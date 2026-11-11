@@ -205,17 +205,25 @@ function foldParts(inside: ThreadItem[], work: Turn["work"]): FoldPart[] {
     return parts;
   }
   // An older runner's stretches of work, each as one step. Its labels said only the stretch's
-  // weightiest step, or whatever the agent last set as its status for every stretch: when they
-  // are all the same they say nothing, and the count is the step.
+  // weightiest step, or whatever the agent last set as its status, which then named every
+  // stretch after it ("Setting direction" ten times over). A label is trusted only where it
+  // tells its stretch apart: said once in a turn whose stretches say different things.
+  // Otherwise the stretch is what can be counted: its steps, and the boards it was on.
   const stretches = inside.filter((i): i is Work => i.kind === "tool");
-  const same = new Set(stretches.map((w) => w.payload.label)).size <= 1 && stretches.length > 1;
+  const times = new Map<string, number>();
+  for (const w of stretches) times.set(w.payload.label, (times.get(w.payload.label) ?? 0) + 1);
+  const telling = (label: string) => times.size > 1 && times.get(label) === 1;
   for (const item of inside) {
     if (item.kind === "assistant") parts.push({ kind: "message", item });
     else if (asked(item)) parts.push({ kind: "asked", item });
     else if (item.kind === "tool") {
-      const { label, steps } = item.payload;
-      const counted = `${steps} ${steps === 1 ? "step" : "steps"}`;
-      const step = { text: same ? counted : `${label} · ${counted}`, count: 1 };
+      const { label, steps, artboards } = item.payload;
+      const boards = new Set(artboards).size;
+      const counted = [
+        `${steps} ${steps === 1 ? "step" : "steps"}`,
+        boards ? ` on ${boards} ${boards === 1 ? "board" : "boards"}` : "",
+      ].join("");
+      const step = { text: telling(label) ? `${label} · ${counted}` : counted, count: 1 };
       const prev = parts.at(-1);
       if (prev?.kind === "steps") prev.steps.push(step);
       else parts.push({ kind: "steps", id: item.id, steps: [step] });
@@ -264,11 +272,15 @@ export function summary(ms: number, boards: number, files: number, steps: number
   return [`Worked for ${took(ms)}`, ...made].join(" · ");
 }
 
-/** "a moment", "40 s", "2 min", "1 h 5 min". */
+/**
+ * "a moment", "8 s", "40 s", "2 min", "1 h 5 min". Past ten seconds, to the nearest five: the
+ * turn's last write can land a moment after the fold first shows, and the line shouldn't tick.
+ */
 export function took(ms: number): string {
   const s = Math.round(Math.max(0, ms) / 1000);
   if (s < 1) return "a moment";
-  if (s < 60) return `${s} s`;
+  if (s < 10) return `${s} s`;
+  if (s < 58) return `${Math.round(s / 5) * 5} s`;
   const min = Math.round(s / 60);
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);

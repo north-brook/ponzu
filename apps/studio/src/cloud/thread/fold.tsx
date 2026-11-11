@@ -52,7 +52,7 @@ export const TurnFoldLine = memo(function TurnFoldLine({
             <Slice size={11} className="text-dry" />
           </TraceIcon>
           <TraceTitle>{fold.summary}</TraceTitle>
-          <span className="sr-only">, what Claude did on the way</span>
+          <span className="sr-only">{ON_THE_WAY[fold.ended]}</span>
         </TraceLine>
       </TraceCollapsibleTrigger>
       {/* The hairline hangs from the slice's middle; what it holds lines up with the summary. */}
@@ -64,6 +64,16 @@ export const TurnFoldLine = memo(function TurnFoldLine({
     </TraceCollapsible>
   );
 });
+
+/**
+ * What the fold holds, said after its summary to a screen reader. The ending itself is the line
+ * after the fold (the answer, "You stopped it", the error); the fold says what came before it.
+ */
+const ON_THE_WAY: Record<TurnFold["ended"], string> = {
+  done: ", what Claude did on the way",
+  stopped: ", what Claude did before it was stopped",
+  failed: ", what Claude did before it failed",
+};
 
 const partKey = (part: FoldPart) => (part.kind === "steps" ? part.id : part.item.id);
 

@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    "./protocol": "./src/api/protocol.ts"
+    "./protocol": "./src/api/protocol.ts",
+    "./turn": "./src/turn.ts"
   },
   "scripts": {
     "build": "bun scripts/build.ts",

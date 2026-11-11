@@ -378,6 +378,24 @@
   }
 }
 
+/*
+ * The room a line held, let go: the thread's foot settles into it rather than jumping. Height 0
+ * once done, and at once under reduced motion.
+ */
+@keyframes leave {
+  from {
+    height: var(--room);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@utility leave {
+  height: 0;
+  animation: leave var(--dur-pane) var(--ease-out);
+}
+
 /* A new working state settling in where the last one was. */
 @keyframes settle {
   from {

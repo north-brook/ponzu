@@ -48,8 +48,14 @@ export class ThreadWriter {
       for (const item of items) if (!item.streaming) this.finished.add(item.id);
     } catch (err) {
       if (retryable(err)) throw err;
-      // Refused outright: sending the same again cannot help, so it is dropped.
-      this.opts.onError?.(err);
+      if (batch.length === 1) {
+        // Refused outright: sending the same again cannot help, so it is dropped.
+        this.opts.onError?.(err);
+        return;
+      }
+      // One item the API won't take mustn't take the rest down with it (the agent's text,
+      // written with its turn): each goes again on its own, and only the refused one is lost.
+      for (const item of batch) await this.send([item]);
     }
   }
 }

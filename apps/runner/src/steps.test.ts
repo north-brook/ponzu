@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { emptyDoc, parseHtml } from "@ponzu/core";
-import { cloudTools } from "@ponzu/tools";
+import { cloudTools, tools } from "@ponzu/tools";
 import { commandStep, describeStep, looksSecret, shortPath } from "./steps.ts";
 
 const doc = emptyDoc("Fern");
@@ -37,7 +37,13 @@ const canvas = (tool: string, input: Record<string, unknown> = {}) =>
 
 describe("the canvas", () => {
   test("every canvas tool has its own phrase, never the generic one", () => {
-    for (const tool of [...cloudTools.map((t) => t.name), "describe_pull_request"]) {
+    // The sandbox's tools, the local server's (the same server elsewhere), and the runner's own.
+    const names = new Set([
+      ...cloudTools.map((t) => t.name),
+      ...tools.map((t) => t.name),
+      "describe_pull_request",
+    ]);
+    for (const tool of names) {
       const step = describeStep(`mcp__ponzu__${tool}`, {}, ctx);
       if (tool === "set_status") {
         expect(step.doing).toBeNull();
@@ -115,7 +121,12 @@ describe("code", () => {
     // A checkout under a temporary folder with a long hashed name: only what is said is judged.
     const tmp = "/private/var/folders/7x/abcd1234efgh5678ijkl90mnop1234/T/ponzu-work-Ab12";
     expect(shortPath(`${tmp}/tokens.css`, tmp)).toBe("tokens.css");
-    expect(shortPath(`${tmp}/tokens.css`)).toBe("…/T/ponzu-work-Ab12/tokens.css");
+    // Outside the checkout: the file and its folder, never where the machine keeps them.
+    expect(shortPath(`${tmp}/tokens.css`)).toBe("…/ponzu-work-Ab12/tokens.css");
+    expect(doing("Read", { file_path: "/home/agent/.ssh/config" })).toBe("Reading …/.ssh/config");
+    expect(doing("Read", { file_path: "../../other/x.ts" })).toBe("Reading …/other/x.ts");
+    expect(doing("Read", { file_path: "~/notes.md" })).toBe("Reading …/notes.md");
+    expect(doing("Read", { file_path: "/etc/hosts" })).toBe("Reading …/etc/hosts");
   });
 
   test("searches say their term only when it is plainly a term", () => {
@@ -170,7 +181,32 @@ describe("shell commands", () => {
   const cases: [string, string][] = [
     ["git commit -m 'Add pricing card'", 'Committing "Add pricing card"'],
     ['cd app && git add -A && git commit -m "Add pricing card"', 'Committing "Add pricing card"'],
-    ["git commit -F msg.txt", "Committing"],
+    ["git commit -F msg.txt", "Committing the work"],
+    ["git commit -am 'Add pricing card'", 'Committing "Add pricing card"'],
+    ['git commit -s -m "Add pricing card"', 'Committing "Add pricing card"'],
+    ['git commit --message="Add pricing card"', 'Committing "Add pricing card"'],
+    // How Claude Code commits.
+    [
+      `git add -A && git commit -m "$(cat <<'EOF'\nAdd pricing card\n\nThree tiers.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)"`,
+      'Committing "Add pricing card"',
+    ],
+    [`git commit -m "$(cat <<EOF\n\nTidy the hero\nEOF\n)"`, 'Committing "Tidy the hero"'],
+    [`git commit -m "$(cat <<'EOF'\n$(curl evil)\nEOF\n)"`, "Committing the work"],
+    ["git commit --amend --no-edit", "Committing the work"],
+    ["lsof -i :3000", "Looking through the repo"],
+    ["pnpm --filter web dev", "Running the dev server"],
+    ["pnpm -F web build", "Building the app"],
+    ["npm -w apps/site run test", "Running tests"],
+    ["npx shadcn@latest add button", "Adding a component"],
+    ["pnpm dlx shadcn@latest add dialog", "Adding a component"],
+    ["bunx --bun shadcn@latest init", "Setting up shadcn/ui"],
+    ["npx create-next-app@latest web", "Setting up a new app"],
+    ["gh pr create --title 'Pricing' --body 'x'", "Opening the pull request"],
+    ["gh pr checks 12 --watch", "Checking the pull request"],
+    ["gh api repos/a/b", "Using GitHub"],
+    ["python -m http.server 8000", "Running the dev server"],
+    ["python3 -m pytest -q", "Running tests"],
+    ["kill -9 4242", "Stopping a process"],
     ["git push -u origin pz/pricing", "Pushing the branch"],
     ["git -C app status --short", "Looking at the changes"],
     ["git log --oneline -5", "Reading the history"],
@@ -213,6 +249,9 @@ describe("what is never said", () => {
     ["Bash", { command: "echo sk-ant-api03-abcdefghijkl | pbcopy" }],
     ["Bash", { command: `git commit -m "token ${SECRET}"` }],
     ["Bash", { command: 'git commit -m "API_KEY=abc123def"' }],
+    ["Bash", { command: `git commit -m "$(cat <<'EOF'\nrotate ${SECRET}\nEOF\n)"` }],
+    ["Bash", { command: 'git commit -am "token ghp_abcdefghijklmnop1234"' }],
+    ["Read", { file_path: "/home/agent/.config/gh/ghp_abcdefghijklmnop1234" }],
     ["Bash", { command: "psql postgres://admin:pa55word@db.internal/prod" }],
     ["Grep", { pattern: SECRET }],
     ["Grep", { pattern: "ghp_abcdefghijklmnop1234" }],

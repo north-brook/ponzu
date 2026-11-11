@@ -1053,8 +1053,10 @@ turn = { ended: "done" | "stopped" | "failed" | null,   // null while it runs; a
 working state (`Drew "Hero"`, "Edited src/app/page.tsx", "Ran tests"), grouped after the
 assistant item they followed (null before the first), a repeat after the same message counted
 rather than listed. At most 120 groups carry text (120 characters each); later steps are counted
-in a group with `text: null` after their message, so a turn of hundreds of tool calls is a few
-kilobytes. The API refuses a record past those bounds. Clients show a running turn's messages
+in a group with `text: null` after their message, and once the log holds 240 groups, in its last
+`text: null` group, so a turn of hundreds of tool calls, or one that talks for hours, is a few
+kilobytes. The API refuses a record past those bounds; a runner whose write is refused sends the
+write's other items again on their own, so one item never takes the agent's text down with it. Clients show a running turn's messages
 and nothing of its work but the working line; once it has ended they keep `final` in full and
 fold everything between the person's message and it into one line ("Worked for 4 min · 7 boards
 · 1 file") that opens on the turn's messages, each followed by its steps. A turn with nothing
@@ -1106,10 +1108,13 @@ from a status the agent set long before: most specific first,
 1. a tool call running: its phrase, for as long as it runs (`Drawing "4 · About you"`, "Reading
    src/app/page.tsx", "Running the dev server", "Searching the repo for "Button"",
    "Committing "Add pricing card"", "Looking up the Tailwind docs"); the newest when several
-   run at once; the plain one ("Drawing a new board") from the moment the model starts writing
-   the call, the specific one once its input is complete;
-2. else what the agent said it is about since it last spoke (set_status, or its todo list's step
-   in progress), which ends the moment it next says something;
+   run at once; the plain one ("Drawing on the canvas") from the moment the model starts
+   writing the call, the specific one as soon as the input's naming keys are written (the
+   runner reads the input as it streams, so a board's name or a file's path shows while its
+   HTML or contents are still being written);
+2. else what the agent said it is about: set_status fills the gap after it was set and ends
+   when the agent's next call begins; its todo list's step in progress lasts until it next says
+   something;
 3. else "Thinking": between calls, while text streams and right after it.
 
 Before Claude Code is up it is "Waking up". Boards are named by their names, files by a short

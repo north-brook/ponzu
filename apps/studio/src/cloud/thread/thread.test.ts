@@ -239,10 +239,35 @@ test("an older runner's thread folds the same way, its stretches counted, its st
   const rows = threadRows(items, idle);
   expect(lines(rows)).toEqual(["message", "fold: Worked for 2 min · 3 boards", "assistant"]);
   const steps = rows.find(isFold)!.fold.parts.flatMap((p) => (p.kind === "steps" ? p.steps : []));
-  expect(steps.map((s) => s.text)).toEqual(["2 steps", "3 steps", "11 steps"]);
+  expect(steps.map((s) => s.text)).toEqual([
+    "2 steps on 1 board",
+    "3 steps on 1 board",
+    "11 steps on 2 boards",
+  ]);
   // A stretch after the last message: the turn stopped mid-work, and nothing is its answer.
   const cut = threadRows([...items.slice(0, 4)], idle);
   expect(lines(cut)).toEqual(["message", "fold: Worked for 20 s · 2 boards"]);
+});
+
+test("an older runner's label is listed only where it tells its stretch apart", () => {
+  const stretch = (label: string, steps: number) =>
+    item({ kind: "tool", payload: { label, steps, artboards: [] } });
+  const fold = (...stretches: ThreadItem[]) => {
+    const rows = threadRows([message(bryce), ...stretches, reply("Done.")], idle);
+    return rows
+      .find(isFold)!
+      .fold.parts.flatMap((p) => (p.kind === "steps" ? p.steps.map((s) => s.text) : []));
+  };
+  // One stretch: its label is whatever the agent set, so only its count is said.
+  expect(fold(stretch("Setting direction", 3))).toEqual(["3 steps"]);
+  // The same label said twice says nothing; one said once among others does.
+  expect(
+    fold(
+      stretch("Setting direction", 2),
+      stretch("Setting direction", 4),
+      stretch("Committed the work", 1),
+    ),
+  ).toEqual(["2 steps", "4 steps", "Committed the work · 1 step"]);
 });
 
 test("earlier turns are folded while a later one runs; a person mid-turn stays in place", () => {

@@ -61,10 +61,13 @@ export class TurnLog {
       this.groups.push({ after: this.after, text, count: 1 });
       return;
     }
-    // Past the limit: counted, after the message they came after.
+    // Past the limit: counted, after the message they came after, until the record holds as
+    // many groups as the API takes; then in the last counted group, whichever message it follows.
     const rest = this.groups.find((g) => g.after === this.after && g.text === null);
     if (rest) rest.count++;
-    else this.groups.push({ after: this.after, text: null, count: 1 });
+    else if (this.groups.length < MAX_TURN_GROUPS * 2)
+      this.groups.push({ after: this.after, text: null, count: 1 });
+    else this.groups.findLast((g) => g.text === null)!.count++;
   }
 
   get stepCount(): number {

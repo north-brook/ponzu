@@ -73,6 +73,8 @@ export type AgentEvent =
   | { type: "text"; id: string; text: string; done: boolean }
   /** The agent began writing a call to a tool: its input is still to come. */
   | { type: "tool-start"; id: string; name: string }
+  /** More of a call's input is written: its complete members so far (the rest still to come). */
+  | { type: "tool-input"; id: string; input: Record<string, unknown> }
   /** The agent called a tool. */
   | { type: "tool"; id: string; name: string; input: Record<string, unknown> }
   /** A tool call's result is in the session. */

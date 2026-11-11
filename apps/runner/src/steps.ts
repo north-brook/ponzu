@@ -240,6 +240,18 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
       return step("Describing the pull request", "Described the pull request", 1);
     case "wait_for_activity":
       return step("Waiting for comments", "Waited for comments");
+    // The local server's tools for a folder of designs: the cloud has one design a sandbox,
+    // but the same server can be the agent's elsewhere.
+    case "list_files":
+      return step("Looking through the designs", "Looked through the designs");
+    case "create_file": {
+      const name = shown(input.name, NAME);
+      return name
+        ? step(`Starting the design "${name}"`, `Started the design "${name}"`, 2)
+        : step("Starting a new design", "Started a new design", 2);
+    }
+    case "update_file":
+      return canvasStep("update_design", input, ctx);
     case "set_status": {
       // The agent saying what it is about: not a step, but the state until it next speaks.
       const intent = shown(input.status, 60);
@@ -487,16 +499,43 @@ function commandOf(argv: string[], full: string): Step | null {
   const bin = basename(cmd);
   if (bin === "git") return gitStep(rest, full);
   // `npx vitest`, `bunx playwright test`: what it runs.
-  if (RUNNERS.has(bin)) return rest[0] ? toolStep(rest.filter((w) => !w.startsWith("-"))) : null;
-  if (bin === "bun" && rest[0] === "x") return toolStep(rest.slice(1));
+  if (RUNNERS.has(bin)) return rest[0] ? toolStep(positional(rest)) : null;
+  if (bin === "bun" && rest[0] === "x") return toolStep(positional(rest.slice(1)));
+  if (bin === "gh") return ghStep(rest);
   if (PMS.has(bin)) return packageStep(bin, rest);
   if (bin === "make" || bin === "just")
     return scriptStep(rest[0] ?? "") ?? step("Running a task", "Ran a task", 1);
   return toolStep(argv);
 }
 
+/** A package manager's flags that take the word after them: `pnpm --filter web dev`. */
+const VALUED = new Set([
+  "--filter",
+  "-F",
+  "-w",
+  "--workspace",
+  "-C",
+  "--cwd",
+  "--dir",
+  "--prefix",
+  "-p",
+  "--package",
+  "--manifest-path",
+]);
+
+/** The words that aren't flags, nor the values of flags that take one. */
+function positional(words: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]!;
+    if (VALUED.has(w)) i++;
+    else if (!w.startsWith("-")) out.push(w);
+  }
+  return out;
+}
+
 function packageStep(pm: string, rest: string[]): Step {
-  const args = rest.filter((w) => !w.startsWith("-"));
+  const args = positional(rest);
   const [sub = "", next = ""] = args;
   if (
     ["i", "install", "add", "ci", "sync", "get", "fetch"].includes(sub) ||
@@ -543,10 +582,43 @@ function scriptStep(name: string): Step | null {
   return null;
 }
 
+/** GitHub's CLI, by what it does. */
+function ghStep(rest: string[]): Step {
+  const [what = "", verb = ""] = positional(rest);
+  if (what === "pr" && verb === "create")
+    return step("Opening the pull request", "Opened the pull request", 2);
+  if (what === "pr" && verb === "merge")
+    return step("Merging the pull request", "Merged the pull request", 2);
+  if (what === "pr" && ["view", "diff", "checks", "list", "status"].includes(verb))
+    return step("Checking the pull request", "Checked the pull request");
+  if (what === "pr" && verb === "edit")
+    return step("Updating the pull request", "Updated the pull request", 1);
+  if (what === "run" || what === "workflow") return step("Checking CI", "Checked CI");
+  if (what === "issue") return step("Reading issues", "Read issues");
+  return step("Using GitHub", "Used GitHub", 1);
+}
+
 /** A command by the program it runs. */
 function toolStep(argv: string[]): Step | null {
   const [cmd = "", ...rest] = argv;
-  const bin = basename(cmd).toLowerCase();
+  const bin = basename(cmd)
+    .toLowerCase()
+    .replace(/(?<=.)@[^/]*$/, "");
+  // `npx shadcn@latest add button`, `bunx create-next-app`.
+  if (bin === "shadcn" || bin === "shadcn-ui") {
+    const sub = positional(rest)[0];
+    return sub === "init"
+      ? step("Setting up shadcn/ui", "Set up shadcn/ui", 1)
+      : step("Adding a component", "Added a component", 1);
+  }
+  if (/^create-[a-z0-9-]+$/.test(bin)) return step("Setting up a new app", "Set up a new app", 1);
+  // `python -m http.server`, `python -m pytest`.
+  if (/^python3?$/.test(bin) && rest[0] === "-m") {
+    const mod = rest[1] ?? "";
+    if (mod === "http.server") return step("Running the dev server", "Ran the dev server", 1);
+    if (mod === "pytest" || mod === "unittest") return step("Running tests", "Ran tests", 1);
+    if (mod === "pip") return step("Installing packages", "Installed packages", 1);
+  }
   if (
     ["vitest", "jest", "pytest", "mocha", "ava", "rspec"].includes(bin) ||
     (bin === "playwright" && rest[0] === "test")
@@ -597,6 +669,7 @@ function toolStep(argv: string[]): Step | null {
       "du",
       "pwd",
       "which",
+      "lsof",
     ].includes(bin)
   )
     return step("Looking through the repo", "Looked through the repo");
@@ -604,7 +677,7 @@ function toolStep(argv: string[]): Step | null {
     return step("Arranging files", "Arranged files", 1);
   if (bin === "rm") return step("Removing files", "Removed files", 1);
   if (["curl", "wget", "http"].includes(bin)) return step("Fetching a page", "Fetched a page", 1);
-  if (["kill", "pkill", "killall", "lsof"].includes(bin))
+  if (["kill", "pkill", "killall", "fuser"].includes(bin))
     return step("Stopping a process", "Stopped a process", 1);
   if (bin === "sleep") return step("Waiting", "Waited");
   if (["node", "python", "python3", "tsx", "ts-node"].includes(bin))
@@ -627,7 +700,7 @@ function gitStep(rest: string[], full: string): Step {
       const message = commitMessage(full);
       return message
         ? step(`Committing "${message}"`, `Committed "${message}"`, 3)
-        : step("Committing", "Committed the work", 3);
+        : step("Committing the work", "Committed the work", 3);
     }
     case "push":
       return step("Pushing the branch", "Pushed the branch", 1);
@@ -660,10 +733,25 @@ function gitStep(rest: string[], full: string): Step {
   }
 }
 
-/** A commit's message from `-m "…"`, when it is plain words: its first line. */
+/**
+ * A commit's message, when it is plain words: its first line. From `-m "…"`, `-am '…'` or
+ * `--message=…`, or the heredoc Claude Code commits with (`-m "$(cat <<'EOF' … EOF)"`).
+ */
 function commitMessage(command: string): string | null {
-  const m = /(?:^|\s)(?:-m|--message)(?:=|\s+)(?:"([^"]*)"|'([^']*)')/.exec(command);
-  const text = m?.[1] ?? m?.[2];
+  const flag = /(?:^|\s)(?:-[a-zA-Z]*m|--message)(?:=|\s+)/.exec(command);
+  if (!flag) return null;
+  const rest = command.slice(flag.index + flag[0].length);
+  let text: string | undefined;
+  const heredoc = /^"?\$\(\s*cat\s+<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*)/.exec(rest);
+  if (heredoc) {
+    const [, end, body = ""] = heredoc;
+    const lines = body.split("\n");
+    const stop = lines.findIndex((l) => l.trim() === end);
+    text = (stop < 0 ? lines : lines.slice(0, stop)).find((l) => l.trim())?.trim();
+  } else {
+    const quoted = /^(?:"([^"]*)"|'([^']*)')/.exec(rest);
+    text = quoted?.[1] ?? quoted?.[2];
+  }
   if (!text) return null;
   const first = text.split(/\\n|\n/)[0]!.trim();
   return /^[\p{L}\p{N}][\p{L}\p{N} ,.:'’()&/#+-]*$/u.test(first) ? shown(first, 50) : null;
@@ -722,11 +810,15 @@ export function shortPath(path: string, cwd?: string): string | null {
     const rel = relative(cwd, p);
     if (rel && !rel.startsWith("..") && !isAbsolute(rel)) p = rel;
   }
-  const parts = p.split("/").filter(Boolean);
+  let parts = p.split("/").filter((part) => part && part !== ".");
   const file = parts.pop();
-  if (!file) return null;
+  if (!file || file === "..") return null;
+  // Outside the checkout (a home folder, a temporary one): only the file and its folder, so
+  // where the machine keeps things is never said.
+  const outside = isAbsolute(p) || parts.includes("..") || p.startsWith("~");
+  if (outside) parts = parts.slice(-1).filter((part) => part !== ".." && part !== "~");
   let out = file;
-  let cut = false;
+  let cut = outside;
   for (let i = parts.length - 1; i >= 0; i--) {
     const next = `${parts[i]}/${out}`;
     if (next.length > PATH) {
@@ -735,7 +827,7 @@ export function shortPath(path: string, cwd?: string): string | null {
     }
     out = next;
   }
-  const said = cut ? `…/${out}` : isAbsolute(p) ? `/${out}` : out;
+  const said = cut ? `…/${out}` : out;
   // Only what is said is judged: the folders cut away never show.
   return looksSecret(said) ? null : said;
 }

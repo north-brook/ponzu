@@ -24,6 +24,8 @@ const WINDOW = 80;
 const PAGE = 40;
 /** How near the top reading up reveals more, or asks for older items. */
 const NEAR_TOP = 320;
+/** The gap between the thread's lines (`gap-[14px]`). */
+const LINE_GAP = 14;
 
 /** A row's key: its item's id, or its fold's. */
 const rowKey = (row: Row) => (isFold(row) ? `fold:${row.fold.id}` : row.item.id);
@@ -70,6 +72,26 @@ export function ThreadView({
   const waiting = sandboxLine(agent);
   const now = useNow();
   const working = waiting ? null : workingLine(items, agent, now);
+
+  /*
+   * The working line leaving (the turn folded, a question came) would drop everything above it
+   * by its height in that frame, the answer the person is reading with it. Its room is kept for
+   * that frame and then let go at the pane's pace, so the answer settles rather than jumps.
+   */
+  const lineRoom = useRef(0);
+  const [leaving, setLeaving] = useState<{ key: number; room: number } | null>(null);
+  const [hadLine, setHadLine] = useState(!!working);
+  if (hadLine !== !!working) {
+    setHadLine(!!working);
+    if (!working && lineRoom.current > 0) setLeaving({ key: Date.now(), room: lineRoom.current });
+    else if (working) setLeaving(null);
+  }
+  useLayoutEffect(() => {
+    const line = content.current?.querySelector<HTMLElement>("[data-working-line]");
+    if (!line) return;
+    // The line and the gap above it.
+    lineRoom.current = line.getBoundingClientRect().height + LINE_GAP;
+  });
   // A send's "Thinking" before the agent has said anything lasts only so long: look again then.
   const [, recheck] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -294,6 +316,17 @@ export function ThreadView({
             ),
           )}
           {working ? <WorkingLine label={working} /> : null}
+          {leaving ? (
+            <div
+              key={leaving.key}
+              aria-hidden
+              data-line-room
+              className="leave shrink-0"
+              // Its own gap is taken back, so it holds exactly what the line did.
+              style={{ "--room": `${leaving.room}px`, marginTop: -LINE_GAP } as CSSProperties}
+              onAnimationEnd={() => setLeaving(null)}
+            />
+          ) : null}
           {waiting ? <SandboxLine {...waiting} /> : null}
         </div>
       </div>

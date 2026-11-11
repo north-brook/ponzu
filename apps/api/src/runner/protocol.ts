@@ -105,7 +105,8 @@ const TurnRecord: z.ZodType<RunnerTurnRecord> = z.object({
         count: StepCount.min(1),
       }),
     )
-    // The counted remainder adds at most one group after each message.
+    // The counted remainder: a group after each message until the runner's record holds this
+    // many, then only counts in its last.
     .max(MAX_TURN_GROUPS * 2)
     .refine((log) => log.filter((g) => g.text !== null).length <= MAX_TURN_GROUPS, {
       message: `At most ${MAX_TURN_GROUPS} steps are listed.`,

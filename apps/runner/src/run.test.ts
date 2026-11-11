@@ -891,7 +891,8 @@ test("the working state across a turn: never blank, specific while a tool runs, 
   run.emit({ type: "tool", id: "t4", name: "Read", input: { file_path: "src/app.tsx" } });
   await now("Reading src/app.tsx");
   run.emit({ type: "tool-done", id: "t4", error: false });
-  await now("Tightening the plan");
+  // The next call ended the stretch it was said for: it doesn't come back.
+  await now("Thinking");
   run.say("msg_2", "Done.", true);
   await now("Thinking");
   run.end();
@@ -903,6 +904,106 @@ test("the working state across a turn: never blank, specific while a tool runs, 
   for (const st of during) expect(st).toMatch(/^working:\S/);
   expect(during).not.toContain("working:null");
   expect(statuses().join("|")).not.toContain("Setting");
+});
+
+test("set_status fills the gap after it and no more: specific, then thinking, between calls", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const seen: string[] = [];
+  const note = () => {
+    const st = api.lastState?.status;
+    if (st && seen.at(-1) !== st) seen.push(st);
+  };
+  const now = async (status: string) => {
+    await until(() => api.lastState?.status === status);
+    note();
+  };
+  await turn(s);
+  await now("Thinking");
+  run.emit({ type: "tool-start", id: "s1", name: "mcp__ponzu__set_status" });
+  run.emit({
+    type: "tool",
+    id: "s1",
+    name: "mcp__ponzu__set_status",
+    input: { status: "setting direction" },
+  });
+  run.emit({ type: "tool-done", id: "s1", error: false });
+  await now("Setting direction");
+  const calls: [string, Record<string, unknown>, string][] = [
+    ["Read", { file_path: "src/a.tsx" }, "Reading src/a.tsx"],
+    ["Grep", { pattern: "Button" }, 'Searching the repo for "Button"'],
+    ["Bash", { command: "bun test" }, "Running tests"],
+  ];
+  for (const [i, [name, input, phrase]] of calls.entries()) {
+    run.emit({ type: "tool-start", id: `c${i}`, name });
+    run.emit({ type: "tool", id: `c${i}`, name, input });
+    await now(phrase);
+    run.emit({ type: "tool-done", id: `c${i}`, error: false });
+    await now("Thinking");
+  }
+  expect(seen).toEqual([
+    "Thinking",
+    "Setting direction",
+    "Reading src/a.tsx",
+    "Thinking",
+    'Searching the repo for "Button"',
+    "Thinking",
+    "Running tests",
+    "Thinking",
+  ]);
+  // Its plan's step in progress lasts while it works through it.
+  run.emit({
+    type: "tool",
+    id: "p1",
+    name: "TodoWrite",
+    input: {
+      todos: [{ content: "Draw the plan", activeForm: "Drawing the plan", status: "in_progress" }],
+    },
+  });
+  run.emit({ type: "tool-done", id: "p1", error: false });
+  await now("Drawing the plan");
+  run.emit({ type: "tool", id: "r1", name: "Read", input: { file_path: "src/b.tsx" } });
+  run.emit({ type: "tool-done", id: "r1", error: false });
+  await now("Drawing the plan");
+  run.say("msg_1", "Done.", true);
+  await now("Thinking");
+  run.end();
+});
+
+test("a call's phrase turns specific while its input is still being written", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const now = (status: string) => until(() => api.lastState?.status === status);
+  await turn(s);
+  const cases: [string, Record<string, unknown>, string, string][] = [
+    [
+      "Write",
+      { file_path: `${s.run.opts.cwd}/src/app/page.tsx` },
+      "Writing a file",
+      "Writing src/app/page.tsx",
+    ],
+    [
+      "mcp__ponzu__write_html",
+      { target: "ab_pricing" },
+      "Drawing on the canvas",
+      'Drawing "Pricing"',
+    ],
+    ["Bash", { command: "bun run build" }, "Running a command", "Building the app"],
+  ];
+  for (const [i, [name, input, plain, specific]] of cases.entries()) {
+    const id = `w${i}`;
+    run.emit({ type: "tool-start", id, name });
+    await now(plain);
+    // The keys that name it are in; the rest (the HTML, the file's contents) is still coming.
+    run.emit({ type: "tool-input", id, input });
+    await now(specific);
+    run.emit({ type: "tool", id, name, input: { ...input, content: "…", html: "<p/>" } });
+    await Bun.sleep(20);
+    expect(api.lastState?.status).toBe(specific);
+    run.emit({ type: "tool-done", id, error: false });
+    await now("Thinking");
+  }
+  run.end();
 });
 
 test("a turn is one thread item that records its steps between its messages, and names its answer", async () => {

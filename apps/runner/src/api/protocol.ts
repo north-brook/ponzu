@@ -402,7 +402,10 @@ export interface TurnRecord {
   /** How many boards it made or changed, and files it changed, each counted once. */
   boards: number;
   files: number;
-  /** Its steps in order, grouped after each message. At most `MAX_TURN_GROUPS` with text. */
+  /**
+   * Its steps in order, grouped after each message. At most `MAX_TURN_GROUPS` with text, and
+   * twice that in all: past them, steps are only counted.
+   */
   log: StepGroup[];
 }
 

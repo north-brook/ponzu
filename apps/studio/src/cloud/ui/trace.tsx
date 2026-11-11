@@ -26,14 +26,18 @@ function TraceLine({
   status,
   ...props
 }: React.ComponentProps<"span"> & {
-  status?: "running" | "error" | "pending";
+  /*
+   * The registry's "running" (a shimmer over the title) is left out: the thread says what is
+   * running with its working line and the turning slice, and has no shimmer.
+   */
+  status?: "error" | "pending";
 }) {
   return (
     <span
       data-slot="trace-line"
       data-status={status}
       className={cn(
-        "flex w-fit min-w-0 max-w-full items-center gap-1.5 text-12 text-faint leading-[1.4] transition-colors duration-(--dur-hover) in-[a:hover,button:hover]:text-muted data-[status=error]:text-danger data-[status=pending]:opacity-60 data-[status=running]:*:data-[slot=trace-title]:shimmer",
+        "flex w-fit min-w-0 max-w-full items-center gap-1.5 text-12 text-faint leading-[1.4] transition-colors duration-(--dur-hover) in-[a:hover,button:hover]:text-muted data-[status=error]:text-danger data-[status=pending]:opacity-60",
         className,
       )}
       {...props}

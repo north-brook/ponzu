@@ -254,8 +254,15 @@ export class Runner {
   private turnBoards = new Set<string>();
   /** The tool calls running now, oldest first: their ids, to what each is doing. */
   private running = new Map<string, string>();
-  /** What the agent said it is about since it last spoke (set_status, its plan). */
-  private intent: string | null = null;
+  /**
+   * What the agent said it is about: set_status until its next call begins, or its plan's step
+   * in progress (`lasting`) until it next speaks.
+   */
+  private intent: { text: string; lasting: boolean } | null = null;
+  /** The tool calls the turn has begun, by id. */
+  private calls = new Set<string>();
+  /** The calls still being written, to the tool each is for. */
+  private callNames = new Map<string, string>();
   private status: AgentStatus = { artboards: [] };
   /** Why the repository could not be checked out, if it could not. */
   private cloneError: string | null = null;
@@ -952,6 +959,9 @@ export class Runner {
         this.inTurn = true;
         this.toolStart(event.id, event.name);
         break;
+      case "tool-input":
+        this.toolInput(event.id, event.input);
+        break;
       case "tool":
         this.inTurn = true;
         this.step(event.id, event.name, event.input);
@@ -1071,9 +1081,22 @@ export class Runner {
     return { doc: this.replica.doc, cwd: this.cwd, secrets: this.opts.secrets };
   }
 
+  /**
+   * A call the turn has not seen before begins. What the agent said with set_status fills the
+   * gap after it was said and no more: the next call it starts ends it. Its plan's step in
+   * progress (TodoWrite) lasts until it speaks, since it moves as the plan does.
+   */
+  private began(id: string): void {
+    if (this.calls.has(id)) return;
+    this.calls.add(id);
+    if (this.intent && !this.intent.lasting) this.intent = null;
+  }
+
   /** The agent began writing a tool call: say what kind of thing is coming. */
   private toolStart(id: string, name: string): void {
     this.openTurn();
+    this.began(id);
+    this.callNames.set(id, name);
     const { doing } = describeStep(name, {}, this.stepContext());
     if (!doing) return;
     this.running.set(id, doing);
@@ -1081,10 +1104,26 @@ export class Runner {
     this.refreshState();
   }
 
+  /**
+   * More of a call's input is written: the keys that name what it is on come first, so the
+   * phrase turns specific ("Drawing "Plan"") while the rest (the board's HTML) is still coming.
+   */
+  private toolInput(id: string, input: Record<string, unknown>): void {
+    const name = this.callNames.get(id);
+    if (!name || !this.running.has(id)) return;
+    const { doing } = describeStep(name, input, this.stepContext());
+    if (!doing || doing === this.running.get(id)) return;
+    this.running.set(id, doing);
+    this.writeTurn(null);
+    this.refreshState();
+  }
+
   private step(id: string, name: string, input: Record<string, unknown>): void {
     const turn = this.openTurn();
+    this.began(id);
+    this.callNames.delete(id);
     const step = describeStep(name, input, this.stepContext());
-    if (step.intent) this.intent = step.intent;
+    if (step.intent) this.intent = { text: step.intent, lasting: name === "TodoWrite" };
     if (step.doing) this.running.set(id, step.doing);
     else this.running.delete(id);
     turn.add(step);
@@ -1110,7 +1149,7 @@ export class Runner {
    * were said in, nor stand in for a tool that is running.
    */
   private label(): string {
-    return [...this.running.values()].at(-1) ?? this.intent ?? "Thinking";
+    return [...this.running.values()].at(-1) ?? this.intent?.text ?? "Thinking";
   }
 
   /** End whatever is streaming: the turn is over, or the runner is. A reply cut off ends as it was. */
@@ -1119,6 +1158,8 @@ export class Runner {
       this.thread.write({ id: item, kind: "assistant", payload: { text }, streaming: false });
     this.texts.clear();
     this.running.clear();
+    this.calls.clear();
+    this.callNames.clear();
     this.intent = null;
     this.writeTurn(ended);
     this.turn = null;

@@ -176,7 +176,8 @@ export const COMPOSITIONS: Composition[] = [
     id: "turn-completed-open",
     title: "Turn · completed, opened",
     ...WINDOW,
-    open: '[data-slot="trace-collapsible-trigger"]',
+    // The thread's last fold: the earlier turns' are above it, out of view.
+    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
   },
   { id: "turn-stopped", title: "Turn · stopped", ...WINDOW },
   { id: "turn-failed", title: "Turn · failed", ...WINDOW },
@@ -185,7 +186,8 @@ export const COMPOSITIONS: Composition[] = [
     id: "turn-old-runner",
     title: "Turn · an older runner's thread, opened",
     ...WINDOW,
-    open: '[data-slot="trace-collapsible-trigger"]',
+    // The thread's last fold: the earlier turns' are above it, out of view.
+    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
   },
   { id: "pull-request-busy", title: "Pull request · draft, failing, large files", ...WINDOW },
   { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },

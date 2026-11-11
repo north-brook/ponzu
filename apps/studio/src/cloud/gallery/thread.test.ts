@@ -378,13 +378,18 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       expect(frame.lines).toBe(0);
       expect(frame.folds).toBe(1);
     }
-    // The answer stays where it was as the turn folds above it: it settles only by the working
-    // line that left from under it, in that frame, and doesn't move after.
+    // The answer stays where it was in the frame the turn folds above it and the working line
+    // goes from under it; then it settles into the line's room, a little each frame, never
+    // jumping, and stays there.
     const before = frames[folded - 1]!;
-    const after = frames[folded]!.answerBottom!;
-    expect(Math.abs(after - before.answerBottom! - before.lineRoom)).toBeLessThan(2);
-    for (const frame of frames.slice(folded))
-      expect(Math.abs(frame.answerBottom! - after)).toBeLessThan(1);
+    expect(Math.abs(frames[folded]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
+    const settled = frames.at(-1)!.answerBottom!;
+    expect(Math.abs(settled - before.answerBottom! - before.lineRoom)).toBeLessThan(2);
+    const after = frames.slice(folded).map((f) => f.answerBottom!);
+    for (let i = 1; i < after.length; i++) {
+      expect(after[i]! - after[i - 1]!).toBeGreaterThan(-0.5);
+      expect(after[i]! - after[i - 1]!).toBeLessThan(before.lineRoom * 0.6);
+    }
   });
 
   test("a folded turn opens and closes from the keyboard, says so, and stays where it is", async () => {
