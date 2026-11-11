@@ -51,7 +51,11 @@ const desktop: PonzuDesktop = {
     void (ipcRenderer.invoke(CHANNELS.links) as Promise<DeepLink[]>).then((links) => {
       for (const link of links) listener(link);
     });
-    return off;
+    // With no listener left (signed out), the main process keeps links for the next one.
+    return () => {
+      off();
+      ipcRenderer.send(CHANNELS.linksStop);
+    };
   },
   onCommand: (listener) => on<MenuCommand>(CHANNELS.command, listener),
   update: {

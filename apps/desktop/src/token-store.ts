@@ -40,7 +40,11 @@ export function tokenStorage(file: string, cipher: Cipher): TokenStorage {
     storage: {
       get: (key) => (memory ?? encrypted).get(key),
       set: (key, value) => target().set(key, value),
-      delete: (key) => (memory ?? encrypted).delete(key),
+      // Both: a file an earlier launch wrote with the keychain would sign the person back in.
+      delete: async (key) => {
+        await memory?.delete(key);
+        await encrypted.delete(key);
+      },
     },
     persistence: () => (memory ? "memory" : "keychain"),
   };

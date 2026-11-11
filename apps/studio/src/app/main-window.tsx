@@ -66,6 +66,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     void host.persistence().then((persistence) => {
       if (persistence === "memory") {
         say("Ponzu can't use this computer's keychain, so you'll sign in again next time.");
+      } else if (persistence === "file") {
+        say("Signed in with a developer's session file, kept unencrypted, not in the keychain.");
       }
     });
   }, [host, say]);

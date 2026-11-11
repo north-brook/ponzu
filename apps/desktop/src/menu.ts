@@ -11,6 +11,8 @@ export interface MenuActions {
   command(command: MenuCommand): void;
   checkForUpdates(): void;
   signOut(): void;
+  /** Whether View has Toggle Developer Tools: development and test builds only. */
+  devTools: boolean;
 }
 
 const SIGN_OUT = "sign-out";
@@ -69,7 +71,7 @@ export function buildMenu(actions: MenuActions): void {
       label: "View",
       submenu: [
         { role: "reload" },
-        { role: "toggleDevTools" },
+        ...(actions.devTools ? [{ role: "toggleDevTools" as const }] : []),
         { type: "separator" },
         { role: "togglefullscreen" },
       ],

@@ -41,9 +41,10 @@ export type SignInResult =
 
 /**
  * Where the session's tokens live. `memory`: this computer's keychain could not be used, so the
- * session lasts until Ponzu quits, and the studio says so. Never written down unencrypted.
+ * session lasts until Ponzu quits. `file`: a developer's saved session, unencrypted, which only
+ * a development or test build takes. The studio says so for either.
  */
-export type SessionPersistence = "keychain" | "memory";
+export type SessionPersistence = "keychain" | "memory" | "file";
 
 /** The updater as the title bar's update mark shows it. */
 export interface UpdateState {
@@ -107,6 +108,7 @@ export const CHANNELS = {
   cancelSignIn: "ponzu:session:cancel-sign-in",
   signOut: "ponzu:session:sign-out",
   links: "ponzu:links",
+  linksStop: "ponzu:links:stop",
   link: "ponzu:link",
   command: "ponzu:command",
   updateState: "ponzu:update:state",

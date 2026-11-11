@@ -1,6 +1,13 @@
-import { ApiError, borrowSession, createApi, createLive } from "@ponzu/client";
+import {
+  ApiError,
+  borrowSession,
+  createApi,
+  createLive,
+  type KeyValueStorage,
+  type Session,
+} from "@ponzu/client";
 import type { PonzuDesktop } from "@ponzu/desktop/bridge";
-import { type Host, localStorageKv } from "./host.ts";
+import type { Host } from "./host.ts";
 
 /**
  * The studio inside the Mac app. The main process holds the session; this borrows an access
@@ -39,6 +46,42 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     onCommand: (listener) => desktop.onCommand(listener),
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
-    docStorage: localStorageKv("ponzu.cache."),
+    docStorage: signedInCache(session, window.localStorage),
+  };
+}
+
+const CACHE = "ponzu.cache.";
+
+/**
+ * The designs last opened, kept to show offline while someone is signed in and only then: they
+ * are whole documents of private repos with the keys that open their files. Nothing is written
+ * once the session ends (a design closing as its window unmounts would), and what was kept
+ * goes with it. The main process clears the studio's storage then too.
+ */
+export function signedInCache(
+  session: Pick<Session, "getState" | "subscribe">,
+  store: Storage,
+): KeyValueStorage {
+  const signedIn = () => session.getState().status === "signed_in";
+  const forget = () => {
+    const keys = Array.from({ length: store.length }, (_, i) => store.key(i));
+    for (const key of keys) if (key?.startsWith(CACHE)) store.removeItem(key);
+  };
+  session.subscribe(() => {
+    if (!signedIn()) forget();
+  });
+  return {
+    get: async (key) => {
+      if (!signedIn()) return null;
+      try {
+        return store.getItem(CACHE + key);
+      } catch {
+        return null;
+      }
+    },
+    set: async (key, value) => {
+      if (signedIn()) store.setItem(CACHE + key, value);
+    },
+    delete: async (key) => store.removeItem(CACHE + key),
   };
 }

@@ -35,21 +35,6 @@ export interface Host {
   update: PonzuDesktop["update"] | null;
   /** Open an https link in the system browser. */
   openExternal(url: string): void;
-  /** Where the last designs opened are kept for showing offline: meant for size, not secrets. */
+  /** Where the last designs opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
-}
-
-/** localStorage as `KeyValueStorage`, for what may be lost: it can be full, or unavailable. */
-export function localStorageKv(prefix: string): KeyValueStorage {
-  return {
-    get: async (key) => {
-      try {
-        return localStorage.getItem(prefix + key);
-      } catch {
-        return null;
-      }
-    },
-    set: async (key, value) => localStorage.setItem(prefix + key, value),
-    delete: async (key) => localStorage.removeItem(prefix + key),
-  };
 }

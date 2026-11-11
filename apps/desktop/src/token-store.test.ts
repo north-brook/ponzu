@@ -76,3 +76,15 @@ test("without a keychain nothing is written down: the session lasts until Ponzu 
   expect(await storage.get("ponzu.session")).toBe("x");
   expect(() => statSync(file)).toThrow();
 });
+
+test("signing out without a keychain also forgets a session an earlier launch kept in it", async () => {
+  const file = join(dir, "d/session.bin");
+  await tokenStorage(file, cipher().cipher).storage.set("ponzu.session", "old");
+  // The keychain has gone since: this launch signs in again, into memory, then signs out.
+  const { storage, persistence } = tokenStorage(file, cipher(false).cipher);
+  await storage.set("ponzu.session", "new");
+  expect(persistence()).toBe("memory");
+  await storage.delete("ponzu.session");
+  expect(() => statSync(file)).toThrow();
+  expect(await tokenStorage(file, cipher().cipher).storage.get("ponzu.session")).toBeNull();
+});

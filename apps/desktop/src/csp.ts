@@ -2,31 +2,44 @@
  * The studio's content security policy. The canvas draws agent-authored HTML in the app's own
  * document (each board in a shadow root, sanitized on its way into the database), so this is the
  * wall behind the sanitizer: no script but the studio's own, no frames, no plugins, no forms,
- * and nothing loaded or reached outside the places Ponzu's UI and a design's files come from.
+ * and nothing reached but the API, Neon Realtime and the design's files.
+ *
+ * Images are the one thing loaded from anywhere on https: a design may show a photo from the
+ * web, as the runner's previews of it do (docs/cloud.md, "Security"). An image runs no script;
+ * what it costs is that the image's host learns the design was opened.
  */
 
-/** Where a design's files are served (docs/cloud.md, "Assets and previews"), every environment's. */
-const ASSETS = "https://*.ponzu.cloud";
-/** Neon Realtime, which live queries subscribe to: one host per database branch. */
-const REALTIME = ["https://*.neon.tech", "wss://*.neon.tech"];
-/** Where an upload's signed PUT goes: Cloudflare R2's S3 endpoint. */
-const UPLOADS = "https://*.r2.cloudflarestorage.com";
-/** People's pictures, from GitHub. */
-const AVATARS = "https://avatars.githubusercontent.com";
+/** Any environment's, for a development build that may point anywhere. */
+const ANY_ASSETS = "https://*.ponzu.cloud";
+const ANY_REALTIME = "https://*.neon.tech";
 /** The UI's web fonts and the Google Fonts designs name. */
 const FONT_CSS = "https://fonts.googleapis.com";
 const FONT_FILES = "https://fonts.gstatic.com";
 
-export function contentSecurityPolicy(apiUrl: string): string {
+export function contentSecurityPolicy(where: {
+  apiUrl: string;
+  realtimeUrl: string | null;
+  assetsUrl: string | null;
+}): string {
+  const assets = where.assetsUrl ? new URL(where.assetsUrl).origin : ANY_ASSETS;
+  const realtime = where.realtimeUrl ? new URL(where.realtimeUrl).origin : ANY_REALTIME;
   const directives: Record<string, string[]> = {
     "default-src": ["'none'"],
     "script-src": ["'self'"],
     // Boards carry their own <style> and style attributes, and the canvas positions with both.
     "style-src": ["'self'", "'unsafe-inline'", FONT_CSS],
-    "font-src": ["'self'", "data:", FONT_FILES, ASSETS],
-    "img-src": ["'self'", "data:", "blob:", ASSETS, AVATARS],
-    "media-src": ["'self'", "blob:", ASSETS],
-    "connect-src": ["'self'", new URL(apiUrl).origin, ...REALTIME, ASSETS, UPLOADS],
+    "font-src": ["'self'", "data:", FONT_FILES, assets],
+    // A design's pictures from the web, its own files and people's GitHub avatars among them.
+    "img-src": ["'self'", "data:", "blob:", "https:"],
+    "media-src": ["'self'", "blob:", assets],
+    // Realtime's socket is the same host over wss.
+    "connect-src": [
+      "'self'",
+      new URL(where.apiUrl).origin,
+      realtime,
+      realtime.replace(/^https:/, "wss:"),
+      assets,
+    ],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],

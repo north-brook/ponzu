@@ -28,6 +28,8 @@ export function createMainWindow(opts: {
   hidden: boolean;
   /** What the preload hands the studio: `--ponzu-<name>=<value>` on the renderer's command line. */
   args: Record<string, string>;
+  /** Whether developer tools can open on the window at all: not in a release. */
+  devTools: boolean;
 }): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
@@ -47,6 +49,7 @@ export function createMainWindow(opts: {
       webviewTag: false,
       navigateOnDragDrop: false,
       safeDialogs: true,
+      devTools: opts.devTools,
       additionalArguments: Object.entries(opts.args).map(
         ([name, value]) => `--ponzu-${name}=${value}`,
       ),

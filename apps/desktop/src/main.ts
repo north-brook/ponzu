@@ -1,8 +1,8 @@
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import type { SessionState } from "@ponzu/client";
 import {
   app,
   type BrowserWindow,
@@ -11,6 +11,7 @@ import {
   ipcMain,
   protocol,
   safeStorage,
+  session as sessions,
   shell,
 } from "electron";
 import { followAppearance } from "./appearance.ts";
@@ -24,7 +25,7 @@ import {
 import { configFor } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
-import { removeLegacyOnce } from "./legacy.ts";
+import { removeLegacyOnce, runProgram } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
 import { externalLink, isStudio } from "./navigation.ts";
@@ -42,18 +43,44 @@ import { createMainWindow } from "./window.ts";
  */
 
 const config = configFor(app.isPackaged, process.env);
+
+/*
+ * A development build is an app of its own: its own data folder, keychain item ("Ponzu Dev Safe
+ * Storage") and single-instance lock, so it never reads, refreshes or replaces an installed
+ * Ponzu's session, nor quits because one is running. Both before anything reads either.
+ */
+if (app.name !== config.appName) {
+  app.setName(config.appName);
+  app.setPath("userData", join(app.getPath("appData"), config.appName));
+}
+
+/*
+ * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
+ * program on the computer. A release refuses to start with one; the fuses (package.json) close
+ * Node's own inspector and ELECTRON_RUN_AS_NODE the same way.
+ */
+if (
+  !config.remoteDebugging &&
+  (app.commandLine.hasSwitch("remote-debugging-port") ||
+    app.commandLine.hasSwitch("remote-debugging-pipe"))
+) {
+  console.error("Ponzu doesn't open a remote debugging port.");
+  process.exit(1);
+}
+
 /** The built main and preload live in <app>/dist, in development and inside the bundle. */
 const here = join(app.getAppPath(), "dist");
 const studioRoot = app.isPackaged
   ? join(process.resourcesPath, "studio")
   : join(app.getAppPath(), "../studio/dist");
 const studioOrigins = [STUDIO_ORIGIN, ...(config.studioDevUrl ? [config.studioDevUrl] : [])];
-const csp = contentSecurityPolicy(config.apiUrl);
+const csp = contentSecurityPolicy(config);
 
 let mainWindow: BrowserWindow | null = null;
 /** Links that arrived before the studio listened for them. */
 const pendingLinks: DeepLink[] = [];
-let studioListening = false;
+/** The studio's listeners for links: none while signed out, when links wait here. */
+let linkListeners = 0;
 
 // A standard, secure scheme of our own: one origin for the studio's storage and the API's CORS.
 protocol.registerSchemesAsPrivileged([
@@ -98,6 +125,7 @@ function showWindow() {
       preload: join(here, "preload.cjs"),
       studio: studioOrigins,
       hidden: smoke,
+      devTools: config.remoteDebugging,
       args: {
         version: app.getVersion(),
         api: config.apiUrl,
@@ -111,7 +139,7 @@ function showWindow() {
     });
     // A reload or a crash starts the studio again; it asks for queued links when it listens.
     win.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
-      if (isMainFrame && !isSameDocument) studioListening = false;
+      if (isMainFrame && !isSameDocument) linkListeners = 0;
     });
     win.webContents.on("render-process-gone", (_event, details) => {
       if (!smoke && details.reason !== "clean-exit") win.reload();
@@ -133,7 +161,7 @@ function openLink(url: string) {
   const link = parseDeepLink(url, config.linkScheme);
   if (!link) return;
   showWindow();
-  if (studioListening) send(CHANNELS.link, link);
+  if (linkListeners > 0) send(CHANNELS.link, link);
   else pendingLinks.push(link);
 }
 
@@ -185,8 +213,11 @@ function registerIpc(session: MainSession, updater: Updates) {
   listen(CHANNELS.cancelSignIn, () => session.cancelSignIn());
   handle(CHANNELS.signOut, () => session.session.signOut());
   handle(CHANNELS.links, () => {
-    studioListening = true;
+    linkListeners++;
     return pendingLinks.splice(0);
+  });
+  listen(CHANNELS.linksStop, () => {
+    linkListeners = Math.max(0, linkListeners - 1);
   });
   handle(CHANNELS.updateState, () => updater.state());
   listen(CHANNELS.updateCheck, () => updater.check());
@@ -212,14 +243,15 @@ function isBridgeError(value: unknown): value is BridgeError {
 
 /**
  * Where the tokens live: nowhere for the smoke check (it must never touch the keychain), a
- * developer's saved session when one is named, and otherwise the keychain.
+ * developer's saved session when a development or test build is given one, and otherwise the
+ * keychain.
  */
 function sessionStorage() {
   if (smoke) return { storage: memoryStorage(), persistence: () => "memory" as const };
-  const file = process.env.PONZU_SESSION_FILE;
+  const file = config.sessionFile;
   if (file) {
     console.warn(`Using the developer session saved in ${file}, unencrypted.`);
-    return { storage: sessionFileStorage(file), persistence: () => "keychain" as const };
+    return { storage: sessionFileStorage(file), persistence: () => "file" as const };
   }
   return tokenStorage(join(app.getPath("userData"), "session.bin"), {
     available: () =>
@@ -229,6 +261,27 @@ function sessionStorage() {
     encrypt: (text) => safeStorage.encryptString(text),
     decrypt: (data) => safeStorage.decryptString(data),
   });
+}
+
+/** Signed out, or let go until GitHub lets the person in again: nobody's designs belong here. */
+function endsSession(state: SessionState): boolean {
+  return state.status === "signed_out" || state.status === "github_reauth";
+}
+
+/**
+ * Everything the studio kept: the designs last opened (whole documents, and the asset keys that
+ * open their files) and the person's window state. The studio stops writing them as it signs
+ * out (desktop-host.ts).
+ */
+async function forgetStudioData(): Promise<void> {
+  for (const origin of studioOrigins) {
+    await sessions.defaultSession
+      .clearStorageData({
+        origin,
+        storages: ["localstorage", "indexdb", "cachestorage", "serviceworkers"],
+      })
+      .catch((error: unknown) => console.error(`Couldn't clear the studio's data: ${error}`));
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -246,16 +299,7 @@ function removeLegacySoon() {
         env: process.env,
         uid: process.getuid?.() ?? 0,
         exists: existsSync,
-        run: (command, args, path) =>
-          new Promise((done) =>
-            execFile(
-              command,
-              args,
-              { timeout: 15_000, windowsHide: true, env: { ...process.env, PATH: path } },
-              (error, stdout) =>
-                done({ status: error ? ((error.code as number) ?? 1) : 0, stdout }),
-            ),
-          ),
+        run: runProgram,
       },
       join(app.getPath("userData"), "legacy-cleanup.json"),
       app.getVersion(),
@@ -315,8 +359,11 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     const session = account.session;
+    let was = session.getState().status;
     session.subscribe(() => {
       const state = session.getState();
+      if (state.status !== was && endsSession(state)) void forgetStudioData();
+      was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
     });
@@ -334,6 +381,8 @@ if (!app.requestSingleInstanceLock()) {
         if (mainWindow) void checkForUpdatesNow(mainWindow);
       },
       signOut: () => void session.signOut(),
+      // Developer tools are a developer's: a release has no way to open them on someone's session.
+      devTools: config.remoteDebugging,
     });
     setSignedIn(session.getState().status === "signed_in");
 

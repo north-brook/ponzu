@@ -11,7 +11,7 @@
     "./bridge": "./src/bridge.ts"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron",
+    "build": "bun scripts/build.ts",
     "start": "bun run build && ./run-dev.sh",
     "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --arm64 --publish never",
     "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never",
@@ -45,6 +45,15 @@
         "to": "studio"
       }
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
     "afterSign": "./scripts/notarize.cjs",
     "protocols": [
       {
