@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { designRunners, events, type Json, users } from "../schema/index.ts";
+import { designRunners, designs, events, type Json, users } from "../schema/index.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
@@ -69,23 +69,42 @@ export function personOf(
     : null;
 }
 
-/**
- * Hand a design's runner the events it has not been handed, oldest first, at most `limit`: those
- * not yet delivered and not already claimed by `runnerId`, which is then recorded as their
- * runner. So an event goes to each runner once, and one an earlier runner took and never
- * acknowledged (it is gone) is the next one's.
- *
- * Only the design's current runner (`design_runners.runner_id`) is handed anything: a runner
- * whose lease was taken between its call being let in and this statement gets nothing.
- */
-export async function claimEvents(
-  db: Db,
-  { designId, runnerId, limit = 100 }: { designId: string; runnerId: string; limit?: number },
-): Promise<ClaimedEvent[]> {
+/** Whether `runnerId` holds `designId`'s lease, as a condition of the statement it is in. */
+function leaseHeld(db: Db, designId: string, runnerId: string) {
   const leased = db
     .select({ id: designRunners.designId })
     .from(designRunners)
     .where(and(eq(designRunners.designId, designId), eq(designRunners.runnerId, runnerId)));
+  return sql`exists (${leased})`;
+}
+
+/**
+ * Hand a design's runner the events it has not been handed, oldest first, at most `limit`: those
+ * not yet delivered and not already claimed by `runnerId`, which is then recorded as their
+ * runner under `claimId`. So an event goes to each runner once, and one an earlier runner took
+ * and never acknowledged (it is gone) is the next one's.
+ *
+ * `claimId` is the runner's, new for each claim. Sent again, because the first answer was lost,
+ * it hands out again what that claim handed out and has not been acknowledged, and nothing
+ * else. The design's head `seq` comes back from the same statement, so a claim that happened
+ * always gets its answer.
+ *
+ * Only the design's current runner (`design_runners.runner_id`) is handed anything: a runner
+ * whose lease was taken between its call being let in and this statement gets nothing. Null
+ * when there is no such design.
+ */
+export async function claimEvents(
+  db: Db,
+  {
+    designId,
+    runnerId,
+    claimId,
+    limit = 100,
+  }: { designId: string; runnerId: string; claimId: string; limit?: number },
+): Promise<{ events: ClaimedEvent[]; seq: number } | null> {
+  const pending = and(eq(events.designId, designId), isNull(events.deliveredAt));
+  const ofThisClaim = and(eq(events.claimedBy, runnerId), eq(events.claimId, claimId));
+  const repeated = db.select({ id: events.id }).from(events).where(and(pending, ofThisClaim));
   // In `with`, so that it runs once. As a subquery of the update it is run again for each
   // row whenever the planner joins by nested loop, and each run locks the next `limit` rows.
   const waiting = db.$with("waiting").as(
@@ -94,10 +113,15 @@ export async function claimEvents(
       .from(events)
       .where(
         and(
-          eq(events.designId, designId),
-          isNull(events.deliveredAt),
-          or(isNull(events.claimedBy), sql`${events.claimedBy} <> ${runnerId}`),
-          sql`exists (${leased})`,
+          pending,
+          leaseHeld(db, designId, runnerId),
+          or(
+            ofThisClaim,
+            and(
+              sql`not exists (${repeated})`,
+              or(isNull(events.claimedBy), sql`${events.claimedBy} <> ${runnerId}`),
+            ),
+          ),
         ),
       )
       .orderBy(events.seq)
@@ -109,41 +133,72 @@ export async function claimEvents(
     db
       .with(waiting)
       .update(events)
-      .set({ claimedAt: sql`now()`, claimedBy: runnerId })
+      .set({ claimedAt: sql`now()`, claimedBy: runnerId, claimId })
       .where(inArray(events.id, db.select({ id: waiting.id }).from(waiting)))
       .returning(),
   );
+  // From the design, so that its head comes back when nothing is claimed.
   const rows = await run(
-    db.with(claimed).select().from(claimed).leftJoin(users, eq(users.id, claimed.userId)),
+    db
+      .with(claimed)
+      .select({
+        seq: designs.seq,
+        event: {
+          id: claimed.id,
+          designId: claimed.designId,
+          seq: claimed.seq,
+          kind: claimed.kind,
+          priority: claimed.priority,
+          payload: claimed.payload,
+          createdAt: claimed.createdAt,
+          claimedAt: claimed.claimedAt,
+          claimedBy: claimed.claimedBy,
+          claimId: claimed.claimId,
+          deliveredAt: claimed.deliveredAt,
+        },
+        user: { id: users.id, name: users.name, githubLogin: users.githubLogin },
+      })
+      .from(designs)
+      .leftJoin(claimed, sql`true`)
+      .leftJoin(users, eq(users.id, claimed.userId))
+      .where(eq(designs.id, designId)),
   );
-  return rows
-    .map(({ claimed: { userId: _, ...event }, users: user }) => ({
-      ...event,
-      from: personOf(user),
-    }))
+  const [head] = rows;
+  if (!head) return null;
+  const claimedEvents = rows
+    .flatMap(({ event, user }) => (event ? [{ ...event, from: personOf(user) }] : []))
     .sort((a, b) => a.seq - b.seq);
+  return { events: claimedEvents, seq: head.seq };
 }
 
 /**
- * Mark events as delivered, by id: the runner has put them into the Claude session. Anything
- * else stays waiting, whatever its place in the feed, and an id already marked or of another
- * design is left alone. `claudeSessionId`, when not null, is stored as the design's session in
- * the same statement, so the next runner resumes the session these events went into. Answers
- * how many were marked.
+ * Mark events as delivered, by id: `runnerId` has put them into the Claude session. Only events
+ * it claimed are marked: anything else stays waiting, whatever its place in the feed, and an id
+ * already marked, of another design or handed to another runner is left alone.
+ * `claudeSessionId`, when not null, is stored as the design's session in the same statement, so
+ * the next runner resumes the session these events went into. Nothing is marked or stored once
+ * `runnerId` no longer holds the lease. Answers how many were marked.
  */
 export async function markEventsDelivered(
   db: Db,
   {
     designId,
+    runnerId,
     ids,
     claudeSessionId = null,
-  }: { designId: string; ids: string[]; claudeSessionId?: string | null },
+  }: { designId: string; runnerId: string; ids: string[]; claudeSessionId?: string | null },
 ): Promise<number> {
   const session = db.$with("session").as(
     db
       .update(designRunners)
       .set({ claudeSessionId })
-      .where(and(eq(designRunners.designId, designId), sql`${claudeSessionId}::text is not null`))
+      .where(
+        and(
+          eq(designRunners.designId, designId),
+          eq(designRunners.runnerId, runnerId),
+          sql`${claudeSessionId}::text is not null`,
+        ),
+      )
       .returning({ id: designRunners.designId }),
   );
   if (ids.length === 0) {
@@ -156,7 +211,13 @@ export async function markEventsDelivered(
       .update(events)
       .set({ deliveredAt: sql`now()` })
       .where(
-        and(eq(events.designId, designId), inArray(events.id, ids), isNull(events.deliveredAt)),
+        and(
+          eq(events.designId, designId),
+          inArray(events.id, ids),
+          isNull(events.deliveredAt),
+          eq(events.claimedBy, runnerId),
+          leaseHeld(db, designId, runnerId),
+        ),
       )
       .returning({ id: events.id }),
   );

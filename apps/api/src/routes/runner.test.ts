@@ -44,6 +44,11 @@ const sample = (repo: "repo" | "scratch" = "repo") =>
   designWithRunner(t, ws, "maya", sampleDoc(), repo);
 const send = (runner: StartedRunner, method: string, path: string, body?: unknown) =>
   call(t, runner.headers, method, `/v1/runner${path}`, body);
+/** A claim's body: a new claim each time unless an id is given. */
+const claim = (body: { claimId?: string; limit?: number } = {}) => ({
+  claimId: newId("clm"),
+  ...body,
+});
 const say = (designId: string, text: string, userId = ws.people.maya!.userId) =>
   appendEvent(t.db, { designId, kind: "message", priority: "now", payload: { text }, userId });
 
@@ -94,7 +99,7 @@ describe("the session and the lease", () => {
     expect(again.body.runnerId).not.toBe(older.session.runnerId);
 
     const refused = await Promise.all([
-      send(older, "POST", "/events/claim", {}),
+      send(older, "POST", "/events/claim", claim()),
       send(older, "PUT", "/state", {
         state: "idle",
         status: null,
@@ -110,14 +115,14 @@ describe("the session and the lease", () => {
     for (const answer of refused)
       expect([answer.status, answer.body.error.code]).toEqual([409, "superseded"]);
     const newer = { ...older.headers, [RUNNER_HEADER]: again.body.runnerId };
-    expect((await call(t, newer, "POST", "/v1/runner/events/claim", {})).status).toBe(200);
+    expect((await call(t, newer, "POST", "/v1/runner/events/claim", claim())).status).toBe(200);
     expect((await getDesignHead(t.db, design.id))!.seq).toBe(0);
   });
 
   test("a call without the lease is superseded, and a revoked token is refused everywhere", async () => {
     const { design, runner } = await sample();
     const bare = { authorization: runner.headers.authorization };
-    expect((await call(t, bare, "POST", "/v1/runner/events/claim", {})).body.error.code).toBe(
+    expect((await call(t, bare, "POST", "/v1/runner/events/claim", claim())).body.error.code).toBe(
       "superseded",
     );
 
@@ -144,7 +149,7 @@ describe("the session and the lease", () => {
     const other = await designIn(t, ws, "maya", sampleDoc());
 
     const doc = await call(t, runner.headers, "GET", `/v1/designs/${other.id}/doc`);
-    const person = await call(t, as("maya"), "POST", "/v1/runner/events/claim", {});
+    const person = await call(t, as("maya"), "POST", "/v1/runner/events/claim", claim());
 
     expect([doc.status, doc.body.error.code]).toEqual([404, "not_found"]);
     expect([person.status, person.body.error.code]).toEqual([401, "token_invalid"]);
@@ -162,7 +167,7 @@ describe("events", () => {
       payload: { name: "ci", conclusion: "failure", url: null, summary: null },
     });
 
-    const { body } = await send(runner, "POST", "/events/claim", {});
+    const { body } = await send(runner, "POST", "/events/claim", claim());
 
     expect(body).toEqual({
       events: [
@@ -184,21 +189,61 @@ describe("events", () => {
   test("claiming again hands out only what is new, and a new runner gets what the old one never acked", async () => {
     const { design, runner } = await sample();
     const lost = await say(design.id, "one");
-    await send(runner, "POST", "/events/claim", {});
+    await send(runner, "POST", "/events/claim", claim());
     const later = await say(design.id, "two");
 
-    const replay = await send(runner, "POST", "/events/claim", {});
+    const replay = await send(runner, "POST", "/events/claim", claim());
     expect(replay.body.events.map((e: { id: string }) => e.id)).toEqual([later.id]);
 
     const next = await startRunner(t, design.id);
-    const taken = await send(next, "POST", "/events/claim", { limit: 1 });
+    const taken = await send(next, "POST", "/events/claim", claim({ limit: 1 }));
     expect(taken.body.events.map((e: { id: string }) => e.id)).toEqual([lost.id]);
+  });
+
+  test("a claim sent again after its answer was lost hands out the same events, and nothing new", async () => {
+    const { design, runner } = await sample();
+    const message = await say(design.id, "Make it blue");
+    const lostClaim = claim();
+    await send(runner, "POST", "/events/claim", lostClaim);
+    const later = await say(design.id, "And the header");
+
+    const again = await send(runner, "POST", "/events/claim", lostClaim);
+    expect(again.body.events.map((e: { id: string }) => e.id)).toEqual([message.id]);
+
+    const next = await send(runner, "POST", "/events/claim", claim());
+    expect(next.body.events.map((e: { id: string }) => e.id)).toEqual([later.id]);
+    // Once they are acknowledged, it has nothing more to hand out.
+    await send(runner, "POST", "/events/ack", { ids: [message.id], claudeSessionId: null });
+    expect((await send(runner, "POST", "/events/claim", lostClaim)).body.events).toEqual([]);
+  });
+
+  test("a claim without its id, or with one not of the protocol's shape, is refused", async () => {
+    const { runner } = await sample();
+
+    for (const body of [{}, { claimId: "clm_short" }, { claimId: newId("ti") }]) {
+      const { status, body: answer } = await send(runner, "POST", "/events/claim", body);
+      expect([status, answer.error.code]).toEqual([400, "invalid_request"]);
+    }
+  });
+
+  test("an ack marks only what this runner was handed", async () => {
+    const { design, runner } = await sample();
+    const unclaimed = await say(design.id, "never claimed");
+
+    const ack = await send(runner, "POST", "/events/ack", {
+      ids: [unclaimed.id],
+      claudeSessionId: null,
+    });
+
+    expect(ack.body).toEqual({ acked: 0 });
+    const [row] = await feedOf(t.db, design.id);
+    expect(row!.deliveredAt).toBeNull();
   });
 
   test("an ack marks events delivered once, and keeps the session they went into for the next runner", async () => {
     const { design, runner } = await sample();
     const event = await say(design.id, "one");
-    await send(runner, "POST", "/events/claim", {});
+    await send(runner, "POST", "/events/claim", claim());
     const ack = { ids: [event.id, "evt_not_this_designs"], claudeSessionId: "sess-1" };
 
     expect((await send(runner, "POST", "/events/ack", ack)).body).toEqual({ acked: 1 });
@@ -208,13 +253,13 @@ describe("events", () => {
 
     const next = await startRunner(t, design.id);
     expect(next.session.claudeSessionId).toBe("sess-1");
-    expect((await send(next, "POST", "/events/claim", {})).body.events).toEqual([]);
+    expect((await send(next, "POST", "/events/claim", claim())).body.events).toEqual([]);
   });
 
   test("a limit past the protocol's is refused", async () => {
     const { runner } = await sample();
 
-    const { status, body } = await send(runner, "POST", "/events/claim", { limit: 101 });
+    const { status, body } = await send(runner, "POST", "/events/claim", claim({ limit: 101 }));
 
     expect([status, body.error.code]).toEqual([400, "invalid_request"]);
   });
@@ -727,7 +772,7 @@ test("no event reaches a design that is not the runner's, whatever it names", as
   const event = await say(other.id, "theirs");
   await createRunnerToken(t.db, { designId: other.id, ttlSeconds: 60 });
 
-  const claimed = await send(runner, "POST", "/events/claim", {});
+  const claimed = await send(runner, "POST", "/events/claim", claim());
   const acked = await send(runner, "POST", "/events/ack", {
     ids: [event.id],
     claudeSessionId: null,

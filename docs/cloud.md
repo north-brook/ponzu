@@ -658,7 +658,7 @@ behind these routes, and is the reference for what each answers.
 - **Errors** are the API's: `{ "error": { "code", "message" } }`. Beyond the common ones
   (`invalid_request`, `payload_too_large`, `rate_limited`, `database_unavailable`,
   `upstream_unavailable`), a route lists those that mean something to the runner.
-- **Ids the runner chooses** (`ti_…`, `q_…`) are a prefix and 16 characters of the API's
+- **Ids the runner chooses** (`ti_…`, `q_…`, `clm_…`) are a prefix and 16 characters of the API's
   alphabet (`packages/db/src/ids.ts`), and the API keys them by design: a thread item or a
   question is found by `(design_id, id)`, so the same id in another design is another row,
   and nothing a runner sends can reach or reveal another design's.
@@ -669,7 +669,7 @@ behind these routes, and is the reference for what each answers.
 | Method | Path | Request | Response |
 |---|---|---|---|
 | POST | `/v1/runner/session` | `{}` | `RunnerSession`, with the lease `runnerId` |
-| POST | `/v1/runner/events/claim` | `{ limit?: number }` | `{ events: RunnerEvent[], seq }` |
+| POST | `/v1/runner/events/claim` | `{ claimId, limit?: number }` | `{ events: RunnerEvent[], seq }` |
 | POST | `/v1/runner/events/ack` | `{ ids: string[], claudeSessionId: string \| null }` | `{ acked: number }` |
 | POST | `/v1/runner/thread` | `{ items: ThreadWrite[] }` | `{ items: [{ id, seq, streaming }] }` |
 | PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId }` | `{ seq }` |
@@ -752,13 +752,17 @@ are not acknowledged and that it has not been handed before, oldest first, at mo
 once: one claimed by an earlier runner, which is gone, is the next one's, and nothing a live
 runner holds is handed out again, so an old event never stands in front of a new one. A page
 that comes back full is followed at once by another claim. The answer carries the design's
-head `seq`, which the runner gives its replica. Safe to repeat.
+head `seq`, read in the same statement, which the runner gives its replica. Each claim carries
+a `claimId` the runner chooses, new for each claim and kept until one is answered: a claim
+sent again with the same id, because its answer was lost, hands out again what that claim
+handed out and has not been acknowledged, and nothing new. Safe to repeat.
 
-**Ack.** `POST /v1/runner/events/ack` marks events delivered, by id; those already marked, or
-another design's, are left alone, and `acked` counts what changed. It also stores
-`claudeSessionId`, when it is not null, as the design's Claude session, in the same
-transaction: the session an event went into is the one the next runner resumes, even when
-no state report got through. Safe to repeat.
+**Ack.** `POST /v1/runner/events/ack` marks events delivered, by id; those already marked,
+another design's, or never handed to this runner are left alone, and `acked` counts what
+changed. It also stores `claudeSessionId`, when it is not null, as the design's Claude
+session, in the same transaction: the session an event went into is the one the next runner
+resumes, even when no state report got through. The statement holds to the lease itself, so
+an ack from a runner superseded while its call was let in changes nothing. Safe to repeat.
 
 The runner acknowledges an event only once **the Claude session holds it**: Claude Code has
 taken its message into the session's transcript (the message's lifecycle reached `started`,

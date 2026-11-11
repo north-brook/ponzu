@@ -148,7 +148,7 @@ The agent
 | Table | What it is for | |
 |---|---|---|
 | `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by design and id: the runner chooses its items' ids, and the same id in another design is another row. | live |
-| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. | |
+| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. `claim_id` is the runner's id for the claim that did, so a claim sent again hands out the same events. | |
 | `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by design and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
 | `sandboxes` | A design's sandbox at the provider: state, address, awake-since. | |
 | `design_runners` | A design's runner now: the lease (`runner_id`) the API takes calls from, when it was last heard from, and the Claude session to resume. Apart from `designs` so the heartbeat does not touch a watched row. | |

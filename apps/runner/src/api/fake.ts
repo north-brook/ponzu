@@ -59,8 +59,9 @@ export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
 
 interface HeldEvent {
   event: RunnerEvent;
-  /** The runner process it was last handed to. */
+  /** The runner process it was last handed to, and the claim that did. */
   claimedBy?: string;
+  claimId?: string;
   deliveredAt?: number;
 }
 
@@ -83,6 +84,8 @@ export class FakeRunnerApi {
   sessionInfo: Omit<RunnerSession, "runnerId" | "seq">;
 
   readonly events: HeldEvent[] = [];
+  /** The claim id of every claim that got in, in order. */
+  readonly claimIds: string[] = [];
   readonly thread = new Map<string, StoredItem>();
   /** Every thread write, as sent. */
   readonly threadWrites: ThreadWrite[][] = [];
@@ -97,6 +100,8 @@ export class FakeRunnerApi {
   revoked = false;
   /** These calls fail with these errors (a `TypeError` is the API out of reach). */
   readonly failing = new Map<Call, Error>();
+  /** The next of these calls does what it does, and its answer is lost on the way. (`claim`) */
+  readonly lostAnswers = new Set<Call>();
   /** Every call, by method name, in order. */
   readonly calls: Call[] = [];
   /** The runner process that holds the lease. */
@@ -132,7 +137,7 @@ export class FakeRunnerApi {
         runner = session.runnerId;
         return session;
       },
-      claim: as((r, opts: ClaimRequest = {}) => this.claim(r, opts)),
+      claim: as((r, request: ClaimRequest) => this.claim(r, request)),
       ack: as((r, ids: string[], claudeSessionId: string | null) =>
         this.ack(r, ids, claudeSessionId),
       ),
@@ -199,19 +204,27 @@ export class FakeRunnerApi {
     return structuredClone({ ...this.sessionInfo, runnerId: this.runner, seq: this.doc.seq });
   }
 
-  async claim(runner: string, opts: ClaimRequest = {}): Promise<ClaimResponse> {
+  async claim(
+    runner: string,
+    { claimId, limit = CLAIM_LIMIT }: ClaimRequest,
+  ): Promise<ClaimResponse> {
     await this.enter("claim", runner);
-    const limit = Math.min(opts.limit ?? CLAIM_LIMIT, CLAIM_LIMIT);
-    const waiting = this.events
-      .filter((e) => e.deliveredAt === undefined && e.claimedBy !== runner)
-      .slice(0, limit);
-    for (const e of waiting) e.claimedBy = runner;
+    this.claimIds.push(claimId);
+    const pending = this.events.filter((e) => e.deliveredAt === undefined);
+    const repeated = pending.filter((e) => e.claimedBy === runner && e.claimId === claimId);
+    const waiting = (
+      repeated.length > 0 ? repeated : pending.filter((e) => e.claimedBy !== runner)
+    ).slice(0, Math.min(limit, CLAIM_LIMIT));
+    for (const e of waiting) Object.assign(e, { claimedBy: runner, claimId });
+    if (this.lostAnswers.delete("claim")) throw new TypeError("fetch failed");
     return { events: waiting.map((e) => structuredClone(e.event)), seq: this.doc.seq };
   }
 
   async ack(runner: string, ids: string[], claudeSessionId: string | null): Promise<void> {
     await this.enter("ack", runner);
-    for (const e of this.events) if (ids.includes(e.event.id)) e.deliveredAt ??= Date.now();
+    for (const e of this.events) {
+      if (ids.includes(e.event.id) && e.claimedBy === runner) e.deliveredAt ??= Date.now();
+    }
     if (claudeSessionId) this.sessionInfo.claudeSessionId = claudeSessionId;
   }
 

@@ -296,6 +296,11 @@ export const events = pgTable(
      * each runner once: taken and not delivered, it is the next runner's.
      */
     claimedBy: text("claimed_by"),
+    /**
+     * The runner's id for the claim that handed it out (`clm_…`), so that a claim sent again
+     * after its answer was lost hands out the same events.
+     */
+    claimId: text("claim_id"),
     deliveredAt: instant("delivered_at"),
   },
   (t) => [

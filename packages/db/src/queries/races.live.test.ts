@@ -172,7 +172,9 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     }
 
     const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
-    const claim = (limit?: number) => claimEvents(db, { designId: design.id, runnerId, limit });
+    const claim = async (limit?: number) =>
+      (await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm"), limit }))!
+        .events;
 
     const first = await claim(2);
     expect(first.map((event) => event.payload)).toEqual([{ index: 0 }, { index: 1 }]);

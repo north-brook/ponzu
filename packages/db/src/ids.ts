@@ -13,6 +13,7 @@ export type IdPrefix =
   | "sbx"
   | "rt"
   | "rnr"
+  | "clm"
   | "up"
   | "dev"
   | "use"

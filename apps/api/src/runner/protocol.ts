@@ -30,7 +30,7 @@ const text = (max = MAX_TEXT) =>
   z.string().transform((value) => (value.length > max ? `${value.slice(0, max - 1)}…` : value));
 
 /** An id the runner chose, as `newId(prefix)` makes them. */
-const chosenId = (prefix: "ti" | "q") =>
+const chosenId = (prefix: "ti" | "q" | "clm") =>
   z
     .string()
     .refine((value) => isId(prefix, value), `Expected an id like ${prefix}_ and 16 characters.`);
@@ -39,6 +39,7 @@ const ShortId = z.string().min(1).max(64);
 const Artboards = z.array(ShortId).max(200);
 
 export const Claim: z.ZodType<ClaimRequest> = z.object({
+  claimId: chosenId("clm"),
   limit: z.number().int().min(1).max(CLAIM_LIMIT).optional(),
 });
 

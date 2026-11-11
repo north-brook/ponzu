@@ -2,7 +2,6 @@ import {
   cancelQuestions,
   claimEvents,
   createQuestion,
-  getDesignHead,
   getRunnerContext,
   markEventsDelivered,
   type RunnerContext,
@@ -122,12 +121,6 @@ async function contextOf(c: RunnerCall): Promise<RunnerContext> {
   return context;
 }
 
-async function headSeq(c: RunnerCall): Promise<number> {
-  const head = await getDesignHead(c.var.deps.db, c.var.actor.designId);
-  if (!head) throw new ApiError(404, "not_found", "There is no such design.");
-  return head.seq;
-}
-
 export const runner = new Hono<AppEnv>()
   /**
    * Takes the design's lease: a new runner id, which every later call carries, and whatever
@@ -139,18 +132,17 @@ export const runner = new Hono<AppEnv>()
   })
 
   /**
-   * The design's events this runner has not been handed, oldest first, and the design's head.
-   * An event goes to each runner once, so asking again hands out only what is new.
+   * The design's events this runner has not been handed, oldest first, and the design's head,
+   * from one statement. An event goes to each runner once, so a new claim hands out only what
+   * is new. Safe to repeat: the same claim id hands out again what it handed out.
    */
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
-    const { db } = c.var.deps;
     const { designId, runnerId } = c.var.actor;
-    const [claimed, seq] = await Promise.all([
-      claimEvents(db, { designId, runnerId, limit: c.req.valid("json").limit }),
-      headSeq(c),
-    ]);
+    const { claimId, limit } = c.req.valid("json");
+    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit });
+    if (!claimed) throw new ApiError(404, "not_found", "There is no such design.");
     const response: ClaimResponse = {
-      events: claimed.map(
+      events: claimed.events.map(
         (event) =>
           ({
             id: event.id,
@@ -162,19 +154,21 @@ export const runner = new Hono<AppEnv>()
             payload: event.payload,
           }) as RunnerEvent,
       ),
-      seq,
+      seq: claimed.seq,
     };
     return c.json(ClaimView.parse(response));
   })
 
   /**
    * Marks events delivered and keeps the Claude session they went into, in one statement.
-   * Those already marked, or another design's, are left alone. Safe to repeat.
+   * Those already marked, another design's, or never handed to this runner are left alone, and
+   * the statement holds to the lease itself. Safe to repeat.
    */
   .post("/events/ack", access.runner, validate("json", Ack), async (c) => {
     const { ids, claudeSessionId } = c.req.valid("json");
     const acked = await markEventsDelivered(c.var.deps.db, {
       designId: c.var.actor.designId,
+      runnerId: c.var.actor.runnerId,
       ids,
       claudeSessionId,
     });

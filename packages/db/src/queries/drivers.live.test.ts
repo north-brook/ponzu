@@ -263,7 +263,9 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       payload: {},
       userId: user.id,
     });
-    const claimed = await claimEvents(db, { designId: design.id, runnerId });
+    const claim = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
+    expect(claim!.seq).toBe(design.seq);
+    const claimed = claim!.events;
     expect(claimed).toMatchObject([
       { kind: "message", payload, deliveredAt: null, claimedBy: runnerId, from: { id: user.id } },
       { id: stop.id, kind: "stop" },
@@ -276,6 +278,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(
       await markEventsDelivered(db, {
         designId: design.id,
+        runnerId,
         ids: claimed.map((event) => event.id),
         claudeSessionId: "sess-live",
       }),

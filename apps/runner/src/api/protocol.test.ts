@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emptyDoc } from "@ponzu/core";
 import { ScriptedAgent } from "../agent/scripted.ts";
+import { randomId } from "../ids.ts";
 import { Runner } from "../run.ts";
 import { ApiError } from "./api.ts";
 import { FakeRunnerApi } from "./fake.ts";
@@ -141,8 +142,11 @@ test("only the runner that started last is answered: an older one is told it was
   const { connected } = served();
   const older = await connected();
   const newer = await connected();
-  expect(await newer.claim()).toMatchObject({ events: [] });
-  await expect(older.claim()).rejects.toMatchObject({ status: 409, code: "superseded" });
+  expect(await newer.claim({ claimId: randomId("clm") })).toMatchObject({ events: [] });
+  await expect(older.claim({ claimId: randomId("clm") })).rejects.toMatchObject({
+    status: 409,
+    code: "superseded",
+  });
   await expect(older.sync.fetchDoc()).rejects.toMatchObject({ status: 409, code: "superseded" });
 });
 

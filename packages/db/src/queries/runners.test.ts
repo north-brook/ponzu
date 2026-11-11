@@ -19,7 +19,12 @@ const runnerOf = async (designId: string) =>
 test("each lease is a new runner id that replaces the last, and keeps the design's session", async () => {
   const { design } = await seedDesign(db);
   const first = await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
-  await markEventsDelivered(db, { designId: design.id, ids: [], claudeSessionId: "sess-1" });
+  await markEventsDelivered(db, {
+    designId: design.id,
+    runnerId: first.runnerId,
+    ids: [],
+    claudeSessionId: "sess-1",
+  });
 
   const second = await takeRunnerLease(db, { designId: design.id, now: new Date(5_000) });
 
