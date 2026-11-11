@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { type Doc, emptyDoc, type ServerMessage } from "@ponzu/core";
-import { MemorySource, SocketSource, viewOnly } from "./connection.ts";
+import { type CanvasSource, MemorySource, SocketSource, viewOnly } from "./connection.ts";
 
 /** A WebSocket the test plays the server for: it hears what the canvas sends. */
 class FakeSocket {
@@ -109,13 +109,11 @@ test("an op that doesn't fit the doc asks for the whole doc", () => {
 });
 
 test("a view-only wrapper made before its source knows where the assets are still finds them", () => {
-  const source: MemorySource & { assetBase?: string; renditions?: boolean } = new MemorySource(
-    emptyDoc(),
-  );
+  // As a cloud source is: wrapped on the first render, told its assets URL once the API answers.
+  const source: CanvasSource = new MemorySource(emptyDoc("Kettle"));
   const view = viewOnly(source);
   expect(view.assetBase).toBeUndefined();
   source.assetBase = "https://assets.test/dsn_1/";
   source.renditions = false;
-  expect(view.assetBase).toBe("https://assets.test/dsn_1/");
-  expect(view.renditions).toBe(false);
+  expect([view.assetBase, view.renditions]).toEqual(["https://assets.test/dsn_1/", false]);
 });

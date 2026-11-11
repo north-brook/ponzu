@@ -156,10 +156,10 @@ describe("opening", () => {
     const client = h.backend.connect(h.ines);
     const asked: string[] = [];
     const designs = new Proxy(client.api.designs, {
-      get(target, key: keyof typeof target) {
-        const method = target[key] as (...args: unknown[]) => unknown;
+      get(target, key) {
+        const method = Reflect.get(target, key) as (...args: unknown[]) => unknown;
         return (...args: unknown[]) => {
-          asked.push(key);
+          asked.push(String(key));
           return method.apply(target, args);
         };
       },
