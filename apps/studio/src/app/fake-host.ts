@@ -6,16 +6,30 @@ import type { Host } from "./host.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
- * (@ponzu/client/testing), with a workspace to work in and a design an agent has drawn on. It
- * starts signed out; Continue with GitHub signs in at once. `window.ponzuFake` hands the test
- * the backend, to play the agent and teammates with.
+ * (@ponzu/client/testing) for someone on their first run. Their team's workspace is set up,
+ * with a design an agent has drawn on; their own GitHub account is not, and its install page
+ * finishes at the next sync (as coming back from GitHub does). claude.ai takes any code but one
+ * starting "wrong". It starts signed out; Continue with GitHub signs in at once.
+ * `window.ponzuFake` hands the test the backend, to play GitHub, the agent and teammates with.
  */
+
+/** The ideas Maya's own repo gets, once they have been made. */
+export const KETTLE_IDEAS = [
+  "Make checkout one page, with the order summary on the right",
+  "Three takes on the home hero that put the plants first",
+  "A dark mode for the shop, using the tokens you already have",
+  "Friendlier empty states for cart, orders and search",
+];
 
 export interface FakeWorld {
   backend: FakeBackend;
   me: FakePerson;
   teammate: FakePerson;
   workspaceId: string;
+  /** Maya's own account, which first run sets up. */
+  personalId: string;
+  /** Every address the app opened in the system browser. */
+  opened: string[];
   /** Draw a board on the design's first page, as its agent. */
   drawBoard(designId: string, name: string, color?: string): string;
   /** Reply in a comment thread, as the teammate. */
@@ -41,6 +55,16 @@ export function fakeHost(): Host {
     members: { [me.id]: "admin", [teammate.id]: "member" },
     repos: [{ name: "ponzu" }, { name: "site" }],
   });
+  const personal = backend.addWorkspace({
+    login: "maya",
+    kind: "personal",
+    members: { [me.id]: "admin" },
+    repos: [{ name: "kettle" }],
+    installed: false,
+  });
+  backend.setIdeas(personal.repos[0]!.id, "generating", KETTLE_IDEAS);
+  backend.claude.acceptsCode = (code) => !code.startsWith("wrong");
+  const opened: string[] = [];
   const client = backend.connect(me);
   const session = signedOutUntilAsked(client.session, me);
   const links = new Set<(link: DeepLink) => void>();
@@ -92,6 +116,8 @@ export function fakeHost(): Host {
     me,
     teammate,
     workspaceId: workspace.id,
+    personalId: personal.id,
+    opened,
     drawBoard,
     async reply(designId, threadId, text) {
       const author = { kind: "user" as const, id: teammate.id, name: teammate.name ?? "Sam" };
@@ -128,7 +154,10 @@ export function fakeHost(): Host {
       return () => commands.delete(listener);
     },
     update: null,
-    openExternal: (url) => window.open(url, "_blank", "noopener"),
+    // Nothing it opens is a real page: GitHub's and claude.ai's are played by the backend.
+    openExternal: (url) => {
+      opened.push(url);
+    },
     docStorage: null,
   };
 }

@@ -91,7 +91,8 @@ export function WorkspaceMenu({
   onSwitch: (workspace: Workspace) => void;
   onAddWorkspace: () => void;
   onSettings: () => void;
-  onPlan: () => void;
+  /** Left out while there is no plan to show: the item is not offered. */
+  onPlan?: () => void;
   onSignOut: () => void;
 }) {
   return (
@@ -139,12 +140,14 @@ export function WorkspaceMenu({
         >
           Settings
         </MenuItem>
-        <MenuItem
-          onSelect={onPlan}
-          leading={<Icon icon={CreditCardIcon} size={16} stroke={1.8} className="text-muted" />}
-        >
-          Plan and usage
-        </MenuItem>
+        {onPlan ? (
+          <MenuItem
+            onSelect={onPlan}
+            leading={<Icon icon={CreditCardIcon} size={16} stroke={1.8} className="text-muted" />}
+          >
+            Plan and usage
+          </MenuItem>
+        ) : null}
         <MenuSeparator />
         <MenuItem
           onSelect={onSignOut}

@@ -173,7 +173,7 @@ export function StopButton({ onStop }: { onStop: () => void }) {
 }
 
 /** An image on its way: its picture, breathing while it uploads, with a way to take it back. */
-function AttachmentChip({
+export function AttachmentChip({
   attachment,
   onRemove,
   onRetry,

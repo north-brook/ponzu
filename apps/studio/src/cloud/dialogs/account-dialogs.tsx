@@ -21,18 +21,25 @@ export function ClaudeSignedOutDialog({
   open,
   onDismiss,
   card,
+  connected = true,
 }: {
   open: boolean;
   onDismiss: () => void;
   card: ClaudeCardProps;
+  /** False for someone with no Claude at all: it asks to connect, not to reconnect. */
+  connected?: boolean;
 }) {
   const { state } = card;
   return (
     <BlockingDialog
       open={open}
       onDismiss={onDismiss}
-      title="Claude was signed out"
-      body="Connect Claude again and Ponzu sends this. Your prompt is saved."
+      title={connected ? "Claude was signed out" : "Connect Claude"}
+      body={
+        connected
+          ? "Connect Claude again and Ponzu sends this. Your prompt is saved."
+          : "Claude Code does the designing, on your own plan. Connect it and Ponzu sends this. Your prompt is saved."
+      }
       wide
     >
       <div className="mt-0.5 flex flex-col">

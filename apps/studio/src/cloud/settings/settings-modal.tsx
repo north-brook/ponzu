@@ -67,6 +67,8 @@ export interface SettingsPanelProps {
   /** Set Ponzu up on another GitHub account, from the solo nav's foot. */
   onCreateTeam: () => void;
   onClose: () => void;
+  /** Sections left out of the nav: what has nothing behind it yet. */
+  hidden?: readonly SettingsSection[];
   /** The chosen section's content. */
   children: ReactNode;
 }
@@ -85,9 +87,11 @@ export function SettingsPanel({
   onSwitchWorkspace,
   onCreateTeam,
   onClose,
+  hidden = [],
   children,
 }: SettingsPanelProps) {
   const team = workspaces.some((w) => w.kind === "org");
+  const shown = (s: SettingsSection) => !hidden.includes(s);
   const item = (s: SettingsSection) => (
     <NavItem key={s} section={s} active={s === section} onSelect={() => onSectionChange(s)} />
   );
@@ -97,7 +101,7 @@ export function SettingsPanel({
         aria-label="Settings"
         className="flex w-[190px] shrink-0 flex-col gap-0.5 bg-secondary px-2.5 py-3.5"
       >
-        {PERSONAL.map(item)}
+        {PERSONAL.filter(shown).map(item)}
         {team ? (
           <>
             <span className="h-2.5 shrink-0" />
@@ -106,11 +110,11 @@ export function SettingsPanel({
               workspaces={workspaces}
               onSwitch={onSwitchWorkspace}
             />
-            {workspaceSections(workspace).map(item)}
+            {workspaceSections(workspace).filter(shown).map(item)}
           </>
         ) : (
           <>
-            {workspaceSections(workspace).map(item)}
+            {workspaceSections(workspace).filter(shown).map(item)}
             <span className="flex-1" />
             <button
               type="button"

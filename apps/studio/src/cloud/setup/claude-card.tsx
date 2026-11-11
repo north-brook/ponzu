@@ -23,13 +23,39 @@ export type ClaudeCardState =
   | {
       mode: "subscription";
       code: string;
-      status: "idle" | "connecting" | "wrong" | "expired";
+      /**
+       * `incomplete`: not the whole code, so it can be pasted again. `wrong`: claude.ai turned it
+       * away. `used`, `expired`: the sign-in is spent. Past each of those three only Open
+       * sign-in again helps. `failed`: Claude couldn't be reached.
+       */
+      status: "idle" | "connecting" | "incomplete" | "wrong" | "used" | "expired" | "failed";
     }
   | {
       mode: "api_key";
       key: string;
-      status: "idle" | "connecting" | "rejected";
+      status: "idle" | "connecting" | "rejected" | "failed";
     };
+
+/**
+ * What each failure says, in place of the field's helper. For a code, Open sign-in again
+ * follows it, which is the way on from each.
+ */
+const ERRORS: Partial<Record<Exclude<ClaudeCardState, { mode: "choose" }>["status"], string>> = {
+  incomplete: "That code isn't complete. Copy all of it.",
+  wrong: "That code didn't work.",
+  used: "That sign-in has been used.",
+  expired: "That code has expired.",
+  rejected: "Anthropic didn't accept that key.",
+  failed: "Couldn't reach Claude. Try again.",
+};
+
+/** A sign-in that can take no more codes: only a new one helps. */
+export function signInSpent(state: ClaudeCardState): boolean {
+  return (
+    state.mode === "subscription" &&
+    (state.status === "wrong" || state.status === "used" || state.status === "expired")
+  );
+}
 
 export interface ClaudeCardProps {
   state: ClaudeCardState;
@@ -50,7 +76,7 @@ export interface ClaudeCardProps {
 
 /** Whether Connect can send what was entered. */
 export function canConnect(state: ClaudeCardState): boolean {
-  if (state.mode === "choose" || state.status === "connecting") return false;
+  if (state.mode === "choose" || state.status === "connecting" || signInSpent(state)) return false;
   return (state.mode === "subscription" ? state.code : state.key).trim().length > 0;
 }
 
@@ -100,14 +126,7 @@ function MethodEntry({
   const subscription = state.mode === "subscription";
   const value = subscription ? state.code : state.key;
   const connecting = state.status === "connecting";
-  const error =
-    state.status === "wrong"
-      ? "That code didn't work. Check it and try again."
-      : state.status === "expired"
-        ? "That code has expired."
-        : state.status === "rejected"
-          ? "Anthropic didn't accept that key."
-          : null;
+  const error = ERRORS[state.status] ?? null;
   const label = subscription ? "Paste the code from claude.ai" : "Paste your Anthropic API key";
   const id = useId();
   return (

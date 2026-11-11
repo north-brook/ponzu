@@ -14,8 +14,8 @@ export interface AccountSectionProps {
   teams: { workspace: Workspace; role: Role }[];
   onSignOut: () => void;
   onCreateTeam: () => void;
-  /** Asks first: the wiring opens DeleteAccountDialog. */
-  onDelete: () => void;
+  /** Asks first: the wiring opens DeleteAccountDialog. Left out, there is no Danger zone. */
+  onDelete?: () => void;
 }
 
 const ROLE_LABELS: Record<Role, string> = { admin: "Admin", member: "Member" };
@@ -72,21 +72,23 @@ export function AccountSection({
           </button>
         </Row>
       </Section>
-      <Section label="Danger zone">
-        <Row
-          trailing={
-            <button
-              type="button"
-              onClick={onDelete}
-              className="cursor-default rounded-4 font-medium text-13 text-danger underline-offset-2 outline-none focus-ring hover:underline"
-            >
-              Delete
-            </button>
-          }
-        >
-          <span className="text-13 text-muted">Delete account</span>
-        </Row>
-      </Section>
+      {onDelete ? (
+        <Section label="Danger zone">
+          <Row
+            trailing={
+              <button
+                type="button"
+                onClick={onDelete}
+                className="cursor-default rounded-4 font-medium text-13 text-danger underline-offset-2 outline-none focus-ring hover:underline"
+              >
+                Delete
+              </button>
+            }
+          >
+            <span className="text-13 text-muted">Delete account</span>
+          </Row>
+        </Section>
+      ) : null}
     </>
   );
 }

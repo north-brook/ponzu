@@ -1,9 +1,11 @@
 import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
+import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
@@ -22,9 +24,11 @@ import {
   usableWorkspaces,
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
+import { usePonzu } from "./ponzu-query.tsx";
+import { SettingsView } from "./settings/settings-view.tsx";
 import { ThreadRail } from "./thread-rail.tsx";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
-import { useAnswer, useOnReturn } from "./use-answer.ts";
+import { useOnReturn } from "./use-answer.ts";
 
 /*
  * The main window, signed in: the person's workspaces from `me`, one of them open with its
@@ -43,6 +47,8 @@ interface Opening {
 
 const RETURN_SYNC_MS = 60_000;
 const NOTICE_MS = 6000;
+/** Ideas show under the composer until the person has made this many designs in a workspace. */
+const IDEAS_UNTIL = 3;
 
 export function MainWindow({ host, user, badge }: { host: Host; user: Profile; badge: ReactNode }) {
   const me = useMemo(() => toPerson(user.id, user), [user]);
@@ -56,8 +62,11 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       }),
     [user.id],
   );
-  const meAnswer = useAnswer(() => host.api.me(), user.id);
-  const reloadMe = meAnswer.reload;
+  const { queries, mutations } = usePonzu();
+  const meAnswer = useQuery(queries.me());
+  const { refetch } = meAnswer;
+  const reloadMe = useCallback(() => void refetch(), [refetch]);
+  const syncGithub = useMutation(mutations.syncGithub()).mutateAsync;
   const [opening, setOpening] = useState<Opening | null>(null);
   const [notice, say] = useNotice();
 
@@ -74,9 +83,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 
   // Back in front: GitHub may have changed who reaches what (docs/cloud.md, "Keeping it true").
   const sync = useCallback(async () => {
-    await host.api.github.sync().catch(() => {});
-    reloadMe();
-  }, [host, reloadMe]);
+    await syncGithub().catch(() => reloadMe());
+  }, [syncGithub, reloadMe]);
   useOnReturn(sync, RETURN_SYNC_MS);
   useEffect(() => {
     window.addEventListener("online", reloadMe);
@@ -128,22 +136,22 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
   const workspace = usable.find((w) => w.id === ui.workspaceId) ?? usable[0] ?? null;
+  // The workspace the window was in is suspended on GitHub: it opens another, and says why.
+  const suspended = all?.find((w) => w.id === ui.workspaceId && w.suspended) ?? null;
+  const suspendedName = suspended ? toWorkspace(suspended).name : null;
+  useEffect(() => {
+    if (suspendedName) {
+      say(
+        `Ponzu is suspended on GitHub for ${suspendedName}. Its designs open again once it's back.`,
+      );
+    }
+  }, [suspendedName, say]);
 
+  // Guided setup (FirstRun) holds the window until there is a workspace to work in, so there
+  // is none only for the moment GitHub takes one away, before the gates see it.
   if (!all || !workspace) {
     return (
       <AppWindow lights={host.lights} sidebar={null} rail={null} badge={badge}>
-        {!all ? (
-          meAnswer.error ? (
-            <PaneMessage
-              title="Can't reach Ponzu"
-              body="Check your connection. Your designs are safe in the cloud and open as soon as Ponzu is back."
-              action={{ label: "Try again", onClick: reloadMe }}
-              busy
-            />
-          ) : null
-        ) : (
-          <NoWorkspace host={host} />
-        )}
         {notice ? <Banner>{notice}</Banner> : null}
       </AppWindow>
     );
@@ -153,6 +161,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       key={workspace.id}
       host={host}
       me={me}
+      user={user}
       workspace={workspace}
       workspaces={usable}
       ui={ui}
@@ -173,6 +182,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 function WorkspaceWindow({
   host,
   me,
+  user,
   workspace,
   workspaces,
   ui,
@@ -185,6 +195,7 @@ function WorkspaceWindow({
 }: {
   host: Host;
   me: Person;
+  user: Profile;
   workspace: MeWorkspace;
   workspaces: MeWorkspace[];
   ui: UiState;
@@ -196,8 +207,10 @@ function WorkspaceWindow({
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
-  const detail = useAnswer(() => host.api.workspaces.get(id), id);
-  useOnReturn(detail.reload, RETURN_SYNC_MS);
+  const { queries } = usePonzu();
+  const detail = useQuery(queries.workspace(id));
+  const reloadDetail = detail.refetch;
+  useOnReturn(() => void reloadDetail(), RETURN_SYNC_MS);
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
   const repos = useMemo(
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
@@ -209,6 +222,11 @@ function WorkspaceWindow({
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
+  const [settings, setSettings] = useState<{ open: boolean; section: SettingsSection }>({
+    open: false,
+    section: "account",
+  });
+  const openSettings = useCallback(() => setSettings({ open: true, section: "account" }), []);
 
   const summaries = useMemo(
     () => live.rows?.map((row) => toSummary(row, { people, open: row.id === openId })) ?? null,
@@ -243,9 +261,9 @@ function WorkspaceWindow({
     () =>
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
-        // SEAM(settings): the settings track mounts Settings here.
+        if (command === "settings") openSettings();
       }),
-    [host, openDesign],
+    [host, openDesign, openSettings],
   );
 
   const addWorkspace = useCallback(() => {
@@ -334,9 +352,8 @@ function WorkspaceWindow({
                   onNewDesign={() => openDesign(null)}
                   onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
                   onAddWorkspace={addWorkspace}
-                  // SEAM(settings): Settings and Plan and usage arrive with the settings track.
-                  onSettings={() => {}}
-                  onPlan={() => {}}
+                  onSettings={openSettings}
+                  // SEAM(settings api): Plan and usage is offered once billing has routes.
                   onSignOut={() => void host.session.signOut()}
                 />
               ),
@@ -385,6 +402,10 @@ function WorkspaceWindow({
           host={host}
           workspaceId={id}
           repos={repos}
+          showIdeas={
+            summaries !== null &&
+            summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
+          }
           onAllowMore={addWorkspace}
           onCreated={(designId, messageFailed) => {
             openDesign(designId);
@@ -394,53 +415,20 @@ function WorkspaceWindow({
           }}
         />
       )}
+      <SettingsView
+        host={host}
+        me={me}
+        user={user}
+        workspaces={workspaces}
+        workspaceId={id}
+        open={settings.open}
+        onOpenChange={(open) => setSettings((now) => ({ ...now, open }))}
+        section={settings.section}
+        onSectionChange={(section) => setSettings((now) => ({ ...now, section }))}
+        onAddWorkspace={addWorkspace}
+      />
       {notice ? <Banner>{notice}</Banner> : null}
     </AppWindow>
-  );
-}
-
-/**
- * Signed in, but nowhere to design: the Ponzu GitHub App is on none of the person's accounts.
- *
- * SEAM(guided setup): the setup track's "Where do you design?" replaces this. Until then this is
- * its least: install the App on GitHub, and the workspace appears when the browser comes back.
- */
-function NoWorkspace({ host }: { host: Host }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="absolute inset-0 flex flex-col items-center pt-[200px] text-center">
-      <h1 className="m-0 font-display font-semibold text-[28px] tracking-[-0.02em]">
-        Where do you design?
-      </h1>
-      <p className="m-0 mt-3 max-w-[460px] text-[15px] text-muted leading-[1.55]">
-        Ponzu works in the GitHub accounts it's installed on. Set it up on yours or an
-        organization's, and choose the repos it can open.
-      </p>
-      <button
-        type="button"
-        onClick={() =>
-          host.api.github.installLink({ client: "mac" }).then(
-            ({ url }) => host.openExternal(url),
-            () => setFailed(true),
-          )
-        }
-        className="app-no-drag mt-8 flex h-9 cursor-default items-center gap-1.5 rounded-8 bg-action px-[18px] font-medium text-13 text-action-ink outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-action-hover active:bg-action-press"
-      >
-        Set up on GitHub
-      </button>
-      {failed ? (
-        <p role="alert" className="m-0 mt-3 text-12 text-danger">
-          GitHub's install page couldn't be opened. Try again.
-        </p>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => void host.session.signOut()}
-        className="app-no-drag mt-6 cursor-default rounded-4 px-1 text-12 text-muted outline-none focus-ring hover:underline"
-      >
-        Sign out
-      </button>
-    </div>
   );
 }
 

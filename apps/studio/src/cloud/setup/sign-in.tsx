@@ -7,17 +7,36 @@ import { Waiting } from "./step.tsx";
  */
 export type SignInState = "idle" | "waiting" | "failed";
 
+/** The words over the button: signing in, or signing in again when GitHub wants Ponzu let in again. */
+export interface SignInCopy {
+  title: string;
+  body: string;
+}
+
+const SIGN_IN: SignInCopy = {
+  title: "Sign in to Ponzu",
+  body: "Design on a canvas, steer with comments, and ship pull requests to your repos.",
+};
+
 /** Signing in to Ponzu, with GitHub: the mark, one line on what Ponzu is, and the one button. */
-export function SignInStep({ state, onContinue }: { state: SignInState; onContinue: () => void }) {
+export function SignInStep({
+  state,
+  onContinue,
+  copy = SIGN_IN,
+}: {
+  state: SignInState;
+  onContinue: () => void;
+  copy?: SignInCopy;
+}) {
   const waiting = state === "waiting";
   return (
-    <div className="absolute inset-0 flex flex-col items-center pt-[230px]">
+    <div data-screen="sign-in" className="absolute inset-0 flex flex-col items-center pt-[230px]">
       <Slice size={72} className="text-ink" />
       <h1 className="m-0 mt-11 font-display font-semibold text-28 text-ink tracking-[-0.02em]">
-        Sign in to Ponzu
+        {copy.title}
       </h1>
       <p className="m-0 mt-3.5 max-w-[420px] text-center text-15 text-muted leading-[1.55]">
-        Design on a canvas, steer with comments, and ship pull requests to your repos.
+        {copy.body}
       </p>
       <button
         type="button"

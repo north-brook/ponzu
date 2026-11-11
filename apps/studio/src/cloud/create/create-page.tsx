@@ -1,5 +1,5 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from "react";
-import type { Idea, Repo } from "../model.ts";
+import type { Idea, PendingAttachment, Repo } from "../model.ts";
 import { cn } from "../ui/cn.ts";
 import { NewDesignComposer } from "./composer.tsx";
 import type { ProjectChoice } from "./create.ts";
@@ -24,6 +24,9 @@ export interface CreatePageProps {
   onAllowMore: () => void;
   /** Prompts for the chosen repo; null shows none (the workspace has designs, or Scratch). */
   ideas: Idea[] | "loading" | null;
+  /** Images to send with the prompt. */
+  attachments?: PendingAttachment[];
+  onRemoveAttachment?: (id: string) => void;
 }
 
 /**
@@ -43,6 +46,8 @@ export function CreatePage({
   onProjectChange,
   onAllowMore,
   ideas,
+  attachments,
+  onRemoveAttachment,
 }: CreatePageProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -82,6 +87,8 @@ export function CreatePage({
           sending={sending}
           model={model}
           fieldRef={field}
+          {...(attachments ? { attachments } : {})}
+          {...(onRemoveAttachment ? { onRemoveAttachment } : {})}
         />
         <div className="mt-2 flex items-center px-1.5">
           <RepoPicker
