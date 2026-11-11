@@ -17,6 +17,7 @@ import { who } from "../thread/thread.ts";
 import { Button, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { safeHref } from "../ui/markdown.ts";
 import { Prose } from "../ui/prose.tsx";
 import {
   answerable,
@@ -164,7 +165,7 @@ export function NeedsYou({
               aria-label={`The value of ${ask.name}`}
               placeholder="Paste the value"
               value={draft.note}
-              disabled={busy}
+              readOnly={busy}
               onChange={(e) => setDraft({ ...draft, note: e.currentTarget.value })}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) {
@@ -178,10 +179,12 @@ export function NeedsYou({
             <textarea
               ref={note}
               rows={1}
+              dir="auto"
               aria-label="Note"
               placeholder={NOTE_PLACEHOLDER[ask.kind]}
               value={draft.note}
-              disabled={busy}
+              // Read-only, not disabled, while the answer goes: the keyboard stays where it was.
+              readOnly={busy}
               onChange={(e) => setDraft({ ...draft, note: e.currentTarget.value })}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -332,45 +335,52 @@ function PageBody({
           ) : null}
         </div>
       );
-    case "link":
+    case "link": {
+      // The agent chose the address, so it may be anything: only a web address opens. Any other
+      // is shown for what it is, and the ask can't be answered by opening it.
+      const href = safeHref(ask.url);
       return (
         <div className="flex flex-col gap-2">
           <p className={lead}>{ask.title}</p>
           {ask.description ? (
             <p className="m-0 text-12 text-muted leading-[1.4]">{ask.description}</p>
           ) : null}
-          <div ref={optionsRef} className="flex flex-col rounded-11 bg-hover p-[3px]">
-            <button
-              type="button"
-              data-option
-              disabled={disabled}
-              onClick={() => onOpenLink(ask.url)}
-              className={cn(
-                OPTION,
-                draft.chosen.length ? "bg-raised shadow-chosen" : "hover:bg-hover active:bg-press",
-              )}
-            >
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="font-medium text-13 leading-[1.3]">Open {hostOf(ask.url)}</span>
-                <span className="truncate text-12 text-muted leading-[1.4]">
-                  {draft.chosen.length ? "Opened. Send when you're done there." : ask.url}
+          {href ? (
+            <div ref={optionsRef} className="flex flex-col rounded-11 bg-hover p-[3px]">
+              <button
+                type="button"
+                data-option
+                disabled={disabled}
+                onClick={() => onOpenLink(href)}
+                className={cn(
+                  OPTION,
+                  draft.chosen.length
+                    ? "bg-raised shadow-chosen"
+                    : "hover:bg-hover active:bg-press",
+                )}
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="font-medium text-13 leading-[1.3]">
+                    Open {new URL(href).host || href}
+                  </span>
+                  <span className="truncate text-12 text-muted leading-[1.4]">
+                    {draft.chosen.length ? "Opened. Send when you're done there." : href}
+                  </span>
                 </span>
-              </span>
-              <Icon icon={ArrowUpRight01Icon} size={14} stroke={1.9} className="text-icon-soft" />
-            </button>
-          </div>
+                <Icon icon={ArrowUpRight01Icon} size={14} stroke={1.9} className="text-icon-soft" />
+              </button>
+            </div>
+          ) : (
+            <p className="m-0 flex flex-col gap-0.5 rounded-11 bg-hover px-2.5 py-[7px] text-12 text-muted leading-[1.4]">
+              Not a web address, so Ponzu won't open it:
+              <span className="font-mono text-11 text-ink [overflow-wrap:anywhere]">{ask.url}</span>
+            </p>
+          )}
         </div>
       );
+    }
   }
 }
-
-const hostOf = (url: string) => {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-};
 
 const OPTION =
   "flex w-full cursor-default items-center gap-2.5 rounded-8 px-2.5 py-[7px] text-left outline-none transition-[background-color,box-shadow] duration-(--dur-hover) focus-ring disabled:pointer-events-none";
@@ -403,7 +413,8 @@ function Options({
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const rows = [...e.currentTarget.querySelectorAll<HTMLElement>("[data-option]")];
     const at = rows.indexOf(document.activeElement as HTMLElement);
-    if (at < 0) return;
+    // ⌘1 and the like are the app's and the window's.
+    if (at < 0 || e.metaKey || e.ctrlKey || e.altKey) return;
     const digit = /^[1-9]$/.test(e.key) ? Number(e.key) - 1 : null;
     if (digit !== null && options[digit]) {
       e.preventDefault();

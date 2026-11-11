@@ -23,21 +23,31 @@ export interface LineHandlers {
   onOpenLink: (url: string) => void;
 }
 
-/** One line of the thread. Memoized: a thousand of them redraw only as they change. */
+/**
+ * One line of the thread. Memoized on its item and on its place in a run, each compared on its
+ * own, so text streaming into the newest line redraws that line alone.
+ */
 export const ThreadLine = memo(function ThreadLine({
-  row,
+  item,
+  continues,
+  team,
+  avatar,
   meId,
   handlers,
-}: {
-  row: ThreadRow;
-  meId: string;
-  handlers: LineHandlers;
-}) {
-  const { item } = row;
+}: ThreadRow & { meId: string; handlers: LineHandlers }) {
   switch (item.kind) {
     case "message":
     case "comment":
-      return <PersonLine row={row} item={item} meId={meId} handlers={handlers} />;
+      return (
+        <PersonLine
+          item={item}
+          continues={continues}
+          team={team}
+          avatar={avatar}
+          meId={meId}
+          handlers={handlers}
+        />
+      );
     case "assistant":
       return (
         <div className="px-[2px] text-13 leading-[1.5]">
@@ -57,12 +67,13 @@ export const ThreadLine = memo(function ThreadLine({
  * thread, the sender's avatar is stamped on the last bubble of their run.
  */
 function PersonLine({
-  row,
   item,
+  continues,
+  team,
+  avatar,
   meId,
   handlers,
-}: {
-  row: ThreadRow;
+}: Omit<ThreadRow, "item"> & {
   item: Extract<ThreadItem, { kind: "message" | "comment" }>;
   meId: string;
   handlers: LineHandlers;
@@ -87,23 +98,26 @@ function PersonLine({
       className={cn(
         // What sits above a bubble hugs it; a team's bubbles leave room for the avatar above.
         "flex flex-col items-end self-end",
-        row.team ? "gap-[9px]" : "gap-[5px]",
+        team ? "gap-[9px]" : "gap-[5px]",
         // A run of one person's bubbles sits close; 14 between runs, from the thread's gap.
-        row.continues && "-mt-2.5",
+        continues && "-mt-2.5",
         // Room for the avatars on the bubbles' corners.
-        row.team && "mr-2",
+        team && "mr-2",
       )}
     >
       {above}
-      <div className={cn("relative", row.team ? "max-w-[260px]" : "max-w-[280px]")}>
-        <p className="m-0 whitespace-pre-wrap rounded-14 bg-surface px-[13px] py-[9px] text-13 leading-[1.5] [overflow-wrap:anywhere]">
+      <div className={cn("relative", team ? "max-w-[260px]" : "max-w-[280px]")}>
+        <p
+          dir="auto"
+          className="m-0 whitespace-pre-wrap rounded-14 bg-surface px-[13px] py-[9px] text-13 leading-[1.5] [overflow-wrap:anywhere]"
+        >
           <span className="sr-only">
             {who(from, meId)}
             {item.kind === "comment" ? " commented" : " said"}:{" "}
           </span>
           {text}
         </p>
-        {row.avatar ? <Stamp person={from} /> : null}
+        {avatar ? <Stamp person={from} /> : null}
       </div>
     </div>
   );
@@ -144,7 +158,10 @@ function Attachments({
             draggable={false}
             className={cn(
               "block bg-surface object-cover",
-              attachments.length === 1 ? "max-h-[160px] max-w-[220px]" : "size-[88px]",
+              // A fixed height, so nothing moves when the picture loads.
+              attachments.length === 1
+                ? "h-[160px] w-auto min-w-[88px] max-w-[220px]"
+                : "size-[88px]",
             )}
           />
         </button>
@@ -170,7 +187,8 @@ function CommentFrame({
       type="button"
       aria-label={name ? `Open the comment on ${name}` : "Open the comment"}
       onClick={onOpen}
-      className="relative h-[72px] w-[132px] cursor-default overflow-hidden rounded-6 bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.98]"
+      // Left-aligned: the miniature is the board's, not a button label.
+      className="relative h-[72px] w-[132px] cursor-default overflow-hidden rounded-6 bg-canvas text-left shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.98]"
     >
       <span aria-hidden className="absolute inset-0">
         {children}

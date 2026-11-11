@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useMemo, useRef } from "react";
 import { gateMessage } from "../gate.ts";
 import type {
   AgentActivity,
@@ -10,8 +10,9 @@ import type {
   ThreadItem,
 } from "../model.ts";
 import { NeedsYou } from "../needs-you/needs-you.tsx";
+import { safeHref } from "../ui/markdown.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
-import { useDraft } from "./composer-rules.ts";
+import { readDraft, restoreDraft, useDraft } from "./composer-rules.ts";
 import type { LineHandlers } from "./lines.tsx";
 import { ThreadSkeleton, ThreadView } from "./thread-view.tsx";
 
@@ -47,9 +48,10 @@ export interface ThreadRailProps extends LineHandlers {
  */
 export function ThreadRail(props: ThreadRailProps) {
   const { designId, meId, items, gate, asks, agent } = props;
-  const [draft, setDraft] = useDraft(designId);
+  const [draft, setDraft] = useDraft(meId, designId);
 
-  // The lines take handlers that never change, so typing a draft redraws none of them.
+  // The lines take handlers that never change, so typing a draft redraws none of them. Every
+  // address a line opens (a link in a reply, a hand-off, an attachment) is checked once, here.
   const latest = useRef(props);
   latest.current = props;
   const handlers = useMemo<LineHandlers>(
@@ -58,7 +60,10 @@ export function ThreadRail(props: ThreadRailProps) {
       onOpenComment: (id) => latest.current.onOpenComment(id),
       onOpenArtboards: (ids) => latest.current.onOpenArtboards(ids),
       onOpenPullRequest: () => latest.current.onOpenPullRequest(),
-      onOpenLink: (url) => latest.current.onOpenLink(url),
+      onOpenLink: (url) => {
+        const href = safeHref(url);
+        if (href) latest.current.onOpenLink(href);
+      },
     }),
     [],
   );
@@ -66,13 +71,21 @@ export function ThreadRail(props: ThreadRailProps) {
   const send = () => {
     const text = draft;
     setDraft("");
-    Promise.resolve(props.onSend(text)).catch(() => setDraft(text));
+    Promise.resolve(props.onSend(text)).catch(() =>
+      setDraft(restoreDraft(text, readDraft(meId, designId))),
+    );
   };
+
+  // The keyboard was in the composer's slot when what fills it changed: it goes to what came.
+  const carry = useRef(false);
+  const slot = gate?.kind === "read_only" ? "read" : asks.length ? "ask" : "compose";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {items ? (
         <ThreadView
+          // Another design's thread opens at its own foot, following.
+          key={designId}
           items={items}
           older={props.older}
           onLoadOlder={props.onLoadOlder}
@@ -83,33 +96,73 @@ export function ThreadRail(props: ThreadRailProps) {
       ) : (
         <ThreadSkeleton />
       )}
-      {gate?.kind === "read_only" ? (
-        <ReadOnlyLine message={gateMessage(gate, meId)} />
-      ) : asks.length ? (
-        <NeedsYou
-          asks={asks}
-          meId={meId}
-          repoName={props.repoName}
-          onAnswer={props.onAnswer}
-          onDismiss={props.onDismissAsk}
-          onOpenLink={props.onOpenLink}
-        />
-      ) : (
-        <RailComposer
-          text={draft}
-          onTextChange={setDraft}
-          working={agent.state === "working" || agent.state === "waking"}
-          gate={gate}
-          meId={meId}
-          attachments={props.attachments}
-          onAttach={props.onAttach}
-          onRemoveAttachment={props.onRemoveAttachment}
-          onRetryAttachment={props.onRetryAttachment}
-          onSend={send}
-          onStop={props.onStop}
-          onConnectClaude={props.onConnectClaude}
-        />
-      )}
+      <Slot key={`${designId}:${slot}`} carry={carry}>
+        {gate?.kind === "read_only" ? (
+          <ReadOnlyLine message={gateMessage(gate, meId)} />
+        ) : asks.length ? (
+          <NeedsYou
+            asks={asks}
+            meId={meId}
+            repoName={props.repoName}
+            onAnswer={props.onAnswer}
+            onDismiss={props.onDismissAsk}
+            onOpenLink={handlers.onOpenLink}
+          />
+        ) : (
+          <RailComposer
+            text={draft}
+            onTextChange={setDraft}
+            working={agent.state === "working" || agent.state === "waking"}
+            gate={gate}
+            meId={meId}
+            attachments={props.attachments}
+            onAttach={props.onAttach}
+            onRemoveAttachment={props.onRemoveAttachment}
+            onRetryAttachment={props.onRetryAttachment}
+            onSend={send}
+            onStop={props.onStop}
+            onConnectClaude={props.onConnectClaude}
+          />
+        )}
+      </Slot>
+    </div>
+  );
+}
+
+/** Where the keyboard lands in what fills the slot: an ask's options, else its field. */
+const LANDING = [
+  '[data-option]:not([tabindex="-1"]):enabled',
+  "textarea:enabled",
+  'input:enabled:not([type="file"])',
+];
+
+/**
+ * The composer's slot, holding one thing: the composer, what the agent waits on, or the
+ * read-only line. A question arriving under someone's caret, or the last answer going out, swaps
+ * it; if the keyboard was in what left, it lands in what came, instead of falling to the window.
+ */
+function Slot({ carry, children }: { carry: RefObject<boolean>; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current!;
+    if (carry.current) {
+      carry.current = false;
+      for (const selector of LANDING) {
+        const target = el.querySelector<HTMLElement>(selector);
+        if (target) {
+          target.focus();
+          break;
+        }
+      }
+    }
+    // A layout effect's cleanup runs before its DOM leaves, while the focus is still inside.
+    return () => {
+      carry.current = el.contains(document.activeElement);
+    };
+  }, [carry]);
+  return (
+    <div ref={box} className="contents">
+      {children}
     </div>
   );
 }

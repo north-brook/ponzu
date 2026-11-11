@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import type { AgentActivity, Person, ThreadItem } from "../model.ts";
-import { composerButton } from "./composer-rules.ts";
+import {
+  clearDrafts,
+  composerButton,
+  readDraft,
+  restoreDraft,
+  writeDraft,
+} from "./composer-rules.ts";
 import { FOLLOWING, type Follow, follow } from "./follow.ts";
 import { threadRows, workingLine } from "./thread.ts";
 
@@ -101,4 +107,22 @@ test("Stop while working with nothing typed; Send once there is something to sen
   const gate = { kind: "claude_limit", owner: bryce, until: "2026-11-10T21:00:00Z" } as const;
   expect(composerButton({ ...base, text: "hello", gate })).toBe("waiting");
   expect(composerButton({ ...base, working: true, gate })).toBe("stop");
+});
+
+test("drafts are kept per person and design, and signing out clears them", () => {
+  writeDraft("bryce", "dsn_hero", "Calmer, and keep the green");
+  writeDraft("maya", "dsn_hero", "Try the serif smaller");
+  expect(readDraft("bryce", "dsn_hero")).toBe("Calmer, and keep the green");
+  // Someone else signed in on the same Mac sees their own draft, not yours.
+  expect(readDraft("maya", "dsn_hero")).toBe("Try the serif smaller");
+  expect(readDraft("bryce", "dsn_other")).toBe("");
+  clearDrafts();
+  expect(readDraft("bryce", "dsn_hero")).toBe("");
+  expect(readDraft("maya", "dsn_hero")).toBe("");
+});
+
+test("a message that failed to send comes back ahead of what was typed since", () => {
+  expect(restoreDraft("Keep the green", "")).toBe("Keep the green");
+  expect(restoreDraft("Keep the green", "  ")).toBe("Keep the green");
+  expect(restoreDraft("Keep the green", "and the photo")).toBe("Keep the green\nand the photo");
 });

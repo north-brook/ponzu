@@ -29,11 +29,13 @@ export function composerButton({
 
 /*
  * Drafts: what someone started typing to a design stays with that design, through switching
- * designs and restarting the app. Kept in the browser's storage, one key per design, and
- * nowhere else: a draft is the person's own until they send it.
+ * designs and restarting the app. Kept in the browser's storage, one key per person and design,
+ * and nowhere else: a draft is the person's own until they send it, so someone else signing in
+ * on the same Mac never sees it, and signing out clears them all.
  */
 
 const PREFIX = "ponzu.draft.";
+const keyOf = (meId: string, designId: string) => `${PREFIX}${meId}.${designId}`;
 const listeners = new Set<() => void>();
 
 function storage(): Storage | null {
@@ -47,36 +49,59 @@ function storage(): Storage | null {
 /** Without storage (a locked-down window), drafts last as long as the page. */
 const memory = new Map<string, string>();
 
-export function readDraft(designId: string): string {
+export function readDraft(meId: string, designId: string): string {
+  const key = keyOf(meId, designId);
   try {
-    return storage()?.getItem(PREFIX + designId) ?? memory.get(designId) ?? "";
+    return storage()?.getItem(key) ?? memory.get(key) ?? "";
   } catch {
-    return memory.get(designId) ?? "";
+    return memory.get(key) ?? "";
   }
 }
 
-export function writeDraft(designId: string, text: string): void {
+export function writeDraft(meId: string, designId: string, text: string): void {
+  const key = keyOf(meId, designId);
   const empty = !text.trim();
-  if (empty) memory.delete(designId);
-  else memory.set(designId, text);
+  if (empty) memory.delete(key);
+  else memory.set(key, text);
   try {
-    if (empty) storage()?.removeItem(PREFIX + designId);
-    else storage()?.setItem(PREFIX + designId, text);
+    if (empty) storage()?.removeItem(key);
+    else storage()?.setItem(key, text);
   } catch {
     // Full or refused: the copy in memory holds it for now.
   }
   for (const listener of listeners) listener();
 }
 
-/** The draft for a design, and a setter that keeps it. */
-export function useDraft(designId: string): [string, (text: string) => void] {
+/** Every draft, of everyone: for signing out. */
+export function clearDrafts(): void {
+  memory.clear();
+  try {
+    const store = storage();
+    const keys = store ? Object.keys(store).filter((key) => key.startsWith(PREFIX)) : [];
+    for (const key of keys) store?.removeItem(key);
+  } catch {
+    // Refused: there was nothing it would let us keep either.
+  }
+  for (const listener of listeners) listener();
+}
+
+/** The viewer's draft for a design, and a setter that keeps it. */
+export function useDraft(meId: string, designId: string): [string, (text: string) => void] {
   const text = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => readDraft(designId),
+    () => readDraft(meId, designId),
   );
-  const set = useCallback((next: string) => writeDraft(designId, next), [designId]);
+  const set = useCallback((next: string) => writeDraft(meId, designId, next), [meId, designId]);
   return [text, set];
+}
+
+/**
+ * The draft after a message failed to send: its text back in the field, ahead of anything
+ * typed while it was on its way.
+ */
+export function restoreDraft(unsent: string, typed: string): string {
+  return typed.trim() ? `${unsent}\n${typed}` : unsent;
 }

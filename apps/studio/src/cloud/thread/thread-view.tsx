@@ -58,7 +58,7 @@ export function ThreadView({
   const rows = useMemo(() => threadRows(items), [items]);
   const working = workingLine(items, agent);
 
-  // The window: from `firstId` to the end. Null is the newest WINDOW rows.
+  // The window: from `firstId` to the end. Null, while following, is the newest WINDOW rows.
   const [firstId, setFirstId] = useState<string | null>(null);
   const found = firstId ? rows.findIndex((r) => r.item.id === firstId) : -1;
   const start = found >= 0 ? found : Math.max(0, rows.length - WINDOW);
@@ -85,29 +85,50 @@ export function ThreadView({
     dispatch({ type: "arrived", count: fresh.length, mine });
   }, [items, meId]);
 
-  // Revealing rows above keeps what is on screen where it is.
-  const before = useRef({ start, scrollHeight: 0, scrollTop: 0 });
-  useLayoutEffect(() => {
+  /*
+   * While the person reads, the line at the top of the view stays put whatever changes around
+   * it: rows revealed above, a picture loading above, the rail resizing. The browser's own scroll
+   * anchoring is off, since it fights following the foot, so the rail anchors by hand: it notes
+   * where the first line in view sits, and after a change scrolls by however far it moved.
+   */
+  const anchor = useRef<{ el: Element; top: number } | null>(null);
+  const noteAnchor = useCallback(() => {
     const el = scroller.current;
-    if (!el) return;
-    const prior = before.current;
+    const top = el?.getBoundingClientRect().top ?? 0;
+    const line = [...(content.current?.children ?? [])].find(
+      (child) => child.getBoundingClientRect().bottom > top,
+    );
+    anchor.current = line ? { el: line, top: line.getBoundingClientRect().top } : null;
+  }, []);
+  const holdAnchor = useCallback(() => {
+    const el = scroller.current;
+    const held = anchor.current;
+    if (!el || !held?.el.isConnected) return;
+    const moved = held.el.getBoundingClientRect().top - held.top;
+    if (Math.abs(moved) < 0.5) return;
+    el.scrollTop += moved;
+    ours.current = el.scrollTop;
+  }, []);
+
+  useLayoutEffect(() => {
     if (following.current) toFoot();
-    else if (start < prior.start) {
-      el.scrollTop = prior.scrollTop + (el.scrollHeight - prior.scrollHeight);
-      ours.current = el.scrollTop;
-    }
-    before.current = { start, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+    else holdAnchor();
+    noteAnchor();
   });
 
-  // Text streaming in, a picture loading, the rail resizing: still at the foot if following.
+  // Text streaming in, a picture loading, the rail resizing: still at the foot if following,
+  // still on the same line if reading.
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => {
-      if (following.current && !jumping.current) toFoot();
+      if (jumping.current) return;
+      if (following.current) toFoot();
+      else holdAnchor();
+      noteAnchor();
     });
     if (content.current) observer.observe(content.current);
     if (scroller.current) observer.observe(scroller.current);
     return () => observer.disconnect();
-  }, [toFoot]);
+  }, [toFoot, holdAnchor, noteAnchor]);
 
   // Back at the foot with a long window drawn: let the oldest go again.
   useEffect(() => {
@@ -140,12 +161,16 @@ export function ThreadView({
     const el = scroller.current;
     if (!el) return;
     const m = metricsOf(el);
+    noteAnchor();
     setEdges((prev) => {
       const next = { top: m.scrollTop > 1, bottom: !atFoot(m) };
       return prev.top === next.top && prev.bottom === next.bottom ? prev : next;
     });
     if (jumping.current || Math.abs(m.scrollTop - ours.current) < 2) return;
     dispatch({ type: "scrolled", metrics: m });
+    // Reading, the window holds its first row: what arrives at the foot no longer pushes the
+    // oldest out from above what the person is reading.
+    if (!atFoot(m) && firstId === null && rows[start]) setFirstId(rows[start].item.id);
     readUp();
   };
 
@@ -191,7 +216,7 @@ export function ThreadView({
             <div className="breathe self-center py-1 text-12 text-faint">Loading earlier…</div>
           ) : null}
           {shown.map((row) => (
-            <ThreadLine key={row.item.id} row={row} meId={meId} handlers={handlers} />
+            <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />
           ))}
           {working ? <WorkingLine label={working} /> : null}
         </div>

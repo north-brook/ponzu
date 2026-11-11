@@ -1,12 +1,5 @@
 import { Add01Icon, Cancel01Icon, RefreshIcon } from "@hugeicons/core-free-icons";
-import {
-  type ClipboardEvent,
-  type DragEvent,
-  type KeyboardEvent,
-  type Ref,
-  useRef,
-  useState,
-} from "react";
+import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 import { gateMessage } from "../gate.ts";
 import type { PendingAttachment, SteerGate } from "../model.ts";
 import { Button, IconButton, SendButton } from "../ui/button.tsx";
@@ -39,7 +32,6 @@ export function RailComposer({
   onSend,
   onStop,
   onConnectClaude,
-  fieldRef,
 }: {
   text: string;
   onTextChange: (text: string) => void;
@@ -55,7 +47,6 @@ export function RailComposer({
   onStop: () => void;
   /** Offered when the wait is the viewer's own Claude, disconnected. */
   onConnectClaude?: () => void;
-  fieldRef?: Ref<HTMLTextAreaElement>;
 }) {
   const button = composerButton({ working, text, attachments, gate });
   const picker = useRef<HTMLInputElement>(null);
@@ -145,10 +136,10 @@ export function RailComposer({
           }}
         />
         <textarea
-          ref={fieldRef}
           aria-label="Message"
           placeholder="Steer, or ask more"
           rows={1}
+          dir="auto"
           value={text}
           onChange={(e) => onTextChange(e.currentTarget.value)}
           onKeyDown={onKeyDown}
