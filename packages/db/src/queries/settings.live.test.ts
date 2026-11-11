@@ -28,9 +28,13 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
 
   test("ping toggles and devices", async () => {
     const user = await seedUser(db, "pinged");
-    expect(await setPingPrefs(db, { userId: user.id, prefs: { teammateComments: true } })).toEqual(
-      { needsYou: true, replies: true, prReady: true, teammateComments: true, emailDigest: false },
-    );
+    expect(await setPingPrefs(db, { userId: user.id, prefs: { teammateComments: true } })).toEqual({
+      needsYou: true,
+      replies: true,
+      prReady: true,
+      teammateComments: true,
+      emailDigest: false,
+    });
     const token = `${Date.now().toString(16)}`.padStart(64, "d");
     const first = await registerDevice(db, {
       userId: user.id,
@@ -44,7 +48,10 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
     expect(first.created).toBe(true);
     expect(first.device.lastSeenAt).toBeInstanceOf(Date);
     const again = await registerDevice(db, { ...first.device, pingsBlocked: true });
-    expect(again).toMatchObject({ created: false, device: { id: first.device.id, pingsBlocked: true } });
+    expect(again).toMatchObject({
+      created: false,
+      device: { id: first.device.id, pingsBlocked: true },
+    });
     const changed = await updateDevice(db, {
       userId: user.id,
       id: first.device.id,
