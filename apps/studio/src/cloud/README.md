@@ -101,9 +101,9 @@ The chrome reads, left to right (the founder's order), the right side the left's
 - the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
   name, no divider.
 
-Each divider's place comes from its pane's width, which the window keeps in `--pane-sidebar` and
-`--pane-rail` (app-window.tsx): the panes take their widths from them, and so do the left block
-and the rail's block in the chrome (`[data-chrome-rail]`), so one number moves both. Where the
+Each divider's place comes from its pane's width, which the panels write to `--pane-sidebar` and
+`--pane-rail` as they lay out (app-window.tsx, a drag included): the left block and the rail's
+block in the chrome (`[data-chrome-rail]`) read them, so one number moves pane and divider. Where the
 window is too narrow for all of it (the smallest window, five people and Update branch) the page
 tabs give way, scrolling under their fade; the cluster never wraps or clips.
 

@@ -236,13 +236,31 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     ];
     for (const [board, rail, size] of cases) {
       await open(board);
-      if (size) await page.setViewportSize(size);
+      if (size) {
+        await page.setViewportSize(size);
+        // The panels lay themselves out again for the new width (fitPanes) a frame or so after
+        // it, and write the rail's width (with its 10 of gutter) to `--pane-rail`: measured once
+        // the two agree, so a pane or a variable stuck at the wrong width still fails.
+        await page.waitForFunction(
+          () => {
+            const rail = document.querySelector("#thread-pane")!.getBoundingClientRect().width;
+            const frame = document.querySelector("header")!.parentElement!;
+            const width = Number.parseFloat(
+              getComputedStyle(frame).getPropertyValue("--pane-rail"),
+            );
+            return Math.abs(rail + 10 - width) <= 1 / 64;
+          },
+          undefined,
+          { timeout: 2000 },
+        );
+      }
       const at = await rightSide();
       // The toggle 10 from the window's edge, always.
       expect(at.toggle.right).toBe(at.width - 10);
       if (rail === "open") {
-        // The divider's pixel is the canvas's last column, as the left one's is its first.
-        expect(at.divider.right).toBe(at.main.right);
+        // The divider's pixel is the canvas's last column, as the left one's is its first
+        // (within a layout unit, 1/64px: the panes are laid out as shares of the window).
+        expect(Math.abs(at.divider.right - at.main.right)).toBeLessThanOrEqual(1 / 64);
       } else {
         // Divider, 12, toggle, together at the window's edge.
         expect(at.toggle.left - at.divider.right).toBe(12);
