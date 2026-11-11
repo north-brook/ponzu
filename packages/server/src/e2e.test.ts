@@ -408,6 +408,7 @@ test("screenshots seek a video from the design's assets/", async () => {
     const red = await image(300);
     const blue = await image(1500);
     expect(red.data).toBeDefined();
+    expect(blue.data).toBeDefined();
     expect(blue.data, `Both frames are the same picture.\n${red.said}\n${blue.said}`).not.toBe(
       red.data,
     );
