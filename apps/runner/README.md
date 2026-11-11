@@ -32,7 +32,8 @@ src/
   save/            what lives only on the disk, kept: checkpoints and restoring them
     checkpoints.ts the turn marker, saving after each turn, finding a rollback at start
     transcripts.ts the files that make a Claude session resumable, packed as the agent
-    work.ts        work in progress: a repo's on refs/ponzu/wip/<design>, Scratch's as an archive
+    work.ts        work in progress: a repo's as a commit in a bundle, Scratch's as a tar, each
+                   kept with the checkpoint and holding no secret
     shell.ts       running tar and git on the agent's side
   agent/
     agent.ts       the Agent interface: start, send, reply, interrupt, a stream of events
@@ -121,13 +122,19 @@ in the sandbox can reach them on localhost, and can make the runner do no more t
 docs/cloud.md ("Saving the sandbox", "Getting ready to sleep") is the specification.
 
 - **After each turn** has settled, the runner saves a checkpoint: the Claude session's
-  transcript and the work in progress (a repo's as a commit on `refs/ponzu/wip/<design id>`, never
-  the design's branch; Scratch's as an archive), under a turn marker the API keeps the highest of,
-  then runs `sync`. Nothing is saved when nothing changed.
+  transcript and the work in progress (a repo's as a commit, never on the design's branch nor
+  anywhere on GitHub, carried in a git bundle; Scratch's as an archive), both uploaded where no
+  client reads them, under a turn marker the API keeps the highest of, then runs `sync`. Files
+  over the size limits, or that look like or hold a secret (a `.env`, a key, a file with a repo
+  secret's value in it), are left out and named. A part that cannot be saved (a transcript over
+  64 MB) never stops the other, and the API keeps the stored one in its place (`keep`). Nothing
+  is saved when nothing changed.
 - **Before a sleep** the API's state answer names the stop (`sleep`). The runner claims nothing
-  more, lets the turn finish (15 s at most), settles the replica, saves a checkpoint, runs `sync`
-  and reports `quiesced`. A warm resume thaws it; the next answer without `sleep` puts it back to
-  work.
+  more, waits for a claim it had out and holds back what it brought, lets the turn finish (15 s
+  at most, then interrupts it and says so in the thread), settles the replica, saves a
+  checkpoint, runs `sync` and reports `quiesced`. A warm resume thaws it and the API pokes it:
+  while it holds a sleep a poke asks for a state report at once, and the answer without `sleep`
+  puts it back to work.
 - **At start**, before Claude Code reads its transcript, a disk whose marker is behind the API's
   (a rollback) or has none (a new sandbox) gets the checkpoint back, never over anything newer,
   and the runner logs `sandbox_rollback` or `sandbox_rebuilt` as JSON and tells the API.

@@ -477,18 +477,31 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   and the runner trusts nothing about it: the agent can reach the port on localhost too, and all
   it can do is make the runner ask the API, with its own token, whether it is going to sleep.
   So the decision is a state the API holds, not a command anyone can send. On it the runner
-  claims nothing new (events wait in the feed), lets a running turn finish for up to 15 seconds,
-  settles the replica and its outboxes, saves a checkpoint, runs `sync` and reports `quiesced`
-  with the stop's time. The stop waits up to 30 seconds for that, then runs `sync` through the
-  provider whatever happened, then stops. A runner that does not answer its port is not waited
-  for; one that is being restarted for going quiet is not asked. When a warm resume thaws the
-  same process, the next state answer has no `sleep` and it takes work again.
+  claims nothing new (events wait in the feed), waits for a claim it already had out and puts
+  nothing that claim brought into the run (left unacknowledged, the same claim id hands them out
+  again after a warm wake, and the next runner gets them after a cold one), lets a running turn
+  finish for up to 15 seconds and interrupts one that has not (the thread says the sandbox went
+  to sleep before Claude finished, and to send a message to pick it up), settles the replica and
+  its outboxes, saves a checkpoint, runs `sync` and reports `quiesced` with the stop's time. The
+  stop waits up to 30 seconds for that, then runs `sync` through the provider (10 seconds)
+  whatever happened, then stops. A runner that does not answer its port is not waited for; one
+  that is being restarted for going quiet is not asked. Once an idle stop has landed, a design
+  whose current runner holds events it claimed and never put into its session (`now` or `next`)
+  is woken again for them. When a warm resume thaws the same process, the API only pokes it: a
+  poke or claim while the runner still thinks it is going to sleep asks for a state report at
+  once, and the answer, with no `sleep`, sets it claiming again, so the first claim comes with
+  the poke rather than at the next heartbeat.
 - **A warm resume and a stopped runner.** A warm resume thaws the boot as it was, so a runner
   that had exited stays exited. After every warm resume the API asks `/health` through the
   stored address (3 seconds); when it does not answer, it reads the design again and, unless it
   was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner` through the
-  provider and looks again for 20 seconds. If that fails it stops the sandbox and resumes it on a
-  new environment, which is always a cold start, and revokes the token it had. A runner that
+  provider and looks again for 15 seconds. If that fails it runs `sync` (a health check can fail
+  for the address alone, with the runner writing), stops the sandbox and resumes it on a new
+  environment, which is always a cold start, and revokes the token it had. The same check runs
+  after a resume that found the machine already running. One attempt of a wake keeps to 260
+  of its function's 300 seconds (`quiesce.ts` adds the waits up): with too little left for the
+  unit's start and a cold start after it, it goes cold at once; with too little for the cold
+  start, the job tries again. A runner that
   exited 78 on purpose stays down: a deleted or settled design is never woken (its token was
   revoked for that reason), and a revoked token always means a new environment, never the old
   one started again. A design settled between the resume and the check is left for the sweep,
@@ -679,25 +692,39 @@ it restores before Claude Code resumes (`apps/runner/src/save/`).
   `/home/agent/.claude` in the image), and the folder of the same name beside it when there is
   one (subagents' transcripts, tool results kept out of the main file). Nothing else under the
   config folder is needed to resume. They are packed with `tar -z` run as the agent (they are
-  0600 `agent`), at most 64 MB compressed.
-- **A repo design's work in progress** is a commit pushed to the hidden ref
-  `refs/ponzu/wip/<design id>` through the same credential path as the agent's pushes: its
-  parent is the checkout's HEAD, so commits not yet pushed travel with it, and its tree is the
-  working tree with untracked files and without ignored ones, built in an index of its own (the
-  checkout's index, branch and stash are never touched). A file over 5 MB, or past 50 MB in all,
-  is left out and named in the commit message. The App's `contents: write` takes the ref (it was
-  pushed, fetched and deleted with an installation token on the test repository); GitHub shows it
-  in no branch list, runs no workflow for it (`push` workflows are for branches and tags), and
-  the API's `push` webhook ignores anything but `refs/heads/…`, so it costs no pull request
-  read. It is readable by whoever can read the repository, as a pushed branch would be: on a
-  public repository the work in progress is public. It is never pushed to the design's branch.
-- **A Scratch design's files** are a `tar -z` of its folder (the same limits; `node_modules` and
-  `.git` left out), uploaded with the transcript.
+  0600 `agent`), at most 64 MB compressed. One past that is left out of the checkpoint, which
+  still saves the work and keeps the transcript stored before (`keep`, below); the thread says
+  once that the conversation is no longer being saved, and the runner logs
+  `checkpoint_session_skipped`.
+- **A repo design's work in progress** is a commit whose parent is the checkout's HEAD, so
+  commits not yet pushed travel with it, and whose tree is the working tree with untracked files
+  and without ignored ones, built in an index of its own (the checkout's index, branch and stash
+  are never touched). It goes nowhere on GitHub: a git bundle of it, holding only the commits
+  GitHub does not have (it leaves out what `origin/<branch>` and `origin/<default branch>` hold),
+  gzipped, is the checkpoint's `workspace` archive, stored like a transcript (below). A ref on the
+  repository was the first design and was dropped: everyone who can read the repository can
+  fetch a ref (on a public one, everyone), GitHub keeps a force-pushed commit reachable by its
+  hash, and every other design's agent on the repository can write it. The commit stays on a
+  local ref in the checkout (`refs/ponzu/wip/<design id>`), which nothing pushes.
+- **A Scratch design's files** are a `tar -z` of its folder (`node_modules` and `.git` left out).
+- **What is left out**, of both: a file over 5 MB, or past 50 MB in all; a file whose name says it
+  holds a secret even when the repo does not ignore it (`.env` and `.env.*` but `.env.example`
+  and its kind, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa` and its kind, `.npmrc`, `.netrc`,
+  `.pypirc`, `.git-credentials`, anything under `.aws/`, `.ssh/`, `.gnupg/`, `.docker/` or
+  `.kube/`); and a file that holds the value of one of the repo's secrets or the Claude
+  credential (8 characters or more). The commit message names each, with why (`Ponzu-Skipped`).
+  The next sandbox's environment brings the secrets back; nothing else would need them.
 - **The marker.** Each checkpoint carries a turn marker one above the highest the runner knows.
   The API records it only over a lower one (`design_runners.saved_*`), so a late or repeated call
   never puts an older checkpoint back, and the runner keeps the marker the API confirmed on its
-  disk, flushed (`~/.ponzu/checkpoint.json`). Nothing is saved when nothing changed since the
-  last.
+  disk, flushed (`~/.ponzu/checkpoint.json`). Before it sends one it writes the marker again with
+  the turn it is sending as `pending`: a marker one behind the API's that says that turn is
+  pending is a stop that came between the API's answer and the write, logged `marker_lag`, not a
+  rollback. Nothing is saved when nothing changed since the last.
+- **Never less than the last.** A part a checkpoint cannot carry (a transcript too large or not on
+  this disk, work that could not be saved or did not change, a checkout that could not be had)
+  is kept from the checkpoint before (`keep`), with its session id or commit, so a checkpoint
+  never drops what the one before it held.
 
 **At start**, once the folder is ready and before Claude Code reads its transcript, the runner
 compares its marker with the API's (`RunnerSession.saved`):
@@ -705,35 +732,43 @@ compares its marker with the API's (`RunnerSession.saved`):
 | Disk | Means | Does |
 |---|---|---|
 | the same or newer | nothing was lost | nothing; work done since the last checkpoint stays |
+| one behind, that turn `pending` | the marker lagged (`marker_lag`) | confirms the marker |
 | none | a new sandbox (`rebuilt`) | restores from the checkpoint |
 | older | the disk went back (`rollback`) | restores from the checkpoint |
 
 Restoring never puts something older over something newer. A transcript or a Scratch file that is
-newer on the disk than in the archive is kept (`tar --keep-newer-files`: a transcript only
-grows). The work in progress goes back only forward: the branch is moved to the saved HEAD only
-when the saved HEAD contains it (`merge --ff-only`); when the branch has moved on past it (someone
-pushed), nothing is restored and the work stays on the ref; and changes the disk has of its own
-are put in `git stash` first, never thrown away. The index is left as HEAD has it, so what was
-uncommitted is uncommitted again and what was untracked is untracked. Then the session resumes,
-and the thread says `resumed` as after any wake. The runner logs `sandbox_rollback` (or
-`sandbox_rebuilt`) with both markers, the boot ids and how long the restore took, and tells the
-API (`POST /v1/runner/restored`), which logs it with the sandbox, its provider id and generation,
-and counts it in `sandboxes.rollbacks`: what to show boat.dev.
+newer on the disk than in the archive is kept (a transcript only grows). The work in progress is
+the commit the API recorded and only that: it comes from the recorded archive (whose size and
+SHA-256 the runner checks, and whose bundle must carry that commit and be built on commits the
+checkout has), never from whatever a ref holds. It goes back only where it loses nothing: the
+branch is moved to the saved HEAD when the saved HEAD contains it (`merge --ff-only`), or when the
+branch is one this disk only just made (never pushed, nothing of its own beyond the default
+branch, which may have moved on since: the common case of a young design on a busy repository);
+when the branch was pushed and has moved on past it, the work is put on a local branch,
+`ponzu-wip/turn-<n>`, and the thread says so, for the agent to bring over what the person wants.
+Changes the disk has of its own are put in `git stash` first, never thrown away. The index is
+left as HEAD has it, so what was uncommitted is uncommitted again and what was untracked is
+untracked. Then the session resumes, and the thread says `resumed` as after any wake. The runner
+logs `sandbox_rollback` (or `sandbox_rebuilt`) with both markers, the boot ids and how long the
+restore took, and tells the API (`POST /v1/runner/restored`), which logs it with the sandbox, its
+provider id and generation, and counts it in `sandboxes.rollbacks`: what to show boat.dev.
 
-**Where it is stored.** A transcript holds the whole conversation and every tool's output, so it
-never goes under a design's asset key, which people hold and the assets domain serves. Archives
-are uploaded through the uploads protocol (purposes `session` and `workspace`) to
-`private/<32 random characters>/<upload id>-<name>` at the bucket's root, a key no answer to any
-client carries, stored `Cache-Control: private, no-store`, recorded only by `POST
+**Where it is stored.** A transcript holds the whole conversation and every tool's output, and a
+bundle the person's unpublished work, so neither goes under a design's asset key, which people
+hold and the assets domain serves. Archives are uploaded through the uploads protocol (purposes
+`session` and `workspace`) to `private/<32 random characters>/<upload id>-<name>`, a key no
+answer to any client carries, stored `Cache-Control: private, no-store`, recorded only by `POST
 /v1/runner/checkpoint` (completing one as a file is refused, since it would answer an assets
-address), read back only through a ten-minute signed GET handed to the design's runner, and
-deleted when a later checkpoint replaces it. That is the minimum: the bucket's one public door,
-the assets domain, serves any key it is asked for, so the key is all that stands between a
-transcript and the world. **Production should keep them in a second R2 bucket with no public
-domain at all**: a bucket of its own (`R2_PRIVATE_BUCKET`), a second `ObjectStorage` made from it
-in `createDeps` for these two purposes (uploads choose the store by purpose; nothing else
-changes, since only signed addresses ever touch these objects), and its lifecycle rule. Deleting
-a design does not delete its stored files yet, transcripts included.
+address), read back only through a ten-minute signed GET handed to the design's runner, deleted
+when a later checkpoint replaces it, and deleted with the design (deleting it, or deleting the
+account of the person whose design it is alone), recorded or not. They go to their own store,
+`deps.archives`: **set `R2_PRIVATE_BUCKET` before production**, a bucket on the same account
+with no public domain, and they go there; unset (as on dev), they go in the assets bucket, where
+the random key is all that stands between a transcript and the world, since the assets domain
+serves any key it is asked for. Either bucket wants a lifecycle rule that deletes objects under
+`private/` a day old that no checkpoint recorded (an upload whose checkpoint call never came);
+recorded ones are deleted by the API. A settled design keeps its last checkpoint, so that
+reopening it resumes the conversation.
 
 ### Events
 
@@ -1081,8 +1116,10 @@ SavedPoint = { turn, at, claudeSessionId, wipCommit, session: boolean, workspace
 `turn` must be above the design's last for anything to change, and the answer is the
 checkpoint the design has now, this one or a newer one; the archives it replaced, or that were
 not recorded, are deleted. An archive id must be this runner's upload of that purpose, in storage
-as declared (404 `not_found`). `wipCommit` is the commit on `refs/ponzu/wip/<design id>`, for a
-repo design. Holds to the lease (409 `superseded`). Safe to repeat.
+as declared (404 `not_found`). `wipCommit` is the work in progress's commit, for a repo design,
+which the `workspace` archive carries as a bundle. `keep: { session?, workspace? }` keeps the
+last checkpoint's transcript (with its session id) or work (with its commit) in place of one this
+checkpoint does not carry. Holds to the lease (409 `superseded`). Safe to repeat.
 
 `POST /v1/runner/restore` answers the last checkpoint with an address per archive that reads it
 for ten minutes, and its size and SHA-256, which the runner checks. `POST /v1/runner/restored`
@@ -1177,8 +1214,9 @@ design's feed and when a person's op moves an awake design's head, and does not 
 that fails: the runner also claims once a minute, and each claim and state answer carries the
 head. `POST /report` carries nothing either: the runner sends its state report now, and only the
 API's answer to that report can say the sandbox is going to sleep. The API asks for one when it
-starts a stop. `GET /health` answers `{ "ok": true, "state": "working" | "needs_you" | "idle" }`,
-and the API reads it after a warm resume.
+starts a stop. While the runner holds a sleep, a poke makes it ask for a report too, which is how
+a warm wake (which only pokes) reaches it. `GET /health` answers `{ "ok": true, "state":
+"working" | "needs_you" | "idle" }`, and the API reads it after a warm resume.
 
 ### Environment
 
@@ -1856,14 +1894,20 @@ from `cloud` into `main`, released as the next major version.
   asking the runner to get ready and flushing first, the double cold start has not rolled a
   disk back in the runs recorded in `apps/runner/image/README.md`. Either way the disk is now a
   cache in fact (principle 2): a checkpoint after each turn holds the transcript and the work in
-  progress, and a disk behind it is restored. **What can still be lost:** what a turn did after
-  its last checkpoint if the sandbox is lost or rolled back before the next (the turn's end, a
-  sleep and SIGTERM each save one, so this is a turn cut off by a crash or a machine lost while
-  it ran); a file over 5 MB or past 50 MB in all, or ignored by the repo, which is never in a
-  checkpoint (`dist/`, `node_modules`, a local `.env`); a transcript over 64 MB compressed; work
-  saved when the branch then moved on past it (it stays on `refs/ponzu/wip/<design>`, not
-  restored); and a turn's usage counted twice after a rollback, since the usage totals are not
-  in the checkpoint.
+  progress, and a disk behind it is restored. **What can still be lost, at worst:**
+  - what a turn did after its last checkpoint, when the sandbox is lost or rolled back before the
+    next (a turn's end, a sleep and SIGTERM each save one, so this is a turn cut off by a crash or
+    a machine lost while it ran, or one longer than the sleep's 15 seconds, which is interrupted
+    and saved as far as it got);
+  - files never in a checkpoint: ignored by the repo (`dist/`, `node_modules`, a `.env.local`),
+    over 5 MB or past 50 MB in all, or holding a secret (above); the secrets come back with the
+    environment, built files with a build;
+  - the conversation after it outgrew 64 MB compressed: the files keep being saved, the
+    transcript stored is the last that fit, and the thread said so;
+  - uncommitted work that cannot go back on a pushed branch that moved on: it is on
+    `ponzu-wip/turn-<n>` in the sandbox, and the thread says so, but nothing merges it;
+  - a turn's usage counted twice after a rollback, since the usage totals are not in the
+    checkpoint.
 - A runner that is answered 409 `superseded` while it starts exits 78 and, on a cold boot, stays
   down until the dead-runner sweep (90 seconds unheard) stops it and starts it on a new
   environment. The end-to-end runs found one way in and it is closed: a `POST /report` that came
@@ -1871,8 +1915,9 @@ from `cloud` into `main`, released as the next major version.
   runner superseded itself; a report is now ignored until the runner has started. A session
   call retried after a lost answer, with the first landing after the retry, would still do it;
   a session call that names the starting process would close that.
-- Checkpoint archives sit in the assets bucket under a random key (above); a private bucket is
-  the better home. Deleting a design does not delete them, nor its `refs/ponzu/wip/<design>`.
+- Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
+  key (above). Work in progress pushed to `refs/ponzu/wip/<design>` by the first version of this
+  (dev only) stays on those repositories until someone deletes the refs.
 - A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
   resume until it has. A message that arrives in that window waits for the stop.
 - Neon Realtime is a public beta.

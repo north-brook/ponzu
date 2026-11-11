@@ -135,6 +135,10 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
         summaries: fake.summaries,
         calls: calls.length,
         lastCall: calls.at(-1) ?? null,
+        claims: calls
+          .filter((c) => c.route === "POST /v1/runner/events/claim")
+          .slice(-20)
+          .map((c) => c.at),
         kept: { writes, restored },
       });
     case "GET /control/memory":
@@ -151,9 +155,11 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
       held = false;
       return new Response(null, { status: 204 });
     case "PUT /control/sleep": {
-      // As the API's stop does: the row says stopping, and the runner is asked for a report.
+      // As the API's stop does: the row says stopping, and the runner is asked for a report. As
+      // its wake does: the row says awake, and the runner is only poked.
       fake.sleep = ((await request.json()) as { sleep: string | null }).sleep;
-      await fetch(`http://127.0.0.1:${runnerPort}/report`, { method: "POST" }).catch(() => {});
+      const door = fake.sleep === null ? "poke" : "report";
+      await fetch(`http://127.0.0.1:${runnerPort}/${door}`, { method: "POST" }).catch(() => {});
       return new Response(null, { status: 204 });
     }
     case "POST /control/events": {

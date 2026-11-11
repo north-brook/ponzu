@@ -60,6 +60,8 @@ export interface Recorded {
   checkpoints: { turn: number; claudeSessionId: string | null; wipCommit: string | null }[];
   restored: RestoredReport[];
   quiesced: string[];
+  /** When the runner last claimed (the fake's clock), the latest twenty. */
+  claims: number[];
 }
 
 /**
@@ -247,18 +249,33 @@ export async function wakeLikeTheApi(trial: Trial, memory: Memory) {
   await until("the fake API", () => record(trial), 120_000, 200);
   const fakeUpSeconds = since(began);
   const before = await record(trial);
+  const awakeAt = before.now;
   await control(trial, "PUT", "memory", memory);
-  // Awake again: the stop is over, and a thawed runner hears it on this report.
+  // Awake again: the stop is over, and the runner is poked, as the API's wake does.
   await control(trial, "PUT", "sleep", { sleep: null });
   await until("the runner's /health", () => health(trial.runner), 180_000, 200);
+  const healthSeconds = since(began);
+  await firstClaim(trial, awakeAt);
   return {
     coldStart: resumed.coldStart,
     fakeUpSeconds,
-    healthSeconds: since(began),
+    healthSeconds,
+    /** From the resume to the runner's first claim: when a waiting message would be taken. */
+    claimSeconds: since(began),
     /** What the fake's own flushed state file said when it started: a second witness. */
     fakeFileSavedTurn: before.kept.restored.savedTurn,
     fakeFileWrites: before.kept.restored.writes,
   };
+}
+
+/** Waits for the runner's first claim after `at` (the fake's clock). */
+export function firstClaim(trial: Trial, at: number): Promise<number> {
+  return until(
+    "the runner's first claim",
+    async () => (await record(trial)).claims.find((c) => c > at) ?? null,
+    120_000,
+    100,
+  );
 }
 
 /** A person's message, as the API adds it to the feed and pokes the runner. */

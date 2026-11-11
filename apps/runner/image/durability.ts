@@ -16,8 +16,8 @@
  * because the real API is never on the sandbox's disk (trial.ts, `wakeLikeTheApi`). Both need
  * BOAT_API_KEY and ANTHROPIC_API_KEY; `proof` also GITHUB_TEST_REPO, GITHUB_APP_ID,
  * GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY_PATH and E2E_PERSON, as e2e.ts's `repo`.
- * What each step saw is printed as JSON and kept in .context/durability/. Every sandbox, the
- * branch and the hidden ref are deleted.
+ * What each step saw is printed as JSON and kept in .context/durability/. Every sandbox and the
+ * branch are deleted.
  */
 import { createSign } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,6 +27,7 @@ import { destroyOnSignal, provider, sh, until } from "./harness.ts";
 import {
   control,
   endTrial,
+  firstClaim,
   health,
   message,
   type Recorded,
@@ -66,7 +67,6 @@ async function proof(): Promise<void> {
   const github = await installationToken(repoName);
   const branch = `pz/durability-${Date.now().toString(36)}`;
   const gitToken = { password: github.token, expiresAt: github.expiresAt };
-  let designId: string | null = null;
   try {
     const person = await gh<{ login: string; id: number }>("", `/users/${need("E2E_PERSON")}`);
     const { slug } = await gh<{ slug: string }>(github.jwt, "/app");
@@ -93,7 +93,6 @@ async function proof(): Promise<void> {
       gitToken,
       hold: true,
     });
-    designId = trial.designId;
     report.sandbox = trial.id;
     report.designId = trial.designId;
     try {
@@ -116,6 +115,16 @@ async function proof(): Promise<void> {
         "sudo rm -rf /root/rollback && sudo mkdir -p /root/rollback && sudo cp -a /home/agent/work /home/agent/.claude /home/user/.ponzu /root/rollback/",
         { quiet: true },
       );
+      // A folder beside the transcript, as Claude Code makes for subagents: it goes into turn
+      // two's checkpoint, and the rollback below takes it away again.
+      const sessionId = (await record(trial)).session.claudeSessionId;
+      if (!sessionId) throw new Error("no Claude session after turn one");
+      await sh(
+        boat,
+        trial.id,
+        `sudo -u agent sh -c 'f=$(ls /home/agent/.claude/projects/*/${sessionId}.jsonl | head -1) && d="\${f%.jsonl}" && mkdir -p "$d/subagents" && echo "{}" > "$d/subagents/agent-probe.jsonl"'`,
+        { quiet: true },
+      );
       // Turn two: a file written and not committed.
       report.turn2 = await turn(
         trial,
@@ -123,14 +132,14 @@ async function proof(): Promise<void> {
       );
       const two = await checkpointAfter(trial, one.turn);
       report.checkpoints = { one, two };
-      // GitHub has the work in progress on the hidden ref, and the branch is untouched.
-      const wip = await gh<{ object: { sha: string } }>(
+      // The work in progress is with the checkpoint, and nothing of it is on GitHub: no ref
+      // for the design, and the branch was never pushed.
+      const wipRefOnGithub = await gh(
         github.token,
         `/repos/${owner}/${repoName}/git/ref/ponzu/wip/${trial.designId}`,
-      );
-      const plan = await gh<{ content: string }>(
-        github.token,
-        `/repos/${owner}/${repoName}/contents/notes/plan.md?ref=${wip.object.sha}`,
+      ).then(
+        () => true,
+        () => false,
       );
       const branchOnGithub = await gh(
         github.token,
@@ -139,12 +148,21 @@ async function proof(): Promise<void> {
         () => true,
         () => false,
       );
-      report.hiddenRef = {
-        commit: wip.object.sha,
-        matchesCheckpoint: wip.object.sha === two.wipCommit,
-        planOnRef: Buffer.from(plan.content, "base64").toString("utf8").trim(),
+      // A session with a folder beside its transcript (subagents, kept tool results), which
+      // the restore must bring back as well.
+      const probe = `/home/agent/.claude/projects/*/${sessionId}/subagents/agent-probe.jsonl`;
+      const sessionFolder = (
+        await sh(boat, trial.id, `sudo sh -c 'ls ${probe}' || true`, { quiet: true })
+      ).trim();
+      report.workInProgress = {
+        commit: two.wipCommit,
+        archived: two.workspace,
+        wipRefOnGithub,
         branchPushed: branchOnGithub,
+        sessionFolder: sessionFolder || null,
       };
+      if (!two.wipCommit || !two.workspace || wipRefOnGithub)
+        throw new Error("the work in progress was not kept with the checkpoint alone");
 
       // A warm sleep and wake, as the API does them.
       const warmSleep = await sleepLikeTheApi(trial);
@@ -206,8 +224,17 @@ async function proof(): Promise<void> {
         { quiet: true },
       );
       const [planLine = "", headNow = "", ...status] = disk.trim().split("\n");
-      report.checkout = { plan: planLine, sameHead: headNow === head, status };
+      const folderBack = (
+        await sh(boat, trial.id, `sudo sh -c 'ls ${probe}' || true`, { quiet: true })
+      ).trim();
+      report.checkout = {
+        plan: planLine,
+        sameHead: headNow === head,
+        status,
+        sessionFolderRestored: !!folderBack,
+      };
       if (planLine.trim() !== "juniper 42") throw new Error(`notes/plan.md is "${planLine}"`);
+      if (!folderBack) throw new Error("the session's folder did not come back");
 
       // And the session remembers both turns.
       const asked = await turn(
@@ -226,12 +253,6 @@ async function proof(): Promise<void> {
       await endTrial(trial);
     }
   } finally {
-    if (designId)
-      await gh(
-        github.token,
-        `/repos/${owner}/${repoName}/git/refs/ponzu/wip/${designId}`,
-        "DELETE",
-      ).catch((err) => console.log(`could not delete the hidden ref: ${err}`));
     await gh(github.token, `/repos/${owner}/${repoName}/git/refs/heads/${branch}`, "DELETE").catch(
       () => {},
     );
@@ -328,6 +349,7 @@ async function coldCycle(trial: Trial, which: string) {
     boot,
     sleep: without(slept, "memory"),
     healthSeconds: woke.healthSeconds,
+    claimSeconds: woke.claimSeconds,
     disk: {
       syncedProbeKept: synced === nonce,
       unsyncedProbeKept: unsynced === nonce,
@@ -452,11 +474,15 @@ async function wakeWithToken(
   const before = await record(trial);
   await control(trial, "PUT", "git-token", gitToken);
   await control(trial, "PUT", "memory", memory);
+  // As the API's wake: the row says awake, and the runner is poked.
   await control(trial, "PUT", "sleep", { sleep: null });
   await until("the runner's /health", () => health(trial.runner), 180_000, 200);
+  const healthSeconds = Math.round((performance.now() - began) / 10) / 100;
+  await firstClaim(trial, before.now);
   return {
     coldStart: resumed.coldStart,
-    healthSeconds: Math.round((performance.now() - began) / 10) / 100,
+    healthSeconds,
+    claimSeconds: Math.round((performance.now() - began) / 10) / 100,
     fakeFileSavedTurn: before.kept.restored.savedTurn,
   };
 }
