@@ -39,15 +39,9 @@ const SEE = `(async () => {
   return state.status === "signed_out" ? "signed out" : "the bridge says " + state.status;
 })()`;
 
-/** `cleanUp` runs just before the check exits, whichever way: the throwaway folder goes. */
-export function watchSmoke(window: BrowserWindow, cleanUp: () => void = () => {}): void {
+export function watchSmoke(window: BrowserWindow): void {
   const exit = (code: number, why: string) => {
     console.error(`smoke: ${why}, exiting ${code}`);
-    try {
-      cleanUp();
-    } catch (error) {
-      console.error(`smoke: couldn't clean up (${error})`);
-    }
     app.exit(code);
   };
   const started = Date.now();

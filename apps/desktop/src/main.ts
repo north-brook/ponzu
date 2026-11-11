@@ -6,6 +6,7 @@ import type { SessionState } from "@ponzu/client";
 import {
   app,
   type BrowserWindow,
+  dialog,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
@@ -22,7 +23,7 @@ import {
   type MenuCommand,
   STUDIO_ORIGIN,
 } from "./bridge.ts";
-import { configFor } from "./config.ts";
+import { bundleMismatch, configFor, schemeRegistration } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
@@ -50,12 +51,23 @@ const config = configFor(app.isPackaged, process.env);
  * item ("Ponzu Preview Safe Storage", "Ponzu Dev Safe Storage") and single-instance lock, so
  * neither reads, refreshes or replaces an installed Ponzu's session, nor quits because one is
  * running. The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
- * All of it before anything reads the name or the folder.
+ * All of it before anything reads the name or the folder, and only once the bundle and the main
+ * process agree on which app this is (`bundleMismatch`).
  */
+const mismatch = bundleMismatch(app.isPackaged, app.name, config);
+if (mismatch) {
+  console.error(mismatch);
+  // The smoke check's caller reads the exit code; a person needs to be told.
+  if (!smoke) dialog.showErrorBox("Ponzu can't start", mismatch);
+  process.exit(1);
+}
 if (app.name !== config.appName) app.setName(config.appName);
 const userData = dataFolder(app.getPath("appData"), config.appName, { smoke });
 app.setPath("userData", userData);
 app.setPath("sessionData", userData);
+// Removed by a shell once this process is gone, however the check ends: a verdict, a crash or
+// the caller's timeout (data-folder.ts).
+if (smoke) removeOnceExited(userData);
 
 /*
  * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
@@ -148,8 +160,7 @@ function showWindow() {
     win.webContents.on("render-process-gone", (_event, details) => {
       if (!smoke && details.reason !== "clean-exit") win.reload();
     });
-    // The throwaway folder goes once the check has exited (data-folder.ts).
-    if (smoke) watchSmoke(win, () => removeOnceExited(userData));
+    if (smoke) watchSmoke(win);
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -351,10 +362,11 @@ if (!app.requestSingleInstanceLock()) {
    * app, or starts it. A development build takes `ponzu-dev:` links on Windows and Linux, through
    * this checkout. Not on a Mac: there it runs inside node_modules' Electron.app, which declares no
    * schemes, so registering would hand the scheme to whichever bare Electron the system finds.
-   * Use Ponzu Preview for links on a Mac.
+   * Use Ponzu Preview for links on a Mac. The smoke check claims nothing (`schemeRegistration`).
    */
-  if (app.isPackaged) app.setAsDefaultProtocolClient(config.linkScheme);
-  else if (process.platform !== "darwin")
+  const registration = schemeRegistration(app.isPackaged, process.platform, smoke);
+  if (registration === "bundle") app.setAsDefaultProtocolClient(config.linkScheme);
+  else if (registration === "checkout")
     app.setAsDefaultProtocolClient(config.linkScheme, process.execPath, [
       resolve(app.getAppPath()),
     ]);

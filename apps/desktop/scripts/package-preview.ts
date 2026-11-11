@@ -9,12 +9,14 @@
  * App Store Connect key, as a release built here would be. docs: apps/desktop/README.md.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import manifest from "../package.json";
 import { type BuildConfig, PREVIEW, previewBuild } from "../src/packaging.ts";
 
 const root = join(import.meta.dir, "..");
+/** How build.ts's PONZU_VARIANT reads in the compiled main process (src/config.ts). */
+const PREVIEW_MAIN = 'var variant = "preview";';
 
 function run(command: string, args: string[], env: Record<string, string> = {}, cwd = root) {
   const result = spawnSync(command, args, {
@@ -38,6 +40,26 @@ writeFileSync(
   `${JSON.stringify(previewBuild(manifest.build as unknown as BuildConfig), null, 2)}\n`,
 );
 run("bunx", ["electron-builder", "--dir", "--publish", "never", "--config", config]);
+
+/*
+ * The bundle is the preview's by electron-builder's config; whether its main process leaves 1.x
+ * alone was fixed when build.ts compiled it. Check that what went into the bundle is the
+ * preview's main process, so a bundle named Ponzu Preview never ships a release's (the app also
+ * refuses to start then: config.ts's `bundleMismatch`). An asar stores its files as they are.
+ */
+const asars = readdirSync(join(root, PREVIEW.output), { recursive: true, encoding: "utf8" })
+  .filter((path) => path.endsWith("app.asar"))
+  .map((path) => join(root, PREVIEW.output, path));
+if (!asars.length) {
+  console.error(`No app.asar under ${PREVIEW.output}.`);
+  process.exit(1);
+}
+for (const asar of asars) {
+  if (!readFileSync(asar).includes(PREVIEW_MAIN)) {
+    console.error(`${asar} doesn't hold Ponzu Preview's main process (no ${PREVIEW_MAIN}).`);
+    process.exit(1);
+  }
+}
 
 if (process.platform === "darwin") {
   const arch = process.arch === "arm64" ? "arm64" : "x64";

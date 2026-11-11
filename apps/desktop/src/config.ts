@@ -105,3 +105,38 @@ function localOrHttps(value: string | undefined): string | null {
   if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
   return url.origin;
 }
+
+/**
+ * Why a packaged app must not start, or null. Which bundle this is (its name, bundle id and link
+ * scheme) is electron-builder's doing; which app the main process thinks it is (`variant`, and so
+ * its data folder, keychain item and whether it removes Ponzu 1.x) was fixed when scripts/build.ts
+ * compiled it. A bundle named "Ponzu Preview" running a release's main process would take
+ * Ponzu's folder and clean up 1.x, so a mismatch stops it before anything reads either.
+ * `bundleName` is `app.name` before the app renames itself: the bundle's productName.
+ */
+export function bundleMismatch(
+  packaged: boolean,
+  bundleName: string,
+  config: Config,
+): string | null {
+  if (!packaged || bundleName === config.appName) return null;
+  return `This app is "${bundleName}", but its main process was built for "${config.appName}". Build it again with its own command (bun run package, or bun run package:preview).`;
+}
+
+/**
+ * How this build registers its link scheme with the system, if it does. A packaged app declares
+ * its scheme in its bundle (Info.plist on a Mac, the .desktop file on Linux) and claims it as the
+ * default at launch. A development build points the scheme at this checkout, except on a Mac,
+ * where it runs inside node_modules' Electron.app, which declares no schemes. The smoke check
+ * claims nothing: registering writes the person's LaunchServices or xdg settings, and would make
+ * a copy in a build folder the one their links open.
+ */
+export function schemeRegistration(
+  packaged: boolean,
+  platform: NodeJS.Platform,
+  smoke: boolean,
+): "bundle" | "checkout" | null {
+  if (smoke) return null;
+  if (packaged) return "bundle";
+  return platform === "darwin" ? null : "checkout";
+}

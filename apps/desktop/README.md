@@ -162,6 +162,12 @@ sign-in screen and the bridge has answered over IPC that nobody is signed in; 1 
 fails to load or comes up without the bridge. It never touches the keychain (the session is in
 memory, so it starts signed out), the network (every request that would leave the computer
 is refused and logged) or the app's data folder: it runs on a throwaway folder in the system's
-temporary folder, removed as it exits, so checking a packaged app on someone's Mac (where
-`~/Library/Application Support/Ponzu` may be 1.x's) writes nothing of theirs. It looks for no
-update.
+temporary folder, removed once the process is gone (whether the check passed, failed, crashed or
+was killed by its caller's timeout), so checking a packaged app on someone's Mac (where
+`~/Library/Application Support/Ponzu` may be 1.x's) writes nothing of theirs. It claims no link
+scheme either, so the copy in `out/` never becomes the one a person's links open. It looks for
+no update.
+
+A packaged app whose bundle and main process disagree on which app they are (a bundle named
+"Ponzu Preview" holding a release's `dist/main.cjs`, say) refuses to start, before it reads any
+data folder; `bun run package:preview` also checks its bundle's main process before it zips it.
