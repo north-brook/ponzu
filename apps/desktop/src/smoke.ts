@@ -2,11 +2,13 @@ import { app, type BrowserWindow, session } from "electron";
 
 /*
  * CI and the release launch the packaged app with PONZU_SMOKE set and expect it to exit 0 once
- * the studio has drawn its sign-in screen. That proves the main process loaded, the studio came
- * off its own scheme, and React ran far enough to put the first screen up. It never touches the
- * keychain (the session lives in memory, so it starts signed out) or the network (every request
- * that would leave the computer is refused, and each is logged). A main process that fails to
- * load hangs on Electron's error dialog until the caller's timeout; a studio that fails exits 1.
+ * the studio has drawn its sign-in screen on the shell's bridge. That proves the main process
+ * loaded, the preload exposed `window.ponzuDesktop` and it answers over IPC (signed out), the
+ * studio came off its own scheme, and React ran far enough to put the first screen up. It never
+ * touches the keychain (the session lives in memory, so it starts signed out) or the network
+ * (every request that would leave the computer is refused, and each is logged). A main process
+ * that fails to load hangs on Electron's error dialog until the caller's timeout; a studio that
+ * fails, or comes up without the bridge, exits 1.
  */
 export const smoke = Boolean(process.env.PONZU_SMOKE);
 
@@ -23,6 +25,18 @@ export function blockNetwork(): void {
   );
 }
 
+/**
+ * Asked in the page: "waiting" until a first screen is up, "signed out" once it is the sign-in
+ * screen and the bridge says so over IPC, and anything else is why the check fails.
+ */
+const SEE = `(async () => {
+  if (document.querySelector('[data-screen="cant-start"]')) return "the studio found no bridge";
+  if (!document.querySelector('[data-screen="sign-in"]')) return "waiting";
+  if (typeof window.ponzuDesktop !== "object") return "the sign-in screen is up without the bridge";
+  const state = await window.ponzuDesktop.session.state();
+  return state.status === "signed_out" ? "signed out" : "the bridge says " + state.status;
+})()`;
+
 export function watchSmoke(window: BrowserWindow): void {
   const exit = (code: number, why: string) => {
     console.error(`smoke: ${why}, exiting ${code}`);
@@ -30,10 +44,9 @@ export function watchSmoke(window: BrowserWindow): void {
   };
   const started = Date.now();
   const look = async () => {
-    const drawn = await window.webContents
-      .executeJavaScript(`Boolean(document.querySelector('[data-screen="sign-in"]'))`)
-      .catch(() => false);
-    if (drawn) return exit(0, "the sign-in screen is up");
+    const seen: string = await window.webContents.executeJavaScript(SEE).catch(() => "waiting");
+    if (seen === "signed out") return exit(0, "the sign-in screen is up, on the bridge");
+    if (seen !== "waiting") return exit(1, seen);
     if (Date.now() - started > PAINT_WITHIN_MS) return exit(1, "no sign-in screen");
     setTimeout(look, 100);
   };

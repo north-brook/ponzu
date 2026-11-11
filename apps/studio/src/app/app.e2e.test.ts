@@ -12,11 +12,16 @@ import { type Browser, chromiumPath, launch, type Page, STUDIO } from "../../scr
 
 setDefaultTimeout(60_000);
 
-/** Builds the app as the desktop package does, into a fresh directory. */
-async function buildApp(): Promise<string> {
+/**
+ * Builds the app as the desktop package does, into a fresh directory. `e2e` keeps Ponzu Cloud in
+ * memory in, which a production build leaves out.
+ */
+async function buildApp(mode: "e2e" | "production"): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "ponzu-studio-"));
-  const build = Bun.spawn(["bunx", "vite", "build", "--outDir", dir], {
+  const build = Bun.spawn(["bunx", "vite", "build", "--mode", mode, "--outDir", dir], {
     cwd: STUDIO,
+    // bun test sets NODE_ENV=test, which a packaging build never has.
+    env: { ...process.env, NODE_ENV: undefined },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -52,7 +57,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   const errors: string[] = [];
 
   beforeAll(async () => {
-    dir = await buildApp();
+    dir = await buildApp("e2e");
     server = serve(dir);
     browser = await launch();
     page = await browser.newPage();
@@ -139,6 +144,29 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByText("What do you want to design?").waitFor();
     expect(await page.getByRole("button", { name: new RegExp(PROMPT) }).count()).toBe(0);
     expect(errors).toEqual([]);
+  });
+});
+
+describe.skipIf(!chromiumPath)("the studio as it ships, without the desktop's bridge", () => {
+  test("carries no in-memory Ponzu Cloud, and says it couldn't start", async () => {
+    const dir = await buildApp("production");
+    const server = serve(dir);
+    const browser = await launch();
+    try {
+      const shipped = await Array.fromAsync(new Bun.Glob("**/*.js").scan(dir));
+      for (const file of shipped) {
+        expect(await Bun.file(join(dir, file)).text()).not.toContain("ponzuFake");
+      }
+      const page = await browser.newPage();
+      await page.goto(server.url);
+      await page.waitForSelector('[data-screen="cant-start"]');
+      expect(await page.textContent("h1")).toBe("Ponzu couldn't start");
+      expect(await page.locator('[data-screen="sign-in"]').count()).toBe(0);
+    } finally {
+      await browser.close();
+      server.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
