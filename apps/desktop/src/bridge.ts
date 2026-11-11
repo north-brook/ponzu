@@ -35,8 +35,11 @@ export type BorrowedToken = { token: string } | { error: BridgeError };
 /** How a sign-in in the browser ended. */
 export type SignInResult =
   | { ok: true }
-  /** The person started another, or closed the window: nothing to say. */
-  | { ok: false; reason: "cancelled" }
+  /**
+   * Ended without its browser coming back: another attempt signed the person in, it ran out,
+   * it was the oldest of too many, or Ponzu quit. Nothing to say.
+   */
+  | { ok: false; reason: "closed" }
   | { ok: false; reason: "failed"; message: string };
 
 /**
@@ -78,9 +81,11 @@ export interface PonzuDesktop {
     accessToken(rejected?: string): Promise<BorrowedToken>;
     /** An error the API answered the studio with, for the session to take in. */
     report(error: BridgeError): void;
-    /** Sign in with GitHub in the system browser. Resolves once it has finished or failed. */
+    /**
+     * Sign in with GitHub in the system browser, beside any attempt still waiting (each stays
+     * able to finish for ten minutes, whatever the window does). Resolves once it has ended.
+     */
     signIn(): Promise<SignInResult>;
-    cancelSignIn(): void;
     signOut(): Promise<void>;
   };
   /** Each link once, those that arrived before the studio listened included. */
@@ -106,7 +111,6 @@ export const CHANNELS = {
   accessToken: "ponzu:session:token",
   report: "ponzu:session:report",
   signIn: "ponzu:session:sign-in",
-  cancelSignIn: "ponzu:session:cancel-sign-in",
   signOut: "ponzu:session:sign-out",
   links: "ponzu:links",
   linksStop: "ponzu:links:stop",

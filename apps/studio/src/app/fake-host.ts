@@ -44,6 +44,14 @@ export interface FakeWorld {
   /** Send a ponzu:// link, as the shell would. */
   link(link: DeepLink): void;
   command(command: MenuCommand): void;
+  /** Keep sign-ins out in the "browser" until `finishSignIn`, as a real one would be. */
+  holdSignIn(): void;
+  /** The browser comes back: every held sign-in finishes, the first signing in. */
+  finishSignIn(): void;
+  /** How many sign-ins the screen has started. */
+  signInsStarted: number;
+  /** How many of them have ended, signed in or not: only the "browser" ends one. */
+  signInsEnded: number;
 }
 
 declare global {
@@ -147,6 +155,8 @@ export function fakeHost(): Host {
 
   void seed(backend, client.api, workspace.id, workspace.repos[0]!.id, drawBoard, teammate);
   const teammateApi = backend.connect(teammate).api;
+  /** Sign-ins out in the "browser", while a test holds them there. */
+  let held: { promise: Promise<void>; resolve: () => void } | null = null;
 
   window.ponzuFake = {
     backend,
@@ -169,7 +179,22 @@ export function fakeHost(): Host {
     command: (command) => {
       for (const listener of commands) listener(command);
     },
+    holdSignIn() {
+      if (held) return;
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      held = { promise, resolve };
+    },
+    finishSignIn() {
+      held?.resolve();
+      held = null;
+    },
+    signInsStarted: 0,
+    signInsEnded: 0,
   };
+  const world = window.ponzuFake;
 
   return {
     session,
@@ -177,10 +202,18 @@ export function fakeHost(): Host {
     live: client.live,
     lights: "drawn",
     async signIn() {
-      await session.completeSignIn({ code: "fake", codeVerifier: "fake" });
-      return { ok: true };
+      world.signInsStarted++;
+      try {
+        if (held) await held.promise;
+        // The first back signs in; the rest find the person signed in already, as the shell's do.
+        if (session.getState().status !== "signed_in") {
+          await session.completeSignIn({ code: "fake", codeVerifier: "fake" });
+        }
+        return { ok: true };
+      } finally {
+        world.signInsEnded++;
+      }
     },
-    cancelSignIn() {},
     persistence: async () => "keychain",
     onLink(listener) {
       links.add(listener);
