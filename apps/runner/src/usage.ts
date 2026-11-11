@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import type { ModelUsage } from "./api/protocol.ts";
+import { writeDurably } from "./durable.ts";
 
 const FIELDS = [
   "inputTokens",
@@ -54,8 +54,7 @@ export class UsageMeter {
   }
 
   private save(): void {
-    mkdirSync(dirname(this.path), { recursive: true });
     const totals = [...this.totals.values()];
-    writeFileSync(this.path, JSON.stringify({ sessionId: this.session, totals }));
+    writeDurably(this.path, JSON.stringify({ sessionId: this.session, totals }));
   }
 }
