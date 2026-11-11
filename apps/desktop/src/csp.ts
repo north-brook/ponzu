@@ -32,13 +32,16 @@ export function contentSecurityPolicy(where: {
     // A design's pictures from the web, its own files and people's GitHub avatars among them.
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "media-src": ["'self'", "blob:", assets],
-    // Realtime's socket is the same host over wss.
+    // Realtime's socket is the same host over wss. The Google Fonts a board uses are read as
+    // well, to go into the picture of where a comment was left (comment-picture.tsx).
     "connect-src": [
       "'self'",
       new URL(where.apiUrl).origin,
       realtime,
       realtime.replace(/^https:/, "wss:"),
       assets,
+      FONT_CSS,
+      FONT_FILES,
     ],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],

@@ -156,6 +156,58 @@ export async function postMessage(
   return row!;
 }
 
+/**
+ * Give a person's comment its picture (`payload.picture`): the `comment` item of `messageId`
+ * that `userId` wrote. The first picture is the one it keeps, as a photo sent is: attaching
+ * again changes nothing. Answers the item as it stands, picture and all, or null when the design
+ * has no such comment of theirs (its op not committed yet, or never).
+ */
+export async function attachCommentPicture(
+  db: Db,
+  {
+    designId,
+    messageId,
+    userId,
+    picture,
+  }: { designId: string; messageId: string; userId: string; picture: Json },
+): Promise<ThreadItem | null> {
+  const theirs = and(
+    eq(threadItems.designId, designId),
+    eq(threadItems.kind, "comment"),
+    eq(threadItems.userId, userId),
+    sql`${threadItems.payload}->>'messageId' = ${messageId}`,
+  );
+  const attached = db.$with("attached").as(
+    db
+      .update(threadItems)
+      .set({
+        payload: sql`${threadItems.payload} || jsonb_build_object('picture', ${JSON.stringify(picture)}::jsonb)`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(theirs, sql`not (${threadItems.payload} ? 'picture')`))
+      .returning(),
+  );
+  // The item as the update left it, or as it was when it had a picture already (`thread_items`
+  // reads as before the statement here).
+  const [row] = await run(
+    db
+      .with(attached)
+      .select({
+        before: threadItems,
+        payload: sql<Json | null>`${attached.payload}`,
+        updatedAt: sql<string | null>`${attached.updatedAt}`,
+      })
+      .from(threadItems)
+      .leftJoin(attached, eq(attached.id, threadItems.id))
+      .where(theirs),
+  );
+  if (!row) return null;
+  const { before, payload, updatedAt } = row;
+  return payload === null
+    ? before
+    : { ...before, payload, updatedAt: updatedAt ? new Date(updatedAt) : before.updatedAt };
+}
+
 /** A page of a design's thread, oldest first: the newest `limit` items, or those before `before`. */
 export async function listThreadItems(
   db: Db,

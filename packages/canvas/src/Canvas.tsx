@@ -97,10 +97,18 @@ export interface CanvasProps {
   initialFit?: "page" | "first";
   /**
    * Where a link opens: an artboard, its page showing with the board framed, or a page. With
-   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). A link is
-   * followed once; a new `at` follows the same one again (a comment's board, clicked twice).
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). With `thread`, a
+   * comment: its pin in the middle of the view and its thread open, resolved or not; when the
+   * thread is gone, `spot` on `page` is where it was, and the view goes there instead. A link is
+   * followed once; a new `at` follows the same one again (a comment, clicked twice).
    */
-  link?: { page?: string; artboard?: string; at?: number };
+  link?: {
+    page?: string;
+    artboard?: string;
+    thread?: string;
+    spot?: { x: number; y: number };
+    at?: number;
+  };
   className?: string;
 }
 
@@ -128,6 +136,8 @@ const FIRST_TOP = 16 + 22;
 const LABEL = 22;
 /** Boards are ever so slightly rounded: screen px, at any zoom. */
 const BOARD_RADIUS = 4;
+/** How much of the page round a comment's pin a link to it shows, at most at 100%. */
+const SPOT_ROOM = { w: 720, h: 480 };
 /** The ring round a working board sits this many screen px off its edge. */
 const RING_GAP = 4;
 
@@ -494,6 +504,15 @@ export function Canvas({
     }
     if (ab) fit({ x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) }, viewportSize(), 96, 1);
   };
+  /** A spot on a page in the middle of the view, with room round it to see what is there. */
+  const showSpot = (pageId: string, spot: { x: number; y: number }) => {
+    if (pageId !== page?.id) {
+      fitted.current = `${pageId}:${initialFit}`;
+      setPageId(pageId);
+    }
+    const { w, h } = SPOT_ROOM;
+    fit({ x: spot.x - w / 2, y: spot.y - h / 2, w, h }, viewportSize(), 48, 1);
+  };
 
   // Open where a link said, once the document is in: on its board, or on its page when the board
   // isn't there. After the page's own fit, so the first frame painted is the board's. A
@@ -502,17 +521,36 @@ export function Canvas({
   const shownLink = useRef<{ key: string; sized: boolean } | null>(null);
   useLayoutEffect(() => {
     if (!link || !doc) return;
+    const key = `${link.page}:${link.artboard}:${link.thread}:${link.at ?? ""}`;
+    // A comment: its pin in the middle of the view, its thread open, resolved or not. One that is
+    // gone is the spot it was at, on its page, when the link says where that was.
+    const thread = link.thread ? doc.threads.find((t) => t.id === link.thread) : undefined;
+    const spotPage = thread
+      ? threadPage(doc, thread)?.id
+      : link.spot && link.page
+        ? linkTarget(doc, { page: link.page })?.pageId
+        : undefined;
+    if (spotPage) {
+      if (shownLink.current?.key === key) return;
+      shownLink.current = { key, sized: true };
+      const board = thread?.artboardId ? findArtboard(doc, thread.artboardId)?.artboard : undefined;
+      const spot = thread
+        ? { x: (board?.x ?? 0) + thread.x, y: (board?.y ?? 0) + thread.y }
+        : link.spot!;
+      showSpot(spotPage, spot);
+      if (thread) setOpenThread(thread.id);
+      return;
+    }
     const to = linkTarget(doc, link);
     const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
     const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
-    const key = `${link.page}:${link.artboard}:${link.at ?? ""}`;
     const shown = shownLink.current;
     if (shown?.key === key && (shown.sized || !sized)) return;
     shownLink.current = { key, sized };
     if (to && ab) showBoard(to.pageId, ab);
     else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link?.page, link?.artboard, link?.at, doc, measured]);
+  }, [link?.page, link?.artboard, link?.thread, link?.at, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file

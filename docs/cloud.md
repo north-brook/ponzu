@@ -1013,7 +1013,8 @@ again and is said in the thread instead (`message_refused`).
 ThreadItem  = { id, seq, at, streaming, kind, payload }
 kind        payload                                                       written by
 message     { text, from: Person }                                        the API, with the event
-comment     { threadId, messageId, text, artboardId, artboardName, from } the API, with the event
+comment     { threadId, messageId, text, artboardId, artboardName, pageId,    the API, with the event
+              pageName, at, from, picture? }
 assistant   { text }                    markdown, streams                 the runner
 tool        { label, steps, artboards } one stretch of work               the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
@@ -1024,10 +1025,17 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
             { type: "pull_request", number, url, title, state }           the API
 ```
 
-A `comment` item also carries `board`, a copy of the artboard as it was when the comment was
-made (up to 64 KB of JSON, `FROZEN_BOARD_BYTES`), which its thumbnail in the thread draws, with
-the pin placed on it: it shows what was commented on, not the board as it later became. A
-larger board, or a comment from before copies were kept, has none, and its thumbnail is live.
+A `comment` item also says where it was left (`pageId`, `pageName`, and `at`, the pin's place on
+the page in page px) and, once its author's app has attached one, `picture`: the area round the
+pin as it was when the comment was made, the pin drawn in with its number, as `{ light, dark,
+width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, WebP at twice that). The app that sent
+the comment draws it from the document as it stood then, uploads it with `POST
+/v1/designs/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, stored
+under `comments/`) and attaches it with `…/picture/complete` once the comment's op is committed
+(404 before that); the first picture attached is the one it keeps. Sending a comment never waits
+on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
+says where it was left instead. Older comment items may carry `board`, a copy of the board an
+earlier thumbnail drew; nothing reads it.
 
 A client renders the thread from these alone. A `tool` item is a stretch of tool calls
 between two things the agent says, folded to one line: while it streams it is the working
@@ -1450,6 +1458,7 @@ Under a design's asset key:
 | `assets/<name>` | a file of the design, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `designs.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
+| `comments/<message id>-<theme>-<random>.webp` | the picture of where a comment was left, in each theme |
 
 At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
 picture, copied from the previews when it opens, under a random key that opens nothing else

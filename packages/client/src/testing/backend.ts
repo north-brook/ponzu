@@ -5,13 +5,20 @@ import {
   type CommittedOp,
   type Doc,
   emptyDoc,
+  findArtboard,
   InvalidOpError,
   newId,
   newOpId,
   type Op,
+  threadPage,
 } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
-import type { QuestionBody, RunErrorCode, ThreadItem } from "@ponzu/runner/protocol";
+import {
+  COMMENT_PICTURE,
+  type QuestionBody,
+  type RunErrorCode,
+  type ThreadItem,
+} from "@ponzu/runner/protocol";
 import type { AnswerBody, Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, networkError } from "../errors.ts";
@@ -107,6 +114,8 @@ export interface FakeDesign {
   github: FakePullRequests | null;
   /** The files people uploaded to it: `assets/<name>` to their type. */
   assets: Map<string, string>;
+  /** The pictures of people's comments, `comments/<name>` to their bytes, by upload id. */
+  pictures: Map<string, { ref: string; bytes: Uint8Array; userId: string }>;
   /** Stops people asked for, oldest first. */
   stops: string[];
   /** What it was made to run on, when the create said. */
@@ -725,6 +734,7 @@ export class FakeBackend {
               branch,
               github: null,
               assets: new Map(),
+              pictures: new Map(),
               stops: [],
               thread: [],
               questions: [],
@@ -943,6 +953,47 @@ export class FakeBackend {
             const ref = `assets/${stem}-${this.id("x").slice(-6)}${ext}`;
             design.assets.set(ref, file.type);
             return { id: this.id("up"), ref, url: `${assetsUrl(design)}${ref}` };
+          }),
+        uploadCommentPicture: (id, messageId, files) =>
+          call(() => {
+            const design = writable(id);
+            return (["light", "dark"] as const).map((theme) => {
+              const upload = this.id("up");
+              const ref = `comments/${messageId}-${theme}-${upload.slice(-6)}.webp`;
+              design.pictures.set(upload, { ref, bytes: files[theme], userId: person.id });
+              return upload;
+            });
+          }),
+        attachCommentPicture: (id, messageId, uploads) =>
+          call(() => {
+            const design = writable(id);
+            const refs = uploads.map((upload) => design.pictures.get(upload));
+            const of = (theme: string) =>
+              refs.find((r) => r?.userId === person.id && r.ref.includes(`${messageId}-${theme}-`));
+            const light = of("light");
+            const dark = of("dark");
+            if (!light || !dark) {
+              throw new ApiError(400, "invalid_request", "A comment's picture is its two files.");
+            }
+            // As the API's statement does: the author's comment keeps the first it is given.
+            const entry = design.thread.find(
+              ({ item, userId }) =>
+                item.kind === "comment" &&
+                item.payload.messageId === messageId &&
+                userId === person.id,
+            );
+            if (!entry || entry.item.kind !== "comment") {
+              throw new ApiError(404, "not_found", "There is no such comment of yours.");
+            }
+            entry.item.payload.picture ??= {
+              light: light.ref,
+              dark: dark.ref,
+              width: COMMENT_PICTURE.width,
+              height: COMMENT_PICTURE.height,
+            };
+            entry.updatedAt = this.now();
+            this.changed();
+            return { picture: entry.item.payload.picture };
           }),
         pullRequest: {
           get: (id) => call(() => github(readable(id)).tab()),
@@ -1394,17 +1445,24 @@ function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
         ? { thread: doc.threads.find((t) => t.id === op.id), message: op.message }
         : null;
   if (!said?.thread) return [];
-  const artboardId = said.thread.artboardId ?? null;
-  const board = doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
+  const thread = said.thread;
+  const artboardId = thread.artboardId ?? null;
+  const board = artboardId ? findArtboard(doc, artboardId)?.artboard : undefined;
+  const page = doc.threads.some((t) => t.id === thread.id) ? threadPage(doc, thread) : null;
   return [
     {
-      threadId: said.thread.id,
+      threadId: thread.id,
       messageId: said.message.id,
       text: said.message.text,
       artboardId,
       artboardName: board?.name ?? null,
-      // The board as it is now, which the comment's thumbnail keeps showing.
-      ...(board ? { board: structuredClone(board) } : {}),
+      ...(page
+        ? {
+            pageId: page.id,
+            pageName: page.name,
+            at: { x: (board?.x ?? 0) + thread.x, y: (board?.y ?? 0) + thread.y },
+          }
+        : {}),
     },
   ];
 }
