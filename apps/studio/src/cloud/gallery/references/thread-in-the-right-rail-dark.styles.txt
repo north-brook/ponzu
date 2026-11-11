@@ -12,10 +12,9 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-ground span rgba(244, 243, 239, 0.1)
 image img[Bryce (you)] bryce.svg
 ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
-ground button[Share] shadow rgb(63, 61, 57) 0px 0px 0px 1px inset
+ground button[Share] rgb(26, 26, 25) shadow rgb(63, 61, 57) 0px 0px 0px 1px inset, rgb(26, 26, 25) 0px 0px 0px 1.5px
 icon svg[Share] 11×11 rgb(183, 179, 169) stroke 2.2px
 text "#412" rgb(183, 179, 169) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(183, 179, 169) stroke 2.2px
@@ -23,6 +22,7 @@ icon svg[Checks passed] 10×10 rgb(183, 179, 169) stroke 2.4px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
+ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
 image img[Workspace: Northbrook] image/png 54474398
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter

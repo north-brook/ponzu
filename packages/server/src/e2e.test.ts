@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Renderer } from "@ponzu/render";
+import type { ChromiumOptions } from "@ponzu/render/chromium";
 import { LocalWorkspace, readJournal, serve } from "./index.ts";
 
 let dir: string;
@@ -21,8 +22,37 @@ async function chromium(): Promise<Renderer | undefined> {
   if (browser) return browser;
   const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
   const executablePath = findChromium();
-  if (executablePath) browser = new ChromiumRenderer({ executablePath });
+  if (executablePath) browser = new ChromiumRenderer({ executablePath, preparePage: watchVideos });
   return browser;
+}
+
+/** What the videos on render pages did, as each page tells it: their seeks and the frames drawn. */
+const videoLog: string[] = [];
+type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
+async function watchVideos(page: Page) {
+  page.on("console", (m) => {
+    if (m.text().startsWith("video ")) videoLog.push(m.text());
+  });
+  await page.addInitScript(() => {
+    const state = (v: HTMLVideoElement) =>
+      `currentTime ${v.currentTime}, readyState ${v.readyState}, paused ${v.paused}`;
+    for (const type of ["loadedmetadata", "seeking", "seeked", "error"])
+      document.addEventListener(
+        type,
+        (e) => {
+          if (e.target instanceof HTMLVideoElement)
+            console.log(`video ${type}: ${state(e.target)}`);
+        },
+        true,
+      );
+    const ask = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    HTMLVideoElement.prototype.requestVideoFrameCallback = function (cb) {
+      return ask.call(this, (now, frame) => {
+        console.log(`video frame drawn: mediaTime ${frame.mediaTime}, ${state(this)}`);
+        cb(now, frame);
+      });
+    };
+  });
 }
 
 const text = (r: any) =>
@@ -238,12 +268,30 @@ test("presence says what an agent is doing, and in which file", async () => {
   expect(claude()).toMatchObject({ status: "tightening the hero" });
   expect(claude().working).toContain(ab.id);
 
-  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 1 } });
-  await Bun.sleep(100);
+  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 5 } });
+  for (let i = 0; i < 200 && !claude().listening; i++) await Bun.sleep(5);
   expect(claude().listening).toBe(true);
   expect(claude().working).toEqual([]);
   expect(claude().status).toBeUndefined();
-  await waiting;
+  // A person's comment ends the wait, rather than sitting it out.
+  const by = { kind: "user", name: "Bryce" } as const;
+  design.apply(
+    {
+      op: "thread.create",
+      thread: {
+        id: "th_presence",
+        artboardId: ab.id,
+        x: 0,
+        y: 0,
+        status: "open",
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [{ id: "m_presence", author: by, text: "taller hero", createdAt: 1 }],
+      },
+    },
+    by,
+  );
+  expect(text(await waiting)).toContain("taller hero");
   expect(claude().listening).toBe(false);
   expect(claude().listenedAt).toBeGreaterThan(0);
 });
@@ -367,11 +415,21 @@ test("screenshots seek a video from the design's assets/", async () => {
     });
     const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
     const image = async (at: number) => {
+      videoLog.length = 0;
       const shot = await client.callTool({ name: "screenshot", arguments: { id: abId, at } });
-      return (shot.content as { type: string; data?: string }[]).find((c) => c.type === "image")!
-        .data;
+      const data = (shot.content as { type: string; data?: string }[]).find(
+        (c) => c.type === "image",
+      )?.data;
+      // What the screenshot said and what its page's video did, for a failure to explain itself.
+      return { data, said: `at ${at}ms: ${text(shot)}\n  ${videoLog.join("\n  ")}` };
     };
-    expect(await image(300)).not.toBe(await image(1500));
+    const red = await image(300);
+    const blue = await image(1500);
+    expect(red.data).toBeDefined();
+    expect(blue.data).toBeDefined();
+    expect(blue.data, `Both frames are the same picture.\n${red.said}\n${blue.said}`).not.toBe(
+      red.data,
+    );
   } finally {
     ws.renderer = undefined;
   }

@@ -14,10 +14,14 @@ type Effort = Defaults["effort"];
 
 /** As the API's own list (apps/api/src/claude/models.ts). */
 const MODELS = [
+  { id: "claude-fable-5-2", label: "Fable 5.2" },
   { id: "claude-opus-5-5", label: "Opus 5.5" },
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
   { id: "claude-haiku-5-5", label: "Haiku 5.5" },
 ];
+/** The API's `DEFAULT_MODEL` and `DEFAULT_EFFORT`: what new designs run on until a person chooses. */
+const DEFAULT_MODEL = "claude-opus-5-5";
+const DEFAULT_EFFORT: Effort = "medium";
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const SIGN_IN_MS = 10 * 60_000;
 const YEAR_MS = 365 * 24 * 3600_000;
@@ -205,8 +209,8 @@ export class FakeClaude {
   defaultsOf(userId: string): Defaults {
     const chosen = this.defaults.get(userId);
     return {
-      model: chosen?.model ?? MODELS[0]!.id,
-      effort: chosen?.effort ?? "high",
+      model: chosen?.model ?? DEFAULT_MODEL,
+      effort: chosen?.effort ?? DEFAULT_EFFORT,
       models: MODELS,
       efforts: EFFORTS,
     };

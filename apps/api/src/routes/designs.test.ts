@@ -159,7 +159,7 @@ describe("POST /v1/designs", () => {
     });
     expect(await session(defaulted.body.id)).toMatchObject({
       model: "claude-opus-5-5",
-      effort: "high",
+      effort: "medium",
     });
     expect(bad.status).toBe(400);
   });

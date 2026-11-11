@@ -227,6 +227,15 @@ export const COMPOSITIONS: Composition[] = [
     id: "crowded-chrome-closed",
     title: "Chrome · five people and Update branch, rail closed",
     ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "crowded-chrome-min-window",
+    title: "Chrome · five people and Update branch, the smallest window",
+    ...MIN,
+    // No reference picture: the page tabs take whatever the cluster leaves, so a pixel of
+    // difference in how a platform sets "Update branch" moves the tabs' edge, the fade and the
+    // "+", past the picture's tolerance on Linux. chrome.test.ts holds its layout by measure.
   },
   { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },

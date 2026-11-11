@@ -31,6 +31,8 @@ test("a computed radius splits into its lengths at top-level spaces only", () =>
 test("each corner is the design's or the canvas's few px, whichever is larger", () => {
   expect(cornersCss(circular([16, 16, 16, 16]), "var(--r)")).toBe("max(16px, var(--r))");
   expect(cornersCss(circular([0, 0, 0, 0]), "var(--r)")).toBe("var(--r)");
+  // A radius smaller than the canvas's still gets the canvas's.
+  expect(cornersCss(circular([1, 1, 1, 1]), "4px")).toBe("max(1px, 4px)");
   expect(cornersCss(circular([16, 0, 16, 0]), "3px")).toBe("max(16px, 3px) 3px max(16px, 3px) 3px");
 });
 

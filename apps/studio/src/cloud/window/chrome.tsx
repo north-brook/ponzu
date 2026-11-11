@@ -1,7 +1,10 @@
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons";
+import { createContext, type PointerEvent, useContext } from "react";
 import { IconButton } from "../ui/button.tsx";
+import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { paneHeld, useShortcut } from "../ui/shortcut.ts";
+import type { Pane } from "./panes.ts";
 
 /**
  * What sits at the chrome's left before the sidebar toggle. `native`: the Mac's own traffic
@@ -32,12 +35,50 @@ export function TrafficLights({ drawn }: { drawn: boolean }) {
 }
 
 /**
- * The chrome's hairline: one before the page tabs (at the sidebar's edge while it is open, just
- * past the design's name while it is closed), one at the rail's edge.
+ * The chrome's hairline: one before the page tabs (on the sidebar's edge while it is open, just
+ * past the design's name while it is closed), one before the thread toggle (on the rail's edge
+ * while it is open, just past the people and the next action while it is closed).
  */
-export function ChromeDivider() {
-  return <span aria-hidden data-chrome-divider className="h-4 w-px shrink-0 bg-sep" />;
+export function ChromeDivider({ pane }: { pane?: Pane }) {
+  const grip = useContext(DividerGrips)?.(pane) ?? null;
+  return (
+    <span
+      aria-hidden
+      data-chrome-divider
+      className={cn(
+        "relative h-4 w-px shrink-0 bg-sep",
+        // As a pane's edge hints (ui/resizable.tsx): only once the pointer rests on it, and
+        // stronger while it is held.
+        grip &&
+          "transition-[background-color] duration-(--dur-hover) ease-out hover:bg-dry hover:delay-(--dur-linger) has-data-held:bg-icon-soft has-data-held:delay-0",
+      )}
+    >
+      {grip ? (
+        // The handle: the chrome's height and 4 either side of the hairline, inside the 12 the
+        // chrome keeps clear around it, so it never covers a control.
+        <span
+          data-chrome-grip={pane}
+          className="app-no-drag -inset-x-1 -inset-y-[11px] absolute cursor-col-resize"
+          onPointerDown={grip.onPointerDown}
+          onDoubleClick={grip.onDoubleClick}
+        />
+      ) : null}
+    </span>
+  );
 }
+
+/**
+ * A chrome divider standing on an open pane's edge is a handle for that edge too: a drag sizes
+ * the pane as its own edge below does, and a double click returns it to the design's width. The
+ * keyboard's way is the edge itself, which is in the tab order.
+ */
+export interface DividerGrip {
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onDoubleClick: () => void;
+}
+
+/** The window's answer for a divider: its pane's grip, or null while that pane is closed. */
+export const DividerGrips = createContext<((pane?: Pane) => DividerGrip | null) | null>(null);
 
 /**
  * Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌘J does the rail, except

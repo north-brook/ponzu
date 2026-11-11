@@ -113,10 +113,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await active()).toBe("search-design-dsn_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
-    // Closing leaves the Search button alone: focus there would raise its tooltip, unasked.
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).not.toBe(
-      "Search",
-    );
+    // Back where ⌘K found it: nowhere, so the next key goes to the window, and the Search
+    // button is left alone: focus there would raise its tooltip, unasked.
+    await page.waitForFunction(() => document.activeElement === document.body);
     expect(await page.$('[role="tooltip"]')).toBeNull();
   });
   test("⌘K with the sidebar collapsed opens it, then searches", async () => {
