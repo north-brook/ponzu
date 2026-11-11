@@ -121,7 +121,7 @@ export class UpstreamError extends Error {
   readonly status?: number;
 
   constructor(
-    readonly service: "workos" | "github" | "storage" | "anthropic",
+    readonly service: "workos" | "github" | "storage" | "model",
     message: string,
     options: { status?: number; cause?: unknown } = {},
   ) {
@@ -135,7 +135,7 @@ const SERVICE_NAME = {
   workos: "the sign-in service",
   github: "GitHub",
   storage: "its file storage",
-  anthropic: "the model it asks",
+  model: "the model it asks",
 } as const;
 
 /** What Hono's own middleware (a body limit, a rate limiter) means by each status it refuses with. */

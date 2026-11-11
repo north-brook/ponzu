@@ -1,4 +1,9 @@
-import type { Model, StructuredAnswer, StructuredRequest } from "../deps/model.ts";
+import {
+  CLAUDE_HAIKU,
+  type Model,
+  type StructuredAnswer,
+  type StructuredRequest,
+} from "../deps/model.ts";
 import { UpstreamError } from "../http/errors.ts";
 
 /** What the fake answers one request with. */
@@ -16,6 +21,7 @@ export type FakeReply =
  * `otherwise`. Every answer costs the same made-up tokens.
  */
 export class FakeModel implements Model {
+  readonly id = CLAUDE_HAIKU;
   readonly requests: StructuredRequest<unknown>[] = [];
   readonly replies: FakeReply[] = [];
   otherwise: FakeReply = {
@@ -49,19 +55,19 @@ export class FakeModel implements Model {
     const reply = this.replies.shift() ?? this.otherwise;
     const usage = { input: 1_200, output: 90 };
     if ("fail" in reply) {
-      throw new UpstreamError("anthropic", `the model call failed (${reply.fail})`, {
+      throw new UpstreamError("model", `the model call failed (${reply.fail})`, {
         status: reply.fail,
       });
     }
     if ("hang" in reply) {
       await new Promise<never>((_, reject) => {
         const fail = () =>
-          reject(new UpstreamError("anthropic", "the model call failed (no answer)", {}));
+          reject(new UpstreamError("model", "the model call failed (no answer)", {}));
         if (request.signal?.aborted) fail();
         request.signal?.addEventListener("abort", fail, { once: true });
       });
     }
     const parsed = request.schema.safeParse((reply as { output: unknown }).output);
-    return { output: parsed.success ? parsed.data : null, stopReason: "end_turn", usage };
+    return { output: parsed.success ? parsed.data : null, finishReason: "stop", usage };
   }
 }

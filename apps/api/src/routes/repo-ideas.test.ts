@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { suspendWorkspace, upsertRepos } from "@ponzu/db";
-import { IDEAS_MODEL, IDEAS_POLICY } from "../ideas/ideas.ts";
+import { CLAUDE_HAIKU } from "../deps/model.ts";
+import { IDEAS_POLICY } from "../ideas/ideas.ts";
 import { IDEAS_SYSTEM_PROMPT } from "../ideas/prompt.ts";
 import { call, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
 import type { FakeRepository } from "../testing/fake-github.ts";
@@ -86,7 +87,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     }
     await t.backgroundDone();
     expect(t.model.requests).toHaveLength(1);
-    expect(t.model.requests[0]).toMatchObject({ model: IDEAS_MODEL, effort: "medium" });
+    expect(t.model.requests[0]).toMatchObject({ effort: "medium" });
 
     // The token it read with reached this repo alone, and only to read it.
     const minted = t.github.installationTokenRequests.at(-1)!;
@@ -107,7 +108,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(line).toMatchObject({
       repoId: ws.repo.id,
       workspaceId: ws.id,
-      model: IDEAS_MODEL,
+      model: CLAUDE_HAIKU,
       attempts: 1,
       usage: { input: 1_200, output: 90 },
       ideas: 4,
@@ -198,12 +199,12 @@ describe("GET /v1/repos/:id/ideas", () => {
     await t.backgroundDone();
 
     const [first, second] = t.model.requests;
-    expect(first!.system).toBe(IDEAS_SYSTEM_PROMPT);
-    expect(first!.system).not.toContain("evil");
+    expect(first!.instructions).toBe(IDEAS_SYSTEM_PROMPT);
+    expect(first!.instructions).not.toContain("evil");
     // The second ask says why the first was turned away, in Ponzu's words, never the answer's.
-    expect(second!.system.startsWith(IDEAS_SYSTEM_PROMPT)).toBe(true);
-    expect(second!.system).toContain("an idea had a web or email address");
-    expect(second!.system).not.toContain("evil");
+    expect(second!.instructions.startsWith(IDEAS_SYSTEM_PROMPT)).toBe(true);
+    expect(second!.instructions).toContain("an idea had a web or email address");
+    expect(second!.instructions).not.toContain("evil");
 
     const prompt = first!.prompt;
     const open = prompt.indexOf("<repository ");
@@ -229,7 +230,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     await ideasOf("maya");
     await t.backgroundDone();
     expect(t.model.requests).toHaveLength(2);
-    expect(t.model.requests[1]!.system).toContain("it had 3 ideas, not 4");
+    expect(t.model.requests[1]!.instructions).toContain("it had 3 ideas, not 4");
     expect((await ideasOf("maya")).body.status).toBe("ready");
     expect(logged("ideas_generated")).toMatchObject([{ attempts: 2 }]);
   });

@@ -29,7 +29,7 @@ src/
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
     poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
     realtime.ts     real: seals live queries with the branch's Realtime secret
-    model.ts        real: a Claude model on Ponzu's own Anthropic key, structured answers
+    model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets

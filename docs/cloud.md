@@ -1006,8 +1006,14 @@ order summary on the right"). They are generated, never written by hand
 
 - **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own `ANTHROPIC_API_KEY`,
   not the person's Claude account: a subscription token cannot make direct API calls, and the
-  ideas show before anyone has connected Claude. About $0.0008 a repo. This is the only model
+  ideas show before anyone has connected Claude. About $0.0009 a repo. This is the only model
   call the API makes; a design's agent still runs on the person's own plan in its sandbox.
+- **Through the AI SDK** (`ai`, `generateText` with `Output.object` and the zod schema, a 30
+  second timeout, one retry), reaching Anthropic with the `@ai-sdk/anthropic` provider and our
+  own key rather than the Vercel AI Gateway: the key is already on every environment, local
+  development and tests need no Vercel login, and no gateway has to be enabled or billed on the
+  project. Going through the gateway is one line in `deps/model.ts` (`createClaude`), plus
+  `AI_GATEWAY_API_KEY` or the project's OIDC token.
 - **Per repo**, on `repos.ideas`, shared by everyone who can read the repo. `GET
   /v1/repos/:id/ideas` answers `ready`, `generating` or `none` to anyone `requireRepo` lets
   read it, a 404 to anyone else.
@@ -1030,7 +1036,7 @@ order summary on the right"). They are generated, never written by hand
 - **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
   every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
   close (every `<` and `>` in it is replaced). The answer is structured output, and is kept only
-  if all four ideas are plain sentences of at most 90 characters, with no address, markup, file
+  if all four ideas are plain imperative sentences of at most 90 characters, with no address, markup, file
   name or mention of Ponzu, AI, code or the repo. One broken answer is asked for again, then
   nothing is kept.
 

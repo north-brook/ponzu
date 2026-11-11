@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { systemClock } from "@ponzu/sandbox";
 import { createGithub } from "../src/deps/github.ts";
-import { createAnthropicModel } from "../src/deps/model.ts";
+import { createClaude } from "../src/deps/model.ts";
 import { askForIdeas, type Tally } from "../src/ideas/ideas.ts";
 import { ideasPrompt } from "../src/ideas/prompt.ts";
 import { readRepository } from "../src/ideas/read-repo.ts";
@@ -47,7 +47,7 @@ const github = createGithub({
   fetch: (url, init) => fetch(url, init),
   clock: systemClock,
 });
-const model = createAnthropicModel({ apiKey: env.ANTHROPIC_API_KEY, fetch: (u, i) => fetch(u, i) });
+const model = createClaude({ apiKey: env.ANTHROPIC_API_KEY, fetch: (u, i) => fetch(u, i) });
 
 /** A token for this one repository, as the App, to read it with: what the API mints. */
 async function appToken(fullName: string): Promise<string> {

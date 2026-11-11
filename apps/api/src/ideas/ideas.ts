@@ -19,9 +19,6 @@ import { isEmpty } from "./snapshot.ts";
  * screen shows no ideas, and the repo is tried again an hour later.
  */
 
-/** The model, by its exact id. */
-export const IDEAS_MODEL = "claude-haiku-5-5";
-
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 
@@ -148,7 +145,7 @@ export async function generateRepoIdeas(
       if ("rejected" in asked) {
         log.warn("ideas_rejected", {
           ...ids,
-          model: IDEAS_MODEL,
+          model: deps.model.id,
           ...tally,
           reason: asked.rejected,
         });
@@ -165,7 +162,7 @@ export async function generateRepoIdeas(
     });
     log.info("ideas_generated", {
       ...ids,
-      model: IDEAS_MODEL,
+      model: deps.model.id,
       ...tally,
       ideas: ideas.length,
       saved,
@@ -174,7 +171,7 @@ export async function generateRepoIdeas(
   } catch (error) {
     log.warn("ideas_failed", {
       ...ids,
-      model: IDEAS_MODEL,
+      model: deps.model.id,
       ...tally,
       timedOut: deadline.aborted,
       error,
@@ -205,8 +202,7 @@ export async function askForIdeas(
   while (tally.attempts < ATTEMPTS) {
     tally.attempts++;
     const answer: StructuredAnswer<IdeasAnswer> = await model.structured({
-      model: IDEAS_MODEL,
-      system: rejected
+      instructions: rejected
         ? `${IDEAS_SYSTEM_PROMPT}\n\nAn earlier answer was turned away because ${rejected}. Keep to every rule.`
         : IDEAS_SYSTEM_PROMPT,
       prompt,
@@ -221,7 +217,7 @@ export async function askForIdeas(
     tally.usage.output += answer.usage.output;
     const checked: ReturnType<typeof checkIdeas> = answer.output
       ? checkIdeas(answer.output)
-      : { ok: false, reason: `it was not in the shape asked for (${answer.stopReason})` };
+      : { ok: false, reason: `it was not in the shape asked for (${answer.finishReason})` };
     if (checked.ok) return { ideas: checked.ideas };
     rejected = checked.reason;
   }
