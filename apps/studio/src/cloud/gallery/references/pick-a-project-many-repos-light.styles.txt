@@ -1,4 +1,4 @@
-ground div rgb(232, 230, 224)
+ground div rgb(238, 237, 233)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
@@ -58,7 +58,7 @@ text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Settled" rgb(94, 91, 84) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
-ground main rgb(244, 243, 239)
+ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "What do you want to design?" rgb(17, 17, 16) 600 34px Funnel Display
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(17, 17, 16) 400 16px Inter

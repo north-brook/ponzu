@@ -1,8 +1,8 @@
-ground div rgb(232, 230, 224)
+ground div rgb(238, 237, 233)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-ground main rgb(244, 243, 239)
+ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 ground span[Setup] rgb(17, 17, 16)
 ground span[Setup] rgb(17, 17, 16)
 ground span[Setup] rgb(211, 208, 200)

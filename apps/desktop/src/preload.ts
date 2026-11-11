@@ -44,6 +44,7 @@ function analytics(): AnalyticsSetup | null {
 
 const desktop: PonzuDesktop = {
   platform: process.platform,
+  glass: argument("glass") === "1",
   version: argument("version"),
   config: {
     apiUrl: argument("api"),
