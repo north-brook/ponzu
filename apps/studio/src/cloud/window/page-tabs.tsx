@@ -65,6 +65,13 @@ export function PageTabs({
                 key={page.id}
                 value={page.id}
                 aria-keyshortcuts={n ? `Alt+${n}` : undefined}
+                // A click opens the page without taking focus, as the chrome's buttons don't
+                // (quietPointerFocus): Radix would focus the tab itself, so the press is ours.
+                onMouseDown={(e) => {
+                  if (e.button !== 0 || e.ctrlKey) return;
+                  e.preventDefault();
+                  if (!active) onSelect(page.id);
+                }}
                 className="scroll-mx-4"
               >
                 {page.icon ? (

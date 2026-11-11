@@ -9,12 +9,15 @@ import {
   type GitCredentialRequest,
   type GitReport as GitReportRequest,
   MAX_PULL_REQUEST_SUMMARY,
+  MAX_STEP_TEXT,
   MAX_TEXT,
   MAX_THREAD_WRITE,
+  MAX_TURN_GROUPS,
   type PullRequestSummaryRequest,
   type QuestionRequest,
   type RestoredReport,
   type RunErrorCode,
+  type TurnRecord as RunnerTurnRecord,
   type StateRequest,
   type ThreadRequest,
   type UploadRequest,
@@ -81,6 +84,38 @@ const RunnerNotice = z.discriminatedUnion("type", [
   z.object({ type: z.literal("error"), code: z.enum(RUN_ERRORS), message: text(2_000) }),
 ]);
 
+const StepCount = z.number().int().min(0).max(1_000_000);
+
+/**
+ * A turn's record: phrases and counts, bounded so a turn of any length stays a few kilobytes
+ * in a row clients watch live. Steps past `MAX_TURN_GROUPS` with text are refused, not kept.
+ */
+const TurnRecord: z.ZodType<RunnerTurnRecord> = z.object({
+  ended: z.enum(["done", "stopped", "failed"]).nullable(),
+  ms: z
+    .number()
+    .int()
+    .min(0)
+    .max(2 ** 31 - 1),
+  final: chosenId("ti").nullable(),
+  boards: StepCount,
+  files: StepCount,
+  log: z
+    .array(
+      z.object({
+        after: chosenId("ti").nullable(),
+        text: text(MAX_STEP_TEXT).nullable(),
+        count: StepCount.min(1),
+      }),
+    )
+    // The counted remainder: a group after each message until the runner's record holds this
+    // many, then only counts in its last.
+    .max(MAX_TURN_GROUPS * 2)
+    .refine((log) => log.filter((g) => g.text !== null).length <= MAX_TURN_GROUPS, {
+      message: `At most ${MAX_TURN_GROUPS} steps are listed.`,
+    }),
+});
+
 const ThreadWrite = z.intersection(
   z.object({ id: chosenId("ti"), streaming: z.boolean() }),
   z.discriminatedUnion("kind", [
@@ -91,6 +126,7 @@ const ThreadWrite = z.intersection(
         label: text(500),
         steps: z.number().int().min(0),
         artboards: Artboards,
+        turn: TurnRecord.optional(),
       }),
     }),
     z.object({ kind: z.literal("notice"), payload: RunnerNotice }),

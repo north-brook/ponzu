@@ -74,6 +74,20 @@ export function buildMenu(actions: MenuActions): void {
       // and the canvas takes ⌘= and ⌘- for its own zoom. Electron's default menu would make
       // ⌘0 Actual Size and scale the whole window.
       submenu: [
+        // The studio takes these keys itself, from anywhere in the window (text fields too), and
+        // the page has a key before the menu does; a click here reaches it as a command. It
+        // drops a command its own shortcut has just run, so one press never toggles twice.
+        {
+          label: "Toggle Sidebar",
+          accelerator: "CmdOrCtrl+B",
+          click: () => actions.command("toggle-sidebar"),
+        },
+        {
+          label: "Toggle Thread",
+          accelerator: "CmdOrCtrl+J",
+          click: () => actions.command("toggle-thread"),
+        },
+        { type: "separator" },
         { role: "reload" },
         ...(actions.devTools ? [{ role: "toggleDevTools" as const }] : []),
         { type: "separator" },

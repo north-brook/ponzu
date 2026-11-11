@@ -5,9 +5,14 @@ import { useAnalytics } from "../../app/analytics/provider.tsx";
 /** Key presses already counted: two shortcuts on one key (⌘, has two) are one use. */
 const counted = new WeakSet<KeyboardEvent>();
 
+/** When each shortcut last ran, by key: a menu item with the same accelerator checks it. */
+const ran = new Map<string, number>();
+
 /**
- * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window. `key` is the
- * KeyboardEvent key, lowercase: "k", "n", "j", ",". Each use is counted (`hotkey used`), by key.
+ * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window, text fields
+ * included: none of the app's take rich text, so no shortcut here shadows one of theirs. `key`
+ * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",". Each use is counted
+ * (`hotkey used`), by key.
  */
 export function useShortcut(key: string, handler: () => void, enabled = true): void {
   const latest = useRef(handler);
@@ -19,6 +24,7 @@ export function useShortcut(key: string, handler: () => void, enabled = true): v
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
       if (e.key.toLowerCase() !== key) return;
       e.preventDefault();
+      ran.set(key, performance.now());
       if (!counted.has(e)) {
         counted.add(e);
         analytics.capture("hotkey used", { hotkey: `mod+${key}` });
@@ -28,6 +34,29 @@ export function useShortcut(key: string, handler: () => void, enabled = true): v
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [key, enabled, analytics]);
+}
+
+/**
+ * Whether a pane should stay as it is for now: a menu, popover or dialog is open over the window
+ * (overlayOpen: a workspace menu anchored in the sidebar would float over nothing, a settings
+ * sheet would hide the change), or a field in the pane that holds it (`data-holds-pane`: a
+ * design's name being edited on its row) has focus. ⌘B, ⌘J and the menu's commands check it
+ * before they toggle.
+ */
+export function paneHeld(pane: "sidebar" | "thread"): boolean {
+  if (typeof document === "undefined") return false;
+  if (overlayOpen()) return true;
+  return !!document.activeElement?.closest(`#${pane} [data-holds-pane]`);
+}
+
+/**
+ * Whether the shortcut on `key` just ran. The desktop's menu carries the same accelerators; the
+ * page takes the key first and the shell's menu only what it leaves, but a menu command that
+ * toggles something checks this, so one press can never toggle it twice.
+ */
+export function ranJustNow(key: string, ms = 250): boolean {
+  const at = ran.get(key);
+  return at !== undefined && performance.now() - at < ms;
 }
 
 /*

@@ -10,6 +10,7 @@ import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
+import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
@@ -361,11 +362,22 @@ function WorkspaceWindow({
     setPage(link?.page ?? null);
   }, [openId, link]);
 
+  // The panes' toggles, for the menu's commands: the latest, without listening again each render.
+  const toggles = useRef<{ sidebar: (() => void) | null; rail: (() => void) | null }>({
+    sidebar: null,
+    rail: null,
+  });
   useEffect(
     () =>
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
         if (command === "settings") openSettings();
+        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again,
+        // and neither toggles under a menu or a modal (paneHeld).
+        if (command === "toggle-sidebar" && !ranJustNow("b") && !paneHeld("sidebar"))
+          toggles.current.sidebar?.();
+        if (command === "toggle-thread" && !ranJustNow("j") && !paneHeld("thread"))
+          toggles.current.rail?.();
       }),
     [host, openDesign, openSettings],
   );
@@ -464,6 +476,14 @@ function WorkspaceWindow({
     },
   });
 
+  const toggleSidebar = () => {
+    analytics.capture("pane toggled", { pane: "sidebar", open: !sidebarOpen });
+    update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen }));
+  };
+  toggles.current = {
+    sidebar: firstDesign ? null : toggleSidebar,
+    rail: panes?.toggleRail ?? null,
+  };
   useView(
     settings.open
       ? { name: "settings", section: settings.section }
@@ -491,10 +511,7 @@ function WorkspaceWindow({
           ? null
           : {
               open: sidebarOpen,
-              onToggle: () => {
-                analytics.capture("pane toggled", { pane: "sidebar", open: !sidebarOpen });
-                update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen }));
-              },
+              onToggle: toggleSidebar,
               content: (
                 <Sidebar
                   me={me}
