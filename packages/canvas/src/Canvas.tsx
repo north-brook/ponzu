@@ -73,7 +73,10 @@ export interface CanvasProps {
   theme?: "light" | "dark";
   /** Float page tabs (bottom left) and tools (bottom right) over the canvas. Default true. */
   footer?: boolean;
-  /** The footer's page tabs, for a host whose chrome has its own. Default true. */
+  /**
+   * The footer's page tabs, for a host whose chrome has its own. Default true. Off, the host
+   * owns ⌥1–9 too: the canvas leaves them to it.
+   */
   pageBar?: boolean;
   /** Extra content at the start of the tools bar, before the modes. */
   footerExtra?: ReactNode;
@@ -672,9 +675,11 @@ export function Canvas({
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const mod = e.metaKey || e.ctrlKey;
-      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
+      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last. A host that
+      // draws its own page tabs (pageBar off) gives them their shortcuts itself.
       const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
       if (e.altKey && !mod && !e.shiftKey && digit && doc) {
+        if (!pageBar) return;
         e.preventDefault();
         const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
         if (p) goToPage(p.id);

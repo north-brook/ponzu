@@ -49,6 +49,37 @@ link survives only to http, https or mailto and opens outside the app. Text shap
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
 Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 
+## Keyboard
+
+| Shortcut | What it does | Where |
+| --- | --- | --- |
+| ⌘N | New design (the create page) | sidebar, File menu |
+| ⌘K | Search (expands a collapsed sidebar first) | sidebar |
+| ⌘J | Show or hide the thread | thread toggle |
+| ⌘, | Settings | sidebar, app menu |
+| ⌘1–⌘8, ⌘9 | Open the sidebar's first eight designs, and ⌘9 its last | sidebar |
+| ⌘0 | The create page | sidebar |
+| ⌥1–⌥8, ⌥9 | Open the design's first eight pages, and ⌥9 its last | page tabs |
+| Esc | Close search, a menu or a popover | |
+
+Ctrl stands for ⌘ off the Mac, and Alt for ⌥. The numbers are the 1.x studio's
+(`ui/shortcut.ts`):
+
+- **Which list.** ⌘ numbers follow the sidebar's active designs as it shows them, filtered and
+  ordered; settled designs aren't counted. While search's results take the list's place, ⌘1–9
+  rest (⌘0 still works). With the sidebar collapsed they open the same designs, unseen. ⌥ numbers
+  follow the page tabs. 9 is always the last, however many there are.
+- **Hints.** Holding the modifier on its own for 250 ms shows each target's number
+  (`ui/shortcut-hint.tsx`): on a row, over its preview's top-left corner; on a page tab, in its
+  icon's place, or on a tab without one over the end of its name, which fades out beneath it.
+  Nothing moves to make room. They arrive one after another on the pop's timing and leave all at
+  once, quicker, as the key comes up, the window loses focus, or any other key, click or scroll
+  comes; so ⌘B, ⌘J or ⌘K never flash them. A number pressed while they show keeps them up.
+- **When not.** Nothing jumps or shows while a menu, popover or dialog is open. In a text field
+  (the composer, search, a rename) ⌘ numbers still jump, since ⌘ types nothing, but show no
+  hints; ⌥ numbers neither jump nor show, since ⌥ types symbols there.
+- **⌘0.** The desktop's View menu has no zoom roles, so ⌘0 is never Actual Size (`menu.ts`).
+
 ## Tokens
 
 - Style with Tailwind utilities that name a token, and nothing else: `bg-surface`, `text-muted`,

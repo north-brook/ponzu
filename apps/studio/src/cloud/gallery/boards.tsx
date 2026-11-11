@@ -1,6 +1,6 @@
 /* What each composition in compositions.ts draws. */
 import type { ReactNode } from "react";
-import { repoKey } from "../filter.ts";
+import { type DesignFilter, repoKey } from "../filter.ts";
 import type { Contributor, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
@@ -50,7 +50,67 @@ function DesignWindow({
   );
 }
 
+/**
+ * More designs and pages than the numbers reach, for the ⌘ and ⌥ shortcuts and their hints:
+ * twelve designs (⌘9 is the last, the ninth to eleventh get none) and eleven pages, two of them
+ * without an icon.
+ */
+const manyDesigns: DesignSummary[] = [
+  ...f.soloDesigns,
+  ...f.soloDesigns.slice(1, 6).map((d, i) => ({
+    ...d,
+    id: `${d.id}_more`,
+    name: `${d.name} (${i + 2})`,
+    lastActivityAt: new Date(Date.parse(d.lastActivityAt) - 86_400_000).toISOString(),
+  })),
+];
+const manyPages = [
+  ...f.homePages,
+  { id: "pg_checkout", name: "Checkout", icon: null, working: false },
+  { id: "pg_cart", name: "Cart", icon: "card", working: false },
+  { id: "pg_account", name: "Account", icon: "list", working: false },
+  { id: "pg_emails", name: "Emails", icon: null, working: false },
+  { id: "pg_search", name: "Search", icon: "list", working: false },
+  { id: "pg_empty", name: "Empty states", icon: "card", working: false },
+  { id: "pg_errors", name: "Errors", icon: "list", working: false },
+  { id: "pg_mobile", name: "Mobile", icon: "phone", working: false },
+];
+
+function ShortcutsWindow({
+  sidebar = "open",
+  filter,
+}: {
+  sidebar?: "open" | "closed";
+  filter?: DesignFilter;
+}) {
+  const quieterRow = quieter(manyDesigns);
+  return (
+    <Harness
+      designs={manyDesigns}
+      openId="dsn_quieter"
+      sidebar={sidebar}
+      {...(filter ? { initialFilter: filter } : {})}
+      chrome={(sidebarOpen) => (
+        <DesignChromeHarness
+          design={quieterRow}
+          sidebarOpen={sidebarOpen}
+          contributors={null}
+          railOpen={false}
+          overrides={{ pages: manyPages }}
+        />
+      )}
+    >
+      {null}
+    </Harness>
+  );
+}
+
 export const BOARDS: Record<string, () => ReactNode> = {
+  shortcuts: () => <ShortcutsWindow />,
+  "shortcuts-collapsed": () => <ShortcutsWindow sidebar="closed" />,
+  "shortcuts-filtered": () => (
+    <ShortcutsWindow filter={{ person: null, projects: [repoKey(f.fernwood)] }} />
+  ),
   "team-sidebar": () => <DesignWindow />,
   "sidebar-team-menu": () => <DesignWindow />,
   "sidebar-filter": () => <DesignWindow />,

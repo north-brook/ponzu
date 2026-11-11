@@ -6,6 +6,8 @@ import { IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { FadeScroll, SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { jumpNumber, jumpTarget, useJumpShortcuts } from "../ui/shortcut.ts";
+import { HintedLabel, ShortcutHint } from "../ui/shortcut-hint.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
 
 /**
@@ -13,6 +15,8 @@ import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
  * shimmers. `activeId` null is the pull request tab open, with no page showing. Arrow keys move
  * between tabs and Return or Space opens one. Too many to fit scroll under a fade, keeping the
  * active tab in view and clear of the fade: the strip never gets narrower than it needs for that.
+ * ⌥1–9 open the first eight and the last; held a moment, ⌥ shows each tab its number, over its
+ * icon, or on a tab without one before its name, which slides aside within the tab to make room.
  */
 export function PageTabs({
   pages,
@@ -28,6 +32,11 @@ export function PageTabs({
 }) {
   const list = useRef<HTMLDivElement>(null);
   const [minWidth, setMinWidth] = useState<number>();
+  const hint = useJumpShortcuts("page", (n) => {
+    const page = jumpTarget(pages, n);
+    if (page && page.id !== activeId) onSelect(page.id);
+    return page !== undefined;
+  });
 
   useLayoutEffect(() => {
     const tab = list.current?.querySelector<HTMLElement>('[aria-selected="true"]');
@@ -45,16 +54,35 @@ export function PageTabs({
     >
       <FadeScroll axis="x" className="min-w-0" style={{ minWidth }}>
         <TabsList ref={list} aria-label="Pages" className="py-1">
-          {pages.map((page) => {
+          {pages.map((page, i) => {
             const active = page.id === activeId;
+            const n = jumpNumber(i, pages.length);
             return (
-              <TabsTrigger key={page.id} value={page.id} className="scroll-mx-4">
+              <TabsTrigger
+                key={page.id}
+                value={page.id}
+                aria-keyshortcuts={n ? `Alt+${n}` : undefined}
+                className="scroll-mx-4"
+              >
                 {page.icon ? (
-                  <span className={cn("flex", active && "text-icon-strong")}>
-                    <PageIcon name={page.icon} size={14} strokeWidth={1.7} />
-                  </span>
+                  <ShortcutHint jump="page" n={n} shown={hint}>
+                    <span className={cn("flex", active && "text-icon-strong")}>
+                      <PageIcon name={page.icon} size={14} strokeWidth={1.7} />
+                    </span>
+                  </ShortcutHint>
                 ) : null}
-                <span className={cn(page.working && "shimmer")}>{page.name}</span>
+                {page.icon ? (
+                  <span className={cn(page.working && "shimmer")}>{page.name}</span>
+                ) : (
+                  <HintedLabel
+                    jump="page"
+                    n={n}
+                    shown={hint}
+                    className={cn(page.working && "shimmer")}
+                  >
+                    {page.name}
+                  </HintedLabel>
+                )}
               </TabsTrigger>
             );
           })}

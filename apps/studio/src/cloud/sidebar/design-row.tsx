@@ -13,6 +13,8 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/menu.tsx";
+import { JUMP_KEY } from "../ui/shortcut.ts";
+import { HintKeys } from "../ui/shortcut-hint.tsx";
 import { PullRequestMark } from "../window/pull-request-mark.tsx";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
@@ -30,13 +32,16 @@ export interface RowHandlers {
  * lives (repo and branch, or a Scratch city) with its pull request. The open design's row takes
  * the selected ground (the canvas's, in light), and its pull request mark darkens and shows its checks. Teammates in it
  * now sit on the preview's corner. Right-click for its actions; Rename edits the name in place.
- * It draws again only when its own props change, so a long list stays quick.
+ * It draws again only when its own props change, so a long list stays quick. One of the first
+ * nine shows its ⌘ number on the preview's corner while ⌘ is held.
  */
 export const DesignRow = memo(function DesignRow({
   design,
   open,
   indicators = true,
   tabIndex,
+  shortcut,
+  hint = false,
   onOpen,
   onAction,
   onRename,
@@ -46,6 +51,10 @@ export const DesignRow = memo(function DesignRow({
   /** Settled rows show none. */
   indicators?: boolean;
   tabIndex: number;
+  /** The ⌘ number that opens it (sidebar order), if one does. */
+  shortcut?: number;
+  /** ⌘ is held: the number shows. */
+  hint?: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -68,6 +77,15 @@ export const DesignRow = memo(function DesignRow({
           <span className="absolute -right-[5px] -bottom-[5px] flex">
             <AvatarStack people={design.hereNow} size={15} overlap={5} ring="chrome" />
           </span>
+        ) : null}
+        {shortcut ? (
+          <HintKeys
+            jump="design"
+            n={shortcut}
+            shown={hint}
+            tone="raised"
+            className="top-[3px] left-[3px]"
+          />
         ) : null}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -114,6 +132,7 @@ export const DesignRow = memo(function DesignRow({
           data-design-row={design.id}
           aria-current={open ? "page" : undefined}
           aria-label={rowLabel(design, indicator)}
+          aria-keyshortcuts={shortcut ? `${JUMP_KEY.design.key}+${shortcut}` : undefined}
           tabIndex={tabIndex}
           onClick={() => onOpen(design)}
           className={cn(
