@@ -21,7 +21,10 @@ RestartSec=3
 # API revoked the runner token, or a newer runner took over the design. Starting again will not
 # mend it; a new environment comes with a new start of the sandbox.
 RestartPreventExitStatus=78
-# The runner finishes in order on SIGTERM: the turn, the edits, the final state.
+# The runner finishes in order on SIGTERM: the turn, the edits, the final state. Only the runner
+# gets it; Claude Code and what the agent started are the runner's to close, and systemd's to
+# kill if the runner has not within TimeoutStopSec.
+KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=20
 

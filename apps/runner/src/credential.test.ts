@@ -1,68 +1,102 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
+import { statSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ApiError } from "./api/api.ts";
+import type { GitCredentialRequest } from "./api/protocol.ts";
 import { formatCredential, helper, parseRequest } from "./credential.ts";
+import { serveCredentials } from "./server.ts";
 
 const ASK = "protocol=https\nhost=github.com\npath=north/fern.git\n\n";
+const REQUEST = { protocol: "https", host: "github.com", path: "north/fern.git" };
 
-function endpoint(reply: (path: string, body: unknown) => Response) {
-  const calls: { path: string; body: unknown; runner: string | null }[] = [];
-  const fetch = (async (url: URL | string, init?: RequestInit) => {
-    const path = new URL(String(url)).pathname;
-    const body = JSON.parse(String(init?.body));
-    calls.push({ path, body, runner: new Headers(init?.headers).get("x-ponzu-runner") });
-    return reply(path, body);
-  }) as typeof globalThis.fetch;
-  return {
-    endpoint: {
-      baseUrl: "https://api.test",
-      token: "pzr_x",
-      client: "runner/0",
-      runnerId: "rnr_1",
-      fetch,
+const cleanup: (() => Promise<void> | void)[] = [];
+afterEach(async () => {
+  for (const done of cleanup.splice(0)) await done();
+});
+
+/** The runner's side of the socket, answering as `get` and `erase` say. */
+async function runner(answers: {
+  get?: (ask: GitCredentialRequest) => Promise<{
+    username: string;
+    password: string;
+    expiresAt: string;
+  }>;
+  erase?: (ask: GitCredentialRequest) => Promise<void>;
+}) {
+  const dir = await mkdtemp(join(tmpdir(), "ponzu-git-"));
+  const path = join(dir, "git.sock");
+  const calls: { op: string; ask: GitCredentialRequest }[] = [];
+  const server = serveCredentials({
+    path,
+    get: async (ask) => {
+      calls.push({ op: "get", ask });
+      return answers.get!(ask);
     },
-    calls,
-  };
+    erase: async (ask) => {
+      calls.push({ op: "erase", ask });
+      await answers.erase?.(ask);
+    },
+  });
+  cleanup.push(
+    () => server.stop(),
+    () => rm(dir, { recursive: true, force: true }),
+  );
+  return { path, calls };
 }
 
 test("git's request is read by key, with the path useHttpPath adds", () => {
-  expect(parseRequest(ASK)).toEqual({
-    protocol: "https",
-    host: "github.com",
-    path: "north/fern.git",
-  });
+  expect(parseRequest(ASK)).toEqual(REQUEST);
 });
 
-test("get answers with the API's token and when git should drop it", async () => {
-  const { endpoint: e, calls } = endpoint(() =>
-    Response.json({
+test("get answers with the token the runner got, and when git should drop it", async () => {
+  const { path, calls } = await runner({
+    get: async () => ({
       username: "x-access-token",
       password: "ghs_abc",
       expiresAt: "2026-11-10T12:00:00Z",
     }),
-  );
-  expect(await helper("get", ASK, e)).toBe(
+  });
+  expect(await helper("get", ASK, path)).toBe(
     "username=x-access-token\npassword=ghs_abc\npassword_expiry_utc=1794312000\n",
   );
-  expect(calls).toEqual([
-    {
-      path: "/v1/runner/git-credential",
-      body: { protocol: "https", host: "github.com", path: "north/fern.git" },
-      runner: "rnr_1",
+  expect(calls).toEqual([{ op: "get", ask: REQUEST }]);
+});
+
+test("erase tells the runner, and store keeps nothing", async () => {
+  const { path, calls } = await runner({});
+  expect(await helper("erase", ASK, path)).toBe("");
+  expect(await helper("store", ASK, path)).toBe("");
+  expect(calls).toEqual([{ op: "erase", ask: REQUEST }]);
+});
+
+test("the API's refusal reaches git as an error, so git gets no credential", async () => {
+  const { path } = await runner({
+    get: async () => {
+      throw new ApiError(403, "forbidden", "Not this design's.");
     },
-  ]);
+  });
+  await expect(helper("get", ASK, path)).rejects.toThrow("Not this design's.");
 });
 
-test("erase tells the API, and store keeps nothing", async () => {
-  const { endpoint: e, calls } = endpoint(() => new Response(null, { status: 204 }));
-  expect(await helper("erase", ASK, e)).toBe("");
-  expect(await helper("store", ASK, e)).toBe("");
-  expect(calls.map((c) => c.path)).toEqual(["/v1/runner/git-credential/erase"]);
+test("a runner that is not listening is an error too", async () => {
+  await expect(helper("get", ASK, join(tmpdir(), "ponzu-no-runner.sock"))).rejects.toThrow();
 });
 
-test("a refusal is an error, so git gets no credential", async () => {
-  const { endpoint: e } = endpoint(() =>
-    Response.json({ error: { code: "forbidden", message: "Not this design's." } }, { status: 403 }),
-  );
-  await expect(helper("get", ASK, e)).rejects.toThrow("Not this design's.");
+test("the socket replaces one a dead runner left, and only its owner and group may open it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ponzu-git-"));
+  cleanup.push(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "git.sock");
+  await writeFile(path, "left behind");
+  const server = serveCredentials({
+    path,
+    get: async () => Promise.reject(),
+    erase: async () => {},
+  });
+  cleanup.push(() => server.stop());
+  expect(statSync(path).isSocket()).toBe(true);
+  expect(statSync(path).mode & 0o777).toBe(0o660);
 });
 
 test("the expiry is in seconds", () => {

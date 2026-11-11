@@ -2,17 +2,17 @@
  * The runner's entry: `bun runner.js` in a design's sandbox, as the ponzu-runner systemd
  * service. README.md has its environment and how to run it elsewhere.
  */
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
-import { EnvError, readEnv } from "./env.ts";
+import { agentEnv, EnvError, readEnv } from "./env.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
-import { serve } from "./server.ts";
+import { serve, serveCredentials } from "./server.ts";
 import { VERSION } from "./version.ts";
 
 /**
@@ -53,13 +53,21 @@ const runner = new Runner({
     executable: env.claude ?? (existsSync(IMAGE_CLAUDE) ? IMAGE_CLAUDE : undefined),
     client: `ponzu-${client}`,
     log: (line) => log(`claude: ${line}`),
+    env: agentEnv(process.env),
   }),
-  renderer: new ChromiumRenderer(env.chromium ? { executablePath: env.chromium } : {}),
-  // The helper names this process's lease, so git of a runner that was superseded gets nothing.
+  // The repo's dev server is on this machine, so a design may load from it.
+  renderer: new ChromiumRenderer({
+    loopback: true,
+    ...(env.chromium ? { executablePath: env.chromium } : {}),
+  }),
+  // The helper asks this process, which asks through its lease: the git of a runner that was
+  // superseded gets nothing, and the agent's git holds no runner token.
   prepare: (session) =>
     checkout(session, {
       root: env.workRoot,
-      helper: `!'${process.execPath}' '${helperFile}' '${session.runnerId}'`,
+      helper: `!'${process.execPath}' '${helperFile}' '${env.gitSocket}'`,
+      env: agentEnv(process.env),
+      ...(env.git ? { git: env.git } : {}),
     }),
   stateDir: env.stateDir,
   log,
@@ -71,11 +79,18 @@ const runner = new Runner({
 
 const server = serve({ port: env.port, poke: () => runner.poke(), health: () => runner.health() });
 log(`listening on ${server.port}`);
+mkdirSync(dirname(env.gitSocket), { recursive: true });
+const credentials = serveCredentials({
+  path: env.gitSocket,
+  get: (ask) => runner.gitCredential(ask),
+  erase: (ask) => runner.eraseGitCredential(ask),
+});
 
 const shutdown = async (signal: string) => {
   log(`${signal}: stopping`);
   await runner.stop();
   server.stop();
+  credentials.stop();
   process.exit(0);
 };
 process.once("SIGTERM", () => void shutdown("SIGTERM"));

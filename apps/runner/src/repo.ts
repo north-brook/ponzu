@@ -7,12 +7,17 @@ import type { RunnerSession } from "./api/protocol.ts";
 export interface CheckoutOptions {
   /** Where checkouts live: the repo goes in `<root>/<name>`, Scratch in `<root>/scratch`. */
   root: string;
-  /** The command git runs as its credential helper for github.com, which asks the API. */
+  /** The command git runs as its credential helper for github.com, which asks the runner. */
   helper: string;
   /** Where to clone from. GitHub, unless a test says otherwise. */
   remote?: (repo: NonNullable<RunnerSession["repo"]>) => string;
   /** The environment git runs in: its HOME holds the global config written here. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * The git to run, when it is not the one on the PATH: in the sandbox image, one that runs as
+   * the agent's user, so the checkout and the global config written here are the agent's.
+   */
+  git?: string;
 }
 
 /** Why the checkout failed, in words for the thread. */
@@ -33,7 +38,8 @@ export async function checkout(session: RunnerSession, opts: CheckoutOptions): P
     await mkdir(dir, { recursive: true });
     return dir;
   }
-  const git = (args: string[], cwd?: string) => run(args, { cwd, env: opts.env });
+  const git = (args: string[], cwd?: string) =>
+    run(opts.git ?? "git", args, { cwd, env: opts.env });
   await configure(session, opts.helper, git);
 
   const dir = join(opts.root, repo.name);
@@ -95,10 +101,14 @@ async function configure(
   await set("credential.https://github.com.useHttpPath", "true");
 }
 
-function run(args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<string> {
+function run(
+  git: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv },
+): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
-      "git",
+      git,
       args,
       {
         cwd: opts.cwd,

@@ -39,6 +39,8 @@ export interface ClaudeAgentOptions {
   client: string;
   /** Claude Code's own stderr, a line at a time. */
   log?: (line: string) => void;
+  /** The environment Claude Code and its tools run in. The runner's own when absent. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -129,7 +131,7 @@ class ClaudeRun implements AgentRun {
         canUseTool: this.ask,
         includePartialMessages: true,
         env: {
-          ...process.env,
+          ...(agent.env ?? process.env),
           CLAUDE_AGENT_SDK_CLIENT_APP: agent.client,
           // A sandbox's Claude Code is the image's: it never updates itself.
           DISABLE_AUTOUPDATER: "1",
