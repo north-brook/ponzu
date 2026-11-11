@@ -6,6 +6,7 @@ import { Button, IconButton, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
+import { FIELD, pressToFocus } from "../ui/press-to-focus.ts";
 import { Tip } from "../ui/tooltip.tsx";
 import { composerButton } from "./composer-rules.ts";
 
@@ -79,12 +80,15 @@ export function RailComposer({
   };
 
   return (
+    // The whole card is the field's: a press on it, past its controls, writes.
     <div
       onDragOver={onDragOver}
       onDragLeave={() => setDropping(false)}
       onDrop={onDrop}
+      onMouseDown={pressToFocus}
       className={cn(
         "flex shrink-0 flex-col overflow-hidden rounded-16 bg-surface shadow-bar transition-shadow duration-(--dur-hover)",
+        !ended && "cursor-text",
         dropping && "shadow-focus",
       )}
     >
@@ -145,6 +149,7 @@ export function RailComposer({
           }}
         />
         <textarea
+          {...FIELD}
           aria-label="Message"
           placeholder="Steer, or ask more"
           rows={1}
