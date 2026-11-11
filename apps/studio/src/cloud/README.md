@@ -202,7 +202,9 @@ pull request, 18 a Settings section, 40 a price.
 tab and its icon); `muted` a control at rest and a secondary line; `faint` quiet text (meta,
 placeholders, labels, counts), deliberately under AA; `icon-soft` a quiet icon standing alone (a
 disclosure chevron, a field's glyph, a row's trailing action, Settings' close), one step above
-faint so it holds 3:1. An icon beside words takes the words' colour: it is part of that label.
+faint so it holds 3:1. An icon beside words takes the words' colour (a tab, a chip, the meta
+line): it is part of that label. The one exception is a row's leading icon in a menu or a nav, which
+is muted beside ink words so the words lead.
 Disabled is not a colour: a disabled control fades to 35%. The accents mean one thing each: yuzu
 the agent at work; `pr-open`, `pr-running`, `pr-conflict`, `pr-failing`, `pr-merged` a pull
 request's state; `danger` what can't be undone or failed.
