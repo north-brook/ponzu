@@ -803,7 +803,7 @@ describe("pull requests, checks and reviews", () => {
       (r) => r.githubRepoId === repository.id,
     )!;
     const repo = t.github.repo(repository.fullName)!;
-    const designs = [];
+    const designs: { id: string }[] = [];
     for (const branch of ["pz/one", "pz/two", "pz/three"]) {
       const made = await createDesign(t.db, {
         workspaceId: workspace!.id,
