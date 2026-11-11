@@ -9,47 +9,12 @@
  * Settings section there, to look at beside the design's boards.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { type Browser, chromiumPath, launch, type Page, STUDIO } from "../../scripts/visual-lib.ts";
+import { type Browser, chromiumPath, launch, type Page } from "../../scripts/visual-lib.ts";
+import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
 
 setDefaultTimeout(60_000);
-
-/**
- * Builds the app as the desktop package does, into a fresh directory. `e2e` keeps Ponzu Cloud in
- * memory in, which a production build leaves out.
- */
-async function buildApp(mode: "e2e" | "production"): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "ponzu-studio-"));
-  const build = Bun.spawn(["bunx", "vite", "build", "--mode", mode, "--outDir", dir], {
-    cwd: STUDIO,
-    // bun test sets NODE_ENV=test, which a packaging build never has.
-    env: { ...process.env, NODE_ENV: undefined },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if ((await build.exited) !== 0) {
-    throw new Error(`The studio didn't build:\n${await new Response(build.stderr).text()}`);
-  }
-  return dir;
-}
-
-/** Serves the built app with its routes falling back to index.html, as the desktop's scheme does. */
-function serve(dir: string) {
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    async fetch(request) {
-      const path = decodeURIComponent(new URL(request.url).pathname);
-      const file = Bun.file(join(dir, path));
-      return path !== "/" && (await file.exists())
-        ? new Response(file)
-        : new Response(Bun.file(join(dir, "index.html")));
-    },
-  });
-  return { url: `http://127.0.0.1:${server.port}/`, stop: () => server.stop(true) };
-}
 
 const PROMPT = "A pricing page with three plans";
 const SHOTS = process.env.PONZU_SHOTS;
@@ -99,7 +64,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       const design = designs.find((d) => d.sequencer.doc.name === prompt)!;
       return {
         id: design.id,
-        said: design.thread.map(({ item }) => (item.kind === "message" ? item.payload.text : "")),
+        said: design.thread.flatMap(({ item }) =>
+          item.kind === "message" ? [item.payload.text] : [],
+        ),
         threads: design.sequencer.doc.threads.map((t) => ({
           id: t.id,
           texts: t.messages.map((m) => m.text),
@@ -228,7 +195,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
           workspaceId: d.workspaceId,
           model: d.model,
           effort: d.effort,
-          said: d.thread.map(({ item }) => (item.kind === "message" ? item.payload.text : "")),
+          said: d.thread.flatMap(({ item }) =>
+            item.kind === "message" ? [item.payload.text] : [],
+          ),
         })),
     );
     const personalId = await page.evaluate(() => window.ponzuFake!.personalId);
@@ -544,11 +513,3 @@ describe.skipIf(!chromiumPath)("the studio as it ships, without the desktop's br
     }
   });
 });
-
-async function waitUntil(done: () => Promise<boolean>, ms = 10_000) {
-  const deadline = Date.now() + ms;
-  while (!(await done())) {
-    if (Date.now() > deadline) throw new Error("Gave up waiting.");
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}

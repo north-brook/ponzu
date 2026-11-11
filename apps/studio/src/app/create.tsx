@@ -6,6 +6,7 @@ import type { ProjectChoice } from "../cloud/create/create.ts";
 import { CreatePage } from "../cloud/create/create-page.tsx";
 import { ClaudeSignedOutDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { Effort, PendingAttachment, Repo } from "../cloud/model.ts";
+import type { FreshDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { Banner } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
@@ -59,8 +60,11 @@ export function CreateView({
   repos: Repo[] | null;
   /** Ideas show while the person is new to the workspace. */
   showIdeas: boolean;
-  /** The design is made: open it. `messageFailed` when the first message didn't go. */
-  onCreated: (designId: string, messageFailed: boolean) => void;
+  /**
+   * The design is made: open it, with what its answer said, so it opens on its first message.
+   * `messageFailed` when the first message didn't go.
+   */
+  onCreated: (design: FreshDesign, messageFailed: boolean) => void;
   onAllowMore: () => void;
 }) {
   const { queries, mutations } = usePonzu();
@@ -129,7 +133,20 @@ export function CreateView({
       setPrompt("");
       release(images);
       setPicked([]);
-      onCreated(design.id, !said);
+      onCreated(
+        {
+          id: design.id,
+          name: design.name,
+          message: said ? text : null,
+          access: design.access,
+          head: {
+            agentState: design.agentState,
+            agentStatus: design.agentStatus,
+            agentBlocker: design.agentBlocker,
+          },
+        },
+        !said,
+      );
     } catch (failure) {
       setError(
         failure instanceof ApiError && failure.code === "network"

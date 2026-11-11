@@ -3,7 +3,7 @@ import { type DesignHeadRow, DocCache, type LiveRows, presentNow } from "@ponzu/
 import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
 import { type Actor, newId } from "@ponzu/core";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import { actionBlock } from "../cloud/pull-request.ts";
 import { railSignal } from "../cloud/status.ts";
@@ -35,6 +35,22 @@ export interface OpenDesign {
   asks: AskStore;
   uploads: Uploads;
   pullRequest: PullRequestStore;
+  /** What the create page knew of a design it just made, until the API's own reads arrive. */
+  fresh: FreshDesign | null;
+}
+
+/**
+ * A design the create page has just made, as its answer said: it opens straight into its
+ * thread with its first message and the agent waking, rather than empty while the canvas, the
+ * thread and the head are read.
+ */
+export interface FreshDesign {
+  id: string;
+  name: string;
+  /** Its first message, which the API already has; none when it is still to be sent. */
+  message: string | null;
+  access: "read" | "write";
+  head: Pick<DesignHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
 }
 
 /**
@@ -46,6 +62,7 @@ export function useOpenDesign(
   me: Person,
   designId: string | null,
   say: (notice: string) => void,
+  fresh: FreshDesign | null = null,
 ): OpenDesign | null {
   const [open, setOpen] = useState<OpenDesign | null>(null);
   const actor = useMemo<Actor>(
@@ -63,7 +80,10 @@ export function useOpenDesign(
   );
   const saying = useRef(say);
   saying.current = say;
-  useEffect(() => {
+  const made = useRef(fresh);
+  made.current = fresh;
+  // Before the window paints: the create page gives way to the design in the same frame.
+  useLayoutEffect(() => {
     if (!designId) {
       setOpen(null);
       return;
@@ -77,6 +97,8 @@ export function useOpenDesign(
       ...(cache ? { cache } : {}),
     });
     const thread = new ThreadStore({ api, live, designId, meId: actor.id }).start();
+    const known = made.current?.id === designId ? made.current : null;
+    if (known?.message) thread.seed(known.message);
     const asks = new AskStore({ api, live, designId, onError: (m) => saying.current(m) }).start();
     const uploads = new Uploads({ api, designId });
     const pullRequest = new PullRequestStore({
@@ -85,7 +107,7 @@ export function useOpenDesign(
       say: (m) => saying.current(m),
       tellAgent: (text) => thread.send(text, []),
     });
-    setOpen({ id: designId, source, thread, asks, uploads, pullRequest });
+    setOpen({ id: designId, source, thread, asks, uploads, pullRequest, fresh: known });
     return () => {
       source.close();
       thread.close();
@@ -116,7 +138,7 @@ export function useAccess(open: OpenDesign): "read" | "write" | null {
   if (state.status === "ready") {
     known.current = { id: open.id, access: open.source.writable ? "write" : "read" };
   }
-  return known.current?.id === open.id ? known.current.access : null;
+  return known.current?.id === open.id ? known.current.access : (open.fresh?.access ?? null);
 }
 
 /** The chrome past the left block for an open design. */
@@ -189,7 +211,7 @@ export function DesignChromeSlot({
   );
   return (
     <DesignChrome
-      name={head?.name ?? summary?.name ?? doc?.name ?? ""}
+      name={head?.name ?? summary?.name ?? doc?.name ?? open.fresh?.name ?? ""}
       sidebarOpen={sidebarOpen}
       pages={pages}
       activePageId={prTab.open ? null : (page ?? pages[0]?.id ?? null)}

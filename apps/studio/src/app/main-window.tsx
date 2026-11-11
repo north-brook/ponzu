@@ -13,7 +13,7 @@ import { orderSettled } from "../cloud/status.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
-import { useOpenDesign } from "./design.tsx";
+import { type FreshDesign, useOpenDesign } from "./design.tsx";
 import { useDesignPanes } from "./design-panes.tsx";
 import type { Host } from "./host.ts";
 import {
@@ -230,7 +230,9 @@ function WorkspaceWindow({
   );
   const live = useLiveQuery("workspace.designs", { workspaceId: id });
   const openId = ui.designs[id] ?? null;
-  const open = useOpenDesign(host, me, openId, say);
+  // The design the create page just made, as its answer said, for it to open on.
+  const [fresh, setFresh] = useState<FreshDesign | null>(null);
+  const open = useOpenDesign(host, me, openId, say, fresh);
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
@@ -463,8 +465,9 @@ function WorkspaceWindow({
             summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
           }
           onAllowMore={addWorkspace}
-          onCreated={(designId, messageFailed) => {
-            openDesign(designId);
+          onCreated={(design, messageFailed) => {
+            setFresh(design);
+            openDesign(design.id);
             if (messageFailed) {
               say("The design is made, but your message didn't reach Claude. Send it again.");
             }

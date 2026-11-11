@@ -182,6 +182,8 @@ export class FakeBackend {
   private readonly createKeys = new Map<string, string>();
   /** While false, every call fails as if there were no network. */
   online = true;
+  /** How long every call takes to answer, in real time, as a network would: none by default. */
+  latencyMs = 0;
   private ids = 0;
   private refreshing = false;
 
@@ -430,7 +432,9 @@ export class FakeBackend {
       ...(person.avatarUrl ? { avatarUrl: person.avatarUrl } : {}),
     };
     const call = async <T>(run: () => T): Promise<T> => {
-      await Promise.resolve();
+      await (this.latencyMs > 0
+        ? new Promise((resolve) => setTimeout(resolve, this.latencyMs))
+        : Promise.resolve());
       if (!this.online) throw networkError(new Error("offline"));
       return run();
     };
@@ -734,6 +738,14 @@ export class FakeBackend {
             if (body.message) {
               const payload = { text: body.message.text, from: personOf(person) };
               this.append(design, { kind: "message", payload }, person.id);
+              // As the API: the first message wakes the agent, on its owner's Claude; without
+              // one connected, the design waits for it.
+              if (this.claude.view(person.id)?.status === "connected") {
+                design.agent = { state: "waking", status: null, artboards: [] };
+                this.append(design, { kind: "notice", payload: { type: "waking" } });
+              } else {
+                design.blocker = "claude_not_connected";
+              }
             }
             this.changed();
             return this.view(design, person.id);

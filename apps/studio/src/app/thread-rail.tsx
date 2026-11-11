@@ -74,10 +74,11 @@ export function DesignRail({
     [asks],
   );
   const items = useMemo(() => {
-    if (!thread.items) return null;
+    // A design just made shows its first message while its thread is read.
+    if (!thread.items && !thread.pending.length) return null;
     const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
     return [
-      ...shownItems(thread.items, waiting).map((item) => toThreadItem(item, ctx)),
+      ...shownItems(thread.items ?? [], waiting).map((item) => toThreadItem(item, ctx)),
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
   }, [thread, waiting, people, assetBase, doc, me]);
@@ -118,7 +119,7 @@ export function DesignRail({
       items={items}
       older={thread.older}
       onLoadOlder={() => open.thread.loadOlder()}
-      agent={agentActivity(head)}
+      agent={agentActivity(head ?? open.fresh?.head)}
       asks={asks}
       gate={gate}
       attachments={attachments}

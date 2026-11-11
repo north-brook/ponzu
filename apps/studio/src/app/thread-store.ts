@@ -78,6 +78,7 @@ export class ThreadStore {
       ({ items }) => {
         for (const item of items) this.pages.set(item.id, item);
         this.firstPage = items.length < THREAD_PAGE ? "short" : "full";
+        this.arrived(items);
         this.emit();
       },
       () => {
@@ -121,6 +122,23 @@ export class ThreadStore {
         this.loadingOlder = false;
         this.emit();
       });
+  }
+
+  /**
+   * The first message of a design just made with it, which the API already has: shown at once,
+   * as on its way, until the thread's own item arrives in its place. Nothing is sent.
+   */
+  seed(text: string): void {
+    const message: PendingMessage = {
+      id: `local_${++this.sends}`,
+      text,
+      attachments: [],
+      status: "sending",
+      at: new Date(this.opts.now?.() ?? Date.now()).toISOString(),
+    };
+    this.pending = [...this.pending, message];
+    this.sentAfter.set(message.id, 0);
+    this.emit();
   }
 
   /** Says something to the agent: in the thread at once, sent behind it. */
