@@ -127,9 +127,9 @@ People and access
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
 | `repo_access` | What GitHub last said each person may do in each repo (`admin`, `write`, `read`, `none`), and when: the one answer to who may see or steer a repo. A person's sync writes a whole workspace of them (`recordReachableRepos`), a question asked as the App writes one (`recordRepoAccess`), and a webhook that cannot say whose access changed makes them stale (`markRepoAccessStale`). The repo list, the designs list and the live queries join it, so a repo and its designs show only to people who can read it. A row is replaced only by a newer answer, and is read only alongside the person's membership. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
-| `claude_accounts` | A person's own Claude: subscription or API key (encrypted), status, expiry, last known limits. | live |
+| `claude_accounts` | A person's own Claude: subscription or API key (encrypted, destroyed on disconnect while the row stays `revoked`), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |
-| `auth_states` | Short-lived: a GitHub install in progress, or a Claude sign-in waiting for its code. | |
+| `auth_states` | Short-lived: a GitHub install in progress, or a Claude sign-in waiting for its code. A person has one Claude sign-in open at a time and starts so many an hour (`openClaudeSignIn`). | |
 
 Designs
 
@@ -150,7 +150,7 @@ The agent
 | `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by design and id: the runner chooses its items' ids, and the same id in another design is another row. | live |
 | `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. `claim_id` is the runner's id for the claim that did, so a claim sent again hands out the same events. | |
 | `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by design and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
-| `sandboxes` | A design's sandbox at the provider: state, address, awake-since. | |
+| `sandboxes` | A design's sandbox at the provider, a generation at a time: its state and when it got there, its address, the environment it runs on (runner token, which Claude credential), its awake-since and who it is put down to, and its auto-stop. At most one of a design's is not `gone`; every move holds to the state it moves from, and leaving `awake` meters the stretch (`moveSandbox`). A wake claims it first (`beginSandbox`, `claimSandbox`): `waking_by` is the wake that holds it, and the claim counts the sandboxes up in its workspace and for its owner. | |
 | `design_runners` | A design's runner now: the lease (`runner_id`) the API takes calls from, when it was last heard from, and the Claude session to resume. Apart from `designs` so the heartbeat does not touch a watched row. | |
 | `runner_tokens` | What a runner signs in with, hashed. Good for one design until it expires. | |
 
@@ -176,9 +176,14 @@ the foreign key is the repo and its workspace together. When GitHub transfers a 
 another account, `upsertRepos` moves the repo and its designs follow in the same statement.
 Usage already recorded stays with the workspace that was billed for it.
 
-A design's pull request is recorded from GitHub's webhooks by `recordPullRequest`, which keeps
-the newest word (`designs.pr_updated_at`, GitHub's `updated_at`) since deliveries arrive out
-of order, and settles the design on a merge.
+A design's pull request is recorded from reads of GitHub by `recordPullRequestRead`, which keeps
+the read that began last (`designs.pr_read_at`, since a check finishing leaves GitHub's
+`updated_at` alone and reads finish out of order), and settles the design on a merge. A merge
+is the last word on its pull request: nothing about it is recorded after one, so a design
+reopened after its merge stays open. A read that finds what the row already holds writes
+nothing, since each write reaches every watcher of the workspace's designs. For the same reason
+the pull request's thread notice goes in with `appendThreadItemOnce`, which never rewrites an
+item it already has.
 
 ## Deleting
 

@@ -64,6 +64,8 @@ export interface CanvasProps {
   theme?: "light" | "dark";
   /** Float page tabs (bottom left) and tools (bottom right) over the canvas. Default true. */
   footer?: boolean;
+  /** The footer's page tabs, for a host whose chrome has its own. Default true. */
+  pageBar?: boolean;
   /** Extra content at the start of the tools bar, before the modes. */
   footerExtra?: ReactNode;
   /**
@@ -86,9 +88,10 @@ export interface CanvasProps {
   initialFit?: "page" | "first";
   /**
    * Where a link opens: an artboard, its page showing with the board framed, or a page. With
-   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget).
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). A link is
+   * followed once; a new `at` follows the same one again (a comment's board, clicked twice).
    */
-  link?: { page?: string; artboard?: string };
+  link?: { page?: string; artboard?: string; at?: number };
   className?: string;
 }
 
@@ -224,6 +227,7 @@ export function Canvas({
   me = { kind: "user", name: "You" },
   theme = "light",
   footer = true,
+  pageBar = true,
   footerExtra,
   readOnly = false,
   page: pageProp,
@@ -456,14 +460,14 @@ export function Canvas({
     const to = linkTarget(doc, link);
     const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
     const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
-    const key = `${link.page}:${link.artboard}`;
+    const key = `${link.page}:${link.artboard}:${link.at ?? ""}`;
     const shown = shownLink.current;
     if (shown?.key === key && (shown.sized || !sized)) return;
     shownLink.current = { key, sized };
     if (to && ab) showBoard(to.pageId, ab);
     else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link?.page, link?.artboard, doc, measured]);
+  }, [link?.page, link?.artboard, link?.at, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
@@ -1603,42 +1607,48 @@ export function Canvas({
            * at a bar, so pressing one never pans or zooms.
            */}
           <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
-            <Bar name="Pages" className="pz:min-w-0 pz:shrink">
-              <PageTabs
-                pages={doc.pages}
-                active={page.id}
-                showShortcut={pageHint}
-                busy={busyPages}
-                onOpen={goToPage}
-                onRename={
-                  readOnly ? undefined : (id, name) => source.apply({ op: "page.update", id, name })
-                }
-                onMove={
-                  readOnly ? undefined : (id, index) => source.apply({ op: "page.move", id, index })
-                }
-              />
-              {!readOnly && (
-                <Tip label="New page">
-                  <Button
-                    variant="ghost"
-                    size="icon-lg"
-                    aria-label="New page"
-                    onClick={() => {
-                      const id = newId("pg");
-                      source.apply({
-                        op: "page.create",
-                        index: doc.pages.length,
-                        page: { id, name: `Page ${doc.pages.length + 1}` },
-                      });
-                      setPageId(id);
-                    }}
-                  >
-                    <Icon name="add" size={15} />
-                  </Button>
-                </Tip>
-              )}
-            </Bar>
-            <Bar name="Controls" className="pz:shrink-0">
+            {pageBar && (
+              <Bar name="Pages" className="pz:min-w-0 pz:shrink">
+                <PageTabs
+                  pages={doc.pages}
+                  active={page.id}
+                  showShortcut={pageHint}
+                  busy={busyPages}
+                  onOpen={goToPage}
+                  onRename={
+                    readOnly
+                      ? undefined
+                      : (id, name) => source.apply({ op: "page.update", id, name })
+                  }
+                  onMove={
+                    readOnly
+                      ? undefined
+                      : (id, index) => source.apply({ op: "page.move", id, index })
+                  }
+                />
+                {!readOnly && (
+                  <Tip label="New page">
+                    <Button
+                      variant="ghost"
+                      size="icon-lg"
+                      aria-label="New page"
+                      onClick={() => {
+                        const id = newId("pg");
+                        source.apply({
+                          op: "page.create",
+                          index: doc.pages.length,
+                          page: { id, name: `Page ${doc.pages.length + 1}` },
+                        });
+                        setPageId(id);
+                      }}
+                    >
+                      <Icon name="add" size={15} />
+                    </Button>
+                  </Tip>
+                )}
+              </Bar>
+            )}
+            <Bar name="Controls" className="pz:ml-auto pz:shrink-0">
               {footerExtra}
               <ToggleGroup
                 variant="raised"

@@ -187,8 +187,9 @@ public, moving or being deleted makes the answers about that repo stale. However
 Ponzu learns that a repo moved account or changed visibility (a webhook, a sync, the
 sweep), the answers about it go stale; and the App being suspended, unsuspended or
 uninstalled makes all of its workspace's answers stale. A pull
-request event updates the design that owns its branch, newest `updated_at` wins, and
-a merge settles the design. A failed check run or suite is an event with priority
+request, check run, check suite, review or push event makes the API read the pull request
+of the design that owns its branch from GitHub again ("Pull requests", below), and a merge
+settles the design. A failed check run or suite is an event with priority
 `next` on that design's feed, and so is a submitted review by someone GitHub says can
 push to the repo, asked the way every access question is (below). A review whose
 `author_association` is not the repo's owner, a member of its organization or a
@@ -422,7 +423,7 @@ detection and no wake-on-request, so the API owns the lifecycle.
 
 | Step | What happens |
 |---|---|
-| Create | On the first message. The API checks credits, creates the sandbox from the repo's base snapshot (or Ponzu's base image), and the runner checks out `pz/<topic>` from the default branch. |
+| Create | On the first message, which `POST /v1/designs` takes with the design (and a create key, so a double tap makes one). The API names the branch `pz/<topic>` from the message's first words that say something, numbered when taken, and never renames it; it creates the sandbox from Ponzu's image (a repo's base snapshot later; credits are not checked yet), and the runner checks out the branch from the default branch. |
 | First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen. |
 | Sleep | Five minutes after the last activity the API stops the sandbox. A stop keeps the disk; memory survives for about ten minutes. |
@@ -431,7 +432,54 @@ detection and no wake-on-request, so the API owns the lifecycle.
 | Lost | A sandbox that cannot be resumed is recreated from the branch and the base. |
 
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
-one-minute cron finishes anything a function did not.
+one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
+
+- **The database decides.** A design has at most one `sandboxes` row that is not `gone`
+  (`waking`, `awake`, `stopping`, `asleep` or `failed`, with when it got there and why it
+  failed), and each move holds to the states it moves from, so of two function instances
+  racing only one makes it. A wake claims the row before it creates or starts anything: `waking`
+  records the wake job that holds it (`waking_by`), only that job moves it on, and another may
+  take it over only once it has sat unmoved for six minutes. A wake that loses the claim does
+  nothing, and when the sandbox is awake every runner token of the design but the one its
+  environment carries is revoked. A row of the next generation replaces a lost one; the design
+  and the generation are the provider's idempotency key, so a create sent again after a crash
+  finds the sandbox the first made. A wake that finds the sandbox `stopping` waits for the stop
+  to land before it resumes it (Known constraints). The design's head shows `waking` at once,
+  and `agent_blocker` says why a design waits: `claude_not_connected`, `claude_expired`,
+  `claude_owner_left` (whose Claude it runs on is no longer in the workspace), `sandbox_busy`
+  (out of starts: the job waits as long as the provider says, or past the limits below) or
+  `sandbox_failed`.
+- **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
+  design's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
+  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
+  `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
+  designs landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
+- **The environment** is `PONZU_API_URL`, `PONZU_DESIGN_ID`, a runner token issued for it
+  (hashed; good for 30 days and renewed with a day left) and exactly one Claude credential,
+  the one the design runs on, opened from the vault. It goes only into the provider's `env`.
+  The row records which token and which credential (the account and when it was connected),
+  and a wake whose credential changed resumes on a new environment, which is a cold start;
+  the old token is revoked. Beside them go the design's repo's secrets, opened from the vault
+  when the environment is made ("Repo environments"), so a secret changed later reaches a
+  sandbox at its next cold start, not when it wakes from sleep.
+- **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
+  a wake fails saying so.
+- **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
+  keeps the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
+  an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
+  safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
+  a new environment, and after three restarts in a row with nothing heard it is `failed`.
+- **The rest of the sweep.** A settled design's sandbox is destroyed and its runner tokens
+  revoked, and so is any sandbox, asleep or awake, whose environment holds a Claude credential
+  that was disconnected or whose owner has left the workspace. A design sandbox at the provider
+  that no row knows is destroyed; a row left in `waking` or `stopping` for six minutes is set to
+  what the provider says, and woken if its feed still has work. One left `waking` before the
+  provider answered its create is failed, and whatever the provider made for it, found by its
+  labels, destroyed.
+- **Whose sandboxes.** Every deployment shares the boat.dev account, so every sandbox carries
+  `scope=<a hash of the database it belongs to>` beside `ponzu=design` (with `design=<id>` and
+  `generation=<n>`) or `ponzu=claude-sign-in`, and a sweep lists and destroys only its own
+  scope's. A sandbox with another scope, or none, is never touched.
 
 ### The runner
 
@@ -632,14 +680,29 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   token for the design's repository. No GitHub secret is stored in the sandbox.
 - **Commits** are authored by the person (their GitHub noreply address) and
   committed by the app.
-- **Pull requests** are opened, read and merged by the API. The agent has no GitHub
-  API token.
+- **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
+  and acted on as the person ("Pull requests" says why). The agent has no GitHub
+  API token; it hands the API its summary of the change.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed as an environment variable when the sandbox starts or
   resumes. It is never written to disk or baked into a snapshot. Moving it behind
-  an egress proxy is hardening work, tracked below.
+  an egress proxy is hardening work, tracked below. A design runs on its owner's account from
+  start to finish (`designs.claude_account_id`). `/v1/claude` connects one: an API key once
+  Anthropic takes it (a free `GET /v1/models`), or a subscription by `claude setup-token`, run
+  in a utility sandbox created with no environment and no command history: `POST
+  /v1/claude/sign-ins` answers the claude.ai address, and `POST /v1/claude/sign-ins/:id/code`
+  writes the pasted code into the sandbox as a file, reads the token back as one, seals it and
+  destroys the sandbox. A sign-in is good for ten minutes and one code (`claude_code_invalid`,
+  `claude_sign_in_expired`, `claude_sign_in_used`). Each sign-in is a machine Ponzu pays for, so a
+  person has one open at a time (a new one replaces the last, and its sandbox is destroyed) and
+  starts at most five an hour (429 `rate_limited`). Disconnecting destroys the credential, keeps
+  the row (`revoked`), and destroys every sandbox whose environment may hold it, asleep or awake:
+  a stopped sandbox keeps its environment at the provider until its disk goes. The next wake
+  starts the design over from its branch. A design whose owner leaves the workspace stops
+  running on their Claude the same way: it does not wake (`claude_owner_left`), and the sweep
+  destroys its sandbox.
 - **Repo secrets** are stored encrypted per repo and injected as environment
-  variables at start.
+  variables when a sandbox starts on a new environment ("Repo environments").
 
 ## The runner protocol
 
@@ -706,6 +769,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential` | `{ protocol, host, path }` | `{ username, password, expiresAt }` |
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
+| POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null }` |
 | POST | `/v1/designs/:id/ops` | `{ ops: [{ id, op }] }` | `{ committed, rejected, seq }` (Committing) |
 | GET | `/v1/designs/:id/ops?after=N` | none | `{ ops, seq }`, 410 when N is too old (Reading) |
 | GET | `/v1/designs/:id/doc` | none | `{ doc, seq }` (Reading) |
@@ -828,7 +892,9 @@ are the boards the agent is on during the stretch. No tool input or output is wr
 `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
 `agent_exited`, `message_refused`, `question_failed`. The `waking` notice becomes `resumed` or
-`started` once Claude Code is up.
+`started` once Claude Code is up. A `pull_request` notice is written once for each pull request
+opening, merging and closing, under an id of its own (`ti_pr-<number>-opened`, `-merged`,
+`-closed`) that no runner can write, whichever of a route and a webhook sees it first.
 
 `POST /v1/runner/thread` writes items by the id the runner chose (`ti_…`): an id the thread
 does not have is appended, an item still streaming has its payload replaced, and a finished
@@ -966,7 +1032,9 @@ Each of these, and every op a person commits (undo and redo included), then call
 wake for the design, one at a time, and every reason pokes the runner when the design's
 sandbox is awake. A stop and an edit record none: a sleeping sandbox is running nothing to stop,
 and an edit is `later`. `requestWake` never fails the request that called it: what that wrote
-is written, and a wake it could not record is logged (`wake_failed`).
+is written, and a wake it could not record is logged (`wake_failed`). A failed check or a review
+comes in a webhook's job, which records a wake for the cron to run (`queueWake`) rather than
+waiting on a sandbox to start.
 
 ### The other way: poke and health
 
@@ -982,10 +1050,185 @@ head. `GET /health` answers `{ "ok": true, "state": "working" | "needs_you" | "i
 The sandbox starts the runner (a systemd service that sources boat's
 `/run/ascii-secrets/env.sh`) with `PONZU_API_URL`, `PONZU_DESIGN_ID`, `PONZU_RUNNER_TOKEN` and
 exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to
-start: Claude Code would use the key without a word and bill its account. The rest is
-optional and in `apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
+start: Claude Code would use the key without a word and bill its account. The repo's secrets
+come packed in one more variable, `PONZU_REPO_SECRETS`, which the runner unpacks only into the
+environment of what it starts, never its own ("Repo environments"). The rest is optional and in
+`apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
 the agent's edits to reach the API, reports its final state (`needs_you` when a question
 stays open) and exits.
+
+### Pull request summary
+
+`POST /v1/runner/pull-request-summary` takes the agent's words on what its branch changes
+(markdown, clipped to 8,000 characters). The API keeps them on the design and, when its pull
+request is open, writes them into the description in place of what it said before; the answer
+names that pull request, or is null while they wait for one to open. Safe to repeat: the last
+one wins.
+
+## Pull requests
+
+A design has at most one open pull request, from its branch into its repo's default branch.
+GitHub holds it. The design's row keeps the little the sidebar and the chrome show (number,
+state, the checks rolled up, whether it can merge, auto-merge), clients watch that live, and the
+pull request tab reads the rest from GitHub when it opens. The code is `apps/api/src/
+pull-requests/` and `deps/github-pull-requests.ts`.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/designs/:id/pull-request` | none | `PullRequestTab` |
+| GET | `/v1/designs/:id/pull-request/files?path=` | none | one file and its diff |
+| POST | `/v1/designs/:id/pull-request` | none | 201 `PullRequestTab`; 200 when one was open |
+| POST | `/v1/designs/:id/pull-request/ready` | none | `PullRequestTab` |
+| POST | `/v1/designs/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
+| POST, DELETE | `/v1/designs/:id/pull-request/auto-merge` | none | `PullRequestTab` |
+| POST | `/v1/designs/:id/pull-request/close` | none | `PullRequestTab` |
+| POST | `/v1/designs/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
+
+Reading takes read access to the design; the rest takes write access. `PullRequestTab` is the
+branch (`exists`, `aheadBy`, `behindBy` against the default branch), the pull request or null
+(state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
+its state, whether the repo's rules require it, and its link, the conversation (the last
+hundred comments and reviews) with line comments, the first hundred changed files with their
+counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the branch
+has commits and no open pull request, or commits since its pull request merged), `ready` (a
+draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
+or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
+back for being behind), `merge`, `blocked` (the rules want something, a review or a required
+check, and the repo has no auto-merge), or `none`. Create PR, Fix checks and Resolve are the
+agent's to do; the client sends it a message. A file's diff is the unified patch, or `binary`,
+or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
+are served, which is one request to GitHub.
+
+**What a client must not trust.** Every title, description, comment, review, check name and
+notice title is what someone on GitHub wrote: anyone who can comment on the pull request, and
+any app or CI that posts a check. It is GitHub's markdown, which can carry raw HTML (a
+description carries Ponzu's own `<picture>`). A client renders it with raw HTML off, and
+neither loads nor follows remote images in it (a tracking pixel learns who looked, and when).
+The links the API sends (a check's page, an avatar) are http(s) or null: a check's link is
+whatever its poster said, and anything else is dropped.
+
+**Who acts.** The App reads the pull request and writes its description, each with a one-hour
+token for the one repository and only what that needs (`contents`, `pull_requests`, `checks`
+and `statuses: read` to read; `pull_requests: write` and `contents: read` to edit). The person
+does everything else (open, ready, merge, auto-merge, close, update the branch) with their own
+GitHub user token (`githubUserToken`).
+
+- Opened as the person, the pull request's author is whoever pressed Create PR. GitHub never
+  counts an author's approval of their own pull request, so where the repo's rules want one
+  review, it comes from someone else, as it would without Ponzu. Opened as the App, the bot
+  would be its author, and the sandbox pushes as the App too, so the person who asked for the
+  change could approve it on GitHub and press Merge: one person where the rules want two.
+- A user-to-server token acts with what both the person and the App may do. So GitHub holds a
+  merge to the repo's rules exactly as they apply to that person, and not as they apply to the
+  App, which a ruleset's bypass list could name. GitHub's history names the person
+  (`merged_by`), not the bot.
+- But GitHub lets an admin, or someone on a ruleset's bypass list, merge past what the rules
+  still want. So Merge does not ask GitHub until the merge state is `clean`, `unstable` or
+  `has_hooks`: anything else (a review wanted, a required check not passed, behind, unknown) is
+  refused with its code before GitHub hears of it, and `nextAction` is never `merge` then. A
+  client may offer to merge anyway only by asking the person and sending `bypass: true`; GitHub
+  then decides whether they may.
+- Reading needs no person, so a webhook can do it.
+- Measured on the test repository with the App's permissions (contents and pull requests
+  write; checks, statuses, metadata and members read): a person's token opens a pull request
+  (its author the person), marks it ready (GraphQL `markPullRequestReadyForReview`), brings its
+  branch up to date (`PUT …/update-branch`) and merges it (`PUT …/merge`, `merged_by` the
+  person). Auto-merge is a setting of the repo, and where it is off GitHub refuses it to either
+  token. Not measured: a base protected by rules, which takes the repo's administration
+  permission to set up, and neither the App nor a token through it has that.
+- A person whose GitHub token is dead is asked to sign in again (401 `github_reauth_required`).
+
+**Opening** is a draft from the branch into the default branch, titled with the design's name,
+whose description is the agent's summary, the design's first page as its preview showed it
+(light and dark, through `<picture>`), and a link back to the design. The picture is a copy of
+the previews made for that pull request, under a random key of its own
+(`pull-requests/<key>/light.png` and `dark.png` at the bucket's root), which reaches those two
+files and nothing else: a description outlives anyone's access to the repo, is mailed to its
+watchers and is read by its integrations, and the design's asset key opens every file of the
+design. Only a private repo's pull request gets one (whoever reads a public one need not be
+able to open the design), and only once the design has previews. When a repo is made public,
+the picture is taken out of each of its designs' newest pull request's description and its
+copy deleted from storage. What stays exposed: whoever could read the description has seen the
+first page as it was, a mail or an integration may keep a copy, and an earlier pull request of
+the same design (one closed, or merged before the design was reopened) keeps its picture.
+
+Where the repo's plan has no draft pull requests GitHub refuses one, and a ready one is opened
+instead. Asking again answers the pull request already open from the branch, or the merged one
+until the branch has commits since its merge (the design was reopened and worked on), when a
+new one is opened from the same branch; one someone opened on GitHub from the branch into the
+default branch is the design's too; after one is closed, asking opens a new one. Refused:
+Scratch (409 `no_repository`), a branch not on GitHub (`branch_not_pushed`), a branch with
+nothing the default branch lacks (`no_changes`).
+
+The agent's summary sits between `<!-- ponzu:summary -->` and `<!-- /ponzu:summary -->`, and
+only that part is written again. A description someone rewrote without those markers is theirs:
+the summary then waits, unwritten.
+
+**Reading, and keeping the row in step.** One GraphQL query as the App (`PULL_REQUEST_QUERY`)
+reads the branch and the pull request; the newest pull request from the branch into the default
+branch is the design's. One from a fork never is, and nor is one someone pointed at another
+base: it merges nothing into the default branch, so it neither shows nor settles the design.
+Every path that reads one (the tab, an action, a webhook) records what it read through one
+function, `recordRead`: the row, the thread's notice (written once, by an id of its own), and,
+on a merge, the design settling. So a merge from the button and GitHub's webhook for it settle
+the design once, whichever comes first, and the sandbox's teardown follows from the settled
+state. Reads finish out of order and a check finishing leaves GitHub's `updated_at` alone, so a
+read is recorded only over one that began no later (`designs.pr_read_at`), or over an older pull
+request; a merge is the last word on its pull request, and a design reopened after its merge
+stays open. A read that finds what the row already says writes nothing, since every write
+reaches everyone watching the workspace's designs.
+
+GitHub's pull request lags a push to its branch by a second or so, and until then shows the
+old commit with its checks and mergeability. The query reads the branch's commit with the pull
+request, and a read that shows an open pull request at another commit than its branch is not
+recorded (a green tick for a commit nobody checked), unless it is the last read there will be;
+Merge and Update branch refuse it as `head_moved`.
+
+A webhook is a signal to read again, never a record: `pull_request` (opened, closed, reopened,
+synchronize, edited, ready, back to draft, auto-merge on and off), `check_run` (completed and
+re-run; one starting adds nothing the push's read does not see), `check_suite` (completed),
+`pull_request_review`, and `push`. Each read is a GraphQL point of the installation's 5,000 an
+hour, and GitHub sends a delivery for every check that finishes, so deliveries are folded into
+windows of two seconds (`pull-requests/refresh.ts`): the first about a design in a window
+records one read for the window's end as a job (`pull_request.refresh`, keyed by the design and
+the window) and makes it then, the rest find it recorded, and the cron tries again a read that
+failed. A read is made again at one, two, three and four seconds while the pull request lags its
+branch or GitHub is still working out whether it can merge (`mergeable` is null; the spike
+measured four to eight seconds after a push or a change of base). A push to the default branch
+reads the open pull requests of the repo's designs, the fifty updated last, four at a time,
+since it may have given them conflicts. Whether checks pass is the rollup of check runs and
+commit statuses, never check suites: other apps leave theirs queued for good.
+
+**Acting** refuses what it can name before asking GitHub, and says why GitHub refused with a
+code a client can show, from GitHub's own words where it gives them. Merge uses the first of
+squash, merge and rebase the repo allows (GitHub has no default method of a repo's own; squash
+is what most allow). It takes the commit the person looked at (`headSha`, required, as for
+Update branch) and merges only while the branch is still there, waiting up to three seconds
+while GitHub works out whether it can. After GitHub says it merged, it is read until the read
+shows it, for a few seconds; if it still does not, a job reads it again a minute later, so the
+design settles whether or not the merge's webhook arrives.
+
+| Code | When |
+|---|---|
+| `no_pull_request` | nothing is open to act on |
+| `pull_request_closed`, `pull_request_draft` | merged or closed; a draft, for a merge or auto-merge |
+| `head_moved` | the branch has commits since `headSha`, or moved under the request |
+| `mergeability_unknown` | GitHub is still working out whether it can merge |
+| `merge_conflicts` | the branch conflicts with its base |
+| `review_required`, `changes_requested` | the repo's rules want an approval; a reviewer asked for changes |
+| `checks_failing`, `checks_pending` | a check the rules require failed, or has not finished (other checks may fail) |
+| `branch_behind` | the rules want the branch up to date: update it |
+| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits, a merge queue…) |
+| `branch_up_to_date` | updating a branch that has everything its base has |
+| `auto_merge_not_allowed`, `already_mergeable` | the repo has auto-merge off; nothing is left to wait for |
+| `forbidden` | GitHub does not let this person do it (403) |
+| `github_refused` | anything else GitHub refused (422) |
+
+Not handled yet: a repo that merges through a merge queue (GitHub refuses a direct merge there:
+`branch_protected`); the App has no `workflows` permission, so a branch update or a push that
+would change `.github/workflows/` is refused by GitHub; and there is no sweep that reads open
+pull requests whose webhooks were all lost (a merge from Ponzu is covered by its own job).
 
 ## Assets and previews
 
@@ -1007,6 +1250,10 @@ Under a design's asset key:
 | `assets/<name>` | a file of the design, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `designs.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
+
+At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
+picture, copied from the previews when it opens, under a random key that opens nothing else
+("Pull requests").
 
 A client builds a preview's address from the design's head: `<assets url>/<asset key>/previews/
 <preview seq>-<theme>.png`. A preview waits under `staging/` at the bucket's root until it is
@@ -1086,11 +1333,245 @@ Pay as you go in credits: $0.10 a credit, 5 credits per awake hour, 100 free per
 member each month, pooled across a workspace. A card is asked for only when the
 free credits are used up. A workspace has a monthly cap.
 
-- Awake time is metered from the sandbox's state changes into `usage_events`.
+- Awake time is metered from the sandbox's state changes into `usage_events`: each stretch
+  from `awake` to whatever it moved to, in the statement that moved it, put down to the
+  workspace and to the person behind the newest event of the design's feed when it was woken
+  or last kept awake.
 - `credit_ledger` holds grants, use and adjustments. Balance and cap are checked
   before every wake. A running turn is never cut off.
 - Stripe receives the billed part as metered usage.
 - The iPhone shows usage and sells nothing.
+
+What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
+the rate card. There is no Stripe, no ledger write and no cap enforcement yet; the cap is stored
+for when there is.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/workspaces/:id/usage` | none | `WorkspaceUsage` |
+| PATCH | `/v1/workspaces/:id/billing` | `{ capUsd }` | `WorkspaceUsage` |
+
+**The period.** A workspace's anchor is the day it was made (`billing_period_anchor`). Its
+period starts at midnight UTC on that day of every month, or on the month's last day when the
+month is shorter (a workspace made on the 31st starts on February 28), and ends where the next
+starts (`billing/period.ts`). `period.end` is the day Plan and usage "bills" or "resets" on; an
+app formats it in UTC, or a person west of Greenwich reads the day before. A stretch of awake
+time counts in the period it began in, as its usage event is dated, and the stretch awake right
+now counts up to the moment of asking, under the card in effect.
+
+**The arithmetic** is one module, `billing/credits.ts`, and every number it answers is an
+integer:
+
+- Used credits: awake seconds × the card's credits per awake hour ÷ 3,600 (each stretch priced
+  by the card that was in effect when it began), plus what model turns cost (zero while every
+  design runs on its owner's own plan), added up exactly and rounded down to a whole credit. A
+  partial credit, under twelve minutes awake at 5 an hour, is never charged.
+- Free credits: the card's free credits per member × the people counted, pooled. The people
+  counted are everyone who has been a member at any point in the period, plus anyone else whose
+  use is in it. A member's allowance is granted once a period and never taken back: it is a
+  `grant` row in `credit_ledger` for the period's start (`credit_ledger_grant_key` keeps it to
+  one), written for every member the first time Plan and usage reads the period with them in
+  it, and for a person as they leave (a sync that drops their membership, or deleting their
+  account, whose grants stay with no person). So the count is the members now, everyone with a
+  grant for the period, and everyone whose use is in it, and someone who leaves mid-period
+  without using anything still counts. Only people who have signed in are members, so a
+  collaborator who never signed in adds nothing.
+- Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
+  sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
+  legend in whole dollars rounded down.
+- A person's and a design's credits are their own exact use rounded down the same way: gross,
+  before the pooled free credits, so a breakdown adds up to what was used, not to what is
+  billed. Use put down to nobody (a deleted account) is `unattributedCredits`.
+- The cap is whole dollars, $1 to $1,000,000, stored in cents (`monthly_cap_cents`; the card's
+  default, $100, until one is set). It may not be set below what the period has billed, rounded
+  up to the dollar (400 `cap_too_low`, with `details.lowestUsd`).
+
+**Who sees what.** Every member sees the totals, the free credits, what would be billed and the
+cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted, highest
+first), `unattributedCredits` and `byDesign`: designs named only where they may read the repo
+(or their own Scratch), the rest, deleted designs included, summed in a last entry with no
+design. An admin who reaches the workspace only through repos shared with them sees no other
+member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
+`{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
+state.
+
+## Notifications
+
+Settings › Notifications chooses what pings a person and where. Nothing sends pushes yet; the
+API keeps what sending will need.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
+| PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
+| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
+| PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
+| DELETE | `/v1/me/devices/:id` | none | 204 |
+
+`prefs` is `{ needsYou, replies, prReady, teammateComments, emailDigest }`, on the person's row:
+the first three start on, the last two off, as the board draws them. A toggle saves as it is
+flipped and every device reads the same row. A device is an install of the app: `pushToken` is
+its APNs device token in hex (`ios`; `macos` is kept for the Mac's own notifications later) and
+`pushEnvironment` which APNs it is for. The iPhone registers after the person turns
+notifications on, and again at each launch, which updates the row in place and keeps
+`lastSeenAt`. `installId` is the app's own random id for the install (16 to 64 letters, digits
+or dashes), made once and kept in the Keychain, and never returned. A token another person
+registered moves to whoever registers it now, with pings on, only when the same install
+registers it (the phone signed in as someone else; logged `device_token_moved` with both
+people). From any other install it stays where it is and the answer is 409 `push_token_taken`
+(logged `device_token_conflict`): knowing a token is not enough to take someone's pings. `pings` is the person's toggle for one device;
+`blocked` is the phone saying iOS has notifications for Ponzu off, which the app reports and
+Settings shows as "Turned off in iOS Settings". A person keeps twenty devices; registering a
+21st forgets the one unseen longest. Signing out of the phone deletes its device. No answer
+carries a push token back.
+
+**What is worth a ping**, and who gets it, once sending is built. Each goes to the person's
+devices with `pings` on and not `blocked`, never to the person who caused it, and speaks as
+Ponzu:
+
+| Event | Toggle | Who | When |
+|---|---|---|---|
+| A question for you | `needsYou` | everyone who can steer the design (write access), the design's owner first | a question row opens (`questions`, the runner's `POST /v1/runner/questions`): a question, a plan, a permission, a sign-in or a secret the agent waits on |
+| A reply | `replies` | everyone who commented on the design | the agent's `assistant` item finishes in a turn that a comment of theirs started |
+| A pull request is ready | `prReady` | the design's owner and whoever pressed Create PR | `recordRead` records the design's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
+| A design finished | `needsYou` | the design's owner | a turn the owner started ends with the agent `idle` and no question open, after more than a minute of work, and the owner is not looking at it (no presence row) |
+| A teammate comments | `teammateComments` | the design's owner | a person other than the owner comments on it |
+| The cap at 80%, the cap reached | always | the workspace's admins | once a period each, with billing |
+
+The email digest (`emailDigest`) is one email a day of the same events and nothing else.
+
+## Repo environments
+
+Settings › Environments shows, per repo, the base its designs start from and the secrets its
+sandboxes receive. A repo is listed once it has something to show: a base, a rebuild asked for,
+or a secret.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/workspaces/:id/environments` | none | `{ repos: Environment[], canManageSecrets }` |
+| GET | `/v1/repos/:id/environment` | none | `{ environment, canManageSecrets, canRebuild }` |
+| POST | `/v1/repos/:id/environment/rebuild` | none | 202, as GET |
+| POST | `/v1/repos/:id/environment/secrets` | `{ name, value }` | 201, as GET |
+| PUT | `/v1/repos/:id/environment/secrets/:name` | `{ value }` | as GET |
+| DELETE | `/v1/repos/:id/environment/secrets/:name` | none | as GET |
+
+`Environment` is the repo (`id`, `owner`, `name`, `fullName`), its base (`status`: `none`,
+`building`, `ready` or `failed`; `builtAt`; `stack`, each a Simple Icons slug and a label;
+`rebuild`: when one was asked for and whether its job still waits) and its secrets by name with
+when each last changed. Anyone `requireRepo` lets read the repo sees it; anyone else gets a
+404, a repo of the same workspace included. Anyone who can push to the repo may ask for a
+rebuild; only an admin of the workspace adds, replaces or removes a secret (403 `forbidden`).
+
+**Rebuild** records a `repo.base_rebuild` job, keyed by the repo, and answers at once. The
+sandbox side of building a base (Claude setting the repo up again from its default branch, the
+result saved as its snapshot and its stack written down) is not built, so the job's handler is
+only a mark: `repos.base_rebuild_requested_at`, for the repo's next start to act on once it can.
+Designs that have a sandbox keep it.
+
+**Secrets.** A name is capitals, digits and underscores, starting with a letter, at most 64
+characters; a value is 1 byte to 16 KiB with no NUL; a repo holds at most 50, 44 KiB of names
+and values in all, because they all go into one sandbox's environment (boat.dev takes 64 KB)
+in base64, which is a third larger, beside Ponzu's own (409 `secrets_full`). A name that would
+replace or steer what Ponzu puts there, or change how a program loads code or checks TLS, is
+refused (400 `secret_name_reserved`): anything starting `PONZU_`, `CLAUDE_`, `ANTHROPIC_` (a
+second credential, or `ANTHROPIC_BASE_URL` sending the owner's to someone else), `ASCII_` or
+`BOAT_` (the provider's), `GIT_` (the credential helper is Ponzu's), `LD_` or `DYLD_` (the
+loader's), `BUN_` (`BUN_OPTIONS` is flags, `--preload` among them), `NODE_` or `NPM_CONFIG_`
+(but `NODE_ENV` and `NODE_AUTH_TOKEN`, which only say how the repo's own code runs and
+installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `USER`, `LOGNAME`,
+`SHELL`, `PWD`, `TMPDIR`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `PS4`, `IFS`, `PROMPT_COMMAND`,
+`PYTHONSTARTUP`, `XDG_CONFIG_HOME`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`,
+`REQUESTS_CA_BUNDLE` and the proxy variables. Adding a name
+the repo has is 409 `secret_exists`; replacing or removing one it lacks is 404. The value is
+sealed in the vault bound to `repo_secrets.encrypted_value` and `<repo id>/<name>`, and is
+never returned, logged or put in an event or a question. A secret the agent asks for in the
+thread goes to the same row (`answerSecretQuestion`, which no route calls yet) and the question
+keeps only its name; that name comes from the sandbox, so the route that wires it must check it
+as these routes do, and the sandbox's environment checks it again either way.
+
+**Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the design's repo's
+secrets, read in one statement, and packs them into one variable of the provider's `env`,
+`PONZU_REPO_SECRETS`: `NAME:base64(value)`, comma-separated (`encodeRepoSecrets` in
+`@ponzu/runner/protocol`). They never become variables of the runner's own: the runner is a Bun
+process that holds the runner token and the Claude credential, and a variable like
+`BUN_OPTIONS` would load code into it before it starts. The runner unpacks them only into the
+environment of what it starts for the agent (`agentEnv`), under its own variables, so none can
+stand in for those either, and without the runner token. Base64 also means boat's
+`/run/ascii-secrets/env.sh`, which the runner's unit sources with bash, holds nothing a shell
+could read as a command whatever an admin typed (a quote, `$(…)`, a newline in a PEM). A
+Scratch design has none. It never fails a
+wake: a name that is reserved now (one stored before it was) and a value the vault cannot open
+are left out, and anything past the provider's limits is too, each logged by count only. A
+changed secret takes effect at the sandbox's next cold start: a new design, a sandbox replaced
+or rebuilt, a new Claude credential, or a runner token near its end. A sandbox that only went to
+sleep wakes on the values it had. Settings says so under the secrets, in the words "New values
+reach a design the next time its sandbox starts fresh. Designs running now keep the ones they
+started with."
+
+## Deleting an account
+
+`DELETE /v1/me` with `{ confirm }`, the person's GitHub login typed out (any case; 400
+`confirmation_mismatch` otherwise), answers 204 once the account is gone, and the app signs out.
+While the person is the only admin of a workspace that others are in it is refused, 409
+`sole_admin` ("Make someone else an admin first.") with `details.workspaces`, and nothing
+changes: a workspace always has an admin. That is an organization's workspace, and their own
+account's too when collaborators on their repos are in it: it still bills, and someone must be
+able to set its cap. The check is made first, and again in the statement that deletes the row,
+on the admins' membership rows locked, so two admins deleting themselves at once cannot each
+see the other stay; the second is refused there, after the steps before it, which are safe to
+have taken.
+There is nothing else to change about a profile: a person's name, avatar and email are GitHub's
+and change there, coming through at their next sign-in.
+
+In this order, each step safe to repeat, so a request that fails partway can be sent again:
+
+1. Their Claude credential is destroyed, and with it every sandbox that held it (as
+   disconnecting does).
+2. Every sandbox of a design they own is retired, its awake time metered and its runner tokens
+   revoked; the provider destroys the machines in the background, and the sweep catches what
+   that misses.
+3. Their designs that are theirs alone are deleted with everything under them: their Scratch
+   designs, and their designs in a workspace nobody else is in.
+4. Their name is taken out of what stays: in every design of a workspace they are in, or that
+   they own, a thread item they wrote or stopped a run in names them as
+   `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under
+   their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
+5. This period's free allowance is granted to them in every workspace they are in, so their
+   leaving does not take it back ("Billing").
+6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+   token of theirs stops working at once), GitHub token, memberships, repo access answers,
+   Claude account, devices and open sign-ins. What other people's work points at forgets them:
+   a design's owner, who wrote a thread item, who answered a question, who changed a secret,
+   whom usage is put down to (the workspace's usage history stays, put down to nobody).
+7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+
+**Designs they own in a workspace others are in stay with it**, owned by nobody: a team's, or
+their own account's when collaborators on their repos are in it. Their canvas, thread and pull
+request are work shared with people in a repo they reach, who have commented on it and may be
+about to merge it; deleting them would take that from people who did not ask, and
+GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
+Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
+one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
+says so: "Your designs, threads and settings are deleted. Designs in a team stay with the team.
+Your repos and pull requests on GitHub are not touched."
+
+What is not rewritten: the name a design's document carries for a comment's author (inside the
+op and the checkpoints, whose history is not rewritten), and their words in workspaces they had
+already left.
+
+## Search
+
+Not built. Searching the sidebar for design names alone is cheap (the `designs` row has the
+name and the access joins `workspace.designs` uses), but the board shows boards and comments
+too, and those live only inside a design's document, as `json` in checkpoints and ops. Reading
+every readable design's document per keystroke is not an answer, so search needs a small table
+kept at commit time: `search_entries (design_id, kind: design | board | comment, ref, text,
+author_id, at)`, written by the statement that commits ops (the same one that copies the name
+and icon to `designs`) from what each op changed, and rebuilt for a design from its checkpoint
+when its shape changes. `GET /v1/workspaces/:id/search?q=` then reads it with a trigram index
+(`pg_trgm`), joined to `repo_access` as the designs list is, at most 8 designs, 8 boards and 8
+comments, with the match offsets the results board highlights. That is a change to the commit
+path, which is its own pull request.
 
 ## Clients
 
@@ -1102,7 +1583,29 @@ Every client names itself on each request (`X-Ponzu-Client: macos/2.0.0`). The A
 can refuse one that is too old (426, `client_too_old`), and the shell then offers
 the update.
 On first launch the cloud app removes what 1.x left behind (the wake helper, the
-`ponzu` shim, agent registrations).
+`ponzu` shim, agent registrations), each only when it is in the form 1.x wrote and
+what it runs is gone.
+
+The renderer never holds the refresh token: it borrows an access token from the
+main process for each request (`borrowSession` in `packages/client`) and sends
+the request itself, from the studio's origin. The window shows the studio and
+nothing else, under a content security policy that runs only the studio's own
+script and reaches only the API, Neon Realtime and a design's files (each its
+environment's exact host). A design's images may come from any https host, as they
+do in the runner's previews. The packaged app's Electron fuses refuse to run it as
+Node or open an inspector, and a release refuses a remote debugging port, so no
+other program can run code as Ponzu to read the session. Signing out forgets the
+session and everything the studio kept: the designs last opened and their asset keys.
+
+Links into the app (`apps/desktop/README.md`):
+
+```
+ponzu://design/<design id>?page=<page id>&artboard=<artboard id>
+ponzu://github/setup?result=installed&workspace=<workspace id>
+```
+
+A link only asks to show something; one that doesn't parse is dropped. A development
+build takes `ponzu-dev://` instead, so it never takes an installed app's links.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
@@ -1123,7 +1626,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
-| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
+| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the design's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the design was opened. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A design carries its workspace, and must agree with its repo's; the rows under a design (ops, thread, questions, presence and the rest) carry the design and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `designs`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted

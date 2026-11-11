@@ -24,7 +24,8 @@ export type Suite = "desktop" | "mobile";
 
 /** The workspace packages (by directory name) each suite builds or tests. */
 const SUITES: Record<Suite, string[]> = {
-  // The packaged Electron app, which bundles the CLI's server and the studio.
+  // The packaged Electron app, which bundles the studio, and the CLI's npm package, which
+  // shares its job until apps/cli is deleted.
   desktop: ["desktop", "cli", "studio"],
   // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/canvas,
   // but its canvas and icons import that package's source by path (apps/mobile/canvas).

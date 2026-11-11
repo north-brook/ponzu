@@ -9,7 +9,9 @@ export type RowIndicator =
   | { kind: "working" }
   | { kind: "unseen" };
 
-export function rowIndicator(design: DesignSummary): RowIndicator | null {
+export function rowIndicator(
+  design: Pick<DesignSummary, "needsYou" | "agentState" | "unseen">,
+): RowIndicator | null {
   if (design.needsYou > 0) return { kind: "needs_you", count: design.needsYou };
   // A sandbox waking up is the agent getting to work: the row turns from the first moment.
   if (design.agentState === "working" || design.agentState === "waking") return { kind: "working" };
@@ -23,7 +25,10 @@ export function rowIndicator(design: DesignSummary): RowIndicator | null {
  */
 export type RailSignal = "idle" | "unseen" | "working" | { needsYou: number };
 
-export function railSignal(design: DesignSummary, threadUnseen: boolean): RailSignal {
+export function railSignal(
+  design: Pick<DesignSummary, "needsYou" | "agentState">,
+  threadUnseen: boolean,
+): RailSignal {
   const row = rowIndicator({ ...design, unseen: threadUnseen });
   if (!row) return "idle";
   return row.kind === "needs_you" ? { needsYou: row.count } : row.kind;

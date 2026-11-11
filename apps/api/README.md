@@ -24,10 +24,16 @@ src/
     github.ts       real: as a person (user, emails, installations, repositories, org role, token
                     refresh) and as the App (installation lookups and tokens, repo lists, a
                     person's permission in a repo)
+    github-octokit.ts  how all of it reaches GitHub: Octokit on our fetch and clock, the App's
+                    JWT and installation tokens (auth-app), pages, GraphQL, and GitHub's
+                    failures as the API's errors. No retry or throttling plugin, on purpose
+    github-pull-requests.ts  a design's pull request: the one GraphQL read and describing
+                    it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
     poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
+    anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
@@ -41,8 +47,23 @@ src/
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
                   session, thread writes, git credentials; runner.e2e.test.ts runs the real
                   runner against these routes
+  pull-requests/  a design's pull request: sync.ts reads it and records it (the one place a
+                  merge settles a design), refresh.ts reads it again after webhooks, as jobs,
+                  open.ts opens it and keeps the agent's summary and picture in it, actions.ts
+                  is what a person does to it, view.ts is what the tab is sent;
+                  pull-requests.live.test.ts runs it against the real test repository
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
-  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox
+  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
+                  orchestrate.ts: the wake job (create, resume, a new environment, replace);
+                  environment.ts: what a sandbox starts with; sweep.ts: the minute's idle
+                  stop, dead runners, settled designs, orphans and repairs; retire.ts
+  claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
+                  `claude setup-token` in a utility sandbox), disconnecting, and the models
+  environments/   a repo's secrets (what a name may be, how a value is sealed) and its base's
+                  rebuild, recorded as a job whose handler only marks it for now
+  billing/        a billing period (period.ts), the credit arithmetic and its rounding
+                  (credits.ts), and Plan and usage worked out from usage events (usage.ts)
+  account/        deleting a person's account, step by step
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
@@ -62,6 +83,14 @@ Hono preset treats both as entry points.
 
 The code runs on Node and is tested on Bun. `src/` outside the tests may use only what Node
 has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
+
+**The sandbox image.** Designs' sandboxes are created from `PONZU_SANDBOX_SNAPSHOT`, and a
+deployment that wakes them must set it; unset, every wake shows `sandbox_failed`. The image's
+runner must speak this API's runner protocol, so bake it (`bun apps/runner/image/bake.ts`) from
+a commit at least as new as the API's protocol: an image from before `claimId` (migration
+0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
+`ponzu-runner-6041787d9d11`. Every deployment shares the boat.dev account; the sweeps keep to
+the sandboxes labelled with their own database (`SandboxConfig.scope`).
 
 ## Adding a route
 
@@ -169,7 +198,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    ```
 
    `createTestApp` is the real app on an in-process Postgres with `t.workos` and `t.github`
-   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`), `t.storage`
+   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`, with the image
+   `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
    signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
    pokes, recorded), `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
@@ -193,9 +223,19 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `feedOf(db, designId)` from `@ponzu/db/testing` is a design's whole feed, for asserting the
    events something added.
 
+   Branches and pull requests are `t.github.pulls` (`testing/fake-pull-requests.ts`), for the
+   repository `t.github.repo(fullName)` names: `push` a commit, `openAsSomeone`, `setChecks`,
+   `review`, `comment`, `protect` the base (with who may bypass it), `lagHead` and `hideMerges`
+   to act out GitHub's reads running behind, and `pull(…)` to read or change one. It answers the
+   GraphQL operations the API sends by their names, keeps `mergeable` unknown for
+   `MERGEABLE_AFTER_MS` after a change, as GitHub does, refuses a merge in GitHub's words, and
+   records what was done and by whom (`actions`).
+
    `deps/storage.live.test.ts` runs uploads against the real bucket, through the routes: it is
    skipped unless `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and
-   `PONZU_ASSETS_URL` (the bucket's public URL) are set.
+   `PONZU_ASSETS_URL` (the bucket's public URL) are set. `pull-requests/pull-requests.live.test.ts`
+   opens, reads and merges a pull request in the real test repository; the top of the file says
+   what it needs.
 
 ## Live queries
 

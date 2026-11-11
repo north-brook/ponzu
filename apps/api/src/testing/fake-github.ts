@@ -2,6 +2,7 @@ import { createHmac, generateKeyPairSync, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { jwtVerify } from "jose";
 import type { Fetch } from "../deps/fetch.ts";
+import { FakePullRequests, type FakeRepoAccess } from "./fake-pull-requests.ts";
 
 /*
  * GitHub, in memory, at the HTTP boundary: the API's real GitHub client talks to `fetch` here.
@@ -122,8 +123,29 @@ export class FakeGithub {
   readonly #holds: { path: string; arrived: () => void; released: Promise<void> }[] = [];
   #next = 1;
 
+  /** The branches and pull requests of every repository. */
+  readonly pulls: FakePullRequests;
+
   constructor(clock: Clock) {
     this.#clock = clock;
+    this.pulls = new FakePullRequests(clock);
+  }
+
+  /** A repository of any installation, as the branch and pull request calls reach it. */
+  repo(fullName: string): FakeRepoAccess | undefined {
+    for (const installation of this.installations) {
+      const repository = installation.repositories.find((repo) => repo.fullName === fullName);
+      if (repository) {
+        return {
+          id: repository.id,
+          fullName,
+          installationId: installation.id,
+          defaultBranch: repository.defaultBranch ?? "main",
+          canPush: (userId) => repository.access[userId] === "write",
+        };
+      }
+    }
+    return undefined;
   }
 
   addUser(user: FakeGithubUser): FakeGithubUser {
@@ -213,6 +235,8 @@ export class FakeGithub {
   /** Serves api.github.com and github.com. Pass it to `createGithub` as its `fetch`. */
   readonly fetch: Fetch = async (url, init = {}) => {
     const answer = await this.#serve(url, init);
+    // A fetched response says where it came from; Octokit's paginator reads it.
+    Object.defineProperty(answer, "url", { value: url });
     const hold = this.#holds.findIndex((queued) => queued.path === new URL(url).pathname);
     if (hold >= 0) {
       const { arrived, released } = this.#holds.splice(hold, 1)[0]!;
@@ -239,10 +263,13 @@ export class FakeGithub {
     }
     if (hostname !== "api.github.com") return notFound(method, url);
 
-    const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /, "") ?? "";
+    // GitHub reads the scheme in any case.
+    const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /i, "") ?? "";
     const appToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(pathname);
     if (method === "POST" && appToken) {
-      return this.#installationToken(bearer, Number(appToken[1]), JSON.parse(String(init.body)));
+      // A token for everything the installation has is asked for with no body at all.
+      const body = JSON.parse(typeof init.body === "string" ? init.body : "{}");
+      return this.#installationToken(bearer, Number(appToken[1]), body);
     }
     const appInstallation = /^\/app\/installations\/(\d+)$/.exec(pathname);
     if (method === "GET" && appInstallation) {
@@ -250,12 +277,16 @@ export class FakeGithub {
       const installation = this.#installation(Number(appInstallation[1]));
       return installation ? Response.json(installationJson(installation)) : notFound(method, url);
     }
+    const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+    const find = (fullName: string) => this.repo(fullName);
     const asInstallation = this.#installationTokens.get(bearer);
     if (asInstallation !== undefined) {
       if (asInstallation.expiresAt <= this.#clock.now()) {
         return Response.json({ message: "Bad credentials" }, { status: 401 });
       }
-      return this.#serveInstallation(asInstallation, method, url);
+      const caller = { kind: "app" as const, ...asInstallation };
+      const pulled = this.pulls.serve(caller, method, new URL(url), body, find);
+      return pulled ?? this.#serveInstallation(asInstallation, method, url);
     }
 
     const held = this.#accessTokens.get(bearer);
@@ -263,6 +294,9 @@ export class FakeGithub {
       return Response.json({ message: "Bad credentials" }, { status: 401 });
     }
     const user = this.#users.get(held.userId)!;
+    const caller = { kind: "user" as const, id: user.id, login: user.login };
+    const pulled = this.pulls.serve(caller, method, new URL(url), body, find);
+    if (pulled) return pulled;
     if (method !== "GET") return notFound(method, url);
 
     if (pathname === "/user") {
@@ -279,7 +313,7 @@ export class FakeGithub {
       const reachable = this.installations.filter((installation) =>
         this.#reaches(user, installation),
       );
-      return Response.json({
+      return paged(url, reachable.length, {
         total_count: reachable.length,
         installations: page(reachable, searchParams).map(installationJson),
       });
@@ -292,7 +326,7 @@ export class FakeGithub {
       const reachable = installation.repositories.filter(
         (repository) => repository.access[user.id],
       );
-      return Response.json({
+      return paged(url, reachable.length, {
         total_count: reachable.length,
         repositories: page(reachable, searchParams).map((repository) => ({
           id: repository.id,
@@ -331,7 +365,7 @@ export class FakeGithub {
       ({ id }) => token.repositoryIds === null || token.repositoryIds.includes(id),
     );
     if (method === "GET" && pathname === "/installation/repositories") {
-      return Response.json({
+      return paged(url, repositories.length, {
         total_count: repositories.length,
         repository_selection: installation.repositorySelection,
         repositories: page(repositories, searchParams).map(repositoryJson),
@@ -507,7 +541,7 @@ export class FakeGithub {
     const installation = this.#installation(installationId);
     if (!installation) return Response.json({ message: "Not Found" }, { status: 404 });
     if (installation.suspendedAt) return suspended();
-    const { repository_ids: repositoryIds, permissions } = body as {
+    const { repository_ids: repositoryIds, permissions = {} } = body as {
       repository_ids?: number[];
       permissions?: Record<string, string>;
     };
@@ -527,7 +561,7 @@ export class FakeGithub {
     this.#installationTokens.set(token, {
       installationId,
       repositoryIds: repositoryIds ?? null,
-      permissions: permissions ?? null,
+      permissions,
       expiresAt,
     });
     return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
@@ -563,8 +597,8 @@ interface InstallationToken {
   installationId: number;
   /** The repositories it was narrowed to; null for every one the installation has. */
   repositoryIds: number[] | null;
-  /** What it was narrowed to; null for everything the installation has. */
-  permissions: Record<string, string> | null;
+  /** What it may do, as it was asked for; none asked for is nothing. */
+  permissions: Record<string, string>;
   /** Epoch milliseconds. */
   expiresAt: number;
 }
@@ -573,6 +607,16 @@ function page<T>(items: T[], params: URLSearchParams): T[] {
   const size = Number(params.get("per_page") ?? 30);
   const start = (Number(params.get("page") ?? 1) - 1) * size;
   return items.slice(start, start + size);
+}
+
+/** One page of a list of `total`, with GitHub's `Link` to the next page while there is one. */
+function paged(url: string, total: number, body: unknown): Response {
+  const next = new URL(url);
+  const size = Number(next.searchParams.get("per_page") ?? 30);
+  const number = Number(next.searchParams.get("page") ?? 1);
+  if (number * size >= total) return Response.json(body);
+  next.searchParams.set("page", String(number + 1));
+  return Response.json(body, { headers: { link: `<${next}>; rel="next"` } });
 }
 
 function installationJson(installation: FakeInstallation) {

@@ -45,7 +45,13 @@ import {
 import { commitOps, findOps, readOps } from "./ops.ts";
 import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
-import { findDesignByBranch, recordPullRequest } from "./pull-requests.ts";
+import {
+  findDesignByBranch,
+  getPullRequestContext,
+  listPullRequestDesigns,
+  recordPullRequestRead,
+  setPullRequestSummary,
+} from "./pull-requests.ts";
 import {
   answerQuestion,
   answerSecretQuestion,
@@ -311,6 +317,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       id: question.id,
       name: "API_KEY",
       encryptedValue: "v1.ciphertext",
+      valueBytes: 24,
       userId: user.id,
     });
     expect(answered).toMatchObject({ status: "answered", answer: { name: "API_KEY" }, payload });
@@ -527,7 +534,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     ).toHaveLength(1);
 
     const branch = { githubRepoId: repo.githubRepoId, branch: "pz/live" };
-    await createDesign(db, {
+    const onBranch = await createDesign(db, {
       workspaceId: workspace.id,
       repoId: repo.id,
       ownerId: user.id,
@@ -536,14 +543,59 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       branch: branch.branch,
       doc: emptyDoc("Live"),
     });
+    expect(await setPullRequestSummary(db, { designId: onBranch.id, summary: "Live." })).toEqual({
+      prNumber: null,
+      prState: null,
+    });
+    const readAt = new Date("2026-11-10T12:00:00.456Z");
     const updatedAt = new Date("2026-11-10T12:00:00.123Z");
-    const settled = await recordPullRequest(db, {
-      ...branch,
+    expect(
+      await recordPullRequestRead(db, {
+        designId: onBranch.id,
+        number: 2,
+        state: "draft",
+        checks: "running",
+        mergeable: null,
+        autoMerge: false,
+        updatedAt,
+        readAt,
+      }),
+    ).toMatchObject({ prNumber: 2, prReadAt: readAt, prUpdatedAt: updatedAt });
+    // Read again, finding the same: nothing is written.
+    expect(
+      await recordPullRequestRead(db, {
+        designId: onBranch.id,
+        number: 2,
+        state: "draft",
+        checks: "running",
+        mergeable: null,
+        autoMerge: false,
+        updatedAt,
+        readAt: new Date(readAt.getTime() + 1),
+      }),
+    ).toBeNull();
+    expect(
+      await listPullRequestDesigns(db, { githubRepoId: repo.githubRepoId, open: true }),
+    ).toEqual([onBranch.id]);
+    const settled = await recordPullRequestRead(db, {
+      designId: onBranch.id,
       number: 2,
       state: "merged",
+      checks: "passing",
+      mergeable: true,
+      autoMerge: false,
       updatedAt,
+      readAt: new Date(readAt.getTime() + 2),
     });
-    expect(await findDesignByBranch(db, branch)).toMatchObject({ id: settled!, status: "settled" });
+    expect(settled).toMatchObject({ status: "settled", prMergeable: true });
+    expect(await getPullRequestContext(db, onBranch.id)).toMatchObject({
+      design: { prSummary: "Live.", prState: "merged" },
+      repo: { githubRepoId: repo.githubRepoId, private: true },
+    });
+    expect(await findDesignByBranch(db, branch)).toMatchObject({
+      id: onBranch.id,
+      status: "settled",
+    });
     expect(await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [] })).toBe(
       1,
     );

@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
   AUTH_STATE_KINDS,
@@ -56,7 +57,7 @@ export const users = pgTable("users", {
   pingNeedsYou: boolean("ping_needs_you").notNull().default(true),
   pingReplies: boolean("ping_replies").notNull().default(true),
   pingPrReady: boolean("ping_pr_ready").notNull().default(true),
-  pingTeammateComments: boolean("ping_teammate_comments").notNull().default(true),
+  pingTeammateComments: boolean("ping_teammate_comments").notNull().default(false),
   emailDigest: boolean("email_digest").notNull().default(false),
   // Guided setup: when each step that has no other trace was finished.
   onboardingWhereAt: instant("onboarding_where_at"),
@@ -198,6 +199,11 @@ export const repos = pgTable(
     baseStatus: text("base_status", { enum: BASE_STATUSES }).notNull().default("none"),
     baseBuiltAt: instant("base_built_at"),
     baseError: text("base_error"),
+    /**
+     * When someone asked for the base to be made again. The sandbox side of building a base is
+     * not built yet, so this only records that the repo's next start should rebuild it.
+     */
+    baseRebuildRequestedAt: instant("base_rebuild_requested_at"),
     stack: jsonb("stack").$type<StackItem[]>().notNull().default([]),
     /** Prompts to start from, grounded in the repo: the API's `ideas/` writes them. */
     ideas: jsonb("ideas").$type<string[]>().notNull().default([]),
@@ -265,6 +271,8 @@ export const repoSecrets = pgTable(
     /** The environment variable the sandbox receives. */
     name: text("name").notNull(),
     encryptedValue: text("encrypted_value").notNull(),
+    /** The value's length in UTF-8 bytes, so a repo's secrets fit what a sandbox's env takes. */
+    valueBytes: integer("value_bytes").notNull().default(0),
     updatedByUserId: text("updated_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -274,6 +282,7 @@ export const repoSecrets = pgTable(
   (t) => [
     primaryKey({ columns: [t.repoId, t.name] }),
     check("repo_secrets_name_check", sql`${t.name} ~ '^[A-Za-z_][A-Za-z0-9_]*$'`),
+    check("repo_secrets_value_bytes_check", sql`${t.valueBytes} >= 0`),
   ],
 );
 
@@ -288,7 +297,12 @@ export const claudeAccounts = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     kind: text("kind", { enum: CLAUDE_ACCOUNT_KINDS }).notNull(),
     status: text("status", { enum: CLAUDE_ACCOUNT_STATUSES }).notNull().default("connected"),
-    encryptedCredential: text("encrypted_credential").notNull(),
+    /**
+     * The subscription token or the API key, sealed to this row. Destroyed when the person
+     * disconnects: the row stays, `revoked`, so the designs that run on it keep pointing at it,
+     * and connecting again fills it in.
+     */
+    encryptedCredential: text("encrypted_credential"),
     planLabel: text("plan_label"),
     email: text("email"),
     /** The last four characters of an API key. */
@@ -305,6 +319,10 @@ export const claudeAccounts = pgTable(
   (t) => [
     check("claude_accounts_kind_check", oneOf(t.kind, CLAUDE_ACCOUNT_KINDS)),
     check("claude_accounts_status_check", oneOf(t.status, CLAUDE_ACCOUNT_STATUSES)),
+    check(
+      "claude_accounts_credential_check",
+      sql`(${t.status} = 'revoked') = (${t.encryptedCredential} is null)`,
+    ),
   ],
 );
 
@@ -318,9 +336,17 @@ export const devices = pgTable(
     platform: text("platform", { enum: DEVICE_PLATFORMS }).notNull(),
     pushToken: text("push_token").notNull().unique(),
     pushEnvironment: text("push_environment", { enum: PUSH_ENVIRONMENTS }).notNull(),
+    /**
+     * The install of the app that registered the token: a random id it keeps in the Keychain.
+     * Only the same install may move the token to another person (the phone signed in as
+     * someone else). Null for a row registered before it was asked for.
+     */
+    installId: text("install_id"),
     name: text("name"),
     appVersion: text("app_version"),
     pingsEnabled: boolean("pings_enabled").notNull().default(true),
+    /** The phone's own settings turned Ponzu's notifications off: nothing can reach it. */
+    pingsBlocked: boolean("pings_blocked").notNull().default(false),
     lastSeenAt: instant("last_seen_at").notNull().defaultNow(),
     createdAt: createdAt(),
   },
@@ -350,6 +376,10 @@ export const authStates = pgTable(
   },
   (t) => [
     index("auth_states_expires_at_idx").on(t.expiresAt),
+    // A person has one Claude sign-in open at a time, each with a sandbox of its own.
+    uniqueIndex("auth_states_open_claude_sign_in_key")
+      .on(t.userId)
+      .where(sql`${t.kind} = 'claude_sign_in' and ${t.consumedAt} is null`),
     check("auth_states_kind_check", oneOf(t.kind, AUTH_STATE_KINDS)),
   ],
 );

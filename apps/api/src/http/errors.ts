@@ -80,6 +80,75 @@ export type ErrorCode =
   | "file_too_large"
   /** An upload of a kind of file this place does not take, or whose name and type disagree. */
   | "unsupported_file_type"
+  /** Anthropic does not take this API key. */
+  | "claude_key_invalid"
+  /**
+   * A Claude sign-in's code that is not whole, or that claude.ai turned away (wrong, from an
+   * earlier sign-in, or past its time there). Open sign-in again for a new one.
+   */
+  | "claude_code_invalid"
+  /** A Claude sign-in that waited longer than ten minutes for its code. Open sign-in again. */
+  | "claude_sign_in_expired"
+  /** A Claude sign-in whose one code was already sent, or that was given up. Open sign-in again. */
+  | "claude_sign_in_used"
+  /** A pull request needs a repo, and this design is Scratch. */
+  | "no_repository"
+  /** Nothing has been pushed to the design's branch yet, so GitHub does not have it. */
+  | "branch_not_pushed"
+  /** The design's branch has no commits that the branch it merges into lacks. */
+  | "no_changes"
+  /** The design has no open pull request to do this to. */
+  | "no_pull_request"
+  /** The design's pull request is merged or closed. */
+  | "pull_request_closed"
+  /** The pull request is a draft: mark it ready first. */
+  | "pull_request_draft"
+  /** The branch conflicts with the branch it merges into. */
+  | "merge_conflicts"
+  /** GitHub is still working out whether the pull request can merge. Try again in a moment. */
+  | "mergeability_unknown"
+  /** The branch moved since it was looked at. Look at it again first. */
+  | "head_moved"
+  /** The repo's rules want an approving review first. */
+  | "review_required"
+  /** A reviewer asked for changes. */
+  | "changes_requested"
+  /** A check the repo's rules require has failed. */
+  | "checks_failing"
+  /** Checks the repo's rules require have not finished. Auto-merge merges once they pass. */
+  | "checks_pending"
+  /** The repo's rules want the branch up to date with the one it merges into: update it. */
+  | "branch_behind"
+  /** The repo's rules do not allow this merge, for a reason GitHub does not spell out. */
+  | "branch_protected"
+  /** The branch already has everything the branch it merges into has. */
+  | "branch_up_to_date"
+  /** The repo does not allow auto-merge: a setting of the repo on GitHub. */
+  | "auto_merge_not_allowed"
+  /** Nothing is left to wait for, so there is nothing for auto-merge to do: merge it. */
+  | "already_mergeable"
+  /** GitHub refused, for a reason Ponzu cannot name. */
+  | "github_refused"
+  /** A push token another device of the person's already has. */
+  | "push_token_taken"
+  /**
+   * A secret's name that would replace or steer what Ponzu puts in a sandbox (its own
+   * variables, the Claude credential, the proxy, the loader). Pick another name.
+   */
+  | "secret_name_reserved"
+  /** The repo already has a secret of that name: replace its value instead. */
+  | "secret_exists"
+  /** The repo's secrets are as many, or as large, as a sandbox's environment takes. */
+  | "secrets_full"
+  /** A monthly cap below what the period has already billed. `details.lowestUsd` says the least. */
+  | "cap_too_low"
+  /**
+   * Deleting the account would leave a team with nobody to run it: the person is its only
+   * admin and others are in it. `details.workspaces` names them. Make someone else an admin.
+   */
+  | "sole_admin"
+  /** The confirmation typed to delete the account is not the person's GitHub login. */
+  | "confirmation_mismatch"
   | "internal";
 
 /**
@@ -121,7 +190,7 @@ export class UpstreamError extends Error {
   readonly status?: number;
 
   constructor(
-    readonly service: "workos" | "github" | "storage" | "model",
+    readonly service: "workos" | "github" | "storage" | "model" | "anthropic" | "sandbox",
     message: string,
     options: { status?: number; cause?: unknown } = {},
   ) {
@@ -136,6 +205,9 @@ const SERVICE_NAME = {
   github: "GitHub",
   storage: "its file storage",
   model: "the model it asks",
+  anthropic: "Anthropic",
+  // Only a Claude sign-in waits on a sandbox in a person's request.
+  sandbox: "Claude",
 } as const;
 
 /** What Hono's own middleware (a body limit, a rate limiter) means by each status it refuses with. */

@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
 
 /** The environment the runner starts with, read and checked once. */
 export interface RunnerEnv {
@@ -73,9 +74,13 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
   };
 }
 
-/** The environment the agent's side runs in: the runner's, without what only the runner holds. */
+/**
+ * The environment the agent's side runs in: the repo's secrets, unpacked from the one variable
+ * they came in, under the runner's own, without what only the runner holds. A secret never
+ * replaces a variable the runner has: the API refuses those names, and this is the second lock.
+ */
 export function agentEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out = { ...env };
-  for (const name of RUNNER_ONLY) delete out[name];
+  const out = { ...decodeRepoSecrets(env[REPO_SECRETS_VARIABLE]), ...env };
+  for (const name of [...RUNNER_ONLY, REPO_SECRETS_VARIABLE]) delete out[name];
   return out;
 }

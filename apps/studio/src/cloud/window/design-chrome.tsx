@@ -20,7 +20,8 @@ export interface DesignChromeProps {
   /** Null while the pull request tab is open. */
   activePageId: string | null;
   onSelectPage: (id: string) => void;
-  onAddPage: () => void;
+  /** Null for someone who may only look. */
+  onAddPage: (() => void) | null;
   /** People on a repo design in a team workspace; null for Scratch and a personal workspace. */
   team: {
     meId: string;
@@ -30,7 +31,13 @@ export interface DesignChromeProps {
     onOpenRepo: () => void;
   } | null;
   pullRequest: { pr: PullRequestSummary; tabOpen: boolean; onToggleTab: () => void } | null;
-  action: { kind: NextAction; busy?: boolean; onRun: (action: NextAction) => void } | null;
+  action: {
+    kind: NextAction;
+    busy?: boolean;
+    /** Why it can't be taken now (actionBlock), for its tip. */
+    blocked?: string | null;
+    onRun: (action: NextAction) => void;
+  } | null;
   rail: { open: boolean; signal: RailSignal; onToggle: () => void };
 }
 
@@ -76,7 +83,14 @@ export function DesignChrome({
   if (action) {
     right.push({
       key: "action",
-      node: <NextActionButton action={action.kind} busy={action.busy} onRun={action.onRun} />,
+      node: (
+        <NextActionButton
+          action={action.kind}
+          busy={action.busy}
+          blocked={action.blocked}
+          onRun={action.onRun}
+        />
+      ),
       after: 10,
     });
   }

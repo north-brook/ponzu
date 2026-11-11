@@ -1,15 +1,25 @@
-import { createPrivateKey, type KeyObject } from "node:crypto";
-import { Octokit } from "@octokit/rest";
+import type { Endpoints } from "@octokit/types";
 import type { Clock } from "@ponzu/sandbox";
-import { SignJWT } from "jose";
 import { ApiError, UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
+import {
+  bearer,
+  createAppCredentials,
+  createOctokit,
+  type GithubOctokit,
+  idOf,
+  listPages,
+  pagedAs,
+  repoParams,
+  send,
+} from "./github-octokit.ts";
+import { createPullRequestCalls, type GithubPullRequests } from "./github-pull-requests.ts";
 
 /*
- * GitHub, on plain fetch, in the two ways the API talks to it: as a person, with their user
- * token (`ghu_`), and as the Ponzu GitHub App, with a JWT signed by its private key. Callers
- * get the user token from `githubUserToken`, which keeps it fresh; they never store one. The
- * repository contents reads (for `ideas/`) go through Octokit, on the same fetch.
+ * GitHub, through Octokit (`github-octokit.ts`), in the two ways the API talks to it: as a
+ * person, with their user token (`ghu_`), and as the Ponzu GitHub App, with a JWT signed by its
+ * private key and the installation tokens minted with it. Callers get the user token from
+ * `githubUserToken`, which keeps it fresh; they never store one.
  */
 
 export interface GithubUser {
@@ -89,7 +99,7 @@ export interface GithubInstallationToken {
  * carries GitHub's `status`, so a caller can tell "no such repository, or not for you" (404)
  * and "not allowed" (403) from GitHub being down.
  */
-export interface Github {
+export interface Github extends GithubPullRequests {
   /** Calls made as a person. Each fails as `github_reauth_required` when GitHub refuses the token. */
   getUser(userToken: string): Promise<GithubUser>;
   /** Needs the App's "Email addresses" permission. */
@@ -185,14 +195,7 @@ export interface RepoPermissionQuery {
   user: { id: number; login: string };
 }
 
-/** An installation token is reused until this long before it runs out. */
-const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
-/** How many installation tokens one instance keeps; past this the oldest go first. */
-const TOKENS_KEPT = 1_000;
-
-const API_URL = "https://api.github.com";
-const TOKEN_URL = "https://github.com/login/oauth/access_token";
-const TIMEOUT_MS = 10_000;
+const OAUTH_URL = "https://github.com";
 const PAGE_SIZE = 100;
 /** The most pages one list is read to: 2,000 installations or repositories. */
 const MAX_PAGES = 20;
@@ -211,93 +214,52 @@ export function createGithub({
   fetch: Fetch;
   clock: Clock;
 }): Github {
-  // Parsed on first use, so a test that never acts as the App needs no real key.
-  let signingKey: ReturnType<typeof createPrivateKey> | undefined;
+  const octokit = createOctokit({ fetch, clock });
+  // The key is read on first use, so a test that never acts as the App needs no real one.
+  const app = createAppCredentials({ clientId, privateKey, octokit, clock });
   /** `getRepoPermission`'s questions in flight, by installation, repository and person. */
   const asking = new Map<string, Promise<RepoPermission>>();
-  /** The tokens it asks with, by installation and repository, oldest first. */
-  const tokens = new Map<string, GithubInstallationToken>();
-  /** For the repository contents reads (`getTree`, `getFileText`, …): the token goes on each. */
-  const octokit = new Octokit({
-    userAgent: "ponzu-api",
-    request: { fetch: fetch as typeof globalThis.fetch },
-    // Its default log writes warnings (a deprecated endpoint) to the console.
-    log: { debug() {}, info() {}, warn() {}, error() {} },
-  });
 
-  /** One call to api.github.com. `as` says whose credential `bearer` is. */
-  async function call(
-    as: "user" | "app",
-    method: string,
-    path: string,
-    bearer: string,
-    body?: unknown,
-  ) {
-    let response: Response;
-    try {
-      response = await fetch(`${API_URL}${path}`, {
-        method,
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${bearer}`,
-          "x-github-api-version": "2022-11-28",
-          "user-agent": "ponzu-api",
-          ...(body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: clock.timeout(TIMEOUT_MS),
-      });
-    } catch (cause) {
-      throw new UpstreamError("github", `${method} ${path} did not answer`, { cause });
-    }
-    if (response.status === 401 && as === "user") {
-      // The token ran out early or the person revoked the App: only signing in again mends it.
-      throw new ApiError(401, "github_reauth_required", "Sign in again to reconnect GitHub.");
-    }
-    if (!response.ok) {
-      throw new UpstreamError("github", `${method} ${path} answered ${response.status}`, {
-        status: response.status,
-      });
-    }
-    return (await response.json()) as any;
-  }
-
-  /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`, up to `MAX_PAGES`. */
-  async function listAll(
-    as: "user" | "app",
-    path: string,
-    token: string,
-    key: string,
-  ): Promise<Listed<any>> {
-    const items: any[] = [];
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      const body = await call(as, "GET", `${path}?per_page=${PAGE_SIZE}&page=${page}`, token);
-      const batch: any[] = body[key] ?? [];
-      items.push(...batch);
-      const total = typeof body.total_count === "number" ? body.total_count : null;
-      if (batch.length < PAGE_SIZE || (total !== null && items.length >= total)) {
-        return { items, complete: true };
+  /**
+   * Work as the App in one repository, with a token for exactly `permissions` there, kept for
+   * reuse while it has a while to run. A token GitHub stops taking before it runs out (the
+   * installation was suspended, or its permissions changed) is dropped, and the work is tried
+   * once more with a new one.
+   */
+  async function asApp<T>(
+    target: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
+    work: (token: string) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      const token = await appToken(target, permissions, attempt > 1);
+      try {
+        return await work(token);
+      } catch (error) {
+        if (attempt === 2 || !(error instanceof UpstreamError) || error.status !== 401) throw error;
       }
     }
-    return { items, complete: false };
   }
 
-  function appJwt(): Promise<string> {
-    signingKey ??= createPrivateKey(privateKey);
-    return signAppJwt({ clientId, privateKey: signingKey, now: clock.now() });
-  }
-
-  async function createInstallationToken({
-    installationId,
-    repositoryIds,
-    permissions,
-  }: Parameters<Github["createInstallationToken"]>[0]): Promise<GithubInstallationToken> {
-    const path = `/app/installations/${installationId}/access_tokens`;
-    const body = await call("app", "POST", path, await appJwt(), {
-      ...(repositoryIds ? { repository_ids: repositoryIds } : {}),
-      ...(permissions ? { permissions } : {}),
-    });
-    return { token: body.token, expiresAt: new Date(body.expires_at) };
+  async function appToken(
+    { installationId, repositoryId }: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
+    fresh: boolean,
+  ): Promise<string> {
+    const scope = {
+      installationId,
+      repositoryIds: [repositoryId],
+      permissions: { ...permissions },
+    };
+    try {
+      return (await app.reuse(scope, fresh)).token;
+    } catch (error) {
+      // 404: the installation is gone. 422: the repository is not in it any more.
+      if (error instanceof UpstreamError && (error.status === 404 || error.status === 422)) {
+        throw new NoInstallationToken();
+      }
+      throw error;
+    }
   }
 
   /**
@@ -313,13 +275,37 @@ export function createGithub({
     repository: RepoPermissionQuery["repository"],
     user: RepoPermissionQuery["user"],
   ): Promise<RepoPermission> {
-    const ask = (path: string) => getAsApp(installationId, repository.id, path);
+    const asMetadataReader = <T>(work: (token: string) => Promise<T>) =>
+      asApp({ installationId, repositoryId: repository.id }, { metadata: "read" }, (token) =>
+        send("app", () => work(token)),
+      );
+    /** What one login may do there, and the id of the account it means. */
+    const permissionOf = async (login: string) => {
+      const { data } = await asMetadataReader((token) =>
+        octokit.request("GET /repos/{owner}/{repo}/collaborators/{username}/permission", {
+          ...repoParams(repository.fullName),
+          username: login,
+          headers: bearer(token),
+        }),
+      );
+      const permission = PERMISSIONS.find((known) => known === data.permission) ?? "none";
+      return { userId: data.user?.id, permission };
+    };
+    /** The login a GitHub account has now (`GET /user/{id}` needs no permission). */
+    const loginOf = async (userId: number) => {
+      const { data } = await asMetadataReader((token) =>
+        octokit.request("GET /user/{account_id}", { account_id: userId, headers: bearer(token) }),
+      );
+      return typeof data.login === "string" ? data.login : null;
+    };
     try {
-      const asked = await permissionOf(ask, repository.fullName, user.login);
+      // Null when GitHub knows no such login or account, or the repository was renamed since
+      // it was last synced.
+      const asked = await orNullOn404(permissionOf(user.login));
       if (asked?.userId === user.id) return asked.permission;
-      const login = await loginOf(ask, user.id);
+      const login = await orNullOn404(loginOf(user.id));
       if (login === null || login === user.login) return "none";
-      const again = await permissionOf(ask, repository.fullName, login);
+      const again = await orNullOn404(permissionOf(login));
       return again?.userId === user.id ? again.permission : "none";
     } catch (error) {
       if (error instanceof NoInstallationToken) return "none";
@@ -327,57 +313,13 @@ export function createGithub({
     }
   }
 
-  /**
-   * A GET as the App, with a `metadata: read` token for one repository. A token GitHub stops
-   * taking before it runs out (the installation was suspended, or its permissions changed) is
-   * dropped, and one more is minted.
-   */
-  async function getAsApp(installationId: number, repositoryId: number, path: string) {
-    const key = `${installationId}:${repositoryId}`;
-    for (let attempt = 1; ; attempt++) {
-      const token = await metadataToken(key, installationId, repositoryId);
-      try {
-        return await call("app", "GET", path, token);
-      } catch (error) {
-        if (attempt === 2 || !(error instanceof UpstreamError) || error.status !== 401) throw error;
-        tokens.delete(key);
-      }
-    }
-  }
-
-  /** A `metadata: read` token for one repository, reused while it has a while to run. */
-  async function metadataToken(
-    key: string,
-    installationId: number,
-    repositoryId: number,
-  ): Promise<string> {
-    const held = tokens.get(key);
-    if (held && held.expiresAt.getTime() - TOKEN_REUSE_MARGIN_MS > clock.now()) return held.token;
-    let minted: GithubInstallationToken;
-    try {
-      minted = await createInstallationToken({
-        installationId,
-        repositoryIds: [repositoryId],
-        permissions: { metadata: "read" },
-      });
-    } catch (error) {
-      // 404: the installation is gone. 422: the repository is not in it any more.
-      if (error instanceof UpstreamError && (error.status === 404 || error.status === 422)) {
-        throw new NoInstallationToken();
-      }
-      throw error;
-    }
-    tokens.delete(key);
-    if (tokens.size >= TOKENS_KEPT) tokens.delete(tokens.keys().next().value!);
-    tokens.set(key, minted);
-    return minted.token;
-  }
-
   return {
     async getUser(userToken) {
-      const user = await call("user", "GET", "/user", userToken);
+      const { data: user } = await send("user", () =>
+        octokit.request("GET /user", { headers: bearer(userToken) }),
+      );
       return {
-        id: user.id,
+        id: idOf(user.id),
         login: user.login,
         name: user.name ?? null,
         avatarUrl: user.avatar_url ?? null,
@@ -385,11 +327,8 @@ export function createGithub({
     },
 
     async listEmails(userToken) {
-      const emails: any[] = await call(
-        "user",
-        "GET",
-        `/user/emails?per_page=${PAGE_SIZE}`,
-        userToken,
+      const { data: emails } = await send("user", () =>
+        octokit.request("GET /user/emails", { per_page: PAGE_SIZE, headers: bearer(userToken) }),
       );
       return emails.map((entry) => ({
         email: entry.email,
@@ -399,13 +338,26 @@ export function createGithub({
     },
 
     async listInstallations(userToken) {
-      const listed = await listAll("user", "/user/installations", userToken, "installations");
+      const listed = await listPages(
+        "user",
+        octokit.paginate.iterator(
+          "GET /user/installations",
+          pagedAs(userToken, { per_page: PAGE_SIZE }),
+        ),
+        MAX_PAGES,
+      );
       return { ...listed, items: listed.items.map(toInstallation) };
     },
 
     async listInstallationRepositories(userToken, installationId) {
-      const path = `/user/installations/${installationId}/repositories`;
-      const listed = await listAll("user", path, userToken, "repositories");
+      const listed = await listPages(
+        "user",
+        octokit.paginate.iterator(
+          "GET /user/installations/{installation_id}/repositories",
+          pagedAs(userToken, { installation_id: installationId, per_page: PAGE_SIZE }),
+        ),
+        MAX_PAGES,
+      );
       return {
         ...listed,
         items: listed.items.map((repository) => ({
@@ -416,10 +368,11 @@ export function createGithub({
     },
 
     async getOrgRole(userToken, org) {
-      const path = `/user/memberships/orgs/${encodeURIComponent(org)}`;
-      let membership: any;
+      let membership: Endpoints["GET /user/memberships/orgs/{org}"]["response"]["data"];
       try {
-        membership = await call("user", "GET", path, userToken);
+        ({ data: membership } = await send("user", () =>
+          octokit.request("GET /user/memberships/orgs/{org}", { org, headers: bearer(userToken) }),
+        ));
       } catch (error) {
         // 404: not a member. 403: the organization does not let the App see its members.
         if (error instanceof UpstreamError && (error.status === 404 || error.status === 403)) {
@@ -432,47 +385,41 @@ export function createGithub({
     },
 
     async refreshUserToken(refreshToken) {
-      let response: Response;
-      try {
-        response = await fetch(TOKEN_URL, {
-          method: "POST",
-          headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-          }),
-          signal: clock.timeout(TIMEOUT_MS),
-        });
-      } catch (cause) {
-        throw new UpstreamError("github", "the token refresh did not answer", { cause });
-      }
+      // Not `@octokit/oauth-methods`: it times the new pair by GitHub's Date header, not the
+      // API's clock, and the refresh's single use is `github/user-token.ts`'s to guard.
+      const { data: body } = await send("app", () =>
+        octokit.request("POST /login/oauth/access_token", {
+          baseUrl: OAUTH_URL,
+          headers: { accept: "application/json" },
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        }),
+      );
       // GitHub answers 200 either way and says which in the body.
-      const body = response.ok ? ((await response.json()) as any) : {};
-      if (typeof body.access_token === "string") {
+      const answer = (body ?? {}) as Record<string, unknown>;
+      if (typeof answer.access_token === "string") {
         const now = clock.now();
         const after = (seconds: unknown) =>
           typeof seconds === "number" ? new Date(now + seconds * 1000) : null;
         return {
           kind: "refreshed",
           tokens: {
-            accessToken: body.access_token,
-            accessTokenExpiresAt: after(body.expires_in),
-            refreshToken: typeof body.refresh_token === "string" ? body.refresh_token : null,
-            refreshTokenExpiresAt: after(body.refresh_token_expires_in),
+            accessToken: answer.access_token,
+            accessTokenExpiresAt: after(answer.expires_in),
+            refreshToken: typeof answer.refresh_token === "string" ? answer.refresh_token : null,
+            refreshTokenExpiresAt: after(answer.refresh_token_expires_in),
           },
         };
       }
-      if (body.error === "bad_refresh_token") return { kind: "rejected" };
+      if (answer.error === "bad_refresh_token") return { kind: "rejected" };
       const code =
-        typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error) ? body.error : "";
-      throw new UpstreamError("github", `the token refresh answered ${response.status} ${code}`, {
-        status: response.status,
-      });
+        typeof answer.error === "string" && /^[a-z_]{1,64}$/.test(answer.error) ? answer.error : "";
+      throw new UpstreamError("github", `the token refresh answered 200 ${code}`, { status: 200 });
     },
 
-    createInstallationToken,
+    createInstallationToken: (scope) => app.mint(scope),
 
     getRepoPermission({ installationId, repository, user }) {
       const key = `${installationId}:${repository.id}:${user.id}`;
@@ -486,9 +433,15 @@ export function createGithub({
     },
 
     async getInstallation(installationId) {
+      const jwt = await app.jwt();
       try {
-        const path = `/app/installations/${installationId}`;
-        return toInstallation(await call("app", "GET", path, await appJwt()));
+        const { data } = await send("app", () =>
+          octokit.request("GET /app/installations/{installation_id}", {
+            installation_id: installationId,
+            headers: bearer(jwt),
+          }),
+        );
+        return toInstallation(data);
       } catch (error) {
         if (error instanceof UpstreamError && error.status === 404) return null;
         throw error;
@@ -496,20 +449,45 @@ export function createGithub({
     },
 
     async listRepositoriesAsInstallation(installationToken) {
-      const path = "/installation/repositories";
-      const listed = await listAll("app", path, installationToken, "repositories");
+      const listed = await listPages(
+        "app",
+        octokit.paginate.iterator(
+          "GET /installation/repositories",
+          pagedAs(installationToken, { per_page: PAGE_SIZE }),
+        ),
+        MAX_PAGES,
+      );
       return { ...listed, items: listed.items.map(toRepository) };
     },
 
     async getAccountName(installationToken, login) {
-      const path = `/users/${encodeURIComponent(login)}`;
-      const account = await call("app", "GET", path, installationToken);
+      const { data: account } = await send("app", () =>
+        octokit.request("GET /users/{username}", {
+          username: login,
+          headers: bearer(installationToken),
+        }),
+      );
       return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
     },
 
+    ...createPullRequestCalls({
+      octokit,
+      async asApp(target, permissions, work) {
+        try {
+          return await asApp(target, permissions, work);
+        } catch (error) {
+          if (!(error instanceof NoInstallationToken)) throw error;
+          throw new ApiError(403, "forbidden", "Ponzu cannot reach this repository on GitHub now.");
+        }
+      },
+    }),
+
     async getRepositoryAbout(token, fullName) {
-      const { data: repository } = await reading("repos.get", () =>
-        octokit.rest.repos.get({ ...at(fullName), ...as(token) }),
+      const { data: repository } = await send("app", () =>
+        octokit.request("GET /repos/{owner}/{repo}", {
+          ...repoParams(fullName),
+          headers: tokenHeaders(token),
+        }),
       );
       return {
         description: stringOrNull(repository.description),
@@ -522,8 +500,13 @@ export function createGithub({
     },
 
     async getTree(token, { fullName, ref }) {
-      const { data } = await reading("git.getTree", () =>
-        octokit.rest.git.getTree({ ...at(fullName), tree_sha: ref, recursive: "1", ...as(token) }),
+      const { data } = await send("app", () =>
+        octokit.request("GET /repos/{owner}/{repo}/git/trees/{tree_sha}", {
+          ...repoParams(fullName),
+          tree_sha: ref,
+          recursive: "1",
+          headers: tokenHeaders(token),
+        }),
       );
       return {
         entries: data.tree.flatMap((entry) =>
@@ -535,53 +518,43 @@ export function createGithub({
       };
     },
 
-    async getFileText(token, { fullName, path, ref, maxBytes }) {
+    getFileText(token, { fullName, path, ref, maxBytes }) {
       return fileOrNull(maxBytes, () =>
-        reading("repos.getContent", () =>
-          octokit.rest.repos.getContent({ ...at(fullName), path, ref, ...as(token) }),
+        send("app", () =>
+          octokit.request("GET /repos/{owner}/{repo}/contents/{path}", {
+            ...repoParams(fullName),
+            path,
+            ref,
+            headers: tokenHeaders(token),
+          }),
         ),
       );
     },
 
-    async getReadme(token, { fullName, ref, maxBytes }) {
+    getReadme(token, { fullName, ref, maxBytes }) {
       return fileOrNull(maxBytes, () =>
-        reading("repos.getReadme", () =>
-          octokit.rest.repos.getReadme({ ...at(fullName), ref, ...as(token) }),
+        send("app", () =>
+          octokit.request("GET /repos/{owner}/{repo}/readme", {
+            ...repoParams(fullName),
+            ref,
+            headers: tokenHeaders(token),
+          }),
         ),
       );
     },
   };
-
-  /** The token on one call, or none for a public repository; and the call's time limit. */
-  function as(token: string | null) {
-    return {
-      headers: token === null ? {} : { authorization: `Bearer ${token}` },
-      request: { signal: clock.timeout(TIMEOUT_MS) },
-    };
-  }
 }
 
-const at = (fullName: string) => {
-  const [owner = "", repo = ""] = fullName.split("/");
-  return { owner, repo };
-};
+/** The token on one call, or none for a public repository. */
+const tokenHeaders = (token: string | null) => (token === null ? {} : bearer(token));
 
-/** An Octokit call whose failure is an `UpstreamError` from `github`, with GitHub's status. */
-async function reading<T>(what: string, call: () => Promise<T>): Promise<T> {
+/** Null for a 404: GitHub has no such thing there. */
+async function orNullOn404<T>(asked: Promise<T>): Promise<T | null> {
   try {
-    return await call();
-  } catch (cause) {
-    // Octokit's `RequestError` is an `HttpError`; one with no response never heard GitHub.
-    const response = cause instanceof Error && cause.name === "HttpError" ? cause : null;
-    const status =
-      response && (response as { response?: unknown }).response
-        ? (response as { status?: number }).status
-        : undefined;
-    throw new UpstreamError(
-      "github",
-      status === undefined ? `${what} did not answer` : `${what} answered ${status}`,
-      { ...(status === undefined ? {} : { status }), cause },
-    );
+    return await asked;
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404) return null;
+    throw error;
   }
 }
 
@@ -613,46 +586,47 @@ async function fileOrNull(
   return new TextDecoder().decode(bytes.subarray(0, maxBytes));
 }
 
+/** What an installation token may do, by GitHub's permission names. */
+export type AppPermissions = Readonly<Record<string, "read" | "write">>;
+
 /**
- * The App's own credential: a JWT good for a few minutes, signed with its private key and
- * backdated for clock drift. GitHub takes it only on `/app/…`.
+ * How the pull request calls reach GitHub: the API's Octokit for one call as anybody, and work
+ * as the App in one repository with a token for exactly the permissions given.
  */
-export function signAppJwt({
-  clientId,
-  privateKey,
-  now,
-}: {
-  clientId: string;
-  privateKey: KeyObject;
-  /** Epoch milliseconds. */
-  now: number;
-}): Promise<string> {
-  const seconds = Math.floor(now / 1000);
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "RS256" })
-    .setIssuer(clientId)
-    .setIssuedAt(seconds - 60)
-    .setExpirationTime(seconds + 540)
-    .sign(privateKey);
+export interface GithubTransport {
+  octokit: GithubOctokit;
+  /** Throws 403 `forbidden` when the App cannot reach the repository at all. */
+  asApp<T>(
+    target: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
+    work: (token: string) => Promise<T>,
+  ): Promise<T>;
 }
 
-function toInstallation(installation: any): GithubUserInstallation {
+type Installation = Endpoints["GET /app/installations/{installation_id}"]["response"]["data"];
+type Repository =
+  Endpoints["GET /installation/repositories"]["response"]["data"]["repositories"][number];
+
+function toInstallation(installation: Installation): GithubUserInstallation {
+  // An installation is on a person or an organization here: GitHub's type also allows an
+  // enterprise, which has no login and no workspace.
+  const account = installation.account as Endpoints["GET /user"]["response"]["data"];
   return {
     id: installation.id,
     account: {
-      id: installation.account.id,
-      login: installation.account.login,
-      type: installation.account.type === "Organization" ? "Organization" : "User",
-      avatarUrl: installation.account.avatar_url ?? null,
+      id: idOf(account.id),
+      login: account.login,
+      type: account.type === "Organization" ? "Organization" : "User",
+      avatarUrl: account.avatar_url ?? null,
     },
     repositorySelection: installation.repository_selection === "all" ? "all" : "selected",
     suspendedAt: installation.suspended_at ? new Date(installation.suspended_at) : null,
   };
 }
 
-function toRepository(repository: any): GithubInstalledRepository {
+function toRepository(repository: Repository): GithubInstalledRepository {
   return {
-    id: repository.id,
+    id: idOf(repository.id),
     fullName: repository.full_name,
     defaultBranch: repository.default_branch,
     private: repository.private === true,
@@ -664,37 +638,3 @@ const PERMISSIONS: readonly RepoPermission[] = ["admin", "write", "read", "none"
 
 /** The App has no way into the repository any more, so nobody has access through it. */
 class NoInstallationToken extends Error {}
-
-type AskAsApp = (path: string) => Promise<any>;
-
-/**
- * What GitHub says one login may do in a repository, and the id of the account it means. Null
- * when GitHub knows no such login, or the repository was renamed since it was last synced.
- */
-async function permissionOf(
-  ask: AskAsApp,
-  fullName: string,
-  login: string,
-): Promise<{ userId: number | undefined; permission: RepoPermission } | null> {
-  try {
-    const body = await ask(
-      `/repos/${fullName}/collaborators/${encodeURIComponent(login)}/permission`,
-    );
-    const permission = PERMISSIONS.includes(body.permission) ? body.permission : "none";
-    return { userId: body.user?.id, permission };
-  } catch (error) {
-    if (error instanceof UpstreamError && error.status === 404) return null;
-    throw error;
-  }
-}
-
-/** The login a GitHub account has now (`GET /user/{id}` needs no permission), or null when it is gone. */
-async function loginOf(ask: AskAsApp, userId: number): Promise<string | null> {
-  try {
-    const body = await ask(`/user/${userId}`);
-    return typeof body.login === "string" ? body.login : null;
-  } catch (error) {
-    if (error instanceof UpstreamError && error.status === 404) return null;
-    throw error;
-  }
-}

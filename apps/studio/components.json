@@ -5,17 +5,17 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/studio.css",
+    "css": "src/cloud/styles/cloud.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
   },
   "iconLibrary": "hugeicons",
   "aliases": {
-    "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "components": "#cloud",
+    "ui": "#cloud/ui",
+    "utils": "#cloud/ui/cn",
+    "lib": "#cloud/ui",
+    "hooks": "#cloud/ui"
   }
 }

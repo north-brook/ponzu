@@ -136,6 +136,42 @@
     0 0 0 1px light-dark(#807c73, #8e8a82),
     0 0 0 4px light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
 
+  /*
+   * The thread rail and the pull request tab.
+   *
+   * The frosted ground of the composer while the agent asks something (the design's --c-bar).
+   */
+  --c-bar: light-dark(rgba(250, 250, 249, 0.72), rgba(28, 28, 28, 0.72));
+  /* The strip above the composer's field while the run waits (the design's --c-secondary). */
+  --c-strip: light-dark(#f4f3ef, #1b1b1a);
+  /* The soft halo round the yuzu dot that heads a question. */
+  --c-yuzu-halo: rgba(255, 200, 30, 0.25);
+  /* A board's miniature, as the canvas draws boards (the design's --c-board). */
+  --c-board:
+    0 0 0 1px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06)),
+    0 2px 10px light-dark(rgba(0, 0, 0, 0.05), transparent);
+  /* Where a comment's pin landed on a board's miniature (the canvas's pin, small). */
+  --c-pin-shadow: 0 0 0 1px rgba(17, 17, 16, 0.18), 0 1px 3px rgba(0, 0, 0, 0.25);
+  /* The chosen answer: raised, with a hairline to hold its edge on the track. */
+  --c-chosen-shadow:
+    var(--c-raised-shadow), 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.04), transparent);
+  /* The note field inside the question composer. Dark: derived. */
+  --c-field-shadow:
+    0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1)),
+    0 1px 2px light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.3));
+  /* A file's card in the pull request tab. Dark: derived. */
+  --c-card-ring: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+  /*
+   * Diff lines: a tint behind the line, a bar at its edge and a stronger tint behind the words
+   * that changed. Dark: derived, the lifted pull request colors at a little more strength.
+   */
+  --c-diff-add: light-dark(rgba(63, 138, 74, 0.07), rgba(95, 179, 107, 0.1));
+  --c-diff-add-bar: light-dark(rgba(63, 138, 74, 0.55), rgba(95, 179, 107, 0.6));
+  --c-diff-add-word: light-dark(rgba(63, 138, 74, 0.16), rgba(95, 179, 107, 0.24));
+  --c-diff-del: light-dark(rgba(180, 69, 58, 0.06), rgba(224, 103, 91, 0.1));
+  --c-diff-del-bar: light-dark(rgba(180, 69, 58, 0.5), rgba(224, 103, 91, 0.6));
+  --c-diff-del-word: light-dark(rgba(180, 69, 58, 0.14), rgba(224, 103, 91, 0.24));
+
   /* Type. The families the app ships (vite.config.ts links them into every page). */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Funnel Display", "Inter", system-ui, sans-serif;

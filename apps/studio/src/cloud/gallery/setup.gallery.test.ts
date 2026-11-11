@@ -201,6 +201,24 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await page.inputValue('input[type="password"]')).toBe("sk-ant-api03-abc");
   });
 
+  test("a confirmation is an alert dialog: Tab stays inside, Escape or the dim leaves it", async () => {
+    const alert = '[role="alertdialog"]';
+    await open("disconnect-claude");
+    await page.waitForSelector(alert);
+    expect(await page.$eval(alert, (el) => el.getAttribute("aria-labelledby") !== null)).toBe(true);
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate((s) => !!document.activeElement?.closest(s), alert)).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(alert, { state: "detached" });
+
+    await open("delete-account");
+    await page.waitForSelector(alert);
+    await page.mouse.click(4, 4);
+    await page.waitForSelector(alert, { state: "detached" });
+  });
+
   test("free credits used up: Escape leaves it, and the prompt stays in the composer", async () => {
     await open("free-credits");
     await page.waitForSelector(dialog);

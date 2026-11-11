@@ -6,6 +6,7 @@ import {
   designRunners,
   designs,
   repos,
+  sandboxes,
   users,
   workspaces,
 } from "../schema/index.ts";
@@ -140,6 +141,30 @@ export async function reportRunnerState(
       .where(eq(designRunners.designId, designId))
       .returning({ designId: designRunners.designId }),
   );
+  // A runner heard from is alive, so its restarts in a row are over; and while its agent works,
+  // its sandbox stays awake.
+  const working = report.state === "working";
+  const kept = db.$with("kept").as(
+    db
+      .update(sandboxes)
+      .set({
+        restarts: 0,
+        ...(working
+          ? {
+              lastActivityAt: sql`greatest(${sandboxes.lastActivityAt}, ${timeParam(now)}::timestamptz)`,
+            }
+          : {}),
+      })
+      .where(
+        and(
+          eq(sandboxes.designId, designId),
+          eq(sandboxes.state, "awake"),
+          sql`exists (select 1 from ${heard})`,
+          working ? undefined : sql`${sandboxes.restarts} <> 0`,
+        ),
+      )
+      .returning({ id: sandboxes.id }),
+  );
   const artboards = sql`${sql.param(report.artboards, designs.agentArtboards)}::text[]`;
   const shown = db.$with("shown").as(
     db
@@ -157,7 +182,7 @@ export async function reportRunnerState(
   );
   const [row] = await run(
     db
-      .with(heard, shown)
+      .with(heard, kept, shown)
       .select({ seq: designs.seq })
       .from(designs)
       .where(and(eq(designs.id, designId), sql`exists (select 1 from ${heard})`)),

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId, randomString } from "../ids.ts";
 import { designRunners, runnerTokens } from "../schema/index.ts";
@@ -56,13 +56,36 @@ export async function verifyRunnerToken(
   return row ?? null;
 }
 
-/** Revoke every token a design's runners hold, as when its sandbox is replaced. Answers how many. */
-export async function revokeRunnerTokens(db: Db, designId: string): Promise<number> {
+/** Revoke one token, as one issued for a start that did not happen. */
+export async function revokeRunnerToken(db: Db, id: string): Promise<void> {
+  await run(
+    db
+      .update(runnerTokens)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(runnerTokens.id, id), isNull(runnerTokens.revokedAt))),
+  );
+}
+
+/**
+ * Revoke every token a design's runners hold, as when its sandbox is destroyed, or every one but
+ * `except`, the one its sandbox now runs on. Answers how many.
+ */
+export async function revokeRunnerTokens(
+  db: Db,
+  designId: string,
+  { except }: { except?: string | null } = {},
+): Promise<number> {
   const revoked = await run(
     db
       .update(runnerTokens)
       .set({ revokedAt: sql`now()` })
-      .where(and(eq(runnerTokens.designId, designId), isNull(runnerTokens.revokedAt)))
+      .where(
+        and(
+          eq(runnerTokens.designId, designId),
+          isNull(runnerTokens.revokedAt),
+          except ? ne(runnerTokens.id, except) : undefined,
+        ),
+      )
       .returning({ id: runnerTokens.id }),
   );
   return revoked.length;

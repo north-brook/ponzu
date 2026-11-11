@@ -10,12 +10,17 @@ import {
   jobs,
   listUserWorkspaces,
   repos,
+  threadItems,
   workspaces,
 } from "@ponzu/db";
 import { syncGithub } from "../github/sync.ts";
+import { REFRESH_JOB, refreshSoon } from "../pull-requests/refresh.ts";
+import { refreshPullRequest } from "../pull-requests/sync.ts";
+import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import {
   createTestApp,
   type FakeInstallation,
+  MERGEABLE_AFTER_MS,
   type SignedInPerson,
   TEST_CRON_SECRET,
   type TestApp,
@@ -217,6 +222,8 @@ describe("what is let in", () => {
   });
 
   test("work that fails after the answer is kept, and the cron runs it again after a wait", async () => {
+    // Run what earlier tests left due first: the wakes their news queued.
+    await cronRun();
     const installation = installOnOrg("flakyco", []);
     const payload = installationPayload("created", installation, 1);
     t.github.failNext(`/app/installations/${installation.id}`);
@@ -275,7 +282,8 @@ describe("what is let in", () => {
 
   test("events and actions Ponzu does not act on are acknowledged and ignored", async () => {
     expect((await deliver("ping", { zen: "Keep it simple." })).status).toBe(204);
-    expect((await deliver("push", { ref: "refs/heads/main" })).status).toBe(204);
+    expect((await deliver("create", { ref: "pz/new", ref_type: "branch" })).status).toBe(204);
+    expect((await deliver("push", { ref: "refs/tags/v1" })).status).toBe(204);
     expect((await deliver("pull_request", { action: "labeled" })).status).toBe(204);
     expect((await deliver("installation", { action: "created" })).status).toBe(204);
     expect(t.logs.some((line) => line.reason === "malformed")).toBe(true);
@@ -620,50 +628,243 @@ describe("github_app_authorization", () => {
 });
 
 describe("pull requests, checks and reviews", () => {
-  test("opened, ready, merged: the design follows and settles", async () => {
+  /** The design's branch pushed to GitHub, and a pull request from it someone opened there. */
+  function openOnGithub(repository: { fullName: string }, { draft = false } = {}) {
+    const repo = t.github.repo(repository.fullName)!;
+    t.github.pulls.push(repo, "pz/checkout");
+    const pull = t.github.pulls.openAsSomeone(repo, { head: "pz/checkout", login: "maya", draft });
+    return { repo, pull };
+  }
+
+  const notices = async (designId: string) =>
+    (await t.db.select().from(threadItems))
+      .filter((item) => item.designId === designId && item.kind === "notice")
+      .map((item) => item.payload);
+
+  test("opened, ready, merged: the design follows GitHub, settles, and the thread says so once", async () => {
     const { repository, design } = await designInRepo("prco");
-    const send = (action: string, pr: object) =>
-      deliver("pull_request", { action, repository: { id: repository.id }, pull_request: pr });
+    const { pull } = openOnGithub(repository, { draft: true });
+    const send = (action: string) =>
+      deliver("pull_request", {
+        action,
+        repository: { id: repository.id },
+        pull_request: pullRequest(repository.id, { number: pull.number }),
+      });
 
-    await send(
-      "opened",
-      pullRequest(repository.id, { draft: true, updatedAt: "2026-11-10T12:00:00Z" }),
-    );
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: 12, prState: "draft" });
+    await send("opened");
+    // Read again until GitHub had worked out that it can merge.
+    expect(await getDesign(t.db, design.id)).toMatchObject({
+      prNumber: pull.number,
+      prState: "draft",
+      prMergeable: true,
+    });
 
-    await send(
-      "ready_for_review",
-      pullRequest(repository.id, { updatedAt: "2026-11-10T12:05:00Z" }),
-    );
-    await send("synchronize", pullRequest(repository.id, { updatedAt: "2026-11-10T12:06:00Z" }));
+    pull.draft = false;
+    await send("ready_for_review");
+    await send("synchronize");
     expect(await getDesign(t.db, design.id)).toMatchObject({ prState: "open", status: "active" });
 
-    await send(
-      "closed",
-      pullRequest(repository.id, {
-        state: "closed",
-        merged: true,
-        updatedAt: "2026-11-10T12:10:00Z",
-      }),
-    );
+    pull.state = "closed";
+    pull.merged = true;
+    await send("closed");
+    await send("closed");
     expect(await getDesign(t.db, design.id)).toMatchObject({
       prState: "merged",
       status: "settled",
     });
+    const url = `https://github.com/${repository.fullName}/pull/${pull.number}`;
+    expect(await notices(design.id)).toEqual([
+      { type: "pull_request", number: pull.number, url, title: pull.title, state: "draft" },
+      { type: "pull_request", number: pull.number, url, title: pull.title, state: "merged" },
+    ]);
   });
 
-  test("closed then reopened, delivered backwards: the reopen still wins", async () => {
+  test("deliveries out of order change nothing: what is recorded is GitHub's word now", async () => {
     const { repository, design } = await designInRepo("reopenco");
-    const send = (action: string, pr: object) =>
-      deliver("pull_request", { action, repository: { id: repository.id }, pull_request: pr });
+    const { pull } = openOnGithub(repository);
+    const send = (action: string, state: string) =>
+      deliver("pull_request", {
+        action,
+        repository: { id: repository.id },
+        pull_request: pullRequest(repository.id, { number: pull.number, state }),
+      });
 
-    await send("reopened", pullRequest(repository.id, { updatedAt: "2026-11-10T13:00:00Z" }));
-    await send(
-      "closed",
-      pullRequest(repository.id, { state: "closed", updatedAt: "2026-11-10T12:30:00Z" }),
-    );
+    // Closed, then reopened; the close is delivered last.
+    await send("reopened", "open");
+    await send("closed", "closed");
 
     expect(await getDesign(t.db, design.id)).toMatchObject({ prState: "open", status: "active" });
+  });
+
+  test("a read that began first and finished last is not recorded over a newer one", async () => {
+    const { repository, design } = await designInRepo("slowreadco");
+    const { repo, pull } = openOnGithub(repository);
+    const sha = t.github.pulls.head(repo, "pz/checkout")!;
+    t.github.pulls.setChecks(sha, [
+      { name: "lint", state: "success" },
+      { name: "test", state: "in_progress" },
+    ]);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+
+    // One check finishes while another runs: the read it makes is held on the way back.
+    const held = t.github.holdNext("/graphql");
+    await t.app.request(
+      "/v1/github/webhook",
+      t.github.delivery("check_run", {
+        action: "completed",
+        repository: { id: repository.id },
+        check_run: {
+          name: "lint",
+          conclusion: "success",
+          head_sha: sha,
+          pull_requests: [
+            { number: pull.number, head: { ref: "pz/checkout", repo: { id: repository.id } } },
+          ],
+        },
+      }),
+    );
+    await held.reached;
+    // Meanwhile the other passes, and that is read and recorded first.
+    t.github.pulls.setChecks(sha, [
+      { name: "lint", state: "success" },
+      { name: "test", state: "success" },
+    ]);
+    t.clock.advance(1_000);
+    await refreshPullRequest(t.deps, design.id, { number: pull.number });
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
+
+    held.release();
+    await t.backgroundDone();
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
+  });
+
+  test("deliveries about a design in one window make one read of it", async () => {
+    const { repository, design } = await designInRepo("windowco");
+    const { pull } = openOnGithub(repository);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    const reads = t.github.pulls.queries;
+
+    // A burst of checks finishing, all about the same pull request.
+    const request = { designId: design.id, number: pull.number };
+    await Promise.all([1, 2, 3].map(() => refreshSoon(t.deps, [request, request])));
+
+    expect(t.github.pulls.queries - reads).toBe(1);
+    const reading = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === REFRESH_JOB && job.key?.startsWith(`${design.id}@`),
+    );
+    expect(reading).toHaveLength(1);
+    expect(reading[0]!.completedAt).not.toBeNull();
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: pull.number });
+
+    // A delivery after the window is read again.
+    await refreshSoon(t.deps, [request]);
+    expect(t.github.pulls.queries - reads).toBe(2);
+  });
+
+  test("a check run starting is not even taken: the push that started it is read", async () => {
+    const { repository } = await designInRepo("createdco");
+    const response = await deliver("check_run", {
+      action: "created",
+      repository: { id: repository.id },
+      check_run: {
+        name: "test",
+        conclusion: null,
+        head_sha: "abc123",
+        pull_requests: [{ number: 1, head: { ref: "pz/checkout", repo: { id: repository.id } } }],
+      },
+    });
+    expect(response.status).toBe(204);
+  });
+
+  test("a push is read until GitHub shows its commit and knows whether it can merge", async () => {
+    const { repository, design } = await designInRepo("pushreadco");
+    const { repo, pull } = openOnGithub(repository);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    await refreshPullRequest(t.deps, design.id, { number: pull.number });
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
+
+    const after = t.github.pulls.push(repo, "pz/checkout");
+    const reads = t.github.pulls.queries;
+    await deliver("push", {
+      ref: "refs/heads/pz/checkout",
+      after,
+      deleted: false,
+      repository: { id: repository.id, default_branch: "main" },
+    });
+
+    // Unknown at first, as GitHub has it for a few seconds after a push; then known.
+    expect(t.github.pulls.queries - reads).toBeGreaterThan(1);
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
+  });
+
+  test("a push to the default branch reads each open pull request, and one that fails is tried again", async () => {
+    const person = await t.signInAs({ login: "manyprsco-person" });
+    const installation = installOnOrg("manyprsco", [person]);
+    const [workspace] = await syncGithub(t.deps, person.userId);
+    const repository = installation.repositories[0]!;
+    const repoRow = (await t.db.select().from(repos)).find(
+      (r) => r.githubRepoId === repository.id,
+    )!;
+    const repo = t.github.repo(repository.fullName)!;
+    const designs: { id: string }[] = [];
+    for (const branch of ["pz/one", "pz/two", "pz/three"]) {
+      const made = await createDesign(t.db, {
+        workspaceId: workspace!.id,
+        repoId: repoRow.id,
+        ownerId: person.userId,
+        claudeAccountId: null,
+        name: branch,
+        branch,
+        doc: emptyDoc(branch),
+      });
+      t.github.pulls.push(repo, branch);
+      const pull = t.github.pulls.openAsSomeone(repo, { head: branch, login: "maya" });
+      t.clock.advance(MERGEABLE_AFTER_MS);
+      await refreshPullRequest(t.deps, made.id);
+      pull.conflicting = true;
+      designs.push(made);
+    }
+
+    t.github.failNext("/graphql", 502);
+    await deliver("push", {
+      ref: "refs/heads/main",
+      repository: { id: repository.id, default_branch: "main" },
+    });
+
+    const mergeable = async () =>
+      Promise.all(designs.map(async ({ id }) => (await getDesign(t.db, id))!.prMergeable));
+    // One read failed; the others were not held up by it.
+    expect((await mergeable()).filter((value) => value === false)).toHaveLength(2);
+    const failed = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === REFRESH_JOB && job.lastError !== null && job.completedAt === null,
+    );
+    expect(failed).toHaveLength(1);
+
+    // The cron tries it again.
+    t.clock.advance(120_000);
+    const cron = await t.app.request("/v1/cron/minute", {
+      headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+    });
+    expect(cron.status).toBe(200);
+    expect(await mergeable()).toEqual([false, false, false]);
+  });
+
+  test("a push to the default branch that gives an open pull request conflicts shows on its design", async () => {
+    const { repository, design } = await designInRepo("conflictco");
+    const { repo, pull } = openOnGithub(repository);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    await refreshPullRequest(t.deps, design.id, { number: pull.number });
+
+    pull.conflicting = true;
+    const after = t.github.pulls.push(repo, "main");
+    await deliver("push", {
+      ref: "refs/heads/main",
+      after,
+      deleted: false,
+      repository: { id: repository.id, default_branch: "main" },
+    });
+
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: false });
   });
 
   test("a pull request from a fork, or on a branch no design owns, changes nothing", async () => {
@@ -690,7 +891,11 @@ describe("pull requests, checks and reviews", () => {
 
   test("a failed check run or suite is news for the agent; a passing one is not", async () => {
     const { repository, design } = await designInRepo("checkco");
-    const prs = [{ number: 12, head: { ref: "pz/checkout", repo: { id: repository.id } } }];
+    const { repo } = openOnGithub(repository);
+    t.github.pulls.setChecks(t.github.pulls.head(repo, "pz/checkout")!, [
+      { name: "lint", state: "failure" },
+    ]);
+    const prs = [{ number: 1, head: { ref: "pz/checkout", repo: { id: repository.id } } }];
     const run = (conclusion: string) => ({
       action: "completed",
       repository: { id: repository.id },
@@ -727,7 +932,7 @@ describe("pull requests, checks and reviews", () => {
           conclusion: "failure",
           url: "https://ci.example/1",
           headSha: "abc123",
-          pullRequest: 12,
+          pullRequest: 1,
         },
       ],
       [
@@ -738,14 +943,23 @@ describe("pull requests, checks and reviews", () => {
           name: "GitHub Actions",
           conclusion: "timed_out",
           headSha: "abc123",
-          pullRequest: 12,
+          pullRequest: 1,
         },
       ],
     ]);
+    // And the design's row has the checks as GitHub rolls them up.
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: 1, prChecks: "failing" });
+    // The news wakes the design's sandbox: one wake waits for the cron.
+    const wakes = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === WAKE_JOB && job.key === design.id && job.completedAt === null,
+    );
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.lockedBy).toBeNull();
   });
 
   test("a review is news for the agent, but not once the design is settled", async () => {
     const { repository, design } = await designInRepo("reviewco");
+    const { pull } = openOnGithub(repository);
     const kim = reviewer("kim", repository, "write");
     const review = (state: string) => ({
       action: "submitted",
@@ -761,10 +975,12 @@ describe("pull requests, checks and reviews", () => {
     });
 
     await deliver("pull_request_review", review("CHANGES_REQUESTED"));
+    pull.state = "closed";
+    pull.merged = true;
     await deliver("pull_request", {
       action: "closed",
       repository: { id: repository.id },
-      pull_request: pullRequest(repository.id, { state: "closed", merged: true }),
+      pull_request: pullRequest(repository.id, { number: pull.number }),
     });
     await deliver("pull_request_review", review("APPROVED"));
 
@@ -802,10 +1018,11 @@ describe("pull requests, checks and reviews", () => {
     const asked = t.github.permissionRequests.length;
 
     for (const association of ["NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "MANNEQUIN"]) {
-      expect((await deliver("pull_request_review", review(association))).status).toBe(204);
+      // Taken, since the pull request is read again; its words go nowhere.
+      expect((await deliver("pull_request_review", review(association))).status).toBe(202);
     }
     expect(await eventsOf(design.id)).toEqual([]);
-    // Dropped on sight: GitHub was not even asked.
+    // Dropped on sight: GitHub was not even asked who they are.
     expect(t.github.permissionRequests.length).toBe(asked);
 
     await deliver("pull_request_review", review("OWNER"));

@@ -8,7 +8,13 @@ import {
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import { reconcileInstallation } from "./installations.ts";
-import { type PullRequestRef, recordPullRequestEvent, tellDesigns } from "./pull-requests.ts";
+import {
+  type PullRequestRef,
+  refreshAfterPush,
+  refreshDesigns,
+  tellDesigns,
+  withdrawRepoPictures,
+} from "./pull-requests.ts";
 import { forgetRevokedAuthorization } from "./revoked.ts";
 import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
 
@@ -17,14 +23,15 @@ import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
  *
  * A delivery is a signal, not a record. GitHub sends one late, twice, or after a later one, so
  * nothing here writes what a payload says about an installation or its repos: it asks GitHub
- * for the installation as it is now (`reconcileInstallation`) or syncs the people it concerns.
- * A pull request is the exception, recorded from its payload, and that keeps only the newest
- * word. Every handler can run again with the same delivery and change nothing more.
+ * for the installation as it is now (`reconcileInstallation`), syncs the people it concerns, or
+ * reads a design's pull request again (`refreshDesigns`). Every handler can run again with the
+ * same delivery and change nothing more, but for the news it tells a design's agent.
  *
  * Only the fields used are read; the schemas below are that list.
  */
 
 /** Whether `header` is GitHub's signature of exactly these bytes, compared in constant time. */
+// Not `@octokit/webhooks-methods`: it takes the body as a string, and this checks the raw bytes.
 export function verifySignature(secret: string, body: Uint8Array, header: string | undefined) {
   const signature = /^sha256=([0-9a-f]{64})$/.exec(header ?? "")?.[1];
   if (!signature) return false;
@@ -32,7 +39,10 @@ export function verifySignature(secret: string, body: Uint8Array, header: string
   return timingSafeEqual(expected, Buffer.from(signature, "hex"));
 }
 
-export type WebhookDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
+export type WebhookDeps = Pick<
+  Deps,
+  "db" | "clock" | "vault" | "github" | "log" | "sandbox" | "poke" | "storage" | "config"
+>;
 type Work = (deps: WebhookDeps) => Promise<void>;
 
 export type Plan =
@@ -78,12 +88,11 @@ const AuthorizationEvent = z.object({ action: z.string(), sender: Id });
 const PullRequestEvent = z.object({
   action: z.string(),
   repository: Id,
-  pull_request: PullRequest.extend({
-    state: z.string(),
-    draft: z.boolean(),
-    merged: z.boolean().nullish(),
-    updated_at: z.iso.datetime({ offset: true }),
-  }),
+  pull_request: PullRequest,
+});
+const PushEvent = z.object({
+  ref: z.string(),
+  repository: Id.extend({ default_branch: z.string() }),
 });
 const CheckRunEvent = z.object({
   action: z.string(),
@@ -138,7 +147,16 @@ const PULL_REQUEST_ACTIONS = [
   "synchronize",
   "ready_for_review",
   "converted_to_draft",
+  "edited",
+  "auto_merge_enabled",
+  "auto_merge_disabled",
 ];
+/**
+ * A check run created changes nothing a read would not see from the push that made it, and
+ * there is one for every check of every push.
+ */
+const CHECK_RUN_ACTIONS = ["completed", "rerequested"];
+const REVIEW_ACTIONS = ["submitted", "edited", "dismissed"];
 /** Check conclusions that are something the agent should hear about. */
 const FAILED = ["failure", "timed_out", "action_required", "startup_failure"];
 /** The most of a review's text a design's feed keeps. */
@@ -189,6 +207,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
           if (accessChanged)
             await markRepoAccessStale(deps.db, { githubRepoIds: [e.repository.id] });
           await reconcileRepository(deps, e.repository.id, e.installation?.id);
+          if (e.action === "publicized") await withdrawRepoPictures(deps, e.repository.id);
         };
       });
 
@@ -230,24 +249,40 @@ export function planDelivery(event: string, payload: unknown): Plan {
         return (deps) => forgetRevokedAuthorization(deps, e.sender.id);
       });
 
+    // Each of these makes the design's pull request be read again from GitHub. A failed check
+    // and a review are also news for the agent, told after the read: a read that fails runs
+    // again with the job, and the news is told once.
+
     case "pull_request":
       return plan(PullRequestEvent, payload, (e) => {
         if (!PULL_REQUEST_ACTIONS.includes(e.action)) return null;
-        const pr = e.pull_request;
         return (deps) =>
-          recordPullRequestEvent(deps, {
+          refreshDesigns(deps, { githubRepoId: e.repository.id, pullRequests: [e.pull_request] });
+      });
+
+    case "push":
+      return plan(PushEvent, payload, (e) => {
+        const branch = /^refs\/heads\/(.+)$/.exec(e.ref)?.[1];
+        if (!branch) return null;
+        return (deps) =>
+          refreshAfterPush(deps, {
             githubRepoId: e.repository.id,
-            pullRequest: { ...pr, updatedAt: new Date(pr.updated_at) },
+            branch,
+            defaultBranch: e.repository.default_branch,
           });
       });
 
     case "check_run":
       return plan(CheckRunEvent, payload, (e) => {
         const run = e.check_run;
-        if (e.action !== "completed" || !FAILED.includes(run.conclusion ?? "")) return null;
-        return (deps) =>
-          tellDesigns(deps, {
-            githubRepoId: e.repository.id,
+        if (!CHECK_RUN_ACTIONS.includes(e.action)) return null;
+        const failed = e.action === "completed" && FAILED.includes(run.conclusion ?? "");
+        return async (deps) => {
+          const githubRepoId = e.repository.id;
+          await refreshDesigns(deps, { githubRepoId, pullRequests: run.pull_requests });
+          if (!failed) return;
+          await tellDesigns(deps, {
+            githubRepoId,
             pullRequests: run.pull_requests,
             kind: "check",
             payload: (pr) => ({
@@ -259,15 +294,20 @@ export function planDelivery(event: string, payload: unknown): Plan {
               pullRequest: pr.number,
             }),
           });
+        };
       });
 
     case "check_suite":
       return plan(CheckSuiteEvent, payload, (e) => {
         const suite = e.check_suite;
-        if (e.action !== "completed" || !FAILED.includes(suite.conclusion ?? "")) return null;
-        return (deps) =>
-          tellDesigns(deps, {
-            githubRepoId: e.repository.id,
+        if (e.action !== "completed") return null;
+        const failed = FAILED.includes(suite.conclusion ?? "");
+        return async (deps) => {
+          const githubRepoId = e.repository.id;
+          await refreshDesigns(deps, { githubRepoId, pullRequests: suite.pull_requests });
+          if (!failed) return;
+          await tellDesigns(deps, {
+            githubRepoId,
             pullRequests: suite.pull_requests,
             kind: "check",
             payload: (pr) => ({
@@ -278,18 +318,24 @@ export function planDelivery(event: string, payload: unknown): Plan {
               pullRequest: pr.number,
             }),
           });
+        };
       });
 
     case "pull_request_review":
       return plan(ReviewEvent, payload, (e) => {
         const { review } = e;
         const { user } = review;
-        if (e.action !== "submitted" || !user || !REVIEWERS.includes(review.author_association)) {
-          return null;
-        }
-        return (deps) =>
-          tellDesigns(deps, {
-            githubRepoId: e.repository.id,
+        if (!REVIEW_ACTIONS.includes(e.action)) return null;
+        const news =
+          e.action === "submitted" &&
+          user !== null &&
+          REVIEWERS.includes(review.author_association);
+        return async (deps) => {
+          const githubRepoId = e.repository.id;
+          await refreshDesigns(deps, { githubRepoId, pullRequests: [e.pull_request] });
+          if (!news) return;
+          await tellDesigns(deps, {
+            githubRepoId,
             pullRequests: [e.pull_request],
             kind: "review",
             author: { githubUserId: user.id, login: user.login },
@@ -302,6 +348,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
               pullRequest: pr.number,
             }),
           });
+        };
       });
 
     default:

@@ -13,6 +13,7 @@ import {
   type Workspace,
 } from "@ponzu/db";
 import { recordReposReachedBy } from "../auth/repo-access.ts";
+import { keepAllowances } from "../billing/allowances.ts";
 import type { Github, GithubUserInstallation } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
@@ -88,7 +89,10 @@ export async function syncGithub(deps: SyncDeps, userId: string): Promise<Worksp
     userId,
     workspaceIds: workspaces.map((workspace) => workspace.id),
   });
-  for (const workspaceId of left) await ensureWorkspaceAdmin(db, workspaceId);
+  for (const workspaceId of left) {
+    await ensureWorkspaceAdmin(db, workspaceId);
+    await keepAllowances(deps, workspaceId, [userId]);
+  }
   return workspaces;
 }
 
@@ -223,6 +227,9 @@ async function resync(
     await markRepoAccessStale(deps.db, { userId });
     if (lostAccessTo === undefined) return;
     const workspaceId = await removeMembership(deps.db, { installationId: lostAccessTo, userId });
-    if (workspaceId) await ensureWorkspaceAdmin(deps.db, workspaceId);
+    if (workspaceId) {
+      await ensureWorkspaceAdmin(deps.db, workspaceId);
+      await keepAllowances(deps, workspaceId, [userId]);
+    }
   }
 }

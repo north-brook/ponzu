@@ -15,10 +15,10 @@ import type { Workspace } from "../model.ts";
 import { WorkspaceMark, workspaceName } from "../sidebar/workspace-menu.tsx";
 import { IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon, type IconSvgElement } from "../ui/icon.tsx";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
 import { Modal } from "../ui/modal.tsx";
-import { ScrollArea } from "../ui/scroll-area.tsx";
 import { useShortcut } from "../ui/shortcut.ts";
 
 export type SettingsSection =
@@ -137,9 +137,9 @@ export function SettingsPanel({
             <Icon icon={Cancel01Icon} size={15} stroke={2} />
           </IconButton>
         </div>
-        <ScrollArea className="flex-1">
+        <FadeScroll className="flex-1">
           <div className="flex flex-col gap-[22px] px-7 pt-[22px] pb-6">{children}</div>
-        </ScrollArea>
+        </FadeScroll>
       </div>
     </div>
   );

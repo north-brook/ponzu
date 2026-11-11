@@ -1,5 +1,5 @@
-# Run by Ponzu's uninstaller (installer.nsh), as the person, before it removes the app: what
-# Ponzu wrote for them at launch. Their designs and ~\.ponzu stay.
+# Run by Ponzu's uninstaller (installer.nsh), as the person, before it removes the app: what 1.x
+# wrote for them at launch, which the cloud app never writes. Their designs and ~\.ponzu stay.
 
 # design.json under Open with, and the Ponzu Design type it opens as (apps/desktop/src/designs.ts).
 $classes = 'HKCU:\Software\Classes'

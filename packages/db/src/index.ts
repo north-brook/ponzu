@@ -2,6 +2,14 @@ export { createDb, createPooledDb, type Db } from "./client.ts";
 export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
 export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
 export {
+  type AccountDeletionPlan,
+  anonymiseUser,
+  DELETED_PERSON,
+  type DeleteUserResult,
+  deleteUser,
+  planAccountDeletion,
+} from "./queries/account-deletion.ts";
+export {
   type ClaudeAccount,
   deleteMembershipsExcept,
   type GithubInstallation,
@@ -33,7 +41,12 @@ export {
   type Workspace,
   wasUninstalled,
 } from "./queries/accounts.ts";
-export { type AuthState, consumeAuthState, createAuthState } from "./queries/auth-states.ts";
+export {
+  type AuthState,
+  consumeAuthState,
+  createAuthState,
+  getAuthState,
+} from "./queries/auth-states.ts";
 export {
   type DocSource,
   OP_RETENTION_DAYS,
@@ -43,21 +56,47 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ConnectedClaude,
+  claudeAccountIdFor,
+  connectClaudeAccount,
+  disconnectClaudeAccount,
+  setAgentDefaults,
+  setClaudeBlocker,
+} from "./queries/claude.ts";
+export { openClaudeSignIn, setClaudeSignInSandbox } from "./queries/claude-sign-ins.ts";
+export {
+  BRANCH_TAKEN,
+  CREATE_KEY_TAKEN,
   createDesign,
   type Design,
   type DesignAccess,
   type DesignListItem,
   deleteDesign,
+  findDesignByCreateKey,
   getDesign,
   getDesignAccess,
   getDesignAssetKey,
   getDesignHead,
   getWorkspaceRepo,
+  listRepoBranches,
   listWorkspaceDesigns,
   markDesignSeen,
   type NewDesign,
   settleDesign,
 } from "./queries/designs.ts";
+export {
+  addRepoSecret,
+  deleteRepoSecret,
+  getRepoEnvironment,
+  listDesignSecrets,
+  listWorkspaceEnvironments,
+  markBaseForRebuild,
+  type RepoEnvironmentRow,
+  replaceRepoSecret,
+  type SealedSecret,
+  type SecretLimits,
+  type SecretWrite,
+} from "./queries/environments.ts";
 export {
   appendEvent,
   type ClaimedEvent,
@@ -99,6 +138,20 @@ export {
   workspaceHasAdmin,
 } from "./queries/members.ts";
 export {
+  type Device,
+  type DeviceChanges,
+  type DeviceRegistered,
+  type DeviceRegistration,
+  deleteDevice,
+  listDevices,
+  MAX_DEVICES_PER_USER,
+  type PingPrefs,
+  pingPrefsOf,
+  registerDevice,
+  setPingPrefs,
+  updateDevice,
+} from "./queries/notifications.ts";
+export {
   type Actor,
   type CommitInput,
   type CommitResult,
@@ -122,7 +175,12 @@ export {
 export {
   type BranchDesign,
   findDesignByBranch,
-  recordPullRequest,
+  getPullRequestContext,
+  listPullRequestDesigns,
+  type PullRequestContext,
+  type PullRequestRead,
+  recordPullRequestRead,
+  setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {
   answerQuestion,
@@ -159,6 +217,7 @@ export {
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
+  revokeRunnerToken,
   revokeRunnerTokens,
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
@@ -169,7 +228,30 @@ export {
   reportRunnerState,
   takeRunnerLease,
 } from "./queries/runners.ts";
-export { getAwakeSandboxAddress } from "./queries/sandboxes.ts";
+export {
+  beginSandbox,
+  claimSandbox,
+  countSandboxRestart,
+  getAwakeSandboxAddress,
+  getLiveSandbox,
+  getWakeContext,
+  isSandboxKnown,
+  listDesignsWithSandboxOn,
+  listLiveSandboxes,
+  listSandboxesToSweep,
+  moveSandbox,
+  recordDesignClaudeAccount,
+  type Sandbox,
+  type SandboxChanges,
+  type SandboxClaim,
+  type SandboxLimits,
+  type SweptSandbox,
+  setSandboxAutoStop,
+  showAgentWaiting,
+  touchSandbox,
+  WAKING_LEASE_MS,
+  type WakeContext,
+} from "./queries/sandboxes.ts";
 export {
   admitSession,
   endSession,
@@ -179,6 +261,7 @@ export {
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
+  appendThreadItemOnce,
   listThreadItems,
   type NewThreadItem,
   postMessage,
@@ -210,4 +293,14 @@ export {
   type TurnUsage,
 } from "./queries/usage.ts";
 export { takeWebhookDelivery } from "./queries/webhooks.ts";
+export {
+  grantAllowances,
+  type RateCardNumbers,
+  readWorkspaceUsage,
+  setMonthlyCap,
+  type UsageDesign,
+  type UsagePerson,
+  type UsageRow,
+  type WorkspaceUsageRead,
+} from "./queries/workspace-usage.ts";
 export * from "./schema/index.ts";

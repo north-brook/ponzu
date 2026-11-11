@@ -170,6 +170,21 @@ export class FakeProvider implements SandboxProvider {
     this.#machine(id).expired = true;
   }
 
+  /** A snapshot that is ready at once, as a bake leaves one, for sandboxes to be created from. */
+  seedSnapshot(name: string, files: Record<string, string> = {}): void {
+    const now = this.clock.now();
+    const bytes = Object.entries(files).map(
+      ([path, text]) => [absolute(path), new TextEncoder().encode(text)] as const,
+    );
+    this.#snapshots.set(name, {
+      sandboxId: "sb_seed",
+      files: new Map(bytes),
+      createdAt: now,
+      readyAt: now,
+      before: null,
+    });
+  }
+
   /** The sandbox's current environment. */
   env(id: string): Record<string, string> {
     return { ...this.#machine(id).env };

@@ -115,6 +115,15 @@ test("a message, a reply, a question and its answer, state and usage, between a 
   const design = await designIn(t, ws, "maya", sampleDoc());
   const { runner, run, api } = await startRunner(design.id);
   run.ready("sess_e2e");
+  // The runner says it started before Maya writes, so the thread's order below is the same
+  // however its writes are batched.
+  await until(async () => {
+    const thread = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/thread`);
+    return thread.body.items.some(
+      (item: { kind: string; payload: { type?: string } }) =>
+        item.kind === "notice" && item.payload.type === "started",
+    );
+  });
 
   // Maya says something; the runner hears of it and puts it into the run.
   const sent = await call(t, as("maya"), "POST", `/v1/designs/${design.id}/messages`, {

@@ -87,13 +87,16 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `PONZU_AS_AGENT` | A command that runs its arguments as the agent's user; the tools read and write the agent's files through it. Unset, they use the runner's own access, which is right only where the agent is the runner's user. The image's is `sudo -u agent`. |
 | `PONZU_GIT_SOCKET` | Where git's credential helper asks the runner. `$PONZU_STATE_DIR/git.sock` by default; `/run/ponzu/git.sock` in the image. |
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
+| `PONZU_REPO_SECRETS` | The repo's secrets, `NAME:base64(value)` comma-separated. |
 
-Repo secrets arrive as more variables in the same file and pass through to Claude Code and its
-tools. The runner token does not: the runner leaves it out of the environment it gives Claude
-Code and the checkout's git, and git's credential helper (`bun git-credential.js <socket>`)
-asks the runner, which asks the API with its token and lease. The Claude credential is in the
-agent's environment, because Claude Code needs it. What that exposes, and to whom, is under
-"What a hostile repo or a hostile comment can do" below.
+Repo secrets arrive packed in `PONZU_REPO_SECRETS`, so none is ever a variable of the runner's
+own (a `BUN_OPTIONS` would load code into it before it starts, and a value is only base64 in
+the file the unit sources). `agentEnv` unpacks them under the runner's own variables for Claude
+Code, its tools and the checkout's git. The runner token is not passed on: the runner leaves it
+out of the environment it gives Claude Code and the checkout's git, and git's credential helper
+(`bun git-credential.js <socket>`) asks the runner, which asks the API with its token and lease.
+The Claude credential is in the agent's environment, because Claude Code needs it. What that
+exposes, and to whom, is under "What a hostile repo or a hostile comment can do" below.
 
 ## The port
 

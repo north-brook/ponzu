@@ -1,11 +1,12 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { Icon as PageIcon } from "@ponzu/canvas/icons";
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { PageTab } from "../model.ts";
 import { IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
+import { FadeScroll, SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { SCROLL_FADE, ScrollArea } from "../ui/scroll-area.tsx";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
 
 /**
  * The open design's pages, as tabs. The active one is raised; the one the agent is drawing on
@@ -22,7 +23,8 @@ export function PageTabs({
   pages: PageTab[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  onAdd: () => void;
+  /** Null for someone who can't change the design: no "+". */
+  onAdd: (() => void) | null;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const [minWidth, setMinWidth] = useState<number>();
@@ -33,60 +35,36 @@ export function PageTabs({
     tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, pages]);
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    const tabs = [...(list.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
-    const at = tabs.indexOf(document.activeElement as HTMLElement);
-    const next = tabs[at + (e.key === "ArrowRight" ? 1 : -1)];
-    if (!next) return;
-    e.preventDefault();
-    next.focus();
-  };
-
-  // The tab you reach with Tab is the active one, or the first while none is.
-  const focusable = activeId ?? pages[0]?.id;
-
   return (
-    <div className="flex min-w-0 items-center gap-0.5">
-      <ScrollArea axis="x" className="min-w-0" style={{ minWidth }}>
-        <div
-          ref={list}
-          role="tablist"
-          aria-label="Pages"
-          onKeyDown={onKeyDown}
-          className="flex items-center gap-0.5 py-1"
-        >
+    // No page is active while the pull request tab is open: an empty value.
+    <Tabs
+      value={activeId ?? ""}
+      onValueChange={onSelect}
+      panels={false}
+      className="flex min-w-0 items-center gap-0.5"
+    >
+      <FadeScroll axis="x" className="min-w-0" style={{ minWidth }}>
+        <TabsList ref={list} aria-label="Pages" className="py-1">
           {pages.map((page) => {
             const active = page.id === activeId;
             return (
-              <button
-                key={page.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                tabIndex={page.id === focusable ? 0 : -1}
-                onClick={() => onSelect(page.id)}
-                className={cn(
-                  "app-no-drag flex h-7 shrink-0 scroll-mx-4 cursor-default select-none items-center gap-1.5 whitespace-nowrap rounded-7 px-2.5 text-13 outline-none transition-colors duration-(--dur-hover) focus-ring",
-                  active
-                    ? "bg-raised font-medium text-ink shadow-raised"
-                    : "text-muted hover:bg-hover active:bg-press",
-                )}
-              >
+              <TabsTrigger key={page.id} value={page.id} className="scroll-mx-4">
                 {page.icon ? (
                   <span className={cn("flex", active && "text-icon-strong")}>
                     <PageIcon name={page.icon} size={14} strokeWidth={1.7} />
                   </span>
                 ) : null}
                 <span className={cn(page.working && "shimmer")}>{page.name}</span>
-              </button>
+              </TabsTrigger>
             );
           })}
-        </div>
-      </ScrollArea>
-      <IconButton label="New page" onClick={onAdd} className="size-7 text-faint">
-        <Icon icon={PlusSignIcon} size={14} stroke={1.9} />
-      </IconButton>
-    </div>
+        </TabsList>
+      </FadeScroll>
+      {onAdd ? (
+        <IconButton label="New page" onClick={onAdd} className="size-7 text-faint">
+          <Icon icon={PlusSignIcon} size={14} stroke={1.9} />
+        </IconButton>
+      ) : null}
+    </Tabs>
   );
 }
