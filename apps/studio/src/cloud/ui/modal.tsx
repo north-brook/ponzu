@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { type ComponentProps, type ReactNode, useLayoutEffect, useRef } from "react";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "./alert-dialog.tsx";
 import { Dialog, DialogContent, DialogTitle, type Dim } from "./dialog.tsx";
 import { TipProvider } from "./tooltip.tsx";
@@ -32,10 +32,27 @@ export function Modal({
   className?: string;
   children: ReactNode;
 }) {
+  // What had the keyboard as it opened. Radix gives focus back to a dialog's trigger, and these
+  // open without one (⌘, a menu item, an answer from the API), so it is given back here.
+  const opener = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (open) {
+      const at = document.activeElement;
+      opener.current = at instanceof HTMLElement && at !== document.body ? at : null;
+    }
+  }, [open]);
   const content = {
     dim,
     className,
     "aria-describedby": undefined,
+    onCloseAutoFocus: (e: Event) => {
+      const back = opener.current;
+      opener.current = null;
+      // Gone with what it was in (a menu's item): Radix's own way, then.
+      if (!back?.isConnected) return;
+      e.preventDefault();
+      back.focus({ preventScroll: true });
+    },
     // Focus starts on the surface itself, so nothing shows a ring until the person moves it,
     // unless a field inside asked for it (the code to paste, the card number).
     onOpenAutoFocus: (e: Event) => {

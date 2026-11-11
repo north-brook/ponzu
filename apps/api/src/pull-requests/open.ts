@@ -58,7 +58,7 @@ export async function openPullRequest(
   const mergedAndDone = existing?.state === "merged" && branch?.sha === existing.head.sha;
   if (isOpen(existing) || mergedAndDone) {
     await recordCurrent(deps, target.designId, found);
-    return { tab: toTab(target, found.read), opened: false };
+    return { tab: toTab(target, found.read, deps.config.githubApp.slug), opened: false };
   }
   if (!branch) throw notPushed(target.branch);
   if (branch.aheadBy === 0) throw noChanges(target.branch, target.defaultBranch);
@@ -100,7 +100,10 @@ export async function openPullRequest(
     "pull_request_refresh",
     refreshPullRequest(deps, target.designId, { number: pullRequest.number }),
   );
-  return { tab: toTab(target, read.read), opened: result.kind === "opened" };
+  return {
+    tab: toTab(target, read.read, deps.config.githubApp.slug),
+    opened: result.kind === "opened",
+  };
 }
 
 /**

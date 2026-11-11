@@ -32,28 +32,35 @@ export function IphoneStep({
       }
       below={<PhoneMock />}
     >
-      <SetupCard className="flex-row items-center gap-[18px] px-4 py-3.5">
-        {/*
-         * Dark on white in either theme, so any phone's camera reads it: 25 modules at 3px in a
-         * quiet zone of four, the board's 100px tile to within a pixel.
-         */}
-        <div
-          className="shrink-0 rounded-10 p-3 shadow-[0_0_0_1px_var(--c-rule)]"
-          style={{ background: "#ffffff", color: "#111110" }}
-        >
-          <QrCode text={IPHONE_URL} module={3} label="QR code for Ponzu on the App Store" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="flex items-center gap-[7px] font-medium text-14 text-ink">
-            <AppleMark size={15} />
-            Scan with your iPhone
-          </span>
-          <span className="text-13 text-muted leading-[1.5]">
-            Sign in with the same GitHub account. Every design is already there.
-          </span>
-        </div>
-      </SetupCard>
+      <IphoneCard />
     </StepLayout>
+  );
+}
+
+/** The QR code to the App Store, and what to do with it: the step's card, and Settings'. */
+export function IphoneCard() {
+  return (
+    <SetupCard className="flex-row items-center gap-[18px] px-4 py-3.5">
+      {/*
+       * Dark on white in either theme, so any phone's camera reads it: 25 modules at 3px in a
+       * quiet zone of four, the board's 100px tile to within a pixel.
+       */}
+      <div
+        className="shrink-0 rounded-10 p-3 shadow-[0_0_0_1px_var(--c-rule)]"
+        style={{ background: "#ffffff", color: "#111110" }}
+      >
+        <QrCode text={IPHONE_URL} module={3} label="QR code for Ponzu on the App Store" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="flex items-center gap-[7px] font-medium text-14 text-ink">
+          <AppleMark size={15} />
+          Scan with your iPhone
+        </span>
+        <span className="text-13 text-muted leading-[1.5]">
+          Sign in with the same GitHub account. Every design is already there.
+        </span>
+      </div>
+    </SetupCard>
   );
 }
 

@@ -44,7 +44,7 @@ export type PullRequestAction =
   | { kind: "close" }
   | { kind: "update_branch"; headSha: string };
 
-type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background">;
+type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config">;
 
 /** The waits for GitHub to work out whether a pull request can merge, before giving up. */
 const MERGEABLE_WAITS_MS = [1_000, 2_000];
@@ -64,7 +64,7 @@ export async function actOnPullRequest(
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
   const read = await act(deps, target, user, action);
-  return toTab(target, read.read);
+  return toTab(target, read.read, deps.config.githubApp.slug);
 }
 
 async function act(

@@ -3,6 +3,7 @@ import {
   appendEvent,
   getDesignAssetKey,
   getQuestion,
+  getUser,
   listAssets,
   listThreadItems,
   postMessage,
@@ -73,6 +74,17 @@ const QuestionView = z.object({
   id: z.string(),
   status: z.enum(["open", "answered", "cancelled"]),
 });
+/** A question as it stands: once answered, the answer that won and who gave it. */
+const StandingQuestionView = QuestionView.extend({
+  answer: z
+    .object({
+      answers: z.record(z.string(), z.string()).optional(),
+      approved: z.boolean().optional(),
+      note: z.string().optional(),
+    })
+    .nullable(),
+  answeredBy: z.object({ id: z.string(), name: z.string(), login: z.string() }).nullable(),
+});
 const UploadView = z.object({
   files: z.array(
     z.object({
@@ -96,6 +108,22 @@ function toItem(item: StoredItem): ThreadItem {
     kind: item.kind,
     payload: item.payload,
   } as ThreadItem;
+}
+
+/**
+ * The refusal of an answer to a question that is no longer open. When someone answered it,
+ * `details.answeredBy` says who, so the one who got there second is told by name.
+ */
+async function closedBy(db: Parameters<typeof getUser>[0], question: Question): Promise<ApiError> {
+  const message = "This question is no longer open.";
+  const userId = question.status === "answered" ? question.answeredByUserId : null;
+  const user = userId ? await getUser(db, userId) : null;
+  return new ApiError(
+    409,
+    "question_closed",
+    message,
+    user ? { details: { answeredBy: personFor(user) } } : {},
+  );
 }
 
 /** What the answer event carries beside the question, if it answers a question of this kind. */
@@ -172,19 +200,46 @@ export const designThread = new Hono<AppEnv>()
       const { design } = await requireDesign(c, id, "write");
       const question = await getQuestion(deps.db, { designId: design.id, id: questionId });
       if (!question) throw new ApiError(404, "not_found", "There is no such question.");
-      const closed = new ApiError(409, "question_closed", "This question is no longer open.");
-      if (question.status !== "open") throw closed;
+      if (question.status !== "open") throw await closedBy(deps.db, question);
       const answered = await answerQuestion(deps.db, {
         designId: design.id,
         id: questionId,
         answer: answerOf(question, c.req.valid("json")),
         userId: actor.user.id,
       });
-      if (!answered) throw closed;
+      if (!answered) {
+        const now = await getQuestion(deps.db, { designId: design.id, id: questionId });
+        throw await closedBy(deps.db, now ?? question);
+      }
       await requestWake(deps, design.id, "answer");
       return c.json(QuestionView.parse(answered));
     },
   )
+
+  /**
+   * One of the agent's questions as it stands. Once answered, the answer that won and who gave
+   * it, so someone who was answering it too sees what was chosen and by whom. A secret's value is
+   * never kept with its question, so a secret has no answer here.
+   */
+  .get("/:id/questions/:questionId", access.user, validate("param", QuestionParams), async (c) => {
+    const { deps } = c.var;
+    const { id, questionId } = c.req.valid("param");
+    const { design } = await requireDesign(c, id, "read");
+    const question = await getQuestion(deps.db, { designId: design.id, id: questionId });
+    if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+    const answered = question.status === "answered";
+    const userId = answered ? question.answeredByUserId : null;
+    const user = userId ? await getUser(deps.db, userId) : null;
+    const given = answered && question.kind !== "secret" ? question.answer : null;
+    return c.json(
+      StandingQuestionView.parse({
+        id: question.id,
+        status: question.status,
+        answer: given && typeof given === "object" && !Array.isArray(given) ? given : null,
+        answeredBy: user ? personFor(user) : null,
+      }),
+    );
+  })
 
   /** Stops the agent's turn, and whatever was put in behind it. */
   .post("/:id/stop", access.user, validate("param", Params), async (c) => {

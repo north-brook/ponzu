@@ -153,6 +153,10 @@ describe("answers", () => {
 
     expect([first.status, first.body]).toEqual([200, { id, status: "answered" }]);
     expect([second.status, second.body.error.code]).toEqual([409, "question_closed"]);
+    // The one who got there second is told who answered.
+    expect(second.body.error.details).toEqual({
+      answeredBy: { id: ws.people.maya!.userId, name: expect.any(String), login: "maya" },
+    });
     expect((await getDesignHead(t.db, design.id))!.needsYouCount).toBe(0);
     expect(
       (await feedOf(t.db, design.id)).map((e) => [e.kind, e.priority, e.userId, e.payload]),
@@ -202,12 +206,42 @@ describe("answers", () => {
     ]);
     expect(await code(asked, { answers: {} })).toEqual([400, "invalid_request"]);
     expect(await code(withdrawn, { approved: true })).toEqual([409, "question_closed"]);
+    // Nobody answered a withdrawn one: nobody is named.
+    expect(
+      (await answer("maya", design.id, withdrawn, { approved: true })).body.error,
+    ).not.toHaveProperty("details");
     expect(await code("q_0000000000000000", { approved: true })).toEqual([404, "not_found"]);
     expect(await code(asked, { answers: { "Which way?": "x" } }, "ines")).toEqual([
       403,
       "forbidden",
     ]);
     expect(await feedOf(t.db, design.id)).toEqual([]);
+  });
+
+  test("a question as it stands: open, then the answer that won and who gave it, to anyone who may read", async () => {
+    const { design, runner } = await sample();
+    const id = await raise(runner, { kind: "question", payload: { questions: [HEADLINE] } });
+    const read = (login: string) =>
+      call(t, as(login), "GET", `/v1/designs/${design.id}/questions/${id}`);
+
+    const open = await read("ines");
+    await answer("maya", design.id, id, { answers: { "Which way?": "Let it wrap" } });
+    const answered = await read("ines");
+    const stranger = await read("omar");
+    const none = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/questions/q_none`);
+
+    expect([open.status, open.body]).toEqual([
+      200,
+      { id, status: "open", answer: null, answeredBy: null },
+    ]);
+    expect(answered.body).toEqual({
+      id,
+      status: "answered",
+      answer: { answers: { "Which way?": "Let it wrap" } },
+      answeredBy: { id: ws.people.maya!.userId, name: expect.any(String), login: "maya" },
+    });
+    expect(stranger.status).toBe(404);
+    expect(none.status).toBe(404);
   });
 
   test("an answer to several questions answers every one of them, and no others", async () => {

@@ -1,5 +1,7 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import type { KeyboardEvent, Ref } from "react";
+import type { PendingAttachment } from "../model.ts";
+import { AttachmentChip } from "../thread/composer.tsx";
 import { IconButton, SendButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { canSend } from "./create.ts";
@@ -18,14 +20,20 @@ export function NewDesignComposer({
   sending = false,
   model,
   fieldRef,
+  attachments = [],
+  onRemoveAttachment,
 }: {
   prompt: string;
   onPromptChange: (prompt: string) => void;
   onSend: () => void;
   onAttach: () => void;
   sending?: boolean;
-  model: ModelChoice;
+  /** Null hides the picker: the person's defaults aren't known yet, and the API applies them. */
+  model: ModelChoice | null;
   fieldRef?: Ref<HTMLTextAreaElement>;
+  /** Images to send with the prompt, above the field. */
+  attachments?: PendingAttachment[];
+  onRemoveAttachment?: (id: string) => void;
 }) {
   const ready = canSend(prompt, sending);
 
@@ -37,6 +45,21 @@ export function NewDesignComposer({
 
   return (
     <div className="flex min-h-[118px] flex-col gap-[18px] rounded-20 bg-surface pt-4 pr-2.5 pb-2.5 pl-[18px] shadow-bar">
+      {attachments.length ? (
+        <ul
+          aria-label="Attached images"
+          className="m-0 -mb-1.5 flex list-none flex-wrap gap-1.5 p-0"
+        >
+          {attachments.map((attachment) => (
+            <AttachmentChip
+              key={attachment.id}
+              attachment={attachment}
+              onRemove={() => onRemoveAttachment?.(attachment.id)}
+              onRetry={() => {}}
+            />
+          ))}
+        </ul>
+      ) : null}
       <textarea
         ref={fieldRef}
         aria-label="Describe the design"
@@ -58,7 +81,7 @@ export function NewDesignComposer({
           <Icon icon={PlusSignIcon} size={16} stroke={1.9} />
         </IconButton>
         <span className="flex-1" />
-        <ModelPicker {...model} />
+        {model ? <ModelPicker {...model} /> : null}
         <SendButton
           size={32}
           iconSize={15}

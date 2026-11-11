@@ -39,16 +39,13 @@ const FILE_STATUS: Record<Pull["files"]["items"][number]["change"], PrFile["stat
 };
 
 /**
- * Someone on GitHub; a deleted account is GitHub's "ghost". The Ponzu App's bot (`ponzu…[bot]`,
- * its slug differing between deployments) is the agent; any other bot is itself.
+ * Someone on GitHub; a deleted account is GitHub's "ghost". The Ponzu App's own bot, as the API
+ * marks it, is the agent; any other bot is itself.
  */
 function authorOf(who: Who): GithubAuthor {
   if (!who) return { login: "ghost", name: null, avatarUrl: null, agent: false };
-  const agent = who.bot && PONZU_BOT.test(who.login);
-  return { login: who.login, name: null, avatarUrl: who.avatarUrl, agent };
+  return { login: who.login, name: null, avatarUrl: who.avatarUrl, agent: who.ponzu };
 }
-
-const PONZU_BOT = /^ponzu[a-z0-9-]*\[bot\]$/;
 
 /** The tab's pull request, from the API's. Each file's diff is asked for when its card opens. */
 export function toPullRequestDetail(pr: Pull): PullRequestDetail {

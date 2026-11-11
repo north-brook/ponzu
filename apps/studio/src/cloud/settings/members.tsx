@@ -18,6 +18,8 @@ export interface MembersSectionProps {
   onManage: () => void;
   /** The last sync with GitHub failed: the list is as it was. */
   syncFailed: boolean;
+  /** Why the last role change didn't happen, in the API's words. */
+  refusal?: string | null;
 }
 
 const ROLES: { value: Role; label: string }[] = [
@@ -37,6 +39,7 @@ export function MembersSection({
   onRoleChange,
   onManage,
   syncFailed,
+  refusal = null,
 }: MembersSectionProps) {
   const viewerIsAdmin = members.some((m) => m.person.id === meId && m.role === "admin");
   return (
@@ -63,7 +66,15 @@ export function MembersSection({
       </Section>
       <Section
         label="People"
-        note={syncFailed ? "Couldn't reach GitHub. This is who was in it last time." : undefined}
+        note={
+          refusal ? (
+            <span role="alert" className="text-danger">
+              {refusal}
+            </span>
+          ) : syncFailed ? (
+            "Couldn't reach GitHub. This is who was in it last time."
+          ) : undefined
+        }
       >
         {sortMembers(members).map((member) => (
           <Row

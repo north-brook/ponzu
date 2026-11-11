@@ -18,7 +18,7 @@ text "Set up" rgb(17, 17, 16) 500 12px Inter
 ground button rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px, rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 icon svg 12×12 rgb(94, 91, 84) stroke 2px
 text "F" rgb(255, 255, 255) 600 14px Funnel Display
-ground span rgb(61, 90, 64)
+ground span rgb(79, 90, 61)
 text "Fablefuel" rgb(17, 17, 16) 500 14px Inter
 text "fablefuel · 12 people" rgb(169, 165, 155) 400 12px Inter
 text "Ready" rgb(94, 91, 84) 500 12px Inter

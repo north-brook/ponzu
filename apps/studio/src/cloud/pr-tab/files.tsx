@@ -138,10 +138,14 @@ function FileCard({
           stroke={2.2}
           className="text-icon-soft"
         />
-        <span className="min-w-0 truncate">
-          {previousPath ? <span className="text-faint">{previousPath} → </span> : null}
-          {file.path}
-        </span>
+        {previousPath ? (
+          <span className="min-w-0 truncate">
+            <span className="text-faint">{previousPath} → </span>
+            {file.path}
+          </span>
+        ) : (
+          <FilePath path={file.path} />
+        )}
         {file.status === "added" || file.status === "removed" ? (
           <span className="shrink-0 font-sans text-11 text-faint">
             {file.status === "added" ? "new" : "deleted"}
@@ -155,6 +159,28 @@ function FileCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A file's path, which gives up its folders before its name when there's no room: the
+ * folders end in an ellipsis, the name stays whole while it fits.
+ */
+function FilePath({ path }: { path: string }) {
+  const cut = path.lastIndexOf("/") + 1;
+  return (
+    <span className="flex min-w-0" title={path}>
+      {/* Read as one: the two halves are blocks, which a name would put a space between. */}
+      <span className="sr-only">{path}</span>
+      {cut ? (
+        <span aria-hidden className="min-w-0 truncate">
+          {path.slice(0, cut)}
+        </span>
+      ) : null}
+      <span aria-hidden className="max-w-full shrink-0 truncate">
+        {path.slice(cut)}
+      </span>
+    </span>
   );
 }
 

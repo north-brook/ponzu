@@ -22,6 +22,7 @@ import {
   markReposRemoved,
   markReposRemovedExcept,
   markWorkspaceUninstalled,
+  recordOnboardingStep,
   suspendWorkspace,
   upsertMembership,
   upsertRepos,
@@ -615,5 +616,26 @@ describe("repos", () => {
       repos: [seen(301, "a/one")],
     });
     expect(back!.removedAt).toBeNull();
+  });
+});
+
+describe("recordOnboardingStep", () => {
+  test("keeps when a step was first done, and leaves the other step alone", async () => {
+    const user = await seedUser(db, "onboarding-steps");
+    const first = new Date("2026-11-01T10:00:00Z");
+    const later = new Date("2026-11-02T10:00:00Z");
+
+    expect(await recordOnboardingStep(db, { userId: user.id, step: "where", at: first })).toEqual({
+      whereAt: first,
+      iphoneAt: null,
+    });
+    expect(await recordOnboardingStep(db, { userId: user.id, step: "where", at: later })).toEqual({
+      whereAt: first,
+      iphoneAt: null,
+    });
+    expect(await recordOnboardingStep(db, { userId: user.id, step: "iphone", at: later })).toEqual({
+      whereAt: first,
+      iphoneAt: later,
+    });
   });
 });

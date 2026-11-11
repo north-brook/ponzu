@@ -333,7 +333,8 @@ function NoticeLine({
           onClick={handlers.onOpenPullRequest}
           className={cn(
             quiet,
-            "-mx-1 -my-0.5 cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
+            // No wider than the rail, so a long title ends in an ellipsis.
+            "-mx-1 -my-0.5 min-w-0 max-w-full cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
           )}
         >
           <Icon icon={icon} size={12} stroke={2} className={color} />

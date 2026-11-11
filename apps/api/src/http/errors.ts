@@ -74,7 +74,10 @@ export type ErrorCode =
    * started for the design. The runner stops for good.
    */
   | "superseded"
-  /** An answer to a question that is no longer open: someone answered first, or the run moved on. */
+  /**
+   * An answer to a question that is no longer open: someone answered first, or the run moved
+   * on. `details.answeredBy` names who answered it, when someone did.
+   */
   | "question_closed"
   /** An upload larger than its kind of file may be. `details.maxBytes` says how large it may be. */
   | "file_too_large"

@@ -16,7 +16,7 @@ import { StepButton } from "../setup/step.tsx";
 import { useNow } from "../time.ts";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
-import { Meter, QuietButton, Row, RowIcon, Section, TwoLine, ValuePicker } from "./parts.tsx";
+import { ActionRow, Meter, QuietButton, Row, Section, TwoLine, ValuePicker } from "./parts.tsx";
 
 export interface AgentDefaults {
   model: string;
@@ -105,16 +105,17 @@ export function AgentsSection({
               </span>
             </Row>
           ) : null}
-          <Row
+          <ActionRow
             leading={<Icon icon={Key01Icon} size={16} stroke={1.8} className="text-faint" />}
-            trailing={<RowIcon icon={ArrowRight01Icon} label="Switch" onClick={onSwitch} />}
+            icon={ArrowRight01Icon}
+            onClick={onSwitch}
           >
             <span className="text-13 text-muted">
               {connection.method === "api_key"
                 ? "Use a Claude subscription instead"
                 : "Use an API key instead"}
             </span>
-          </Row>
+          </ActionRow>
         </Section>
       ) : null}
       <Section label="Defaults for new designs">

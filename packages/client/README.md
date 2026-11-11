@@ -8,7 +8,8 @@ a browser and Hermes.
 | Entry | For |
 |---|---|
 | `@ponzu/client` | `createSession`, sign-in, `createApi`, `createLive`, the row types and sorting |
-| `@ponzu/client/react` | `LiveProvider`, `useLiveQuery`, `useSessionState` |
+| `@ponzu/client/react` | `LiveProvider`, `useLiveQuery`, `useSessionState`, `useRepoIdeas` |
+| `@ponzu/client/query` | TanStack Query for what is asked by request: `createQueryClient`, `ponzuQueries`, `ponzuMutations`, `invalidateFromLive` |
 | `@ponzu/client/canvas` | `CloudSource`, wherever `@ponzu/canvas` runs (the studio, the phone's canvas web view) |
 | `@ponzu/client/testing` | `createFakeBackend`, `FakeClock`, `FakeRealtime`: all of the above in memory |
 
@@ -69,8 +70,31 @@ code (`not_found`, `forbidden`, `last_admin`, …) or `network` when nothing ans
 `error.transient` says whether trying again can help. An expired token is refreshed and the
 request sent once more before you hear of it.
 
-The thread's routes (`sendMessage`, `answer`, `stop`, `thread`, `upload`) are not on the API
-yet: they are typed by hand in `thread-routes.ts` until they are.
+The thread's shapes (`SendMessageBody`, `AnswerBody`, `ThreadPage`) are inferred from those
+routes in `thread-routes.ts`; a thread item is read as the runner protocol's `ThreadItem`, which
+says which payload goes with which kind.
+
+## Requests in React: TanStack Query
+
+```ts
+const queryClient = createQueryClient();          // one per signed-in person
+const queries = ponzuQueries(api);
+const mutations = ponzuMutations(api, queryClient);
+const stop = invalidateFromLive(queryClient, live);
+
+const me = useQuery(queries.me());
+const connect = useMutation(mutations.connectApiKey());
+```
+
+What is asked for by request (`me`, the GitHub accounts, a workspace, the person's Claude and
+their defaults; Settings' notifications, environments and usage; an open design's thread pages,
+its pull request and each file's diff at a commit) is cached by TanStack Query, the phone's
+library too. A design's sends, answers, uploads, stop and pull request actions are mutations
+here as well; its thread and questions are live queries. Each mutation writes what
+its answer says into the cache and asks again for what it may have changed. Where a live query
+covers the same rows, it says when an answer is out of date: `invalidateFromLive` asks for
+`me` and the Claude answers again when the person's own row changes elsewhere. A query that
+was refused (a 403, a 404) is not asked again; one that got no answer is, twice.
 
 ## Live queries
 

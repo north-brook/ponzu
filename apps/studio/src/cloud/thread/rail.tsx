@@ -110,7 +110,10 @@ export function ThreadRail(props: ThreadRailProps) {
       )}
       <Slot key={`${designId}:${slot}`} carry={carry}>
         {gate?.kind === "read_only" ? (
-          <ReadOnlyLine message={gateMessage(gate, meId)} />
+          <ReadOnlyLine
+            message={gateMessage(gate, meId)}
+            whole={gate.repo ? `${gate.repo.owner}/${gate.repo.name}` : null}
+          />
         ) : asks.length ? (
           <NeedsYou
             asks={asks}

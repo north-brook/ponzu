@@ -82,7 +82,7 @@ export const designPullRequest = new Hono<AppEnv>()
     if (target instanceof ApiError) throw target;
     const found = await readPullRequest(deps, target);
     await recordCurrent(deps, target.designId, found);
-    return c.json(PullRequestTabView.parse(toTab(target, found.read)));
+    return c.json(PullRequestTabView.parse(toTab(target, found.read, deps.config.githubApp.slug)));
   })
 
   /**

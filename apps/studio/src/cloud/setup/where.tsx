@@ -1,5 +1,5 @@
 import { Tick02Icon } from "@hugeicons/core-free-icons";
-import { monogramColor } from "../sidebar/workspace-menu.tsx";
+import { monogramColor, monogramLetter } from "../sidebar/workspace-menu.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { canContinue, type GithubAccount } from "./setup.ts";
@@ -162,9 +162,10 @@ function AccountMark({ account }: { account: GithubAccount }) {
         "grid size-8 shrink-0 place-items-center font-display font-semibold text-14 leading-none",
         shape,
       )}
-      style={{ background: monogramColor(String(account.githubAccountId)), color: "#ffffff" }}
+      // As the sidebar draws the workspace it becomes.
+      style={{ background: monogramColor(account.login), color: "#ffffff" }}
     >
-      {(account.name || account.login).charAt(0).toUpperCase()}
+      {monogramLetter(account)}
     </span>
   );
 }

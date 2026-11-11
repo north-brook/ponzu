@@ -68,11 +68,10 @@ export function PullRequestView({
     const href = safeHref(url);
     if (href) open(href);
   };
-  const column = "flex min-h-0 min-w-0 flex-col overflow-y-auto pt-11 pb-11 [scrollbar-width:thin]";
   if (state.kind !== "ready") {
     return (
-      <div className="absolute inset-0 grid grid-cols-[380px_minmax(0,1fr)] gap-12 pr-12 pl-14">
-        <div className={cn(column, "gap-[26px]")}>
+      <Columns>
+        <div className={cn(COLUMN, "gap-[26px]")}>
           <div className="flex flex-col gap-3.5">
             <Skeleton className="h-[29px] w-4/5 rounded-6" />
             <Subtitle state={state.summary.state} number={state.summary.number} />
@@ -88,7 +87,7 @@ export function PullRequestView({
             <DetailsSkeleton rows={6} />
           )}
         </div>
-        <div className={cn(column, "gap-2.5")} aria-hidden>
+        <div className={cn(COLUMN, "gap-2.5")} aria-hidden>
           <Skeleton className="h-3.5 w-12 rounded-3" />
           {[0, 1, 2].map((i) => (
             <Skeleton
@@ -98,14 +97,14 @@ export function PullRequestView({
             />
           ))}
         </div>
-      </div>
+      </Columns>
     );
   }
 
   const { pr } = state;
   return (
-    <div className="absolute inset-0 grid grid-cols-[380px_minmax(0,1fr)] gap-12 pr-12 pl-14">
-      <div className={cn(column, "gap-[26px]")}>
+    <Columns>
+      <div className={cn(COLUMN, "gap-[26px]")}>
         <div className="flex flex-col gap-3.5">
           <h1 className="m-0 font-display font-semibold text-26 leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]">
             {pr.title}
@@ -157,7 +156,7 @@ export function PullRequestView({
           </Section>
         ) : null}
       </div>
-      <div className={column}>
+      <div className={COLUMN}>
         <Files
           files={pr.files}
           total={pr.filesTotal}
@@ -168,6 +167,25 @@ export function PullRequestView({
           onOpenLink={onOpenLink}
           onLoadDiff={onLoadDiff}
         />
+      </div>
+    </Columns>
+  );
+}
+
+/** Each column scrolls on its own, side by side; stacked, the pane scrolls them as one. */
+const COLUMN =
+  "flex min-h-0 min-w-0 flex-col overflow-y-auto pt-11 pb-11 [scrollbar-width:thin] @max-[720px]:overflow-visible @max-[720px]:not-last:pb-0 @max-[720px]:last:pt-9";
+
+/**
+ * The 380 column beside the files. In a narrow pane (the smallest window, with the sidebar and
+ * the rail open) there is no room for both, so the details stack above the files, which get the
+ * pane's whole width.
+ */
+function Columns({ children }: { children: ReactNode }) {
+  return (
+    <div className="@container absolute inset-0">
+      <div className="grid h-full grid-cols-[380px_minmax(0,1fr)] gap-12 pr-12 pl-14 @max-[720px]:block @max-[720px]:overflow-y-auto @max-[720px]:px-10 @max-[720px]:[scrollbar-width:thin]">
+        {children}
       </div>
     </div>
   );

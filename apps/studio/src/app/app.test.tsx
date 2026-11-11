@@ -4,7 +4,6 @@ import { createFakeBackend } from "@ponzu/client/testing";
 import type { UpdateState } from "@ponzu/desktop/bridge";
 import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "./app.tsx";
-import { nameFor } from "./create.tsx";
 import type { Host } from "./host.ts";
 import { UpdateNotes } from "./update.tsx";
 
@@ -92,9 +91,4 @@ test("the update's notes, and Restart while it isn't already restarting", () => 
   expect(notes(false)).toContain("<li>Boards draw faster.</li>");
   expect(notes(false)).toContain(">Restart<");
   expect(notes(true)).toContain("Restarting…");
-});
-
-test("a new design is called by the first line of what it was asked, until the agent names it", () => {
-  expect(nameFor("  A pricing page\nwith three plans")).toBe("A pricing page");
-  expect(nameFor("x".repeat(60))).toBe(`${"x".repeat(47)}…`);
 });

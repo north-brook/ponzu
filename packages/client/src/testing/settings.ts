@@ -45,6 +45,8 @@ export interface SettingsWorld {
   repo(repoId: string): { id: string; fullName: string; workspaceId: string; canPush: boolean };
   /** The repos of a workspace the person can read. */
   repos(workspaceId: string): { id: string }[];
+  /** Some design was made on the repo: its start builds the repo's base. */
+  designedIn(repoId: string): boolean;
   person(userId: string): {
     id: string;
     name: string | null;
@@ -217,7 +219,13 @@ export class FakeSettings {
             return {
               repos: world
                 .repos(workspaceId)
-                .filter((repo) => this.bases.has(repo.id) || this.secrets.has(repo.id))
+                // As the API: once it has a design, a base or a secret.
+                .filter(
+                  (repo) =>
+                    world.designedIn(repo.id) ||
+                    this.bases.has(repo.id) ||
+                    this.secrets.has(repo.id),
+                )
                 .map((repo) => environment(repo.id).environment),
               canManageSecrets: role === "admin",
             };

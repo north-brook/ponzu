@@ -147,6 +147,56 @@ describe("against the API's own routes", () => {
     expect([nothing.status, nothing.code]).toEqual([409, "nothing_to_undo"]);
   });
 
+  test("guided setup's steps, the person's Claude by key, and their defaults", async () => {
+    const maya = clientFor("maya");
+    expect((await maya.onboarding("where")).whereConfirmedAt).not.toBeNull();
+    expect((await maya.me()).onboarding.iphoneStepSeenAt).toBeNull();
+
+    const key = "sk-ant-api03-client-test-key-0000";
+    const rejected = await maya.claude.connectApiKey(key).catch((error) => error);
+    expect([rejected.status, rejected.code]).toEqual([400, "claude_key_invalid"]);
+    t.anthropic.keys.add(key);
+    const { account } = await maya.claude.connectApiKey(key);
+    expect([account?.kind, account?.status, account?.label]).toEqual([
+      "api_key",
+      "connected",
+      "Anthropic API key · sk-ant-…0000",
+    ]);
+    expect((await maya.claude.get()).account?.kind).toBe("api_key");
+
+    const defaults = await maya.claude.defaults();
+    expect(defaults.models.map((m) => m.id)).toContain(defaults.model);
+    expect((await maya.claude.setDefaults({ effort: "max" })).effort).toBe("max");
+
+    await maya.claude.disconnect();
+    expect((await maya.claude.get()).account).toBeNull();
+  });
+
+  test("a design made with its first message, once however often it is sent, and its thread", async () => {
+    const maya = clientFor("maya");
+    const body = {
+      workspaceId: ws.id,
+      name: "Checkout",
+      message: { text: "Make checkout one page" },
+      effort: "low" as const,
+      createKey: "create-key-client-1",
+    };
+    const [first, again] = await Promise.all([
+      maya.designs.create(body),
+      maya.designs.create(body),
+    ]);
+    expect(again.id).toBe(first.id);
+
+    const said = await maya.designs.sendMessage(first.id, { text: "And a summary" });
+    expect(said.kind).toBe("message");
+    const { items } = await maya.designs.thread(first.id);
+    expect(items.map((item) => (item.kind === "message" ? item.payload.text : item.kind))).toEqual([
+      "Make checkout one page",
+      "And a summary",
+    ]);
+    await maya.designs.stop(first.id);
+  });
+
   test("live queries are sealed in one call, each answered on its own", async () => {
     const maya = clientFor("maya");
     const created = await maya.designs.create({ workspaceId: ws.id, name: "Scratch" });

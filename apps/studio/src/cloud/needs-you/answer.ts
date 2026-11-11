@@ -1,4 +1,4 @@
-import type { Ask, AskAnswer, AskedQuestion } from "../model.ts";
+import type { Ask, AskAnswer, AskedQuestion, AskGiven } from "../model.ts";
 
 /*
  * Answering what the agent asks. Everything it waits on is laid out as pages, one at a time in
@@ -70,6 +70,34 @@ export function questionAnswer(question: AskedQuestion, draft: Draft): string {
     .join(", ");
   const note = draft.note.trim();
   return labels && note ? `${labels}. ${note}` : labels || note;
+}
+
+/**
+ * A page as the answer that closed its ask said it, the inverse of `questionAnswer`: the options
+ * whose labels lead the answer, in the options' order, and the rest as the note. A question
+ * answered only in words chooses nothing.
+ */
+export function draftOf(page: Page, given: AskGiven): Draft {
+  const { ask } = page;
+  if (ask.kind === "plan" || ask.kind === "permission" || ask.kind === "link") {
+    if (given.approved === undefined) return EMPTY_DRAFT;
+    return { chosen: [given.approved ? "yes" : "no"], note: given.note ?? "" };
+  }
+  if (ask.kind !== "question") return EMPTY_DRAFT;
+  const q = ask.questions[page.index];
+  let rest = (q && given.answers?.[q.question]) ?? "";
+  const chosen: string[] = [];
+  for (const { label } of q?.options ?? []) {
+    const lead = chosen.length ? `, ${label}` : label;
+    const ends = ["", ", ", ". "].some((after) =>
+      after ? rest.startsWith(lead + after) : rest === lead,
+    );
+    if (!ends) continue;
+    chosen.push(label);
+    rest = rest.slice(lead.length);
+  }
+  const note = chosen.length ? rest.replace(/^\. /, "") : rest;
+  return { chosen, note };
 }
 
 /**
