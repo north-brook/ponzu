@@ -5,8 +5,8 @@
  * action pending, perhaps) and then the next one: never an earlier step, the sign-in screen, an
  * empty window or a wait; the title and the line under it never move, nor does a step's action
  * while it waits; and Fresh start's composer stands still while the repo's ideas come in under
- * it. The walk runs with every answer equally slow, with each answer its own delay, and with
- * `me` far behind the rest. A relaunch at any stage goes straight to where the person belongs,
+ * it. The walk runs with each answer its own delay, and with every answer slow and `me` far
+ * behind the rest (which also holds the case of every answer equally slow). A relaunch at any stage goes straight to where the person belongs,
  * holding a quiet empty window until it knows. Skips where there is no Chrome or Chromium.
  *
  * Each walk runs in its own file (first-run*.e2e.test.ts), so bun's workers walk them at once.
@@ -264,7 +264,8 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         const { page, errors } = await open(`&as=${as}`);
         if (screen === "create") await page.getByText(heading).waitFor();
         else await page.getByRole("heading", { name: heading }).waitFor();
-        await page.waitForTimeout(LATENCY * 4);
+        // Every answer the screen set off in, and drawn: nothing after it moves the window on.
+        await quiet(page);
         expect(await screens(page)).toEqual(["blank", screen]);
         expect(errors).toEqual([]);
         await page.close();

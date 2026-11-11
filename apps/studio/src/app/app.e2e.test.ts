@@ -92,14 +92,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   };
   const frames: Awaited<ReturnType<typeof stepFrame>>[] = [];
 
-  test("signed out, it asks to sign in, and shows nothing else", async () => {
-    await page.waitForSelector('[data-screen="sign-in"]');
-    expect(await page.textContent("h1")).toBe("Sign in to Ponzu");
-    expect(await page.locator("#sidebar").count()).toBe(0);
-    await shoot("1-sign-in");
-  });
-
   test("a sign-in outlives the window coming forward; the button waits a moment, then is ready", async () => {
+    // Signed out, the built app opens on the sign-in screen (app.test.tsx: and nothing else).
+    await page.waitForSelector('[data-screen="sign-in"]');
+    await shoot("1-sign-in");
     const button = page.getByRole("button", { name: "Continue with GitHub" });
     const busy = () => button.getAttribute("aria-busy");
     await page.evaluate(() => window.ponzuFake!.holdSignIn());
@@ -186,19 +182,16 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // and pressing it again starts nothing more.
     const tabs = () => page.evaluate(() => window.ponzuFake!.opened.length);
     const before = await tabs();
-    await page.evaluate(() => {
-      window.ponzuFake!.backend.claude.startTakesMs = 1500;
-    });
+    // Held until the second press is in, so it lands while the first start is out.
+    await page.evaluate(() => window.ponzuFake!.backend.claude.holdStarts());
     const reopen = page.getByRole("button", { name: "Open sign-in again" });
     await reopen.click();
     await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === "true");
     expect(await reopen.isDisabled()).toBe(true);
     await shoot("3c-open-sign-in-again-waiting");
     await reopen.click({ force: true });
+    await page.evaluate(() => window.ponzuFake!.backend.claude.releaseStarts());
     await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === null);
-    await page.evaluate(() => {
-      window.ponzuFake!.backend.claude.startTakesMs = 0;
-    });
     expect((await tabs()) - before).toBe(1);
     await waitUntil(async () => (await field.inputValue()) === "");
     await field.fill("k7Hq2-Rw9xT-pL4mZ#state");

@@ -171,7 +171,8 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
       if (!bytes) return route.fulfill({ status: 404, body: "" });
       return route.fulfill({ status: 200, contentType: "image/webp", body: Buffer.from(bytes) });
     });
-    await page.goto(server.url);
+    // Signed in past setup: the first run is app.e2e's and the slow-answer walks'.
+    await page.goto(`${server.url}?as=returning`);
   });
   afterAll(async () => {
     if (SHOTS && page) await page.screenshot({ path: join(SHOTS, "last.png") }).catch(() => {});
@@ -237,31 +238,18 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
   const bare = () => fake(() => (window as unknown as { bare: string[] }).bare);
 
   test("into the team's design, with two boards drawn", async () => {
-    await page.getByRole("button", { name: "Continue with GitHub" }).click();
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
-    await page.getByRole("button", { name: "Set up" }).click();
-    await fake(() =>
-      window.ponzuFake!.link({
-        kind: "github_setup",
-        result: "installed",
-        workspaceId: window.ponzuFake!.personalId,
-      }),
-    );
-    await waitUntil(async () => (await page.getByText("Ready").count()) === 2);
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await page.getByLabel("Paste the code from claude.ai").fill("k7Hq2-Rw9xT-pL4mZ#state");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await page.getByRole("button", { name: "Start designing" }).click();
-    await page.getByRole("button", { name: "Workspace: Personal" }).click();
-    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
-    await page.getByRole("button", { name: /Onboarding flow/ }).click();
-    designId = await fake(
-      () =>
-        [...window.ponzuFake!.backend.designs.values()].find(
-          (d) => d.sequencer.doc.name === "Onboarding flow",
-        )!.id,
-    );
+    await page.locator("#sidebar").waitFor();
+    const find = () =>
+      fake(
+        () =>
+          [...window.ponzuFake!.backend.designs.values()].find(
+            (d) => d.sequencer.doc.name === "Onboarding flow",
+          )?.id ?? "",
+      );
+    await waitUntil(async () => (await find()) !== "");
+    designId = await find();
+    // Opened as its link opens it.
+    await fake((id: string) => window.ponzuFake!.link({ kind: "design", designId: id }), designId);
     // Its boards, as the agent draws them: a hero and the plans beside it, a gap between.
     await fake(
       ({ id, boards }: { id: string; boards: Artboard[] }) => {
