@@ -203,7 +203,9 @@ line (1.0–1.1 px), and a small icon reads at the weight of a large one.
 the action button's glyph, a checked box): a light line on a fill reads thinner than ink on
 paper. An icon alone that belongs to a row of text controls takes the row's step: the page tabs'
 + is `inline`, like the tabs' icons. The slice, avatars and brand marks are drawn, not stroked,
-and keep their own sizes.
+and keep their own sizes. There is one plus, Hugeicons' `PlusSignIcon` (the canvas's `plus`):
+`Add01Icon` draws a smaller cross in the same box, so beside the zoom's + it read lighter
+(ladder.test.ts holds this).
 
 **Text.** A size, a weight and a face; colour comes from the role below unless the step is
 defined by being quiet.
@@ -212,7 +214,7 @@ defined by being quiet.
 | --- | --- | --- |
 | `body` | 13 | what a person reads: messages, a dialog's words |
 | `name` | 13 medium | a design's, a page tab's, a setting's name |
-| `title` | 13 semibold | the heading of a small surface: the workspace, a popover |
+| `title` | 13 semibold | the heading of a small surface: the workspace, a dialog's row |
 | `control` | 12 medium | a button's words (quiet muted, raised ink, action semibold on ink) |
 | `secondary` | 12 | a line under a name (faint) or a value at rest (muted) |
 | `meta` | 11 mono, faint | repo, branch, pull request, counts, ages |
@@ -220,6 +222,10 @@ defined by being quiet.
 
 Display (Funnel Display 600) is a heading's alone: 34 the create page, 28 a setup step, 26 the
 pull request, 18 a Settings section, 40 a price.
+
+The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
+cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
+are on the ladder too: a message is `body` (13), its author and age `secondary` (12).
 
 **Colour, by role.** `ink` is what is read, chosen or open (body text, the chosen tool, the active
 tab and its icon); `muted` a control at rest and a secondary line; `faint` quiet text (meta,

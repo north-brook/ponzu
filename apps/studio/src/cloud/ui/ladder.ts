@@ -19,7 +19,7 @@ export const TEXT = {
   body: "text-13",
   /** A name: a design's, a page tab's, a setting's. */
   name: "text-13 font-medium",
-  /** The heading of a small surface: the workspace, a popover's title. */
+  /** The heading of a small surface: the workspace, a dialog's row. (Share's heading is 14, as drawn.) */
   title: "text-13 font-semibold",
   /** A control's words: a quiet button, a chip, a raised button. */
   control: "text-12 font-medium",

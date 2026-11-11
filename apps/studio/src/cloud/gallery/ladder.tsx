@@ -3,7 +3,6 @@
  * steps, the colour ladder, and how an icon and text pair in a control. `?ladder` in the gallery.
  */
 import {
-  Add01Icon,
   ArrowDown01Icon,
   ArrowUpRight01Icon,
   Cancel01Icon,
@@ -11,6 +10,7 @@ import {
   GitBranchIcon,
   GitPullRequestIcon,
   Home01Icon,
+  PlusSignIcon,
   Search01Icon,
   SidebarLeftIcon,
   Tick02Icon,
@@ -189,7 +189,7 @@ export function Ladder() {
                 </span>
                 <span className="ml-3 flex items-center gap-1.5 rounded-pill bg-surface py-1 pr-1 pl-1.5 shadow-bar">
                   <IconButton label="Attach an image" className="size-7 rounded-pill">
-                    <Icon icon={Add01Icon} step="control" />
+                    <Icon icon={PlusSignIcon} step="control" />
                   </IconButton>
                   <span className="w-32 text-13 text-faint">Steer, or ask more</span>
                   <span className="grid size-7 place-items-center rounded-pill bg-action">

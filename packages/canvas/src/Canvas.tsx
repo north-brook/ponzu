@@ -1843,7 +1843,7 @@ export function Canvas({
                         setPageId(id);
                       }}
                     >
-                      <Icon name="add" step="control" />
+                      <Icon name="plus" step="control" />
                     </Button>
                   </Tip>
                 )}

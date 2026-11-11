@@ -1,9 +1,9 @@
 import {
-  Add01Icon,
   ArrowDown01Icon,
   ArrowUpRight01Icon,
   CreditCardIcon,
   Logout01Icon,
+  PlusSignIcon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import type { Workspace } from "../model.ts";
@@ -138,7 +138,7 @@ export function WorkspaceMenu({
         </MenuRadioGroup>
         <MenuItem
           onSelect={onAddWorkspace}
-          leading={<Icon icon={Add01Icon} step="control" />}
+          leading={<Icon icon={PlusSignIcon} step="control" />}
           trailing={<Icon icon={ArrowUpRight01Icon} step="small" className="text-icon-soft" />}
           className="text-muted"
         >

@@ -1,4 +1,4 @@
-import { Add01Icon, Cancel01Icon, RefreshIcon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 import { gateMessage } from "../gate.ts";
 import type { PendingAttachment, SteerGate } from "../model.ts";
@@ -137,7 +137,7 @@ export function RailComposer({
           onClick={() => picker.current?.click()}
           className="size-7 rounded-pill"
         >
-          <Icon icon={Add01Icon} step="control" />
+          <Icon icon={PlusSignIcon} step="control" />
         </IconButton>
         <input
           ref={picker}

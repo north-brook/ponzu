@@ -1,11 +1,11 @@
 import {
-  Add01Icon,
   ArrowDown01Icon,
   BotIcon,
   Cancel01Icon,
   CreditCardIcon,
   GithubIcon,
   Notification01Icon,
+  PlusSignIcon,
   ServerStack01Icon,
   UserCircleIcon,
   UserGroupIcon,
@@ -117,7 +117,7 @@ export function SettingsPanel({
               onClick={onCreateTeam}
               className="flex h-8 shrink-0 cursor-default items-center gap-[9px] rounded-8 px-2.5 text-13 text-faint outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover hover:text-muted"
             >
-              <Icon icon={Add01Icon} step="control" />
+              <Icon icon={PlusSignIcon} step="control" />
               Create a team
             </button>
           </>

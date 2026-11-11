@@ -8,9 +8,9 @@ import { Button, cn, Menu, Textarea } from "./ui.tsx";
 /** A card floating over the canvas: a thread, or the composer for a new one. */
 export const threadCard =
   "pz:absolute pz:-top-3 pz:left-5 pz:w-[300px] pz:select-text pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
-const meta = "pz:text-[11.5px] pz:text-muted-foreground";
+const meta = "pz:text-[12px] pz:text-muted-foreground";
 const messageText =
-  "pz:whitespace-pre-wrap pz:text-[13.5px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
+  "pz:whitespace-pre-wrap pz:text-[13px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
 
 export function timeAgo(ms: number): string {
   const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
@@ -139,7 +139,7 @@ export function Composer({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <Textarea
-        className="pz:max-h-40 pz:flex-1 pz:text-[13.5px] pz:leading-[1.55]"
+        className="pz:max-h-40 pz:flex-1 pz:text-[13px] pz:leading-[1.55]"
         ref={ref}
         value={text}
         placeholder={placeholder}
@@ -190,7 +190,7 @@ function EditField({
   return (
     <div className="pz:flex pz:flex-col pz:gap-1.5">
       <Textarea
-        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13.5px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
+        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
         ref={ref}
         value={text}
         aria-label="Edit message"

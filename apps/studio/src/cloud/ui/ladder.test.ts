@@ -25,6 +25,20 @@ test("cloud icons are set by step, not by size and stroke", async () => {
     for (const m of src.matchAll(/<Icon\b[^>]*?\b(size|stroke)=/g))
       offenders.push(`${file}:${src.slice(0, m.index).split("\n").length}`);
     if (/text-icon-strong/.test(src)) offenders.push(`${file}: text-icon-strong (retired)`);
+    // One plus: Add01 draws a smaller cross than PlusSign in the same box, so the composer's +
+    // read lighter than the zoom's beside it.
+    if (/\bAdd01Icon\b/.test(src)) offenders.push(`${file}: Add01Icon (the plus is PlusSignIcon)`);
+  }
+  expect(offenders).toEqual([]);
+});
+
+test("the canvas's controls draw one plus and set text on whole pixels", async () => {
+  const root = new URL("../../../../../packages/canvas/src/", import.meta.url).pathname;
+  const offenders: string[] = [];
+  for await (const file of new Glob("*.tsx").scan(root)) {
+    const src = await Bun.file(`${root}${file}`).text();
+    if (/<Icon name="add"/.test(src)) offenders.push(`${file}: name="add" (the plus is "plus")`);
+    for (const m of src.matchAll(/text-\[\d+\.\d+px\]/g)) offenders.push(`${file}: ${m[0]}`);
   }
   expect(offenders).toEqual([]);
 });

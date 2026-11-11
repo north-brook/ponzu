@@ -1,4 +1,4 @@
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import type { Person, Workspace } from "../model.ts";
 import { WorkspaceMark } from "../sidebar/workspace-menu.tsx";
 import { Avatar } from "../ui/avatar.tsx";
@@ -67,7 +67,7 @@ export function AccountSection({
             onClick={onCreateTeam}
             className="-mx-1 flex cursor-default items-center gap-2.5 rounded-6 px-1 py-1 text-13 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
           >
-            <Icon icon={Add01Icon} step="control" />
+            <Icon icon={PlusSignIcon} step="control" />
             Create a team
           </button>
         </Row>

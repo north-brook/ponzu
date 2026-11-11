@@ -1,10 +1,10 @@
 import {
-  Add01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
   Key01Icon,
   Layers01Icon,
   PencilEdit02Icon,
+  PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { Fragment, type KeyboardEvent, type ReactNode, useId, useState } from "react";
 import type { Repo } from "../model.ts";
@@ -322,7 +322,7 @@ function Secrets({
             onClick={() => setDraft({ name: "", value: "", replacing: null })}
             className="flex cursor-default items-center gap-[5px] rounded-4 font-medium text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
           >
-            <Icon icon={Add01Icon} step="small" />
+            <Icon icon={PlusSignIcon} step="small" />
             Add
           </button>
         ) : null}
