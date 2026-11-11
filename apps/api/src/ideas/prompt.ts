@@ -152,7 +152,7 @@ export function ideasPrompt(snapshot: RepoSnapshot): string {
       : null,
     // The rule against saying how ideas are made names words that are this product's own.
     own.length
-      ? `This product's own name or description has ${own.map((word) => `"${word}"`).join(" and ")} in it: there it is the product's word, and an idea may name the product by it.\n`
+      ? `This product's own name or description has ${own.map((word) => `"${word === "ai" ? "AI" : word}"`).join(" and ")} in it: there it is the product's word, and an idea may name the product by it.\n`
       : null,
     "Write the four ideas for this product.",
   ]
@@ -212,7 +212,7 @@ const NOT_A_VERB =
 const AI = /\bAI\b/;
 
 /**
- * The words of `NEVER` that are the product's own: in its name or its description. A product
+ * The words of `NEVER`, and "AI", that are the product's own: in its name or its description. A product
  * called "ponzu-test" or "gpt-playground" is named in its ideas like any other, so those words
  * are let through for it and it alone.
  */
@@ -220,6 +220,8 @@ export function ownWords(snapshot: Pick<RepoSnapshot, "fullName" | "description"
   const said = `${snapshot.fullName} ${snapshot.description ?? ""}`.replace(/[-_./]+/g, " ");
   const own = new Set<string>();
   for (const [word] of said.matchAll(new RegExp(NEVER.source, "gi"))) own.add(word.toLowerCase());
+  // "AI" has its own check, in capitals; a name says it in any case ("ai-notes").
+  if (/\bai\b/i.test(said)) own.add("ai");
   return [...own];
 }
 /** Anything like an address: a scheme, an email, or a name with a dot in it (`evil.example`). */
@@ -292,7 +294,8 @@ export function checkIdeas(
     const never =
       [...fixed.matchAll(new RegExp(NEVER.source, "gi"))]
         .map(([word]) => word)
-        .find((word) => !own.includes(word.toLowerCase())) ?? AI.exec(fixed)?.[0];
+        .find((word) => !own.includes(word.toLowerCase())) ??
+      (own.includes("ai") ? undefined : AI.exec(fixed)?.[0]);
     if (never) {
       return {
         ok: false,

@@ -257,4 +257,17 @@ describe("a product named with a word ideas may not otherwise say", () => {
     ).toEqual(["gpt"]);
     expect(ownWords({ fullName: "acme/checkout", description: "Payments" })).toEqual([]);
   });
+
+  test("a product called AI something may be called that, and no other may", () => {
+    const ideas = ["Give AI Notes a first screen with one note already written", ...GOOD.slice(1)];
+    const own = ownWords({ fullName: "acme/ai-notes", description: null });
+    expect(own).toEqual(["ai"]);
+    expect(checkIdeas({ ideas }, { own })).toMatchObject({ ok: true });
+    expect(
+      checkIdeas({ ideas }, { own: ownWords({ fullName: "acme/maintain", description: null }) }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"AI"'),
+    });
+  });
 });
