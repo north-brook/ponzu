@@ -6,9 +6,9 @@ stylesheet the studio used to link, so the app, its headless tests and the galle
 never wait on the network, and text draws exactly as it did: every gallery composition, drawn
 with its text showing, is the same picture as before.
 
-The styles use Inter 400 to 600 (the face is variable in weight and optical size), Funnel Display
-600 for headings and IBM Plex Mono 400 and 500 (what asks for Plex at 600 gets the 500 face, as it
-always has). The old link also asked for Funnel Display 700, which nothing uses; it was the same
+The styles use Inter 400 to 600 (the face is variable in weight and optical size), upright and in
+Inter's own italic (the thread's asides are set in it), Funnel Display 600 for headings and IBM
+Plex Mono 400 and 500 (what asks for Plex at 600 gets the 500 face, as it always has). The old link also asked for Funnel Display 700, which nothing uses; it was the same
 file as 600, so leaving it out saves no file, only an unused `@font-face`.
 
 Each Latin, Latin Extended, Cyrillic, Greek or Vietnamese file (and Plex's symbols2, its box
@@ -19,7 +19,7 @@ drawing) is a subset: the browser fetches it only when a page shows one of its c
 Fetched on 2026-11-11 from Google Fonts, with a current Chrome's User-Agent (so the answer is
 WOFF2, cut into subsets), from:
 
-- <https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&family=Funnel+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap>
+- <https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..600;1,14..32,400..600&family=Funnel+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap>
 
 | File | From `https://fonts.gstatic.com` | SHA-256 (first 16) |
 | --- | --- | --- |
@@ -44,6 +44,13 @@ WOFF2, cut into subsets), from:
 | `inter-vietnamese.woff2` | /s/inter/v20/UcCo3FwrK3iLTcvtYwYZ8UA3J58.woff2 | `07df696d36deed37` |
 | `inter-latin-ext.woff2` | /s/inter/v20/UcCo3FwrK3iLTcvsYwYZ8UA3J58.woff2 | `8bc9dee39deab5dc` |
 | `inter-latin.woff2` | /s/inter/v20/UcCo3FwrK3iLTcviYwYZ8UA3.woff2 | `dd8a4575be980610` |
+| `inter-italic-cyrillic-ext.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwkT9mI1F55MKw.woff2 | `974fe69be65d7e5c` |
+| `inter-italic-cyrillic.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwAT9mI1F55MKw.woff2 | `925b918fe862f38f` |
+| `inter-italic-greek-ext.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwgT9mI1F55MKw.woff2 | `dbc57e88c2780c49` |
+| `inter-italic-greek.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwcT9mI1F55MKw.woff2 | `380e26a8b1f42bc7` |
+| `inter-italic-vietnamese.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwsT9mI1F55MKw.woff2 | `3199b2e5db75b970` |
+| `inter-italic-latin-ext.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwoT9mI1F55MKw.woff2 | `7d263a256b5858b2` |
+| `inter-italic-latin.woff2` | /s/inter/v20/UcCm3FwrK3iLTcvnUwQT9mI1F54.woff2 | `124b693f9bb56633` |
 
 | Family | Version in the files | Upstream (what Google Fonts builds from) | Licence |
 | --- | --- | --- | --- |

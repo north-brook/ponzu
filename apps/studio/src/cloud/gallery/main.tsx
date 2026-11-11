@@ -62,6 +62,7 @@ await Promise.all(
   [
     '400 13px "Inter"',
     '600 13px "Inter"',
+    'italic 400 13px "Inter"',
     '600 34px "Funnel Display"',
     '400 11px "IBM Plex Mono"',
     '500 11px "IBM Plex Mono"',
