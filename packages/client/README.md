@@ -40,10 +40,20 @@ pair.
 Sessions may share one `storage` (two windows, browser tabs): each reads it before refreshing
 and takes up a pair another has stored, so none spends a token another has already rotated.
 
-`storage` holds the tokens: `safeStorage` behind IPC on the Mac, `expo-secure-store` on the
-phone. WorkOS has not been shown to accept a refresh from a browser origin, so on the Mac
-either run the session in the main process, or pass a `fetch` that sends WorkOS's call
-through it.
+`storage` holds the tokens: `safeStorage` in the Mac's main process, `expo-secure-store` on the
+phone.
+
+On the Mac the main process holds the session (`createSession` returns a `SessionHost`) and is
+the only one that refreshes; the renderer never sees the refresh token. It borrows an access
+token for each request over IPC:
+
+```ts
+const session = borrowSession({ apiUrl, client, lender });   // lender: SessionLender, over IPC
+```
+
+`lender.accessToken(rejected?)` is the host's `accessToken`, and `lender.report(error)` its
+`take`, so an error the renderer hears (signed out elsewhere, too old) reaches the one session
+that acts on it.
 
 ## The API
 

@@ -473,6 +473,27 @@ export interface GitCredentialResponse {
 }
 
 /* ------------------------------------------------------------------ */
+/* Pull request                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `POST /v1/runner/pull-request-summary`: the agent's words on what its branch changes, for the
+ * pull request's description. The API opens and edits the pull request; the agent has no GitHub
+ * API token. Sending it again replaces what was sent before.
+ */
+export interface PullRequestSummaryRequest {
+  /** Markdown, at most `MAX_PULL_REQUEST_SUMMARY` characters. */
+  summary: string;
+}
+
+export const MAX_PULL_REQUEST_SUMMARY = 8_000;
+
+export interface PullRequestSummaryResponse {
+  /** The open pull request whose description now says it; null while it waits for one. */
+  pullRequest: number | null;
+}
+
+/* ------------------------------------------------------------------ */
 /* Usage                                                               */
 /* ------------------------------------------------------------------ */
 

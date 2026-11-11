@@ -24,6 +24,8 @@ src/
     github.ts       real: as a person (user, emails, installations, repositories, org role, token
                     refresh) and as the App (installation lookups and tokens, repo lists, a
                     person's permission in a repo)
+    github-pull-requests.ts  a design's pull request: the one GraphQL read and describing
+                    it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
@@ -42,6 +44,11 @@ src/
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
                   session, thread writes, git credentials; runner.e2e.test.ts runs the real
                   runner against these routes
+  pull-requests/  a design's pull request: sync.ts reads it and records it (the one place a
+                  merge settles a design), refresh.ts reads it again after webhooks, as jobs,
+                  open.ts opens it and keeps the agent's summary and picture in it, actions.ts
+                  is what a person does to it, view.ts is what the tab is sent;
+                  pull-requests.live.test.ts runs it against the real test repository
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
   sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
                   orchestrate.ts: the wake job (create, resume, a new environment, replace);
@@ -208,9 +215,19 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    `feedOf(db, designId)` from `@ponzu/db/testing` is a design's whole feed, for asserting the
    events something added.
 
+   Branches and pull requests are `t.github.pulls` (`testing/fake-pull-requests.ts`), for the
+   repository `t.github.repo(fullName)` names: `push` a commit, `openAsSomeone`, `setChecks`,
+   `review`, `comment`, `protect` the base (with who may bypass it), `lagHead` and `hideMerges`
+   to act out GitHub's reads running behind, and `pull(…)` to read or change one. It answers the
+   GraphQL operations the API sends by their names, keeps `mergeable` unknown for
+   `MERGEABLE_AFTER_MS` after a change, as GitHub does, refuses a merge in GitHub's words, and
+   records what was done and by whom (`actions`).
+
    `deps/storage.live.test.ts` runs uploads against the real bucket, through the routes: it is
    skipped unless `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and
-   `PONZU_ASSETS_URL` (the bucket's public URL) are set.
+   `PONZU_ASSETS_URL` (the bucket's public URL) are set. `pull-requests/pull-requests.live.test.ts`
+   opens, reads and merges a pull request in the real test repository; the top of the file says
+   what it needs.
 
 ## Live queries
 

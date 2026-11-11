@@ -2,6 +2,7 @@ import { createHmac, generateKeyPairSync, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { jwtVerify } from "jose";
 import type { Fetch } from "../deps/fetch.ts";
+import { FakePullRequests, type FakeRepoAccess } from "./fake-pull-requests.ts";
 
 /*
  * GitHub, in memory, at the HTTP boundary: the API's real GitHub client talks to `fetch` here.
@@ -122,8 +123,29 @@ export class FakeGithub {
   readonly #holds: { path: string; arrived: () => void; released: Promise<void> }[] = [];
   #next = 1;
 
+  /** The branches and pull requests of every repository. */
+  readonly pulls: FakePullRequests;
+
   constructor(clock: Clock) {
     this.#clock = clock;
+    this.pulls = new FakePullRequests(clock);
+  }
+
+  /** A repository of any installation, as the branch and pull request calls reach it. */
+  repo(fullName: string): FakeRepoAccess | undefined {
+    for (const installation of this.installations) {
+      const repository = installation.repositories.find((repo) => repo.fullName === fullName);
+      if (repository) {
+        return {
+          id: repository.id,
+          fullName,
+          installationId: installation.id,
+          defaultBranch: repository.defaultBranch ?? "main",
+          canPush: (userId) => repository.access[userId] === "write",
+        };
+      }
+    }
+    return undefined;
   }
 
   addUser(user: FakeGithubUser): FakeGithubUser {
@@ -250,12 +272,16 @@ export class FakeGithub {
       const installation = this.#installation(Number(appInstallation[1]));
       return installation ? Response.json(installationJson(installation)) : notFound(method, url);
     }
+    const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+    const find = (fullName: string) => this.repo(fullName);
     const asInstallation = this.#installationTokens.get(bearer);
     if (asInstallation !== undefined) {
       if (asInstallation.expiresAt <= this.#clock.now()) {
         return Response.json({ message: "Bad credentials" }, { status: 401 });
       }
-      return this.#serveInstallation(asInstallation, method, url);
+      const caller = { kind: "app" as const, ...asInstallation };
+      const pulled = this.pulls.serve(caller, method, new URL(url), body, find);
+      return pulled ?? this.#serveInstallation(asInstallation, method, url);
     }
 
     const held = this.#accessTokens.get(bearer);
@@ -263,6 +289,9 @@ export class FakeGithub {
       return Response.json({ message: "Bad credentials" }, { status: 401 });
     }
     const user = this.#users.get(held.userId)!;
+    const caller = { kind: "user" as const, id: user.id, login: user.login };
+    const pulled = this.pulls.serve(caller, method, new URL(url), body, find);
+    if (pulled) return pulled;
     if (method !== "GET") return notFound(method, url);
 
     if (pathname === "/user") {
@@ -507,7 +536,7 @@ export class FakeGithub {
     const installation = this.#installation(installationId);
     if (!installation) return Response.json({ message: "Not Found" }, { status: 404 });
     if (installation.suspendedAt) return suspended();
-    const { repository_ids: repositoryIds, permissions } = body as {
+    const { repository_ids: repositoryIds, permissions = {} } = body as {
       repository_ids?: number[];
       permissions?: Record<string, string>;
     };
@@ -527,7 +556,7 @@ export class FakeGithub {
     this.#installationTokens.set(token, {
       installationId,
       repositoryIds: repositoryIds ?? null,
-      permissions: permissions ?? null,
+      permissions,
       expiresAt,
     });
     return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
@@ -563,8 +592,8 @@ interface InstallationToken {
   installationId: number;
   /** The repositories it was narrowed to; null for every one the installation has. */
   repositoryIds: number[] | null;
-  /** What it was narrowed to; null for everything the installation has. */
-  permissions: Record<string, string> | null;
+  /** What it may do, as it was asked for; none asked for is nothing. */
+  permissions: Record<string, string>;
   /** Epoch milliseconds. */
   expiresAt: number;
 }

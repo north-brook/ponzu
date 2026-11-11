@@ -1,5 +1,5 @@
 {
-  "id": "049906b1-dc30-4f2f-b0d2-46795d309d3f",
+  "id": "252fd1f8-f26e-4432-8e87-5b66ed8f7c11",
   "prevId": "6befb4ed-6b32-48e1-8b60-cbfb1ab8d0fb",
   "version": "7",
   "dialect": "postgresql",
@@ -129,7 +129,7 @@
           "name": "encrypted_credential",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "plan_label": {
           "name": "plan_label",
@@ -230,10 +230,6 @@
         "claude_accounts_status_check": {
           "name": "claude_accounts_status_check",
           "value": "\"claude_accounts\".\"status\" in ('connected', 'expired', 'revoked')"
-        },
-        "claude_accounts_credential_check": {
-          "name": "claude_accounts_credential_check",
-          "value": "(\"claude_accounts\".\"status\" = 'revoked') = (\"claude_accounts\".\"encrypted_credential\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -2421,6 +2417,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "pr_read_at": {
+          "name": "pr_read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pr_summary": {
+          "name": "pr_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "agent_state": {
           "name": "agent_state",
           "type": "text",
@@ -2441,12 +2449,6 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
-        "agent_blocker": {
-          "name": "agent_blocker",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "needs_you_count": {
           "name": "needs_you_count",
           "type": "integer",
@@ -2460,12 +2462,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "create_key": {
-          "name": "create_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "sandbox_id": {
           "name": "sandbox_id",
@@ -2521,27 +2517,6 @@
             },
             {
               "expression": "branch",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "designs_owner_id_create_key_key": {
-          "name": "designs_owner_id_create_key_key",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "create_key",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2676,10 +2651,6 @@
         "designs_agent_state_check": {
           "name": "designs_agent_state_check",
           "value": "\"designs\".\"agent_state\" in ('idle', 'waking', 'working', 'needs_you', 'limited')"
-        },
-        "designs_agent_blocker_check": {
-          "name": "designs_agent_blocker_check",
-          "value": "\"designs\".\"agent_blocker\" in ('claude_not_connected', 'claude_expired', 'sandbox_busy', 'sandbox_failed')"
         },
         "designs_needs_you_count_check": {
           "name": "designs_needs_you_count_check",
@@ -3207,13 +3178,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
         "provider": {
           "name": "provider",
           "type": "text",
@@ -3224,27 +3188,14 @@
           "name": "provider_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "state": {
           "name": "state",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'waking'"
-        },
-        "state_at": {
-          "name": "state_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "failure": {
-          "name": "failure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "default": "'starting'"
         },
         "address": {
           "name": "address",
@@ -3258,27 +3209,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "runner_token_id": {
-          "name": "runner_token_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claude_credential": {
-          "name": "claude_credential",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "awake_since": {
           "name": "awake_since",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "awake_user_id": {
-          "name": "awake_user_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -3288,19 +3221,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "auto_stop_at": {
-          "name": "auto_stop_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "restarts": {
-          "name": "restarts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -3355,27 +3275,6 @@
           "method": "btree",
           "with": {}
         },
-        "sandboxes_design_id_generation_key": {
-          "name": "sandboxes_design_id_generation_key",
-          "columns": [
-            {
-              "expression": "design_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "generation",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "sandboxes_design_id_idx": {
           "name": "sandboxes_design_id_idx",
           "columns": [
@@ -3421,32 +3320,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "sandboxes_runner_token_id_runner_tokens_id_fk": {
-          "name": "sandboxes_runner_token_id_runner_tokens_id_fk",
-          "tableFrom": "sandboxes",
-          "tableTo": "runner_tokens",
-          "columnsFrom": [
-            "runner_token_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "sandboxes_awake_user_id_users_id_fk": {
-          "name": "sandboxes_awake_user_id_users_id_fk",
-          "tableFrom": "sandboxes",
-          "tableTo": "users",
-          "columnsFrom": [
-            "awake_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3459,15 +3332,11 @@
         },
         "sandboxes_state_check": {
           "name": "sandboxes_state_check",
-          "value": "\"sandboxes\".\"state\" in ('waking', 'awake', 'stopping', 'asleep', 'failed', 'gone')"
+          "value": "\"sandboxes\".\"state\" in ('starting', 'awake', 'asleep', 'gone')"
         },
         "sandboxes_awake_since_check": {
           "name": "sandboxes_awake_since_check",
           "value": "(\"sandboxes\".\"state\" = 'awake') = (\"sandboxes\".\"awake_since\" is not null)"
-        },
-        "sandboxes_generation_check": {
-          "name": "sandboxes_generation_check",
-          "value": "\"sandboxes\".\"generation\" > 0"
         }
       },
       "isRLSEnabled": false

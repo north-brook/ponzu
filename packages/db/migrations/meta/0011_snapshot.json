@@ -1,6 +1,6 @@
 {
-  "id": "fad3d417-2895-4465-b63b-b11601b4bcd3",
-  "prevId": "049906b1-dc30-4f2f-b0d2-46795d309d3f",
+  "id": "41107e0d-f151-4cc6-a19e-fe1de446f39c",
+  "prevId": "252fd1f8-f26e-4432-8e87-5b66ed8f7c11",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -65,22 +65,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_states_open_claude_sign_in_key": {
-          "name": "auth_states_open_claude_sign_in_key",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"auth_states\".\"kind\" = 'claude_sign_in' and \"auth_states\".\"consumed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2437,6 +2421,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "pr_read_at": {
+          "name": "pr_read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pr_summary": {
+          "name": "pr_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "agent_state": {
           "name": "agent_state",
           "type": "text",
@@ -2695,7 +2691,7 @@
         },
         "designs_agent_blocker_check": {
           "name": "designs_agent_blocker_check",
-          "value": "\"designs\".\"agent_blocker\" in ('claude_not_connected', 'claude_expired', 'claude_owner_left', 'sandbox_busy', 'sandbox_failed')"
+          "value": "\"designs\".\"agent_blocker\" in ('claude_not_connected', 'claude_expired', 'sandbox_busy', 'sandbox_failed')"
         },
         "designs_needs_you_count_check": {
           "name": "designs_needs_you_count_check",
@@ -3255,12 +3251,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "waking_by": {
-          "name": "waking_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "failure": {
           "name": "failure",

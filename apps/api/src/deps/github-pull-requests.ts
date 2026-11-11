@@ -1,0 +1,724 @@
+import type { PrChecks, PrState } from "@ponzu/db";
+import { UpstreamError } from "../http/errors.ts";
+import type { AppPermissions, GithubAnswer, GithubTransport } from "./github.ts";
+
+/*
+ * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
+ * writes its description, with a token for the one repository; the person opens it, merges it,
+ * marks it ready, sets auto-merge, closes it and updates its branch with their own user token,
+ * so GitHub holds them to the repo's rules as they apply to them and names them as who did it.
+ *
+ * Everything the pull request tab shows is one GraphQL query. The github-app spike measured
+ * what this rests on: `mergeable` is null (`UNKNOWN`) for seconds after a push, check suites are
+ * no measure of checks (other apps leave theirs queued for good), and the rollup of check runs
+ * and statuses is.
+ */
+
+/** One repository of an installation, as the App reaches it. */
+export interface PullRequestRepo {
+  installationId: number;
+  repository: { id: number; fullName: string };
+}
+
+/** Someone on GitHub: a person, or an app's bot. */
+export interface GithubWho {
+  login: string;
+  /** On http(s), or null. */
+  avatarUrl: string | null;
+  bot: boolean;
+}
+
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+/** GitHub's word on whether the pull request can merge now, and if not, why. */
+export type MergeState =
+  | "clean"
+  | "unstable"
+  | "has_hooks"
+  | "behind"
+  | "blocked"
+  | "dirty"
+  | "draft"
+  | "unknown";
+
+export type ReviewDecision = "approved" | "changes_requested" | "review_required";
+
+export type CheckState =
+  | "pending"
+  | "running"
+  | "passed"
+  | "failed"
+  | "cancelled"
+  | "skipped"
+  | "neutral";
+
+export interface GithubCheck {
+  name: string;
+  /** The app that ran it; null for a commit status. */
+  app: string | null;
+  state: CheckState;
+  /** Whether the repo's rules want it to pass before the pull request merges. */
+  required: boolean;
+  /** Its page, when it gave one on http(s). Whoever posts a check chooses it. */
+  url: string | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
+export interface GithubReview {
+  id: string;
+  author: GithubWho | null;
+  state: "approved" | "changes_requested" | "dismissed";
+  at: Date | null;
+  url: string;
+}
+
+/** One thing said on the pull request: a comment, a review's text, or a line comment. */
+export interface GithubRemark {
+  id: string;
+  author: GithubWho | null;
+  body: string;
+  at: Date;
+  url: string;
+  /** For a line comment, the file and line it is on. */
+  path: string | null;
+  line: number | null;
+}
+
+export interface GithubChangedFile {
+  path: string;
+  change: "added" | "modified" | "deleted" | "renamed" | "copied" | "changed";
+  additions: number;
+  deletions: number;
+}
+
+export interface GithubCommit {
+  sha: string;
+  message: string;
+  at: Date;
+  /** Their GitHub login, or the name in the commit when they have none. */
+  author: string | null;
+}
+
+export interface GithubPullRequest {
+  /** GitHub's node id, which its GraphQL mutations take. */
+  id: string;
+  number: number;
+  url: string;
+  title: string;
+  body: string;
+  state: PrState;
+  head: { ref: string; sha: string; repositoryId: number | null };
+  base: { ref: string };
+  author: GithubWho | null;
+  mergedBy: GithubWho | null;
+  createdAt: Date;
+  updatedAt: Date;
+  mergedAt: Date | null;
+  closedAt: Date | null;
+  /** Null while GitHub works it out. */
+  mergeable: boolean | null;
+  mergeState: MergeState;
+  reviewDecision: ReviewDecision | null;
+  autoMerge: { method: MergeMethod; enabledBy: GithubWho | null } | null;
+  checks: { state: PrChecks; items: GithubCheck[]; complete: boolean };
+  reviews: GithubReview[];
+  conversation: GithubRemark[];
+  files: { total: number; additions: number; deletions: number; items: GithubChangedFile[] };
+  commits: { total: number; items: GithubCommit[] };
+}
+
+/** What one read finds about a design's branch and the pull request asked for. */
+export interface GithubPullRequestRead {
+  /** The ways the repo lets a pull request merge, the one to use first. */
+  mergeMethods: MergeMethod[];
+  autoMergeAllowed: boolean;
+  /** Null when the branch is not on GitHub. */
+  branch: { sha: string; aheadBy: number; behindBy: number } | null;
+  /** The newest pull request from the branch into the default branch, if there is one. */
+  newest: number | null;
+  /** The pull request asked for, if a number was given. */
+  pullRequest: GithubPullRequest | null;
+}
+
+export type OpenResult =
+  | { kind: "opened"; number: number }
+  /** One is already open from this branch. */
+  | { kind: "exists" }
+  /** The branch has nothing its base does not. */
+  | { kind: "no_commits" }
+  /** The branch is not on GitHub. */
+  | { kind: "no_branch" }
+  /** The repo's plan has no draft pull requests. */
+  | { kind: "draft_unsupported" }
+  /** GitHub does not let this person open one here. */
+  | { kind: "forbidden" };
+
+/** How GitHub answered something a person asked of it. */
+export type PersonResult =
+  | "done"
+  /** The branch is no longer at the commit the request named. */
+  | "head_moved"
+  /** GitHub does not let this person do this here. */
+  | "forbidden"
+  /** GitHub refused it for some other reason. */
+  | "refused";
+
+/**
+ * Why GitHub would not merge, as its answer words it: what the repo's rules still want, or
+ * `not_mergeable` when it does not say.
+ */
+export type MergeRefusal =
+  | "review_required"
+  | "changes_requested"
+  | "checks_pending"
+  | "checks_failing"
+  | "branch_behind"
+  | "merge_conflicts"
+  | "not_mergeable";
+
+export interface GithubChangedFileDiff extends GithubChangedFile {
+  previousPath: string | null;
+  /** The unified diff; null when GitHub has none to give (a binary file, or one too large). */
+  patch: string | null;
+}
+
+export interface GithubPullRequests {
+  /** As the App: the branch, and the pull request `number` names (none for null). */
+  readPullRequest(
+    repo: PullRequestRepo,
+    query: { branch: string; defaultBranch: string; number: number | null },
+  ): Promise<GithubPullRequestRead>;
+  /** As the person, so that they are its author. */
+  openPullRequest(
+    userToken: string,
+    input: {
+      fullName: string;
+      head: string;
+      base: string;
+      title: string;
+      body: string;
+      draft: boolean;
+    },
+  ): Promise<OpenResult>;
+  /** As the App: its description. */
+  editPullRequestBody(repo: PullRequestRepo, number: number, body: string): Promise<void>;
+  /**
+   * As the App: one of the first hundred changed files (those the tab lists) with its diff, or
+   * null when they have no such file.
+   */
+  readPullRequestFile(
+    repo: PullRequestRepo,
+    number: number,
+    path: string,
+  ): Promise<GithubChangedFileDiff | null>;
+
+  /** As the person: these take their GitHub user token and the pull request's node id. */
+  markReady(userToken: string, pullRequestId: string): Promise<PersonResult>;
+  enableAutoMerge(
+    userToken: string,
+    pullRequestId: string,
+    method: MergeMethod,
+  ): Promise<PersonResult>;
+  disableAutoMerge(userToken: string, pullRequestId: string): Promise<PersonResult>;
+  /** As the person: merges only while the branch is at `sha`. */
+  mergePullRequest(
+    userToken: string,
+    input: { fullName: string; number: number; method: MergeMethod; sha: string },
+  ): Promise<PersonResult | MergeRefusal>;
+  /** As the person: merges the base into the branch, only while the branch is at `sha`. */
+  updatePullRequestBranch(
+    userToken: string,
+    input: { fullName: string; number: number; sha: string },
+  ): Promise<PersonResult>;
+  closePullRequest(
+    userToken: string,
+    input: { fullName: string; number: number },
+  ): Promise<PersonResult>;
+}
+
+/** Reading takes these; statuses are what CI that reports the old way shows up as. */
+const READ: AppPermissions = {
+  contents: "read",
+  pull_requests: "read",
+  checks: "read",
+  statuses: "read",
+  metadata: "read",
+};
+/** Writing a pull request's description. */
+const WRITE: AppPermissions = { contents: "read", pull_requests: "write", metadata: "read" };
+
+/** The most of one comment or review the tab is sent. */
+const MAX_TEXT = 8_000;
+/** The files the tab lists, and so the most a diff is looked for among: one page of GitHub's. */
+const LISTED_FILES = 100;
+
+const WHO = "__typename login avatarUrl";
+
+export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: String!, $qualifiedBranch: String!, $defaultBranch: String!, $number: Int!, $known: Boolean!) {
+  repository(owner: $owner, name: $name) {
+    squashMergeAllowed
+    mergeCommitAllowed
+    rebaseMergeAllowed
+    autoMergeAllowed
+    ref(qualifiedName: $qualifiedBranch) {
+      target { oid }
+      compare(headRef: $defaultBranch) { aheadBy behindBy }
+      associatedPullRequests(first: 1, baseRefName: $defaultBranch, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number } }
+    }
+    pullRequest(number: $number) @include(if: $known) {
+      id number url title body state isDraft createdAt updatedAt mergedAt closedAt
+      mergeable mergeStateStatus reviewDecision
+      headRefName headRefOid baseRefName
+      headRepository { databaseId }
+      author { ${WHO} }
+      mergedBy { ${WHO} }
+      autoMergeRequest { mergeMethod enabledBy { ${WHO} } }
+      additions deletions
+      files(first: 100) { totalCount nodes { path additions deletions changeType } }
+      commits(last: 100) { totalCount nodes { commit { oid messageHeadline committedDate author { name user { login } } } } }
+      head: commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { totalCount nodes {
+        __typename
+        ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $number) checkSuite { app { name } } }
+        ... on StatusContext { context state targetUrl createdAt isRequired(pullRequestNumber: $number) }
+      } } } } } }
+      comments(last: 100) { nodes { id url body createdAt author { ${WHO} } } }
+      reviews(last: 100) { nodes { id url state body submittedAt author { ${WHO} }
+        comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} } } } } }
+    }
+  }
+}`;
+
+const MARK_READY = `mutation MarkReady($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`;
+const ENABLE_AUTO_MERGE = `mutation EnableAutoMerge($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) { clientMutationId } }`;
+const DISABLE_AUTO_MERGE = `mutation DisableAutoMerge($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`;
+
+export function createPullRequestCalls({ request, asApp }: GithubTransport): GithubPullRequests {
+  const target = ({ installationId, repository }: PullRequestRepo) => ({
+    installationId,
+    repositoryId: repository.id,
+  });
+
+  /** A GraphQL call. GitHub answers 200 with `errors` for most failures. */
+  async function graphql(
+    as: "user" | "app",
+    bearer: string,
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<{ data: any; errors: { type?: string; path?: unknown[] }[] }> {
+    const answer = await request(as, "POST", "/graphql", bearer, { query, variables });
+    if (answer.status !== 200) {
+      throw new UpstreamError("github", `graphql answered ${answer.status}`, {
+        status: answer.status,
+      });
+    }
+    return { data: answer.body?.data ?? null, errors: answer.body?.errors ?? [] };
+  }
+
+  async function mutate(userToken: string, query: string, variables: Record<string, unknown>) {
+    const { errors } = await graphql("user", userToken, query, variables);
+    if (errors.length === 0) return "done";
+    return errors.some((error) => error.type === "FORBIDDEN") ? "forbidden" : "refused";
+  }
+
+  return {
+    readPullRequest(repo, { branch, defaultBranch, number }) {
+      const [owner, name] = splitName(repo.repository.fullName);
+      return asApp(target(repo), READ, async (token) => {
+        const { data, errors } = await graphql("app", token, PULL_REQUEST_QUERY, {
+          owner,
+          name,
+          qualifiedBranch: `refs/heads/${branch}`,
+          defaultBranch,
+          number: number ?? 0,
+          known: number !== null,
+        });
+        // A number GitHub does not have is an error about that part alone; the rest still holds.
+        const noSuchNumber = (error: { type?: string; path?: unknown[] }) =>
+          error.type === "NOT_FOUND" && error.path?.[1] === "pullRequest";
+        if (!data?.repository || !errors.every(noSuchNumber)) {
+          const notFound = errors.some((error) => error.type === "NOT_FOUND");
+          throw new UpstreamError("github", "the pull request query was refused", {
+            status: notFound ? 404 : 502,
+          });
+        }
+        return toRead(data.repository);
+      });
+    },
+
+    async openPullRequest(userToken, { fullName, head, base, title, body, draft }) {
+      const path = `/repos/${fullName}/pulls`;
+      const answer = await request("user", "POST", path, userToken, {
+        title,
+        head,
+        base,
+        body,
+        draft,
+      });
+      if (answer.status === 201) return { kind: "opened", number: answer.body.number };
+      if (answer.status === 403 || answer.status === 404) return { kind: "forbidden" };
+      if (answer.status === 422) {
+        const refused = whyRefused(answer);
+        if (refused) return { kind: refused };
+      }
+      throw new UpstreamError("github", `POST ${path} answered ${answer.status}`, {
+        status: answer.status,
+      });
+    },
+
+    editPullRequestBody(repo, number, body) {
+      return asApp(target(repo), WRITE, async (token) => {
+        const path = `/repos/${repo.repository.fullName}/pulls/${number}`;
+        const answer = await request("app", "PATCH", path, token, { body });
+        if (answer.status !== 200) {
+          throw new UpstreamError("github", `PATCH ${path} answered ${answer.status}`, {
+            status: answer.status,
+          });
+        }
+      });
+    },
+
+    readPullRequestFile(repo, number, wanted) {
+      return asApp(target(repo), READ, async (token) => {
+        // GitHub lists a pull request's files in the same order here as to the tab's query.
+        const path = `/repos/${repo.repository.fullName}/pulls/${number}/files?per_page=${LISTED_FILES}`;
+        const answer = await request("app", "GET", path, token);
+        if (answer.status !== 200 || !Array.isArray(answer.body)) {
+          throw new UpstreamError(
+            "github",
+            `the files of a pull request answered ${answer.status}`,
+            {
+              status: answer.status,
+            },
+          );
+        }
+        const file = answer.body.find((candidate: any) => candidate.filename === wanted);
+        if (!file) return null;
+        return {
+          path: file.filename,
+          previousPath: file.previous_filename ?? null,
+          change: changeOf(file.status),
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: typeof file.patch === "string" ? file.patch : null,
+        };
+      });
+    },
+
+    markReady: (userToken, id) => mutate(userToken, MARK_READY, { id }),
+    enableAutoMerge: (userToken, id, method) =>
+      mutate(userToken, ENABLE_AUTO_MERGE, { id, method: method.toUpperCase() }),
+    disableAutoMerge: (userToken, id) => mutate(userToken, DISABLE_AUTO_MERGE, { id }),
+
+    async mergePullRequest(userToken, { fullName, number, method, sha }) {
+      const path = `/repos/${fullName}/pulls/${number}/merge`;
+      const answer = await request("user", "PUT", path, userToken, { merge_method: method, sha });
+      if (answer.status === 405) return mergeRefusal(messageOf(answer));
+      return personResult(answer, { 409: "head_moved" });
+    },
+
+    async updatePullRequestBranch(userToken, { fullName, number, sha }) {
+      const path = `/repos/${fullName}/pulls/${number}/update-branch`;
+      const answer = await request("user", "PUT", path, userToken, { expected_head_sha: sha });
+      // GitHub says a moved head with a 422 and these words; any other 422 is something else.
+      const moved = answer.status === 422 && /expected head sha/i.test(messageOf(answer));
+      return moved ? "head_moved" : personResult(answer, {});
+    },
+
+    async closePullRequest(userToken, { fullName, number }) {
+      const path = `/repos/${fullName}/pulls/${number}`;
+      const answer = await request("user", "PATCH", path, userToken, { state: "closed" });
+      return personResult(answer, {});
+    },
+  };
+}
+
+function splitName(fullName: string): [string, string] {
+  const slash = fullName.indexOf("/");
+  return [fullName.slice(0, slash), fullName.slice(slash + 1)];
+}
+
+/** GitHub's own words for a refusal, from `message` and each of `errors`. Never shown to anyone. */
+function messageOf(answer: GithubAnswer): string {
+  const errors: any[] = Array.isArray(answer.body?.errors) ? answer.body.errors : [];
+  return [answer.body?.message, ...errors.map((error) => error?.message ?? error?.field)]
+    .filter((part) => typeof part === "string")
+    .join(" ");
+}
+
+/** What GitHub's words for a merge it refused (a 405) say the repo's rules still want. */
+function mergeRefusal(message: string): MergeRefusal {
+  if (/approving review|review is required|code owner/i.test(message)) return "review_required";
+  if (/changes requested|requested changes/i.test(message)) return "changes_requested";
+  if (/status checks? .*(expected|in progress|pending|queued)/i.test(message)) {
+    return "checks_pending";
+  }
+  if (/status check|required check/i.test(message)) return "checks_failing";
+  if (/not up to date|out of date/i.test(message)) return "branch_behind";
+  if (/conflict/i.test(message)) return "merge_conflicts";
+  return "not_mergeable";
+}
+
+/** Why GitHub would not open a pull request, when it is one Ponzu can tell people. */
+function whyRefused(
+  answer: GithubAnswer,
+): Exclude<OpenResult["kind"], "opened" | "forbidden"> | null {
+  const message = messageOf(answer);
+  if (/already exists/i.test(message)) return "exists";
+  if (/no commits between/i.test(message)) return "no_commits";
+  if (/draft pull requests are not supported/i.test(message)) return "draft_unsupported";
+  const errors: any[] = Array.isArray(answer.body?.errors) ? answer.body.errors : [];
+  if (errors.some((error) => error?.field === "head" && error?.code === "invalid")) {
+    return "no_branch";
+  }
+  return null;
+}
+
+function personResult(answer: GithubAnswer, meanings: Record<number, PersonResult>): PersonResult {
+  if (answer.status >= 200 && answer.status < 300) return "done";
+  const meaning = meanings[answer.status];
+  if (meaning) return meaning;
+  if (answer.status === 403 || answer.status === 404) return "forbidden";
+  if (answer.status === 422) return "refused";
+  throw new UpstreamError("github", `a pull request action answered ${answer.status}`, {
+    status: answer.status,
+  });
+}
+
+// What GitHub's GraphQL answers, mapped to the shapes above. Only the fields the query asks for.
+
+function toRead(repository: any): GithubPullRequestRead {
+  const methods: MergeMethod[] = [];
+  if (repository.squashMergeAllowed) methods.push("squash");
+  if (repository.mergeCommitAllowed) methods.push("merge");
+  if (repository.rebaseMergeAllowed) methods.push("rebase");
+  const ref = repository.ref;
+  return {
+    mergeMethods: methods,
+    autoMergeAllowed: repository.autoMergeAllowed === true,
+    // `compare` is of the branch as the base and the default branch as the head: the default
+    // branch's commits ahead are what the branch lacks, and the branch's own are those behind.
+    branch: ref
+      ? {
+          sha: ref.target.oid,
+          aheadBy: ref.compare?.behindBy ?? 0,
+          behindBy: ref.compare?.aheadBy ?? 0,
+        }
+      : null,
+    newest: ref?.associatedPullRequests.nodes[0]?.number ?? null,
+    pullRequest: repository.pullRequest ? toPullRequest(repository.pullRequest) : null,
+  };
+}
+
+function toPullRequest(pr: any): GithubPullRequest {
+  const rollup = pr.head.nodes[0]?.commit.statusCheckRollup ?? null;
+  const reviews: any[] = pr.reviews.nodes;
+  const conversation: GithubRemark[] = [
+    ...pr.comments.nodes.map((comment: any) => remark(comment, null, null)),
+    ...reviews
+      .filter((review) => review.body?.trim())
+      .map((review) => remark({ ...review, createdAt: review.submittedAt }, null, null)),
+    ...reviews.flatMap((review) =>
+      review.comments.nodes.map((comment: any) =>
+        remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
+      ),
+    ),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  return {
+    id: pr.id,
+    number: pr.number,
+    url: pr.url,
+    title: pr.title,
+    // Whole, since Ponzu writes its part of it back (at most 65,536 characters on GitHub).
+    body: pr.body ?? "",
+    state:
+      pr.state === "MERGED"
+        ? "merged"
+        : pr.state === "CLOSED"
+          ? "closed"
+          : pr.isDraft
+            ? "draft"
+            : "open",
+    head: {
+      ref: pr.headRefName,
+      sha: pr.headRefOid,
+      repositoryId: pr.headRepository?.databaseId ?? null,
+    },
+    base: { ref: pr.baseRefName },
+    author: who(pr.author),
+    mergedBy: who(pr.mergedBy),
+    createdAt: new Date(pr.createdAt),
+    updatedAt: new Date(pr.updatedAt),
+    mergedAt: dateOrNull(pr.mergedAt),
+    closedAt: dateOrNull(pr.closedAt),
+    mergeable: pr.mergeable === "MERGEABLE" ? true : pr.mergeable === "CONFLICTING" ? false : null,
+    mergeState: (MERGE_STATES as readonly string[]).includes(
+      String(pr.mergeStateStatus).toLowerCase(),
+    )
+      ? (String(pr.mergeStateStatus).toLowerCase() as MergeState)
+      : "unknown",
+    reviewDecision: pr.reviewDecision ? (pr.reviewDecision.toLowerCase() as ReviewDecision) : null,
+    autoMerge: pr.autoMergeRequest
+      ? {
+          method: String(pr.autoMergeRequest.mergeMethod).toLowerCase() as MergeMethod,
+          enabledBy: who(pr.autoMergeRequest.enabledBy),
+        }
+      : null,
+    checks: {
+      state: rollupState(rollup?.state ?? null),
+      items: (rollup?.contexts.nodes ?? []).map(toCheck),
+      complete: !rollup || rollup.contexts.totalCount <= rollup.contexts.nodes.length,
+    },
+    reviews: reviews
+      .filter((review) => REVIEW_STATES.includes(review.state))
+      .map((review) => ({
+        id: review.id,
+        author: who(review.author),
+        state: review.state.toLowerCase(),
+        at: dateOrNull(review.submittedAt),
+        url: review.url,
+      })),
+    conversation,
+    files: {
+      total: pr.files?.totalCount ?? 0,
+      additions: pr.additions,
+      deletions: pr.deletions,
+      items: (pr.files?.nodes ?? []).map((file: any) => ({
+        path: file.path,
+        change: changeOf(file.changeType),
+        additions: file.additions,
+        deletions: file.deletions,
+      })),
+    },
+    commits: {
+      total: pr.commits.totalCount,
+      items: pr.commits.nodes.map(({ commit }: any) => ({
+        sha: commit.oid,
+        message: commit.messageHeadline,
+        at: new Date(commit.committedDate),
+        author: commit.author?.user?.login ?? commit.author?.name ?? null,
+      })),
+    },
+  };
+}
+
+const MERGE_STATES = [
+  "clean",
+  "unstable",
+  "has_hooks",
+  "behind",
+  "blocked",
+  "dirty",
+  "draft",
+  "unknown",
+] as const;
+/** The reviews that are a verdict; a review that only comments is in the conversation. */
+const REVIEW_STATES = ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"];
+
+function who(actor: any): GithubWho | null {
+  if (!actor?.login) return null;
+  return {
+    login: actor.login,
+    avatarUrl: httpUrl(actor.avatarUrl),
+    bot: actor.__typename === "Bot",
+  };
+}
+
+/**
+ * `value` when it is an http(s) address, else null. A check's link is whatever the app or CI
+ * that posted it said, and a client opens it.
+ */
+function httpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function remark(node: any, path: string | null, line: number | null): GithubRemark {
+  return {
+    id: node.id,
+    author: who(node.author),
+    body: clip(node.body ?? ""),
+    at: new Date(node.createdAt),
+    url: node.url,
+    path,
+    line,
+  };
+}
+
+function rollupState(state: string | null): PrChecks {
+  if (state === "SUCCESS") return "passing";
+  if (state === "FAILURE" || state === "ERROR") return "failing";
+  if (state === "PENDING" || state === "EXPECTED") return "running";
+  return "none";
+}
+
+function toCheck(node: any): GithubCheck {
+  if (node.__typename === "StatusContext") {
+    const state: CheckState =
+      node.state === "SUCCESS"
+        ? "passed"
+        : node.state === "FAILURE" || node.state === "ERROR"
+          ? "failed"
+          : "pending";
+    return {
+      name: node.context,
+      app: null,
+      state,
+      required: node.isRequired === true,
+      url: httpUrl(node.targetUrl),
+      startedAt: dateOrNull(node.createdAt),
+      completedAt: null,
+    };
+  }
+  return {
+    name: node.name,
+    app: node.checkSuite?.app?.name ?? null,
+    state: checkRunState(node.status, node.conclusion),
+    required: node.isRequired === true,
+    url: httpUrl(node.detailsUrl),
+    startedAt: dateOrNull(node.startedAt),
+    completedAt: dateOrNull(node.completedAt),
+  };
+}
+
+function checkRunState(status: string, conclusion: string | null): CheckState {
+  if (status === "IN_PROGRESS") return "running";
+  if (status !== "COMPLETED") return "pending";
+  switch (conclusion) {
+    case "SUCCESS":
+      return "passed";
+    case "SKIPPED":
+      return "skipped";
+    case "NEUTRAL":
+      return "neutral";
+    case "CANCELLED":
+    case "STALE":
+      return "cancelled";
+    default:
+      return "failed";
+  }
+}
+
+/** GraphQL's `changeType` or REST's `status`, which calls a deletion `removed`. */
+function changeOf(change: string): GithubChangedFile["change"] {
+  const known = ["added", "modified", "deleted", "renamed", "copied", "changed"] as const;
+  const lower = String(change)
+    .toLowerCase()
+    .replace(/^removed$/, "deleted");
+  return (known as readonly string[]).includes(lower)
+    ? (lower as GithubChangedFile["change"])
+    : "changed";
+}
+
+function dateOrNull(value: string | null | undefined): Date | null {
+  return value ? new Date(value) : null;
+}
+
+function clip(text: string): string {
+  return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…` : text;
+}

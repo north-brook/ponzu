@@ -17,7 +17,8 @@ import { WAKE_ATTEMPTS, WAKE_JOB } from "./orchestrate.ts";
  *
  * Every reason keeps an awake sandbox awake for longer and pokes its runner. A message, an
  * answer or a comment also records a wake (`orchestrate.ts`), which this request starts at
- * once and the cron finishes if it does not.
+ * once and the cron finishes if it does not. GitHub's news for the agent (a failed check, a
+ * review) comes in a webhook's job instead, which only records one (`queueWake`).
  */
 
 export type WakeReason = "message" | "answer" | "comment" | "stop" | "edit";
@@ -68,6 +69,24 @@ export async function requestWake(
 export async function startWake(deps: JobDeps, designId: string, reason: string): Promise<void> {
   const recorded = await recordWake(deps, designId, reason);
   if (recorded) await runJob(deps, recorded.job, recorded.worker);
+}
+
+/**
+ * Record a wake for the design for the minute's cron to run, held by nobody: for news from
+ * GitHub (a failed check, a review), whose webhook job should not wait on a sandbox starting.
+ */
+export async function queueWake(
+  deps: Pick<JobDeps, "db" | "clock">,
+  designId: string,
+  reason: string,
+): Promise<void> {
+  await enqueueJob(deps.db, {
+    kind: WAKE_JOB,
+    key: designId,
+    payload: { designId, reason },
+    runAt: new Date(deps.clock.now()),
+    maxAttempts: WAKE_ATTEMPTS,
+  });
 }
 
 /** A wake for the design held by a new worker, or null when one is already waiting. */

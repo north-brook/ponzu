@@ -13,6 +13,7 @@ import type {
   ClaimResponse,
   CompleteResponse,
   GitCredentialResponse,
+  PullRequestSummaryResponse,
   QuestionResponse,
   RunnerEvent,
   RunnerSession,
@@ -31,12 +32,14 @@ import type { Deps } from "../deps/index.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { credentialOf, gitTarget } from "../runner/git-credential.ts";
 import {
   Ack,
   Claim,
   Complete,
   GitCredential,
+  PullRequestSummary,
   Question,
   State,
   Thread,
@@ -270,6 +273,16 @@ export const runner = new Hono<AppEnv>()
   .post("/git-credential/erase", access.runner, validate("json", GitCredential), async (c) => {
     c.var.deps.gitTokens.forget(gitTarget(await contextOf(c), c.req.valid("json")));
     return c.body(null, 204);
+  })
+
+  /**
+   * The agent's words on what its branch changes: written into the open pull request's
+   * description, or kept until one opens. Safe to repeat: the last one wins.
+   */
+  .post("/pull-request-summary", access.runner, validate("json", PullRequestSummary), async (c) => {
+    const { summary } = c.req.valid("json");
+    const pullRequest = await savePullRequestSummary(c.var.deps, c.var.actor.designId, summary);
+    return c.json({ pullRequest } satisfies PullRequestSummaryResponse);
   })
 
   /** What each turn used, by model, under the turn's id. Safe to repeat. */

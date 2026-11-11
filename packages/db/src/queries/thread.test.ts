@@ -7,6 +7,7 @@ import { createTestDb } from "../testing.ts";
 import { QueryError } from "./run.ts";
 import {
   appendThreadItem,
+  appendThreadItemOnce,
   listThreadItems,
   postMessage,
   type ThreadWrite,
@@ -63,6 +64,17 @@ test("appending an id again changes nothing and returns the item as it stands", 
 
   expect(again).toEqual(first);
   expect(await listThreadItems(db, { designId: design.id })).toHaveLength(1);
+});
+
+test("appending an id once adds it the first time and touches nothing after", async () => {
+  const { design } = await seedDesign(db);
+  const item = { id: "ti_pr-1-opened", designId: design.id, kind: "notice" as const };
+
+  expect(await appendThreadItemOnce(db, { ...item, payload: { text: "First" } })).toBe(true);
+  const [first] = await listThreadItems(db, { designId: design.id });
+  expect(await appendThreadItemOnce(db, { ...item, payload: { text: "Second" } })).toBe(false);
+
+  expect(await listThreadItems(db, { designId: design.id })).toEqual([first!]);
 });
 
 const write = (id: string, text: string, streaming: boolean): ThreadWrite => ({

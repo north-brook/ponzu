@@ -176,9 +176,14 @@ the foreign key is the repo and its workspace together. When GitHub transfers a 
 another account, `upsertRepos` moves the repo and its designs follow in the same statement.
 Usage already recorded stays with the workspace that was billed for it.
 
-A design's pull request is recorded from GitHub's webhooks by `recordPullRequest`, which keeps
-the newest word (`designs.pr_updated_at`, GitHub's `updated_at`) since deliveries arrive out
-of order, and settles the design on a merge.
+A design's pull request is recorded from reads of GitHub by `recordPullRequestRead`, which keeps
+the read that began last (`designs.pr_read_at`, since a check finishing leaves GitHub's
+`updated_at` alone and reads finish out of order), and settles the design on a merge. A merge
+is the last word on its pull request: nothing about it is recorded after one, so a design
+reopened after its merge stays open. A read that finds what the row already holds writes
+nothing, since each write reaches every watcher of the workspace's designs. For the same reason
+the pull request's thread notice goes in with `appendThreadItemOnce`, which never rewrites an
+item it already has.
 
 ## Deleting
 

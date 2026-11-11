@@ -64,6 +64,8 @@ export interface CanvasProps {
   theme?: "light" | "dark";
   /** Float page tabs (bottom left) and tools (bottom right) over the canvas. Default true. */
   footer?: boolean;
+  /** The footer's page tabs, for a host whose chrome has its own. Default true. */
+  pageBar?: boolean;
   /** Extra content at the start of the tools bar, before the modes. */
   footerExtra?: ReactNode;
   /**
@@ -224,6 +226,7 @@ export function Canvas({
   me = { kind: "user", name: "You" },
   theme = "light",
   footer = true,
+  pageBar = true,
   footerExtra,
   readOnly = false,
   page: pageProp,
@@ -1603,42 +1606,48 @@ export function Canvas({
            * at a bar, so pressing one never pans or zooms.
            */}
           <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
-            <Bar name="Pages" className="pz:min-w-0 pz:shrink">
-              <PageTabs
-                pages={doc.pages}
-                active={page.id}
-                showShortcut={pageHint}
-                busy={busyPages}
-                onOpen={goToPage}
-                onRename={
-                  readOnly ? undefined : (id, name) => source.apply({ op: "page.update", id, name })
-                }
-                onMove={
-                  readOnly ? undefined : (id, index) => source.apply({ op: "page.move", id, index })
-                }
-              />
-              {!readOnly && (
-                <Tip label="New page">
-                  <Button
-                    variant="ghost"
-                    size="icon-lg"
-                    aria-label="New page"
-                    onClick={() => {
-                      const id = newId("pg");
-                      source.apply({
-                        op: "page.create",
-                        index: doc.pages.length,
-                        page: { id, name: `Page ${doc.pages.length + 1}` },
-                      });
-                      setPageId(id);
-                    }}
-                  >
-                    <Icon name="add" size={15} />
-                  </Button>
-                </Tip>
-              )}
-            </Bar>
-            <Bar name="Controls" className="pz:shrink-0">
+            {pageBar && (
+              <Bar name="Pages" className="pz:min-w-0 pz:shrink">
+                <PageTabs
+                  pages={doc.pages}
+                  active={page.id}
+                  showShortcut={pageHint}
+                  busy={busyPages}
+                  onOpen={goToPage}
+                  onRename={
+                    readOnly
+                      ? undefined
+                      : (id, name) => source.apply({ op: "page.update", id, name })
+                  }
+                  onMove={
+                    readOnly
+                      ? undefined
+                      : (id, index) => source.apply({ op: "page.move", id, index })
+                  }
+                />
+                {!readOnly && (
+                  <Tip label="New page">
+                    <Button
+                      variant="ghost"
+                      size="icon-lg"
+                      aria-label="New page"
+                      onClick={() => {
+                        const id = newId("pg");
+                        source.apply({
+                          op: "page.create",
+                          index: doc.pages.length,
+                          page: { id, name: `Page ${doc.pages.length + 1}` },
+                        });
+                        setPageId(id);
+                      }}
+                    >
+                      <Icon name="add" size={15} />
+                    </Button>
+                  </Tip>
+                )}
+              </Bar>
+            )}
+            <Bar name="Controls" className="pz:ml-auto pz:shrink-0">
               {footerExtra}
               <ToggleGroup
                 variant="raised"

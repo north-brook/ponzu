@@ -91,6 +91,44 @@ export type ErrorCode =
   | "claude_sign_in_expired"
   /** A Claude sign-in whose one code was already sent, or that was given up. Open sign-in again. */
   | "claude_sign_in_used"
+  /** A pull request needs a repo, and this design is Scratch. */
+  | "no_repository"
+  /** Nothing has been pushed to the design's branch yet, so GitHub does not have it. */
+  | "branch_not_pushed"
+  /** The design's branch has no commits that the branch it merges into lacks. */
+  | "no_changes"
+  /** The design has no open pull request to do this to. */
+  | "no_pull_request"
+  /** The design's pull request is merged or closed. */
+  | "pull_request_closed"
+  /** The pull request is a draft: mark it ready first. */
+  | "pull_request_draft"
+  /** The branch conflicts with the branch it merges into. */
+  | "merge_conflicts"
+  /** GitHub is still working out whether the pull request can merge. Try again in a moment. */
+  | "mergeability_unknown"
+  /** The branch moved since it was looked at. Look at it again first. */
+  | "head_moved"
+  /** The repo's rules want an approving review first. */
+  | "review_required"
+  /** A reviewer asked for changes. */
+  | "changes_requested"
+  /** A check the repo's rules require has failed. */
+  | "checks_failing"
+  /** Checks the repo's rules require have not finished. Auto-merge merges once they pass. */
+  | "checks_pending"
+  /** The repo's rules want the branch up to date with the one it merges into: update it. */
+  | "branch_behind"
+  /** The repo's rules do not allow this merge, for a reason GitHub does not spell out. */
+  | "branch_protected"
+  /** The branch already has everything the branch it merges into has. */
+  | "branch_up_to_date"
+  /** The repo does not allow auto-merge: a setting of the repo on GitHub. */
+  | "auto_merge_not_allowed"
+  /** Nothing is left to wait for, so there is nothing for auto-merge to do: merge it. */
+  | "already_mergeable"
+  /** GitHub refused, for a reason Ponzu cannot name. */
+  | "github_refused"
   | "internal";
 
 /**

@@ -23,7 +23,7 @@ export function ThreadToggle({
   const shown = open ? "idle" : signal;
   const label =
     typeof shown === "object"
-      ? "Ponzu needs you"
+      ? `${shown.needsYou} ${shown.needsYou === 1 ? "question" : "questions"} for you`
       : shown === "working"
         ? "Thread (working)"
         : shown === "unseen"

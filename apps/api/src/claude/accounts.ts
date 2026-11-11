@@ -19,7 +19,16 @@ import { startWake } from "../sandboxes/wake.ts";
 
 export type ClaudeDeps = Pick<
   Deps,
-  "db" | "clock" | "vault" | "github" | "log" | "sandbox" | "poke" | "config" | "background"
+  | "db"
+  | "clock"
+  | "vault"
+  | "github"
+  | "log"
+  | "sandbox"
+  | "poke"
+  | "storage"
+  | "config"
+  | "background"
 >;
 
 /** What a new credential is. */

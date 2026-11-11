@@ -140,7 +140,12 @@ export {
 export {
   type BranchDesign,
   findDesignByBranch,
-  recordPullRequest,
+  getPullRequestContext,
+  listPullRequestDesigns,
+  type PullRequestContext,
+  type PullRequestRead,
+  recordPullRequestRead,
+  setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {
   answerQuestion,
@@ -221,6 +226,7 @@ export {
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
+  appendThreadItemOnce,
   listThreadItems,
   type NewThreadItem,
   postMessage,
