@@ -178,6 +178,33 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * The window's panes (window/app-window.tsx). While a pane opens or closes, the window carries
+ * `data-pane-motion`: the panes' panels ease (here) and so does everything tagged `pane-motion`
+ * (below). At any other time, a drag included, they follow at once.
+ */
+[data-pane-motion] [data-panel] {
+  transition-property: flex-grow;
+  transition-duration: var(--dur-pane);
+  transition-timing-function: var(--ease-out);
+}
+
+/*
+ * While an edge is dragged (`data-pane-drag`): the column-resize cursor wherever the pointer
+ * goes, no text selected on the way, and the canvas's frames, which would swallow the pointer,
+ * let it through.
+ */
+[data-pane-drag],
+[data-pane-drag] * {
+  /* biome-ignore lint/complexity/noImportantStyles: outranks every control's own cursor */
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+[data-pane-drag] iframe {
+  pointer-events: none;
+}
+
 /* Keyboard focus, the same on every control. */
 /* `data-quiet-focus` (ui/quiet-focus.ts): focus a click gave, or handed over without the person
    moving it (a question taking the composer's place), which shows once they press a key. */
@@ -187,14 +214,22 @@
   }
 }
 
-/* The panes' one clock: the sidebar and the rail opening and closing, and everything that moves
-   with them (the canvas pane's edges, the chrome's divider, name and right block). Name what
-   moves with a `transition-*` utility beside it. Reduced motion stills it like any other. */
+/* The panes' one clock: what moves with the sidebar and the rail as a toggle opens or closes
+   them (the canvas pane's edges, the chrome's divider, name and right block). Name what moves
+   with a `transition-*` utility beside it. It eases only while the window carries
+   `data-pane-motion` (a toggle's easing): at any other time, a drag of an edge included, it
+   follows at once, so the chrome never trails the pane under the pointer. `:where` keeps it
+   no stronger than a class, so an element's own `[transition-duration:…]` list still wins.
+   Reduced motion stills it like any other. */
 @utility pane-motion {
-  --tw-duration: var(--dur-pane);
-  --tw-ease: var(--ease-out);
-  transition-duration: var(--dur-pane);
-  transition-timing-function: var(--ease-out);
+  --tw-duration: 0s;
+  transition-duration: 0s;
+  :where([data-pane-motion]) & {
+    --tw-duration: var(--dur-pane);
+    --tw-ease: var(--ease-out);
+    transition-duration: var(--dur-pane);
+    transition-timing-function: var(--ease-out);
+  }
 }
 
 /* The slice turning a sixth per beat: the agent is working. */
