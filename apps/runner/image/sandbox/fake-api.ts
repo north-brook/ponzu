@@ -8,11 +8,12 @@
  * pushes events and reads back what the runner did. What a cold start must not lose (the
  * session's Claude session id, the document) is kept in a file; a git token is never written.
  */
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { emptyDoc } from "@ponzu/core";
 import { FakeRunnerApi } from "../../src/api/fake.ts";
 import { fakeApiHandler } from "../../src/api/fake-http.ts";
 import type { EventBody, Priority, RunnerSession, StateRequest } from "../../src/api/protocol.ts";
+import { writeDurably } from "../../src/durable.ts";
 
 const designId = need("PONZU_DESIGN_ID");
 const token = need("PONZU_RUNNER_TOKEN");
@@ -23,6 +24,10 @@ const stateFile = process.env.PONZU_FAKE_API_STATE ?? `${process.env.HOME}/.ponz
 interface Kept {
   session: FakeRunnerApi["sessionInfo"];
   doc: ReturnType<FakeRunnerApi["doc"]["snapshot"]>["doc"];
+  /** The feed goes on from here: the transcript already holds the events before it. */
+  feedSeq: number;
+  /** How many times the state was written: the driver checks a cold start read the last. */
+  writes: number;
 }
 const kept: Kept | null = existsSync(stateFile)
   ? JSON.parse(readFileSync(stateFile, "utf8"))
@@ -30,7 +35,11 @@ const kept: Kept | null = existsSync(stateFile)
 const fake = new FakeRunnerApi({
   doc: kept?.doc ?? emptyDoc("Untitled"),
   session: kept?.session ?? { design: { id: designId, name: "Untitled" }, model: "haiku" },
+  feedSeq: kept?.feedSeq ?? 0,
 });
+let writes = kept?.writes ?? 0;
+/** What the state file said when this process started. */
+const restored = { writes, feedSeq: fake.feedSeq };
 const started = Date.now();
 /** State reports and every call, with when they arrived. */
 const states: (StateRequest & { at: number })[] = [];
@@ -74,10 +83,12 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
         doc: fake.doc.snapshot(),
         calls: calls.length,
         lastCall: calls.at(-1) ?? null,
+        kept: { writes, restored },
       });
     case "POST /control/events": {
       const body = (await request.json()) as EventBody & { priority?: Priority };
       const event = fake.push(body, body.priority ? { priority: body.priority } : {});
+      keep();
       await fetch(`http://127.0.0.1:${runnerPort}/poke`, { method: "POST" }).catch(() => {});
       return Response.json(event);
     }
@@ -96,14 +107,15 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
   return new Response(`nothing at ${url.pathname}`, { status: 404 });
 }
 
-/** Written whole and then moved, so a cold start never reads half a file. */
+/** Written as the runner writes what it keeps: whole, and on the disk before it is answered. */
 let last = "";
 function keep(): void {
-  const json = JSON.stringify({ session: fake.sessionInfo, doc: fake.doc.snapshot().doc });
+  const state = { session: fake.sessionInfo, doc: fake.doc.snapshot().doc, feedSeq: fake.feedSeq };
+  const json = JSON.stringify(state);
   if (json === last) return;
   last = json;
-  writeFileSync(`${stateFile}.new`, json);
-  renameSync(`${stateFile}.new`, stateFile);
+  writes += 1;
+  writeDurably(stateFile, JSON.stringify({ ...state, writes } satisfies Kept));
 }
 setInterval(keep, 500);
 

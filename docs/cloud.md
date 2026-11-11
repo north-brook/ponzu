@@ -508,7 +508,7 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   transcript is gone (the sandbox was rebuilt) starts over. The SDK is pinned to the version
   released with the image's Claude Code (0.3.322 with 2.1.322), and runs the image's
   `/usr/local/bin/claude`, never a copy of its own.
-- **Nobody to click "allow".** `bypassPermissions`, as `user` in a VM of its own.
+- **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
   AskUserQuestion, plan approval and any other prompt still reach `canUseTool`, and become
   questions ("Needs you"). The result message is the only success signal: an API failure
   arrives as `subtype: "success"` with `is_error: true`.
@@ -517,8 +517,8 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   user's own settings, where boat puts a skill and an MCP server, do not load.
   `strictMcpConfig` is on and the runner passes the repo's `.mcp.json` servers itself, beside
   `ponzu`, so they start without an approval prompt nobody could answer. A hostile repo can
-  therefore do anything as `user` that its code could: reach the Claude credential, a token
-  for its own repository, the runner token and its own secrets. Nothing of another design.
+  therefore do anything as `agent` that its code could: reach the Claude credential, a token
+  for its own repository and its own secrets. Not the runner token, nothing of another design.
   So can anyone who talks the agent into it ("Security": prompt injection).
 - **Ponzu's part.** `CLOUD_INSTRUCTIONS` and a line on the checkout are appended to the
   `claude_code` system prompt. The canvas tools are the in-process MCP server `ponzu`,
@@ -615,6 +615,29 @@ measurement and lint, inside the runner's process.
 - **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
   image (1.3.14) the renderer's own tests hung.
 
+### The image
+
+Every sandbox is created from one saved snapshot, baked from `apps/runner/image` (its README
+has what is in it and the measurements): boat's base with the Bun the repo pins, the runner's
+build, the Claude Code the Agent SDK pin speaks to (checked by the binary's hash), the Chrome
+Headless Shell playwright-core pins (checked by the zip's hash), exactly `packages/render`'s
+fonts at the versions it pins, a second Linux user, `agent`, and the runner's unit, enabled.
+The snapshot is named for a hash of all of that, of the checks it passed and of boat's base as
+read before the recipe ran, so the same inputs make the same name, and the API creates
+sandboxes `from` the name in its `PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json`
+records the last bake and when it passed the checks from the snapshot, which is what says it
+may be used. About 490 MiB over boat's base.
+
+**Two users.** The runner runs as `user`; Claude Code, its tools, the repo's hooks and the
+checkout's git run as `agent`, which has no sudo, no docker and no way into `/home/user`, the
+runner's `/proc` or boat's environment file, so nothing the repo or the agent runs can read the
+runner token. git asks the runner for credentials over a socket ("Git"). The canvas tools run
+in the runner's process, so a file the agent names to one (an HTML file by path, an asset, an
+export) is read and written as `agent` (`PONZU_AS_AGENT`): a path, or a link a repo committed,
+reaches only what the agent could reach itself, not the runner's environment or home. The
+runner reads Claude Code's transcripts (0600 `agent`) through `CAP_DAC_READ_SEARCH`. The
+Claude credential is still in the agent's environment: Claude Code needs it.
+
 ### Events
 
 A design has one ordered feed of things that happened: a message, an answer, a
@@ -705,8 +728,10 @@ behind these routes, and is the reference for what each answers.
   and act on the same events twice; with the lease the older one is refused at its next call.
 - **Stopping for good.** On 401 `token_invalid` or 409 `superseded`, from any call, the
   runner interrupts the turn, writes nothing more, closes Claude Code and exits 78, which
-  systemd does not restart (`RestartPreventExitStatus`). Only a new start of the sandbox, with
-  a new environment, brings a runner back.
+  systemd does not restart (`RestartPreventExitStatus`). Only a cold start of the sandbox (a
+  resume with a new environment is always one) or an explicit `systemctl start ponzu-runner`
+  through `exec` brings a runner back: a warm resume thaws the same boot, and the runner stays
+  down.
 - **Batch, never chat.** The sandbox is in the EU and the API in US East, about 100 ms each
   way, so each route takes many things at once and the runner sends what piled up: thread
   writes at most about three a second, state when it changes and on a heartbeat, acks,
@@ -937,13 +962,14 @@ for an id whose bytes never arrived.
 
 ### Git
 
-The checkout's git asks for credentials through a helper, `bun git-credential.js <runner id>`
+The checkout's git asks for credentials through a helper, `bun git-credential.js <socket>`
 (`credential.https://github.com.helper`, with `credential.https://github.com.useHttpPath
-true`, and an empty helper before it so no other is asked). It reads the runner token from the
-environment git passes on, sends the runner id it was configured with as `X-Ponzu-Runner`, so
-the git of a superseded runner gets nothing, writes nothing down, and calls `POST
-/v1/runner/git-credential` with what git asked: `{ protocol: "https", host: "github.com",
-path: "<owner>/<name>.git" }`. The API mints a one-hour installation token for that one
+true`, and an empty helper before it so no other is asked). It asks the runner over a local
+socket (`/run/ponzu/git.sock` in the image, open to the runner and the agent's user only) and
+writes nothing down; the runner calls `POST /v1/runner/git-credential` with its own token and
+lease (`X-Ponzu-Runner`), so the git of a superseded runner gets nothing and the agent's side
+never holds the runner token. The request is what git asked: `{ protocol: "https", host:
+"github.com", path: "<owner>/<name>.git" }`. The API mints a one-hour installation token for that one
 repository (`contents: write`, `metadata: read`), or reuses one with ten minutes or more
 left. 403 `forbidden` for any other host or repository, 404 `not_found` for Scratch, 502
 `upstream_unavailable` when GitHub fails. When GitHub refuses a token, git calls `erase`, and
@@ -952,7 +978,8 @@ in the memory of the function instance that minted it, never in a row, so an `er
 on another instance leaves the first one's in use until it has ten minutes left.
 
 At start the runner sets `author.*` to the person and `committer.*` to the App's bot in the
-global git config, clones the repository into `~/work/<name>` (or fetches, when the disk kept
+agent's global git config, clones the repository into `~/work/<name>` of the agent's user
+(`/home/agent/work` in the image), as that user (or fetches, when the disk kept
 it), and checks out the design's branch: the local one, else the one on GitHub, else a new one
 from `origin/<default branch>`. Work on disk is never reset. A clone that fails is a
 `clone_failed` notice and the design's status, and the run goes on in an empty folder, so the
@@ -1607,13 +1634,14 @@ with a key that exists only in the API's environment. Each is bound to the row a
 column it is stored in, so a value copied anywhere else does not decrypt, and each
 names the key that encrypted it, so the key can be rotated.
 
-**Prompt injection.** The agent runs as the sandbox's user with permissions bypassed, beside
-the owner's Claude credential (in Claude Code's environment, and in `/proc` for anything
-running as that user), the runner token and the repo's secrets. Anyone whose words reach the
-model can try to talk it into a command: a person commenting on the design, anyone reviewing
-its pull request (on a public repository, anyone on GitHub), a check's log, the repo's own
-files. Such a command can read and send the Claude credential, the runner token and the repo's
-secrets. What limits it today: other people's words reach the model quoted, under instructions
+**Prompt injection.** The agent runs as `agent` with permissions bypassed, beside the owner's
+Claude credential (in Claude Code's environment, and in `/proc` for anything running as
+`agent`) and the repo's secrets. Anyone whose words reach the model can try to talk it into a
+command: a person commenting on the design, anyone reviewing its pull request (on a public
+repository, anyone on GitHub), a check's log, the repo's own files. Such a command can read and
+send the Claude credential and the repo's secrets, and get a one-hour token for the repo from
+the runner's socket. It cannot read the runner token, which only the runner's process holds.
+What limits it today: other people's words reach the model quoted, under instructions
 that quoted text is feedback and never asks for credentials or for anything to be sent
 elsewhere; the runner token is good for one design and can write nothing an agent could not
 (a runner cannot write the API's notices, such as a pull request's), and a stolen one can at
@@ -1621,9 +1649,10 @@ most take the lease and stop that design's runner; a git token is good for an ho
 repository. Scrubbing the credential from what the agent's tools inherit
 (`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`) is not used: in Claude Code 2.1.322 it turns
 `bypassPermissions` back to `default` unless every tool is listed in `allowedTools`, and
-anything running as the same user reads the environment from `/proc` anyway. The boundary that
-closes this is in Hardening: Claude Code's tools as a user of their own, and the Claude
-credential behind an egress proxy, so nothing in the sandbox holds it.
+anything running as `agent` reads Claude Code's environment from `/proc` anyway. What closes
+this is in Hardening: the Claude credential behind an egress proxy, so nothing in the sandbox
+holds it, and egress rules for `agent`. The list of what remains is in
+`apps/runner/image/README.md` ("Two users").
 
 Every route says who may call it (anyone, a signed-in person, a design's
 runner, or either of those two), and a route that does not is refused. A whole
@@ -1664,15 +1693,25 @@ from `cloud` into `main`, released as the next major version.
 3. **The apps.** Desktop shell, studio, mobile.
 4. **Billing.**
 5. **Cutover.** Delete the local runtime, rewrite the docs and the site, release.
-6. **Hardening.** Egress proxy for credentials, Claude Code's tools as a user apart
-   from the runner's, limits, observability, abuse controls, the picture tier.
+6. **Hardening.** Egress proxy for credentials, egress rules for the agent's user, a runner
+   user without sudo, limits, observability, abuse controls, the picture tier. (Claude Code's
+   tools as a user apart from the runner's is done: the image's `agent`.)
 
 ## Known constraints
 
 - boat.dev hosts in the EU only. The sandbox is far from the API and the database,
   which is why tools work on a local replica and post ops in the background.
-- After a long sleep the first reply takes 20 to 50 seconds. The thread shows a
-  waking state.
+- After a long sleep (a cold resume) the runner answers `/health` in 5 to 16 seconds and the
+  first words of a reply come 8 to 25 seconds after the resume call; after a short one (warm)
+  in under a second and about 2 seconds. A create from the image answers `/health` in 4 to 31
+  seconds (`apps/runner/image/README.md` has the runs). The thread shows a waking state.
+- A cold start can bring the disk back older than it was. A file written a moment before a stop
+  and not flushed is lost, so the runner flushes after each turn. Worse, in two of three
+  end-to-end runs of the image the second cold start in a row came back with the disk as it was
+  at the first, losing everything written in between; a test with only files being written did not
+  show it. Unexplained, and worth raising with boat. Until then the sandbox's disk is a cache
+  that can go back to its previous cold stop (principle 2): the session can forget its last
+  exchanges, unpushed commits can be lost, and a turn's usage can be counted twice.
 - A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
   resume until it has. A message that arrives in that window waits for the stop.
 - Neon Realtime is a public beta.

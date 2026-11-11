@@ -2,6 +2,7 @@
  * The runner's entry: `bun runner.js` in a design's sandbox, as the ponzu-runner systemd
  * service. README.md has its environment and how to run it elsewhere.
  */
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,7 @@ import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
 import { agentEnv, EnvError, readEnv } from "./env.ts";
+import { agentFiles } from "./files.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
 import { serve, serveCredentials } from "./server.ts";
@@ -55,6 +57,7 @@ const runner = new Runner({
     log: (line) => log(`claude: ${line}`),
     env: agentEnv(process.env),
   }),
+  ...(env.asAgent ? { files: agentFiles(env.asAgent, agentEnv(process.env)) } : {}),
   // The repo's dev server is on this machine, so a design may load from it.
   renderer: new ChromiumRenderer({
     loopback: true,
@@ -70,6 +73,8 @@ const runner = new Runner({
       ...(env.git ? { git: env.git } : {}),
     }),
   stateDir: env.stateDir,
+  // Every filesystem, so the agent's files are flushed with the runner's own.
+  flush: () => void spawn("sync", { stdio: "ignore" }).on("error", (err) => log(`sync: ${err}`)),
   log,
   onFatal: () => {
     server.stop();

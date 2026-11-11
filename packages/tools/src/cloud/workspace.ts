@@ -7,6 +7,7 @@ import {
   type Telemetry,
   type Workspace,
 } from "../context.ts";
+import type { AgentFiles } from "../disk.ts";
 import { ReplicaDesign } from "./replica-design.ts";
 
 /** What the agent is doing, as the design's row shows it to everyone who has it open. */
@@ -54,6 +55,11 @@ export interface CloudWorkspaceOptions {
   replica: Replica;
   /** Without one, screenshot, record and export say they can't run. */
   renderer?: Renderer;
+  /**
+   * How the paths the agent names are read and written. The runner's process may reach what
+   * the agent must not (its token), so in the image it reads and writes as the agent.
+   */
+  files?: AgentFiles;
   host: CloudHost;
   telemetry?: Telemetry;
 }
@@ -125,6 +131,7 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
     events,
     presence,
     renderer: opts.renderer,
+    files: opts.files,
     telemetry: opts.telemetry,
     designs: () => [open],
     resolve: async () => open,

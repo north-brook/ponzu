@@ -1,7 +1,7 @@
 import { basename, extname } from "node:path";
 import { z } from "zod";
 import { ToolError, tool } from "../define.ts";
-import { fileSize, readGiven } from "../disk.ts";
+import { fileSize, localFiles, readGiven } from "../disk.ts";
 import { designOf } from "../util.ts";
 
 /** The largest file add_asset takes. */
@@ -124,6 +124,7 @@ export const addAsset = tool({
         `${name} isn't a kind of file a design can hold. Assets are images, fonts and video: ${Object.keys(ASSET_TYPES).join(", ")}.`,
       );
     const bytes = await readGiven(
+      ws.files ?? localFiles,
       args.path,
       MAX_ASSET_BYTES,
       "Make it smaller first: resize or compress an image, shorten or re-encode a video.",

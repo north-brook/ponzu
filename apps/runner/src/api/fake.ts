@@ -110,15 +110,26 @@ export class FakeRunnerApi {
   runner: string | null = null;
 
   private readonly transport: SyncTransport;
-  private seq = 0;
+  private seq: number;
   private itemSeq = 0;
   private runners = 0;
 
-  constructor(opts: { session?: Partial<RunnerSession>; doc?: Doc } = {}) {
+  /**
+   * `feedSeq` is where the feed's numbering goes on from, for a fake that outlives its process:
+   * an event id the API used once is never another event's, and a runner that finds one in its
+   * transcript takes the event as delivered.
+   */
+  constructor(opts: { session?: Partial<RunnerSession>; doc?: Doc; feedSeq?: number } = {}) {
     this.doc = new Sequencer(opts.doc ?? emptyDoc("Fern"));
     this.transport = memoryTransport(this.doc, AGENT);
     const { runnerId: _, seq: __, ...info } = testSession(opts.session);
     this.sessionInfo = info;
+    this.seq = opts.feedSeq ?? 0;
+  }
+
+  /** The last event's seq in the design's feed. */
+  get feedSeq(): number {
+    return this.seq;
   }
 
   /** A runner's connection, as `HttpRunnerApi` is one over HTTP. */

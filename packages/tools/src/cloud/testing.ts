@@ -12,6 +12,7 @@ import {
 import { Sequencer } from "@ponzu/core/testing";
 import type { Renderer } from "@ponzu/render";
 import type { NamedBytes, Telemetry, ToolContext } from "../context.ts";
+import type { AgentFiles } from "../disk.ts";
 import {
   type AgentStatus,
   type CloudHost,
@@ -108,6 +109,7 @@ export function memoryCloud(
     /** In place of real timers for the replica's retries, to hold one back. */
     schedule?: Scheduler;
     telemetry?: Telemetry;
+    files?: AgentFiles;
   } = {},
 ): MemoryCloud {
   const api = new Sequencer(doc);
@@ -129,6 +131,7 @@ export function memoryCloud(
     renderer: opts.renderer,
     host,
     telemetry: opts.telemetry,
+    files: opts.files,
   });
   let posted = 0;
   return {

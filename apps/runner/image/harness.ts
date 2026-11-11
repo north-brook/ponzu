@@ -1,10 +1,16 @@
 /*
  * What the bake, its checks and the end-to-end run do to a sandbox from this machine, on
  * packages/sandbox's provider: run a command and show its output, send a folder, build what
- * runs inside. Nothing here puts a secret in a command: those go in a sandbox's environment.
+ * runs inside, and destroy what is left when the run is cut short.
+ *
+ * Secrets go in a sandbox's environment, never in a command. A command line does not stay in
+ * the request: sudo writes it to /var/log/auth.log and the journal, and boat keeps it under
+ * /home/user/.ascii/processes, all of which a snapshot saved later would hold. So `sh` refuses
+ * a command holding the shape of a key or the value of any secret in this process's
+ * environment, and the image's secret scan covers both places.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BoatProvider, type SandboxProvider } from "@ponzu/sandbox";
@@ -25,6 +31,75 @@ export function redact(text: string): string {
     .replace(/_token=[A-Za-z0-9._-]+/g, "_token=…");
 }
 
+/** A variable whose name says it holds a secret. */
+const SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD|PRIVATE|CREDENTIAL/i;
+
+/**
+ * The values of the secrets in `env`, by name: every variable whose name says it is one, long
+ * enough not to turn up by chance. The App's key file is named by a path: its contents count.
+ */
+export function secretValues(env: NodeJS.ProcessEnv): Map<string, string> {
+  const values = new Map<string, string>();
+  for (const [name, value] of Object.entries(env)) {
+    if (!value || !SECRET_NAME.test(name)) continue;
+    if (name.endsWith("_PATH")) {
+      try {
+        values.set(name, readFileSync(value, "utf8").trim());
+      } catch {}
+    } else if (value.length >= 12) values.set(name, value);
+  }
+  return values;
+}
+
+/** The names of the secrets whose shape or value `text` holds. */
+export function secretsIn(text: string, secrets: Map<string, string>): string[] {
+  const found = [...secrets].filter(([, value]) => text.includes(value)).map(([name]) => name);
+  if (redact(text) !== text) found.push("a key's shape");
+  return found;
+}
+
+/** Each file under `dir` that holds one of `secrets`, with the names it holds. */
+export function filesWithSecrets(dir: string, secrets: Map<string, string>): string[] {
+  const walk = (at: string): string[] =>
+    readdirSync(at).flatMap((name) => {
+      const path = join(at, name);
+      return statSync(path).isDirectory() ? walk(path) : [path];
+    });
+  return walk(dir).flatMap((path) => {
+    const text = readFileSync(path, "latin1");
+    const names = [...secrets].filter(([, v]) => text.includes(v)).map(([n]) => n);
+    return names.length ? [`${path} (${names.join(", ")})`] : [];
+  });
+}
+
+/* Sandboxes this process made and has not destroyed, for when it is stopped. */
+const inFlight = new Map<string, SandboxProvider>();
+
+/** Destroy `id` if this process is interrupted before it does. */
+export function track(boat: SandboxProvider, id: string): () => void {
+  inFlight.set(id, boat);
+  return () => forget(id);
+}
+
+export function forget(id: string): void {
+  inFlight.delete(id);
+}
+
+/** On Ctrl-C or SIGTERM, destroy every tracked sandbox before exiting. */
+export function destroyOnSignal(): void {
+  let stopping = false;
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      if (stopping) return;
+      stopping = true;
+      console.error(`\n${signal}: destroying ${[...inFlight.keys()].join(", ") || "nothing"}`);
+      void Promise.allSettled([...inFlight].map(([id, boat]) => boat.destroy(id))).then(() =>
+        process.exit(130),
+      );
+    });
+  }
+}
+
 export class CommandError extends Error {
   override name = "CommandError";
 }
@@ -39,6 +114,7 @@ export async function sh(
   command: string,
   opts: { timeoutSeconds?: number; quiet?: boolean } = {},
 ): Promise<string> {
+  refuseSecrets(command);
   let stdout = "";
   let stderr = "";
   for await (const event of boat.execStream(id, command, {
@@ -70,6 +146,7 @@ export async function shLong(
   command: string,
   timeoutMs = 15 * 60_000,
 ): Promise<string> {
+  refuseSecrets(command);
   const { pid } = await boat.spawn(id, command);
   const done = await until(
     command.split("\n")[0]!,
@@ -84,6 +161,13 @@ export async function shLong(
   throw new CommandError(
     `${command.split("\n")[0]} ${done.state} ${done.exitCode}\n${redact(done.stderr.slice(-2000))}`,
   );
+}
+
+/** A command that would leave a secret on the sandbox's disk is a bug here: stop before sending it. */
+function refuseSecrets(command: string): void {
+  const found = secretsIn(command, secretValues(process.env));
+  if (found.length)
+    throw new Error(`refusing to send a command holding ${found.join(", ")}: use env instead`);
 }
 
 /** Sends a folder to `remote` in the sandbox, which is made if it is missing. */
@@ -137,10 +221,15 @@ export async function until<T>(
   everyMs = 250,
 ): Promise<T> {
   const end = Date.now() + ms;
+  let last: unknown = null;
   for (;;) {
-    const got = await check().catch(() => undefined);
+    const got = await check().catch((err) => {
+      last = err;
+      return undefined;
+    });
     if (got) return got;
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > end)
+      throw new Error(`timed out waiting for ${what}${last ? ` (last: ${String(last)})` : ""}`);
     await Bun.sleep(everyMs);
   }
 }

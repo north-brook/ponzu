@@ -1,12 +1,14 @@
 /*
  * What goes into the sandbox image, read from this checkout: the versions it pins, the folder
  * provision.sh runs from, and the name the image is saved under. The name is a hash of all of
- * it, so the same inputs make the same name and a bake of an image that exists is skipped.
+ * it, of the checks it passed and of boat's base it was made on, so the same inputs make the
+ * same name and a bake of an image that exists is skipped.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import bunPin from "./bun.json" with { type: "json" };
+import chromiumPin from "./chromium.json" with { type: "json" };
 
 export const RUNNER = join(import.meta.dir, "..");
 const ROOT = join(RUNNER, "..", "..");
@@ -26,6 +28,10 @@ export interface Pins {
   playwrightCoreVersion: string;
   /** The Chrome Headless Shell that playwright-core version downloads. */
   headlessShellVersion: string;
+  /** Its build for linux-x64 and the zip's hash, from chromium.json. */
+  headlessShellRevision: string;
+  headlessShellUrl: string;
+  headlessShellSha256: string;
 }
 
 /**
@@ -48,10 +54,18 @@ export function readPins(): Pins {
   const playwright = JSON.parse(readFileSync(join(core, "package.json"), "utf8")).version as string;
   const browsers = JSON.parse(readFileSync(join(core, "browsers.json"), "utf8")).browsers as {
     name: string;
+    revision: string;
     browserVersion: string;
   }[];
   const shell = browsers.find((b) => b.name === "chromium-headless-shell");
   if (!shell) throw new Error("playwright-core names no chromium-headless-shell");
+  if (
+    shell.browserVersion !== chromiumPin.browserVersion ||
+    shell.revision !== chromiumPin.revision
+  )
+    throw new Error(
+      `playwright-core ${playwright} pins Chrome Headless Shell ${shell.browserVersion} (build ${shell.revision}) but image/chromium.json has ${chromiumPin.browserVersion}: put its linux64 zip's address and hash there.`,
+    );
   return {
     bunVersion: bunPin.version,
     bunSha256: bunPin.linuxX64Sha256,
@@ -59,6 +73,9 @@ export function readPins(): Pins {
     claudeSha256: claude.platforms["linux-x64"].checksum,
     playwrightCoreVersion: playwright,
     headlessShellVersion: shell.browserVersion,
+    headlessShellRevision: chromiumPin.revision,
+    headlessShellUrl: chromiumPin.url,
+    headlessShellSha256: chromiumPin.sha256,
   };
 }
 
@@ -70,6 +87,9 @@ export function pinsEnv(pins: Pins, inputs: string): string {
     `CLAUDE_VERSION=${pins.claudeVersion}`,
     `CLAUDE_SHA256=${pins.claudeSha256}`,
     `PLAYWRIGHT_CORE_VERSION=${pins.playwrightCoreVersion}`,
+    `CHROMIUM_REVISION=${pins.headlessShellRevision}`,
+    `CHROMIUM_URL=${pins.headlessShellUrl}`,
+    `CHROMIUM_SHA256=${pins.headlessShellSha256}`,
     `INPUTS_HASH=${inputs}`,
     "",
   ].join("\n");
@@ -79,19 +99,55 @@ export interface Input {
   /** Where it goes in the folder provision.sh runs from. */
   path: string;
   bytes: Uint8Array;
+  /** Hashed into the name but not sent: what the image was checked with, and against. */
+  hashedOnly?: true;
 }
 
-/** Everything the image is made from, in the folder's layout. Needs a built dist/. */
-export function recipeInputs(pins: Pins): Input[] {
+/** The checks an image must pass, by where they live: tightening one makes a new image. */
+const CHECKS = [
+  join(import.meta.dir, "checks.ts"),
+  join(import.meta.dir, "trial.ts"),
+  ...readdirSync(join(import.meta.dir, "sandbox"))
+    .sort()
+    .map((name) => join(import.meta.dir, "sandbox", name)),
+  join(ROOT, "packages", "render", "src", "stand-ins.test.ts"),
+];
+
+/**
+ * Everything the image is made from, in the folder's layout. Needs a built dist/. `base` is
+ * what boat's base image held before provisioning (`BASE_FINGERPRINT`): the same recipe on
+ * another base is another image.
+ */
+export function recipeInputs(pins: Pins, base: string, dist = DIST): Input[] {
   const files: Input[] = [
     { path: "provision.sh", bytes: readFileSync(RECIPE) },
     { path: "sandbox-fonts.json", bytes: readFileSync(FONTS) },
-    { path: "pins.json", bytes: Buffer.from(JSON.stringify(pins)) },
+    { path: "pins.json", bytes: Buffer.from(JSON.stringify(pins)), hashedOnly: true },
+    { path: "base.txt", bytes: Buffer.from(base), hashedOnly: true },
   ];
-  for (const file of walk(DIST))
-    files.push({ path: join("runner", relative(DIST, file)), bytes: readFileSync(file) });
+  for (const file of CHECKS)
+    files.push({
+      path: join("checks", relative(ROOT, file)),
+      bytes: readFileSync(file),
+      hashedOnly: true,
+    });
+  for (const file of walk(dist))
+    files.push({ path: join("runner", relative(dist, file)), bytes: readFileSync(file) });
   return files;
 }
+
+/**
+ * What boat's base image is, read in a fresh sandbox before the recipe runs: the system, every
+ * package and its version, the fonts fallback can find, and the tools the recipe keeps or
+ * replaces. boat names no version of its base, so this is how a change to it is seen.
+ */
+export const BASE_FINGERPRINT = `set -e
+cat /etc/os-release
+uname -r
+dpkg-query -W -f '\${Package}=\${Version}\\n' | sort
+find /usr/share/fonts /usr/local/share/fonts -type f 2>/dev/null | sort
+sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1
+/usr/local/bin/bun --version 2>/dev/null || true`;
 
 /** The same inputs always hash the same, whatever order they were read in. */
 export function inputsHash(inputs: Input[]): string {
@@ -110,7 +166,7 @@ export function snapshotName(inputs: string): string {
 /** Writes the folder provision.sh runs from: the inputs, and the pins as it reads them. */
 export function stage(dir: string, inputs: Input[], pins: Pins, hash: string): void {
   for (const input of inputs) {
-    if (input.path === "pins.json") continue;
+    if (input.hashedOnly) continue;
     mkdirSync(dirname(join(dir, input.path)), { recursive: true });
     writeFileSync(join(dir, input.path), input.bytes);
   }

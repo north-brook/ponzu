@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { type Actor, Replica } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import {
+  type AgentFiles,
   type AgentStatus,
   CLOUD_INSTRUCTIONS,
   type CloudHost,
@@ -100,10 +101,18 @@ export interface RunnerOptions {
   agent: Agent;
   /** Without one the tools say they cannot take screenshots, and no previews are drawn. */
   renderer?: Renderer;
+  /** How the tools read and write the files the agent names: as the agent, in the image. */
+  files?: AgentFiles;
   /** Gets the working directory ready and returns it (`checkout` from repo.ts). */
   prepare(session: RunnerSession): Promise<string>;
   /** Where the runner keeps what it needs across restarts. */
   stateDir: string;
+  /**
+   * Called once a turn has ended and its edits have settled: put what the turn wrote (the
+   * session's transcript, the checkout) on the disk. A stop that turns cold loses what was
+   * still in memory, and the sandbox may be stopped at any time after a turn.
+   */
+  flush?(): void;
   log(message: string): void;
   /**
    * The API said this process must stop for good (its token is revoked, or a newer runner
@@ -286,6 +295,7 @@ export class Runner {
       id: this.session.design.id,
       replica: this.replica,
       renderer: this.opts.renderer,
+      ...(this.opts.files ? { files: this.opts.files } : {}),
       host: this.host(),
     });
     if (this.opts.renderer) {
@@ -991,6 +1001,7 @@ export class Runner {
         return;
       }
       this.ws.presence.leave(CALLER.id);
+      this.opts.flush?.();
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }

@@ -48,10 +48,15 @@ cp -R "$here/runner" "$PONZU/runner"
 chown -R root:root "$PONZU/runner"
 
 step "Chrome Headless Shell for playwright-core $PLAYWRIGHT_CORE_VERSION"
-PLAYWRIGHT_BROWSERS_PATH="$PONZU/browsers" \
-  "$BUN" "$PONZU/runner/node_modules/playwright-core/cli.js" install --only-shell chromium \
-  > "$work/playwright.log" 2>&1 || { cat "$work/playwright.log"; exit 1; }
-shell=$(echo "$PONZU"/browsers/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell)
+# The build playwright-core's own installer would fetch, but by the hash in chromium.json, and
+# where that installer puts it. The runner names the binary (PONZU_CHROMIUM).
+curl -fsSL --retry 3 -o "$work/shell.zip" "$CHROMIUM_URL"
+echo "$CHROMIUM_SHA256  $work/shell.zip" | sha256sum --check --quiet
+browsers="$PONZU/browsers/chromium_headless_shell-$CHROMIUM_REVISION"
+rm -rf "$browsers"
+install -d "$browsers"
+unzip -q "$work/shell.zip" -d "$browsers"
+shell="$browsers/chrome-headless-shell-linux64/chrome-headless-shell"
 [ -x "$shell" ] || { echo "no headless shell at $shell" >&2; exit 1; }
 
 step "fonts"
@@ -92,15 +97,18 @@ install -d /etc/systemd/system/ponzu-runner.service.d
 cat > /etc/systemd/system/ponzu-runner.service.d/image.conf <<EOF
 # What this image adds to the runner's unit: where things are, and the agent's user apart.
 [Service]
-# The checkout is the agent's: files the runner writes there (exports) are the group's too.
+# git's credential helper asks the runner on a socket only the runner's user and this group open,
+# and the folder the runner makes for a Scratch design is the agent's to write in.
 Group=agent
 UMask=0002
-# Reads what the agent writes (Claude Code keeps its transcripts 0600) and nothing more. The
-# agent's side starts through sudo, which drops it.
+# Claude Code keeps its transcripts 0600; the runner reads them to resume a session. The agent's
+# side starts through sudo, which drops it. Files the agent names for the canvas tools are never
+# read with it: the tools read and write those as the agent (PONZU_AS_AGENT).
 AmbientCapabilities=CAP_DAC_READ_SEARCH
 # git's credential helper asks the runner here (PONZU_GIT_SOCKET), as the group.
 RuntimeDirectory=ponzu
 RuntimeDirectoryMode=0750
+Environment=PONZU_AS_AGENT=$PONZU/libexec/as-agent
 Environment=PONZU_CLAUDE=$PONZU/libexec/agent-claude
 Environment=PONZU_GIT=$PONZU/libexec/agent-git
 Environment=PONZU_GIT_SOCKET=/run/ponzu/git.sock

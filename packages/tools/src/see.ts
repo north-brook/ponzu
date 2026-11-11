@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { ToolContext, Workspace } from "./context.ts";
 import { ToolError, type ToolImage, tool } from "./define.ts";
 import type { OpenDesign } from "./design.ts";
-import { fileSize, writeGiven } from "./disk.ts";
+import { fileSize, localFiles, writeGiven } from "./disk.ts";
 import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
 import { designOf } from "./util.ts";
 
@@ -312,7 +312,7 @@ export async function exportTo(
     colorScheme: theme.colorScheme,
     assetBase: ws.assetBase?.(open.key),
   });
-  await writeGiven(path, out.bytes);
+  await writeGiven(ws.files ?? localFiles, path, out.bytes);
   return {
     path,
     bytes: out.bytes,
