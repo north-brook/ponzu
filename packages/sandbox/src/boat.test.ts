@@ -189,6 +189,14 @@ describe("create", () => {
     expect(b.sent[0]!.body).toMatchObject({ monitoring: false });
   });
 
+  test("a create boat answers without a sandbox is unavailable, to be sent again", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", () => json(202, { ok: true, type: "sandbox.created" }));
+    await expect(
+      b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600 }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+  });
+
   test("leaves out a port boat could not host", async () => {
     const b = boat();
     b.on("POST /sandboxes", () =>

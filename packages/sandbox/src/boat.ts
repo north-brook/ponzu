@@ -190,6 +190,11 @@ export class BoatProvider implements SandboxProvider {
           sandbox: BoatSandbox;
           hostedPorts?: BoatHostedPort[];
         }>("POST", "/sandboxes", call);
+        // Seen once on a create: a success with no sandbox in it. Whether one was made is not
+        // known, and sending the create again with the same key finds out.
+        if (!body.sandbox) {
+          throw new SandboxError("unavailable", "boat accepted a create but named no sandbox");
+        }
         return {
           sandbox: toSandbox(body.sandbox),
           addresses: (body.hostedPorts ?? []).flatMap((hosted) =>
