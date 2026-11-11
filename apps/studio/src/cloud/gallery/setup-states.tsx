@@ -83,6 +83,11 @@ const STATES: [string, SettingsSection, SettingsData][] = [
     }),
   ],
   ["Environments · as a member", "environments", team({ meId: f.maya.id })],
+  [
+    "Environments · other stacks, one without a logo",
+    "environments",
+    team({ environments: s.otherStacks, open: [s.otherStacks[2]!.repo.id] }),
+  ],
   ["Plan and usage · no card yet", "plan", { ...SOLO_SETTINGS, usage: s.freeUsage }],
   [
     "Plan and usage · at the cap",

@@ -67,6 +67,33 @@ export const accounts: GithubAccount[] = [
 ];
 /** Nothing set up yet: only the person's own account, and Continue waits. */
 export const nothingReady: GithubAccount[] = [personalAccount];
+/** A person in a dozen organizations: more rows than a short window holds. */
+export const manyAccounts: GithubAccount[] = [
+  ...accounts,
+  ...[
+    "Kettle",
+    "Halyard",
+    "Moss & Co",
+    "Tidewater",
+    "Lumen",
+    "Orchard",
+    "Paperjam",
+    "Quarry",
+    "Ridgeline",
+  ].map(
+    (name, i): GithubAccount => ({
+      githubAccountId: 3001 + i,
+      login: name.toLowerCase().replace(/[^a-z]/g, ""),
+      name,
+      avatarUrl: null,
+      kind: "org",
+      status: "ready",
+      workspaceId: `ws_${i}`,
+      suspended: false,
+      memberCount: 3 + i,
+    }),
+  ),
+];
 /** The person's own account ready, and an organization whose installation is suspended. */
 export const suspendedAccounts: GithubAccount[] = [
   { ...personalAccount, status: "ready", workspaceId: "ws_bryce" },
@@ -178,6 +205,29 @@ export const environments: RepoEnvironment[] = [
     },
     secrets: [{ name: "ANTHROPIC_API_KEY", updatedAt: local(11, 1) }],
   },
+];
+
+/** Bases built on other stacks, the last with a service Ponzu has no logo for. */
+const built = (name: string, stack: RepoEnvironment["base"]["stack"]): RepoEnvironment => ({
+  repo: { ...fernwood, id: `repo_${name}`, name },
+  base: { status: "ready", builtAt: new Date(NOW - 3 * 24 * 3_600_000).toISOString(), stack },
+  secrets: [],
+});
+export const otherStacks: RepoEnvironment[] = [
+  built("api", [
+    { slug: "go", label: "Go 1.23" },
+    { slug: "redis", label: "Redis 7" },
+    { slug: "docker", label: "Docker" },
+  ]),
+  built("storefront", [
+    { slug: "ruby", label: "Ruby 3.3" },
+    { slug: "yarn", label: "Yarn 4" },
+    { slug: "mysql", label: "MySQL 8" },
+  ]),
+  built("engine", [
+    { slug: "rust", label: "Rust 1.82" },
+    { slug: "quickwit", label: "Quickwit 0.8" },
+  ]),
 ];
 
 const visa = (last4: string): Card => ({ brand: "visa", last4, failed: false });

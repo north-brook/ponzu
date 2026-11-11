@@ -30,33 +30,41 @@ export function StepLayout({
   return (
     <>
       {below}
-      <div className="absolute inset-0 flex flex-col items-center pt-[120px]">
-        <div
-          role="progressbar"
-          aria-label="Setup"
-          aria-valuemin={1}
-          aria-valuemax={3}
-          aria-valuenow={progress}
-          className="flex gap-1.5"
-        >
-          {[1, 2, 3].map((n) => (
-            <span
-              key={n}
-              className={cn(
-                "h-1 w-7 rounded-pill transition-colors duration-(--dur-pane)",
-                n <= progress ? "bg-ink" : "bg-step",
-              )}
-            />
-          ))}
+      {/*
+       * 120 from the top in a window the boards' height or taller, closing to 48 in the smallest.
+       * Past that the card block gives way (a card that can scroll does), never the actions.
+       */}
+      <div className="absolute inset-0 [container-type:size]">
+        <div className="flex h-full flex-col items-center pt-[clamp(48px,calc(100cqh-730px),120px)] pb-8">
+          <div
+            role="progressbar"
+            aria-label="Setup"
+            aria-valuemin={1}
+            aria-valuemax={3}
+            aria-valuenow={progress}
+            className="flex gap-1.5"
+          >
+            {[1, 2, 3].map((n) => (
+              <span
+                key={n}
+                className={cn(
+                  "h-1 w-7 rounded-pill transition-colors duration-(--dur-pane)",
+                  n <= progress ? "bg-ink" : "bg-step",
+                )}
+              />
+            ))}
+          </div>
+          <h1 className="m-0 mt-14 font-display font-semibold text-28 text-ink tracking-[-0.02em]">
+            {title}
+          </h1>
+          <p className="m-0 mt-3 max-w-[460px] text-center text-15 text-muted leading-[1.55]">
+            {body}
+          </p>
+          <div className="mt-8 flex min-h-0 w-[480px] flex-col">{children}</div>
+          <div className="mt-7 flex w-[480px] shrink-0 items-center justify-center gap-4">
+            {actions}
+          </div>
         </div>
-        <h1 className="m-0 mt-14 font-display font-semibold text-28 text-ink tracking-[-0.02em]">
-          {title}
-        </h1>
-        <p className="m-0 mt-3 max-w-[460px] text-center text-15 text-muted leading-[1.55]">
-          {body}
-        </p>
-        <div className="mt-8 flex w-[480px] flex-col">{children}</div>
-        <div className="mt-7 flex w-[480px] items-center justify-center gap-4">{actions}</div>
       </div>
     </>
   );

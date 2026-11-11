@@ -15,12 +15,15 @@ export function BlockingDialog({
   onDismiss,
   title,
   body,
+  wide = false,
   children,
 }: {
   open: boolean;
   onDismiss: () => void;
   title: string;
   body: string;
+  /** 520 rather than 420: room for the setup's 480-wide Claude card as it is drawn there. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -29,7 +32,7 @@ export function BlockingDialog({
       onOpenChange={(next) => (next ? undefined : onDismiss())}
       title={title}
       dim="dialog"
-      className="w-[420px] flex-col"
+      className={cn("flex-col", wide ? "w-[520px]" : "w-[420px]")}
     >
       <div className="flex flex-col gap-3 px-5 pt-[22px] pb-[18px]">
         <Slice size={26} className="text-ink" />

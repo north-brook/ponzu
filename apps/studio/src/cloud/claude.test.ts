@@ -3,6 +3,7 @@ import {
   type ClaudeConnection,
   connectionLine,
   duration,
+  enteredKey,
   limitView,
   needsRenewal,
   pastedCode,
@@ -106,5 +107,12 @@ describe("a pasted code", () => {
   test("is left as pasted when it is ambiguous", () => {
     expect(pastedCode("a#b c#d")).toBe("a#b c#d");
     expect(pastedCode("no code here")).toBe("no code here");
+  });
+});
+
+describe("an entered key", () => {
+  test("loses the space or line break a copy from the Console brings with it", () => {
+    expect(enteredKey(" sk-ant-api03-abc_DEF-123 \n")).toBe("sk-ant-api03-abc_DEF-123");
+    expect(enteredKey("sk-ant-api03-\nabc")).toBe("sk-ant-api03-abc");
   });
 });

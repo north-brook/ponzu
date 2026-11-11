@@ -6,6 +6,7 @@ import {
   DisconnectClaudeDialog,
 } from "../dialogs/account-dialogs.tsx";
 import { CapReachedDialog, CardFields, FreeCreditsDialog } from "../dialogs/billing-dialogs.tsx";
+import type { ClaudeCardState } from "../setup/claude-card.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, Harness } from "./harness.tsx";
 import * as s from "./setup-fixtures.ts";
@@ -43,8 +44,8 @@ const card = (
   />
 );
 
-function ClaudeSignedOut() {
-  const props = useClaudeCard(choose, ignore);
+function ClaudeSignedOut({ start = choose }: { start?: ClaudeCardState }) {
+  const props = useClaudeCard(start, ignore);
   return (
     <OnSend>
       {(dismiss, open) => <ClaudeSignedOutDialog open={open} onDismiss={dismiss} card={props} />}
@@ -75,6 +76,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
   "setup-where-suspended": () => (
     <SetupHarness start={{ step: "where", accounts: s.suspendedAccounts }} />
   ),
+  "setup-where-many": () => <SetupHarness start={{ step: "where", accounts: s.manyAccounts }} />,
   "setup-where-loading": () => <SetupHarness start={{ step: "where", accounts: "loading" }} />,
   "setup-where-failed": () => <SetupHarness start={{ step: "where", accounts: "failed" }} />,
   "setup-claude": () => <SetupHarness start={{ step: "claude", card: choose }} />,
@@ -223,6 +225,14 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
     </OnSend>
   ),
   "claude-signed-out": () => <ClaudeSignedOut />,
+  "claude-signed-out-code": () => (
+    <ClaudeSignedOut start={{ mode: "subscription", code: "", status: "idle" }} />
+  ),
+  "claude-signed-out-key": () => (
+    <ClaudeSignedOut
+      start={{ mode: "api_key", key: "sk-ant-api03-not-a-key", status: "rejected" }}
+    />
+  ),
   "disconnect-claude": () => (
     <SettingsWindowWith>
       {(close, open) => <DisconnectClaudeDialog open={open} onCancel={close} onConfirm={close} />}

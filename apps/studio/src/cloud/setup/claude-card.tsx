@@ -5,7 +5,7 @@
  */
 import { ArrowUpRight01Icon, Key01Icon } from "@hugeicons/core-free-icons";
 import { useId } from "react";
-import { pastedCode } from "../claude.ts";
+import { enteredKey, pastedCode } from "../claude.ts";
 import { cn } from "../ui/cn.ts";
 import { TextField } from "../ui/field.tsx";
 import { Icon } from "../ui/icon.tsx";
@@ -38,7 +38,10 @@ export interface ClaudeCardProps {
   onAddKey: () => void;
   /** Back to the two ways; a pending sign-in is abandoned. */
   onChange: () => void;
-  /** The code or key as typed (a paste of the code arrives already lifted from its words). */
+  /**
+   * The code or key as entered: a paste of the code arrives lifted from its words, and a key
+   * without whitespace, so what is held can be sent as it is.
+   */
   onInput: (text: string) => void;
   /** Start a new sign-in and open claude.ai again; the code is cleared. */
   onReopen: () => void;
@@ -145,7 +148,7 @@ function MethodEntry({
           readOnly={connecting}
           invalid={error !== null}
           aria-describedby={`${id}-help`}
-          onChange={(e) => onInput(e.target.value)}
+          onChange={(e) => onInput(subscription ? e.target.value : enteredKey(e.target.value))}
           onPaste={(e) => {
             if (!subscription) return;
             e.preventDefault();
@@ -155,7 +158,12 @@ function MethodEntry({
         <p
           id={`${id}-help`}
           role={error ? "alert" : undefined}
-          className={cn("m-0 text-12", error ? "text-danger" : "text-faint")}
+          className={cn(
+            "m-0 text-pretty text-12",
+            // The key's helper runs to two lines; its one-line error keeps them, so Connect holds.
+            !subscription && "min-h-[2lh]",
+            error ? "text-danger" : "text-faint",
+          )}
         >
           {error ??
             (subscription

@@ -123,3 +123,8 @@ export function pastedCode(text: string): string {
   const codes = trimmed.split(/\s+/).filter((word) => /^[\w-]+#[\w-]+$/.test(word));
   return codes.length === 1 ? codes[0]! : trimmed;
 }
+
+/** An API key as entered: a key has no spaces, so a copy's stray space or line break goes. */
+export function enteredKey(text: string): string {
+  return text.replace(/\s+/g, "");
+}

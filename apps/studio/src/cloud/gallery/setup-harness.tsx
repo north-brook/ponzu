@@ -60,7 +60,7 @@ export function useClaudeCard(initial: ClaudeCardState, onConnected: () => void)
       const entered = state.mode === "subscription" ? state.code : state.key;
       setState({ ...state, status: "connecting" } as ClaudeCardState);
       later(900, () => {
-        if (entered.trim() !== "wrong") return onConnected();
+        if (entered !== "wrong") return onConnected();
         setState(
           state.mode === "subscription"
             ? { ...state, status: "wrong" }
@@ -234,8 +234,9 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
     ),
     agents: () => (
       <AgentsSection
-        connection={data.connection}
-        entry={data.entry || !data.connection ? entry : null}
+        {...(data.connection
+          ? { connection: data.connection, entry: data.entry ? entry : null }
+          : { connection: null, entry })}
         onDisconnect={() => set({ connection: null })}
         onSwitch={() => {
           set({ entry: { mode: "choose", starting: false, failed: false } });

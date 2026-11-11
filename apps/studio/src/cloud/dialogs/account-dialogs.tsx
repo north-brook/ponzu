@@ -33,6 +33,7 @@ export function ClaudeSignedOutDialog({
       onDismiss={onDismiss}
       title="Claude was signed out"
       body="Connect Claude again and Ponzu sends this. Your prompt is saved."
+      wide
     >
       <div className="mt-0.5 flex flex-col">
         <ClaudeCard {...card} />

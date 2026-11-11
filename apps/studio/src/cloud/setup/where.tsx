@@ -69,16 +69,19 @@ export function WhereStep({
           </RowButton>
         </SetupCard>
       ) : (
-        // Past eight rows the card scrolls inside itself, so Continue stays on screen.
-        <SetupCard className="max-h-[472px] overflow-y-auto">
-          {accounts.map((account) => (
-            <AccountRow
-              key={account.githubAccountId}
-              account={account}
-              waiting={settingUp === account.githubAccountId}
-              onSetUp={() => onSetUp(account)}
-            />
-          ))}
+        // When the window can't hold every row, the card scrolls inside itself: the link and
+        // Continue stay on screen below it.
+        <SetupCard className="min-h-0">
+          <div className="scroll-fade flex min-h-0 flex-col overflow-y-auto overscroll-contain">
+            {accounts.map((account) => (
+              <AccountRow
+                key={account.githubAccountId}
+                account={account}
+                waiting={settingUp === account.githubAccountId}
+                onSetUp={() => onSetUp(account)}
+              />
+            ))}
+          </div>
         </SetupCard>
       )}
       {notice ? (

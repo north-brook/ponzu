@@ -33,14 +33,20 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     built?.dispose();
   });
 
-  const open = async (board: string) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+  const open = async (board: string, size = { width: 1440, height: 900 }) => {
+    await page.setViewportSize(size);
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
     await page.goto(`${server.url}/gallery.html?board=${board}&theme=light`);
     await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
   };
   const dialog = '[role="dialog"]';
   const title = () => page.textContent(`${dialog} h2:not(.sr-only)`);
+  const focused = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+  const inView = (selector: string) =>
+    page.$eval(selector, (el) => {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight;
+    });
 
   test("Settings: Escape closes it, ⌘, opens it again, and Tab stays inside", async () => {
     await open("settings-account");
@@ -96,6 +102,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
       state: "detached",
     });
     expect(await page.$(dialog)).not.toBeNull();
+    expect(await focused()).toBe("Edit DATABASE_URL");
   });
 
   test("the cap: below what is billed is refused, Return saves, Escape puts it back", async () => {
@@ -106,10 +113,15 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await page.textContent('[role="alert"]')).toBe("At least $22, billed so far");
     await page.press(field, "Enter");
     expect(await page.$(field)).not.toBeNull();
+    // Clicking away keeps the refused cap and its reason in view rather than dropping them.
+    await page.click(`${dialog} h2:not(.sr-only)`);
+    expect(await page.inputValue(field)).toBe("10");
+    expect(await page.textContent('[role="alert"]')).toBe("At least $22, billed so far");
     await page.fill(field, "75");
     await page.press(field, "Enter");
     await page.waitForSelector(field, { state: "detached" });
     await page.waitForSelector('span:has-text("Cap $75")');
+    expect(await focused()).toBe("Change cap");
 
     await page.click('button[aria-label="Change cap"]');
     await page.fill(field, "300");
@@ -117,6 +129,8 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await page.waitForSelector(field, { state: "detached" });
     expect(await page.$('span:has-text("Cap $75")')).not.toBeNull();
     expect(await page.$(dialog)).not.toBeNull();
+    // Focus is back on the pencil, so the next Tab carries on from the row.
+    expect(await focused()).toBe("Change cap");
   });
 
   test("roles: an admin changes a member's, and the account's owner is locked", async () => {
@@ -134,6 +148,21 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await page.click('button:has-text("Set up")');
     await page.waitForSelector('span:text-is("Ready")');
     expect(await page.$eval(continueButton, (b) => (b as HTMLButtonElement).disabled)).toBe(false);
+  });
+
+  test("where you design: a dozen accounts in the smallest window leave Continue in reach", async () => {
+    await open("setup-where-many", { width: 1100, height: 640 });
+    expect(await inView('button:has-text("Continue")')).toBe(true);
+    expect(await inView('button:has-text("Don\'t see an organization?")')).toBe(true);
+    // The rows past what fits are a scroll inside the card away.
+    expect(await inView('span:text-is("Ridgeline")')).toBe(false);
+    await page.hover('span:text-is("Personal")');
+    await page.mouse.wheel(0, 2000);
+    await page.waitForFunction(() => {
+      const row = [...document.querySelectorAll("span")].find((s) => s.textContent === "Ridgeline");
+      return row && row.getBoundingClientRect().bottom <= window.innerHeight;
+    });
+    expect(await inView('button:has-text("Continue")')).toBe(true);
   });
 
   test("paste the code: a paste keeps only the code, and Return connects", async () => {
@@ -154,12 +183,22 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await page.waitForSelector('h1:has-text("Get Ponzu on your iPhone")');
   });
 
-  test("a code that doesn't work keeps what was typed and says so", async () => {
+  test("a key that doesn't work keeps what was typed and says so, and Connect holds", async () => {
     await open("setup-api-key");
+    const connect = () =>
+      page.$eval('button:has-text("Connect")', (b) => b.getBoundingClientRect().top);
+    const before = await connect();
     await page.keyboard.type("wrong");
     await page.keyboard.press("Enter");
     await page.waitForSelector('[role="alert"]:has-text("Anthropic didn\'t accept that key.")');
     expect(await page.inputValue('input[type="password"]')).toBe("wrong");
+    expect(await connect()).toBe(before);
+  });
+
+  test("a key copied with a stray space and line break arrives without them", async () => {
+    await open("setup-api-key");
+    await page.keyboard.insertText(" sk-ant-api03-abc \n");
+    expect(await page.inputValue('input[type="password"]')).toBe("sk-ant-api03-abc");
   });
 
   test("free credits used up: Escape leaves it, and the prompt stays in the composer", async () => {

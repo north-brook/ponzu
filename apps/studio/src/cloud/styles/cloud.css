@@ -192,6 +192,39 @@
   background: repeating-linear-gradient(-45deg, var(--c-faint) 0 1.5px, transparent 1.5px 4.5px);
 }
 
+/*
+ * A list that scrolls inside itself fades out at its foot while there is more below, so a row
+ * cut at the edge reads as "more", not as the last. Driven by its own scroll: a list that fits
+ * has no scroll timeline, and no fade.
+ */
+@property --scroll-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes scroll-fade {
+  from,
+  96% {
+    --scroll-fade: 32px;
+  }
+  to {
+    --scroll-fade: 0px;
+  }
+}
+
+@utility scroll-fade {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+  animation: scroll-fade auto linear both;
+  animation-timeline: scroll(self);
+
+  /* It follows the scroll rather than moving on its own, so reduced motion keeps it. */
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: outranks the reduced-motion reset's own */
+    animation-duration: auto !important;
+  }
+}
+
 /* A voice comment's waveform, each bar breathing on its own delay, and its caret blinking. */
 @keyframes wave {
   from {

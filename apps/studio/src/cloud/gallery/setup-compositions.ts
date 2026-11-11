@@ -56,6 +56,12 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   setup("setup-where-suspended", "Where do you design · suspended"),
   setup("setup-where-loading", "Where do you design · loading"),
   setup("setup-where-failed", "Where do you design · couldn't reach GitHub"),
+  {
+    ...setup("setup-where-many", "Where do you design · a dozen accounts, the smallest window"),
+    // The smallest window, app-window.tsx's MIN_WINDOW.
+    width: 1100,
+    height: 640,
+  },
   setup("setup-claude", "3 · Connect Claude", "3-connect-claude.html"),
   setup("setup-claude-failed", "Connect Claude · couldn't start"),
   setup("setup-paste-code", "3b · Paste the code", "3b-paste-the-code.html"),
@@ -85,6 +91,8 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   { id: "cap-reached", title: "Monthly cap reached", ...WINDOW },
   { id: "cap-reached-member", title: "Monthly cap reached · a member", ...WINDOW },
   { id: "claude-signed-out", title: "Claude signed out, on send", ...WINDOW },
+  { id: "claude-signed-out-code", title: "Claude signed out · paste the code", ...WINDOW },
+  { id: "claude-signed-out-key", title: "Claude signed out · key rejected", ...WINDOW },
   { id: "disconnect-claude", title: "Disconnect Claude?", ...WINDOW },
   { id: "delete-account", title: "Delete your account?", ...WINDOW },
 ];
