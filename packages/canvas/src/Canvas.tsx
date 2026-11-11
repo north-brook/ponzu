@@ -31,6 +31,7 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { CaptureFlash, useCaptures } from "./capture.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
+import { cornersCss, designCorners, ringCorners } from "./corners.ts";
 import { type DraftPin, draftKey, moveDraft, setDraft, unsent, useDrafts } from "./drafts.ts";
 import { Icon, Icons, Pencil } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
@@ -1380,20 +1381,31 @@ export function Canvas({
                     h: shot.box.height,
                   }
                 : box;
+              // The ring and the frame keep their gap all the way round a board's corners.
+              const own = designCorners(ab);
+              const ringRadius = ringCorners(own, BOARD_RADIUS, RING_GAP);
+              const frameRadius =
+                Math.max(Math.max(...(own ?? [0])) * view.zoom, BOARD_RADIUS) + RING_GAP;
               return (
                 <Fragment key={ab.id}>
                   {ring !== undefined && (
-                    <Ring {...box} leaving={ring} dim={!!shot} delay={ringDelay(drawn)} />
+                    <Ring
+                      {...box}
+                      radius={ringRadius}
+                      leaving={ring}
+                      dim={!!shot}
+                      delay={ringDelay(drawn)}
+                    />
                   )}
-                  {drawn !== undefined && <Frame {...box} at={drawn} />}
+                  {drawn !== undefined && <Frame {...box} radius={frameRadius} at={drawn} />}
                   {shot && (
                     <CaptureFlash
                       key={shot.id}
                       capture={shot}
                       ring={ringBox(box)}
-                      ringRadius={BOARD_RADIUS + RING_GAP}
+                      ringRadius={frameRadius}
                       area={worldRect(area)}
-                      radius={BOARD_RADIUS}
+                      radius={shot.box ? BOARD_RADIUS : frameRadius - RING_GAP}
                     />
                   )}
                 </Fragment>
@@ -1779,6 +1791,7 @@ function Ring({
   y,
   w,
   h,
+  radius,
   leaving = false,
   dim = false,
   delay = 0,
@@ -1787,6 +1800,8 @@ function Ring({
   y: number;
   w: number;
   h: number;
+  /** Its border-radius: the board's corners, a gap out (corners.ts). */
+  radius: string;
   leaving?: boolean;
   /** An agent's capture is playing over it: it steps aside meanwhile. */
   dim?: boolean;
@@ -1802,7 +1817,7 @@ function Ring({
     >
       <div
         className="pz-ring pz:absolute pz:inset-0"
-        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms` }}
+        style={{ borderRadius: radius, animationDelay: `${wait}ms` }}
       />
     </div>
   );
@@ -1812,7 +1827,22 @@ function Ring({
  * A new artboard's frame drawing itself round its final bounds where the ring will be, from when
  * the board landed, then fading as the ring takes over.
  */
-function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number; at: number }) {
+function Frame({
+  x,
+  y,
+  w,
+  h,
+  radius,
+  at,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Its corners in screen px: the board's largest, a gap out. */
+  radius: number;
+  at: number;
+}) {
   const rect = useRef<SVGRectElement>(null);
   useLayoutEffect(() => {
     if (rect.current) drawFrame(rect.current, at);
@@ -1828,7 +1858,7 @@ function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number;
         x={1}
         y={1}
         style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }}
-        rx={BOARD_RADIUS + RING_GAP}
+        rx={radius}
         pathLength={100}
         fill="none"
         stroke="currentColor"
@@ -2173,6 +2203,10 @@ const Board = memo(function Board({
     [source, version, colorScheme],
   );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
+  // The design's own corners where it rounds its root, the canvas's few px where it doesn't: the
+  // sheet and its shadow take the radii ArtboardView gives the live root (corners.ts).
+  const own = useMemo(() => designCorners(ab), [ab]);
+  const corners = own ? cornersCss(own, "var(--pz-board-radius)") : "var(--pz-board-radius)";
   return (
     <div
       ref={(el) => {
@@ -2180,13 +2214,14 @@ const Board = memo(function Board({
         if (el && at !== undefined) arriveBoard(el, at);
       }}
       className="pz:absolute pz:shadow-board"
+      data-pz-board={ab.id}
       style={
         {
           left: ab.x + dx,
           top: ab.y + dy,
           width: w,
           height: fixed ?? undefined,
-          borderRadius: radius,
+          borderRadius: corners,
           "--pz-board-radius": `${radius}px`,
         } as CSSProperties
       }

@@ -13,6 +13,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
+import { cornersCss, designCorners } from "./corners.ts";
 import { BoardImages, firstStep, markupUrl } from "./images.ts";
 import { BoardDetail, type Detail, holdLoops, STILL_CSS } from "./lod.ts";
 import { animationsOf, MOTION_CSS, Motion } from "./motion.ts";
@@ -39,7 +40,10 @@ interface Props {
    * view: its loops hold.
    */
   hold?: boolean;
-  /** Rounded as the canvas rounds its boards, by `--pz-board-radius` on a parent. */
+  /**
+   * Rounded as the canvas draws the board's sheet, by `--pz-board-radius` on a parent (which
+   * already holds the design's own radius where the canvas could read it: corners.ts).
+   */
   rounded?: boolean;
 }
 
@@ -129,9 +133,16 @@ export const ArtboardView = memo(function ArtboardView({
     // The page's media preference is the system's; a canvas in its own theme decides them here.
     const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
     const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    // The canvas rounds its boards a touch, over whatever radius the design gave its root: the
-    // corners are the canvas's. Thumbnails, screenshots and exports keep the design's own.
-    const round = rounded ? "[data-artboard]{border-radius:var(--pz-board-radius)!important}" : "";
+    // The canvas rounds its boards a touch (`--pz-board-radius`, a few screen px), and keeps the
+    // design's own radius wherever that is larger: corners.ts, which the sheet round the board
+    // follows too. A radius it can't read as px (a token, a %) is left as the design gave it.
+    // Thumbnails, screenshots and exports draw the design's own.
+    const own = rounded ? designCorners(artboard) : null;
+    const round = !rounded
+      ? ""
+      : own
+        ? `:host{--pz-board-corners:${cornersCss(own, "var(--pz-board-radius)")}}[data-artboard]{border-radius:var(--pz-board-corners)!important}`
+        : "";
     // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
     const resolved = resolveTokenAssets(tokens, assetBase);
     const canvas = tracked ? `${MOTION_CSS}${STILL_CSS}` : "";

@@ -162,10 +162,7 @@ function Designs({ designs, usage }: { designs: DesignUsage[]; usage: Usage }) {
     <section aria-label="By design" className="flex flex-col">
       <SectionLabel className="pb-1">By design</SectionLabel>
       {designs.map(({ kind, id, name, usedCredits }) => (
-        <div
-          key={id ?? kind}
-          className="flex h-[38px] items-center gap-2.5 border-rule border-t"
-        >
+        <div key={id ?? kind} className="flex h-[38px] items-center gap-2.5 border-rule border-t">
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-13",

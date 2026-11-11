@@ -187,11 +187,13 @@ function designBreakdown(
   }
   const unnamed = ([DELETED, HIDDEN] as const)
     .filter((line) => lines.has(line))
-    .map((line): DesignUsageView => ({
-      kind: line,
-      design: null,
-      usedCredits: credits.get(line) ?? 0,
-    }));
+    .map(
+      (line): DesignUsageView => ({
+        kind: line,
+        design: null,
+        usedCredits: credits.get(line) ?? 0,
+      }),
+    );
   return [...highestFirst(named), ...unnamed];
 }
 

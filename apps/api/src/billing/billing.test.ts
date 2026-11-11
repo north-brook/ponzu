@@ -328,7 +328,7 @@ describe("a breakdown adds up to the headline", () => {
   });
 
   test("apportion: each part is its use rounded down or up, and they sum to the total", () => {
-    fc.assert(
+    return fc.assert(
       fc.property(fc.array(fc.nat({ max: 50 * HOUR }), { maxLength: 40 }), (seconds) => {
         const parts = seconds.map((s) => awakeUnits(s, 5));
         const credits = apportion(parts);
@@ -353,7 +353,7 @@ describe("a breakdown adds up to the headline", () => {
       modelCredits: fc.integer({ min: 0, max: 99_999 }).map((n) => n / 10_000),
     });
     const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
-    fc.assert(
+    return fc.assert(
       fc.property(
         fc.array(row, { maxLength: 30 }),
         fc.array(fc.boolean(), { minLength: designs.length, maxLength: designs.length }),
@@ -393,8 +393,11 @@ describe("a breakdown adds up to the headline", () => {
     }));
     const designs = ["des_a", "des_b", "des_c"].map((id) => ({ id, name: id, readable: true }));
     const credited = (order: typeof rows) =>
-      workspaceUsage(read({ bryce: 0 }, { rows: order, designs }), period, viewer("bryce"))
-        .byDesign?.find((row) => row.usedCredits === 1)?.design?.id;
+      workspaceUsage(
+        read({ bryce: 0 }, { rows: order, designs }),
+        period,
+        viewer("bryce"),
+      ).byDesign?.find((row) => row.usedCredits === 1)?.design?.id;
     expect(credited(rows)).toBe("des_a");
     expect(credited(rows.toReversed())).toBe("des_a");
   });
