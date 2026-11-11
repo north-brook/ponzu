@@ -158,6 +158,35 @@ test("asked to get ready for sleep, the runner takes no new work, finishes its t
   await until(() => api.lastState?.quiesced === null);
 });
 
+test("a report asked for while the runner is still starting waits: it has no lease to send it under", async () => {
+  // A cold boot: the port answers before the session does, and the API's stop or wake asks.
+  const api = new FakeRunnerApi();
+  api.down = true;
+  const d = await disk();
+  const fatal: string[] = [];
+  const runner = new Runner({
+    api: api.client(),
+    agent: new ScriptedAgent(),
+    prepare: async () => d.work,
+    stateDir: d.stateDir,
+    log: () => {},
+    onFatal: (reason) => fatal.push(reason),
+    timing: FAST,
+  });
+  open.push(runner);
+  const started = runner.start();
+  runner.report();
+  runner.report();
+  await Bun.sleep(60);
+  api.down = false;
+  await started;
+  await until(() => api.states.length > 0);
+  expect(fatal).toEqual([]);
+  expect(api.calls.filter((c) => c === "session")).not.toHaveLength(0);
+  // Everything after the session carried its lease.
+  expect(api.calls.indexOf("putState")).toBeGreaterThan(api.calls.lastIndexOf("session"));
+});
+
 test("a turn that will not finish does not hold the sleep up for long", async () => {
   const api = new FakeRunnerApi();
   const d = await disk();

@@ -147,7 +147,7 @@ async function proof(): Promise<void> {
       // A warm sleep and wake, as the API does them.
       const warmSleep = await sleepLikeTheApi(trial);
       await Bun.sleep(WARM_AFTER_MS);
-      const warmWake = await wakeLikeTheApi(trial, warmSleep.memory);
+      const warmWake = await wake(trial, warmSleep.memory);
       report.warm = { sleep: without(warmSleep, "memory"), wake: warmWake };
       await idle(trial, "the runner after the warm wake");
 
@@ -155,7 +155,7 @@ async function proof(): Promise<void> {
       const coldSleep = await sleepLikeTheApi(trial);
       console.log(`cold: asleep; resuming in ${COLD_AFTER_MS / 1000} s`);
       await Bun.sleep(COLD_AFTER_MS);
-      const coldWake = await wakeLikeTheApi(trial, coldSleep.memory);
+      const coldWake = await wake(trial, coldSleep.memory);
       await idle(trial, "the runner after the cold wake");
       const afterCold = await record(trial);
       const boatRolledBack = afterCold.restored.some((r) => r.kind === "rollback");
@@ -309,11 +309,11 @@ async function coldCycle(trial: Trial, which: string) {
   const slept = await sleepLikeTheApi(trial);
   console.log(`${which} cold: asleep; resuming in ${COLD_AFTER_MS / 1000} s`);
   await Bun.sleep(COLD_AFTER_MS);
-  const woke = await wakeLikeTheApi(trial, slept.memory);
+  const woke = await wake(trial, slept.memory);
   const probes = await sh(
     boat,
     trial.id,
-    "cat ~/.ponzu-probe-synced; echo; cat ~/.ponzu-probe-unsynced 2>/dev/null; echo; cat /proc/sys/kernel/random/boot_id",
+    'printf "%s\\n%s\\n%s\\n" "$(cat ~/.ponzu-probe-synced)" "$(cat ~/.ponzu-probe-unsynced 2>/dev/null)" "$(cat /proc/sys/kernel/random/boot_id)"',
     { quiet: true },
   );
   const [synced = "", unsynced = "", boot = ""] = probes.split("\n").map((l) => l.trim());
@@ -419,10 +419,30 @@ async function journal(trial: Trial, pattern: string): Promise<string[]> {
   const out = await sh(
     boat,
     trial.id,
-    `sudo journalctl -u ponzu-runner -b 0 --no-pager -o short-iso | grep -E '${pattern}' | grep -v pam_unix | tail -40`,
+    `sudo journalctl -u ponzu-runner -u ponzu-fake-api -b 0 --no-pager -o short-iso | grep -E '${pattern}' | grep -v -e pam_unix -e 'sudo\\[' | tail -40`,
     { quiet: true },
   ).catch(() => "");
   return out.trim().split("\n").filter(Boolean);
+}
+
+/**
+ * `wakeLikeTheApi`, and when the fake API's address does not answer, what the sandbox says of
+ * its two units from the inside, kept in the report; then once more through the addresses.
+ */
+async function wake(trial: Trial, memory: Parameters<typeof wakeLikeTheApi>[1]) {
+  try {
+    return await wakeLikeTheApi(trial, memory);
+  } catch (err) {
+    const seen = await sh(
+      boat,
+      trial.id,
+      "systemctl is-active ponzu-fake-api ponzu-runner; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8790/control/record; curl -s http://127.0.0.1:4600/health; echo; cat /proc/sys/kernel/random/boot_id",
+      { quiet: true },
+    ).catch((e) => String(e));
+    report.wakeFailure = { error: String(err), seen: seen.trim().split("\n") };
+    // Through the addresses, once more, now that the sandbox has had longer.
+    return await wakeLikeTheApi(trial, memory);
+  }
 }
 
 function without<T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> {

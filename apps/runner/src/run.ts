@@ -374,6 +374,9 @@ export class Runner {
    * say the sandbox is going to sleep.
    */
   report(): void {
+    // Not started: a report now would carry no lease, and the API would answer `superseded`.
+    // The reports that start the heartbeat hear any sleep there is.
+    if (this.stopping || !this.claimTimer) return;
     this.state.now();
   }
 

@@ -55,7 +55,8 @@ export class StateReporter {
 
   /** Report now, changed or not: the answer is what says whether the sandbox is going to sleep. */
   now(): void {
-    this.pacer.kick();
+    // Only once reporting has started: before that the runner has no lease to report under.
+    if (this.heartbeat) this.pacer.kick();
   }
 
   /** Send the state as it is now and stop the heartbeat. */

@@ -28,7 +28,12 @@ src/
   usage.ts         each turn's tokens, by model
   repo.ts          git's identity and credential helper, the clone and the branch
   credential.ts    git's credential helper (built as dist/git-credential.js)
-  server.ts        POST /poke and GET /health
+  server.ts        POST /poke, POST /report and GET /health
+  save/            what lives only on the disk, kept: checkpoints and restoring them
+    checkpoints.ts the turn marker, saving after each turn, finding a rollback at start
+    transcripts.ts the files that make a Claude session resumable, packed as the agent
+    work.ts        work in progress: a repo's on refs/ponzu/wip/<design>, Scratch's as an archive
+    shell.ts       running tar and git on the agent's side
   agent/
     agent.ts       the Agent interface: start, send, reply, interrupt, a stream of events
     sdk.ts         ClaudeAgent, on the Agent SDK; the only file that knows the SDK
@@ -59,8 +64,10 @@ playwright-core pins, `packages/render`'s fonts, and `ponzu-runner.service` with
 failure, except on exit 78, which means only a new start of the sandbox can mend it: the
 environment is wrong, the API revoked the runner token (the design was deleted or settled), or
 a newer runner took over the design's lease. On SIGTERM, which only the runner gets
-(`KillMode=mixed`), it stops the turn, lets the agent's edits reach the API, writes the final
-state and exits, within the unit's 20 seconds; what is left of the agent's side is killed then.
+(`KillMode=mixed`), it stops the turn, lets the agent's edits reach the API, saves a checkpoint
+(5 seconds at most), writes the final state and exits, within the unit's 20 seconds; what is
+left of the agent's side is killed then. A warm resume thaws a runner that had exited as exited;
+the API starts the unit again then (docs/cloud.md, "A warm resume and a stopped runner").
 
 In the image, Claude Code and the checkout's git run as a second user, `agent`, that cannot
 read the runner's environment (`PONZU_CLAUDE` and `PONZU_GIT` are wrappers that switch to it),
@@ -81,7 +88,8 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Exactly one. With both the runner refuses to start: Claude Code would silently use the key and bill its account. |
 | `PONZU_RUNNER_PORT` | The port `/poke` and `/health` listen on, on every interface. 4600 by default. |
 | `PONZU_WORK_ROOT` | Where checkouts live. `~/work` by default: the repo in `~/work/<name>`, Scratch in `~/work/scratch`. |
-| `PONZU_STATE_DIR` | What the runner keeps across restarts (usage totals). `~/.ponzu` by default. |
+| `PONZU_STATE_DIR` | What the runner keeps across restarts: usage totals, and the marker of the last checkpoint the API confirmed (`checkpoint.json`). `~/.ponzu` by default. |
+| `CLAUDE_CONFIG_DIR` | Claude Code's config folder, where its transcripts are and where a checkpoint's are put back. `~/.claude` by default; `/home/agent/.claude` in the image. |
 | `PONZU_CLAUDE` | The `claude` binary, when it is not `/usr/local/bin/claude`. The image's runs it as `agent`. |
 | `PONZU_GIT` | The `git` the checkout runs, when it is not the one on the PATH. The image's runs it as `agent`. |
 | `PONZU_AS_AGENT` | A command that runs its arguments as the agent's user; the tools read and write the agent's files through it. Unset, they use the runner's own access, which is right only where the agent is the runner's user. The image's is `sudo -u agent`. |
@@ -102,9 +110,30 @@ exposes, and to whom, is under "What a hostile repo or a hostile comment can do"
 
 `POST /poke` (204) means "there may be something to claim". It carries nothing and the runner
 trusts nothing about it: it only starts a claim, which the runner makes to the API with its own
-token. The runner also claims every minute without one. `GET /health` answers
-`{ "ok": true, "state": "working" | "needs_you" | "idle" }`. boat's token-gated address for the
-port is how the API reaches both.
+token. The runner also claims every minute without one. `POST /report` (204) carries nothing
+either: the runner sends its state report now, and only the API's answer can tell it the sandbox
+is going to sleep (below). `GET /health` answers `{ "ok": true, "state": "working" | "needs_you"
+| "idle" }`. boat's token-gated address for the port is how the API reaches all three; anything
+in the sandbox can reach them on localhost, and can make the runner do no more than ask.
+
+## Sleep, and what the disk keeps
+
+docs/cloud.md ("Saving the sandbox", "Getting ready to sleep") is the specification.
+
+- **After each turn** has settled, the runner saves a checkpoint: the Claude session's
+  transcript and the work in progress (a repo's as a commit on `refs/ponzu/wip/<design id>`, never
+  the design's branch; Scratch's as an archive), under a turn marker the API keeps the highest of,
+  then runs `sync`. Nothing is saved when nothing changed.
+- **Before a sleep** the API's state answer names the stop (`sleep`). The runner claims nothing
+  more, lets the turn finish (15 s at most), settles the replica, saves a checkpoint, runs `sync`
+  and reports `quiesced`. A warm resume thaws it; the next answer without `sleep` puts it back to
+  work.
+- **At start**, before Claude Code reads its transcript, a disk whose marker is behind the API's
+  (a rollback) or has none (a new sandbox) gets the checkpoint back, never over anything newer,
+  and the runner logs `sandbox_rollback` or `sandbox_rebuilt` as JSON and tells the API.
+- **The pull request summary.** On a checked-out repo design the runner hosts
+  `set_pull_request_summary` beside the canvas tools: the agent's own words on what its branch
+  changes, which the API writes into the pull request's description.
 
 ## Running it here
 
