@@ -1,7 +1,7 @@
 /* What each composition in compositions.ts draws. */
 import type { ReactNode } from "react";
 import { type DesignFilter, repoKey } from "../filter.ts";
-import type { Contributor, DesignSummary } from "../model.ts";
+import type { Contributor, DesignMember, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
@@ -23,12 +23,15 @@ function DesignWindow({
   query = null,
   sidebar = "open",
   rail = true,
+  members = f.members,
 }: {
   designs?: DesignSummary[];
   contributors?: Contributor[];
   query?: string | null;
   sidebar?: "open" | "closed";
   rail?: boolean;
+  /** Who Share lists. */
+  members?: DesignMember[];
 }) {
   return (
     <Harness
@@ -43,6 +46,7 @@ function DesignWindow({
           sidebarOpen={sidebarOpen}
           contributors={contributors}
           railOpen={rail}
+          members={members}
         />
       )}
     >
@@ -118,6 +122,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search": () => <DesignWindow query="" />,
   "sidebar-search-results": () => <DesignWindow query="hero" />,
   share: () => <DesignWindow />,
+  "share-not-joined": () => <DesignWindow members={f.membersMixed} />,
   "sidebar-previews-updating": () => <LivePreviews />,
   "thread-in-the-right-rail": () => (
     <DesignHarness

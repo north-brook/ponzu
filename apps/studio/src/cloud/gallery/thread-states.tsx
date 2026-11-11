@@ -52,7 +52,8 @@ function Rail({
           onAnswer={ignore}
           onDismissAsk={ignore}
           onConnectClaude={ignore}
-          renderBoard={() => <span className="block size-full bg-chip" />}
+          // The scene the picture is made from, which the canvas draws: its ground here.
+          renderDrawing={() => <span className="block size-full bg-canvas" />}
           onOpenComment={ignore}
           onOpenArtboards={ignore}
           onOpenPullRequest={ignore}
@@ -103,6 +104,29 @@ const unsent: ThreadItem[] = [
       },
     }),
   ),
+];
+
+/** A comment with its picture, a reply to it, and a short one. */
+const commented: ThreadItem[] = [
+  t.said(f.bryce, "Give me three takes on the hero. Keep the green."),
+  t.comment(f.bryce, "Too many words here. Calmer, and put a quieter take beside it."),
+  t.reply("Folding that into B: no paragraph, and the photo does the talking."),
+  t.comment(f.bryce, "Yes"),
+];
+
+/** The viewer's own comment the moment it is sent, its picture's files still being made. */
+const drawing: ThreadItem[] = [
+  t.said(f.bryce, "Give me three takes on the hero. Keep the green."),
+  t.comment(f.bryce, "Too many words here.", { kind: "drawing", width: 240, height: 160 }),
+];
+
+/** Comments with no picture to show: on a board, and on the open canvas of a page. */
+const placed: ThreadItem[] = [
+  t.comment(f.bryce, "Too many words here. Calmer, and put a quieter take beside it.", null),
+  t.comment(f.bryce, "Something to go between these two", null, {
+    artboardName: null,
+    pageName: "Checkout",
+  }),
 ];
 
 export function ThreadStates({
@@ -186,6 +210,19 @@ export function ThreadStates({
         <Rail designId="turn-failed" thread={t.failedTurn} label="failed" />
         <Rail designId="turn-asked" thread={t.askedTurn} label="ended on a question" />
         <Rail designId="turn-old" thread={t.oldFormatThread} label="an older runner's thread" />
+      </Section>
+      <Section title="Thread rail · comments from the canvas">
+        <Rail designId="comment-picture" thread={commented} label="with the picture of where" />
+        <Rail
+          designId="comment-drawing"
+          thread={drawing}
+          label="your own, its picture still being drawn"
+        />
+        <Rail
+          designId="comment-place"
+          thread={placed}
+          label="no picture: older, too large, or gone"
+        />
       </Section>
       <Section title="Needs you">
         <Rail

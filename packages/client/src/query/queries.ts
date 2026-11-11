@@ -33,6 +33,15 @@ export function ponzuQueries(api: Api) {
         queryKey: queryKeys.workspace(workspaceId),
         queryFn: () => api.workspaces.get(workspaceId),
       }),
+    /**
+     * Who can open a design, as Share lists them: everyone GitHub gives access to its repo,
+     * whether or not they have opened Ponzu.
+     */
+    designPeople: (designId: string) =>
+      queryOptions({
+        queryKey: queryKeys.designPeople(designId),
+        queryFn: () => api.designs.people(designId),
+      }),
     claudeAccount: () =>
       queryOptions({
         queryKey: queryKeys.claudeAccount(),

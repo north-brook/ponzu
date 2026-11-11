@@ -128,7 +128,7 @@ export function LiveTurnRail() {
           onStop={ignore}
           onAnswer={ignore}
           onDismissAsk={ignore}
-          renderBoard={() => <span className="block size-full bg-chip" />}
+          renderDrawing={() => <span className="block size-full bg-canvas" />}
           onOpenComment={ignore}
           onOpenArtboards={ignore}
           onOpenPullRequest={ignore}

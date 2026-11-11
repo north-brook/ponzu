@@ -5,6 +5,7 @@
 import type {
   AgentActivity,
   Ask,
+  CommentPicture,
   Person,
   PullRequestDetail,
   ThreadItem,
@@ -12,6 +13,8 @@ import type {
   TurnRecord,
 } from "../model.ts";
 import { bryce, maya, NOW, sam } from "./fixtures.ts";
+import heroCommentDark from "./previews/comment-hero-dark.webp";
+import heroCommentLight from "./previews/comment-hero-light.webp";
 import heroPreview from "./previews/hero.png";
 
 const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
@@ -83,17 +86,32 @@ export function ended(
   };
 }
 
-const comment = (from: Person, text: string, pin: { x: number; y: number }): ThreadItem =>
+/** The picture the app drew of a comment on the boards' "Hero", by the headline. */
+export const heroPicture: CommentPicture = {
+  kind: "image",
+  light: heroCommentLight,
+  dark: heroCommentDark,
+  width: 240,
+  height: 160,
+};
+
+export const comment = (
+  from: Person,
+  text: string,
+  picture: CommentPicture | null = heroPicture,
+  where: { artboardName: string | null; pageName?: string } = { artboardName: "Hero" },
+): ThreadItem =>
   item({
     kind: "comment",
     payload: {
       threadId: `th_${seq}`,
       messageId: `msg_${seq}`,
       text,
-      artboardId: "ab_hero",
-      artboardName: "Hero",
+      artboardId: where.artboardName ? "ab_hero" : null,
+      artboardName: where.artboardName,
+      pageName: where.pageName ?? null,
       from,
-      pin,
+      picture,
     },
   });
 
@@ -111,11 +129,7 @@ export const heroThread: ThreadItem[] = [
   // A turn that was only its answer: nothing to fold.
   ended(readTurn, { final: readReply.id }),
   readReply,
-  // The pin sits where the board draws it on its 132×72 frame.
-  comment(bryce, "Too many words here. Calmer, and put a quieter take beside it.", {
-    x: 57 / 132,
-    y: 45 / 72,
-  }),
+  comment(bryce, "Too many words here. Calmer, and put a quieter take beside it."),
   heroTurn,
   reply("Folding that into B: no paragraph, and the photo does the talking."),
 ];
@@ -139,7 +153,7 @@ export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding
 /** Together on a design: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(bryce, ASK),
-  comment(sam, "The photo should lead here, not the headline.", { x: 101 / 130, y: 41 / 81 }),
+  comment(sam, "The photo should lead here, not the headline."),
   turn(true),
   reply("Making the photo lead in B for Sam, and keeping your headline in A so you can compare."),
   said(maya, "Can C try the serif at a smaller size?"),

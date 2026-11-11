@@ -120,6 +120,20 @@
       "when": 1794417552349,
       "tag": "0016_posthog_session",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794420370805,
+      "tag": "0017_workspace_people",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794420954424,
+      "tag": "0018_comment_pictures",
+      "breakpoints": true
     }
   ]
 }

@@ -1,23 +1,25 @@
 import type { DesignHeadRow, LiveRows, MeRow, QuestionRow } from "@ponzu/client";
-import type { Artboard, Doc } from "@ponzu/core";
+import type { Doc } from "@ponzu/core";
+import { COMMENT_PICTURE, type CommentItem } from "@ponzu/runner/protocol";
 import type {
   AgentActivity,
   Ask,
   Attachment,
+  CommentPicture,
   Person,
-  Pin,
   Repo,
   RunErrorCode,
   SteerGate,
   ThreadItem,
   ThreadNotice,
 } from "../cloud/model.ts";
+import type { LocalPicture } from "./comment-pictures.ts";
 
 /*
  * The thread's live rows as the rail's model: people resolved to the workspace's members, a
- * message's attachments to their addresses, a comment's pin to its place in the board's
- * miniature, a question row to what the agent waits on, and the design's head to what the agent
- * is doing and what keeps anyone from steering it. Pure, so the rules are tested on their own.
+ * message's attachments and a comment's picture to their addresses, a question row to what the
+ * agent waits on, and the design's head to what the agent is doing and what keeps anyone from
+ * steering it. Pure, so the rules are tested on their own.
  */
 
 type RunnerItem = LiveRows["design.thread"];
@@ -29,8 +31,10 @@ export interface ThreadContext {
   people: ReadonlyMap<string, Person>;
   /** Where the design's files are served (ends in "/"), once the API has said. */
   assetsUrl: string | null;
-  /** The document, for where comments' pins sit. */
+  /** The document, for the pages comments were left on. */
   doc: Doc | null;
+  /** The pictures of the viewer's own comments, by message id, made here. */
+  pictures?: ReadonlyMap<string, LocalPicture>;
 }
 
 /** Someone the thread names, as the member they are when the workspace has them. */
@@ -45,64 +49,39 @@ export function personOf(named: Named, people: ReadonlyMap<string, Person>): Per
   );
 }
 
-/** The size of a comment's frame in the thread (lines.tsx `CommentFrame`). */
-export const FRAME = { width: 132, height: 72 } as const;
-
-/** An artboard's declared size, from its root's style. */
-export function boardSize(board: Artboard): { width: number; height: number } {
-  const px = (value: string | undefined, fallback: number) => {
-    const n = Number.parseFloat(value ?? "");
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
-  return { width: px(board.root.style.width, 1280), height: px(board.root.style.height, 800) };
-}
-
 /**
- * How a board fills a comment's frame: scaled to cover it and centered, as its miniature draws
- * it (board-miniature.tsx).
+ * A comment's picture as the rail shows it: the viewer's own, from here, while it is drawn and
+ * after (the files themselves, so nothing loads again), else the one its thread item has, at
+ * the design's assets address; null when there is none.
  */
-export function frameFit(board: { width: number; height: number }) {
-  const scale = Math.max(FRAME.width / board.width, FRAME.height / board.height);
+export function pictureOf(
+  payload: CommentItem,
+  local: LocalPicture | undefined,
+  assetsUrl: string | null,
+): CommentPicture | null {
+  const { width, height } = COMMENT_PICTURE;
+  if (local?.state === "drawing") return { kind: "drawing", width, height };
+  if (local) return { kind: "image", light: local.light, dark: local.dark, width, height };
+  const kept = payload.picture;
+  if (!kept || !assetsUrl) return null;
   return {
-    scale,
-    left: (FRAME.width - board.width * scale) / 2,
-    top: (FRAME.height - board.height * scale) / 2,
+    kind: "image",
+    light: `${assetsUrl}${kept.light}`,
+    dark: `${assetsUrl}${kept.dark}`,
+    width: kept.width,
+    height: kept.height,
   };
 }
 
 /**
- * The boards comments were made on, as they were then, by the comment's thread item: what each
- * comment's miniature shows, so it stays what was commented on as the board changes after.
+ * The page a comment on the open canvas was left on, by name, for its compact line: the page
+ * as it is now, or as the comment named it; none for one on a board, or a design of one page.
  */
-export function frozenBoards(items: readonly RunnerItem[]): Map<string, Artboard> {
-  const boards = new Map<string, Artboard>();
-  for (const item of items) {
-    if (item.kind === "comment" && item.payload.board) {
-      boards.set(item.id, item.payload.board as Artboard);
-    }
-  }
-  return boards;
-}
-
-/**
- * Where a comment's pin lands in its board's miniature; null when it falls outside it. Measured
- * on the board as the comment saw it, where that was kept.
- */
-export function pinOf(
-  doc: Doc | null,
-  threadId: string,
-  artboardId: string | null,
-  frozen: Artboard | null = null,
-): Pin | null {
-  if (!doc || !artboardId) return null;
-  const thread = doc.threads.find((t) => t.id === threadId);
-  const board =
-    frozen ?? doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
-  if (!thread || !board) return null;
-  const fit = frameFit(boardSize(board));
-  const x = (fit.left + thread.x * fit.scale) / FRAME.width;
-  const y = (fit.top + thread.y * fit.scale) / FRAME.height;
-  return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
+function pageNameOf(payload: CommentItem, doc: Doc | null): string | null {
+  if (payload.artboardId !== null) return null;
+  if (doc && doc.pages.length < 2) return null;
+  const page = doc?.pages.find((p) => p.id === payload.pageId);
+  return page?.name ?? payload.pageName ?? null;
 }
 
 /** A message's images: the design's files, served from under its assets address. */
@@ -141,16 +120,19 @@ export function toThreadItem(item: RunnerItem, ctx: ThreadContext): ThreadItem {
         },
       };
     case "comment": {
-      const { threadId, artboardId, board: _board, ...rest } = item.payload;
+      const comment = item.payload;
       return {
         ...base,
         kind: "comment",
         payload: {
-          ...rest,
-          threadId,
-          artboardId,
-          from: personOf(item.payload.from, ctx.people),
-          pin: pinOf(ctx.doc, threadId, artboardId, (item.payload.board as Artboard) ?? null),
+          threadId: comment.threadId,
+          messageId: comment.messageId,
+          text: comment.text,
+          artboardId: comment.artboardId,
+          artboardName: comment.artboardName,
+          pageName: pageNameOf(comment, ctx.doc),
+          from: personOf(comment.from, ctx.people),
+          picture: pictureOf(comment, ctx.pictures?.get(comment.messageId), ctx.assetsUrl),
         },
       };
     }

@@ -1,4 +1,4 @@
-import { Canvas } from "@ponzu/canvas";
+import { Canvas, type CanvasProps } from "@ponzu/canvas";
 import { type DesignHeadRow, DocCache, type LiveRows, presentNow } from "@ponzu/client";
 import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
@@ -11,6 +11,8 @@ import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { DesignChrome } from "../cloud/window/design-chrome.tsx";
 import { AskStore } from "./ask-store.ts";
+import { drawCommentPicture, hasPictureArea } from "./comment-picture.tsx";
+import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
@@ -26,7 +28,8 @@ import { useSnapshot } from "./use-snapshot.ts";
 /*
  * An open design: the canvas on a `CloudSource`, and the chrome over it, both driven by the
  * same source and the design's live head; its thread, what its agent waits on, the images on
- * their way into a message, and its pull request. All of them live as long as the design is open.
+ * their way into a message, the pictures of the viewer's comments, and its pull request. All of
+ * them live as long as the design is open.
  */
 
 export interface OpenDesign {
@@ -35,6 +38,7 @@ export interface OpenDesign {
   thread: ThreadStore;
   asks: AskStore;
   uploads: Uploads;
+  pictures: CommentPictures;
   pullRequest: PullRequestStore;
   /** What the create page knew of a design it just made, until the API's own reads arrive. */
   fresh: FreshDesign | null;
@@ -108,18 +112,27 @@ export function useOpenDesign(
     const asks = new AskStore({ ponzu, live, designId, onError: (m) => saying.current(m) });
     asks.start();
     const uploads = new Uploads({ ponzu, designId });
+    const pictures = new CommentPictures({
+      designId,
+      meId: actor.id,
+      source,
+      api: api.designs,
+      draw: drawCommentPicture,
+      drawable: hasPictureArea,
+    }).start();
     const pullRequest = new PullRequestStore({
       ponzu,
       designId,
       say: (m) => saying.current(m),
       tellAgent: (text) => thread.send(text, []),
     });
-    setOpen({ id: designId, source, thread, asks, uploads, pullRequest, fresh: known });
+    setOpen({ id: designId, source, thread, asks, uploads, pictures, pullRequest, fresh: known });
     return () => {
       source.close();
       thread.close();
       asks.close();
       uploads.close();
+      pictures.close();
       pullRequest.close();
     };
   }, [host, ponzu, actor, cache, designId]);
@@ -342,7 +355,7 @@ export function DesignCanvas({
   page: string | null;
   onPage: (id: string) => void;
   /** Where a link, or a line of the thread, asked to show it. */
-  link?: { page?: string; artboard?: string; at?: number };
+  link?: CanvasProps["link"];
   /** Leave it: back to the create page. */
   onClose: () => void;
 }) {

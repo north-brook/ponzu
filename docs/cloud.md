@@ -128,6 +128,42 @@ someone who reaches it only through repos shared with them (an outside collabora
 sees no other member. Ponzu stores only the role (Admin or Member). There are no
 invitations.
 
+**Who is in a workspace** is everyone GitHub gives access to at least one repo of
+its installation, whether or not they have opened Ponzu: that is the count on "Where
+do you design?", Settings › Members and Share. The API reads it as the App, once for
+the whole installation and never per person (`github/people.ts`): each installed
+repo's people (`collaborators`, affiliation all, with their permission and name,
+over GraphQL a hundred at a time), an organization's members for their roles (which
+takes `members: read`), and for a personal account its person. It keeps them in
+`workspace_people` (workspace, GitHub id, login, name, avatar, how they reach it,
+their best permission and each repo's, when last seen), not as `users` rows; someone
+who signs in is matched by their GitHub id, and only then has a membership and a
+role. The read is a job of its own (`github.people`), so neither a person's sync nor
+a webhook's work waits on it or fails with it: a reconcile that finds the last read
+an hour old records one and runs it beside the request, and the `installation`,
+`installation_repositories`, `member`, `membership`, `organization` and `team`
+webhooks record one for the end of their minute, after their own work (taking access
+away first), so a burst of deliveries is one read, made by the cron. A read asks about
+at most 100 repos, those asked longest ago first (`repos.people_read_at`), so a bigger
+installation is read whole over a few, and reads 1,000 people a list. Each repo whose
+list came back whole replaces what was known of it, one cut short only adds, a repo
+the installation lost takes its entries with it, and someone left reaching no repo is
+gone; `people_complete` only says, for show, whether the last read was of every repo
+whole. The organization's members only label people owner or member: without
+`members: read`, someone new is taken for an outside collaborator. A suspended
+installation's people stay as last seen; an uninstalled one's are forgotten. What
+anyone may do is still their own sync's answer (`memberships`, `repo_access`, which
+wins over the list's per-repo snapshot for anyone who has one); this list grants
+nothing. Free credits still count the people who have opened Ponzu.
+
+**Who sees whom** follows what GitHub would show them, chosen in the query
+(`listWorkspacePeople`, `countWorkspacePeople`, `listRepoPeople`): an owner of the
+account sees everyone; a member sees its owners and members, and an outside
+collaborator only when they share a repo the member can push to (GitHub shows a
+repo's collaborators only to those); an outside collaborator sees only themselves and
+no count. In Share, someone who can only read the design's repo is not shown its
+outside collaborators.
+
 GitHub's owners are a floor: whoever owns the account (the person, for a personal
 account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
 Admin at every sync and cannot be demoted (409 `owner_is_admin`). Whoever installed
@@ -1023,7 +1059,8 @@ again and is said in the thread instead (`message_refused`).
 ThreadItem  = { id, seq, at, streaming, kind, payload }
 kind        payload                                                       written by
 message     { text, from: Person }                                        the API, with the event
-comment     { threadId, messageId, text, artboardId, artboardName, from } the API, with the event
+comment     { threadId, messageId, text, artboardId, artboardName, pageId,    the API, with the event
+              pageName, at, from, picture? }
 assistant   { text }                    markdown, streams                 the runner
 tool        { label, steps, artboards, turn? }  one turn's work (below)   the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
@@ -1034,10 +1071,17 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
             { type: "pull_request", number, url, title, state }           the API
 ```
 
-A `comment` item also carries `board`, a copy of the artboard as it was when the comment was
-made (up to 64 KB of JSON, `FROZEN_BOARD_BYTES`), which its thumbnail in the thread draws, with
-the pin placed on it: it shows what was commented on, not the board as it later became. A
-larger board, or a comment from before copies were kept, has none, and its thumbnail is live.
+A `comment` item also says where it was left (`pageId`, `pageName`, and `at`, the pin's place on
+the page in page px) and, once its author's app has attached one, `picture`: the area round the
+pin as it was when the comment was made, the pin drawn in with its number, as `{ light, dark,
+width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, WebP at twice that). The app that sent
+the comment draws it from the document as it stood then, uploads it with `POST
+/v1/designs/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, staged
+and copied under `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
+(404 before that); the first picture attached is the one it keeps. Sending a comment never waits
+on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
+says where it was left instead. Older comment items may carry `board`, a copy of the board an
+earlier thumbnail drew; nothing reads it.
 
 A client renders the thread from these alone, and never shows a tool's input or output.
 
@@ -1524,6 +1568,7 @@ Under a design's asset key:
 | `assets/<name>` | a file of the design, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `designs.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
+| `comments/<message id>-<theme>-<random>.webp` | the picture of where a comment was left, in each theme |
 
 At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
 picture, copied from the previews when it opens, under a random key that opens nothing else
@@ -1532,7 +1577,9 @@ picture, copied from the previews when it opens, under a random key that opens n
 A client builds a preview's address from the design's head: `<assets url>/<asset key>/previews/
 <preview seq>-<theme>.png`. A preview waits under `staging/` at the bucket's root until it is
 completed with its seq, and is copied into place then; a bucket lifecycle rule can clear what is
-never completed. Previews replaced by later ones are deleted.
+never completed. Previews replaced by later ones are deleted. A comment's picture waits there too,
+since it is uploaded before its comment is saved (and may never be): it is copied under
+`comments/` only when it is attached to a comment that exists and has no picture yet.
 
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
