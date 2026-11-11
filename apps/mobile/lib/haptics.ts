@@ -20,13 +20,8 @@ const quiet = () => undefined;
  * Development: each haptic is logged to Metro (`[haptic] tick`), so a
  * simulator, which can't buzz, shows one per gesture.
  */
-let log: ((kind: string) => void) | null =
+const log: ((kind: string) => void) | null =
   typeof __DEV__ !== "undefined" && __DEV__ ? (k) => console.log(`[haptic] ${k}`) : null;
-
-/** Tests: where haptics are reported, or nowhere. */
-export function onHaptic(fn: ((kind: string) => void) | null) {
-  log = fn;
-}
 
 /** A light tick: opening something, going back, a focus landing, a pin dropped. */
 export function tick() {

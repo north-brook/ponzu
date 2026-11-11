@@ -268,12 +268,30 @@ test("presence says what an agent is doing, and in which file", async () => {
   expect(claude()).toMatchObject({ status: "tightening the hero" });
   expect(claude().working).toContain(ab.id);
 
-  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 1 } });
-  await Bun.sleep(100);
+  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 5 } });
+  for (let i = 0; i < 200 && !claude().listening; i++) await Bun.sleep(5);
   expect(claude().listening).toBe(true);
   expect(claude().working).toEqual([]);
   expect(claude().status).toBeUndefined();
-  await waiting;
+  // A person's comment ends the wait, rather than sitting it out.
+  const by = { kind: "user", name: "Bryce" } as const;
+  design.apply(
+    {
+      op: "thread.create",
+      thread: {
+        id: "th_presence",
+        artboardId: ab.id,
+        x: 0,
+        y: 0,
+        status: "open",
+        createdAt: 1,
+        updatedAt: 1,
+        messages: [{ id: "m_presence", author: by, text: "taller hero", createdAt: 1 }],
+      },
+    },
+    by,
+  );
+  expect(text(await waiting)).toContain("taller hero");
   expect(claude().listening).toBe(false);
   expect(claude().listenedAt).toBeGreaterThan(0);
 });
