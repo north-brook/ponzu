@@ -240,6 +240,8 @@ export class Runner {
   /** The claim being sent, until it is answered. */
   private claimId: string | null = null;
   private claimFailures = 0;
+  /** A claim has been answered since the start: until then the state says it is waking. */
+  private claimedOnce = false;
   private claimTimer: ReturnType<typeof setInterval> | null = null;
   private stopping: Promise<void> | null = null;
   private fatalReason: string | null = null;
@@ -323,7 +325,8 @@ export class Runner {
 
     await this.startAgent(this.session.claudeSessionId);
     if (this.stopping) return;
-    this.refreshState();
+    // Still waking until the first claim is answered: reporting idle now would show the person
+    // nothing (and Send) for the moment between that and the run their message starts.
     this.claimTimer = setInterval(() => this.claim(), this.timing.claimEveryMs);
     this.claimTimer.unref?.();
     this.claim();
@@ -571,6 +574,11 @@ export class Runner {
           this.claimFailures = 0;
           this.replica.notify(seq);
           for (const event of events) this.take(event);
+          // The first answer ends the start: working on what it handed out, or idle.
+          if (!this.claimedOnce) {
+            this.claimedOnce = true;
+            this.refreshState();
+          }
           // A full page: there may be more behind it.
           if (events.length >= CLAIM_LIMIT) this.claimAgain = true;
         } catch (err) {
@@ -850,7 +858,7 @@ export class Runner {
 
   private step(name: string, input: Record<string, unknown>): void {
     const label = stepLabel(name, input, this.replica.doc);
-    const weight = stepWeight(name);
+    const weight = stepWeight(name, input);
     // The boards the agent is on carry over from the stretch before: the canvas says them only
     // when they change.
     this.work ??= {

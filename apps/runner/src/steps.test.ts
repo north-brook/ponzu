@@ -75,4 +75,13 @@ test("a stretch is named by what it made over what it ran over what it read", ()
   expect(stepWeight("mcp__ponzu__list_comments")).toBe(0);
   expect(stepWeight("mcp__ponzu__screenshot")).toBe(0);
   expect(stepWeight("Read")).toBe(0);
+  // A commit is a stretch's main action; describing the pull request after it is not.
+  expect(stepWeight("Bash", { command: 'git commit -m "Hero"' })).toBe(3);
+  expect(stepWeight("mcp__ponzu__describe_pull_request")).toBeLessThan(3);
+});
+
+test("deleting says what goes, never that it is drawing", () => {
+  expect(label("mcp__ponzu__delete", { ids: ["ab_b"] })).toBe('Deleting "Pricing · B"');
+  expect(label("mcp__ponzu__delete", { ids: ["n_h"] })).toBe('Removing from "Pricing · B"');
+  expect(label("mcp__ponzu__delete", { ids: ["n_gone"] })).toBe("Removing from the canvas");
 });

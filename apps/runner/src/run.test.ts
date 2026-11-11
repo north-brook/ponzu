@@ -212,6 +212,29 @@ test("a poke while the runner is starting waits for the claim that ends the star
   expect((await agent.last.input()).uuid).toBe(eventUuid(event.id));
 });
 
+test("a runner starting for a message says it is waking until its first claim, never idle", async () => {
+  const api = new FakeRunnerApi();
+  api.push({ kind: "message", payload: { text: "Make the card" } });
+  // A claim takes a while to come back, as over the network: long enough for a heartbeat.
+  api.slow.set("claim", 60);
+  const s = await setup({ api });
+  await until(() => s.agent.runs.length > 0);
+  await Bun.sleep(30);
+  const said = api.states.map((r) => r.state);
+  expect(said.length).toBeGreaterThan(0);
+  expect(said).not.toContain("idle");
+  expect(said.at(-1)).toBe("working");
+});
+
+test("a runner with nothing to claim goes from waking to idle once its claim is answered", async () => {
+  const api = new FakeRunnerApi();
+  api.slow.set("claim", 40);
+  await setup({ api });
+  await until(() => api.states.at(-1)?.state === "idle");
+  const said = api.states.map((r) => r.state);
+  expect(said.indexOf("idle")).toBeGreaterThan(said.indexOf("working"));
+});
+
 test("a design with a session resumes it, and what an earlier run asked stays open", async () => {
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_old", { messages: new Set(), toolResults: new Set() });
@@ -839,6 +862,41 @@ test("a finished stretch is named by what it made, and a later one keeps the boa
     { label: 'Drawing "Pricing"', steps: 2, artboards: ["ab_pricing"] },
     { label: 'Drawing "Pricing"', steps: 1, artboards: ["ab_pricing"] },
   ]);
+});
+
+test("a stretch is named by its main action: a commit, not the pull request's description after it", async () => {
+  const s = await setup({ doc: pricing() });
+  await turn(s);
+  const step = (id: string, name: string, input: Record<string, unknown>) => {
+    s.run.emit({ type: "tool", id, name, input });
+    s.run.emit({ type: "tool-done", id, error: false });
+  };
+  step("toolu_a", "Bash", { command: "git add -A" });
+  step("toolu_b", "Bash", { command: 'git commit -m "Pricing"' });
+  step("toolu_c", "Bash", { command: "git push" });
+  step("toolu_d", "mcp__ponzu__describe_pull_request", { title: "Pricing", body: "" });
+  s.run.say("msg_1", "Committed.");
+  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
+  const work = s.api.items().find((i) => i.kind === "tool");
+  expect(work?.payload).toMatchObject({ label: "Committing", steps: 4 });
+});
+
+test("a stretch that deletes a board says so, by the board's name", async () => {
+  const s = await setup({ doc: pricing() });
+  await turn(s);
+  await s.run.call("list_comments");
+  // Claude Code says what it calls before the call runs, so the board is still there to name.
+  s.run.emit({
+    type: "tool",
+    id: "toolu_del",
+    name: "mcp__ponzu__delete",
+    input: { ids: ["ab_pricing"] },
+  });
+  s.run.emit({ type: "tool-done", id: "toolu_del", error: false });
+  s.run.say("msg_1", "Removed it.");
+  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
+  const work = s.api.items().find((i) => i.kind === "tool");
+  expect(work?.payload).toMatchObject({ label: 'Deleting "Pricing"', steps: 2 });
 });
 
 test("a question ends the stretch before it, so the thread reads in the order it happened", async () => {

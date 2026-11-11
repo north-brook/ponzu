@@ -104,6 +104,8 @@ export class FakeRunnerApi {
   readonly failing = new Map<Call, Error>();
   /** The next of these calls does what it does, and its answer is lost on the way. (`claim`) */
   readonly lostAnswers = new Set<Call>();
+  /** These calls take this many ms to answer, as over a real network. */
+  readonly slow = new Map<Call, number>();
   /** Every call, by method name, in order. */
   readonly calls: Call[] = [];
   /** The runner process that holds the lease. */
@@ -373,6 +375,8 @@ export class FakeRunnerApi {
 
   private async enter(call: Call, runner?: string): Promise<void> {
     this.calls.push(call);
+    const ms = this.slow.get(call);
+    if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
     if (this.down) throw new TypeError("fetch failed");
     if (this.revoked) throw new ApiError(401, "token_invalid", "This runner token is not valid.");
     const failure = this.failing.get(call);
