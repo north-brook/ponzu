@@ -86,6 +86,26 @@ test("an answer not in the shape asked for is no output, with what it cost", asy
   });
 });
 
+test("a refusal with nothing written is no output, still with what it cost", async () => {
+  const { model } = claudeServing(() =>
+    Response.json({
+      id: "msg_test",
+      type: "message",
+      role: "assistant",
+      model: CLAUDE_HAIKU,
+      content: [],
+      stop_reason: "refusal",
+      stop_sequence: null,
+      usage: { input_tokens: 1_200, output_tokens: 3 },
+    }),
+  );
+  expect(await model.structured({ ...ask, effort: "low" })).toEqual({
+    output: null,
+    finishReason: "content-filter",
+    usage: { input: 1_200, output: 3 },
+  });
+});
+
 test("no answer at all is an UpstreamError from the model, after one retry at most", async () => {
   // `retry-after-ms`, which the SDK honors, keeps its backoff from holding up the test.
   const failing = (status: number) =>

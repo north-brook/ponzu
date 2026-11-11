@@ -425,6 +425,82 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.$('span:text-matches("^Merged")')).not.toBeNull();
   });
 
+  test("page tabs: the + follows the last tab at the tabs' own 2px, one tab or many", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?states&theme=light`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    const measure = (state: string) =>
+      page.$eval(`[data-state="${state}"]`, (box) => {
+        const list = box.querySelector('[role="tablist"]')!;
+        const strip = list.parentElement!;
+        const tabs = [...list.querySelectorAll('[role="tab"]')];
+        const plus = box.querySelector('button[aria-label="New page"]')!.getBoundingClientRect();
+        const last = tabs.at(-1)!.getBoundingClientRect();
+        return {
+          afterLastTab: Math.round(plus.left - last.right),
+          afterStrip: Math.round(plus.left - strip.getBoundingClientRect().right),
+          scrolls: strip.scrollWidth > strip.clientWidth,
+        };
+      });
+    // Tabs that fit: no room kept for a fade there is no need of.
+    expect(await measure("one page")).toEqual({ afterLastTab: 2, afterStrip: 2, scrolls: false });
+    expect(await measure("three pages")).toEqual({
+      afterLastTab: 2,
+      afterStrip: 2,
+      scrolls: false,
+    });
+    // Too many: they scroll under the fade, and the + still follows the strip at 2.
+    const many = await measure("too many to fit");
+    expect(many.scrolls).toBe(true);
+    expect(many.afterStrip).toBe(2);
+  });
+
+  test("the create composer: a press anywhere on its card writes; its controls keep theirs", async () => {
+    await open("create");
+    const field = 'textarea[aria-label="Describe the design"]';
+    const card = await page.$eval(field, (el) => {
+      const r = el.parentElement!.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    });
+    const focused = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLTextAreaElement;
+        return el.tagName === "TEXTAREA"
+          ? { at: el.selectionStart, to: el.selectionEnd, length: el.value.length }
+          : null;
+      });
+    expect(await page.$eval(field, (el) => getComputedStyle(el.parentElement!).cursor)).toBe(
+      "text",
+    );
+    await page.fill(field, "Three plans");
+    await page.$eval(field, (el) => (el as HTMLElement).blur());
+    // The gap between the field and the buttons, and the space beside the + in their row.
+    for (const [x, y] of [
+      [card.x + card.width / 2, card.y + card.height - 64],
+      [card.x + 120, card.y + card.height - 26],
+    ] as const) {
+      await page.mouse.click(x, y);
+      expect(await focused()).toEqual({ at: 11, to: 11, length: 11 });
+      await page.$eval(field, (el) => (el as HTMLElement).blur());
+    }
+    // A selection dragged out of the field and let go over the card stays.
+    const box = (await page.$(field))!;
+    const b = (await box.boundingBox())!;
+    await page.mouse.move(b.x + 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(card.x + card.width / 2, card.y + card.height - 40, { steps: 6 });
+    await page.mouse.up();
+    const selected = await focused();
+    expect(selected!.to - selected!.at).toBeGreaterThan(0);
+    // The model picker opens its menu, not the field.
+    await page.$eval(field, (el) => (el as HTMLElement).blur());
+    await page.click('button[aria-haspopup="menu"]');
+    await page.waitForSelector('[role="menu"]');
+    expect(await focused()).toBeNull();
+    await page.keyboard.press("Escape");
+  });
+
   test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {
     await open("pull-request-tab");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';

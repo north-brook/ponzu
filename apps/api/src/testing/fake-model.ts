@@ -27,7 +27,7 @@ export class FakeModel implements Model {
   otherwise: FakeReply = {
     output: {
       ideas: [
-        "Make checkout one page, with the order summary on the right",
+        "Put the order summary beside the card form, all on one page",
         "Compare home heroes led by the plants, the care guides or the prices",
         "Show what went wrong when a card is declined at checkout",
         "Bring the leaf green into a dark theme for the whole shop",
