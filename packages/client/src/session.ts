@@ -84,6 +84,11 @@ interface Tokens {
   accessToken: string;
   refreshToken: string;
   user: Profile;
+  /**
+   * When to refresh, on this device's clock: the token's lifetime counted from when it came,
+   * so a clock that is minutes off neither refreshes on every call nor sends expired tokens.
+   */
+  refreshAt: number;
 }
 
 export function createSession(opts: SessionOptions): Session {
@@ -152,11 +157,7 @@ class TokenSession implements Session {
       refresh_token: string;
     };
     this.generation++;
-    this.tokens = {
-      accessToken: body.access_token,
-      refreshToken: body.refresh_token,
-      user: body.user,
-    };
+    this.tokens = this.received(body, body.user);
     this.unsaved = true;
     await this.persist();
     this.set({ status: "signed_in", user: body.user });
@@ -184,9 +185,7 @@ class TokenSession implements Session {
     const tokens = this.tokens;
     if (!tokens) throw new ApiError(401, "unauthenticated", "Sign in to do this.");
     if (this.unsaved) await this.persist();
-    const stale =
-      rejected === tokens.accessToken ||
-      expiresAt(tokens.accessToken) - this.clock.now() < REFRESH_MARGIN_MS;
+    const stale = rejected === tokens.accessToken || this.clock.now() >= tokens.refreshAt;
     if (!stale) return tokens.accessToken;
     this.refreshing ??= this.refresh().finally(() => {
       this.refreshing = null;
@@ -194,9 +193,23 @@ class TokenSession implements Session {
     return (await this.refreshing).accessToken;
   }
 
-  /** Trade the refresh token for a new pair, store it, and only then hand it out. */
+  /**
+   * A fresh pair. Another session on the same storage (a second window, a tab) may have
+   * refreshed already, spending the token this one holds: then theirs is taken up instead.
+   */
   private async refresh(): Promise<Tokens> {
     const generation = this.generation;
+    const newer = await this.storedOtherThan(this.tokens!.refreshToken);
+    if (generation !== this.generation) throw signedOut();
+    if (newer) {
+      this.tokens = newer;
+      if (this.clock.now() < newer.refreshAt) return newer;
+    }
+    return this.redeem(generation);
+  }
+
+  /** Trade the refresh token for a new pair, store it, and only then hand it out. */
+  private async redeem(generation: number): Promise<Tokens> {
     const { refreshToken, user } = this.tokens!;
     let wait = FIRST_RETRY_MS;
     for (let attempt = 1; ; attempt++) {
@@ -217,7 +230,7 @@ class TokenSession implements Session {
       if (generation !== this.generation) throw signedOut();
       if (response?.ok) {
         const body = (await response.json()) as { access_token: string; refresh_token: string };
-        this.tokens = { accessToken: body.access_token, refreshToken: body.refresh_token, user };
+        this.tokens = this.received(body, user);
         this.unsaved = true;
         await this.persist();
         return this.tokens;
@@ -225,6 +238,13 @@ class TokenSession implements Session {
       if (response && !retryable(response.status)) {
         const error = await response.json().catch(() => null);
         if ((error as { error?: string } | null)?.error === "invalid_grant") {
+          // Spent by another session while this one was asking: carry on with what it stored.
+          const newer = await this.storedOtherThan(refreshToken);
+          if (generation !== this.generation) throw signedOut();
+          if (newer) {
+            this.tokens = newer;
+            return this.clock.now() < newer.refreshAt ? newer : this.redeem(generation);
+          }
           await this.forget({ status: "signed_out" });
           throw signedOut();
         }
@@ -291,16 +311,50 @@ class TokenSession implements Session {
     }
   }
 
-  private async load(): Promise<void> {
-    let tokens: Tokens | null = null;
+  /** A pair just handed out by the API or WorkOS. */
+  private received(body: { access_token: string; refresh_token: string }, user: Profile): Tokens {
+    const { exp, iat } = claims(body.access_token);
+    const lifetime = typeof exp === "number" && typeof iat === "number" ? exp - iat : null;
+    return {
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      user,
+      refreshAt:
+        lifetime === null
+          ? expiresAt(body.access_token) - REFRESH_MARGIN_MS
+          : this.clock.now() + lifetime * 1000 - REFRESH_MARGIN_MS,
+    };
+  }
+
+  /** What storage holds, if it is a session with a refresh token other than `refreshToken`. */
+  private async storedOtherThan(refreshToken: string): Promise<Tokens | null> {
+    const stored = await this.stored();
+    return stored && stored.refreshToken !== refreshToken ? stored : null;
+  }
+
+  private async stored(): Promise<Tokens | null> {
     try {
       const saved = await this.opts.storage.get(SESSION_KEY);
-      tokens = saved ? (JSON.parse(saved) as Tokens) : null;
+      const tokens = saved ? (JSON.parse(saved) as Partial<Tokens>) : null;
+      if (!tokens?.refreshToken || !tokens.user) return null;
+      const accessToken = tokens.accessToken ?? "";
+      return {
+        accessToken,
+        refreshToken: tokens.refreshToken,
+        user: tokens.user,
+        // Stored before `refreshAt` was: by the token's own claims.
+        refreshAt: tokens.refreshAt ?? expiresAt(accessToken) - REFRESH_MARGIN_MS,
+      };
     } catch {
-      // Unreadable: the person signs in again.
+      // Unreadable: as good as nothing stored.
+      return null;
     }
+  }
+
+  private async load(): Promise<void> {
+    const tokens = await this.stored();
     if (this.state.status !== "loading") return;
-    this.tokens = tokens?.refreshToken && tokens.user ? tokens : null;
+    this.tokens = tokens;
     this.set(
       this.tokens ? { status: "signed_in", user: this.tokens.user } : { status: "signed_out" },
     );
@@ -333,10 +387,14 @@ function retryable(status: number): boolean {
 
 /** When a JWT runs out, in milliseconds; 0 when it cannot be read, so it is refreshed. */
 export function expiresAt(jwt: string): number {
+  const { exp } = claims(jwt);
+  return typeof exp === "number" ? exp * 1000 : 0;
+}
+
+function claims(jwt: string): { exp?: unknown; iat?: unknown } {
   try {
-    const payload = JSON.parse(decodeBase64url(jwt.split(".")[1] ?? "")) as { exp?: unknown };
-    return typeof payload.exp === "number" ? payload.exp * 1000 : 0;
+    return JSON.parse(decodeBase64url(jwt.split(".")[1] ?? "")) ?? {};
   } catch {
-    return 0;
+    return {};
   }
 }

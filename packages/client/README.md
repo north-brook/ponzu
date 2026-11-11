@@ -32,8 +32,13 @@ await session.completeSignIn({ code, codeVerifier: started.codeVerifier });
 `session.getState()` is `loading`, `signed_out`, `signed_in` (with the user), `github_reauth`
 (sign in again to re-grant GitHub) or `too_old` (the API answered 426: offer the update);
 `session.subscribe` hears it change. The session refreshes the five-minute access token with
-WorkOS shortly before it runs out, one refresh at a time, and writes the rotated pair to
-`storage` before using it. A refresh that WorkOS calls `invalid_grant` signs out.
+WorkOS shortly before it runs out (by the token's lifetime, so a device clock that is off does
+not matter), one refresh at a time, and writes the rotated pair to `storage` before using it. A
+refresh that WorkOS calls `invalid_grant` signs out, unless `storage` meanwhile holds a newer
+pair.
+
+Sessions may share one `storage` (two windows, browser tabs): each reads it before refreshing
+and takes up a pair another has stored, so none spends a token another has already rotated.
 
 `storage` holds the tokens: `safeStorage` behind IPC on the Mac, `expo-secure-store` on the
 phone. WorkOS has not been shown to accept a refresh from a browser origin, so on the Mac
@@ -72,7 +77,8 @@ The names are the API's (`me`, `workspace.designs`, `design.head`, `design.threa
 or failing) or `ended` (refused, for good: `error.code` says why). Rows come unordered: sort
 with `byRecentActivity`, `bySeq` and `presentNow`.
 
-Every subscription is renewed in one call every 50 seconds. Call `live.pause()` when the app
+Every subscription is renewed every 50 seconds, in one call (or one per 32, the API's limit). A
+second `subscribe` to a query already answered hears its current snapshot straight away. Call `live.pause()` when the app
 goes to the background and `live.resume()` when it comes back; each query then starts again
 with a full fresh result. Neon Realtime is used only in `live/realtime.ts`.
 
@@ -88,6 +94,8 @@ source.close();   // on leaving the design
 `me` is the signed-in person as the API stamps their ops: `{ kind: "user", id, name, avatarUrl }`.
 Edits show at once and are posted behind; undo and redo are the API's. `source.setPage(id)` tells
 the others which page you are on, and `source.retryNow()` skips a wait when the network is back.
+A design deleted or taken away while open turns the state to `error`, and whatever had not been
+saved yet is reported through `onUnsaved`.
 `DocCache` keeps the last designs opened, shown read only while the API cannot be reached; give
 it storage meant for size (a file), not the keychain.
 

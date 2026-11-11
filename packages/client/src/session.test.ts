@@ -14,10 +14,13 @@ const API = "https://api.test";
 const WORKOS = "https://api.workos.com/user_management/authenticate";
 const user = { id: "usr_1", githubLogin: "maya", name: "Maya", email: null, avatarUrl: null };
 
-/** A WorkOS access token that runs out at `exp` (seconds). Unsigned: the client never checks. */
-function jwt(exp: number, n: number): string {
+/**
+ * A WorkOS access token that runs out at `exp` (seconds), issued at `iat` when given. Unsigned:
+ * the client never checks.
+ */
+function jwt(exp: number, n: number, iat?: number): string {
   const part = (value: object) => encodeBase64url(new TextEncoder().encode(JSON.stringify(value)));
-  return `${part({ alg: "RS256" })}.${part({ sub: "user_1", exp, n })}.sig`;
+  return `${part({ alg: "RS256" })}.${part({ sub: "user_1", exp, iat, n })}.sig`;
 }
 
 const json = (status: number, body: unknown) =>
@@ -53,6 +56,8 @@ class MemoryStorage implements KeyValueStorage {
 async function harness(opts: {
   /** Seconds the stored access token has left; no session stored when undefined. */
   left?: number;
+  /** Seconds this device's clock is ahead of WorkOS's. */
+  ahead?: number;
   api?: (request: Request, call: number) => Response | Promise<Response>;
   workos?: (body: { refresh_token: string }, call: number) => Response | Promise<Response> | null;
 }) {
@@ -74,25 +79,31 @@ async function harness(opts: {
       const override = opts.workos?.(body, refreshes.length);
       if (override) return override;
       issued++;
+      const now = Math.floor(clock.now() / 1000) - (opts.ahead ?? 0);
       return json(200, {
-        access_token: jwt(Math.floor(clock.now() / 1000) + 300, issued),
+        access_token: jwt(now + 300, issued, now),
         refresh_token: `rt_${issued}`,
       });
     }
     requests.push(request);
     return (await opts.api?.(request, requests.length)) ?? json(200, { ok: true });
   };
-  const session = createSession({
-    apiUrl: API,
-    workosClientId: "client_test",
-    storage,
-    fetch,
-    clock,
-    client: { platform: "macos", version: "2.0.0" },
-  });
-  await clock.advance(0);
+  /** A session on this storage: a second one is another window or tab of the same app. */
+  const open = async () => {
+    const session = createSession({
+      apiUrl: API,
+      workosClientId: "client_test",
+      storage,
+      fetch,
+      clock,
+      client: { platform: "macos", version: "2.0.0" },
+    });
+    await clock.advance(0);
+    return session;
+  };
+  const session = await open();
   const bearer = (request: Request) => request.headers.get("authorization")?.replace("Bearer ", "");
-  return { clock, storage, session, refreshes, requests, bearer };
+  return { clock, storage, session, open, refreshes, requests, bearer };
 }
 
 describe("signing in and out", () => {
@@ -275,6 +286,17 @@ describe("refreshing", () => {
     expect(h.storage.saved()?.refreshToken).toBe("rt_0");
   });
 
+  test("a clock minutes ahead refreshes once, by the token's lifetime, not on every call", async () => {
+    const h = await harness({ left: 10, ahead: 6 * 60 });
+    for (let i = 0; i < 10; i++) await h.session.fetch(`${API}/v1/me`);
+    expect(h.refreshes).toEqual(["rt_0"]);
+
+    // Four minutes on, under a minute of its five is left: refreshed again.
+    await h.clock.advance(4 * 60_000 + 1);
+    await h.session.fetch(`${API}/v1/me`);
+    expect(h.refreshes).toEqual(["rt_0", "rt_1"]);
+  });
+
   test("invalid_grant is signed out: the stored session is forgotten", async () => {
     const h = await harness({
       left: 10,
@@ -286,6 +308,52 @@ describe("refreshing", () => {
     expect(h.session.getState()).toEqual({ status: "signed_out" });
     expect(h.storage.saved()).toBeNull();
     expect(h.requests).toHaveLength(0);
+  });
+});
+
+describe("two sessions on one storage", () => {
+  test("one that is behind takes up the other's refresh instead of spending its own", async () => {
+    const h = await harness({
+      left: 10,
+      // Past the 30 second grace, the spent token is refused.
+      workos: (body) =>
+        body.refresh_token === "rt_0" && h.refreshes.length > 1
+          ? json(400, { error: "invalid_grant" })
+          : null,
+    });
+    const other = await h.open();
+    await h.session.fetch(`${API}/v1/me`);
+    await h.clock.advance(31_000);
+
+    await other.fetch(`${API}/v1/me`);
+    expect(h.refreshes).toEqual(["rt_0"]);
+    expect(h.bearer(h.requests[1]!)).toBe(h.bearer(h.requests[0]!));
+    expect(other.getState().status).toBe("signed_in");
+    // And when what it took up runs out, it refreshes with that, not with the one it had.
+    await h.clock.advance(5 * 60_000);
+    await other.fetch(`${API}/v1/me`);
+    expect(h.refreshes).toEqual(["rt_0", "rt_1"]);
+    expect(h.storage.saved()?.refreshToken).toBe("rt_2");
+  });
+
+  test("refused a token the other spent meanwhile, it carries on with theirs; nothing is forgotten", async () => {
+    let first: Promise<unknown> = Promise.resolve();
+    const h = await harness({
+      left: 10,
+      // The second to ask with rt_0 hears no only once the first has stored what it got.
+      workos: (body, call) =>
+        body.refresh_token === "rt_0" && call === 2
+          ? first.then(() => json(400, { error: "invalid_grant" }))
+          : null,
+    });
+    const other = await h.open();
+    first = h.session.fetch(`${API}/v1/me`);
+    const answers = await Promise.all([first, other.fetch(`${API}/v1/me`)]);
+
+    expect(answers.map((a) => (a as Response).status)).toEqual([200, 200]);
+    expect(h.refreshes).toEqual(["rt_0", "rt_0"]);
+    expect(other.getState().status).toBe("signed_in");
+    expect(h.storage.saved()?.refreshToken).toBe("rt_1");
   });
 });
 
