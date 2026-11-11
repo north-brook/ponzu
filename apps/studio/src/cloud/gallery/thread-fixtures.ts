@@ -2,8 +2,17 @@
  * The boards' threads, questions and pull request as the product's types, and the extra states
  * the boards don't draw.
  */
-import type { Ask, Person, PullRequestDetail, ThreadItem, ThreadNotice } from "../model.ts";
+import type {
+  Ask,
+  CommentPicture,
+  Person,
+  PullRequestDetail,
+  ThreadItem,
+  ThreadNotice,
+} from "../model.ts";
 import { bryce, maya, NOW, sam } from "./fixtures.ts";
+import heroCommentDark from "./previews/comment-hero-dark.webp";
+import heroCommentLight from "./previews/comment-hero-light.webp";
 import heroPreview from "./previews/hero.png";
 
 const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
@@ -23,17 +32,32 @@ export const work = (label: string, streaming: boolean, steps = 4, artboards: st
   item({ kind: "tool", payload: { label, steps, artboards } }, streaming);
 export const notice = (payload: ThreadNotice, streaming = false) =>
   item({ kind: "notice", payload }, streaming);
-const comment = (from: Person, text: string, pin: { x: number; y: number }): ThreadItem =>
+/** The picture the app drew of a comment on the boards' "Hero", by the headline. */
+export const heroPicture: CommentPicture = {
+  kind: "image",
+  light: heroCommentLight,
+  dark: heroCommentDark,
+  width: 240,
+  height: 160,
+};
+
+export const comment = (
+  from: Person,
+  text: string,
+  picture: CommentPicture | null = heroPicture,
+  where: { artboardName: string | null; pageName?: string } = { artboardName: "Hero" },
+): ThreadItem =>
   item({
     kind: "comment",
     payload: {
       threadId: `th_${seq}`,
       messageId: `msg_${seq}`,
       text,
-      artboardId: "ab_hero",
-      artboardName: "Hero",
+      artboardId: where.artboardName ? "ab_hero" : null,
+      artboardName: where.artboardName,
+      pageName: where.pageName ?? null,
       from,
-      pin,
+      picture,
     },
   });
 
@@ -45,11 +69,7 @@ const READ =
 export const heroThread: ThreadItem[] = [
   said(bryce, ASK),
   reply(READ),
-  // The pin sits where the board draws it on its 132×72 frame.
-  comment(bryce, "Too many words here. Calmer, and put a quieter take beside it.", {
-    x: 57 / 132,
-    y: 45 / 72,
-  }),
+  comment(bryce, "Too many words here. Calmer, and put a quieter take beside it."),
   reply("Folding that into B: no paragraph, and the photo does the talking."),
   work("Writing Hero · B's headline", true),
 ];
@@ -67,7 +87,7 @@ export const setUpThread: ThreadItem[] = [
 /** Together on a design: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(bryce, ASK),
-  comment(sam, "The photo should lead here, not the headline.", { x: 101 / 130, y: 41 / 81 }),
+  comment(sam, "The photo should lead here, not the headline."),
   reply("Making the photo lead in B for Sam, and keeping your headline in A so you can compare."),
   said(maya, "Can C try the serif at a smaller size?"),
   work("Cropping Hero · B's photo", true),

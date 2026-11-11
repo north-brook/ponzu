@@ -31,48 +31,8 @@ const ignore = () => {};
 /** What the agent says to any message, a word at a time. */
 const REPLY = "On it. Keeping the green, and letting the photo do the talking in B.";
 
-/**
- * The canvas's miniature of a board, as the gallery fakes it: the boards' "Hero" at a quarter
- * scale. Its colors are the sample shop's, not the app's, so they are written out as the design
- * draws them.
- */
-const renderBoard = (): ReactNode => (
-  <div
-    style={{
-      zoom: 0.26,
-      width: 500,
-      height: 312,
-      display: "flex",
-      flexDirection: "column",
-      gap: 16,
-      padding: "24px 28px",
-      background: "#f3efe6",
-      color: "#1f2a1d",
-      fontFamily: "'Instrument Serif', serif",
-    }}
-  >
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        font: "500 10px/1 var(--font-sans)",
-        color: "#4b5a46",
-      }}
-    >
-      <span>FERNWOOD</span>
-      <span>Shop · Care</span>
-    </div>
-    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 20, flex: 1 }}>
-      <span style={{ fontSize: 38, lineHeight: 1 }}>Plants that outlive your lease</span>
-      <div
-        style={{
-          borderRadius: 6,
-          background: "radial-gradient(circle at 40% 35%,#9bb48a,#4f6b45 60%,#2f4429)",
-        }}
-      />
-    </div>
-  </div>
-);
+/** A comment's picture while it is drawn, as the gallery fakes it: the canvas's ground. */
+const renderDrawing = (): ReactNode => <span className="block size-full bg-canvas" />;
 
 export function DesignHarness({
   designs,
@@ -248,7 +208,7 @@ export function DesignHarness({
       }}
       onDismissAsk={(id) => setAsks((all) => all.filter((a) => a.id !== id))}
       onConnectClaude={ignore}
-      renderBoard={renderBoard}
+      renderDrawing={renderDrawing}
       onOpenComment={ignore}
       onOpenArtboards={ignore}
       onOpenPullRequest={() => openTab(true)}

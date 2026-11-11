@@ -241,6 +241,51 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         ).json();
         return done.files[0]!;
       },
+      /**
+       * Puts the picture of where the person left a comment in storage, its light and its dark
+       * WebP, before or after the comment's op is committed. Answers the uploads, for
+       * `attachCommentPicture` once the comment is in the thread.
+       */
+      uploadCommentPicture: async (
+        id: string,
+        messageId: string,
+        files: { light: Uint8Array; dark: Uint8Array },
+      ): Promise<string[]> => {
+        const crypto = opts.crypto ?? (globalThis.crypto as unknown as Randomness);
+        const themes = [
+          { name: "light.webp", bytes: files.light },
+          { name: "dark.webp", bytes: files.dark },
+        ];
+        const declared = await Promise.all(
+          themes.map(async ({ name, bytes }) => ({
+            name,
+            contentType: "image/webp",
+            size: bytes.byteLength,
+            sha256: hex(await crypto.subtle.digest("SHA-256", bytes)),
+          })),
+        );
+        const route = v1.designs[":id"].comments[":messageId"].picture;
+        const tickets = await (
+          await route.$post({ param: { id, messageId }, json: { files: declared } })
+        ).json();
+        await Promise.all(
+          tickets.files.map((ticket, i) =>
+            putBytes(opts.fetch ?? globalThis.fetch, ticket.put, themes[i]!.bytes),
+          ),
+        );
+        return tickets.files.map((ticket) => ticket.id);
+      },
+      /**
+       * Gives the person's comment the picture uploaded for it: answers the picture it keeps,
+       * which is the first it was given. 404 `not_found` until the comment's op is committed.
+       */
+      attachCommentPicture: async (id: string, messageId: string, uploads: string[]) =>
+        (
+          await v1.designs[":id"].comments[":messageId"].picture.complete.$post({
+            param: { id, messageId },
+            json: { ids: uploads },
+          })
+        ).json(),
 
       /**
        * The design's pull request as GitHub has it (docs/cloud.md, "Pull requests"). Every

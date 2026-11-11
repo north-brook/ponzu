@@ -4,10 +4,11 @@ import {
   type Op,
   summarize,
   type Thread,
+  threadPage,
   touchedArtboards,
 } from "@ponzu/core";
 import type { Design, EventPriority, OpEvent } from "@ponzu/db";
-import type { CommentEvent, EditEvent, Person, ThreadContent } from "@ponzu/runner/protocol";
+import type { CommentEvent, CommentItem, EditEvent, Person } from "@ponzu/runner/protocol";
 
 /*
  * What the agent hears about a person's ops (docs/cloud.md, "Events"), in the shapes of the
@@ -25,8 +26,6 @@ import type { CommentEvent, EditEvent, Person, ThreadContent } from "@ponzu/runn
 export function agentBoards(design: Pick<Design, "agentState" | "agentArtboards">): string[] {
   return design.agentState === "working" ? design.agentArtboards : [];
 }
-
-type CommentItem = Extract<ThreadContent, { kind: "comment" }>["payload"];
 
 /**
  * The events of each op a person is committing, read against the document before and after
@@ -46,15 +45,14 @@ export function eventsForPersonOps(
     return comments.map((comment) => {
       const priority: EventPriority =
         comment.artboardId !== null && working.has(comment.artboardId) ? "now" : "next";
-      const board = frozenBoard(docs.after, comment.artboardId);
       const item: CommentItem = {
         threadId: comment.threadId,
         messageId: comment.messageId,
         text: comment.text,
         artboardId: comment.artboardId,
         artboardName: comment.artboardName,
+        ...placeOf(docs.after, comment.threadId),
         from: person,
-        ...(board ? { board } : {}),
       };
       return { ...base, kind: "comment", priority, payload: { ...comment }, comment: { ...item } };
     });
@@ -113,22 +111,23 @@ function comment(
 }
 
 /**
- * The most of a board a comment keeps a copy of, as JSON. Its thumbnail is 132 × 72, so this is
- * room for any board a person draws by hand and most an agent makes; past it the thumbnail is
- * the board as it is now.
+ * Where a comment was left, as its thread item keeps it: the page and its name, and the pin's
+ * place on that page, so the thread can name it and the canvas go to it after the thread is
+ * gone. Its picture is its author's app's to attach (`attachCommentPicture`).
  */
-export const FROZEN_BOARD_BYTES = 64 * 1024;
-
-/**
- * The board a comment is pinned to, as it is the moment the comment is made: what its thumbnail
- * in the thread shows from then on, rather than the board as it later becomes. Null on the open
- * canvas, or for a board past FROZEN_BOARD_BYTES.
- */
-export function frozenBoard(doc: Doc, artboardId: string | null): CommentItem["board"] | null {
-  const board = artboardId ? findArtboard(doc, artboardId)?.artboard : undefined;
-  if (!board) return null;
-  const copy = JSON.parse(JSON.stringify(board)) as NonNullable<CommentItem["board"]>;
-  return new TextEncoder().encode(JSON.stringify(copy)).length <= FROZEN_BOARD_BYTES ? copy : null;
+export function placeOf(
+  doc: Doc,
+  threadId: string,
+): Pick<CommentItem, "pageId" | "pageName" | "at"> {
+  const thread = doc.threads.find(({ id }) => id === threadId);
+  const page = thread ? threadPage(doc, thread) : null;
+  if (!thread || !page) return {};
+  const board = thread.artboardId ? findArtboard(doc, thread.artboardId)?.artboard : undefined;
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    at: { x: (board?.x ?? 0) + thread.x, y: (board?.y ?? 0) + thread.y },
+  };
 }
 
 /** A board's name after the ops, or before them for one they deleted. */

@@ -1,5 +1,5 @@
 {
-  "id": "11a9257d-808c-4567-a51e-79e222cd0069",
+  "id": "bec6376c-7c98-403b-9b75-12e7dfc7d1e2",
   "prevId": "61bd0ad4-1183-4a5d-bedc-1e76799e2a6b",
   "version": "7",
   "dialect": "postgresql",
@@ -2496,19 +2496,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "unpushed": {
-          "name": "unpushed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "push_error": {
-          "name": "push_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -3114,7 +3101,7 @@
       "checkConstraints": {
         "events_kind_check": {
           "name": "events_kind_check",
-          "value": "\"events\".\"kind\" in ('message', 'answer', 'comment', 'edit', 'check', 'review', 'stop', 'push')"
+          "value": "\"events\".\"kind\" in ('message', 'answer', 'comment', 'edit', 'check', 'review', 'stop')"
         },
         "events_priority_check": {
           "name": "events_priority_check",
@@ -4023,7 +4010,7 @@
       "checkConstraints": {
         "uploads_purpose_check": {
           "name": "uploads_purpose_check",
-          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace')"
+          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace', 'comment')"
         },
         "uploads_size_check": {
           "name": "uploads_size_check",

@@ -70,9 +70,17 @@ export const AGENT_BLOCKERS = [
  * What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's
  * picture; and two the runner keeps that no client ever reads: the Claude session's transcript
  * and a Scratch design's work in progress, each a compressed archive (docs/cloud.md, "Saving
- * the sandbox").
+ * the sandbox"). A `comment` is a person's picture of where they left a comment, as the thread
+ * shows it.
  */
-export const UPLOAD_PURPOSES = ["asset", "export", "preview", "session", "workspace"] as const;
+export const UPLOAD_PURPOSES = [
+  "asset",
+  "export",
+  "preview",
+  "session",
+  "workspace",
+  "comment",
+] as const;
 
 export const USAGE_KINDS = ["sandbox", "model"] as const;
 export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;

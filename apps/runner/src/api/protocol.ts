@@ -250,15 +250,6 @@ export interface CommentEvent {
   nodeId: string | null;
 }
 
-/** An artboard as the document held it at a moment: `Artboard` from @ponzu/core, by shape. */
-export interface FrozenBoard {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  root: unknown;
-}
-
 /** A person changed the canvas: moved, renamed or deleted artboards, managed pages. */
 export interface EditEvent {
   /** What they did, in a few words: `summarize` from @ponzu/core, as the canvas says it. */
@@ -363,24 +354,11 @@ export type ThreadItem = {
 export type ThreadContent =
   /** Written by the API when a person sends a message. */
   | { kind: "message"; payload: { text: string; from: Person } }
-  /** Written by the API when a comment reaches the agent: shown with a thumbnail of its board. */
-  | {
-      kind: "comment";
-      payload: {
-        threadId: string;
-        messageId: string;
-        text: string;
-        artboardId: string | null;
-        artboardName: string | null;
-        from: Person;
-        /**
-         * The board as it was when the comment was made (an @ponzu/core `Artboard`), so its
-         * thumbnail shows what was commented on rather than the board now. Left out on the
-         * open canvas, and for a board too large to keep a copy of: the thumbnail is then live.
-         */
-        board?: FrozenBoard;
-      };
-    }
+  /**
+   * Written by the API when a comment reaches the agent: shown with a picture of where it was
+   * left, once its author's app has attached one.
+   */
+  | { kind: "comment"; payload: CommentItem }
   /** What the agent says. Streams as it is written. */
   | { kind: "assistant"; payload: AssistantItem }
   /** One stretch of work between two things the agent says. While it streams it is the working line. */
@@ -388,6 +366,47 @@ export type ThreadContent =
   | { kind: "notice"; payload: Notice };
 
 export type ThreadKind = ThreadContent["kind"];
+
+/** A person's comment or reply on the canvas, as the thread shows it. */
+export interface CommentItem {
+  threadId: string;
+  messageId: string;
+  text: string;
+  artboardId: string | null;
+  artboardName: string | null;
+  /**
+   * The page it was left on, and that page's name then: where it was, even once the thread is
+   * gone. Left out of comments from before they were kept.
+   */
+  pageId?: string;
+  pageName?: string;
+  /** Where the pin was on that page, in page px. Left out of comments from before it was kept. */
+  at?: { x: number; y: number };
+  from: Person;
+  /**
+   * A picture of the area round the pin as it was when the comment was made, which its author's
+   * app makes and attaches a moment after the comment. Left out until then, for good when it
+   * couldn't be made or kept, and on comments from before there were pictures. (Those may carry
+   * `board`, the copy of a board earlier thumbnails drew; nothing reads it now.)
+   */
+  picture?: CommentPicture;
+}
+
+/**
+ * A comment's picture: the area round its pin, the pin drawn in, in each theme. Each is a WebP
+ * under the design's assets address, `COMMENT_PICTURE.scale` times its size as shown.
+ */
+export interface CommentPicture {
+  /** `comments/<message id>-light.webp`, relative to the design's assets address. */
+  light: string;
+  dark: string;
+  /** Its size as shown, in CSS px. */
+  width: number;
+  height: number;
+}
+
+/** The size a comment's picture is shown at, in CSS px, and how many device px it has to each. */
+export const COMMENT_PICTURE = { width: 240, height: 160, scale: 2 } as const;
 
 export interface AssistantItem {
   /** Markdown. Clipped to `MAX_TEXT` characters. */

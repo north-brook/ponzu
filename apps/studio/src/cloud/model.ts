@@ -164,9 +164,8 @@ export interface CommentHit {
 
 /*
  * The thread: what the rail draws. The kinds and payloads are the runner protocol's
- * (`ThreadItem` in @ponzu/runner/protocol), with people resolved to their avatars, a message's
- * attachments to their addresses, and a comment's pin to where it sits on its board (from the
- * document's comment thread).
+ * (`ThreadItem` in @ponzu/runner/protocol), with people resolved to their avatars, and a
+ * message's attachments and a comment's picture to their addresses.
  */
 
 /** An image a person sent with a message: one of the design's files. */
@@ -178,13 +177,14 @@ export interface Attachment {
 }
 
 /**
- * Where a comment's pin sits in its board's miniature (`renderBoard`), as fractions of the
- * miniature's width and height.
+ * A picture of the area round a comment's pin as it was when the comment was made, at its size
+ * as shown: its files in each theme (for the viewer's own, local copies), or, while the viewer's
+ * own app is still making them, the scene they are made from (`renderDrawing`).
  */
-export interface Pin {
-  x: number;
-  y: number;
-}
+export type CommentPicture = { width: number; height: number } & (
+  | { kind: "image"; light: string; dark: string }
+  | { kind: "drawing" }
+);
 
 /** Why a turn ended badly, as the runner names it. Each has its own plain sentence in the rail. */
 export type RunErrorCode =
@@ -241,8 +241,11 @@ export type ThreadItem = {
         text: string;
         artboardId: string | null;
         artboardName: string | null;
+        /** The page it was left on, by name, when it was left on the open canvas. */
+        pageName: string | null;
         from: Person;
-        pin: Pin | null;
+        /** Its picture; null when there is none to show, and the comment says where it was left. */
+        picture: CommentPicture | null;
       };
     }
   /** Markdown, from the model: untrusted text. */

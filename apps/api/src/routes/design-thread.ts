@@ -1,8 +1,11 @@
 import {
   answerQuestion,
   appendEvent,
+  attachCommentPicture,
+  getComment,
   getDesignAssetKey,
   getQuestion,
+  getUploads,
   getUser,
   listAssets,
   listThreadItems,
@@ -10,7 +13,13 @@ import {
   type Question,
   type ThreadItem as StoredItem,
 } from "@ponzu/db";
-import { MAX_TEXT, type QuestionBody, type ThreadItem } from "@ponzu/runner/protocol";
+import {
+  COMMENT_PICTURE,
+  type CommentPicture,
+  MAX_TEXT,
+  type QuestionBody,
+  type ThreadItem,
+} from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { z } from "zod";
 import { appSession } from "../analytics/scope.ts";
@@ -22,7 +31,7 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
 import { requestWake } from "../sandboxes/wake.ts";
-import { completeUploads, presignUploads } from "../uploads/uploads.ts";
+import { commentRef, completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
  * People's side of a design's thread (docs/cloud.md, "The runner protocol", "Events", "Needs
@@ -61,6 +70,20 @@ const ThreadQuery = z.object({
 
 const UploadBody = z.object({ files: z.array(UploadFile).min(1).max(MAX_UPLOAD_FILES) });
 const CompleteBody = Complete.transform(({ ids }) => ({ ids }));
+
+/** A comment by the id of its message (`m_…`, chosen by the person's app). */
+const CommentParams = Params.extend({
+  messageId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+});
+const PictureBody = z.object({ files: z.array(UploadFile).length(2) });
+const PictureView = z.object({
+  picture: z.object({
+    light: z.string(),
+    dark: z.string(),
+    width: z.number(),
+    height: z.number(),
+  }),
+});
 
 const Item = z.object({
   id: z.string(),
@@ -331,4 +354,112 @@ export const designThread = new Hono<AppEnv>()
       });
       return c.json(CompleteView.parse({ files }));
     },
+  )
+
+  /**
+   * Addresses for the picture of where the person left a comment (`light.webp` and
+   * `dark.webp`), which their app draws as the comment is sent. Asked for whether or not the
+   * comment's op has been committed yet.
+   */
+  .post(
+    "/:id/comments/:messageId/picture",
+    access.user,
+    validate("param", CommentParams),
+    validate("json", PictureBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { id, messageId } = c.req.valid("param");
+      const { design } = await requireDesign(c, id, "write");
+      const assetKey = await getDesignAssetKey(deps.db, design.id);
+      if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
+      const files = c.req
+        .valid("json")
+        .files.map((file) => ({ ...file, kind: "comment" as const, comment: messageId }));
+      const placed = await presignUploads(
+        deps,
+        { designId: design.id, assetKey },
+        files,
+        actor.user.id,
+      );
+      return c.json(UploadView.parse({ files: placed }));
+    },
+  )
+
+  /**
+   * Gives the person's comment the picture whose bytes arrived, both themes at once, and
+   * answers the picture it has: the first it was given, as a photo sent stays sent. 404
+   * `not_found` while the comment itself is not in the thread (its op not committed yet): ask
+   * again once it is. The files wait under `staging/` until then and are copied to where they
+   * are served from only for a comment that exists and has no picture yet, so a picture that
+   * is never attached is never served.
+   */
+  .post(
+    "/:id/comments/:messageId/picture/complete",
+    access.user,
+    validate("param", CommentParams),
+    validate("json", CompleteBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { id, messageId } = c.req.valid("param");
+      const { ids } = c.req.valid("json");
+      const { design } = await requireDesign(c, id, "write");
+      const assetKey = await getDesignAssetKey(deps.db, design.id);
+      if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
+      const who = { designId: design.id, messageId, userId: actor.user.id };
+      const comment = await getComment(deps.db, who);
+      if (!comment) throw new ApiError(404, "not_found", "There is no such comment of yours.");
+      const had = (comment.payload as { picture?: CommentPicture }).picture;
+      if (had) return c.json(PictureView.parse({ picture: had }));
+
+      // Both files are this comment's, one of each theme, before either is copied anywhere.
+      const uploads = await getUploads(deps.db, { designId: design.id, ids });
+      pictureOf(
+        messageId,
+        uploads
+          .filter((row) => row.userId === actor.user.id && row.purpose === "comment")
+          .map((row) => ({ ref: commentRef(row.name) })),
+        ids,
+      );
+      const target = { designId: design.id, assetKey, seq: design.seq };
+      const files = await completeUploads(deps, target, ids, { userId: actor.user.id });
+      const picture = pictureOf(messageId, files, ids);
+      const item = await attachCommentPicture(deps.db, { ...who, picture: { ...picture } });
+      if (!item) throw new ApiError(404, "not_found", "There is no such comment of yours.");
+      const kept = (item.payload as { picture?: CommentPicture }).picture ?? picture;
+      if (kept.light !== picture.light) {
+        // Another of the person's windows attached its picture first: this one is no one's.
+        deps.background(
+          "comment_picture_unkept",
+          Promise.all(
+            [picture.light, picture.dark].map((ref) => deps.storage.delete(`${assetKey}/${ref}`)),
+          ),
+        );
+      }
+      return c.json(PictureView.parse({ picture: kept }));
+    },
   );
+
+/**
+ * A comment's picture from its two files, the light and the dark, each a picture of this
+ * comment's; refused when they are anything else.
+ */
+function pictureOf(
+  messageId: string,
+  files: { ref: string | null }[],
+  ids: string[],
+): CommentPicture {
+  const of = (theme: "light" | "dark") => {
+    const found = files.filter(({ ref }) => ref?.startsWith(`comments/${messageId}-${theme}-`));
+    return found.length === 1 ? found[0]!.ref! : null;
+  };
+  const light = of("light");
+  const dark = of("dark");
+  if (!light || !dark || files.length !== 2 || new Set(ids).size !== 2) {
+    throw new ApiError(
+      400,
+      "invalid_request",
+      "A comment's picture is its light.webp and its dark.webp, uploaded for that comment.",
+    );
+  }
+  return { light, dark, width: COMMENT_PICTURE.width, height: COMMENT_PICTURE.height };
+}
