@@ -174,6 +174,8 @@ test("the thread shows the runner waking while the checkout is made, then a new 
     payload: { type: "waking" },
     streaming: true,
   });
+  // The state goes out on its own pacer, not with the thread's write: wait for its first report.
+  await until(() => api.lastState);
   expect(api.lastState).toMatchObject({ state: "working", status: "Waking up" });
 
   cloned!();
