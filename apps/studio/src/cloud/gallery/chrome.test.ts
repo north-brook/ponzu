@@ -219,8 +219,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       ["crowded-chrome", "open"],
       ["sidebar-collapsed", "closed"],
       ["crowded-chrome-closed", "closed"],
-      // The pull request tab folds the rail: the right side reads as it does closed.
-      ["pull-request-tab", "closed"],
+      // The pull request tab leaves the rail as it was: open here, closed in the other board.
+      ["pull-request-tab", "open"],
+      ["pull-request-rail-closed", "closed"],
       ["min-window", "open", { width: 1100, height: 640 }],
       ["min-window-collapsed", "open", { width: 1100, height: 640 }],
       ["crowded-chrome-min-window", "open", { width: 1100, height: 640 }],

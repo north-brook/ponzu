@@ -80,7 +80,8 @@ The chrome reads, left to right (the founder's order), the right side the left's
   divider; the divider is on the rail's edge, its pixel the canvas's last column; the chrome over
   the rail is empty to the toggle.
 - rail closed: `[people] [PR mark] [action] | [thread toggle]`, together at the window's edge,
-  12 either side of the divider. The pull request tab folds the rail, so it reads the same.
+  12 either side of the divider. The pull request tab leaves the rail as it was, so it reads as
+  on any page: open or closed by the rail.
 - the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
   name, no divider.
 
