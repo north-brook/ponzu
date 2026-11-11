@@ -59,8 +59,8 @@ export function ThreadRail(props: ThreadRailProps) {
   latest.current = props;
   const handlers = useMemo<LineHandlers>(
     () => ({
-      renderBoard: (id, comment) => latest.current.renderBoard(id, comment),
-      onOpenComment: (id) => latest.current.onOpenComment(id),
+      renderDrawing: (messageId) => latest.current.renderDrawing(messageId),
+      onOpenComment: (threadId, messageId) => latest.current.onOpenComment(threadId, messageId),
       onOpenArtboards: (ids) => latest.current.onOpenArtboards(ids),
       onOpenPullRequest: () => latest.current.onOpenPullRequest(),
       onOpenLink: (url) => {

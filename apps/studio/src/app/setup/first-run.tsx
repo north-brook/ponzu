@@ -6,6 +6,8 @@ import { IphoneStep } from "../../cloud/setup/iphone-step.tsx";
 import { setupStep } from "../../cloud/setup/setup.ts";
 import { SignInStep } from "../../cloud/setup/sign-in.tsx";
 import { AppWindow } from "../../cloud/window/app-window.tsx";
+import type { SetupStepName } from "../analytics/events.ts";
+import { useAnalytics, useView } from "../analytics/provider.tsx";
 import type { Host } from "../host.ts";
 import { shownWorkspace } from "../map.ts";
 import { PaneMessage } from "../notices.tsx";
@@ -74,18 +76,24 @@ export function FirstRun({
   /** The step on screen, which stays while the next one can't show yet. */
   const shown = useRef<Shown | null>(null);
 
-  const windowReady = !defaults.isPending && !(ahead && (detail.isPending || !designs));
-  if (step === "done" && (handedOver.current || windowReady)) {
-    handedOver.current = true;
-    return children;
-  }
-
   const waiting =
     !me.data ||
     step === "done" ||
     (step === "where" && arrival.loading) ||
     // The iPhone step waits for the devices, so it never shows to someone who has one.
     (step === "iphone" && devices.isPending);
+  useSetupSteps(
+    waiting || step === null || step === "sign_in" ? null : step,
+    step === "done",
+    !me.data && me.isError,
+  );
+
+  const windowReady = !defaults.isPending && !(ahead && (detail.isPending || !designs));
+  if (step === "done" && (handedOver.current || windowReady)) {
+    handedOver.current = true;
+    return children;
+  }
+
   const view: Shown | null = waiting ? shown.current : (step as Shown | null);
   shown.current = view;
   let content: ReactNode = null;
@@ -117,6 +125,30 @@ export function FirstRun({
       {content}
     </AppWindow>
   );
+}
+
+/**
+ * Each step as it shows (`setup step reached`, and its view), and each one left for the next or
+ * for the window (`setup step completed`): a step is only ever left by doing it.
+ */
+function useSetupSteps(shown: SetupStepName | null, done: boolean, unreachable: boolean) {
+  const analytics = useAnalytics();
+  useEffect(() => {
+    if (unreachable) analytics.capture("notice shown", { notice: "cant_reach_ponzu" });
+  }, [analytics, unreachable]);
+  const last = useRef<SetupStepName | null>(null);
+  useView(shown ? { name: "setup", step: shown } : null);
+  useEffect(() => {
+    const was = last.current;
+    if (was && (done || (shown && shown !== was))) {
+      analytics.capture("setup step completed", { step: was });
+      last.current = null;
+    }
+    if (shown && shown !== was) {
+      analytics.capture("setup step reached", { step: shown });
+      last.current = shown;
+    }
+  }, [analytics, shown, done]);
 }
 
 /** Connect Claude: once the API has it, `me` says so and the gates move on. */

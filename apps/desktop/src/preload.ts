@@ -1,6 +1,7 @@
 import type { SessionState } from "@ponzu/client";
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 import {
+  type AnalyticsSetup,
   type BorrowedToken,
   type BridgeError,
   CHANNELS,
@@ -30,6 +31,17 @@ function argument(name: string): string {
   return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length) ?? "";
 }
 
+/** The analytics setup the main process passed, URI-encoded JSON; none when it passed none. */
+function analytics(): AnalyticsSetup | null {
+  const passed = argument("analytics");
+  if (!passed) return null;
+  try {
+    return JSON.parse(decodeURIComponent(passed)) as AnalyticsSetup;
+  } catch {
+    return null;
+  }
+}
+
 const desktop: PonzuDesktop = {
   platform: process.platform,
   glass: argument("glass") === "1",
@@ -39,6 +51,7 @@ const desktop: PonzuDesktop = {
     client: argument("client"),
     dev: argument("dev") === "1",
     linkScheme: argument("scheme"),
+    analytics: analytics(),
   },
   session: {
     state: () => ipcRenderer.invoke(CHANNELS.sessionState) as Promise<SessionState>,

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { seedDesign } from "../fixtures.ts";
 import { newId } from "../ids.ts";
-import { designRunners, events } from "../schema/index.ts";
+import { designRunners, designs, events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { appendEvent, claimEvents, findStops, markEventsDelivered, personOf } from "./events.ts";
 import { takeRunnerLease } from "./runners.ts";
@@ -111,10 +111,20 @@ test("a claim answers the design's head, and a design that is not there answers 
 
   const claimed = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
 
-  expect(claimed).toEqual({ events: [], seq: design.seq });
+  expect(claimed).toEqual({ events: [], seq: design.seq, pullRequest: null });
   expect(
     await claimEvents(db, { designId: "des_missing", runnerId, claimId: newId("clm") }),
   ).toBeNull();
+});
+
+test("a claim says the design's pull request as its row has it, for the agent's next turn", async () => {
+  const { design } = await seedDesign(db);
+  const { runnerId } = await start(design.id);
+  await db.update(designs).set({ prNumber: 12, prState: "draft" }).where(eq(designs.id, design.id));
+
+  const claimed = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
+
+  expect(claimed?.pullRequest).toEqual({ number: 12, state: "draft" });
 });
 
 test("a claim sent again hands out again what it handed out, and nothing new", async () => {

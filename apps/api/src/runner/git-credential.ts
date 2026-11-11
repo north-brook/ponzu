@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import type { RunnerContext } from "@ponzu/db";
 import type { GitCredentialRequest, GitCredentialResponse } from "@ponzu/runner/protocol";
 import type { GithubInstallationToken } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
-import { ApiError } from "../http/errors.ts";
+import { ApiError, UpstreamError } from "../http/errors.ts";
 
 /*
  * Git's credentials for a design's checkout (docs/cloud.md, "The runner protocol", "Git"): a
@@ -17,9 +18,19 @@ const REUSE_MARGIN_MS = 10 * 60_000;
 const KEPT = 1_000;
 const PERMISSIONS = { contents: "write", metadata: "read" } as const;
 
+/** A token for git, and whether it was minted for this ask or handed out again. */
+export interface GitToken {
+  token: GithubInstallationToken;
+  minted: boolean;
+}
+
 /**
  * The tokens this instance has minted for git, by installation and repository. Not auth-app's
  * cache: git is handed a token only with ten minutes left, and `erase` drops one at once.
+ *
+ * A token goes to git only when GitHub's answer to the mint says it grants what git needs:
+ * `contents: write` on the design's repository. One that says less is minted again once, and
+ * then refused (502): git would only be told the repository is not found.
  */
 export class GitTokens {
   readonly #held = new Map<string, GithubInstallationToken>();
@@ -27,25 +38,68 @@ export class GitTokens {
   async get(
     { github, clock }: Pick<Deps, "github" | "clock">,
     target: { installationId: number; repositoryId: number },
-  ): Promise<GithubInstallationToken> {
+  ): Promise<GitToken> {
     const key = keyOf(target);
     const held = this.#held.get(key);
-    if (held && held.expiresAt.getTime() - clock.now() >= REUSE_MARGIN_MS) return held;
-    const minted = await github.createInstallationToken({
-      installationId: target.installationId,
-      repositoryIds: [target.repositoryId],
-      permissions: { ...PERMISSIONS },
-    });
+    if (held && held.expiresAt.getTime() - clock.now() >= REUSE_MARGIN_MS) {
+      return { token: held, minted: false };
+    }
+    const mint = () =>
+      github.createInstallationToken({
+        installationId: target.installationId,
+        repositoryIds: [target.repositoryId],
+        permissions: { ...PERMISSIONS },
+      });
+    let minted = await mint();
+    if (lacks(minted, target.repositoryId)) minted = await mint();
+    if (lacks(minted, target.repositoryId)) {
+      throw new UpstreamError(
+        "github",
+        `GitHub granted ${JSON.stringify(minted.permissions ?? {})} on ${JSON.stringify(minted.repositoryIds ?? [])}, not contents: write on ${target.repositoryId}`,
+      );
+    }
     this.#held.delete(key);
     this.#held.set(key, minted);
     if (this.#held.size > KEPT) this.#held.delete(this.#held.keys().next().value!);
-    return minted;
+    return { token: minted, minted: true };
   }
 
-  /** GitHub refused the one handed out: the next ask mints another. */
-  forget(target: { installationId: number; repositoryId: number }): void {
-    this.#held.delete(keyOf(target));
+  /**
+   * GitHub refused the one handed out: the next ask mints another. Answers the fingerprint of
+   * the token it dropped, for the log, or null when it held none.
+   */
+  forget(target: { installationId: number; repositoryId: number }): string | null {
+    const key = keyOf(target);
+    const held = this.#held.get(key);
+    this.#held.delete(key);
+    return held ? fingerprint(held.token) : null;
   }
+}
+
+/** Whether GitHub said it granted less than git needs. What it did not say is not held against it. */
+function lacks(token: GithubInstallationToken, repositoryId: number): boolean {
+  if (token.permissions && token.permissions.contents !== "write") return true;
+  if (token.repositoryIds && !token.repositoryIds.includes(repositoryId)) return true;
+  return false;
+}
+
+/**
+ * A token's name in the logs: the first 12 hex characters of its SHA-256, which tell two tokens
+ * apart and give nothing of either away. The runner logs the same of what it handed git.
+ */
+export function fingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 12);
+}
+
+/** What the log says of a token git was handed: never the token itself. */
+export function describeToken({ token, minted }: GitToken): Record<string, unknown> {
+  return {
+    minted,
+    fingerprint: fingerprint(token.token),
+    expiresAt: token.expiresAt.toISOString(),
+    ...(token.permissions ? { permissions: token.permissions } : {}),
+    ...(token.repositoryIds ? { repositoryIds: token.repositoryIds } : {}),
+  };
 }
 
 const keyOf = ({

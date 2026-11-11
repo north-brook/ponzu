@@ -4,10 +4,11 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestIcon,
 } from "@hugeicons/core-free-icons";
-import { memo, type ReactNode } from "react";
-import type { Attachment, Person, Pin, PrState, ThreadItem, ThreadNotice } from "../model.ts";
+import { memo, type ReactNode, useState } from "react";
+import type { Attachment, Person, PrState, ThreadItem, ThreadNotice } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
+import { useColorScheme } from "../ui/color-scheme.ts";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
@@ -15,10 +16,13 @@ import { ERROR_COPY, ERROR_DETAIL, type ThreadRow, who } from "./thread.ts";
 
 /** What a line can lead to: the canvas, the pull request tab, the browser. */
 export interface LineHandlers {
-  /** A miniature of a board, for a comment's frame; the canvas draws it. */
-  /** A comment's board, as it was when the comment was made where that is known. */
-  renderBoard: (artboardId: string, commentId: string) => ReactNode;
-  onOpenComment: (threadId: string) => void;
+  /**
+   * The picture of where the viewer's own comment was left while their app is still making its
+   * files: the same scene, drawn live (the canvas draws it).
+   */
+  renderDrawing: (messageId: string) => ReactNode;
+  /** Takes the canvas to a comment: its page, its pin in the middle, its thread open. */
+  onOpenComment: (threadId: string, messageId: string) => void;
   onOpenArtboards: (artboardIds: string[]) => void;
   onOpenPullRequest: () => void;
   onOpenLink: (url: string) => void;
@@ -68,8 +72,10 @@ export const ThreadLine = memo(function ThreadLine({
 
 /**
  * A person's message, or their comment from the canvas: a bubble on the right, whoever sent it.
- * Images and a comment's board sit above it, as in Messages. With more than one person in the
- * thread, the sender's avatar is stamped on the last bubble of their run.
+ * Images sit above a message, as in Messages. A comment is a picture of where it was left with
+ * its words under it, one unit like a photo sent with a text, or, without a picture, a quiet
+ * line above its words that says where. With more than one person in the thread, the sender's
+ * avatar is stamped on the last bubble of their run.
  */
 function PersonLine({
   item,
@@ -85,28 +91,45 @@ function PersonLine({
 }) {
   const { from, text } = item.payload;
   const delivery = item.kind === "message" ? item.payload.delivery : undefined;
+  const theme = useColorScheme();
+  // A picture that wouldn't load (gone from storage, or offline) gives way to the line.
+  const [failed, setFailed] = useState<string | null>(null);
+  const comment = item.kind === "comment" ? item.payload : null;
+  const src = comment?.picture?.kind === "image" ? comment.picture[theme] : undefined;
+  const picture =
+    comment?.picture && (src === undefined || src !== failed) ? comment.picture : null;
+  const openComment = comment
+    ? () => handlers.onOpenComment(comment.threadId, comment.messageId)
+    : undefined;
   const above =
     item.kind === "message" ? (
       item.payload.attachments.length ? (
         <Attachments attachments={item.payload.attachments} onOpen={handlers.onOpenLink} />
       ) : null
-    ) : item.payload.artboardId ? (
-      <CommentFrame
-        name={item.payload.artboardName}
-        pin={item.payload.pin}
-        onOpen={() => handlers.onOpenComment(item.payload.threadId)}
+    ) : comment && openComment && picture ? (
+      <CommentPictureButton
+        src={src}
+        width={picture.width}
+        height={picture.height}
+        place={placeOf(comment)}
+        onOpen={openComment}
+        onFailed={() => setFailed(src ?? null)}
       >
-        {handlers.renderBoard(item.payload.artboardId, item.id)}
-      </CommentFrame>
+        {picture.kind === "drawing" ? handlers.renderDrawing(comment.messageId) : null}
+      </CommentPictureButton>
+    ) : comment && openComment ? (
+      <CommentPlace place={placeOf(comment)} onOpen={openComment} />
     ) : null;
   return (
     <div
       className={cn(
         // What sits above a bubble hugs it; a team's bubbles leave room for the avatar above.
         "flex flex-col items-end self-end",
-        team ? "gap-[9px]" : "gap-[5px]",
-        // A run of one person's bubbles sits close; 14 between runs, from the thread's gap.
-        continues && "-mt-2.5",
+        // A comment's picture and its words are one: they meet with a hairline of a gap.
+        picture ? "gap-[2px]" : team ? "gap-[9px]" : "gap-[5px]",
+        // A run of one person's bubbles sits close; 14 between runs, from the thread's gap. A
+        // picture and its words are a unit of their own in the run, so it keeps a little more.
+        continues && (picture ? "-mt-1.5" : "-mt-2.5"),
         // Room for the avatars on the bubbles' corners.
         team && "mr-2",
       )}
@@ -118,6 +141,9 @@ function PersonLine({
           aria-busy={delivery === "sending" || undefined}
           className={cn(
             "m-0 whitespace-pre-wrap rounded-14 bg-surface px-[13px] py-[9px] text-13 leading-[1.5] transition-opacity duration-(--dur-hover) [overflow-wrap:anywhere]",
+            // Where it meets its picture, the corner on the sender's side tucks in, as the
+            // bubbles of one run do in Messages.
+            picture && "rounded-tr-[5px]",
             delivery && "opacity-60",
           )}
         >
@@ -203,36 +229,82 @@ function Attachments({
   );
 }
 
-/** A miniature of the board a comment was pinned on, with a dot where the pin landed. */
-function CommentFrame({
-  name,
-  pin,
+/** Where a comment was left, in words: its board, or the open canvas (and its page). */
+function placeOf(comment: Extract<ThreadItem, { kind: "comment" }>["payload"]): string {
+  if (comment.artboardName) return comment.artboardName;
+  if (comment.artboardId) return "a board";
+  return comment.pageName ? `the canvas, ${comment.pageName}` : "the canvas";
+}
+
+/**
+ * The picture of where a comment was left, above its words as a photo sits above the text sent
+ * with it in Messages: the same rounding, the corner that meets the bubble tucked in. It holds
+ * its size from the first frame, on the canvas's ground, and the image comes up over it once it
+ * has loaded. Pressing it takes the canvas there.
+ */
+function CommentPictureButton({
+  src,
+  width,
+  height,
+  place,
   onOpen,
+  onFailed,
   children,
 }: {
-  name: string | null;
-  pin: Pin | null;
+  /** The file for the theme shown; none while it is being drawn (`children` is the scene). */
+  src: string | undefined;
+  width: number;
+  height: number;
+  place: string;
   onOpen: () => void;
+  onFailed: () => void;
   children: ReactNode;
 }) {
+  const [loaded, setLoaded] = useState<string | null>(null);
   return (
     <button
       type="button"
-      aria-label={name ? `Open the comment on ${name}` : "Open the comment"}
+      aria-label={`Open the comment on ${place}`}
       onClick={onOpen}
-      // Left-aligned: the miniature is the board's, not a button label.
-      className="relative h-[72px] w-[132px] cursor-default overflow-hidden rounded-6 bg-canvas text-left shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.98]"
+      style={{ width, height }}
+      className="relative block shrink-0 cursor-default overflow-hidden rounded-14 rounded-br-[5px] bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.97] active:brightness-[0.94]"
     >
-      <span aria-hidden className="absolute inset-0">
-        {children}
-      </span>
-      {pin ? (
-        <span
-          aria-hidden
-          className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-pill bg-yuzu shadow-pin"
-          style={{ left: `${pin.x * 100}%`, top: `${pin.y * 100}%` }}
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          // The picture's own pixels are its ground's: nothing shows until they are in.
+          onLoad={() => setLoaded(src)}
+          onError={onFailed}
+          className={cn(
+            "block size-full transition-opacity duration-(--dur-hover)",
+            loaded === src ? "opacity-100" : "opacity-0",
+          )}
         />
-      ) : null}
+      ) : (
+        <span aria-hidden className="absolute inset-0">
+          {children}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * A comment with no picture to show (from before there were pictures, too large to keep, or one
+ * that wouldn't load): a quiet line above its words that says where it was left, and goes there.
+ */
+function CommentPlace({ place, onOpen }: { place: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={`Open the comment on ${place}`}
+      onClick={onOpen}
+      className="-my-0.5 -mr-1 flex min-w-0 max-w-[280px] cursor-default items-center gap-1.5 rounded-6 px-1.5 py-0.5 text-12 text-faint leading-[1.4] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover hover:text-muted"
+    >
+      <span aria-hidden className="size-2 shrink-0 rounded-pill bg-yuzu shadow-pin" />
+      <span className="truncate">On {place}</span>
     </button>
   );
 }

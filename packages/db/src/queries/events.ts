@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import type { PrState } from "../enums.ts";
 import { newId } from "../ids.ts";
 import { designRunners, designs, events, type Json, users } from "../schema/index.ts";
 import { run } from "./run.ts";
@@ -133,7 +134,12 @@ export async function claimEvents(
     claimId,
     limit = 100,
   }: { designId: string; runnerId: string; claimId: string; limit?: number },
-): Promise<{ events: ClaimedEvent[]; seq: number } | null> {
+): Promise<{
+  events: ClaimedEvent[];
+  seq: number;
+  /** The design's pull request as its row says, for the agent's next turn. */
+  pullRequest: { number: number; state: PrState } | null;
+} | null> {
   const pending = and(eq(events.designId, designId), isNull(events.deliveredAt));
   const ofThisClaim = and(eq(events.claimedBy, runnerId), eq(events.claimId, claimId));
   const repeated = db.select({ id: events.id }).from(events).where(and(pending, ofThisClaim));
@@ -175,6 +181,8 @@ export async function claimEvents(
       .with(claimed)
       .select({
         seq: designs.seq,
+        prNumber: designs.prNumber,
+        prState: designs.prState,
         event: {
           id: claimed.id,
           designId: claimed.designId,
@@ -201,7 +209,11 @@ export async function claimEvents(
   const claimedEvents = rows
     .flatMap(({ event, user }) => (event ? [{ ...event, from: personOf(user) }] : []))
     .sort((a, b) => a.seq - b.seq);
-  return { events: claimedEvents, seq: head.seq };
+  const pullRequest =
+    head.prNumber === null || head.prState === null
+      ? null
+      : { number: head.prNumber, state: head.prState };
+  return { events: claimedEvents, seq: head.seq, pullRequest };
 }
 
 /**

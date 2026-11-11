@@ -39,13 +39,14 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
-import { credentialOf, gitTarget } from "../runner/git-credential.ts";
+import { credentialOf, describeToken, gitTarget } from "../runner/git-credential.ts";
 import {
   Ack,
   Checkpoint,
   Claim,
   Complete,
   GitCredential,
+  GitReport,
   PullRequestSummary,
   Question,
   Restored,
@@ -116,6 +117,9 @@ const ClaimView = z.object({
     }),
   ),
   seq: z.number(),
+  pullRequest: z
+    .object({ number: z.number(), state: z.enum(["draft", "open", "merged", "closed"]) })
+    .nullable(),
 });
 const ThreadView: z.ZodType<ThreadResponse> = z.object({
   items: z.array(z.object({ id: z.string(), seq: z.number(), streaming: z.boolean() })),
@@ -186,6 +190,7 @@ export const runner = new Hono<AppEnv>()
           }) as RunnerEvent,
       ),
       seq: claimed.seq,
+      pullRequest: claimed.pullRequest,
     };
     return c.json(ClaimView.parse(response));
   })
@@ -343,13 +348,34 @@ export const runner = new Hono<AppEnv>()
   .post("/git-credential", access.runner, validate("json", GitCredential), async (c) => {
     const { deps } = c.var;
     const target = gitTarget(await contextOf(c), c.req.valid("json"));
-    const token = await deps.gitTokens.get(deps, target);
-    return c.json(CredentialView.parse(credentialOf(token)));
+    const given = await deps.gitTokens.get(deps, target);
+    // What went to git, so a push GitHub refuses can be traced to the token it was handed.
+    deps.log.info("git_credential", { designId: c.var.actor.designId, ...describeToken(given) });
+    return c.json(CredentialView.parse(credentialOf(given.token)));
   })
 
   /** GitHub refused the token git was given: the next ask mints a new one. Safe to repeat. */
   .post("/git-credential/erase", access.runner, validate("json", GitCredential), async (c) => {
-    c.var.deps.gitTokens.forget(gitTarget(await contextOf(c), c.req.valid("json")));
+    const ask = c.req.valid("json");
+    const forgotten = c.var.deps.gitTokens.forget(gitTarget(await contextOf(c), ask));
+    c.var.deps.log.warn("git_credential_erased", {
+      designId: c.var.actor.designId,
+      fingerprint: forgotten,
+      reason: ask.reason ?? null,
+    });
+    return c.body(null, 204);
+  })
+
+  /**
+   * What the runner saw of git and GitHub in the sandbox (its checks of a token, its pushes),
+   * logged beside `git_credential` so a refused push can be traced from here. Safe to repeat.
+   */
+  .post("/git-report", access.runner, validate("json", GitReport), async (c) => {
+    const { deps, actor } = c.var;
+    const { name, fields } = c.req.valid("json");
+    const line = { ...fields, designId: actor.designId, from: "runner" };
+    if (name === "git_push" && fields.ok === false) deps.log.warn(name, line);
+    else deps.log.info(name, line);
     return c.body(null, 204);
   })
 
@@ -359,8 +385,8 @@ export const runner = new Hono<AppEnv>()
    */
   .post("/pull-request-summary", access.runner, validate("json", PullRequestSummary), async (c) => {
     const { summary } = c.req.valid("json");
-    const pullRequest = await savePullRequestSummary(c.var.deps, c.var.actor.designId, summary);
-    return c.json({ pullRequest } satisfies PullRequestSummaryResponse);
+    const saved = await savePullRequestSummary(c.var.deps, c.var.actor.designId, summary);
+    return c.json(saved satisfies PullRequestSummaryResponse);
   })
 
   /**

@@ -68,3 +68,4 @@ export {
   type SessionState,
   SessionStorageError,
 } from "./session.ts";
+export { scrubSecrets, scrubSecretsText } from "./telemetry-scrub.ts";

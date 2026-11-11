@@ -93,11 +93,6 @@ ground p[Thread] rgb(255, 255, 255)
 text "You said:" rgb(17, 17, 16) 400 13px Inter
 text "I read the shop page and the current he…" rgb(17, 17, 16) 400 13px Inter
 ground button[Open the comment on Hero] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.05) 0px 2px 10px 0px
-ground div[Open the comment on Hero] rgb(243, 239, 230)
-text "FERNWOOD" rgb(75, 90, 70) 500 10px Inter
-text "Shop · Care" rgb(75, 90, 70) 500 10px Inter
-text "Plants that outlive your lease" rgb(31, 42, 29) 400 38px Instrument Serif
-ground span[Open the comment on Hero] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.18) 0px 0px 0px 1px, rgba(0, 0, 0, 0.25) 0px 1px 3px 0px
 text "Too many words here. Calmer, and put a …" rgb(17, 17, 16) 400 13px Inter
 ground p[Thread] rgb(255, 255, 255)
 text "You commented:" rgb(17, 17, 16) 400 13px Inter
