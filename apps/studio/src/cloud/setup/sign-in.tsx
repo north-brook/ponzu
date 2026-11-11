@@ -22,10 +22,16 @@ const SIGN_IN: SignInCopy = {
 export function SignInStep({
   state,
   onContinue,
+  onCancel,
+  failure,
   copy = SIGN_IN,
 }: {
   state: SignInState;
   onContinue: () => void;
+  /** While waiting: stop waiting for the browser, offered quietly under the button. */
+  onCancel?: () => void;
+  /** Why it failed, in the shell's words; the spec's line when there are none. */
+  failure?: string | null;
   copy?: SignInCopy;
 }) {
   const waiting = state === "waiting";
@@ -49,9 +55,18 @@ export function SignInStep({
         Continue with GitHub
       </button>
       {state === "failed" ? (
-        <p role="alert" className="m-0 mt-3 text-12 text-danger">
-          Couldn't sign in. Try again.
+        <p role="alert" className="m-0 mt-3 max-w-[420px] text-center text-12 text-danger">
+          {failure || "Couldn't sign in. Try again."}
         </p>
+      ) : waiting && onCancel ? (
+        // The browser may open without the window losing focus: this is the way out then.
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-3 cursor-default rounded-4 px-1 text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
+        >
+          Cancel
+        </button>
       ) : null}
     </div>
   );

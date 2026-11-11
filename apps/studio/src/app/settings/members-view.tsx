@@ -1,5 +1,6 @@
 import { ApiError } from "@ponzu/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { Workspace } from "../../cloud/model.ts";
 import { MembersSection } from "../../cloud/settings/members.tsx";
 import type { Host } from "../host.ts";
@@ -9,8 +10,13 @@ import { peopleUrl, toMembers } from "./map.ts";
 /*
  * Settings › Members: who GitHub says is in the workspace, and each one's role, which an admin
  * sets here. The API holds to the rules (an owner on GitHub stays an admin; a workspace keeps
- * one), the picker offers only what it takes, and a refusal is said under the list.
+ * one), the picker offers only what it takes, and a refusal is said under the list, in red,
+ * for a few seconds.
  */
+
+/** How long a refused role change is said. */
+const REFUSAL_MS = 6000;
+
 export function MembersView({
   host,
   workspace,
@@ -23,8 +29,14 @@ export function MembersView({
   const { queries, mutations } = usePonzu();
   const view = useQuery(queries.workspace(workspace.id));
   const setRole = useMutation(mutations.setRole());
-  if (!view.data) return null;
   const refused = setRole.error;
+  const { reset } = setRole;
+  useEffect(() => {
+    if (!refused) return;
+    const timer = setTimeout(reset, REFUSAL_MS);
+    return () => clearTimeout(timer);
+  }, [refused, reset]);
+  if (!view.data) return null;
   return (
     <MembersSection
       workspace={workspace}

@@ -11,7 +11,7 @@ import { usePonzu } from "../ponzu-query.tsx";
 import { loadUi, saveUi } from "../ui-state.ts";
 import { useClaudeConnect } from "./claude-connect.ts";
 import { setupFacts } from "./facts.ts";
-import { WhereView } from "./where-view.tsx";
+import { useArrivalSync, WhereView } from "./where-view.tsx";
 
 /*
  * Guided first run on the Mac (onboarding 3.2): after signing in, the gates are read from the
@@ -38,11 +38,14 @@ export function FirstRun({
   const me = useQuery(queries.me());
   const step = me.data ? setupStep(setupFacts(me.data)) : null;
   // "Where do you design?" waits for its list: until then the sign-in screen keeps waiting.
-  const accounts = useQuery({ ...queries.githubAccounts(), enabled: step === "where" });
+  const arrival = useArrivalSync(step === "where");
+  // Fresh start's model picker shows the person's defaults: asked for alongside `me`, so the
+  // create page opens whole. If they can't be had it opens anyway, and the API applies them.
+  const defaults = useQuery({ ...queries.claudeDefaults(), enabled: me.data !== undefined });
 
-  if (step === "done") return children;
+  if (step === "done" && !defaults.isPending) return children;
 
-  const waiting = !me.data || (step === "where" && accounts.isPending);
+  const waiting = !me.data || step === "done" || (step === "where" && arrival.loading);
   let content: ReactNode = null;
   if (!me.data && me.isError) {
     content = (

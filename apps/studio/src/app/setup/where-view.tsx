@@ -11,10 +11,34 @@ import { usePonzu } from "../ponzu-query.tsx";
  * page in the browser, and on coming back (Ponzu's ponzu://github/setup link, or the window
  * coming to the front) a sync with GitHub, which turns the row Ready. Continue records the
  * step, and the gates move on.
+ *
+ * The list comes from the sync guided setup runs as the step opens (`useArrivalSync`), and is
+ * shown only once that has answered: one call to GitHub for it, not a read and then a sync.
  */
 
 /** Coming back to the window asks GitHub again, but not more often than this. */
 const FOCUS_SYNC_MS = 2_000;
+
+/**
+ * Asks GitHub once as the step opens, since what the last sign-in's sync saw may be old, and
+ * answers whether the list is still on its way. If the sync fails, the accounts are read
+ * instead, and if that fails too the step says so.
+ */
+export function useArrivalSync(onStep: boolean): { loading: boolean } {
+  const { queries, mutations } = usePonzu();
+  const sync = useMutation(mutations.syncGithub());
+  const asked = useRef(false);
+  const syncNow = sync.mutate;
+  useEffect(() => {
+    // Back on the step later (GitHub took the only workspace away): GitHub is asked again.
+    if (!onStep) asked.current = false;
+    if (!onStep || asked.current) return;
+    asked.current = true;
+    syncNow();
+  }, [onStep, syncNow]);
+  const read = useQuery({ ...queries.githubAccounts(), enabled: onStep && sync.isError });
+  return { loading: !sync.isSuccess && !(sync.isError && !read.isPending) };
+}
 
 export function WhereView({
   host,
@@ -25,23 +49,32 @@ export function WhereView({
   onWorkspaceSetUp: (workspaceId: string) => void;
 }) {
   const { queries, mutations } = usePonzu();
-  const accounts = useQuery(queries.githubAccounts());
+  // What the arrival sync, or the read after it, put in the cache; and each sync after.
+  const accounts = useQuery({ ...queries.githubAccounts(), enabled: false });
   const sync = useMutation(mutations.syncGithub());
   const installLink = useMutation(mutations.installLink());
   const confirm = useMutation(mutations.recordOnboarding());
   const [settingUp, setSettingUp] = useState<number | null>(null);
   const [notice, setNotice] = useState<InstallNotice | null>(null);
   const syncNow = sync.mutate;
-  const lastSync = useRef(0);
+  // The step opened on a sync that just answered.
+  const lastSync = useRef(Date.now());
+  const shown = useRef(accounts.data);
+  shown.current = accounts.data;
 
   /** Ask GitHub again, then stop waiting on the row that was being set up. */
   const resync = useCallback(() => {
     lastSync.current = Date.now();
-    syncNow(undefined, { onSettled: () => setSettingUp(null) });
+    const before = JSON.stringify(shown.current);
+    syncNow(undefined, {
+      // A list that changed answers what was asked of the owners, or the install that failed.
+      onSuccess: (answer) => {
+        if (JSON.stringify(answer) !== before) setNotice(null);
+      },
+      onError: () => setNotice("failed"),
+      onSettled: () => setSettingUp(null),
+    });
   }, [syncNow]);
-
-  // On arriving, GitHub is asked once: what the last sign-in's sync saw may be old.
-  useEffect(() => resync(), [resync]);
 
   useEffect(() => {
     const back = () => {
@@ -78,9 +111,9 @@ export function WhereView({
 
   const list: GithubAccount[] | "loading" | "failed" = accounts.data
     ? accounts.data.accounts
-    : accounts.isError
-      ? "failed"
-      : "loading";
+    : accounts.isFetching
+      ? "loading"
+      : "failed";
 
   return (
     <WhereStep

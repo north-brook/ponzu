@@ -2,7 +2,7 @@ import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
 import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
@@ -136,16 +136,19 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
   const workspace = usable.find((w) => w.id === ui.workspaceId) ?? usable[0] ?? null;
-  // The workspace the window was in is suspended on GitHub: it opens another, and says why.
-  const suspended = all?.find((w) => w.id === ui.workspaceId && w.suspended) ?? null;
-  const suspendedName = suspended ? toWorkspace(suspended).name : null;
+  // The workspace the window showed is suspended on GitHub: it opens another, and says why.
+  // What was shown counts, not what was chosen: a window that took the first workspace too.
+  const shownId = useRef<string | null>(null);
   useEffect(() => {
-    if (suspendedName) {
+    const was = shownId.current;
+    shownId.current = workspace?.id ?? null;
+    const gone = was && was !== workspace?.id ? all?.find((w) => w.id === was) : null;
+    if (gone?.suspended) {
       say(
-        `Ponzu is suspended on GitHub for ${suspendedName}. Its designs open again once it's back.`,
+        `Ponzu is suspended on GitHub for ${toWorkspace(gone).name}. Its designs open again once it's back.`,
       );
     }
-  }, [suspendedName, say]);
+  }, [workspace?.id, all, say]);
 
   // Guided setup (FirstRun) holds the window until there is a workspace to work in, so there
   // is none only for the moment GitHub takes one away, before the gates see it.
@@ -164,6 +167,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       user={user}
       workspace={workspace}
       workspaces={usable}
+      everyWorkspace={all}
       ui={ui}
       update={update}
       badge={badge}
@@ -185,6 +189,7 @@ function WorkspaceWindow({
   user,
   workspace,
   workspaces,
+  everyWorkspace,
   ui,
   update,
   badge,
@@ -197,7 +202,10 @@ function WorkspaceWindow({
   me: Person;
   user: Profile;
   workspace: MeWorkspace;
+  /** Those the window can switch to: installed and not suspended. */
   workspaces: MeWorkspace[];
+  /** Every one the person is in, for Settings to say what is wrong with those that aren't. */
+  everyWorkspace: MeWorkspace[];
   ui: UiState;
   update: (change: (ui: UiState) => UiState) => void;
   badge: ReactNode;
@@ -208,9 +216,8 @@ function WorkspaceWindow({
 }) {
   const id = workspace.id;
   const { queries } = usePonzu();
+  // Asked again with `me` after each sync with GitHub, as the window comes back to the front.
   const detail = useQuery(queries.workspace(id));
-  const reloadDetail = detail.refetch;
-  useOnReturn(() => void reloadDetail(), RETURN_SYNC_MS);
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
   const repos = useMemo(
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
@@ -304,8 +311,10 @@ function WorkspaceWindow({
   const lost =
     live.status === "ended" &&
     (live.error?.code === "not_found" || live.error?.code === "forbidden");
-  // A brand-new personal workspace has no sidebar until its first design (onboarding 3.6).
-  const firstDesign = workspace.kind === "personal" && summaries?.length === 0;
+  // A brand-new personal workspace has no sidebar until its first design (onboarding 3.6), when
+  // it is all the person has: with a team set up too, the sidebar is how they reach it.
+  const firstDesign =
+    workspace.kind === "personal" && summaries?.length === 0 && workspaces.length === 1;
   const designs = [...(active ?? []), ...(settled ?? [])];
   const sidebarOpen = ui.sidebarOpen;
 
@@ -419,7 +428,7 @@ function WorkspaceWindow({
         host={host}
         me={me}
         user={user}
-        workspaces={workspaces}
+        workspaces={everyWorkspace}
         workspaceId={id}
         open={settings.open}
         onOpenChange={(open) => setSettings((now) => ({ ...now, open }))}

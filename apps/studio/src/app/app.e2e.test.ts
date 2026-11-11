@@ -170,7 +170,24 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The sign-in is spent: Connect waits for a new one.
     expect(await page.getByRole("button", { name: "Connect" }).isDisabled()).toBe(true);
 
-    await page.getByRole("button", { name: "Open sign-in again" }).click();
+    // Starting a sign-in takes the API a while (it wakes a sandbox for each): the link waits,
+    // and pressing it again starts nothing more.
+    const tabs = () => page.evaluate(() => window.ponzuFake!.opened.length);
+    const before = await tabs();
+    await page.evaluate(() => {
+      window.ponzuFake!.backend.claude.startTakesMs = 1500;
+    });
+    const reopen = page.getByRole("button", { name: "Open sign-in again" });
+    await reopen.click();
+    await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === "true");
+    expect(await reopen.isDisabled()).toBe(true);
+    await shoot("3c-open-sign-in-again-waiting");
+    await reopen.click({ force: true });
+    await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === null);
+    await page.evaluate(() => {
+      window.ponzuFake!.backend.claude.startTakesMs = 0;
+    });
+    expect((await tabs()) - before).toBe(1);
     await waitUntil(async () => (await field.inputValue()) === "");
     await field.fill("k7Hq2-Rw9xT-pL4mZ#state");
     await page.getByRole("button", { name: "Connect" }).click();
@@ -185,8 +202,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     await page.getByRole("button", { name: "Start designing" }).click();
     await page.getByText("What do you want to design?").waitFor();
-    // A brand-new personal workspace has no sidebar until its first design.
-    expect(await page.locator("#sidebar").count()).toBe(0);
+    // A brand-new personal workspace hides the sidebar only when it is all the person has:
+    // with the team Ready, the switcher is how they reach it.
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
     expect(await page.getByRole("button", { name: "Project: kettle" }).count()).toBe(1);
     const idea = page.getByRole("button", { name: /Make checkout one page/ });
     await idea.waitFor();
@@ -239,6 +257,23 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await nav.getByRole("button", { name: "Agents" }).click();
     await page.getByText("Defaults for new designs").waitFor();
     await shoot("settings-agents");
+
+    // Switching ways, pressed anywhere along the row: a key first, then back to a subscription,
+    // whose sign-in is let go of when Settings closes with it unfinished.
+    await page.getByText("Use an API key instead").click();
+    await page.getByLabel("Paste your Anthropic API key").fill("sk-ant-api03-e2e-4f2a");
+    await page.getByRole("button", { name: "Connect" }).click();
+    await page.getByText("Use a Claude subscription instead").click();
+    await page.getByLabel("Paste the code from claude.ai").waitFor();
+    const openSignIns = () =>
+      page.evaluate(() => window.ponzuFake!.backend.claude.openSignIns(window.ponzuFake!.me.id));
+    expect(await openSignIns()).toBe(1);
+    await page.keyboard.press("Escape");
+    await nav.waitFor({ state: "detached" });
+    await waitUntil(async () => (await openSignIns()) === 0);
+    await page.keyboard.press("Meta+,");
+    await nav.getByRole("button", { name: "Agents" }).click();
+    await page.getByText("Use a Claude subscription instead").waitFor();
 
     // Settings' own switcher changes only its workspace's sections.
     await nav.getByRole("button", { name: "Workspace: Personal" }).click();
@@ -311,6 +346,28 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Back to designs" }).click();
     await page.getByText("What do you want to design?").waitFor();
     expect(await page.getByRole("button", { name: new RegExp(PROMPT) }).count()).toBe(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("a team suspended on GitHub gives way to another, says why, and Settings shows it", async () => {
+    await page.evaluate(() => {
+      const world = window.ponzuFake!;
+      world.backend.suspend(world.workspaceId);
+      // Back from GitHub: the window asks GitHub again.
+      world.link({ kind: "github_setup", result: "installed" });
+    });
+    await page.getByText("Ponzu is suspended on GitHub for Northbrook").waitFor();
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
+
+    await page.keyboard.press("Meta+,");
+    const nav = page.getByRole("navigation", { name: "Settings" });
+    await nav.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page.getByRole("menu").waitFor({ state: "detached" });
+    await nav.getByRole("button", { name: "GitHub", exact: true }).click();
+    await page.getByText("Suspended on north-brook").waitFor();
+    await shoot("settings-github-suspended");
+    await page.keyboard.press("Escape");
     expect(errors).toEqual([]);
   });
 });
