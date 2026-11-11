@@ -434,3 +434,128 @@ describe("a person's uploads", () => {
     expect(status).toBe(404);
   });
 });
+
+describe("a comment's picture", () => {
+  const webp = (theme: string) => new TextEncoder().encode(`RIFF WEBP ${theme}`);
+  const declared = (name: string, body: Uint8Array, contentType = "image/webp") => ({
+    name,
+    contentType,
+    size: body.byteLength,
+    sha256: createHash("sha256").update(body).digest("hex"),
+  });
+  const comment = (messageId: string) => ({
+    op: "thread.create",
+    thread: {
+      id: `th_${messageId}`,
+      artboardId: "ab_1",
+      x: 40,
+      y: 30,
+      status: "open",
+      createdAt: 0,
+      updatedAt: 0,
+      messages: [
+        { id: messageId, author: { kind: "user", name: "Maya" }, text: "Here", createdAt: 0 },
+      ],
+    },
+  });
+  /** Uploads both themes for `messageId` as `who`, and answers the ids to complete. */
+  async function upload(designId: string, messageId: string, who = "maya") {
+    const files = { light: webp("light"), dark: webp("dark") };
+    const signed = await call(
+      t,
+      as(who),
+      "POST",
+      `/v1/designs/${designId}/comments/${messageId}/picture`,
+      { files: [declared("light.webp", files.light), declared("dark.webp", files.dark)] },
+    );
+    expect(signed.status).toBe(200);
+    for (const [index, file] of signed.body.files.entries()) {
+      const body = index === 0 ? files.light : files.dark;
+      await t.storage.fetch(file.put.url, { method: "PUT", headers: file.put.headers, body });
+    }
+    return signed.body.files.map((file: { id: string }) => file.id) as string[];
+  }
+  const complete = (designId: string, messageId: string, ids: string[], who = "maya") =>
+    call(t, as(who), "POST", `/v1/designs/${designId}/comments/${messageId}/picture/complete`, {
+      ids,
+    });
+
+  test("its two files go under comments/, and the comment's thread item keeps the first", async () => {
+    const { design } = await sample();
+    const ids = await upload(design.id, "m_pic1");
+
+    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const keys = () => [...t.storage.objects.keys()];
+    const served = () => keys().filter((key) => key.startsWith(`${assetKey}/comments/`));
+    const staged = () => keys().filter((key) => /^staging\/.*m_pic1-/.test(key));
+    // The bytes wait under staging/, served from nowhere, until a comment has them.
+    expect(staged()).toHaveLength(2);
+    expect(served()).toEqual([]);
+
+    // Before the comment is committed, there is nothing to give it to; asking again is fine.
+    const early = await complete(design.id, "m_pic1", ids);
+    expect([early.status, early.body.error.code]).toEqual([404, "not_found"]);
+    expect(served()).toEqual([]);
+
+    await call(t, as("maya"), "POST", `/v1/designs/${design.id}/ops`, {
+      ops: [{ id: "op_pic1", op: comment("m_pic1") }],
+    });
+    const done = await complete(design.id, "m_pic1", ids);
+    expect(done.status).toBe(200);
+    const { picture } = done.body;
+    expect(picture).toEqual({
+      light: expect.stringMatching(/^comments\/m_pic1-light-[0-9a-z]{6}\.webp$/),
+      dark: expect.stringMatching(/^comments\/m_pic1-dark-[0-9a-z]{6}\.webp$/),
+      width: 240,
+      height: 160,
+    });
+    const light = await t.storage.head(`${assetKey}/${picture.light}`);
+    expect(light?.size).toBe(webp("light").byteLength);
+    const [item] = await listThreadItems(t.db, { designId: design.id });
+    expect(item!.payload).toMatchObject({ messageId: "m_pic1", picture });
+    await t.backgroundDone();
+    expect(staged()).toEqual([]);
+
+    // A second picture for it (another window of theirs) changes nothing: the first is the one
+    // it keeps, and the second is never served.
+    const again = await complete(design.id, "m_pic1", await upload(design.id, "m_pic1"));
+    expect(again.body.picture).toEqual(picture);
+    expect(served().sort()).toEqual(
+      [`${assetKey}/${picture.light}`, `${assetKey}/${picture.dark}`].sort(),
+    );
+  });
+
+  test("only its author gives a comment a picture, of its own files, both themes", async () => {
+    const { design } = await sample();
+    await call(t, as("maya"), "POST", `/v1/designs/${design.id}/ops`, {
+      ops: [{ id: "op_pic2", op: comment("m_pic2") }],
+    });
+    const reader = await call(
+      t,
+      as("ines"),
+      "POST",
+      `/v1/designs/${design.id}/comments/m_pic2/picture`,
+      { files: [declared("light.webp", webp("l")), declared("dark.webp", webp("d"))] },
+    );
+    const png = await call(
+      t,
+      as("maya"),
+      "POST",
+      `/v1/designs/${design.id}/comments/m_pic2/picture`,
+      {
+        files: [declared("light.png", webp("l"), "image/png"), declared("dark.webp", webp("d"))],
+      },
+    );
+    // Another comment's files are not this one's picture.
+    const elsewhere = await complete(design.id, "m_pic2", await upload(design.id, "m_other"));
+
+    expect([reader.status, reader.body.error.code]).toEqual([403, "forbidden"]);
+    expect(png.status).toBeGreaterThanOrEqual(400);
+    expect([elsewhere.status, elsewhere.body.error.code]).toEqual([400, "invalid_request"]);
+    const [item] = await listThreadItems(t.db, { designId: design.id });
+    expect(item!.payload).not.toHaveProperty("picture");
+    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const served = [...t.storage.objects.keys()].filter((key) => key.startsWith(`${assetKey}/`));
+    expect(served).toEqual([]);
+  });
+});

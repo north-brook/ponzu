@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { DesignListRow, PresenceRow } from "@ponzu/client";
+import { createFakeBackend } from "@ponzu/client/testing";
 import {
   contributors,
   designMembers,
@@ -244,6 +245,33 @@ test("Share lists the owner first, then everyone who can edit", () => {
     ["maya", "owner"],
     ["sam", "edit"],
   ]);
+});
+
+test("Share lists everyone GitHub gives access to the repo, who hasn't opened Ponzu too", async () => {
+  const backend = createFakeBackend();
+  const bryce = backend.addPerson({ login: "brycedbjork", name: "Bryce Bjork" });
+  const maya = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
+  const ws = backend.addWorkspace({
+    login: "north-brook",
+    members: { [bryce.id]: "admin", [maya.id]: "member" },
+    repos: [{ name: "fernwood", access: { [maya.id]: "read" } }, { name: "other" }],
+    githubOnly: [
+      { login: "tingqgao", name: "Ting Gao", repos: { fernwood: "write" } },
+      // Only in another repo: not someone who can open this design.
+      { login: "elsewhere", repos: { other: "write" } },
+    ],
+  });
+  const { api } = backend.connect(bryce);
+  const design = await api.designs.create({ workspaceId: ws.id, repoId: ws.repos[0]!.id });
+
+  const { people } = await api.designs.people(design.id);
+  const members = designMembers([], bryce.id, people);
+  expect(members.map((m) => [m.person.login, m.access, m.joined])).toEqual([
+    ["brycedbjork", "owner", true],
+    ["maya", "view", true],
+    ["tingqgao", "edit", false],
+  ]);
+  expect(members[2]!.person.id).toStartWith("github:");
 });
 
 test("a page is working while the agent is on one of its boards", () => {

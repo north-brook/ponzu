@@ -1,6 +1,7 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { BASE_REBUILD_JOB, runBaseRebuildJob } from "../environments/rebuild.ts";
+import { PEOPLE_JOB, runPeopleJob } from "../github/people.ts";
 import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
 import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
 import { runWakeJob, WAKE_JOB } from "../sandboxes/orchestrate.ts";
@@ -45,6 +46,7 @@ const handlers = (): Record<
   [WAKE_JOB]: runWakeJob,
   [REFRESH_JOB]: runRefreshJob,
   [BASE_REBUILD_JOB]: runBaseRebuildJob,
+  [PEOPLE_JOB]: runPeopleJob,
 });
 
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */
@@ -60,11 +62,26 @@ const CLAIM_LIMIT = 10;
  * own failure: that is logged and recorded on the row.
  */
 export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Promise<void> {
-  const { db, clock, log } = deps;
-  try {
+  await runHeldJob(deps, job, worker, async () => {
     const handler = handlers()[job.kind];
     if (!handler) throw new Error(`Nothing runs jobs of kind ${job.kind}.`);
     await handler(deps, job.payload, job);
+  });
+}
+
+/**
+ * Run `work` for a job `worker` holds, then complete the job or give it back as `runJob` does:
+ * for a module that runs its own kind of job where it has less than `JobDeps` to hand. The
+ * cron runs any retry through `runJob`.
+ */
+export async function runHeldJob(
+  { db, clock, log, analytics }: Pick<JobDeps, "db" | "clock" | "log" | "analytics">,
+  job: RunningJob,
+  worker: string,
+  work: () => Promise<void>,
+): Promise<void> {
+  try {
+    await work();
   } catch (error) {
     const later = error instanceof RetryLater;
     const wait = later ? error.ms : Math.min(RETRY_BASE_MS * 2 ** (job.attempts - 1), RETRY_MAX_MS);
@@ -78,7 +95,7 @@ export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Pr
       log.info("job_waiting", { jobId: job.id, kind: job.kind, attempts: job.attempts, wait });
     } else {
       log.warn("job_failed", { jobId: job.id, kind: job.kind, attempts: job.attempts, error });
-      deps.analytics.exception(error, {
+      analytics.exception(error, {
         job_kind: job.kind,
         job_id: job.id,
         attempt: job.attempts,

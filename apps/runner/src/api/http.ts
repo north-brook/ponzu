@@ -11,6 +11,7 @@ import {
   type CompleteResponse,
   type GitCredentialRequest,
   type GitCredentialResponse,
+  type GitReport,
   type PullRequestSummaryRequest,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -116,6 +117,10 @@ export class HttpRunnerApi implements RunnerApi {
     await this.call("POST", "/v1/runner/git-credential/erase", ask);
   }
 
+  async reportGit(report: GitReport): Promise<void> {
+    await this.call("POST", "/v1/runner/git-report", report);
+  }
+
   async recordUsage(turns: TurnUsage[]): Promise<void> {
     await this.call("POST", "/v1/runner/usage", { turns });
   }
@@ -172,13 +177,10 @@ export class HttpRunnerApi implements RunnerApi {
     await this.call("POST", "/v1/runner/restored", report);
   }
 
-  async pullRequestSummary(summary: string): Promise<number | null> {
-    const answer = await this.call<PullRequestSummaryResponse>(
-      "POST",
-      "/v1/runner/pull-request-summary",
-      { summary } satisfies PullRequestSummaryRequest,
-    );
-    return answer.pullRequest;
+  pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse> {
+    return this.call<PullRequestSummaryResponse>("POST", "/v1/runner/pull-request-summary", {
+      summary,
+    } satisfies PullRequestSummaryRequest);
   }
 
   /** The existing document routes, as core's `Replica` asks for them. */

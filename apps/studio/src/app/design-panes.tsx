@@ -1,9 +1,12 @@
+import type { CanvasProps } from "@ponzu/canvas";
 import { type ReactNode, useCallback, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
-import { DesignRail } from "./thread-rail.tsx";
+import { type CommentLink, DesignRail } from "./thread-rail.tsx";
+
+type CanvasLink = NonNullable<CanvasProps["link"]>;
 
 /*
  * What the window shows for an open design, in AppWindow's three slots: the chrome, the thread
@@ -62,9 +65,9 @@ export function useDesignPanes({
   // the person left it, never on the last one's tab or board.
   const designId = open?.id ?? null;
   const [tabFor, setTabFor] = useState<string | null>(null);
-  const [showing, setShowing] = useState<{ designId: string; artboard: string; at: number }>();
+  const [showing, setShowing] = useState<{ designId: string; link: CanvasLink }>();
   const prTab = designId !== null && tabFor === designId;
-  const shown = showing?.designId === designId ? showing : null;
+  const shown = showing?.designId === designId ? showing.link : null;
   const setPrTab = (open: boolean) => setTabFor(open ? designId : null);
 
   const onOpenArtboards = useCallback(
@@ -72,7 +75,15 @@ export function useDesignPanes({
       const [artboard] = ids;
       if (!artboard || !designId) return;
       setTabFor(null);
-      setShowing({ designId, artboard, at: Date.now() });
+      setShowing({ designId, link: { artboard, at: Date.now() } });
+    },
+    [designId],
+  );
+  const onOpenComment = useCallback(
+    (to: CommentLink) => {
+      if (!designId) return;
+      setTabFor(null);
+      setShowing({ designId, link: { ...to, at: Date.now() } });
     },
     [designId],
   );
@@ -118,6 +129,7 @@ export function useDesignPanes({
         repo={repo}
         owner={owner}
         onOpenArtboards={onOpenArtboards}
+        onOpenComment={onOpenComment}
         onOpenPullRequest={() => setPrTab(true)}
         say={say}
         {...(onConnectClaude ? { onConnectClaude } : {})}
@@ -133,11 +145,7 @@ export function useDesignPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown
-              ? { link: { artboard: shown.artboard, at: shown.at } }
-              : link
-                ? { link }
-                : {})}
+            {...(shown ? { link: shown } : link ? { link } : {})}
             onClose={onClose}
           />
         </div>

@@ -6,7 +6,7 @@ import type { Installation } from "../../cloud/settings/github.tsx";
 import type { Member } from "../../cloud/settings/members.ts";
 import type { PingDevice } from "../../cloud/settings/notifications.tsx";
 import type { DesignUsage, TeamUsage } from "../../cloud/settings/plan.tsx";
-import { toPerson } from "../map.ts";
+import { githubPersonId, toPerson } from "../map.ts";
 
 /*
  * The API's answers as Settings' sections take them. Pure, so what each section says about the
@@ -32,13 +32,32 @@ export function toConnection(account: ClaudeView): ClaudeConnection {
   };
 }
 
-/** A workspace's people, with whether GitHub says each owns the account. */
+/**
+ * A workspace's people: everyone GitHub says can reach it, with whether each has opened Ponzu
+ * and whether GitHub says they own the account. An API from before `people` lists only those
+ * who have opened Ponzu.
+ */
 export function toMembers(view: WorkspaceView): Member[] {
-  return view.members.map((member) => ({
-    person: toPerson(member.userId, member),
-    role: member.role,
-    owner: member.githubAccess === "owner",
-  }));
+  const people = (view as { people?: WorkspaceView["people"] }).people;
+  if (!people) {
+    return view.members.map((member) => ({
+      person: toPerson(member.userId, member),
+      joined: true,
+      role: member.role,
+      owner: member.githubAccess === "owner",
+    }));
+  }
+  return people.map((someone): Member => {
+    const owner = someone.githubAccess === "owner";
+    return someone.userId !== null && someone.role !== null
+      ? { person: toPerson(someone.userId, someone), joined: true, role: someone.role, owner }
+      : {
+          person: toPerson(githubPersonId(someone.githubUserId), someone),
+          joined: false,
+          role: null,
+          owner,
+        };
+  });
 }
 
 /** The GitHub App on the workspace's account, as Settings › GitHub says it. */
