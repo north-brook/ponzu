@@ -68,7 +68,7 @@ function useHeldWhileClosing(
  * The keyboard and the thread pane. Once the pane has opened (its width's transition has ended,
  * or at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
  * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌘J, the
- * View menu, the pane coming back as the pull request tab closes. Not when it came with a
+ * View menu, or anything else that opens it while the design shows. Not when it came with a
  * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
  * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the
  * window, so it never sits in a pane that has gone inert.

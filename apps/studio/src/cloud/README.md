@@ -152,9 +152,9 @@ moved from ⌥ to ⌃, which types nothing (`ui/shortcut.ts`):
 
 The thread and the pull request's keys:
 
-- **Opening the thread** (its toggle, ⌘J, View › Toggle Thread, or the pane coming back as the
-  pull request tab closes) puts the caret in its composer once the pane has opened (it is
-  `inert` until then), without scrolling the thread or showing a ring; with a question in the
+- **Opening the thread** (its toggle, ⌘J, View › Toggle Thread, from the canvas or the pull
+  request tab) puts the caret in its composer once the pane has opened (it is `inert` until
+  then), without scrolling the thread or showing a ring; with a question in the
   composer's place, on its first option. Not under a menu, popover or dialog, not from a field
   elsewhere that has the caret (search, a rename), and not when the pane comes with a design
   being opened. Closing it with the keyboard inside gives the keyboard back to where it was.

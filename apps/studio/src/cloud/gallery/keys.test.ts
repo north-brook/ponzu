@@ -171,16 +171,17 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
     expect(await pressed()).toBe("true");
     await page.keyboard.press("Meta+p");
     expect(await pressed()).toBe("false");
-    // The thread comes back as it was (the gallery's tab folds it away, as the boards draw).
+    // The thread pane stays as it was throughout.
     expect(await expanded()).toBe("true");
-    // From the composer, which keeps its words (no "p" typed into it).
+    // From the composer, which keeps its words and its caret (no "p" typed into it).
     await page.fill(COMPOSER, "Keep the green");
     await page.focus(COMPOSER);
     await page.keyboard.press("Meta+p");
     expect(await pressed()).toBe("true");
+    expect(await page.inputValue(COMPOSER)).toBe("Keep the green");
+    expect((await focused()).name).toBe("Message");
     await page.keyboard.press("Meta+p");
     expect(await pressed()).toBe("false");
-    expect(await page.inputValue(COMPOSER)).toBe("Keep the green");
     // Under a menu it does nothing, and the menu stays.
     await page.click('#sidebar button[aria-label^="Workspace:"]');
     await page.waitForSelector("[role=menu]");
@@ -192,15 +193,6 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
     await page.hover(PR);
     const tip = await page.waitForSelector('[role="tooltip"]');
     expect((await tip.textContent())?.replace(/\s/g, "")).toContain("⌘P");
-  });
-
-  test("leaving the pull request puts the thread back with the keyboard in it", async () => {
-    await open("pull-request-tab");
-    expect(await expanded()).toBe("false");
-    await page.keyboard.press("Meta+p");
-    expect(await expanded()).toBe("true");
-    // The board's thread waits on a question: its first option.
-    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "radio");
   });
 
   test("⌘⇧↵ presses the action button once a press, from the composer too, and says so", async () => {
