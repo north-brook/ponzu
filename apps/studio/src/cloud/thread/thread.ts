@@ -11,14 +11,11 @@ import {
 type Said = Extract<ThreadItem, { kind: "message" | "comment" }>;
 type Work = Extract<ThreadItem, { kind: "tool" }>;
 type Reply = Extract<ThreadItem, { kind: "assistant" }>;
-type Notice = Extract<ThreadItem, { kind: "notice" }>;
 
 const said = (item: ThreadItem | undefined): item is Said =>
   item?.kind === "message" || item?.kind === "comment";
 const isTurn = (item: ThreadItem): item is Work & { payload: { turn: TurnRecord } } =>
   item.kind === "tool" && !!item.payload.turn;
-const asked = (item: ThreadItem): item is Notice =>
-  item.kind === "notice" && item.payload.type === "question";
 
 /** One line of the thread as the rail draws it. */
 export interface ThreadRow {
@@ -29,43 +26,21 @@ export interface ThreadRow {
   team: boolean;
   /** Stamp the sender's avatar: the thread is a team's, and their run ends here. */
   avatar: boolean;
-}
-
-/** A finished turn's middle, folded to one line that opens on it. */
-export interface FoldRow {
-  fold: TurnFold;
-}
-
-export type Row = ThreadRow | FoldRow;
-
-export const isFold = (row: Row): row is FoldRow => "fold" in row;
-
-export interface TurnFold {
-  /** Stable while the turn is in the thread: the item it starts at. */
-  id: string;
-  /** The line it folds to: "Worked for 2 min · 9 boards · 3 files". */
-  summary: string;
-  ended: "done" | "stopped" | "failed";
-  /** What it holds, in order: the agent's messages before its answer, and its steps after each. */
-  parts: FoldPart[];
-}
-
-export type FoldPart =
-  | { kind: "message"; item: Reply }
-  | { kind: "asked"; item: Notice }
-  | { kind: "steps"; id: string; steps: FoldStep[] };
-
-export interface FoldStep {
-  /** "Drew "Hero"", or for what a turn only counted, "12 more steps". */
-  text: string;
-  count: number;
+  /**
+   * Something the agent said on the way, not its answer: set quieter than the answer, in
+   * italics. A message is one once the agent has gone on working after it, and it shows only
+   * while its turn runs.
+   */
+  aside?: boolean;
+  /** An aside straight after another: it sits tight under it, as one run of them. */
+  asideContinues?: boolean;
 }
 
 /**
  * The thread split into turns. A turn is opened by its work item when the runner keeps one per
  * turn (`turn` on a `tool` item); an older runner's turn is opened by the agent's first item
  * after a person's. Everything up to the next opening is the turn's: the API's items within it
- * (a person's message mid-turn, a pull request) stay where they are, never folded.
+ * (a person's message mid-turn, a question, a pull request) stay where they are.
  */
 interface Turn {
   items: ThreadItem[];
@@ -104,7 +79,7 @@ function turnsOf(items: ThreadItem[]): { before: ThreadItem[]; turns: Turn[] } {
 const active = (agent: AgentActivity | undefined) =>
   agent?.state === "working" || agent?.state === "waking" || agent?.state === "needs_you";
 
-/** Whether this, the thread's last turn, is still running: shown in full, never folded. */
+/** Whether this, the thread's last turn, is still running: its asides still show. */
 function live(turn: Turn, agent: AgentActivity | undefined): boolean {
   if (!active(agent)) return false;
   if (turn.work) return turn.work.streaming;
@@ -115,195 +90,99 @@ function live(turn: Turn, agent: AgentActivity | undefined): boolean {
 }
 
 /**
- * The lines the thread shows, in order. What the run says about itself while starting (waking,
- * resumed, started) has no line. A running turn shows the agent's messages and nothing of its
- * tools: the working line at the foot says what it is doing. A finished turn keeps its answer
- * in full and folds what came before it into one line that opens on it; a turn that was only
- * its answer has no fold.
+ * The lines the thread shows, in order: what people said, what the agent said, and how a turn
+ * ended. What the run says about itself while starting (waking, resumed, started) has no line,
+ * and neither do the agent's tools: while a turn runs, the working line at the foot says what
+ * it is doing, and what the agent says on the way shows as asides; once the turn has ended
+ * only its answer stays, with whatever else happened in it (a question answered, a pull
+ * request, a stop or an error).
  */
-export function threadRows(items: ThreadItem[], agent?: AgentActivity): Row[] {
+export function threadRows(items: ThreadItem[], agent?: AgentActivity): ThreadRow[] {
   const shown = items.filter((item) => {
     if (item.kind !== "notice") return true;
     const { type } = item.payload;
     return type !== "waking" && type !== "resumed" && type !== "started";
   });
   const { before, turns } = turnsOf(shown);
-  const out: (ThreadItem | FoldRow)[] = [...before];
+  const out: ThreadItem[] = [...before];
+  const asides = new Set<string>();
   turns.forEach((turn, i) => {
-    if (i === turns.length - 1 && live(turn, agent)) {
-      out.push(...turn.items.filter((item) => item.kind !== "tool"));
-      return;
-    }
-    out.push(...folded(turn));
+    const running = i === turns.length - 1 && live(turn, agent);
+    const these = new Set(asidesOf(turn, running));
+    out.push(
+      ...turn.items.filter((item) => item.kind !== "tool" && (running || !these.has(item.id))),
+    );
+    if (running) for (const id of these) asides.add(id);
   });
-  return withRuns(out);
-}
-
-/** A finished turn: its middle folded into one row where it began, the rest as it was. */
-function folded(turn: Turn): (ThreadItem | FoldRow)[] {
-  const { items, work } = turn;
-  const agentItems = items.filter((i) => i.kind === "assistant" || i.kind === "tool");
-  const lastAgent = agentItems.at(-1);
-  // The answer: the runner names it; for an older runner, its last message unless it went on
-  // working after it.
-  const finalId = work
-    ? work.payload.turn.final
-    : lastAgent?.kind === "assistant"
-      ? lastAgent.id
-      : null;
-  const final = items.find((i) => i.id === finalId && i.kind === "assistant") ?? null;
-  const endAt = final ? items.indexOf(final) : items.length;
-  const lastWork = lastAgent ? items.indexOf(lastAgent) : -1;
-  // What folds: the agent's own items before the answer, and the questions it asked on the way
-  // (one asked after its last item is how the turn ended: it stays).
-  const folds = (item: ThreadItem, at: number) =>
-    at < endAt &&
-    (item.kind === "tool" ||
-      (item.kind === "assistant" && item !== final) ||
-      (asked(item) && at < lastWork));
-  const parts = foldParts(items.filter(folds), work);
-  const out: (ThreadItem | FoldRow)[] = [];
-  let placed = false;
-  items.forEach((item, at) => {
-    if (folds(item, at)) {
-      if (!placed && parts.length) out.push({ fold: foldOf(turn, parts, final) });
-      placed = true;
-      return;
-    }
-    out.push(item);
-  });
-  return out;
-}
-
-/** The fold's parts: each message, with its steps after it, in order. */
-function foldParts(inside: ThreadItem[], work: Turn["work"]): FoldPart[] {
-  const parts: FoldPart[] = [];
-  if (work) {
-    const log = work.payload.turn.log;
-    const stepsAfter = (after: string | null): FoldPart[] => {
-      const steps = log
-        .filter((g) => g.after === after)
-        .map((g) =>
-          g.text === null
-            ? { text: `${g.count} more ${g.count === 1 ? "step" : "steps"}`, count: 1 }
-            : { text: g.text, count: g.count },
-        );
-      return steps.length ? [{ kind: "steps", id: `${work.id}:${after ?? "start"}`, steps }] : [];
-    };
-    parts.push(...stepsAfter(null));
-    const known = new Set<string | null>([null]);
-    for (const item of inside) {
-      if (item.kind === "assistant") {
-        parts.push({ kind: "message", item });
-        parts.push(...stepsAfter(item.id));
-        known.add(item.id);
-      } else if (asked(item)) parts.push({ kind: "asked", item });
-    }
-    // Steps after a message this window doesn't hold (or its answer): at the end, in order.
-    for (const after of new Set(log.map((g) => g.after)))
-      if (!known.has(after)) parts.push(...stepsAfter(after));
-    return parts;
-  }
-  // An older runner's stretches of work, each as one step. Its labels said only the stretch's
-  // weightiest step, or whatever the agent last set as its status, which then named every
-  // stretch after it ("Setting direction" ten times over). A label is trusted only where it
-  // tells its stretch apart: said once in a turn whose stretches say different things.
-  // Otherwise the stretch is what can be counted: its steps, and the boards it was on.
-  const stretches = inside.filter((i): i is Work => i.kind === "tool");
-  const times = new Map<string, number>();
-  for (const w of stretches) times.set(w.payload.label, (times.get(w.payload.label) ?? 0) + 1);
-  const telling = (label: string) => times.size > 1 && times.get(label) === 1;
-  for (const item of inside) {
-    if (item.kind === "assistant") parts.push({ kind: "message", item });
-    else if (asked(item)) parts.push({ kind: "asked", item });
-    else if (item.kind === "tool") {
-      const { label, steps, artboards } = item.payload;
-      const boards = new Set(artboards).size;
-      const counted = [
-        `${steps} ${steps === 1 ? "step" : "steps"}`,
-        boards ? ` on ${boards} ${boards === 1 ? "board" : "boards"}` : "",
-      ].join("");
-      const step = { text: telling(label) ? `${label} · ${counted}` : counted, count: 1 };
-      const prev = parts.at(-1);
-      if (prev?.kind === "steps") prev.steps.push(step);
-      else parts.push({ kind: "steps", id: item.id, steps: [step] });
-    }
-  }
-  return parts;
-}
-
-function foldOf(turn: Turn, parts: FoldPart[], final: ThreadItem | null): TurnFold {
-  const { items, work } = turn;
-  const first = items[0]!;
-  if (work) {
-    const t = work.payload.turn;
-    const ended = t.ended ?? "stopped";
-    return {
-      id: first.id,
-      summary: summary(t.ms, t.boards, t.files, work.payload.steps),
-      ended,
-      parts,
-    };
-  }
-  // An older runner: how long from its first item to its answer (or its last), and the boards
-  // its stretches were on.
-  const stretches = items.filter((i): i is Work => i.kind === "tool");
-  const end = final ?? items.findLast((i) => i.kind === "assistant" || i.kind === "tool")!;
-  const ms = Date.parse(end.at) - Date.parse(first.at);
-  const boards = new Set(stretches.flatMap((w) => w.payload.artboards)).size;
-  const steps = stretches.reduce((n, w) => n + w.payload.steps, 0);
-  const stopped = items.some((i) => i.kind === "notice" && i.payload.type === "stopped");
-  const failed = items.some((i) => i.kind === "notice" && i.payload.type === "error");
-  const ended = stopped ? "stopped" : failed ? "failed" : "done";
-  return { id: first.id, summary: summary(ms, boards, 0, steps), ended, parts };
+  return withRuns(out, asides);
 }
 
 /**
- * The folded line, in a person's words: how long it worked and what it made ("Worked for 2 min
- * · 9 boards · 3 files"). With nothing made, how many steps it took. How it ended (a stop, an
- * error, a question) is the line after the fold, so the fold doesn't say it again.
+ * The agent's messages in a turn that are not its answer. In a running turn, every message the
+ * agent has gone on working after: a later message, or steps logged after it. Its newest words,
+ * with nothing after them yet, read as an answer until it carries on. In a finished turn, every
+ * message but its answer (answerOf).
  */
-export function summary(ms: number, boards: number, files: number, steps: number): string {
-  const made = [
-    boards ? `${boards} ${boards === 1 ? "board" : "boards"}` : "",
-    files ? `${files} ${files === 1 ? "file" : "files"}` : "",
-  ].filter(Boolean);
-  if (!made.length && steps) made.push(`${steps} ${steps === 1 ? "step" : "steps"}`);
-  return [`Worked for ${took(ms)}`, ...made].join(" · ");
+function asidesOf(turn: Turn, running: boolean): string[] {
+  const { items, work } = turn;
+  const messages = items.filter((i): i is Reply => i.kind === "assistant");
+  if (running) {
+    const after = new Set(work?.payload.turn.log.map((group) => group.after));
+    return messages
+      .filter((message, at) => {
+        if (at < messages.length - 1 || after.has(message.id)) return true;
+        // An older runner: a tool item after it is the work it went on to.
+        return !work && items.slice(items.indexOf(message) + 1).some((i) => i.kind === "tool");
+      })
+      .map((message) => message.id);
+  }
+  const answer = answerOf(turn, messages);
+  return messages.filter((message) => message.id !== answer).map((message) => message.id);
 }
 
 /**
- * "a moment", "8 s", "40 s", "2 min", "1 h 5 min". Past ten seconds, to the nearest five: the
- * turn's last write can land a moment after the fold first shows, and the line shouldn't tick.
+ * A finished turn's answer: the one message of its that stays. The runner names it (`final`):
+ * the agent's last message, unless it went on working after it. A turn that still ended as it
+ * meant to (`done`) with work after its last words keeps those words: they are the last thing
+ * it said, and without them the person's message would stand unanswered. One stopped or failed
+ * has none: how it ended is its last line. A record not yet closed (the head said idle a moment
+ * before the thread did) keeps its last words too, so they don't go and come back. An older
+ * runner says none of this, so its answer is its last message, unless the turn was stopped or
+ * failed after it.
  */
-export function took(ms: number): string {
-  const s = Math.round(Math.max(0, ms) / 1000);
-  if (s < 1) return "a moment";
-  if (s < 10) return `${s} s`;
-  if (s < 58) return `${Math.round(s / 5) * 5} s`;
-  const min = Math.round(s / 60);
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+function answerOf(turn: Turn, messages: Reply[]): string | null {
+  const { items, work } = turn;
+  const last = messages.at(-1)?.id ?? null;
+  if (work) {
+    const { final, ended } = work.payload.turn;
+    if (final && messages.some((m) => m.id === final)) return final;
+    return ended === "stopped" || ended === "failed" ? null : last;
+  }
+  const lastAgent = items.findLast((i) => i.kind === "assistant" || i.kind === "tool");
+  if (lastAgent?.kind === "assistant") return lastAgent.id;
+  const cut = items.some(
+    (i) => i.kind === "notice" && (i.payload.type === "stopped" || i.payload.type === "error"),
+  );
+  return cut ? null : last;
 }
 
-/** Lines in order, each person's run of messages marked. */
-function withRuns(shown: (ThreadItem | FoldRow)[]): Row[] {
-  // A fold sits between two of a person's messages as a line of its own: it breaks their run.
-  const items = shown.map((s) => ("fold" in s ? undefined : s));
+/** Lines in order: each person's run of messages marked, and the running turn's asides. */
+function withRuns(items: ThreadItem[], asides: ReadonlySet<string>): ThreadRow[] {
   const people = new Set(
     items.filter((i): i is Said => said(i)).map((item) => item.payload.from.id),
   );
   const sameSender = (a: ThreadItem | undefined, b: ThreadItem | undefined) =>
     said(a) && said(b) && a.payload.from.id === b.payload.from.id;
   const team = people.size > 1;
-  return shown.map((s, i) => {
-    if ("fold" in s) return s;
+  return items.map((s, i) => {
+    const aside = asides.has(s.id);
+    const above = items[i - 1];
     return {
       item: s,
-      continues: sameSender(items[i - 1], s),
+      continues: sameSender(above, s),
       team: team && said(s),
       avatar: team && said(s) && !sameSender(s, items[i + 1]),
+      ...(aside ? { aside, asideContinues: above !== undefined && asides.has(above.id) } : {}),
     };
   });
 }
@@ -315,8 +194,8 @@ export const SENT_GRACE_MS = 20_000;
  * The working line at the thread's foot: what the agent is doing, from the moment a person sends
  * until its turn ends, never blank between. Waking while its sandbox starts; the runner's
  * working state while it works (thinking, or the specific thing); nothing while it waits on a
- * question (that is in the composer's place) or once its turn has folded, which happens in the
- * same frame. In the moment between a send and the agent's first report, thinking.
+ * question (that is in the composer's place) or once its turn has ended, which happens in the
+ * frame its asides go. In the moment between a send and the agent's first report, thinking.
  */
 export function workingLine(
   items: ThreadItem[],

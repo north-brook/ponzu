@@ -240,7 +240,15 @@ export function DesignHarness({
           pullRequest={pr ? { pr, tabOpen: prTab, onToggleTab: () => setPrTab((o) => !o) } : null}
           action={
             action
-              ? { kind: action, blocked: actionBlock(action, gate, f.bryce.id), onRun: ignore }
+              ? {
+                  kind: action,
+                  blocked: actionBlock(action, gate, f.bryce.id),
+                  // What was pressed, for the browser tests to read (`window.actionsRun`).
+                  onRun: (kind: NextAction) => {
+                    const w = window as { actionsRun?: string[] };
+                    w.actionsRun = [...(w.actionsRun ?? []), kind];
+                  },
+                }
               : null
           }
           rail={{
