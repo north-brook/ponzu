@@ -307,11 +307,12 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await questionTop()).toBe(raised);
   });
 
-  test("a first visit sits where its ideas go, and shows nothing while they're made", async () => {
+  test("a first visit keeps its ideas' room: a skeleton while they're made, and nothing moves", async () => {
     await open("fresh-start");
     const withIdeas = await questionTop();
+    expect(await page.$('[aria-label="Ideas"]')).not.toBeNull();
     await open("fresh-start-loading");
-    expect(await page.$('[aria-label="Finding ideas"]')).toBeNull();
+    expect(await page.$('[aria-label="Finding ideas"]')).not.toBeNull();
     expect(await page.$('[aria-label="Ideas"]')).toBeNull();
     expect(await questionTop()).toBe(withIdeas);
   });
