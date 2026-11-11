@@ -553,6 +553,33 @@ describe("the event feed", () => {
     ]);
   });
 
+  test("a comment an undo or a redo puts back is an edit, not said or shown again", async () => {
+    const design = await sample();
+    await post(as("maya"), design.id, [{ id: "op_c", op: comment("th_u", "ab_1") }]);
+    const deleted = { op: "thread.delete", id: "th_u" };
+    await post(as("maya"), design.id, [{ id: "op_d", op: deleted }]);
+    const act = (kind: "undo" | "redo") =>
+      call(t, as("maya"), "POST", `/v1/designs/${design.id}/${kind}`);
+
+    // Undoing the deletion puts the comment back; so does undoing the comment, then redoing it.
+    expect((await act("undo")).status).toBe(200);
+    await post(as("maya"), design.id, [{ id: "op_d2", op: deleted }]);
+    for (const kind of ["undo", "undo", "redo"] as const)
+      expect((await act(kind)).status).toBe(200);
+
+    expect((await feed(design.id)).map((event) => event.kind)).toEqual([
+      "comment",
+      "edit",
+      "edit",
+      "edit",
+      "edit",
+      "edit",
+      "edit",
+    ]);
+    const thread = await listThreadItems(t.db, { designId: design.id });
+    expect(thread.map((item) => item.kind)).toEqual(["comment"]);
+  });
+
   test("the runner's own ops make no events", async () => {
     const design = await sample();
 

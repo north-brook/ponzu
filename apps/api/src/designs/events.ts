@@ -13,9 +13,9 @@ import type { CommentEvent, EditEvent, Person, ThreadContent } from "@ponzu/runn
  * What the agent hears about a person's ops (docs/cloud.md, "Events"), in the shapes of the
  * runner protocol. A new comment or a reply is a `comment` event, `now` when it is on a board
  * the agent is working on and `next` otherwise, with the `comment` thread item that shows it in
- * the thread; any other change to the canvas (an edited or resolved comment among them) is an
- * `edit`, `later`, for the agent to see before it next touches that board. The runner's own ops
- * are not news to it, so they make no events.
+ * the thread; any other change to the canvas (an edited or resolved comment among them, and
+ * every undo and redo) is an `edit`, `later`, for the agent to see before it next touches that
+ * board. The runner's own ops are not news to it, so they make no events.
  */
 
 /**
@@ -42,14 +42,7 @@ export function eventsForPersonOps(
   return ops.flatMap(({ id, op }): OpEvent[] => {
     const base = { opId: id, userId: person.id };
     const comments = commentsIn(op, docs.after);
-    if (comments.length === 0) {
-      const artboards = touchedArtboards(docs.after, op).map((board) => ({
-        id: board,
-        name: artboardName(docs, board) ?? "",
-      }));
-      const payload: EditEvent = { summary: summarize(docs.after, op), artboards };
-      return [{ ...base, kind: "edit", priority: "later", payload: { ...payload } }];
-    }
+    if (comments.length === 0) return [editEvent(person, { id, op }, docs)];
     return comments.map((comment) => {
       const priority: EventPriority =
         comment.artboardId !== null && working.has(comment.artboardId) ? "now" : "next";
@@ -64,6 +57,24 @@ export function eventsForPersonOps(
       return { ...base, kind: "comment", priority, payload: { ...comment }, comment: { ...item } };
     });
   });
+}
+
+/**
+ * An op's `edit` event. An undo or a redo a person commits makes only this: the comments it
+ * puts back (a redone comment, an undone thread deletion) were heard when they were first
+ * made, so they are neither said to the agent again nor shown in the thread again.
+ */
+export function editEvent(
+  person: Person,
+  { id, op }: { id: string; op: Op },
+  docs: { before: Doc; after: Doc },
+): OpEvent {
+  const artboards = touchedArtboards(docs.after, op).map((board) => ({
+    id: board,
+    name: artboardName(docs, board) ?? "",
+  }));
+  const payload: EditEvent = { summary: summarize(docs.after, op), artboards };
+  return { opId: id, userId: person.id, kind: "edit", priority: "later", payload: { ...payload } };
 }
 
 /** The new comments and replies an op makes, as the agent is told of them. */

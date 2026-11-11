@@ -7,7 +7,7 @@ import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
 import { actorOf, personFor, toCommittedOp } from "./actor.ts";
 import { COMMIT_ATTEMPTS, designBusy, headChange } from "./commit.ts";
 import { keep, readCurrentDoc } from "./document.ts";
-import { eventsForPersonOps } from "./events.ts";
+import { editEvent } from "./events.ts";
 
 /*
  * Undo is the API's (docs/cloud.md, "Undo"). An undo commits the inverse of the newest op by
@@ -31,7 +31,7 @@ export async function reverse(
     caller,
     kind,
   }: {
-    design: Pick<Design, "id" | "agentState" | "agentArtboards">;
+    design: Pick<Design, "id">;
     caller: Caller;
     kind: "undo" | "redo";
   },
@@ -67,10 +67,7 @@ export async function reverse(
     const op = { id: newOpId(), op: target.inverse, inverse };
     const events =
       caller.kind === "user"
-        ? eventsForPersonOps(design, personFor(caller.user), [op], {
-            before: current.doc,
-            after: doc,
-          })
+        ? [editEvent(personFor(caller.user), op, { before: current.doc, after: doc })]
         : [];
     const result = await commitReversal(deps.db, {
       designId: design.id,
@@ -87,10 +84,7 @@ export async function reverse(
       throw new Error("An inverse from the log could not be stored again.");
     }
     keep(deps, design.id, current, { seq: result.seq, doc, ops: result.ops });
-    if (caller.kind === "user") {
-      const commented = events.some((event) => event.kind === "comment");
-      await requestWake(deps, design.id, commented ? "comment" : "edit");
-    }
+    if (caller.kind === "user") await requestWake(deps, design.id, "edit");
     return { committed: toCommittedOp(result.ops[0]!), seq: result.seq };
   }
   throw designBusy();
