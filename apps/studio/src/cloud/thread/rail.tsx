@@ -38,6 +38,8 @@ export interface ThreadRailProps extends LineHandlers {
   onStop: () => void;
   onAnswer: (askId: string, answer: AskAnswer) => void;
   onDismissAsk: (askId: string) => void;
+  /** The viewer started answering an ask. */
+  onTouchAsk?: (askId: string) => void;
   onConnectClaude?: () => void;
 }
 
@@ -117,6 +119,7 @@ export function ThreadRail(props: ThreadRailProps) {
             onAnswer={props.onAnswer}
             onDismiss={props.onDismissAsk}
             onOpenLink={handlers.onOpenLink}
+            {...(props.onTouchAsk ? { onTouch: props.onTouchAsk } : {})}
           />
         ) : (
           <RailComposer

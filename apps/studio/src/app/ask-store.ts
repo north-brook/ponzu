@@ -6,14 +6,17 @@ import { toAsk } from "./thread-map.ts";
  * What the agent waits on in one open design: the `design.questions` live query, which holds
  * the open questions alone, and the viewer's answers on their way. The first answer wins: when
  * someone else's got there first, the API says so (409 `question_closed`) and the ask stays, put
- * calmly, until the viewer puts it away. A question the run withdrew, or a teammate answered
- * while the viewer wasn't answering it, leaves with its row.
+ * calmly, until the viewer puts it away. A question the run withdrew, or a teammate answered,
+ * leaves with its row; when the viewer had started answering it, it stays, closed, saying so,
+ * until they put it away, so their choices don't vanish without a word.
  */
 
 export class AskStore {
   private rows: readonly QuestionRow[] = [];
   /** Asks the viewer is answering now. */
   private sending = new Set<string>();
+  /** Asks the viewer has started answering: chosen something in, or typed a note. */
+  private touched = new Set<string>();
   /** Asks someone else answered first, kept until put away. */
   private closed: Ask[] = [];
   private snapshot: Ask[] = [];
@@ -35,10 +38,15 @@ export class AskStore {
       "design.questions",
       { designId: this.opts.designId },
       ({ rows }) => {
+        const before = this.rows;
         this.rows = rows ?? [];
-        // An answer the run has taken is no longer on its way.
-        for (const id of this.sending) {
-          if (!this.rows.some((row) => row.id === id)) this.sending.delete(id);
+        const here = new Set(this.rows.map((row) => row.id));
+        for (const row of before) {
+          if (here.has(row.id)) continue;
+          // An answer the run has taken is no longer on its way.
+          const mine = this.sending.delete(row.id);
+          const started = this.touched.delete(row.id);
+          if (!mine && started) this.keepClosed({ ...toAsk(row), status: "closed" });
         }
         this.emit();
       },
@@ -71,7 +79,7 @@ export class AskStore {
       (error: unknown) => {
         this.sending.delete(id);
         if (error instanceof ApiError && error.code === "question_closed") {
-          this.closed = [...this.closed, { ...asked, status: "answered" }];
+          this.keepClosed({ ...asked, status: "answered" });
         } else {
           this.opts.onError(
             error instanceof ApiError && error.code === "network"
@@ -84,10 +92,20 @@ export class AskStore {
     );
   }
 
-  /** Puts away an ask someone else answered first. */
+  /** The viewer started answering this ask. */
+  touch(id: string): void {
+    if (this.rows.some((row) => row.id === id)) this.touched.add(id);
+  }
+
+  /** Puts away an ask that closed while the viewer was on it. */
   dismiss(id: string): void {
     this.closed = this.closed.filter((ask) => ask.id !== id);
     this.emit();
+  }
+
+  private keepClosed(ask: Ask): void {
+    this.touched.delete(ask.id);
+    this.closed = [...this.closed.filter((kept) => kept.id !== ask.id), ask];
   }
 
   private emit(): void {

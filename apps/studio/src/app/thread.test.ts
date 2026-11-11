@@ -3,7 +3,7 @@ import type { DesignHeadRow, MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import type { Person } from "../cloud/model.ts";
 import { AskStore } from "./ask-store.ts";
-import { agentActivity, steerGate, toThreadItem } from "./thread-map.ts";
+import { agentActivity, branchMoment, shownItems, steerGate, toThreadItem } from "./thread-map.ts";
 import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
 
@@ -38,8 +38,8 @@ async function world() {
     name: "Pricing",
   });
   const agent = backend.agent(design.id);
-  const thread = (who = client) =>
-    new ThreadStore({ api: who.api, live: who.live, designId: design.id }).start();
+  const thread = (who = client, meId = maya.id) =>
+    new ThreadStore({ api: who.api, live: who.live, designId: design.id, meId }).start();
   const errors: string[] = [];
   const asks = (who = client) =>
     new AskStore({
@@ -187,12 +187,61 @@ test("a message shows at once, then is the thread's own; one that fails stays, t
   store.close();
 });
 
+test("a message the live rows hold before the API answers shows once, not twice", async () => {
+  const w = await world();
+  // The API commits the message, then wakes the agent before it answers: the live row lands first.
+  let answer = () => {};
+  const held = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const api = {
+    designs: {
+      ...w.client.api.designs,
+      sendMessage: async (...args: Parameters<typeof w.client.api.designs.sendMessage>) => {
+        const item = await w.client.api.designs.sendMessage(...args);
+        await held;
+        return item;
+      },
+    },
+  };
+  const store = new ThreadStore({
+    api,
+    live: w.client.live,
+    designId: w.design.id,
+    meId: w.maya.id,
+  }).start();
+  await settle();
+  // An older message with the same words is not this one.
+  await w.client.api.designs.sendMessage(w.design.id, { text: "Add a yearly toggle" });
+  await settle();
+  store.send("Add a yearly toggle", []);
+  expect(store.getSnapshot().pending).toHaveLength(1);
+  await settle();
+  const texts = (snap = store.getSnapshot()) =>
+    snap
+      .items!.filter((i) => i.kind === "message")
+      .map((i) => i.kind === "message" && i.payload.text);
+  // The live row has it: the bubble gives way, while the API still hasn't answered.
+  expect(store.getSnapshot().pending).toEqual([]);
+  expect(texts()).toEqual(["Add a yearly toggle", "Add a yearly toggle"]);
+  answer();
+  await settle();
+  expect(store.getSnapshot().pending).toEqual([]);
+  expect(texts()).toHaveLength(2);
+  store.close();
+});
+
 test("history comes a page at a time until the live rows have the whole thread", async () => {
   const w = await world();
   for (let i = 0; i < THREAD_PAGE + 5; i++) w.agent.say(`Line ${i}`);
   // Without live rows (a realtime that never connects), the newest page paints first.
   const live = { subscribe: () => () => {} };
-  const store = new ThreadStore({ api: w.client.api, live, designId: w.design.id }).start();
+  const store = new ThreadStore({
+    api: w.client.api,
+    live,
+    designId: w.design.id,
+    meId: w.maya.id,
+  }).start();
   await settle();
   expect(store.getSnapshot().items).toHaveLength(THREAD_PAGE);
   expect(store.getSnapshot().older).toBe("more");
@@ -329,6 +378,72 @@ test("when a teammate answered first, the viewer's answer is turned away calmly"
   store.close();
 });
 
+test("a question the viewer had started on stays, closed, when it leaves without their answer", async () => {
+  const w = await world();
+  const store = w.asks();
+  const sam = w.backend.connect(w.sam);
+  const id = w.agent.ask(HEADLINE);
+  const untouched = w.agent.ask(HEADLINE);
+  await settle();
+  store.touch(id);
+  await sam.api.designs.answer(w.design.id, id, { answers: { "Which way?": "Let it wrap" } });
+  await sam.api.designs.answer(w.design.id, untouched, {
+    answers: { "Which way?": "Let it wrap" },
+  });
+  await settle();
+  // Who closed it the live rows don't say: it says only that it no longer waits.
+  expect(store.getSnapshot()).toMatchObject([{ id, status: "closed" }]);
+  store.dismiss(id);
+  expect(store.getSnapshot()).toEqual([]);
+
+  // Withdrawn while the viewer was on it: the same.
+  const next = w.agent.ask(HEADLINE);
+  await settle();
+  store.touch(next);
+  w.agent.withdraw(next);
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([{ id: next, status: "closed" }]);
+  store.close();
+});
+
+test("an open question is in the composer's place, not also a line in the thread", async () => {
+  const w = await world();
+  const store = w.thread();
+  const asks = w.asks();
+  w.agent.say("The headline runs to three lines.");
+  const id = w.agent.ask(HEADLINE, "Headline");
+  await settle();
+  const waiting = new Set(asks.getSnapshot().map((a) => a.id));
+  const kinds = (open: ReadonlySet<string>) =>
+    shownItems(store.getSnapshot().items!, open).map((i) => i.kind);
+  expect(kinds(waiting)).toEqual(["assistant"]);
+  asks.answer(id, { answers: { "Which way?": "Shorten it" } });
+  await settle();
+  // Answered, it is part of what happened.
+  expect(kinds(new Set(asks.getSnapshot().map((a) => a.id)))).toEqual(["assistant", "notice"]);
+  asks.close();
+  store.close();
+});
+
+test("the branch may have moved after a finished stretch of work or a pull request notice", async () => {
+  const w = await world();
+  const store = w.thread();
+  await settle();
+  expect(branchMoment(store.getSnapshot().items!)).toBe(0);
+  w.agent.tool("Pushing", { id: "ti_push", streaming: true });
+  await settle();
+  // Still at work: nothing to read yet.
+  expect(branchMoment(store.getSnapshot().items!)).toBe(0);
+  w.agent.tool("Pushed", { id: "ti_push", streaming: false });
+  await settle();
+  const pushed = branchMoment(store.getSnapshot().items!);
+  expect(pushed).toBeGreaterThan(0);
+  w.agent.say("Done.");
+  await settle();
+  expect(branchMoment(store.getSnapshot().items!)).toBe(pushed);
+  store.close();
+});
+
 test("a withdrawn question leaves, and an answer that can't reach Ponzu says so", async () => {
   const w = await world();
   const store = w.asks();
@@ -400,7 +515,7 @@ test("someone who may only read sees the thread and is told so, and can't send o
   ).toEqual({ kind: "read_only", repo });
 
   w.agent.say("Here are three plans.");
-  const store = w.thread(ines);
+  const store = w.thread(ines, w.ines.id);
   await settle();
   expect(store.getSnapshot().items).toHaveLength(1);
   store.send("Mine", []);

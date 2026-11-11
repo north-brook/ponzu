@@ -47,6 +47,7 @@ export function NeedsYou({
   onAnswer,
   onDismiss,
   onOpenLink,
+  onTouch,
 }: {
   asks: Ask[];
   meId: string;
@@ -55,6 +56,8 @@ export function NeedsYou({
   onAnswer: (askId: string, answer: AskAnswer) => void;
   onDismiss: (askId: string) => void;
   onOpenLink: (url: string) => void;
+  /** The viewer started answering this ask: chose something or typed a note. */
+  onTouch?: (askId: string) => void;
 }) {
   const pages = pagesOf(asks);
   const [current, setCurrent] = useState<string | null>(null);
@@ -78,7 +81,10 @@ export function NeedsYou({
 
   if (!page) return null;
   const draft = drafts[keyOf(page)] ?? EMPTY_DRAFT;
-  const setDraft = (next: Draft) => setDrafts((d) => ({ ...d, [keyOf(page)]: next }));
+  const setDraft = (next: Draft) => {
+    setDrafts((d) => ({ ...d, [keyOf(page)]: next }));
+    onTouch?.(page.ask.id);
+  };
   const go = (to: number) => {
     const next = pages[to];
     if (!next) return;
@@ -145,7 +151,7 @@ export function NeedsYou({
         />
       </div>
       {closed ? (
-        <Resolved by={ask.answeredBy} cancelled={ask.status === "cancelled"} meId={meId}>
+        <Resolved status={ask.status} by={ask.answeredBy} meId={meId}>
           <Button
             variant="quiet"
             onClick={() => onDismiss(ask.id)}
@@ -481,21 +487,24 @@ function Options({
 
 /** Where the note field was, once the ask is closed: who answered it, or that nobody need. */
 function Resolved({
+  status,
   by,
-  cancelled,
   meId,
   children,
 }: {
+  status: Ask["status"];
   by: Person | null;
-  cancelled: boolean;
   meId: string;
   children: ReactNode;
 }) {
-  const said = cancelled
-    ? "Claude moved on, so this needs no answer."
-    : by
-      ? `${who(by, meId)} answered.`
-      : "Answered.";
+  const said =
+    status === "cancelled"
+      ? "Claude moved on, so this needs no answer."
+      : status === "closed"
+        ? "No longer waiting on this."
+        : by
+          ? `${who(by, meId)} answered.`
+          : "Answered.";
   return (
     <div className="flex items-center gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field">
       <span role="status" className="min-w-0 flex-1 py-1 text-13 text-muted leading-5">

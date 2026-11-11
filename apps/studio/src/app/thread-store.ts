@@ -5,8 +5,9 @@ import type { Attachment, OlderItems } from "../cloud/model.ts";
  * One open design's thread: the `design.thread` live query, pages of its history from the API
  * while the live rows aren't there yet (the first paint, offline), and the viewer's messages on
  * their way. A message shows at once; once the API has it, its own item takes the bubble's place
- * and the live row follows with the same id. One that fails stays, marked, to send again or take
- * back to edit.
+ * and the live row follows with the same id. The live row often comes first (the API wakes the
+ * agent before it answers), so a bubble also gives way to the viewer's own message with its words
+ * arriving after it was sent. One that fails stays, marked, to send again or take back to edit.
  */
 
 type RunnerItem = LiveRows["design.thread"];
@@ -38,6 +39,8 @@ export class ThreadStore {
   /** What the API answered each message with, until the live rows have it. */
   private sent = new Map<string, RunnerItem>();
   private pending: PendingMessage[] = [];
+  /** The newest seq held when each message on its way was sent: its row comes after it. */
+  private sentAfter = new Map<string, number>();
   private firstPage: "asking" | "full" | "short" | "failed" = "asking";
   private loadingOlder = false;
   private exhausted = false;
@@ -52,6 +55,8 @@ export class ThreadStore {
       api: Pick<Api, "designs">;
       live: Pick<Live, "subscribe">;
       designId: string;
+      /** The viewer, whose messages the bubbles are. */
+      meId: string;
       now?: () => number;
     },
   ) {}
@@ -65,6 +70,7 @@ export class ThreadStore {
         this.live = live;
         // A message the live rows hold no longer needs the API's answer to show it.
         for (const row of live.rows ?? []) this.sent.delete(row.id);
+        this.arrived(live.rows ?? []);
         this.emit();
       },
     );
@@ -127,6 +133,7 @@ export class ThreadStore {
       at: new Date(this.opts.now?.() ?? Date.now()).toISOString(),
     };
     this.pending = [...this.pending, message];
+    this.sentAfter.set(message.id, this.snapshot.items?.at(-1)?.seq ?? 0);
     this.emit();
     void this.deliver(message);
   }
@@ -144,7 +151,35 @@ export class ThreadStore {
   /** Lets go of a message that didn't arrive: its words went back to the composer. */
   discard(id: string): void {
     this.pending = this.pending.filter((m) => m.id !== id);
+    this.sentAfter.delete(id);
     this.emit();
+  }
+
+  /**
+   * Bubbles on their way whose message the live rows already hold: the viewer's, with the same
+   * words, after the bubble was sent, each row taking one bubble, oldest first.
+   */
+  private arrived(rows: readonly RunnerItem[]): void {
+    const sending = this.pending.filter((m) => m.status === "sending");
+    if (!sending.length) return;
+    const taken = new Set<string>();
+    const landed = new Set<string>();
+    for (const message of sending) {
+      const after = this.sentAfter.get(message.id) ?? 0;
+      const row = rows.find(
+        (r) =>
+          r.kind === "message" &&
+          r.seq > after &&
+          !taken.has(r.id) &&
+          r.payload.from.id === this.opts.meId &&
+          r.payload.text === message.text,
+      );
+      if (!row) continue;
+      taken.add(row.id);
+      landed.add(message.id);
+      this.sentAfter.delete(message.id);
+    }
+    if (landed.size) this.pending = this.pending.filter((m) => !landed.has(m.id));
   }
 
   private async deliver(message: PendingMessage): Promise<void> {
@@ -154,8 +189,10 @@ export class ThreadStore {
         text: message.text,
         ...(refs.length ? { attachments: refs } : {}),
       });
-      this.sent.set(item.id, item);
+      // Held until the live rows have it, unless they already do.
+      if (!this.live?.rows?.some((row) => row.id === item.id)) this.sent.set(item.id, item);
       this.pending = this.pending.filter((m) => m.id !== message.id);
+      this.sentAfter.delete(message.id);
     } catch {
       this.pending = this.pending.map((m) =>
         m.id === message.id ? { ...m, status: "failed" } : m,

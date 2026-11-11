@@ -8,7 +8,13 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { BoardMiniature } from "./board-miniature.tsx";
 import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
-import { agentActivity, steerGate, type ThreadContext, toThreadItem } from "./thread-map.ts";
+import {
+  agentActivity,
+  shownItems,
+  steerGate,
+  type ThreadContext,
+  toThreadItem,
+} from "./thread-map.ts";
 import type { PendingMessage } from "./thread-store.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
@@ -59,14 +65,22 @@ export function DesignRail({
   const doc = state.doc;
   const assetBase = open.source.assetBase;
 
+  // A question waiting in the composer's place isn't in the thread as well.
+  const waiting = useMemo(
+    () =>
+      new Set(
+        asks.filter((ask) => ask.status === "open" || ask.status === "sending").map((a) => a.id),
+      ),
+    [asks],
+  );
   const items = useMemo(() => {
     if (!thread.items) return null;
     const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
     return [
-      ...thread.items.map((item) => toThreadItem(item, ctx)),
+      ...shownItems(thread.items, waiting).map((item) => toThreadItem(item, ctx)),
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
-  }, [thread, people, assetBase, doc, me]);
+  }, [thread, waiting, people, assetBase, doc, me]);
 
   // With the rail open, the viewer has read the thread as far as it goes.
   const newest = thread.items?.at(-1)?.seq;
@@ -119,6 +133,7 @@ export function DesignRail({
       }
       onAnswer={(id, answer) => open.asks.answer(id, answer)}
       onDismissAsk={(id) => open.asks.dismiss(id)}
+      onTouchAsk={(id) => open.asks.touch(id)}
       onRetryMessage={(id) => open.thread.retry(id)}
       onEditMessage={(id) => open.thread.discard(id)}
       {...(onConnectClaude ? { onConnectClaude } : {})}
