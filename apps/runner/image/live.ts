@@ -51,6 +51,8 @@ import { ROOT, RUNNER } from "./image.ts";
 export { RUNNER_PORT };
 export const FAKE_API_PORT = 8790;
 const FAKE_DIR = "/vercel/fake-api";
+/** The fake API's memory on the sandbox's disk: what the real API would remember. */
+export const FAKE_STATE = `${FAKE_DIR}/state.json`;
 /** What the API gives ponzu-stop. */
 export const STOP_COMMAND_MS = 30_000;
 
@@ -262,7 +264,7 @@ export async function startFakeApi(box: Box, start: Start, opts: { hold?: boolea
       PONZU_DESIGN_ID: start.designId,
       PONZU_RUNNER_TOKEN: start.runnerToken,
       PONZU_PORT_TOKEN: start.portToken,
-      PONZU_FAKE_API_STATE: `${FAKE_DIR}/state.json`,
+      PONZU_FAKE_API_STATE: FAKE_STATE,
       PONZU_FAKE_API_BUNDLE: `${FAKE_DIR}/runner.tgz`,
       ...(opts.hold ? { PONZU_FAKE_API_HOLD: "1" } : {}),
     },

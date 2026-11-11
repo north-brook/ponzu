@@ -12,9 +12,9 @@
  *   1. a sleep as the API's (ponzu-stop, then stop) and a wake (up, ponzu-start): the snapshot
  *      brings the disk back as it was, and the runner restores nothing;
  *   2. the sandbox is removed, as an image change, Vercel's 14-day removal or an expired
- *      snapshot leave it; up() makes a new one on an empty disk, the fake API (whose memory this
- *      machine kept, since the real API is never on the sandbox's disk) holds the runner until
- *      it is handed back, and the runner rebuilds from the checkpoint and git: the file is back,
+ *      snapshot leave it; up() makes a new one on an empty disk, the fake API starts from the
+ *      memory this machine kept (the real API is never on the sandbox's disk), and the runner
+ *      rebuilds from the checkpoint and git: the file is back,
  *      uncommitted, on the same HEAD, the session's folder is back, and turn three remembers
  *      both turns.
  * Vercel keeps one snapshot ({count: 1, deleteEvicted: true}), so no rollback is manufactured.
@@ -32,6 +32,7 @@ import {
   type Box,
   buildRunnerBundle,
   control,
+  FAKE_STATE,
   gh,
   idle,
   installationToken,
@@ -176,10 +177,12 @@ async function proof(): Promise<void> {
   say("recreate", { upSeconds: secs(performance.now() - r0), fresh: fresh.fresh });
   if (!fresh.fresh) throw new Error("up() after a remove did not start on an empty disk");
   await installFakeApi(b, bundle);
-  await startFakeApi(b, start, { hold: true });
-  await startRunner(b, start);
+  // What the API remembers, feed position included, is there before the runner asks: the fake
+  // starts from it. A git token is never in it; the API mints one.
+  await sandboxes().writeFile(b.at, FAKE_STATE, JSON.stringify(memory));
+  await startFakeApi(b, start);
   await control(b, start, "PUT", "git-token", gitToken);
-  await control(b, start, "PUT", "memory", memory);
+  await startRunner(b, start);
   const rebuilt = await idle(b, start, "the runner after the rebuild", 300_000);
   say("rebuild", {
     seconds: secs(performance.now() - r0),
