@@ -153,6 +153,7 @@ jobs:
           exit $failed
       - name: What each test file took
         # Copied over test-timings.json, this refreshes it (CONTRIBUTING.md).
+        if: ${{ !cancelled() }}
         run: cat test-timings.json
 
   database:
