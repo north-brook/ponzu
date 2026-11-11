@@ -1,5 +1,17 @@
 # The sandbox image
 
+> **Vercel Sandbox (branch cloud-vercel-spike).** The image is now a Dockerfile (`Dockerfile`,
+> `FROM ubuntu:24.04` by digest, running `provision.sh` once) pushed to Vercel Container Registry
+> by `vcr.ts` and named by digest in `current.json`. Vercel runs no systemd, ENTRYPOINT or CMD:
+> the API starts `/opt/ponzu/bin/ponzu-start` (a `flock` around `src/supervise.ts`) as a detached
+> `runCommand({ sudo: true, detached: true, env })` at every start, and that command's `env` is
+> the only place the runner's secrets go. The runner runs as `ponzu` (group `agent`), the agent
+> as `agent`, and Vercel's commands as the image's `ubuntu`. The runner's port is public
+> (`https://<sub>.vercel.run`), so it answers only `authorization: Bearer $PONZU_PORT_TOKEN`.
+> `vercel.ts` and `vercel-e2e.ts` are the harness and the end-to-end run on Vercel. `bake.ts`,
+> `checks.ts`, `trial.ts`, `e2e.ts` and `durability.ts` below are boat's and still to be ported.
+> The rest of this README describes the boat image.
+
 Every design's sandbox starts from one boat.dev saved snapshot: boat's Ubuntu 24.04 base with
 what the runner needs on top. This folder is how it is made, checked and tried.
 [docs/cloud.md](../../../docs/cloud.md) ("The sandbox", "The runner", "Rendering") says why

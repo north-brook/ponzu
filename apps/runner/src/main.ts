@@ -1,9 +1,10 @@
 /*
- * The runner's entry: `bun runner.js` in a design's sandbox, as the ponzu-runner systemd
- * service. README.md has its environment and how to run it elsewhere.
+ * The runner's entry: `bun runner.js` in a design's sandbox, started and restarted by the
+ * supervisor (supervise.ts), which the API starts with a detached command at every start of the
+ * sandbox. README.md has its environment and how to run it elsewhere.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,11 +26,9 @@ import { VERSION } from "./version.ts";
 
 /**
  * What a restart will not mend (configuration, a revoked token, a newer runner holding the
- * lease): systemd is told not to try (RestartPreventExitStatus).
+ * lease): the supervisor does not try again (supervise.ts).
  */
 const EXIT_CONFIG = 78;
-/** The Claude Code the sandbox image installs. */
-const IMAGE_CLAUDE = "/usr/local/bin/claude";
 
 const log = (message: string) => console.error(`[runner] ${message}`);
 
@@ -38,7 +37,7 @@ function claudeConfigDir(env: NodeJS.ProcessEnv): string {
   return env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), ".claude");
 }
 
-/** This boot of the machine, and when it began: what tells boat which boot's writes came back. */
+/** This boot of the machine, and when it began: what tells which boot's writes came back. */
 function boot(): { id: string | null; at: string | null } {
   try {
     const id = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
@@ -74,7 +73,7 @@ const runner = new Runner({
     client,
   }),
   agent: new ClaudeAgent({
-    executable: env.claude ?? (existsSync(IMAGE_CLAUDE) ? IMAGE_CLAUDE : undefined),
+    executable: env.claude,
     client: `ponzu-${client}`,
     log: (line) => log(`claude: ${line}`),
     env: agentEnv(process.env),
@@ -96,7 +95,7 @@ const runner = new Runner({
     }),
   stateDir: env.stateDir,
   // What the working state and the thread's steps never say, whatever the agent typed.
-  secrets: [env.token, ...secretValues(process.env)],
+  secrets: [env.token, env.portToken, ...secretValues(process.env)],
   // Every filesystem, so the agent's files are flushed with the runner's own.
   flush: () =>
     new Promise<void>((resolve) => {
@@ -152,6 +151,7 @@ const runner = new Runner({
 
 const server = serve({
   port: env.port,
+  portToken: env.portToken,
   poke: () => runner.poke(),
   report: () => runner.report(),
   health: () => runner.health(),

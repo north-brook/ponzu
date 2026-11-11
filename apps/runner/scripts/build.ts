@@ -4,8 +4,8 @@
  *
  *   runner.js              the runner, bundled with everything but playwright-core
  *   git-credential.js      git's credential helper for github.com
+ *   supervise.js           what starts the runner, restarts it and stops it (no systemd)
  *   package.json           playwright-core, at the version the renderer was built against
- *   ponzu-runner.service   the systemd unit, with {{BUN}} and {{RUNNER_DIR}} to fill in
  *
  * The image runs `bun install --production` in the directory, then `bun runner.js` on its own
  * Bun (1.3 or later) on Linux. Claude Code is the image's own binary, not a copy the Agent SDK
@@ -15,7 +15,7 @@
  *   bun scripts/build.ts --smoke   also starts the bundle, which must refuse an empty environment
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -27,6 +27,7 @@ mkdirSync(out, { recursive: true });
 for (const [entry, name] of [
   ["src/main.ts", "runner.js"],
   ["src/credential.ts", "git-credential.js"],
+  ["src/supervise.ts", "supervise.js"],
 ] as const) {
   const built = await Bun.build({
     entrypoints: [join(root, entry)],
@@ -57,12 +58,11 @@ const manifest = {
   dependencies: { "playwright-core": playwright.version },
 };
 writeFileSync(join(out, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-copyFileSync(join(root, "deploy", "ponzu-runner.service"), join(out, "ponzu-runner.service"));
 console.log(`built ${out}`);
 
 if (process.argv.includes("--smoke")) {
   // Loading the bundle reaches every module it holds. With no environment it must stop at
-  // once, with the status systemd is told not to restart on.
+  // once, with the status the supervisor does not restart on.
   const run = spawnSync(process.execPath, [join(out, "runner.js")], {
     env: { PATH: process.env.PATH },
     encoding: "utf8",

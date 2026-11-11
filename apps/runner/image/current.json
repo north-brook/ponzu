@@ -1,10 +1,12 @@
 {
-  "snapshot": "ponzu-runner-2de5aff8d903",
-  "inputs": "2de5aff8d90350a37fec16d85a27d92312032cdc06cbfdf39781f187948221b1",
-  "base": "63ef2b523183",
-  "bakedAt": "2026-11-11T19:50:22.625Z",
-  "verifiedAt": "2026-11-11T19:57:01.530Z",
-  "sizeBytes": 853991424,
+  "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+  "repository": "northbrook/ponzu-api/ponzu-runner-spike",
+  "tag": "8fc0bab012ac",
+  "inputs": "8fc0bab012ac1d274f53cc4b1a7209de8edfc172e6e308a1d167398f96114043",
+  "base": "ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852",
+  "builtAt": "2026-11-11T21:02:55.203Z",
+  "verifiedAt": "2026-11-11T21:07:11.131Z",
+  "sizeBytes": 557451333,
   "pins": {
     "bunVersion": "1.4.2",
     "bunSha256": "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",

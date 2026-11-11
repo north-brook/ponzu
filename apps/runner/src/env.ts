@@ -9,6 +9,8 @@ export interface RunnerEnv {
   token: string;
   /** The port `/poke` and `/health` listen on. */
   port: number;
+  /** The bearer a caller of that port must carry: its address is public. */
+  portToken: string;
   /** Where checkouts live. */
   workRoot: string;
   /** Where the runner keeps what it needs across restarts. */
@@ -36,7 +38,7 @@ export class EnvError extends Error {
  * What only the runner may hold. Claude Code, its tools and the checkout's git run without
  * them: the agent asks the runner for what it needs (git's credential, over `gitSocket`).
  */
-const RUNNER_ONLY = ["PONZU_RUNNER_TOKEN"];
+const RUNNER_ONLY = ["PONZU_RUNNER_TOKEN", "PONZU_PORT_TOKEN"];
 
 /** The Claude credential, exactly one of which is set. */
 export const CLAUDE_CREDENTIALS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
@@ -67,6 +69,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
     designId: need("PONZU_DESIGN_ID"),
     token: need("PONZU_RUNNER_TOKEN"),
     port,
+    portToken: need("PONZU_PORT_TOKEN"),
     workRoot: env.PONZU_WORK_ROOT ?? join(home, "work"),
     stateDir,
     gitSocket: env.PONZU_GIT_SOCKET ?? join(stateDir, "git.sock"),

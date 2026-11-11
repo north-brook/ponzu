@@ -32,6 +32,8 @@ const designId = need("PONZU_DESIGN_ID");
 const token = need("PONZU_RUNNER_TOKEN");
 const port = Number(process.env.PONZU_FAKE_API_PORT ?? 8790);
 const runnerPort = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
+/** The runner's port answers only the bearer of its port token, on localhost too. */
+const runnerDoor = { authorization: `Bearer ${process.env.PONZU_PORT_TOKEN ?? ""}` };
 const stateFile = process.env.PONZU_FAKE_API_STATE ?? `${process.env.HOME}/.ponzu-fake-api.json`;
 /** Held until the driver hands back the memory it kept: what the real API would remember. */
 let held = process.env.PONZU_FAKE_API_HOLD === "1";
@@ -159,14 +161,20 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
       // its wake does: the row says awake, and the runner is only poked.
       fake.sleep = ((await request.json()) as { sleep: string | null }).sleep;
       const door = fake.sleep === null ? "poke" : "report";
-      await fetch(`http://127.0.0.1:${runnerPort}/${door}`, { method: "POST" }).catch(() => {});
+      await fetch(`http://127.0.0.1:${runnerPort}/${door}`, {
+        method: "POST",
+        headers: runnerDoor,
+      }).catch(() => {});
       return new Response(null, { status: 204 });
     }
     case "POST /control/events": {
       const body = (await request.json()) as EventBody & { priority?: Priority };
       const event = fake.push(body, body.priority ? { priority: body.priority } : {});
       keep();
-      await fetch(`http://127.0.0.1:${runnerPort}/poke`, { method: "POST" }).catch(() => {});
+      await fetch(`http://127.0.0.1:${runnerPort}/poke`, {
+        method: "POST",
+        headers: runnerDoor,
+      }).catch(() => {});
       return Response.json(event);
     }
     case "PUT /control/session":
