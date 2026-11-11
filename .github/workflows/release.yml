@@ -160,7 +160,7 @@ jobs:
           bun run --filter @ponzu/studio build
           bun scripts/npm-package.ts
         env:
-          # As in the Mac app's server: release builds report anonymous usage.
+          # Release builds of the CLI report anonymous usage (apps/cli/src/telemetry.ts).
           PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
       - name: It installs, creates a design and serves the studio
         run: bun scripts/npm-smoke.ts
@@ -238,9 +238,6 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           GH_TOKEN: ${{ github.token }}
-          # Inlined into the bundled server, so release builds report anonymous
-          # usage and builds from source don't (apps/cli/src/telemetry.ts).
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
       - name: Signed, notarized and stapled
         # The app inside the DMG carries the notarization ticket; the DMG
         # itself is only a container and is not notarized.
@@ -251,15 +248,14 @@ jobs:
         # notarized; codesign shows the ticket is in the bundle.
         run: |
           codesign --verify --deep --strict --verbose=2 out/mac-arm64/Ponzu.app
-          codesign --verify --strict --verbose=2 out/mac-arm64/Ponzu.app/Contents/Resources/server/ponzu
           spctl --assess --type execute --verbose=2 out/mac-arm64/Ponzu.app
           set -o pipefail
           codesign --display --verbose=4 out/mac-arm64/Ponzu.app 2>&1 | grep -x 'Notarization Ticket=stapled'
         working-directory: apps/desktop
-      - name: The signed app starts its server and paints the studio
+      - name: The signed app draws its sign-in screen
         # The exact bundle in the draft, before the draft goes public. A broken
         # main process hangs on Electron's error dialog and trips the alarm;
-        # a server or renderer failure exits 1. See src/smoke.ts. macOS ships
+        # a studio that fails exits 1. See src/smoke.ts. macOS ships
         # no `timeout`; perl's alarm survives exec.
         # ELECTRON_RUN_AS_NODE, if a host sets it, would make the app plain Node.
         run: env -u ELECTRON_RUN_AS_NODE PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
@@ -327,7 +323,6 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
       - name: The update feed names no publisher to check updates against
         # electron-updater checks a Windows update's signature only against the
         # publisher app-update.yml names, which an unsigned build has none of.
@@ -335,7 +330,7 @@ jobs:
           cat out/win-unpacked/resources/app-update.yml
           ! grep -q publisherName out/win-unpacked/resources/app-update.yml
         working-directory: apps/desktop
-      - name: The installer installs Ponzu, which starts its server and paints the studio
+      - name: The installer installs Ponzu, which draws its sign-in screen
         # As CI's "Desktop package (Windows)", on what the installer put in
         # place: one click, for this person only, under %LOCALAPPDATA%\Programs.
         shell: pwsh
@@ -355,7 +350,7 @@ jobs:
           exit $app.ExitCode
         working-directory: apps/desktop
       - name: Uninstalling removes Ponzu and what it wrote for the person
-        # What the app writes at launch (src/designs.ts, apps/cli/src/command.ts),
+        # What Ponzu 1.x wrote at launch (its src/designs.ts, apps/cli/src/command.ts),
         # which the uninstaller removes through build/uninstall.ps1.
         shell: pwsh
         run: |
@@ -447,10 +442,9 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
-      - name: The AppImage starts its server and paints the studio
+      - name: The AppImage draws its sign-in screen
         # As CI's "Desktop package", through the AppImage's own runtime. Its
-        # icons are where the app's desktop entry finds them (src/designs.ts).
+        # icons are where the app's desktop entry finds them (src/linux.ts).
         run: |
           cat out/latest-linux.yml
           chmod +x out/Ponzu-x64.AppImage
@@ -460,24 +454,17 @@ jobs:
           test -f "$RUNNER_TEMP/squashfs-root/usr/share/icons/hicolor/512x512/apps/ponzu.png"
           test -f "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
         working-directory: apps/desktop
-      - name: The .deb installs, starts, and removes itself and the wake helper
-        # Installed with its dependencies, launched from where it links
-        # `ponzu`. The wake helper's units are written as the app writes them
-        # at launch; the runner has no systemd user session, so only the files
-        # are there to remove (build/deb-after-remove.sh).
+      - name: The .deb installs, starts, and removes itself
+        # Installed with its dependencies, launched from where it links `ponzu`.
         run: |
           sudo apt-get install -y ./out/Ponzu-x64.deb
           test "$(readlink -f /usr/bin/ponzu)" = /opt/Ponzu/ponzu
           test -f /usr/share/icons/hicolor/512x512/apps/ponzu.png
           grep '^Icon=ponzu$' /usr/share/applications/ponzu.desktop
           PONZU_SMOKE=1 timeout 120 xvfb-run -a ponzu --no-sandbox
-          /opt/Ponzu/resources/server/ponzu wake install || true
-          test -f ~/.config/systemd/user/ponzu-wake@.service
           sudo apt-get remove -y "$(dpkg-deb -f out/Ponzu-x64.deb Package)"
           test ! -e /opt/Ponzu/ponzu
           test ! -e /usr/bin/ponzu
-          test ! -e ~/.config/systemd/user/ponzu-wake@.service
-          test ! -e ~/.config/systemd/user/ponzu-wake.socket
         working-directory: apps/desktop
       - name: Upload anything electron-builder didn't
         if: env.PUBLISH == 'true'

@@ -1020,7 +1020,24 @@ Every client names itself on each request (`X-Ponzu-Client: macos/2.0.0`). The A
 can refuse one that is too old (426, `client_too_old`), and the shell then offers
 the update.
 On first launch the cloud app removes what 1.x left behind (the wake helper, the
-`ponzu` shim, agent registrations).
+`ponzu` shim, agent registrations), each only when it is in the form 1.x wrote and
+what it runs is gone.
+
+The renderer never holds the refresh token: it borrows an access token from the
+main process for each request (`borrowSession` in `packages/client`) and sends
+the request itself, from the studio's origin. The window shows the studio and
+nothing else, under a content security policy that runs only the studio's own
+script and reaches only the API, Neon Realtime and a design's files.
+
+Links into the app (`apps/desktop/README.md`):
+
+```
+ponzu://design/<design id>?page=<page id>&artboard=<artboard id>
+ponzu://github/setup?result=installed&workspace=<workspace id>
+```
+
+A link only asks to show something; one that doesn't parse is dropped. A development
+build takes `ponzu-dev://` instead, so it never takes an installed app's links.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The

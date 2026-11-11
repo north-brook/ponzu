@@ -236,18 +236,19 @@ jobs:
         if: env.RUN == 'true'
         run: bun run package:dir
         working-directory: apps/desktop
-      - name: The packaged app starts its server and paints the studio
+      - name: The packaged app draws its sign-in screen
         if: env.RUN == 'true'
-        # A main process that fails to load hangs on Electron's error dialog
-        # and trips the timeout; a server or renderer failure exits 1. See
-        # src/smoke.ts. The release workflow runs the same check on the
-        # signed Mac build before publishing it.
+        # Signed out, with no keychain and no network. A main process that
+        # fails to load hangs on Electron's error dialog and trips the timeout;
+        # a studio that fails exits 1. See src/smoke.ts. The release workflow
+        # runs the same check on the signed Mac build before publishing it.
         run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
         working-directory: apps/desktop
       - name: The npm package installs, creates a design and serves the studio
         if: env.RUN == 'true'
         # What the release workflow publishes for `bunx ponzu`, with the studio
-        # the package above built.
+        # the package above built. The desktop app no longer bundles the CLI;
+        # this stays here until apps/cli is deleted at cutover.
         run: bun scripts/npm-package.ts && bun scripts/npm-smoke.ts
 
   desktop-windows:
@@ -290,19 +291,20 @@ jobs:
       - name: The CLI and the app's own paths, as Windows writes them
         if: env.RUN == 'true'
         # The CLI's tests that need Windows itself ("Check, typecheck, test"
-        # runs the rest), and the app's reading of paths with Windows' separators.
+        # runs the rest), and the app's serving of the studio and reading of
+        # links with Windows' separators.
         run: |
           bun test apps/cli/src/host.test.ts apps/cli/src/command.test.ts -t "on Windows"
-          bun test apps/desktop/src/designs.test.ts
+          bun test apps/desktop/src/studio-files.test.ts apps/desktop/src/deep-links.test.ts
       - name: Unsigned, unpublished package
         if: env.RUN == 'true'
         run: bun run package:dir
         working-directory: apps/desktop
-      - name: The packaged app starts its server and paints the studio
+      - name: The packaged app draws its sign-in screen
         if: env.RUN == 'true'
         # As on Linux: a main process that fails to load hangs on Electron's
-        # error dialog and trips the timeout; a server or renderer failure
-        # exits 1. Windows' own timeout.exe only pauses, so PowerShell waits.
+        # error dialog and trips the timeout; a studio that fails exits 1.
+        # Windows' own timeout.exe only pauses, so PowerShell waits.
         shell: pwsh
         run: |
           $env:PONZU_SMOKE = "1"

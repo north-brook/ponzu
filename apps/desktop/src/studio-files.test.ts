@@ -32,6 +32,8 @@ test("nothing outside the studio, nothing missing, nothing of another host", () 
     "ponzu-studio://app/../secret.json",
     "ponzu-studio://app/%2e%2e/secret.json",
     "ponzu-studio://app/assets/%2e%2e%2f%2e%2e%2fsecret.json",
+    // Windows' separator, which a URL's path doesn't count as one.
+    "ponzu-studio://app/assets/..%5C..%5Csecret.json",
     "ponzu-studio://app/missing.js",
     "ponzu-studio://app/index.html.bak",
     "ponzu-studio://other/index.html",
