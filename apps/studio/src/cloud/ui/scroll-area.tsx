@@ -1,7 +1,8 @@
 import { type ComponentProps, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "./cn.ts";
 
-const FADE = 16;
+/** How far in from a cut edge the fade reaches. */
+export const SCROLL_FADE = 16;
 
 /**
  * A region that scrolls on one axis and fades out at an edge with more beyond it, so a list cut
@@ -46,7 +47,7 @@ export function ScrollArea({
   const direction = axis === "y" ? "to bottom" : "to right";
   const mask =
     edges.start || edges.end
-      ? `linear-gradient(${direction}, ${edges.start ? "transparent" : "black"}, black ${FADE}px, black calc(100% - ${FADE}px), ${edges.end ? "transparent" : "black"})`
+      ? `linear-gradient(${direction}, ${edges.start ? "transparent" : "black"}, black ${SCROLL_FADE}px, black calc(100% - ${SCROLL_FADE}px), ${edges.end ? "transparent" : "black"})`
       : undefined;
 
   return (

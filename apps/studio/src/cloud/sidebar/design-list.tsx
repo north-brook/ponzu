@@ -1,12 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type { DesignSummary } from "../model.ts";
-import { DesignRow, type RowAction } from "./design-row.tsx";
-
-export interface RowHandlers {
-  onOpen: (design: DesignSummary) => void;
-  onAction: (design: DesignSummary, action: Exclude<RowAction, "rename">) => void;
-  onRename: (design: DesignSummary, name: string) => void;
-}
+import { DesignRow, type RowHandlers } from "./design-row.tsx";
 
 /**
  * Rows of designs, one Tab stop for the whole list (the open design, else the first); the arrow
@@ -56,9 +50,9 @@ export function DesignList({
             open={design.id === openId}
             indicators={indicators}
             tabIndex={design.id === stop ? 0 : -1}
-            onOpen={() => onOpen(design)}
-            onAction={(action) => onAction(design, action)}
-            onRename={(name) => onRename(design, name)}
+            onOpen={onOpen}
+            onAction={onAction}
+            onRename={onRename}
           />
         </li>
       ))}

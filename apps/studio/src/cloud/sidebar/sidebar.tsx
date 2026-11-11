@@ -1,6 +1,12 @@
 import { PencilEdit02Icon, Search01Icon } from "@hugeicons/core-free-icons";
-import { type ReactNode, useRef } from "react";
-import { applyFilter, type DesignFilter, isFiltering, NO_FILTER, repoCounts } from "../filter.ts";
+import { type ReactNode, useMemo, useRef } from "react";
+import {
+  applyFilter,
+  type DesignFilter,
+  isFiltering,
+  NO_FILTER,
+  projectCounts,
+} from "../filter.ts";
 import type { DesignSummary, Person, SearchResults, Workspace } from "../model.ts";
 import type { ResultKey } from "../search.ts";
 import { orderDesigns } from "../status.ts";
@@ -8,12 +14,14 @@ import { Button, IconButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { ScrollArea } from "../ui/scroll-area.tsx";
 import { useShortcut } from "../ui/shortcut.ts";
-import { DesignList, DesignListSkeleton, type RowHandlers } from "./design-list.tsx";
+import { DesignList, DesignListSkeleton } from "./design-list.tsx";
+import type { RowHandlers } from "./design-row.tsx";
 import { FilterMenu } from "./filter-menu.tsx";
 import { SearchField, SearchResultsView, useResultSelection } from "./search.tsx";
 import { SettledTray } from "./settled-tray.tsx";
 import { WorkspaceMenu } from "./workspace-menu.tsx";
 
+/** The row handlers are passed to every row: keep them the same functions between renders. */
 export interface SidebarProps extends RowHandlers {
   me: Person;
   workspace: Workspace;
@@ -25,6 +33,9 @@ export interface SidebarProps extends RowHandlers {
   settled: { count: number; designs: DesignSummary[] | null; expanded: boolean };
   onSettledExpandedChange: (expanded: boolean) => void;
   openDesignId: string | null;
+  /** The window's sidebar is collapsed; ⌘K expands it before it searches. */
+  collapsed: boolean;
+  onExpand: () => void;
   filter: DesignFilter;
   onFilterChange: (filter: DesignFilter) => void;
   /** Null while search is closed; "" open and empty. */
@@ -44,15 +55,23 @@ export interface SidebarProps extends RowHandlers {
 /**
  * The sidebar: the workspace switcher and Search, Filter and New design over the workspace's
  * designs by recency, the settled tray at the foot. Search takes the header row's place; with a
- * query its results take the list's.
+ * query its results take the list's. It holds the shortcuts for what it offers: ⌘K, ⌘N and ⌘,.
  */
 export function Sidebar(props: SidebarProps) {
   const { me, workspace, designs, filter, query, results } = props;
   const searchButton = useRef<HTMLButtonElement>(null);
+  const searchField = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useResultSelection(results);
 
-  useShortcut("k", () => props.onQueryChange(query ?? ""));
+  useShortcut("k", () => {
+    if (props.collapsed) props.onExpand();
+    if (query === null) props.onQueryChange("");
+    // Already open: back into the field, once the pane is no longer inert. A field just opened
+    // takes focus as it mounts.
+    else requestAnimationFrame(() => searchField.current?.focus({ preventScroll: true }));
+  });
   useShortcut("n", props.onNewDesign);
+  useShortcut(",", props.onSettings);
 
   const closeSearch = () => {
     props.onQueryChange(null);
@@ -62,7 +81,11 @@ export function Sidebar(props: SidebarProps) {
 
   const searching = query !== null && query.trim() !== "";
   const team = workspace.kind === "org";
-  const shown = designs ? orderDesigns(applyFilter(designs, filter), workspace.kind) : null;
+  const shown = useMemo(
+    () => (designs ? orderDesigns(applyFilter(designs, filter), workspace.kind) : null),
+    [designs, filter, workspace.kind],
+  );
+  const projects = useMemo(() => projectCounts(designs ?? []), [designs]);
   const handlers: RowHandlers = {
     onOpen: props.onOpen,
     onAction: props.onAction,
@@ -97,7 +120,7 @@ export function Sidebar(props: SidebarProps) {
             onChange={props.onFilterChange}
             me={me}
             teammates={team ? props.teammates : null}
-            repos={repoCounts(designs ?? [])}
+            projects={projects}
           />
           <IconButton
             label="New design"
@@ -110,6 +133,7 @@ export function Sidebar(props: SidebarProps) {
         </div>
       ) : (
         <SearchField
+          fieldRef={searchField}
           query={query}
           onQueryChange={props.onQueryChange}
           results={searching ? results : null}

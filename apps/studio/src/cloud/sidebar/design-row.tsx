@@ -1,5 +1,5 @@
 import { Files01Icon, FolderGitIcon, GitBranchIcon } from "@hugeicons/core-free-icons";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import type { DesignSummary } from "../model.ts";
 import { type RowIndicator, rowIndicator } from "../status.ts";
 import { AvatarStack } from "../ui/avatar.tsx";
@@ -18,13 +18,21 @@ import { DesignPreviewImage } from "./design-preview.tsx";
 
 export type RowAction = "copy_link" | "rename" | "settle" | "reopen" | "delete";
 
+/** What a row does, the same for every row: pass the same functions each render. */
+export interface RowHandlers {
+  onOpen: (design: DesignSummary) => void;
+  onAction: (design: DesignSummary, action: Exclude<RowAction, "rename">) => void;
+  onRename: (design: DesignSummary, name: string) => void;
+}
+
 /**
  * A design in the sidebar: its preview, its name with one status at the end, and where it
  * lives (repo and branch, or a Scratch city) with its pull request. The open design's row takes
- * the canvas's ground, and its pull request mark darkens and shows its checks. Teammates in it
+ * the selected ground (the canvas's, in light), and its pull request mark darkens and shows its checks. Teammates in it
  * now sit on the preview's corner. Right-click for its actions; Rename edits the name in place.
+ * It draws again only when its own props change, so a long list stays quick.
  */
-export function DesignRow({
+export const DesignRow = memo(function DesignRow({
   design,
   open,
   indicators = true,
@@ -32,15 +40,12 @@ export function DesignRow({
   onOpen,
   onAction,
   onRename,
-}: {
+}: RowHandlers & {
   design: DesignSummary;
   open: boolean;
   /** Settled rows show none. */
   indicators?: boolean;
   tabIndex: number;
-  onOpen: () => void;
-  onAction: (action: Exclude<RowAction, "rename">) => void;
-  onRename: (name: string) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -73,7 +78,7 @@ export function DesignRow({
               onDone={(name) => {
                 renamed.current = true;
                 setRenaming(false);
-                if (name && name !== design.name) onRename(name);
+                if (name && name !== design.name) onRename(design, name);
               }}
             />
           ) : (
@@ -95,7 +100,7 @@ export function DesignRow({
 
   const rowClass = cn(
     "flex w-full items-center gap-2.5 rounded-8 px-2 py-1.5 text-left text-ink outline-none transition-colors duration-(--dur-hover)",
-    open ? "bg-canvas" : "hover:bg-hover",
+    open ? "bg-selected" : "hover:bg-hover",
   );
 
   if (renaming) return <div className={rowClass}>{body}</div>;
@@ -110,32 +115,32 @@ export function DesignRow({
           aria-current={open ? "page" : undefined}
           aria-label={rowLabel(design, indicator)}
           tabIndex={tabIndex}
-          onClick={onOpen}
+          onClick={() => onOpen(design)}
           className={cn(
             rowClass,
             "cursor-default select-none focus-ring active:bg-press",
-            open && "active:bg-canvas",
+            open && "active:bg-selected",
           )}
         >
           {body}
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent width={200}>
-        <ContextMenuItem onSelect={() => onAction("copy_link")}>Copy link</ContextMenuItem>
+        <ContextMenuItem onSelect={() => onAction(design, "copy_link")}>Copy link</ContextMenuItem>
         <ContextMenuItem onSelect={() => setRenaming(true)}>Rename</ContextMenuItem>
         {settled ? (
-          <ContextMenuItem onSelect={() => onAction("reopen")}>Reopen</ContextMenuItem>
+          <ContextMenuItem onSelect={() => onAction(design, "reopen")}>Reopen</ContextMenuItem>
         ) : (
-          <ContextMenuItem onSelect={() => onAction("settle")}>Settle</ContextMenuItem>
+          <ContextMenuItem onSelect={() => onAction(design, "settle")}>Settle</ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => onAction("delete")} className="text-danger">
+        <ContextMenuItem onSelect={() => onAction(design, "delete")} className="text-danger">
           Delete
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenuRoot>
   );
-}
+});
 
 /** Where a design lives: the repo and its branch, or Scratch's city. */
 function ProjectLine({ design }: { design: DesignSummary }) {

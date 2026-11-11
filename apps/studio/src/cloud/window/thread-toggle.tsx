@@ -3,6 +3,7 @@ import type { RailSignal } from "../status.ts";
 import { IconButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
+import { useShortcut } from "../ui/shortcut.ts";
 
 /**
  * Opens and closes the thread rail (⌘J). While the rail is closed it carries the agent's state
@@ -18,6 +19,7 @@ export function ThreadToggle({
   signal: RailSignal;
   onToggle: () => void;
 }) {
+  useShortcut("j", onToggle);
   const shown = open ? "idle" : signal;
   const label =
     typeof shown === "object"

@@ -1,5 +1,5 @@
 import { DashboardSquare01Icon, Search01Icon } from "@hugeicons/core-free-icons";
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
+import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useState } from "react";
 import {
   type BoardHit,
   type CommentHit,
@@ -20,11 +20,12 @@ const LIST_ID = "search-results";
 const optionId = (key: ResultKey) => `search-${key.replace(":", "-")}`;
 
 /**
- * The search field, in the header row's place. Arrow keys move the selection through the
- * results below it, Return opens the selected one, Escape clears and closes. Leaving it empty
- * closes it too.
+ * The search field, in the header row's place, focused as it opens. Arrow keys move the
+ * selection through the results below it, Return opens the selected one, Escape clears and
+ * closes. Leaving it empty closes it too.
  */
 export function SearchField({
+  fieldRef,
   query,
   onQueryChange,
   results,
@@ -33,6 +34,7 @@ export function SearchField({
   onOpenResult,
   onClose,
 }: {
+  fieldRef: RefObject<HTMLInputElement | null>;
   query: string;
   onQueryChange: (query: string) => void;
   results: SearchResults | null;
@@ -42,6 +44,11 @@ export function SearchField({
   onClose: () => void;
 }) {
   const keys = results ? resultKeys(results) : [];
+
+  // Without scrolling: a sidebar opening from collapsed would otherwise slide its content aside.
+  useEffect(() => {
+    fieldRef.current?.focus({ preventScroll: true });
+  }, [fieldRef]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
@@ -71,7 +78,7 @@ export function SearchField({
         aria-controls={LIST_ID}
         aria-autocomplete="list"
         aria-activedescendant={selected ? optionId(selected) : undefined}
-        autoFocus
+        ref={fieldRef}
         spellCheck={false}
         placeholder="Search"
         value={query}
@@ -121,6 +128,11 @@ export function SearchResultsView({
   const slow = useAfter(300, results === null);
   const now = useNow();
 
+  // The field keeps focus, so the selection has to bring itself into view.
+  useEffect(() => {
+    if (selected) document.getElementById(optionId(selected))?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
+
   if (!results) {
     return slow ? <Note>Searching…</Note> : null;
   }
@@ -140,7 +152,7 @@ export function SearchResultsView({
       onMouseMove={() => onSelect(key)}
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => onOpenResult(key)}
-      className="flex cursor-default select-none items-center gap-2.5 rounded-8 px-2 py-1.5 aria-selected:bg-canvas"
+      className="flex cursor-default select-none items-center gap-2.5 rounded-8 px-2 py-1.5 aria-selected:bg-selected"
     >
       {leading}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">

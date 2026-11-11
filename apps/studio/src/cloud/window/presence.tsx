@@ -1,4 +1,5 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
+import { type KeyboardEvent, useState } from "react";
 import { type Contributor, firstName } from "../model.ts";
 import { ago, useNow } from "../time.ts";
 import { Avatar } from "../ui/avatar.tsx";
@@ -12,19 +13,33 @@ export const PRESENCE_LIMIT = 5;
 
 /**
  * Everyone who has worked on the design, you first: full strength while they're here, faded to
- * 40% once they've gone. Hovering one says who, and for someone away, when they were last here.
- * The "+" after them opens Share (it must sit in the Share popover's root); open, it takes the
- * open row's ground instead of its ring.
+ * 40% once they've gone. Hovering one, or reaching it with the keyboard (one Tab stop, then the
+ * arrows), says who, and for someone away, when they were last here. The "+" after them opens
+ * Share (it must sit in the Share popover's root); open, it takes the selected ground instead of
+ * its ring.
  */
 export function Presence({ contributors, meId }: { contributors: Contributor[]; meId: string }) {
   const now = useNow();
-  const ordered = contributors.toSorted(
-    (a, b) => Number(b.person.id === meId) - Number(a.person.id === meId),
-  );
+  const [focused, setFocused] = useState(0);
+  const shown = contributors
+    .toSorted((a, b) => Number(b.person.id === meId) - Number(a.person.id === meId))
+    .slice(0, PRESENCE_LIMIT);
+  const stop = Math.min(focused, shown.length - 1);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    const next = stop + step;
+    if (!step || next < 0 || next >= shown.length) return;
+    e.preventDefault();
+    setFocused(next);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="img"]')[next]?.focus();
+  };
+
   return (
     <div className="flex shrink-0 items-center">
-      <div className="flex">
-        {ordered.slice(0, PRESENCE_LIMIT).map((c, i) => {
+      {/* biome-ignore lint/a11y/useSemanticElements: a group of avatars, not a form's fieldset */}
+      <div role="group" aria-label="People in this design" onKeyDown={onKeyDown} className="flex">
+        {shown.map((c, i) => {
           const you = c.person.id === meId;
           const name = `${firstName(c.person)}${you ? " (you)" : ""}`;
           const away = !you && !c.here;
@@ -35,7 +50,13 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
               <span
                 role="img"
                 aria-label={label}
-                className={cn("flex", i > 0 && "-ml-1.5", away && "opacity-40")}
+                tabIndex={i === stop ? 0 : -1}
+                onFocus={() => setFocused(i)}
+                className={cn(
+                  "app-no-drag flex rounded-pill outline-none focus-ring",
+                  i > 0 && "-ml-1.5",
+                  away && "opacity-40",
+                )}
               >
                 <Avatar person={c.person} size={22} ring="chrome" />
               </span>
@@ -46,7 +67,7 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
       <Tip label="Share">
         <PopoverTrigger
           aria-label="Share"
-          className="app-no-drag ml-[3px] grid size-[22px] shrink-0 cursor-default place-items-center rounded-pill text-muted shadow-[inset_0_0_0_1px_var(--c-outline)] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover aria-expanded:bg-canvas aria-expanded:shadow-none"
+          className="app-no-drag ml-[3px] grid size-[22px] shrink-0 cursor-default place-items-center rounded-pill text-muted shadow-[inset_0_0_0_1px_var(--c-outline)] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover aria-expanded:bg-selected aria-expanded:shadow-none"
         >
           <Icon icon={PlusSignIcon} size={11} stroke={2.4} />
         </PopoverTrigger>

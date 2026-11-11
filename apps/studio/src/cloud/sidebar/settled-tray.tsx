@@ -4,7 +4,8 @@ import { orderSettled } from "../status.ts";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { ScrollArea } from "../ui/scroll-area.tsx";
-import { DesignList, DesignListSkeleton, type RowHandlers } from "./design-list.tsx";
+import { DesignList, DesignListSkeleton } from "./design-list.tsx";
+import type { RowHandlers } from "./design-row.tsx";
 
 /**
  * Designs whose pull request merged, folded into a tray at the sidebar's foot. Expanded, they
