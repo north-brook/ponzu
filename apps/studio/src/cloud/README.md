@@ -86,7 +86,7 @@ Ctrl stands for ⌘ off the Mac, and Alt for ⌥. The numbers are the 1.x studio
   follow the page tabs. 9 is always the last, however many there are.
 - **Hints.** Holding the modifier on its own for 250 ms shows each target's number
   (`ui/shortcut-hint.tsx`): on a row, over its preview's top-left corner; on a page tab, in its
-  icon's place, or on a tab without one over the end of its name, which fades out beneath it.
+  icon's place, or on a tab without one in place of its name, which fades beneath it.
   Nothing moves to make room. They arrive one after another on the pop's timing and leave all at
   once, quicker, as the key comes up, the window loses focus, or any other key, click or scroll
   comes; so ⌘B, ⌘J or ⌘K never flash them. A number pressed while they show keeps them up.

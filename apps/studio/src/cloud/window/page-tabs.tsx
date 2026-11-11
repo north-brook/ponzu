@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
  * between tabs and Return or Space opens one. Too many to fit scroll under a fade, keeping the
  * active tab in view and clear of the fade: the strip never gets narrower than it needs for that.
  * ⌥1–9 open the first eight and the last; held a moment, ⌥ shows each tab its number, over its
- * icon, or on a tab without one before its name, which slides aside within the tab to make room.
+ * icon, or on a tab without one in place of its name, centred on the tab.
  */
 export function PageTabs({
   pages,

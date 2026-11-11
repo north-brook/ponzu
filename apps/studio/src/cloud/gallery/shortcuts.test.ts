@@ -334,7 +334,22 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
         return hint ? `${hint.getAttribute("data-mod")}${hint.getAttribute("data-n")}` : "";
       }),
     );
+    // A tab with no icon (Checkout, the fourth) gives its name to the keys, centred on it: the
+    // name is not cut short, it fades whole.
+    const iconless = await page.$eval(`${TABS}:nth-child(4)`, (tab) => {
+      const hint = tab.querySelector("[data-hint]")!.getBoundingClientRect();
+      const box = tab.getBoundingClientRect();
+      const name = tab.querySelector("[data-hint]")!.previousElementSibling!;
+      return {
+        offCentre: Math.abs(hint.x + hint.width / 2 - (box.x + box.width / 2)),
+        nameOpacity: Number(getComputedStyle(name).opacity),
+        text: tab.textContent,
+      };
+    });
     await page.keyboard.up("Alt");
+    expect(iconless.text).toBe("Checkout");
+    expect(iconless.offCentre).toBeLessThan(1);
+    expect(iconless.nameOpacity).toBe(0);
     // The tabs' text is still their names alone: the keys are drawn, not written.
     expect(await page.$$eval(TABS, (tabs) => tabs.map((t) => t.textContent))).not.toContain(
       expect.stringContaining("⌥"),

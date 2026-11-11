@@ -294,37 +294,6 @@
   animation: shimmer 1.8s linear infinite;
 }
 
-/*
- * A label a shortcut hint comes in before (a page tab with no icon, ui/shortcut-hint.tsx): it
- * slides aside by the hint's width within its own box, its end fading out where it would run
- * past, and back as the hint goes, on the hint's timing (--hint-delay is its turn).
- */
-@property --hint-shift {
-  syntax: "<length>";
-  inherits: false;
-  initial-value: 0px;
-}
-
-@utility hint-shift {
-  translate: var(--hint-shift) 0;
-  mask-image: linear-gradient(
-    to left,
-    transparent var(--hint-shift),
-    #000 calc(var(--hint-shift) * 1.5)
-  );
-  transition: --hint-shift 90ms ease-in;
-
-  @media (prefers-reduced-motion: reduce) {
-    /* biome-ignore lint/complexity/noImportantStyles: outranks hint-shifted's shorthand, whatever the order */
-    transition-delay: 0ms !important;
-  }
-}
-
-@utility hint-shifted {
-  --hint-shift: 24px;
-  transition: --hint-shift var(--dur-pop) var(--ease-out) var(--hint-delay, 0ms);
-}
-
 /* Loading placeholders breathe instead of sweeping, so a list of them stays calm. */
 @keyframes breathe {
   50% {

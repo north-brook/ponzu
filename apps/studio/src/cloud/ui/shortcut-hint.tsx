@@ -65,9 +65,10 @@ export function HintKeys({
 }
 
 /**
- * A label with no icon to give way (a page tab without one): the keys come in before it, and it
- * slides aside within its own room to make space, its end fading out where it would run past.
- * Its box never changes, so neither does anything around it.
+ * A label with no icon to give way (a page tab without one): it fades and the keys take its
+ * place, centred on it, as 1.x's Home button gave its whole mark to ⌘0. Sliding the name aside
+ * to make room cut it short ("Pag" for Page 1, the same for Page 2), so the tab's place in the
+ * row names it instead. Its box never changes, so neither does anything around it.
  */
 export function HintedLabel({
   jump,
@@ -86,12 +87,22 @@ export function HintedLabel({
   return (
     <span className="relative">
       <span
-        className={cn("block hint-shift", shown && "hint-shifted", className)}
+        className={cn(
+          "block transition-opacity duration-(--dur-hover) ease-out",
+          STAGGERED,
+          shown && "opacity-0",
+          className,
+        )}
         style={stagger(n, shown)}
       >
         {children}
       </span>
-      <HintKeys jump={jump} n={n} shown={shown} className="top-1/2 -left-1 -mt-2" />
+      <HintKeys
+        jump={jump}
+        n={n}
+        shown={shown}
+        className="top-1/2 left-1/2 -mt-2 -translate-x-1/2"
+      />
     </span>
   );
 }
