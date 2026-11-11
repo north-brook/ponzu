@@ -1,6 +1,7 @@
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { DesignAccess, DesignMember, Repo } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
+import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
@@ -12,10 +13,14 @@ const ACCESS: Record<DesignAccess, string> = {
   view: "Can view",
 };
 
+/** Under the login of someone GitHub gives access who hasn't opened Ponzu. */
+const NOT_JOINED_SHORT = "hasn't opened Ponzu yet";
+
 /**
  * Who can open this design. Access is the repo's on GitHub, so there is nothing to grant here:
- * the repo line opens it on GitHub, where people are added and removed. Every member is listed,
- * scrolling past 420px. Render it inside the Popover whose anchor is the chrome's right cluster.
+ * the repo line opens it on GitHub, where people are added and removed. Everyone with access is
+ * listed, scrolling past 420px; someone who hasn't opened Ponzu yet is quieter, and says so
+ * under their login. Render it inside the Popover whose anchor is the chrome's right cluster.
  */
 export function SharePopover({
   designName,
@@ -59,19 +64,29 @@ export function SharePopover({
           aria-label="People with access"
           className="m-0 flex list-none flex-col px-3 pt-0.5 pb-2"
         >
-          {members.map(({ person, access }) => (
+          {members.map(({ person, access, joined }) => (
             <li key={person.id} className="flex items-center gap-2.5 px-1 py-1.5">
-              <Avatar person={person} size={26} ring="surface" />
+              <Avatar
+                person={person}
+                size={26}
+                ring="surface"
+                className={joined ? undefined : "opacity-50"}
+              />
               <div className="flex min-w-0 flex-1 flex-col gap-px">
-                <span className="truncate font-medium text-13">
+                <span className={cn("truncate font-medium text-13", !joined && "text-muted")}>
                   {person.name}
                   {person.id === meId ? (
                     <span className="font-normal text-faint"> (you)</span>
                   ) : null}
                 </span>
-                <span className="truncate font-mono text-11 text-faint">{person.login}</span>
+                <span className="truncate text-11 text-faint">
+                  <span className="font-mono">{person.login}</span>
+                  {joined ? null : ` · ${NOT_JOINED_SHORT}`}
+                </span>
               </div>
-              <span className="shrink-0 text-12 text-muted">{ACCESS[access]}</span>
+              <span className={cn("shrink-0 text-12", joined ? "text-muted" : "text-faint")}>
+                {ACCESS[access]}
+              </span>
             </li>
           ))}
         </ul>

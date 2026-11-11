@@ -66,6 +66,19 @@ export const alex: Person = {
   avatarUrl: alexAvatar,
 };
 export const teammates = [sam, maya, jordan, alex];
+/** On the team on GitHub, and haven't opened Ponzu yet: no Ponzu user, keyed by GitHub id. */
+export const ting: Person = {
+  id: "github:5101",
+  name: "Ting Gao",
+  login: "tinggao",
+  avatarUrl: null,
+};
+export const leo: Person = {
+  id: "github:5102",
+  name: "Leo Park",
+  login: "leopark",
+  avatarUrl: null,
+};
 
 export const northbrook: Workspace = {
   id: "ws_northbrook",
@@ -272,11 +285,18 @@ export const contributors: Contributor[] = [
 export const justYou: Contributor[] = [{ person: bryce, here: true, lastHereAt: null }];
 
 export const members: DesignMember[] = [
-  { person: bryce, access: "owner" },
-  { person: sam, access: "edit" },
-  { person: maya, access: "edit" },
-  { person: jordan, access: "edit" },
-  { person: alex, access: "edit" },
+  { person: bryce, access: "owner", joined: true },
+  { person: sam, access: "edit", joined: true },
+  { person: maya, access: "edit", joined: true },
+  { person: jordan, access: "edit", joined: true },
+  { person: alex, access: "edit", joined: true },
+];
+
+/** Share with two people who have access on GitHub and haven't opened Ponzu yet. */
+export const membersMixed: DesignMember[] = [
+  ...members.slice(0, 3),
+  { person: ting, access: "edit", joined: false },
+  { person: leo, access: "view", joined: false },
 ];
 
 export const ideas: Idea[] = [

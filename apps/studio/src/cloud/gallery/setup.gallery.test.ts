@@ -165,6 +165,26 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await page.waitForSelector('button[aria-label="Role of Maya Ortiz: Admin"]');
   });
 
+  test("roles: someone who hasn't opened Ponzu is listed, with a note and nothing to change", async () => {
+    await open("settings-members-not-joined");
+    const people = '[aria-label="People"]';
+    await page.waitForSelector(`${people} :text("Ting Gao")`);
+    // An admin may change Maya's role, and has no picker for Ting or Leo.
+    expect(await page.$('button[aria-label="Role of Maya Ortiz: Member"]')).not.toBeNull();
+    expect(await page.$('button[aria-label^="Role of Ting Gao"]')).toBeNull();
+    expect(await page.$('button[aria-label^="Role of Leo Park"]')).toBeNull();
+    expect(
+      await page.$$eval(`${people} span:text-is("Hasn't opened Ponzu yet")`, (n) => n.length),
+    ).toBe(2);
+    // They come after everyone who has opened Ponzu.
+    const names = await page.$$eval(`${people} [class*="min-h-12"]`, (rows) =>
+      rows.map((row) => row.textContent ?? ""),
+    );
+    expect(names.findIndex((n) => n.includes("Ting Gao"))).toBeGreaterThan(
+      names.findIndex((n) => n.includes("Maya Ortiz")),
+    );
+  });
+
   test("where you design: Continue waits for an account, which turns Ready on return", async () => {
     await open("setup-where-nothing-ready");
     const continueButton = 'button:has-text("Continue")';

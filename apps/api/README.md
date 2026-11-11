@@ -43,7 +43,8 @@ src/
   vault/          sealing stored secrets
   github/         githubUserToken: a person's GitHub token, kept fresh; syncGithub and
                   reconcileInstallation: workspaces, members and repos in line with GitHub;
-                  the install round trip and its setup page; what each webhook does
+                  the install round trip and its setup page; what each webhook does;
+                  people.ts: everyone GitHub gives access, read once per installation
   designs/        committing ops, undo, the current document and its cache, who may send
                   which op (op-rules.ts), and the events a design's feed gets
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the

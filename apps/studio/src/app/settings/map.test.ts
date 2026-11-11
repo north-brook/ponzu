@@ -55,6 +55,46 @@ describe("Members", () => {
     });
   });
 
+  test("everyone GitHub gives access is listed; who hasn't opened Ponzu has no role", async () => {
+    const backend = createFakeBackend();
+    const bryce = backend.addPerson({ login: "brycedbjork", name: "Bryce Bjork" });
+    const ws = backend.addWorkspace({
+      login: "north-brook",
+      name: "Northbrook",
+      members: { [bryce.id]: "admin" },
+      owners: [bryce.id],
+      repos: [{ name: "ponzu-test" }],
+      githubOnly: [{ login: "tingqgao", name: "Ting Gao" }],
+    });
+    const { api } = backend.connect(bryce);
+
+    // The row on "Where do you design?" counts her too: "north-brook · 2 people".
+    const { accounts } = await api.github.accounts();
+    expect(accounts.find((a) => a.login === "north-brook")?.memberCount).toBe(2);
+
+    const members = toMembers(await api.workspaces.get(ws.id));
+    expect(members.map((m) => [m.person.login, m.joined, m.role])).toEqual([
+      ["brycedbjork", true, "admin"],
+      ["tingqgao", false, null],
+    ]);
+    const ting = members[1]!;
+    expect(ting.person.name).toBe("Ting Gao");
+    // Keyed by her GitHub id until she has a Ponzu user; an admin has nothing to change.
+    expect(ting.person.id).toStartWith("github:");
+    expect(roleEdit(ting, members, true)).toEqual({ editable: false, reason: "not_joined" });
+  });
+
+  test("an API from before `people` still lists who has opened Ponzu", async () => {
+    const { api, ws } = team();
+    const { people: _people, ...older } = await api.workspaces.get(ws.id);
+    const members = toMembers(older as Awaited<ReturnType<typeof api.workspaces.get>>);
+    expect(members.map((m) => [m.person.login, m.joined])).toEqual([
+      ["ines", true],
+      ["maya", true],
+      ["sam", true],
+    ]);
+  });
+
   test("the API refuses to demote an owner, and says why in words for people", async () => {
     const { api, ws, owner } = team();
     const refused = await api.workspaces.setRole(ws.id, owner.id, "member").catch((e) => e);

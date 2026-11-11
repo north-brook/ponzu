@@ -2,11 +2,19 @@ import { ArrowDown01Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons"
 import type { Workspace } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { Button } from "../ui/button.tsx";
+import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
 import { Tip } from "../ui/tooltip.tsx";
-import { LOCKED_REASONS, type Member, type Role, roleEdit, sortMembers } from "./members.ts";
+import {
+  LOCKED_REASONS,
+  type Member,
+  NOT_JOINED,
+  type Role,
+  roleEdit,
+  sortMembers,
+} from "./members.ts";
 import { Row, Section, TwoLine } from "./parts.tsx";
 
 export interface MembersSectionProps {
@@ -30,7 +38,8 @@ const ROLES: { value: Role; label: string }[] = [
 /**
  * Who is in the workspace, and each person's role. Membership is GitHub's: everyone who can
  * reach the organization's repos is in, so there is nothing here to invite or remove. An admin
- * sets roles; everyone else reads them.
+ * sets roles; everyone else reads them. Someone who hasn't opened Ponzu yet is listed too,
+ * quieter, with a note where a role would be: they have none until they do.
  */
 export function MembersSection({
   workspace,
@@ -83,26 +92,34 @@ export function MembersSection({
               <Avatar
                 person={member.person}
                 size={28}
-                className="shadow-[0_0_0_1px_var(--c-rule)]"
+                className={cn("shadow-[0_0_0_1px_var(--c-rule)]", !member.joined && "opacity-50")}
               />
             }
             trailing={
-              <RolePicker
-                member={member}
-                edit={roleEdit(member, members, viewerIsAdmin)}
-                workspace={workspace}
-                onChange={(role) => onRoleChange(member, role)}
-              />
+              member.joined ? (
+                <RolePicker
+                  member={member}
+                  edit={roleEdit(member, members, viewerIsAdmin)}
+                  workspace={workspace}
+                  onChange={(role) => onRoleChange(member, role)}
+                />
+              ) : (
+                <span className="flex h-6 items-center text-12 text-faint">{NOT_JOINED}</span>
+              )
             }
           >
             <TwoLine
               title={
-                <>
-                  {member.person.name}
-                  {member.person.id === meId ? (
-                    <span className="font-normal text-12 text-faint"> (you)</span>
-                  ) : null}
-                </>
+                member.joined ? (
+                  <>
+                    {member.person.name}
+                    {member.person.id === meId ? (
+                      <span className="font-normal text-12 text-faint"> (you)</span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-muted">{member.person.name}</span>
+                )
               }
               line={member.person.login}
             />
@@ -120,14 +137,14 @@ function RolePicker({
   workspace,
   onChange,
 }: {
-  member: Member;
+  member: Extract<Member, { joined: true }>;
   edit: ReturnType<typeof roleEdit>;
   workspace: Workspace;
   onChange: (role: Role) => void;
 }) {
   const label = member.role === "admin" ? "Admin" : "Member";
   if (!edit.editable) {
-    if (edit.reason === "not_admin") {
+    if (edit.reason === "not_admin" || edit.reason === "not_joined") {
       return <span className="flex h-6 items-center text-12 text-muted">{label}</span>;
     }
     // Where the chevron would be stays empty, so a locked role lines up with the pickers.

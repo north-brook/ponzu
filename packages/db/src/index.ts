@@ -166,6 +166,17 @@ export {
   readOps,
   type StoredOp,
 } from "./queries/ops.ts";
+export {
+  bestPermission,
+  countWorkspacePeople,
+  forgetWorkspacePeople,
+  type GithubPerson,
+  listRepoPeople,
+  listWorkspacePeople,
+  type RepoPerson,
+  recordWorkspacePeople,
+  type WorkspacePerson,
+} from "./queries/people.ts";
 export { pingDb } from "./queries/ping.ts";
 export {
   deleteStalePresence,

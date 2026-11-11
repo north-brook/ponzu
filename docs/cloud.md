@@ -124,6 +124,26 @@ someone who reaches it only through repos shared with them (an outside collabora
 sees no other member. Ponzu stores only the role (Admin or Member). There are no
 invitations.
 
+**Who is in a workspace** is everyone GitHub gives access to at least one repo of
+its installation, whether or not they have opened Ponzu: that is the count on "Where
+do you design?", Settings › Members and Share. The API reads it as the App, once for
+the whole installation and never per person (`github/people.ts`): each installed
+repo's people (`collaborators`, affiliation all, with their permission and name,
+over GraphQL a hundred at a time), an organization's members for their roles (which
+takes `members: read`), and for a personal account its person. It keeps them in
+`workspace_people` (workspace, GitHub id, login, name, avatar, how they reach it,
+their best permission and each repo's, when last seen), not as `users` rows; someone
+who signs in is matched by their GitHub id, and only then has a membership and a
+role. It is read when an installation is reconciled and the last read is an hour old,
+and at once on `installation`, `installation_repositories`, `member`, `membership`,
+`organization` and `team` webhooks; at most 100 repos (the most recently pushed) and
+1,000 people a list. A read cut short anywhere, or without `members: read`, only adds
+(`people_complete` is false); a complete one drops whoever it no longer finds. A
+suspended installation's people stay as last seen; an uninstalled one's are
+forgotten. What anyone may do is still their own sync's answer (`memberships`,
+`repo_access`); this list grants nothing. Free credits still count the people who
+have opened Ponzu.
+
 GitHub's owners are a floor: whoever owns the account (the person, for a personal
 account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
 Admin at every sync and cannot be demoted (409 `owner_is_admin`). Whoever installed

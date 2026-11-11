@@ -6,6 +6,7 @@ import {
   listUserWorkspaces,
   listWorkspaceDesigns,
   listWorkspaceMembers,
+  listWorkspacePeople,
   listWorkspaceRepos,
   MEMBER_ROLES,
   type MemberWorkspace,
@@ -14,6 +15,7 @@ import {
   REPOSITORY_SELECTIONS,
   setMemberRole,
   WORKSPACE_KINDS,
+  type WorkspacePerson,
 } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -55,6 +57,30 @@ const Member = z.object({
   githubAccess: z.enum(GITHUB_ACCESS),
 });
 
+/**
+ * Someone GitHub says can reach the workspace, whether or not they have opened Ponzu. Someone
+ * who has not has no Ponzu user and no role yet: there is nothing to change about them here.
+ */
+export const WorkspacePersonView = z.object({
+  githubUserId: z.number(),
+  githubLogin: z.string(),
+  name: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  /** Whether they have opened Ponzu and are in the workspace there. */
+  joined: z.boolean(),
+  /** Their Ponzu user once they have joined; null until then. */
+  userId: z.string().nullable(),
+  /** Their role once they have joined; null until then. */
+  role: z.enum(MEMBER_ROLES).nullable(),
+  /** How GitHub says they reach it. */
+  githubAccess: z.enum(GITHUB_ACCESS),
+});
+
+export const toPersonView = (person: WorkspacePerson): z.input<typeof WorkspacePersonView> => ({
+  ...person,
+  joined: person.userId !== null,
+});
+
 const WorkspaceProfile = z.object({
   workspace: WorkspaceSummary.extend({
     /** The App on the account, for Settings › GitHub. Null while it is not installed. */
@@ -89,6 +115,13 @@ const WorkspaceProfile = z.object({
    * with them sees only themselves: GitHub does not show them who else is in it.
    */
   members: z.array(Member),
+  /**
+   * Everyone GitHub says can reach the workspace, whether or not they have opened Ponzu: those
+   * who have (`joined`, as in `members`) first, admins first, then the rest, each by name. The
+   * same rule as `members`: someone who reaches it only through repos shared with them sees
+   * only themselves.
+   */
+  people: z.array(WorkspacePersonView),
 });
 
 /** A row of the sidebar: what `workspace.designs` delivers live, plus how far the person has looked. */
@@ -152,15 +185,15 @@ export const workspaces = new Hono<AppEnv>()
       { ...c.var.deps, log: c.var.log },
       { user, workspace: member },
     );
-    const [workspace, repos, everyone] = await Promise.all([
+    const [workspace, repos, everyone, reachers] = await Promise.all([
       getWorkspace(db, member.id),
       listWorkspaceRepos(db, { workspaceId: member.id, userId: user.id }),
       listWorkspaceMembers(db, member.id),
+      listWorkspacePeople(db, member.id),
     ]);
-    const members =
-      member.githubAccess === "collaborator"
-        ? everyone.filter(({ userId }) => userId === user.id)
-        : everyone;
+    const onlySelf = member.githubAccess === "collaborator";
+    const members = onlySelf ? everyone.filter(({ userId }) => userId === user.id) : everyone;
+    const people = onlySelf ? reachers.filter(({ userId }) => userId === user.id) : reachers;
     if (!workspace) throw new ApiError(404, "not_found", "There is no such workspace.");
     return c.json(
       WorkspaceProfile.parse({
@@ -182,6 +215,7 @@ export const workspaces = new Hono<AppEnv>()
           name: repo.fullName.slice(repo.fullName.indexOf("/") + 1),
         })),
         members,
+        people: people.map(toPersonView),
       }),
     );
   })

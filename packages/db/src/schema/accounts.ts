@@ -23,6 +23,7 @@ import {
   PUSH_ENVIRONMENTS,
   REPO_PERMISSIONS,
   REPOSITORY_SELECTIONS,
+  type RepoPermission,
   WORKSPACE_KINDS,
 } from "../enums.ts";
 import { createdAt, instant, type Json, oneOf, updatedAt } from "./columns.ts";
@@ -135,6 +136,13 @@ export const workspaces = pgTable(
      */
     ideasWindowStartedAt: instant("ideas_window_started_at"),
     ideasWindowCount: integer("ideas_window_count").notNull().default(0),
+    /**
+     * When `workspace_people` was last read from GitHub as the App, by the API's clock. Null:
+     * never, so how many people can reach the workspace is not known yet.
+     */
+    peopleSyncedAt: instant("people_synced_at"),
+    /** False when that read was cut short: someone missing from it may still have access. */
+    peopleComplete: boolean("people_complete").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -170,6 +178,45 @@ export const memberships = pgTable(
     index("memberships_user_id_idx").on(t.userId),
     check("memberships_role_check", oneOf(t.role, MEMBER_ROLES)),
     check("memberships_github_access_check", oneOf(t.githubAccess, GITHUB_ACCESS)),
+  ],
+);
+
+/**
+ * Everyone GitHub says can reach a workspace: the people with access to at least one repo of
+ * its installation, read as the App (`github/people.ts` in the API), whether or not they have
+ * opened Ponzu. No `users` row is made for them; someone who signs in is matched by their
+ * GitHub id. It says who is in the team (the count, Settings › Members, Share) and nothing
+ * more: what a person may do in Ponzu is still `memberships` and `repo_access`, from their own
+ * sync. Someone a complete read no longer finds is deleted.
+ */
+export const workspacePeople = pgTable(
+  "workspace_people",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
+    githubLogin: text("github_login").notNull(),
+    name: text("name"),
+    avatarUrl: text("avatar_url"),
+    /** How they reach it: they own the account, they are in its organization, or neither. */
+    githubAccess: text("github_access", { enum: GITHUB_ACCESS }).notNull(),
+    /** The most GitHub lets them do in any of its repos: never `none`. */
+    permission: text("permission", { enum: REPO_PERMISSIONS }).notNull(),
+    /** What they may do in each repo they reach, by GitHub repo id. */
+    repoPermissions: jsonb("repo_permissions")
+      .$type<Record<string, RepoPermission>>()
+      .notNull()
+      .default({}),
+    /** When a read of GitHub last found them, by the API's clock. */
+    lastSeenAt: instant("last_seen_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.githubUserId] }),
+    index("workspace_people_github_user_id_idx").on(t.githubUserId),
+    check("workspace_people_github_access_check", oneOf(t.githubAccess, GITHUB_ACCESS)),
+    check("workspace_people_permission_check", oneOf(t.permission, REPO_PERMISSIONS)),
+    check("workspace_people_permission_not_none_check", sql`${t.permission} <> 'none'`),
   ],
 );
 

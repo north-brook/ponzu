@@ -1,4 +1,5 @@
 import {
+  forgetWorkspacePeople,
   getWorkspaceByInstallation,
   listStaleInstallations,
   markRepoAccessStale,
@@ -11,6 +12,7 @@ import {
   wasUninstalled,
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
+import { peopleDue, refreshWorkspacePeople } from "./people.ts";
 
 /*
  * One installation of the App, brought in line with GitHub. Whatever asked (a webhook, a sync
@@ -43,14 +45,23 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  *   recorded, and any it no longer sees is marked removed (never deleted: designs point at
  *   it). A repo list GitHub served only in part marks nothing removed.
  *
+ * Who can reach its repos (`github/people.ts`) is read with it when `people` is `refresh` (a
+ * webhook said membership changed), or when the last read is old: then a failure to read them
+ * is logged and left for next time, so it never fails a person's sync. An uninstalled
+ * installation's people are forgotten; a suspended one's stay as last seen.
+ *
  * `installedByUserId` is who installed it, for a webhook that says so; it fills in an unknown
  * installer and never replaces a known one. Safe to run any number of times, at once.
  */
 export async function reconcileInstallation(
-  { db, clock, github, log }: ReconcileDeps,
+  deps: ReconcileDeps,
   installationId: number,
-  { installedByUserId = null }: { installedByUserId?: string | null } = {},
+  {
+    installedByUserId = null,
+    people = "when_due",
+  }: { installedByUserId?: string | null; people?: "refresh" | "when_due" } = {},
 ): Promise<Workspace | null> {
+  const { db, clock, github, log } = deps;
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
   const before = await getWorkspaceByInstallation(db, installationId);
@@ -63,6 +74,7 @@ export async function reconcileInstallation(
   if (!installation) {
     await markWorkspaceUninstalled(db, installationId);
     await reachChanged();
+    if (before) await forgetWorkspacePeople(db, before.id);
     return null;
   }
   if (installation.suspendedAt) {
@@ -121,11 +133,22 @@ export async function reconcileInstallation(
     });
   }
 
+  if (people === "refresh") {
+    await refreshWorkspacePeople(deps, { workspace, installation, repositories });
+  } else if (peopleDue(workspace, readAt.getTime())) {
+    try {
+      await refreshWorkspacePeople(deps, { workspace, installation, repositories });
+    } catch (error) {
+      log.warn("github_people_read_failed", { installationId, error });
+    }
+  }
+
   // GitHub may have reported the installation gone while this was reading it, and that
   // uninstall would then be underneath what this just wrote. An installation id is never used
   // again, so it is applied again on top.
   if (await wasUninstalled(db, installationId)) {
     await markWorkspaceUninstalled(db, installationId);
+    await forgetWorkspacePeople(db, workspace.id);
     return null;
   }
   return workspace;
