@@ -20,7 +20,6 @@ import {
   type Notice,
   type Person,
   type Priority,
-  type PullRequestSummaryResponse,
   type QuestionRequest,
   type QuestionResponse,
   type RestoredReport,
@@ -129,8 +128,6 @@ export class FakeRunnerApi {
   readonly checkpoints: Omit<Checkpoint, "session" | "workspace">[] = [];
   /** What runners reported restoring. */
   readonly restored: RestoredReport[] = [];
-  /** The agent's pull request summaries, in order. */
-  readonly summaries: string[] = [];
   /**
    * The stop the API is putting the sandbox through, which every state answer names; null while
    * it is awake. Set it to ask the runner to get ready to sleep.
@@ -297,12 +294,6 @@ export class FakeRunnerApi {
     this.restored.push(structuredClone(report));
   }
 
-  async pullRequestSummary(runner: string, summary: string): Promise<PullRequestSummaryResponse> {
-    await this.enter("pullRequestSummary", runner);
-    this.summaries.push(summary);
-    return { pullRequest: null };
-  }
-
   async claim(
     runner: string,
     { claimId, limit = CLAIM_LIMIT }: ClaimRequest,
@@ -419,6 +410,15 @@ export class FakeRunnerApi {
   async recordUsage(runner: string, turns: TurnUsage[]): Promise<void> {
     await this.enter("recordUsage", runner);
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
+  }
+
+  /** The agent's pull request summaries, in the order they came; none is open here. */
+  readonly summaries: string[] = [];
+
+  async pullRequestSummary(runner: string, summary: string): Promise<number | null> {
+    await this.enter("pullRequestSummary", runner);
+    this.summaries.push(summary);
+    return null;
   }
 
   async commit(runner: string, ops: Parameters<SyncTransport["commit"]>[0]) {

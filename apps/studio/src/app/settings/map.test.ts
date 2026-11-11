@@ -148,7 +148,7 @@ describe("Plan and usage", () => {
     // Nothing is billed while billing isn't set up: the line says so, not a billing date.
     expect(usage.notBilled).toBe(true);
     expect(usageLine(usage, { name: "Northbrook", people: 3 })).toBe(
-      "this month for Northbrook · 3 people · 400 credits · not billed yet",
+      "past free this month in Northbrook · 3 people · 400 credits · not billed yet",
     );
     expect(toTeamUsage(answer, "Northbrook").byPerson?.map((p) => p.usedCredits)).toEqual([
       250, 150, 0,

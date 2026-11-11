@@ -38,8 +38,11 @@ export interface EnvironmentsSectionProps {
   /** Under the list: what a change to a secret does, and when. */
   note?: string;
   onRebuild: (repo: Repo) => void;
-  /** Adds a secret, or replaces the value of one by its name. */
-  onSaveSecret: (repo: Repo, name: string, value: string) => void;
+  /**
+   * Adds a secret, or replaces the value of one by its name. When it answers a promise, the
+   * field stays open with what was typed until it settles, and stays open if it is refused.
+   */
+  onSaveSecret: (repo: Repo, name: string, value: string) => unknown;
   onRemoveSecret: (repo: Repo, name: string) => void;
 }
 
@@ -245,35 +248,52 @@ function Secrets({
 }: {
   env: RepoEnvironment;
   canEdit: boolean;
-  onSave: (name: string, value: string) => void;
+  onSave: (name: string, value: string) => unknown;
   onRemove: (name: string) => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Remove asks once more, in place, before a secret goes: its value can't be read back.
+  const [removing, setRemoving] = useState(false);
   // An edit ends with focus back on what opened it: Add, or the secret's pencil.
   const focus = useFocusReturn();
   const close = () => {
     focus.returnTo(draft?.replacing ?? "add");
     setDraft(null);
+    setRemoving(false);
   };
-  const save = () => {
-    if (!draft) return;
-    const ok = draft.replacing
+  const ok = draft
+    ? draft.replacing
       ? draft.value.length > 0
-      : canSaveSecret(draft.name, draft.value, env.secrets);
-    if (!ok) return;
-    onSave(draft.name, draft.value);
-    close();
+      : canSaveSecret(draft.name, draft.value, env.secrets)
+    : false;
+  const save = async () => {
+    if (!draft || !ok || saving) return;
+    setSaving(true);
+    try {
+      await onSave(draft.name, draft.value);
+      close();
+    } catch {
+      // Refused: what was typed stays, beside the reason the section shows.
+    } finally {
+      setSaving(false);
+    }
   };
   const keys = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      save();
+      void save();
     } else if (e.key === "Escape") {
       close();
     }
   };
   const adding = draft && !draft.replacing ? draft : null;
   const nameError = adding ? secretNameError(adding.name, env.secrets) : null;
+  const saveButton = (
+    <QuietButton disabled={!ok || saving} onClick={() => void save()}>
+      Save
+    </QuietButton>
+  );
   return (
     <>
       <CardHead icon={Key01Icon} label="Secrets">
@@ -293,30 +313,57 @@ function Secrets({
       {env.secrets.map((secret) =>
         draft?.replacing === secret.name ? (
           <SecretRow key={secret.name} name={<SecretName>{secret.name}</SecretName>}>
-            <TextField
-              compact
-              mono
-              autoFocus
-              data-keeps-escape
-              type="password"
-              aria-label={`New value for ${secret.name}`}
-              placeholder="New value"
-              value={draft.value}
-              onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-              onKeyDown={keys}
-              className="w-[180px]"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                onRemove(secret.name);
-                focus.returnTo("add");
-                setDraft(null);
-              }}
-              className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
-            >
-              Remove
-            </button>
+            {removing ? (
+              <>
+                <span className="truncate text-12 text-muted">Remove it from this repo?</span>
+                <button
+                  type="button"
+                  autoFocus
+                  data-keeps-escape
+                  onClick={() => {
+                    onRemove(secret.name);
+                    focus.returnTo("add");
+                    setDraft(null);
+                    setRemoving(false);
+                  }}
+                  onKeyDown={keys}
+                  className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRemoving(false)}
+                  className="cursor-default rounded-4 font-medium text-12 text-muted outline-none focus-ring hover:text-ink"
+                >
+                  Keep
+                </button>
+              </>
+            ) : (
+              <>
+                <TextField
+                  compact
+                  mono
+                  autoFocus
+                  data-keeps-escape
+                  type="password"
+                  aria-label={`New value for ${secret.name}`}
+                  placeholder="New value"
+                  value={draft.value}
+                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                  onKeyDown={keys}
+                  className="w-[180px]"
+                />
+                {saveButton}
+                <button
+                  type="button"
+                  onClick={() => setRemoving(true)}
+                  className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
+                >
+                  Remove
+                </button>
+              </>
+            )}
           </SecretRow>
         ) : (
           <SecretRow key={secret.name} name={<SecretName>{secret.name}</SecretName>}>
@@ -334,23 +381,20 @@ function Secrets({
       )}
       {adding ? (
         <>
-          <SecretRow
-            name={
-              <TextField
-                compact
-                mono
-                autoFocus
-                data-keeps-escape
-                aria-label="Name"
-                placeholder="NAME"
-                invalid={nameError !== null}
-                value={adding.name}
-                onChange={(e) => setDraft({ ...adding, name: secretName(e.target.value) })}
-                onKeyDown={keys}
-                className="w-[180px]"
-              />
-            }
-          >
+          <div className="mx-2.5 flex h-8 items-center gap-2">
+            <TextField
+              compact
+              mono
+              autoFocus
+              data-keeps-escape
+              aria-label="Name"
+              placeholder="NAME"
+              invalid={nameError !== null}
+              value={adding.name}
+              onChange={(e) => setDraft({ ...adding, name: secretName(e.target.value) })}
+              onKeyDown={keys}
+              className="min-w-0 flex-1"
+            />
             <TextField
               compact
               mono
@@ -361,9 +405,10 @@ function Secrets({
               value={adding.value}
               onChange={(e) => setDraft({ ...adding, value: e.target.value })}
               onKeyDown={keys}
-              className="w-[180px]"
+              className="min-w-0 flex-1"
             />
-          </SecretRow>
+            {saveButton}
+          </div>
           {nameError ? (
             <p role="alert" className="m-0 mx-2.5 pb-1 text-12 text-danger">
               {nameError}

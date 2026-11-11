@@ -4,7 +4,6 @@ import type {
   ClaimResponse,
   GitCredentialRequest,
   GitCredentialResponse,
-  PullRequestSummaryResponse,
   QuestionRequest,
   RestoredReport,
   RunnerSession,
@@ -81,8 +80,12 @@ export interface RunnerApi {
   restore(): Promise<Restored>;
   /** The disk was behind the last checkpoint and the runner restored from it. Safe to repeat. */
   reportRestored(report: RestoredReport): Promise<void>;
-  /** The agent's words on what its branch changes, for the pull request. Safe to repeat. */
-  pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse>;
+  /**
+   * The agent's words on what its branch changes, for the pull request's description. Answers
+   * the number of the open pull request they were written into, or null while none is open (the
+   * API keeps them for the one that opens). Safe to repeat: the last one sent wins.
+   */
+  pullRequestSummary(summary: string): Promise<number | null>;
 }
 
 /** A checkpoint to save: its turn marker and what is kept with it. */

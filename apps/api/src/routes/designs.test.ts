@@ -413,6 +413,8 @@ describe("presence", () => {
     expect((await call(t, as("omar"), "PUT", `/v1/designs/${design.id}/presence`, {})).status).toBe(
       404,
     );
+    // Leaving one that is gone (just deleted, say) is quiet.
+    expect((await call(t, as("maya"), "DELETE", "/v1/designs/des_gone/presence")).status).toBe(204);
   });
 });
 

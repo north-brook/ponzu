@@ -9,6 +9,8 @@ import { RepoPicker } from "./repo-picker.tsx";
 
 /** Where the column's top sits when it needs room below: for ideas, or the open repo picker. */
 const TOP = 130;
+/** What the open repo picker takes below the chip: its list at its tallest, and a margin. */
+const PICKER_ROOM = 340;
 
 export interface CreatePageProps {
   prompt: string;
@@ -54,8 +56,7 @@ export function CreatePage({
   const field = useRef<HTMLTextAreaElement>(null);
   const pane = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
-  const top = ideas !== null || pickerOpen;
-  const lift = useCentreLift(pane, column, top);
+  const lift = useCentreLift(pane, column, ideas !== null, pickerOpen);
 
   const pick = (idea: Idea) => {
     onPromptChange(idea.prompt);
@@ -114,15 +115,17 @@ export function CreatePage({
 
 /**
  * How far below TOP the column sits to be centred in the pane, 40px high of true centre; zero
- * when it should sit at TOP or doesn't fit. `measured` is false until the first measure, so the
- * column doesn't glide into place on arrival.
+ * when it should sit at TOP (ideas follow) or doesn't fit. The open repo picker lifts it only
+ * when the picker wouldn't fit below it where it is, so the page doesn't jump for nothing.
+ * `measured` is false until the first measure, so the column doesn't glide into place on arrival.
  */
 function useCentreLift(
   pane: RefObject<HTMLDivElement | null>,
   column: RefObject<HTMLDivElement | null>,
   top: boolean,
+  picker: boolean,
 ) {
-  const [state, setState] = useState({ centre: 0, measured: false });
+  const [state, setState] = useState({ centre: 0, roomBelow: 0, measured: false });
   useLayoutEffect(() => {
     const p = pane.current;
     const c = column.current;
@@ -130,7 +133,12 @@ function useCentreLift(
     const measure = () => {
       const content = c.offsetHeight - TOP;
       const centre = Math.max(0, (p.clientHeight - 40 - content) / 2 - TOP);
-      setState((s) => (s.centre === centre && s.measured ? s : { centre, measured: true }));
+      const roomBelow = p.clientHeight - (TOP + centre + content);
+      setState((s) =>
+        s.centre === centre && s.roomBelow === roomBelow && s.measured
+          ? s
+          : { centre, roomBelow, measured: true },
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -138,5 +146,6 @@ function useCentreLift(
     observer.observe(c);
     return () => observer.disconnect();
   }, []);
-  return { offset: top ? 0 : state.centre, measured: state.measured };
+  const lifted = top || (picker && state.roomBelow < PICKER_ROOM);
+  return { offset: lifted ? 0 : state.centre, measured: state.measured };
 }

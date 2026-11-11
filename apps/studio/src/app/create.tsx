@@ -14,8 +14,8 @@ import { useClaudeConnect } from "./setup/claude-connect.ts";
 
 /*
  * Fresh start: the create page, made real. Sending makes the design with its first message in
- * one call (POST /v1/designs), on the model and effort the picker shows (the person's defaults
- * until they change it), in the chosen repo or Scratch, and opens it. Each composition carries
+ * one call (POST /v1/designs), on the model and effort the picker shows (the last ones picked
+ * here, on this Mac, or else the person's defaults), in the chosen repo or Scratch, and opens it. Each composition carries
  * a create key, so sending it twice makes one design. A prompt with images makes the design
  * first, uploads them to it, then says the message with them.
  *
@@ -23,10 +23,30 @@ import { useClaudeConnect } from "./setup/claude-connect.ts";
  * it is done: a Claude not connected, or signed out. Nothing else blocks yet (no billing).
  */
 
-/** A design is called by the first line of what it was asked, until the agent names it. */
+/** The most a first name runs to, before it is cut at a word. */
+const NAME_MAX = 40;
+
+/**
+ * What a design is called until the agent names it: what the first line of the prompt is about,
+ * as a title. Its first clause, without the request's verb and article ("Design a pricing card:
+ * a heading…" is "Pricing card"), cut at a word when it is still long.
+ */
 export function nameFor(prompt: string): string {
   const line = prompt.trim().split("\n")[0]!.trim();
-  return line.length > 48 ? `${line.slice(0, 47).trimEnd()}…` : line;
+  const clause = line.split(/(?<=[.!?])\s|[:;]\s|\s[—–-]\s/)[0]!.replace(/[\s.!?:;,]+$/, "");
+  const topic = clause
+    .replace(
+      /^(?:(?:please|can you|could you)\s+)?(?:design|make|create|build|draw|mock up|sketch|redesign|add)\s+(?:me\s+|us\s+)?/i,
+      "",
+    )
+    .replace(/^(?:a|an|the|some)\s+/i, "")
+    .trim();
+  const name = topic || line;
+  const cut =
+    name.length <= NAME_MAX
+      ? name
+      : `${name.slice(0, name.lastIndexOf(" ", NAME_MAX) > 12 ? name.lastIndexOf(" ", NAME_MAX) : NAME_MAX).replace(/[\s,;:]+$/, "")}…`;
+  return cut.charAt(0).toUpperCase() + cut.slice(1);
 }
 
 /** A new create key: the API takes 8 to 64 of `A-Za-z0-9_-`. */
@@ -73,7 +93,7 @@ export function CreateView({
   const create = useMutation(mutations.createDesign());
   const [prompt, setPrompt] = useState("");
   const [chosen, setChosen] = useState<ProjectChoice | null>(null);
-  const [model, setModel] = useState<{ model: string; effort: Effort } | null>(null);
+  const [model, setModel] = useState<Choice | null>(loadChoice);
   const [picked, setPicked] = useState<Picked[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,8 +109,16 @@ export function CreateView({
     host.api,
     showIdeas && project.kind === "repo" ? project.repo.id : null,
   );
+  // The last choice holds while the account still offers it.
+  const remembered =
+    model &&
+    defaults.data?.models.some((m) => m.id === model.model) &&
+    defaults.data.efforts.includes(model.effort)
+      ? model
+      : null;
   const choice =
-    model ?? (defaults.data ? { model: defaults.data.model, effort: defaults.data.effort } : null);
+    remembered ??
+    (defaults.data ? { model: defaults.data.model, effort: defaults.data.effort } : null);
   const ready = claudeReady(me.data);
 
   const connect = useClaudeConnect({
@@ -183,7 +211,10 @@ export function CreateView({
                 efforts: defaults.data.efforts,
                 model: choice.model,
                 effort: choice.effort,
-                onChange: (id, effort) => setModel({ model: id, effort }),
+                onChange: (id, effort) => {
+                  setModel({ model: id, effort });
+                  saveChoice({ model: id, effort });
+                },
               }
             : null
         }
@@ -227,6 +258,30 @@ export function CreateView({
       {error ? <Banner>{error}</Banner> : null}
     </>
   );
+}
+
+type Choice = { model: string; effort: Effort };
+
+/** Where the last model and effort picked here are kept, so the next design starts on them. */
+const CHOICE_KEY = "ponzu.create.model";
+
+function loadChoice(): Choice | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHOICE_KEY) ?? "null") as Partial<Choice> | null;
+    return typeof saved?.model === "string" && typeof saved.effort === "string"
+      ? { model: saved.model, effort: saved.effort as Effort }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveChoice(choice: Choice): void {
+  try {
+    localStorage.setItem(CHOICE_KEY, JSON.stringify(choice));
+  } catch {
+    // Without storage, the choice holds while the page is open.
+  }
 }
 
 function toPicked(file: File): Picked {

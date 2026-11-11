@@ -227,6 +227,6 @@ test("the state answer says when the sandbox is going to sleep, and the pull req
   fake.sleep = "2026-11-11T10:00:00.000Z";
   expect((await http.putState({ ...state, quiesced: fake.sleep })).sleep).toBe(fake.sleep);
   expect(fake.quiesced).toEqual([fake.sleep]);
-  expect(await http.pullRequestSummary("What the branch does.")).toEqual({ pullRequest: null });
+  expect(await http.pullRequestSummary("What the branch does.")).toBeNull();
   expect(fake.summaries).toEqual(["What the branch does."]);
 });

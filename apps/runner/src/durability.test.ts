@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
 import type { RunnerSession } from "./api/protocol.ts";
-import { Runner, SUMMARY_TOOL, type Timing } from "./run.ts";
+import { Runner, type Timing } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
 import { Transcripts } from "./save/transcripts.ts";
 import { ScratchWork } from "./save/work.ts";
@@ -317,20 +317,4 @@ test("a new sandbox, with nothing on its disk, starts from the last checkpoint",
   expect(
     existsSync(join(second.config, "projects", "-home-agent-work-scratch", `${SESSION}.jsonl`)),
   ).toBe(true);
-});
-
-test("the agent's own words describe its branch, for the pull request", async () => {
-  const api = new FakeRunnerApi({
-    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
-  });
-  const d = await disk();
-  const s = await start(api, d);
-  const result = await s.run.call(SUMMARY_TOOL, { summary: "A calmer hero, one CTA." });
-  expect(api.summaries).toEqual(["A calmer hero, one CTA."]);
-  expect(result.text).toContain("when one is opened");
-  expect(s.run.opts.instructions).toContain(SUMMARY_TOOL);
-
-  // Scratch has no branch, so no pull request and no such tool.
-  const scratch = await start(new FakeRunnerApi(), await disk());
-  expect(scratch.run.opts.tools.some((t) => t.name === SUMMARY_TOOL)).toBe(false);
 });

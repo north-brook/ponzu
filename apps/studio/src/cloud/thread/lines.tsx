@@ -323,6 +323,15 @@ function NoticeLine({
           <span aria-hidden className="size-[7px] shrink-0 rounded-pill bg-dry" />
           <span className="shrink-0">Asked:</span>
           <span className="truncate">{notice.text}</span>
+          {notice.answer ? (
+            <>
+              <span aria-hidden className="shrink-0">
+                →
+              </span>
+              <span className="sr-only">answered</span>
+              <span className="max-w-[45%] shrink-0 truncate text-ink">{notice.answer}</span>
+            </>
+          ) : null}
         </div>
       );
     case "pull_request": {

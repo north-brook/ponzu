@@ -13,6 +13,8 @@ import {
   runTool,
   type ToolCaller,
   type ToolDef,
+  ToolError,
+  tool,
 } from "@ponzu/tools";
 import { z } from "zod";
 import type {
@@ -96,11 +98,11 @@ export const TIMING: Timing = {
   backoff: BACKOFF,
 };
 
-/** The runner's own tool: the agent's summary of its branch, for the pull request. */
-export const SUMMARY_TOOL = "set_pull_request_summary";
-
 /** How many times in a row Claude Code may stop by itself before the runner stops starting it. */
 const MAX_RESTARTS = 3;
+
+/** The tool the agent describes its branch's pull request with, beside the canvas tools. */
+const SUMMARY_TOOL = "describe_pull_request";
 
 const EVENT_KINDS = new Set<string>([
   "message",
@@ -609,10 +611,7 @@ export class Runner {
       model: this.session.model,
       effort: this.session.effort,
       instructions: this.instructions(),
-      tools: [
-        ...cloudTools.map((def) => this.tool(def)),
-        ...(this.checkedOut ? [this.summaryTool()] : []),
-      ],
+      tools: this.tools().map((def) => this.tool(def)),
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
@@ -629,8 +628,39 @@ export class Runner {
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
         ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
-        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Once the branch holds a change worth reviewing, and again whenever what it does changes, call ${SUMMARY_TOOL} with a few lines of markdown on what the branch changes and why, for the people reviewing it: Ponzu puts your words in the pull request's description.`;
-    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Whenever you push, say what the branch changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. It becomes the pull request's description, now or when it opens.`;
+    const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
+    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+  }
+
+  /** The canvas tools, and for a design with a repo, the one that describes its pull request. */
+  private tools(): ToolDef<any>[] {
+    if (!this.session.repo || this.cloneError) return cloudTools;
+    const api = this.api;
+    const describe = tool({
+      name: SUMMARY_TOOL,
+      title: "Describe pull request",
+      group: "converse",
+      description:
+        "Say what the design's branch changes, for its pull request's description: a few lines of Markdown for a reviewer, what changed and why. Ponzu writes it into the open pull request, or keeps it for the one it opens. Call it again after a push that changes the story; the last one wins.",
+      input: {
+        summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
+      },
+      async handler({ summary }) {
+        try {
+          const number = await api.pullRequestSummary(summary);
+          return {
+            text:
+              number === null
+                ? "Kept: it becomes the pull request's description when Ponzu opens it."
+                : `Written into pull request #${number}'s description.`,
+          };
+        } catch (err) {
+          throw new ToolError(`Ponzu could not take it: ${said(err)}`);
+        }
+      },
+    });
+    return [...cloudTools, describe];
   }
 
   private tool(def: ToolDef<any>): AgentTool {
@@ -646,45 +676,6 @@ export class Runner {
         // The agent is at the canvas: what people did to it is next for it to read.
         this.deliverLater("next");
         return result;
-      },
-    };
-  }
-
-  /** A repo design whose repository is checked out. */
-  private get checkedOut(): boolean {
-    return !!this.session.repo && !this.cloneError;
-  }
-
-  /**
-   * The agent's own words on what its branch changes, for the pull request's description
-   * (docs/cloud.md, "Pull request summary"). The agent has no GitHub API token: the API keeps the
-   * summary and writes it into the description of the pull request, once one is open.
-   */
-  private summaryTool(): AgentTool {
-    return {
-      name: SUMMARY_TOOL,
-      description:
-        "Say what this design's branch changes, for its pull request's description: a few lines of markdown for the people reviewing it (what changed, why, anything to check). Ponzu writes it into the description of the open pull request, or keeps it for when one opens; calling it again replaces what you said before.",
-      input: {
-        summary: z
-          .string()
-          .min(1)
-          .max(MAX_PULL_REQUEST_SUMMARY)
-          .describe("Markdown: what the branch changes and why."),
-      },
-      destructive: false,
-      run: async (args) => {
-        const { summary } = args as { summary: string };
-        try {
-          const { pullRequest } = await this.api.pullRequestSummary(summary);
-          return {
-            text: pullRequest
-              ? `Pull request #${pullRequest}'s description now says this.`
-              : "Kept: it goes into the pull request's description when one is opened.",
-          };
-        } catch (err) {
-          return { text: `Ponzu could not keep the summary: ${said(err)}`, isError: true };
-        }
       },
     };
   }
@@ -1097,6 +1088,9 @@ export class Runner {
 
   private raise(askId: string, ask: Ask): void {
     const id = derivedId("q", askId);
+    // The work so far ends where the question is asked, so the thread reads in order: what it
+    // did, what it asked, then what it did with the answer.
+    this.finishWork();
     this.asks.set(id, askId);
     this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
     const [header, text] =

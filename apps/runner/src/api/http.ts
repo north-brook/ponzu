@@ -172,10 +172,13 @@ export class HttpRunnerApi implements RunnerApi {
     await this.call("POST", "/v1/runner/restored", report);
   }
 
-  pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse> {
-    return this.call("POST", "/v1/runner/pull-request-summary", {
-      summary,
-    } satisfies PullRequestSummaryRequest);
+  async pullRequestSummary(summary: string): Promise<number | null> {
+    const answer = await this.call<PullRequestSummaryResponse>(
+      "POST",
+      "/v1/runner/pull-request-summary",
+      { summary } satisfies PullRequestSummaryRequest,
+    );
+    return answer.pullRequest;
   }
 
   /** The existing document routes, as core's `Replica` asks for them. */

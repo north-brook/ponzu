@@ -12,11 +12,14 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, chromiumPath, launch, type Page } from "../../scripts/visual-lib.ts";
+import { nameFor } from "./create.tsx";
 import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
 
 setDefaultTimeout(60_000);
 
 const PROMPT = "A pricing page with three plans";
+/** What the design made from it is called until its agent names it. */
+const NAME = nameFor(PROMPT);
 const SHOTS = process.env.PONZU_SHOTS;
 
 /**
@@ -59,9 +62,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
   /** The design the test made, as the in-memory API holds it. */
   const made = () =>
-    page.evaluate((prompt) => {
+    page.evaluate((name) => {
       const designs = [...window.ponzuFake!.backend.designs.values()];
-      const design = designs.find((d) => d.sequencer.doc.name === prompt)!;
+      const design = designs.find((d) => d.sequencer.doc.name === name)!;
       return {
         id: design.id,
         said: design.thread.flatMap(({ item }) =>
@@ -72,7 +75,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
           texts: t.messages.map((m) => m.text),
         })),
       };
-    }, PROMPT);
+    }, NAME);
 
   const shoot = async (name: string) => {
     if (!SHOTS) return;
@@ -187,10 +190,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     await page.locator("#sidebar").waitFor();
-    await page.getByRole("button", { name: /A quieter checkout/ }).waitFor();
+    await page.getByRole("button", { name: /Quieter checkout/ }).waitFor();
     const made = await page.evaluate(() =>
       [...window.ponzuFake!.backend.designs.values()]
-        .filter((d) => d.sequencer.doc.name === "A quieter checkout")
+        .filter((d) => d.sequencer.doc.name === "Quieter checkout")
         .map((d) => ({
           workspaceId: d.workspaceId,
           model: d.model,
@@ -290,7 +293,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   test("a design made on the create page opens, and the canvas draws what its agent commits", async () => {
     await page.getByPlaceholder(/Describe a screen/).fill(PROMPT);
     await page.keyboard.press("Enter");
-    await page.getByRole("button", { name: new RegExp(PROMPT) }).waitFor();
+    await page.getByRole("button", { name: new RegExp(NAME) }).waitFor();
     const design = await made();
     // The first message went to the agent.
     expect(design.said).toEqual([PROMPT]);
@@ -422,7 +425,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     // The pull request tab takes the canvas's pane, with the file's diff on demand.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
-    await page.getByRole("heading", { name: PROMPT }).waitFor();
+    await page.getByRole("heading", { name: NAME }).waitFor();
     expect(await page.locator("#thread").count()).toBe(0);
     await page.getByRole("button", { name: /src\/pricing\.tsx/ }).click();
     await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
@@ -464,7 +467,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByText("This design isn't here any more").waitFor();
     await page.getByRole("button", { name: "Back to designs" }).click();
     await page.getByText("What do you want to design?").waitFor();
-    expect(await page.getByRole("button", { name: new RegExp(PROMPT) }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: new RegExp(NAME) }).count()).toBe(0);
     expect(errors).toEqual([]);
   });
 

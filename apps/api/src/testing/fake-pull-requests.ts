@@ -263,6 +263,20 @@ export class FakePullRequests {
       this.queries++;
       return this.#graphql(caller, query, variables, find);
     }
+    // Octokit sends the ref escaped, slashes and all, as GitHub takes it.
+    const ref = /^\/repos\/([^/]+\/[^/]+)\/git\/refs\/heads\/(.+)$/.exec(
+      decodeURIComponent(url.pathname),
+    );
+    if (method === "DELETE" && ref) {
+      const repo = find(ref[1]!);
+      if (!repo || !this.#reaches(caller, repo)) return notFound();
+      if (caller.kind !== "user" || !repo.canPush(caller.id)) return forbidden();
+      const branch = ref[2]!;
+      if (!this.#repo(repo).branches.delete(branch)) {
+        return Response.json({ message: "Reference does not exist" }, { status: 422 });
+      }
+      return new Response(null, { status: 204 });
+    }
     const route =
       /^\/repos\/([^/]+\/[^/]+)\/pulls(?:\/(\d+))?(\/merge|\/update-branch|\/files)?$/.exec(
         url.pathname,

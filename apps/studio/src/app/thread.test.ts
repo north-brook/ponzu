@@ -4,7 +4,14 @@ import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@pon
 import type { Person } from "../cloud/model.ts";
 import { AskStore } from "./ask-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
-import { agentActivity, branchMoment, shownItems, steerGate, toThreadItem } from "./thread-map.ts";
+import {
+  agentActivity,
+  answerLine,
+  branchMoment,
+  shownItems,
+  steerGate,
+  toThreadItem,
+} from "./thread-map.ts";
 import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
 
@@ -568,4 +575,13 @@ test("someone who may only read sees the thread and is told so, and can't send o
   const refused = await ines.api.designs.stop(w.design.id).catch((error) => error);
   expect(refused.code).toBe("forbidden");
   store.close();
+});
+
+test("a closed question's line says what was picked: the labels, or yes or no", () => {
+  expect(
+    answerLine({ status: "answered", answer: { answers: { "Which accent?": "Royal blue" } } }),
+  ).toBe("Royal blue");
+  expect(answerLine({ status: "answered", answer: { approved: false } })).toBe("No");
+  expect(answerLine({ status: "cancelled", answer: null })).toBeNull();
+  expect(answerLine(undefined)).toBeNull();
 });

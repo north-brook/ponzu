@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { ApiError, type PullRequestTab } from "@ponzu/client";
 import { createFakeBackend, settle } from "@ponzu/client/testing";
 import {
+  bodyForTab,
   chromeAction,
   prActionError,
   prSummary,
@@ -554,4 +555,20 @@ test("a Scratch design has no pull request to read", async () => {
   });
   const refused = await w.client.api.designs.pullRequest.get(scratch.id).catch((e) => e);
   expect(refused.code).toBe("no_repository");
+});
+
+test("the tab shows a description without what Ponzu wrote for GitHub's own page", () => {
+  const body = [
+    "<!-- ponzu:summary -->\nAdds the **Pro** pricing card.\n<!-- /ponzu:summary -->",
+    '<!-- ponzu:picture --><a href="https://ponzu.design/designs/des_1"><picture><source media="(prefers-color-scheme: dark)" srcset="https://assets/d.png"><img src="https://assets/l.png" alt="Pricing card" width="720"></picture></a><!-- /ponzu:picture -->',
+    "Designed in Ponzu: [Pricing card](https://ponzu.design/designs/des_1)",
+    "Reviewer note: <b>kept</b>.",
+  ].join("\n\n");
+  expect(bodyForTab(body)).toBe("Adds the **Pro** pricing card.\n\nReviewer note: <b>kept</b>.");
+  // An empty summary leaves nothing.
+  expect(
+    bodyForTab(
+      "<!-- ponzu:summary -->\n\n<!-- /ponzu:summary -->\n\nDesigned in Ponzu: [A](https://ponzu.design/designs/des_1)",
+    ),
+  ).toBe("");
 });

@@ -161,6 +161,17 @@ describe("secrets", () => {
       expect(refused.status).toBe(400);
       expect(refused.body.error.code).toBe("secret_name_reserved");
     }
+    const prefixed = await call(t, ada, "POST", `${env()}/secrets`, {
+      name: "PONZU_QA_TEST",
+      value: "x",
+    });
+    expect(prefixed.body.error.message).toBe(
+      "Names starting with PONZU_ are kept for Ponzu, Claude and the sandbox's own tools. Use another name.",
+    );
+    const exact = await call(t, ada, "POST", `${env()}/secrets`, { name: "PATH", value: "x" });
+    expect(exact.body.error.message).toBe(
+      "PATH is a name the sandbox itself depends on. Use another name.",
+    );
   });
 
   test("allow how a repo's own code runs and installs, under Node's prefix", async () => {

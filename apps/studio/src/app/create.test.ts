@@ -2,9 +2,18 @@ import { expect, test } from "bun:test";
 import { createFakeBackend } from "@ponzu/client/testing";
 import { claudeReady, nameFor, newCreateKey } from "./create.tsx";
 
-test("a new design is called by the first line of what it was asked, until the agent names it", () => {
-  expect(nameFor("  A pricing page\nwith three plans")).toBe("A pricing page");
-  expect(nameFor("x".repeat(60))).toBe(`${"x".repeat(47)}…`);
+test("a new design is called by what its first line is about, until the agent names it", () => {
+  expect(nameFor("  A pricing page\nwith three plans")).toBe("Pricing page");
+  expect(
+    nameFor("A 360×240 pricing card: a heading 'Pro', a price '$12/mo' and a blue button"),
+  ).toBe("360×240 pricing card");
+  expect(nameFor("Design a quieter shop hero. Keep the photo.")).toBe("Quieter shop hero");
+  expect(nameFor("make the checkout calmer — fewer fields")).toBe("Checkout calmer");
+  expect(nameFor("Redesign the settings page so that every section fits on one screen")).toBe(
+    "Settings page so that every section fits…",
+  );
+  expect(nameFor("x".repeat(60))).toBe(`X${"x".repeat(39)}…`);
+  expect(nameFor("Design")).toBe("Design");
 });
 
 test("a create key is one the API takes", () => {

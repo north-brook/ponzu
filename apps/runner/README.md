@@ -139,7 +139,7 @@ docs/cloud.md ("Saving the sandbox", "Getting ready to sleep") is the specificat
   (a rollback) or has none (a new sandbox) gets the checkpoint back, never over anything newer,
   and the runner logs `sandbox_rollback` or `sandbox_rebuilt` as JSON and tells the API.
 - **The pull request summary.** On a checked-out repo design the runner hosts
-  `set_pull_request_summary` beside the canvas tools: the agent's own words on what its branch
+  `describe_pull_request` beside the canvas tools: the agent's own words on what its branch
   changes, which the API writes into the pull request's description.
 
 ## Running it here
