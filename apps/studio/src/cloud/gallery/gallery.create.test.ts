@@ -215,42 +215,39 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("lenny");
     await focusOn("Project: lenny");
   });
-  // A few repos list without a search, and the list takes the keys; enough to need one, the field.
-  for (const [board, focused] of [
-    ["create", '[role="listbox"][aria-label="Repositories"]'],
-    ["pick-a-project-many-repos", 'input[aria-label="Search repositories"]'],
-  ] as const) {
-    test(`the repo picker on ${board}: the arrows, Home and End move the highlight; Escape changes nothing`, async () => {
-      await open(board);
-      await page.click('button[aria-label^="Project"]');
-      await page.waitForSelector(focused);
-      const highlighted = () =>
-        page.$eval(focused, (el) => {
-          const id = el.getAttribute("aria-activedescendant");
-          return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
-        });
-      const choices = await page.$$eval('[role="option"]', (els) =>
-        els.map((e) => e.getAttribute("data-choice")),
-      );
-      // It opens on the chosen one, named for assistive tech.
-      expect(await highlighted()).toBe("repo_fernwood");
-      await page.keyboard.press("End");
-      expect(await highlighted()).toBe(choices.at(-1)!);
-      await page.keyboard.press("Home");
-      expect(await highlighted()).toBe(choices[0]!);
-      await page.keyboard.press("ArrowDown");
-      expect(await highlighted()).toBe(choices[1]!);
-      // The field, or the list, keeps focus throughout.
-      expect(await page.$eval(focused, (el) => el === document.activeElement)).toBe(true);
-      await page.keyboard.press("Escape");
-      await page.waitForSelector(focused, { state: "detached" });
-      await focusOn("Project: fernwood");
-    });
-  }
-  test("the repo picker: one line a row, by name; the search only once there are enough", async () => {
+  /**
+   * Checks the arrows, Home and End move the highlight while `focused` (the field, or the list)
+   * keeps focus, and that Escape closes the picker with the chosen repo kept.
+   */
+  const highlightWalk = async (focused: string) => {
+    const highlighted = () =>
+      page.$eval(focused, (el) => {
+        const id = el.getAttribute("aria-activedescendant");
+        return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
+      });
+    const choices = await page.$$eval('[role="option"]', (els) =>
+      els.map((e) => e.getAttribute("data-choice")),
+    );
+    // It opens on the chosen one, named for assistive tech.
+    expect(await highlighted()).toBe("repo_fernwood");
+    await page.keyboard.press("End");
+    expect(await highlighted()).toBe(choices.at(-1)!);
+    await page.keyboard.press("Home");
+    expect(await highlighted()).toBe(choices[0]!);
+    await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toBe(choices[1]!);
+    // The field, or the list, keeps focus throughout.
+    expect(await page.$eval(focused, (el) => el === document.activeElement)).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(focused, { state: "detached" });
+    await focusOn("Project: fernwood");
+  };
+  test("the repo picker on create: one line a row, by name, no search; the list takes the keys, Escape changes nothing, Return chooses", async () => {
+    const list = '[role="listbox"][aria-label="Repositories"]';
     await open("create");
     await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    await page.waitForSelector(list);
+    // A few repos: no search; the list itself has the keys.
     expect(await page.$('input[aria-label="Search repositories"]')).toBeNull();
     // Each row says only its name: no owner, no second line, no heading over them.
     expect(await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent))).toEqual([
@@ -265,37 +262,23 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       els.map((e) => Math.round(e.getBoundingClientRect().height)),
     );
     expect(new Set(heights)).toEqual(new Set([32]));
+    await highlightWalk(list);
     // Return chooses with the list's own focus too.
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector(list);
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]', {
-      state: "detached",
-    });
+    await page.waitForSelector(list, { state: "detached" });
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
   });
-  test("the repo picker: a name cut short shows whole in a tip; one that fits doesn't", async () => {
+  test("the repo picker on pick-a-project-many-repos: the search field keeps the keys; the arrows, Home and End move the highlight; Escape changes nothing", async () => {
+    const field = 'input[aria-label="Search repositories"]';
     await open("pick-a-project-many-repos");
     await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('input[aria-label="Search repositories"]');
-    const name = "customer-onboarding-experiments-and-landing-page-variants";
-    const tip = '[data-slot="tooltip-content"]';
-    await page.hover('[data-choice="repo_lenny"] span');
-    await new Promise((r) => setTimeout(r, 700));
-    expect(await page.$(tip)).toBeNull();
-    const row = `[data-choice="repo_${name}"]`;
-    await page.$eval(row, (el) => el.scrollIntoView({ block: "nearest" }));
-    await page.hover(`${row} span`);
-    await page.waitForSelector(tip);
-    expect(await page.textContent(tip)).toContain(name);
-    // It sits past the picker's edge, not over the rows.
-    const [tipLeft, pickerRight] = await page.evaluate((tip) => {
-      const t = document.querySelector(tip)!.getBoundingClientRect();
-      const p = document.querySelector('[data-slot="popover-content"]')!.getBoundingClientRect();
-      return [t.left, p.right];
-    }, tip);
-    expect(tipLeft).toBeGreaterThanOrEqual(pickerRight);
+    await page.waitForSelector(field);
+    await highlightWalk(field);
   });
-  test("the repo picker: the arrows show a cut-short name's tip too, and take it away", async () => {
+  test("the repo picker: a cut-short name's tip, from the arrows and the pointer; one that fits has none", async () => {
     await open("pick-a-project-many-repos");
     await page.mouse.move(1, 1);
     await page.click('button[aria-label^="Project"]');
@@ -315,6 +298,22 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.textContent(tip)).toContain(name);
     await page.keyboard.press("ArrowDown");
     await page.waitForSelector(tip, { state: "detached" });
+    // The pointer: a name that fits gets no tip, the one cut short does.
+    await page.hover('[data-choice="repo_lenny"] span');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(await page.$(tip)).toBeNull();
+    const row = `[data-choice="repo_${name}"]`;
+    await page.$eval(row, (el) => el.scrollIntoView({ block: "nearest" }));
+    await page.hover(`${row} span`);
+    await page.waitForSelector(tip);
+    expect(await page.textContent(tip)).toContain(name);
+    // It sits past the picker's edge, not over the rows.
+    const [tipLeft, pickerRight] = await page.evaluate((tip) => {
+      const t = document.querySelector(tip)!.getBoundingClientRect();
+      const p = document.querySelector('[data-slot="popover-content"]')!.getBoundingClientRect();
+      return [t.left, p.right];
+    }, tip);
+    expect(tipLeft).toBeGreaterThanOrEqual(pickerRight);
   });
   test("page tabs: the arrows move between them without opening one; Return opens it", async () => {
     await open("thread-in-the-right-rail");

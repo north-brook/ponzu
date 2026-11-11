@@ -320,8 +320,18 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     expect(await expanded(SIDEBAR)).toBe("false");
   });
 
-  test("after a click on a toolbar control, the canvas's keys light no ring and press nothing", async () => {
+  test("a click leaves no ring on any control and the canvas's keys press nothing after it; the keyboard brings the ring back", async () => {
     await open("team-sidebar");
+    const ring = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLElement;
+        return {
+          name: el.getAttribute("aria-label") ?? el.textContent?.trim(),
+          // What focus-ring (cloud.css) draws on.
+          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
+        };
+      });
+    /** The ring, and the panes' state: what a key pressed after the click must leave alone. */
     const state = () =>
       page.evaluate(() => {
         const el = document.activeElement as HTMLElement;
@@ -333,6 +343,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
           thread: document.querySelector('[aria-controls="thread"]')!.getAttribute("aria-expanded"),
         };
       });
+    // After a click on a toolbar control, the canvas's keys light no ring and press nothing.
     for (const selector of [SIDEBAR, THREAD, 'header [role="tab"]:nth-child(2)']) {
       await page.click(selector);
       const after = await state();
@@ -342,19 +353,6 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
         expect(await state()).toEqual(after);
       }
     }
-  });
-
-  test("a click leaves no ring on any control; the keyboard brings it back", async () => {
-    await open("team-sidebar");
-    const ring = () =>
-      page.evaluate(() => {
-        const el = document.activeElement as HTMLElement;
-        return {
-          name: el.getAttribute("aria-label") ?? el.textContent?.trim(),
-          // What focus-ring (cloud.css) draws on.
-          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
-        };
-      });
     for (const selector of [
       SIDEBAR,
       THREAD,

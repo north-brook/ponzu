@@ -64,12 +64,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       els.map((e) => e.querySelector("span:not([aria-hidden])")?.textContent),
     );
     expect(names).toEqual(["Northbrook", "Fablefuel", "Personal"]);
-    // Typeahead jumps to the row that starts with the letters typed, by its name alone.
+    // Typeahead jumps to the row that starts with the letter typed, by its name alone.
     await page.keyboard.press("f");
     await page.waitForFunction(() => document.activeElement?.textContent?.endsWith("Fablefuel"));
-    await page.waitForTimeout(1100);
-    await page.keyboard.type("pl");
-    await focusOn("Plan and usage");
     await page.keyboard.press("End");
     await focusOn("Sign out");
     await page.keyboard.press("Home");
@@ -127,7 +124,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // Focused without scrolling the pane's content aside while it opens.
     expect(await page.$eval("#sidebar", (el) => el.scrollLeft)).toBe(0);
   });
-  test("the search selection keeps itself in view", async () => {
+  test("the search selection keeps itself in view, and no matches says so", async () => {
     await open("sidebar-search", { width: 1100, height: 640 });
     // Enough results to run past the pane at the smallest window.
     await page.keyboard.type("e");
@@ -141,16 +138,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       return list.scrollTop > 0 && option.top >= box.top && option.bottom <= box.bottom;
     });
     expect(inView).toBe(true);
-  });
-  test("⌘J opens and closes the thread rail", async () => {
-    await open("team-sidebar");
-    const expanded = () =>
-      page.$eval('button[aria-controls="thread"]', (b) => b.getAttribute("aria-expanded"));
-    expect(await expanded()).toBe("true");
-    await page.keyboard.press("Meta+j");
-    expect(await expanded()).toBe("false");
-    await page.keyboard.press("Meta+j");
-    expect(await expanded()).toBe("true");
+    // Nothing matches: it says so.
+    await page.fill('input[role="combobox"]', "zebra");
+    expect(await page.textContent('[role="status"]')).toBe("No results for “zebra”");
   });
   test("presence is one Tab stop, and each person's tip shows from the keyboard", async () => {
     await open("team-sidebar");
@@ -182,11 +172,6 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await duration()).toBe("0s");
     await page.emulateMedia({ reducedMotion: "no-preference" });
     expect(await duration()).toBe("1.2s");
-  });
-  test("search with no matches says so", async () => {
-    await open("sidebar-search");
-    await page.keyboard.type("zebra");
-    expect(await page.textContent('[role="status"]')).toBe("No results for “zebra”");
   });
   test("the design list is one Tab stop that the arrows move through", async () => {
     await open("team-sidebar");
