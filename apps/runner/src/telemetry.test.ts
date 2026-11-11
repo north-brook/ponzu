@@ -86,3 +86,58 @@ test("PostHog down never throws into the capture", async () => {
   await telemetry.shutdown().catch(() => {});
   expect(ph.batches.length).toBeGreaterThan(0);
 });
+
+test("with content on, no secret the agent's environment holds leaves in what it saw or said", async () => {
+  const ph = sink();
+  const telemetry = posthogTelemetry(
+    { key: "phc_test", host: "https://ph.test", content: true },
+    { fetch: ph.fetch, secrets: ["stripe-live-0123456789", "1"] },
+  );
+  // The agent ran `env`, and read a file holding the Claude credential.
+  const printed = "STRIPE_KEY=stripe-live-0123456789\nPATH=/usr/bin\nONE=1";
+  telemetry.capture([
+    {
+      event: "$ai_span",
+      distinctId: "usr_ada",
+      properties: {
+        $ai_trace_id: "res-1",
+        $ai_span_name: "Bash",
+        $ai_input_state: { command: "env" },
+        $ai_output_state: [{ type: "text", text: printed }],
+      },
+    },
+    {
+      event: "$ai_generation",
+      distinctId: "usr_ada",
+      properties: {
+        $ai_trace_id: "res-1",
+        $ai_input_tokens: 1200,
+        $ai_input: [
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", content: "it is sk-ant-oat01-abcdefghijklmnopqrstuvwxyz" },
+            ],
+          },
+        ],
+        $ai_output_choices: [{ role: "assistant", content: [{ type: "text", text: printed }] }],
+      },
+    },
+  ]);
+  await telemetry.flush();
+  const [span, generation] = ph.batches[0]!.body.batch as [
+    Record<string, any>,
+    Record<string, any>,
+  ];
+  const sent = JSON.stringify(ph.batches);
+  expect(sent).not.toContain("stripe-live-0123456789");
+  expect(sent).not.toContain("sk-ant-oat01");
+  expect(span.properties.$ai_output_state).toEqual([
+    { type: "text", text: "STRIPE_KEY=[redacted]\nPATH=/usr/bin\nONE=1" },
+  ]);
+  expect(span.properties.$ai_input_state).toEqual({ command: "env" });
+  // What only looks like a secret's name is a count, and stays.
+  expect(generation.properties.$ai_input_tokens).toBe(1200);
+  expect(generation.properties.$ai_input[0].content[0].content).toBe("it is [redacted]");
+  await telemetry.shutdown();
+});

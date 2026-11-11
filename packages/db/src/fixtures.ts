@@ -21,9 +21,9 @@ export async function seedUser(db: Db, login = "bryce") {
   return user;
 }
 
-export function seedWorkspace(db: Db, login = "north-brook") {
+export async function seedWorkspace(db: Db, login = "north-brook") {
   const githubAccountId = nextGithubId++;
-  return upsertWorkspace(db, {
+  const { connected: _connected, ...workspace } = await upsertWorkspace(db, {
     githubAccountId,
     githubLogin: login,
     kind: "org",
@@ -33,6 +33,7 @@ export function seedWorkspace(db: Db, login = "north-brook") {
     repositorySelection: "all",
     installedByUserId: null,
   });
+  return workspace;
 }
 
 export async function seedRepo(db: Db, workspaceId: string, fullName = "north-brook/fernwood") {

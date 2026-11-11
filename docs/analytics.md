@@ -66,7 +66,7 @@ traces nothing, whatever the API says.
 - **Never a secret.** No tokens, API keys, OAuth codes, Ponzu's own session ids, Claude
   credentials, vault contents, webhook payloads, authorization headers or request bodies. A URL
   goes without its query string. An exception's message and stack go through the same redaction
-  as the logs.
+  as the logs, and so does an agent turn's content (`@ponzu/core/redact`).
 
 ## Server events
 
@@ -81,8 +81,8 @@ Every event about a workspace also carries `workspace_id`.
 | `user signed in` | `new_user` | Every sign-in exchange that let someone in. |
 | `user signed out` | | |
 | `account deleted` | `deleted_designs`, `kept_designs` | |
-| `workspace connected` | `workspace_id`, `kind`, `repos` | The App was installed on an account, or installed again, or unsuspended. About whoever installed it, when Ponzu knows them. |
-| `workspace disconnected` | `workspace_id`, `reason` (`uninstalled`, `suspended`) | About no one. |
+| `workspace connected` | `workspace_id`, `kind`, `repos` | The App was installed on an account, or installed again, or unsuspended. Once, even when its webhook and the setup read it at the same moment: the database tells exactly one of them it made the change. About whoever installed it when Ponzu knows them, else the person whose sign-in found it. |
+| `workspace disconnected` | `workspace_id`, `reason` (`uninstalled`, `suspended`) | About no one. An uninstall is said by the reader that took it off the workspace; a suspension under one id per suspension, at GitHub's time for it. |
 | `repo access changed` | `workspace_id`, `repos` | GitHub said the repos the App reaches changed. About no one. |
 | `claude connected` | `kind` (`subscription`, `api_key`), `woke_designs` | |
 | `claude disconnected` | | |
@@ -102,7 +102,7 @@ Every event about a workspace also carries `workspace_id`.
 | `sandbox lost` | `design_id` | The provider lost the sandbox or its disk; the wake made a new one. |
 | `sandbox restored` | `design_id`, `kind` (`rollback`, `rebuilt`) | A runner found its disk behind the last checkpoint. About no one. |
 | `ideas generated` | `repo_id`, `count`, `duration_ms`, `attempts`, `input_tokens`, `output_tokens` | About whoever's visit started it. |
-| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `failed`) | |
+| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `failed`) | `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
 | `file uploaded` | `design_id`, `content_type`, `bytes` | A person's image reached a design. |
 | `monthly cap set` | `cap_usd` | |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
@@ -149,14 +149,18 @@ design's turns read as one conversation whatever Claude session each ran in), an
 of the app session that sent the message, when it said. The distinct id is the person whose
 message began the turn; a turn nobody's message began is about no one. With content on, the
 prompt, the replies and the tools' arguments and results go too, each clipped to 16,000
-characters; with it off those properties are null.
+characters and scrubbed on the way out: every value of the repo's secrets, the Claude credential
+and the runner's token (the agent's environment holds the first two, so a command that prints it
+would otherwise carry them), and anything that looks like a token or key. With it off those
+properties are null.
 
 Why the runner sends them itself: it has the whole of Claude Code's message stream, which is
 large with content on, and the API's functions answer in 4.5 MB from a region a hundred
 milliseconds away. The token is public. A turn never waits on PostHog: its events are built when
 it ends and put on posthog-node's bounded queue, which sends itself every few seconds; the runner
 flushes it as it gets ready to sleep and as it stops (within a few seconds), so what a turn did
-leaves before the machine does.
+leaves before the machine does. That flush runs beside the product's own (the thread, answers,
+usage), never among them: a PostHog that fails at once cannot cut short the wait for them.
 
 Why not `@posthog/ai`'s Claude Agent SDK integration: it fixes one trace id for a whole query
 (the runner keeps one query per session, and its turns' ids are the results'), it cannot say per

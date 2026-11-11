@@ -23,8 +23,8 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
  *
  * A turn's events are built and handed over when it ends, which is when its id is known; a
  * turn never waits on any of this. Prompts, replies and tool arguments and results go only when
- * `content` is on, each clipped; otherwise those properties are null, as PostHog's privacy mode
- * leaves them.
+ * `content` is on, each clipped (and scrubbed of secrets as they leave, in `telemetry.ts`);
+ * otherwise those properties are null, as PostHog's privacy mode leaves them.
  */
 
 /** One event for PostHog. `distinctId` null: about no one person. */

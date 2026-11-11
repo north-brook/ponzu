@@ -460,6 +460,21 @@ export class Runner {
     await within(this.opts.renderer?.close() ?? Promise.resolve());
   }
 
+  /** Sends the queued traces, within a stop step; a PostHog that fails or hangs costs nothing. */
+  private flushTelemetry(): Promise<void> {
+    if (!this.telemetry) return Promise.resolve();
+    let flushing: Promise<void>;
+    try {
+      flushing = this.telemetry.flush();
+    } catch (err) {
+      flushing = Promise.reject(err);
+    }
+    return bounded(
+      flushing.catch((err) => this.log(`sending the turns' traces failed: ${said(err)}`)),
+      this.timing.stopStepMs,
+    );
+  }
+
   /** PostHog, when the session says analytics is on. Failing to start it starts no trace. */
   private startTelemetry(config: RunnerAnalytics | null): Telemetry | null {
     if (!config || !this.opts.telemetry) return null;
@@ -582,18 +597,22 @@ export class Runner {
       });
     }
     if (this.ws) await this.ws.design.settled(this.timing.settleMs);
-    await bounded(
-      Promise.all([
-        this.thread.flush(),
-        this.acks.flush(),
-        this.questions.flush(),
-        this.turns.flush(),
-        this.previews?.flush(),
-        // The turns' traces, before the machine is frozen with them in memory.
-        this.telemetry?.flush(),
-      ]),
-      this.timing.stopStepMs,
-    );
+    await Promise.all([
+      bounded(
+        Promise.all([
+          this.thread.flush(),
+          this.acks.flush(),
+          this.questions.flush(),
+          this.turns.flush(),
+          this.previews?.flush(),
+        ]),
+        this.timing.stopStepMs,
+      ),
+      // The turns' traces, before the machine is frozen with them in memory. Beside the product's
+      // own flushes, never among them: a PostHog that fails at once must not cut short the wait
+      // for the thread, and one that hangs waits no longer than they may.
+      this.flushTelemetry(),
+    ]);
     await bounded(this.checkpoint(), this.timing.checkpointMs);
     if (!current()) return;
     this.sleep!.ready = true;

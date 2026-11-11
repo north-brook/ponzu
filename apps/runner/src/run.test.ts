@@ -1212,6 +1212,31 @@ test("the traces are flushed as the sandbox gets ready to sleep, and sent off as
   expect(t.calls).toEqual(["flush", "shutdown"]);
 });
 
+test("a PostHog that fails to send does not cut short the wait for the thread before sleep", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => ({
+      capture: () => {},
+      flush: () => Promise.reject(new Error("PostHog is down")),
+      shutdown: async () => {},
+    }),
+  });
+  s.run.ready("sess_1");
+  await turn(s);
+  // The API is slow to take the thread: the reply is still on its way when the sleep comes.
+  s.api.delays.set("writeThread", 150);
+  s.run.say("m1", "Drawn.");
+  s.run.end();
+  s.api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => s.api.quiesced.length === 1);
+  expect(s.api.items().find((i) => i.kind === "assistant")).toMatchObject({
+    streaming: false,
+    payload: { text: "Drawn." },
+  });
+  expect(s.logs).toContain("sending the turns' traces failed: PostHog is down");
+});
+
 test("telemetry that cannot start leaves the runner running, untraced", async () => {
   const s = await setup({
     session: { analytics: ANALYTICS },

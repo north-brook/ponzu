@@ -9,6 +9,7 @@ import type { AppEnv } from "../http/context.ts";
 import { call, designWithRunner, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
 import { createTestApp, type FakeInstallation, type TestApp } from "../testing/index.ts";
 import { DISTINCT_ID_HEADER, SESSION_HEADER } from "./middleware.ts";
+import { withScope } from "./scope.ts";
 
 // The server's analytics through the real app: what each request captures, about whom, in which
 // workspace and app session, as PostHog would be handed it.
@@ -105,6 +106,64 @@ describe("workspaces and ideas", () => {
     await reconcileInstallation(t.deps, installation.id);
     expect(t.analytics.of("workspace disconnected").map((e) => e.properties)).toEqual([
       { workspace_id: workspace!.id, reason: "uninstalled", $process_person_profile: false },
+    ]);
+  });
+
+  test("an install read at once by its webhook and the setup is connected once, and so is each change after", async () => {
+    const installation: FakeInstallation = {
+      id: 7_700_011,
+      account: { id: 7_700_012, login: "fernwood", type: "User" },
+      repositorySelection: "all",
+      repositories: [],
+    };
+    t.github.installations.push(installation);
+    const installer = ws.people.maya!.userId;
+    // The App's webhook, which names the installer, and the setup they came back to, which runs
+    // in their request.
+    const setup = {
+      userId: () => installer,
+      designId: () => null,
+      sessionId: SESSION,
+      requestId: "req_setup",
+      route: () => "GET /v1/github/accounts",
+      workspaceId: null,
+    };
+    const both = () =>
+      Promise.all([
+        reconcileInstallation(t.deps, installation.id, { installedByUserId: installer }),
+        withScope(setup, () => reconcileInstallation(t.deps, installation.id)),
+      ]);
+
+    const [workspace] = await both();
+    const connected = t.analytics.of("workspace connected");
+    expect(connected).toHaveLength(1);
+    expect(connected[0]!.distinctId).toBe(installer);
+    await both();
+    expect(t.analytics.of("workspace connected")).toHaveLength(1);
+
+    // Suspended: said by both, under one id and GitHub's time, which PostHog keeps once.
+    installation.suspendedAt = new Date("2026-11-10T12:00:00.000Z");
+    await both();
+    const suspended = t.analytics.of("workspace disconnected");
+    expect(suspended.length).toBeGreaterThan(0);
+    expect(new Set(suspended.map((e) => e.uuid)).size).toBe(1);
+    expect(suspended[0]).toMatchObject({
+      properties: { workspace_id: workspace!.id, reason: "suspended" },
+      timestamp: installation.suspendedAt,
+    });
+
+    // Lifted: connected again, once.
+    installation.suspendedAt = null;
+    t.analytics.events.length = 0;
+    await both();
+    expect(t.analytics.of("workspace connected")).toHaveLength(1);
+
+    // Uninstalled: only the reader that took the installation off says so.
+    t.analytics.events.length = 0;
+    t.github.installations.splice(t.github.installations.indexOf(installation), 1);
+    await both();
+    expect(t.analytics.of("workspace disconnected").map((e) => e.properties.reason)).toEqual([
+      "uninstalled",
     ]);
   });
 

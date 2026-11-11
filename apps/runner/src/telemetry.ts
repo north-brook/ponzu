@@ -1,3 +1,4 @@
+import { knownSecrets, redact } from "@ponzu/core/redact";
 import { PostHog, type PostHogOptions } from "posthog-node";
 import type { AiEvent } from "./agent/trace.ts";
 import type { RunnerAnalytics } from "./api/protocol.ts";
@@ -36,10 +37,37 @@ export const CLIENT_OPTIONS = {
   disableRemoteConfig: true,
 } satisfies PostHogOptions;
 
+/**
+ * The properties that carry what the agent saw and said, sent only when content is on. The rest
+ * are ids, names and numbers, and some of their names (`$ai_input_tokens`) look like secrets'.
+ */
+const CONTENT = ["$ai_input", "$ai_output_choices", "$ai_input_state", "$ai_output_state"];
+
+/** Deep enough for a tool's arguments inside a model call's prompt. */
+const CONTENT_DEPTH = 32;
+
 export function posthogTelemetry(
   config: RunnerAnalytics,
-  options: { fetch?: PostHogOptions["fetch"]; log?: (message: string) => void } = {},
+  options: {
+    fetch?: PostHogOptions["fetch"];
+    log?: (message: string) => void;
+    /**
+     * Values taken out of the content wherever they appear: the repo's secrets and the Claude
+     * credential, which the agent's environment holds and a command may print.
+     */
+    secrets?: readonly string[];
+  } = {},
 ): Telemetry {
+  const known = knownSecrets(options.secrets);
+  // What a secret looks like, and every value known to be one, out of the content before it goes.
+  const scrub = (properties: Record<string, unknown>) => {
+    if (!config.content) return properties;
+    const out = { ...properties };
+    for (const name of CONTENT) {
+      if (out[name] != null) out[name] = redact(out[name], { known, maxDepth: CONTENT_DEPTH });
+    }
+    return out;
+  };
   const client = new PostHog(config.key, {
     ...CLIENT_OPTIONS,
     host: config.host,
@@ -56,7 +84,7 @@ export function posthogTelemetry(
           event,
           // About no one person: kept off every profile, under the trace's own id.
           distinctId: distinctId ?? String(properties.$ai_trace_id),
-          properties,
+          properties: scrub(properties),
           ...(groups ? { groups } : {}),
         });
       }

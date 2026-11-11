@@ -119,6 +119,43 @@ describe("upsertWorkspace", () => {
     expect(second).toMatchObject({ name: "Northbrook", repositorySelection: "all" });
     expect(second.installedByUserId).toBe(installer.id);
     expect(second.installedAt).toEqual(first.installedAt);
+    // Made by the first; the second found it already there.
+    expect([first.connected, second.connected]).toEqual([true, false]);
+  });
+
+  test("of calls at once for a new installation, exactly one connected it", async () => {
+    const calls = await Promise.all(
+      [0, 1, 2].map(() =>
+        upsertWorkspace(db, { ...installation, githubAccountId: 7003, installationId: 503 }),
+      ),
+    );
+    expect(new Set(calls.map((w) => w.id)).size).toBe(1);
+    expect(calls.filter((w) => w.connected)).toHaveLength(1);
+  });
+
+  test("a suspension lifted is a connection, and only once", async () => {
+    const first = await upsertWorkspace(db, {
+      ...installation,
+      githubAccountId: 7004,
+      installationId: 504,
+    });
+    await db.update(workspaces).set({ suspendedAt: new Date() }).where(eq(workspaces.id, first.id));
+    const lifted = {
+      ...installation,
+      githubAccountId: 7004,
+      installationId: 504,
+      suspendedAt: null,
+    };
+    const again = await Promise.all([upsertWorkspace(db, lifted), upsertWorkspace(db, lifted)]);
+    expect(again.map((w) => w.connected).sort()).toEqual([false, true]);
+    // Still suspended, as GitHub says: nothing connected.
+    const still = await upsertWorkspace(db, {
+      ...installation,
+      githubAccountId: 7004,
+      installationId: 504,
+      suspendedAt: new Date(),
+    });
+    expect(still.connected).toBe(false);
   });
 
   test("a reinstall comes back to the same workspace, lifted out of suspension", async () => {
@@ -147,6 +184,7 @@ describe("upsertWorkspace", () => {
       suspendedAt: null,
     });
     expect(second.installedAt!.getTime()).toBeGreaterThan(0);
+    expect(second.connected).toBe(true);
   });
 
   test("an installer learned after the fact fills in, and never replaces, a known one", async () => {

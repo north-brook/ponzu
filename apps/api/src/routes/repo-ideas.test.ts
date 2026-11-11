@@ -447,6 +447,16 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(t.model.requests).toHaveLength(IDEAS_POLICY.windowLimit);
     expect(logged("ideas_rate_limited")).toHaveLength(2);
 
+    // Read again and again while the limit holds: PostHog keeps one skip per repo and window.
+    const limited = made.at(-1)!.id;
+    for (let i = 0; i < 3; i++) await ideasOf("ines", limited);
+    const skips = t.analytics
+      .of("ideas skipped")
+      .filter((e) => e.properties.repo_id === limited && e.properties.reason === "rate_limited");
+    expect(skips.length).toBeGreaterThan(1);
+    expect(new Set(skips.map((e) => e.uuid)).size).toBe(1);
+    expect(new Set(skips.map((e) => e.timestamp?.getTime())).size).toBe(1);
+
     // The next hour has room again.
     t.clock.advance(IDEAS_POLICY.windowMs);
     expect((await ideasOf("ines", made.at(-1)!.id)).body.status).toBe("generating");

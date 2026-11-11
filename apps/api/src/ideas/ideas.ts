@@ -1,5 +1,6 @@
 import { claimRepoIdeas, type RepoIdeasRow, releaseRepoIdeas, saveRepoIdeas } from "@ponzu/db";
 import type { z } from "zod";
+import { stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
 import type { Model, StructuredAnswer } from "../deps/model.ts";
 import type { Logger } from "../http/log.ts";
@@ -100,10 +101,18 @@ export async function repoIdeas(
     }
     if (claim === "rate_limited") {
       log.warn("ideas_rate_limited", { repoId: repo.id, workspaceId: repo.workspaceId });
+      // Every read of a due repo says this while the limit holds: said once per repo and window
+      // (one id, time and nobody's), so how often the app reads is not what PostHog counts.
+      const window = Math.floor(now / IDEAS_POLICY.windowMs) * IDEAS_POLICY.windowMs;
       deps.analytics.capture(
         "ideas skipped",
         { repo_id: repo.id, reason: "rate_limited" },
-        { workspaceId: repo.workspaceId },
+        {
+          distinctId: null,
+          workspaceId: repo.workspaceId,
+          timestamp: new Date(window),
+          uuid: stableUuid(`${repo.id}/ideas/rate_limited/${window}`),
+        },
       );
     } else if (!repo.ideas.length) {
       // Due when this request read the row, and no longer: someone else claimed it meanwhile.
