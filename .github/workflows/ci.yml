@@ -138,8 +138,7 @@ jobs:
           failed=0
           # Beside the builds above, a test file's first in-process Postgres can take longer to
           # boot than bun's five seconds; it takes well under one alone.
-          # The slowest files first (test-timings.json), so the run doesn't wait on one started last.
-          bun test --parallel --timeout 20000 --timings test-timings.json --update-timings || failed=1
+          bun test --parallel --timeout 20000 || failed=1
           wait
           for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner; do
             echo "::group::$name"
@@ -151,10 +150,6 @@ jobs:
             fi
           done
           exit $failed
-      - name: What each test file took
-        # Copied over test-timings.json, this refreshes it (CONTRIBUTING.md).
-        if: ${{ !cancelled() }}
-        run: cat test-timings.json
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every

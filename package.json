@@ -11,7 +11,6 @@
     "dev": "bun run --filter @ponzu/studio dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
-    "test:timings": "bun test --parallel --timings test-timings.json --update-timings",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",

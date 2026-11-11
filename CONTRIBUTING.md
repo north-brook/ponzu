@@ -6,9 +6,6 @@ bun run dev          # the studio with hot reload, on Ponzu Cloud in memory
 bun run lint && bun run typecheck && bun test
 ```
 
-CI starts the slowest test files first, from `test-timings.json`. To refresh it, copy the
-"What each test file took" step of a green CI run over it (`bun run test:timings` measures locally).
-
 The desktop app: `cd apps/desktop && bun run start`, against the real API
 ([apps/desktop/README.md](apps/desktop/README.md)). The iPhone app:
 `cd apps/mobile && bunx expo run:ios`, see [docs/mobile.md](docs/mobile.md).

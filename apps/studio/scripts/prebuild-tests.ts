@@ -1,8 +1,8 @@
 /*
  * Builds, at once, the three studios the Chromium tests serve, into `<root>/gallery`,
  * `<root>/e2e` and `<root>/production`, each with its stamp (scripts/prebuilt.ts). CI runs this
- * before `bun test` with PONZU_PREBUILT_STUDIO=<root>, so the eleven test files that serve one
- * share three builds instead of making eleven:
+ * before `bun test` with PONZU_PREBUILT_STUDIO=<root>, so the test files that serve one share
+ * three builds instead of each making its own:
  *
  *   bun apps/studio/scripts/prebuild-tests.ts "$RUNNER_TEMP/studio-tests"
  *
