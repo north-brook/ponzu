@@ -12,6 +12,7 @@ export interface ClaudeModel {
 }
 
 export const CLAUDE_MODELS: readonly ClaudeModel[] = [
+  { id: "claude-fable-5-2", label: "Fable 5.2" },
   { id: "claude-opus-5-5", label: "Opus 5.5" },
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
   { id: "claude-haiku-5-5", label: "Haiku 5.5" },

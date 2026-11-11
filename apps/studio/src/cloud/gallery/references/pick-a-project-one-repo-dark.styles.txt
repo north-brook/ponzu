@@ -65,7 +65,7 @@ text "I'd like to iterate on the onboarding f…" rgb(244, 243, 239) 400 16px In
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Opus 5.5" rgb(183, 179, 169) 500 12px Inter
 icon svg[Claude] 13×13 rgb(183, 179, 169) stroke 1px
-text "· High" rgb(118, 115, 105) 400 12px Inter
+text "High" rgb(118, 115, 105) 400 12px Inter
 icon svg[Model: Opus 5.5, effort High] 11×11 rgb(183, 179, 169) stroke 2.2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px

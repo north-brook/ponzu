@@ -21,7 +21,13 @@ import { enterThread } from "../thread/rail.tsx";
 import { cn } from "../ui/cn.ts";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable.tsx";
 import { TipProvider } from "../ui/tooltip.tsx";
-import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
+import {
+  type DividerGrip,
+  DividerGrips,
+  type Lights,
+  SidebarToggle,
+  TrafficLights,
+} from "./chrome.tsx";
 import {
   CANVAS_MIN,
   fitPanes,
@@ -419,9 +425,9 @@ export function AppWindow({
 
   /**
    * Puts `pane`'s edge at `width`, within its limits and short of the canvas's minimum (the other
-   * pane stays as it is), and keeps what it came to.
+   * pane stays as it is), and keeps what it came to (`keep`: not for each step of a drag).
    */
-  const moveEdge = (pane: Pane, width: number) => {
+  const moveEdge = (pane: Pane, width: number, keep = true) => {
     const panel = panels[pane].current;
     if (!panel) return;
     const other: Pane = pane === "sidebar" ? "rail" : "sidebar";
@@ -436,7 +442,45 @@ export function AppWindow({
     panel.resize(`${size}px`);
     // What the canvas's room let it have (the panel's own size reads the old one until its
     // layout lands).
-    onResize.current?.(pane, Math.round(size + GUTTER[pane]));
+    if (keep) onResize.current?.(pane, Math.round(size + GUTTER[pane]));
+    return size + GUTTER[pane];
+  };
+
+  /**
+   * The chrome's divider over an open pane's edge, as a handle for it (chrome.tsx): the pane
+   * follows the pointer from where the press began, within the edge's own limits, and what it
+   * came to is kept on release. Nothing takes focus, and the chrome doesn't drag the window.
+   */
+  const dividerGrip = (pane?: Pane): DividerGrip | null => {
+    if (!pane || !(pane === "sidebar" ? sidebarOpen : railOpen)) return null;
+    return {
+      onPointerDown: (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        held.current = pane;
+        motion.stop();
+        const grip = event.currentTarget;
+        const from = widthNow(pane);
+        const pressed = event.clientX;
+        let came = from;
+        const move = (moved: globalThis.PointerEvent) => {
+          const by = moved.clientX - pressed;
+          came = moveEdge(pane, from + (pane === "sidebar" ? by : -by), false) ?? came;
+        };
+        grip.setPointerCapture(event.pointerId);
+        grip.addEventListener("pointermove", move);
+        grip.setAttribute("data-held", "");
+        dragging(frame.current, () => {
+          grip.removeEventListener("pointermove", move);
+          grip.removeAttribute("data-held");
+          if (came !== from) onResize.current?.(pane, Math.round(came));
+        });
+      },
+      onDoubleClick: () => {
+        held.current = pane;
+        moveEdge(pane, PANES[pane].default);
+      },
+    };
   };
 
   // Where focus was before a press on an edge took it (the library focuses the separator), to
@@ -551,7 +595,7 @@ export function AppWindow({
             {badge}
             <span className="flex-1" />
           </div>
-          {chrome}
+          <DividerGrips value={dividerGrip}>{chrome}</DividerGrips>
         </header>
         <ResizablePanelGroup
           elementRef={group}

@@ -264,6 +264,7 @@ describe("defaults", () => {
     const before = await call(t, headers, "GET", "/v1/claude/defaults");
     expect(before.body).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
     expect(before.body.models.map((m: { label: string }) => m.label)).toEqual([
+      "Fable 5.2",
       "Opus 5.5",
       "Sonnet 5.5",
       "Haiku 5.5",
