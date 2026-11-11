@@ -15,7 +15,7 @@ const SETUP_RESULTS: readonly GithubSetupResult[] = [
   "failed",
 ];
 
-/** The link `url` stands for under `scheme` (`ponzu`, or a development build's `ponzu-dev`). */
+/** The link `url` stands for under `scheme` (`ponzu`, or Ponzu Dev's `ponzu-dev`). */
 export function parseDeepLink(url: string, scheme: string): DeepLink | null {
   if (!URL.canParse(url)) return null;
   const parsed = new URL(url);

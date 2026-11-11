@@ -8,7 +8,7 @@ import { designAppLink } from "./app-link";
  * request's description and the agent's messages give it. A browser can't show the design (it
  * is the team's, behind their sign-in), so the page hands it to the Mac app as
  * ponzu://design/<id>, which opens it for whoever may, or offers the app, like /local does for a
- * design on someone's Mac. `?app=ponzu-preview` hands it to Ponzu Preview instead (app-link.ts).
+ * design on someone's Mac. `?app=ponzu-dev` hands it to Ponzu Dev instead (app-link.ts).
  */
 
 export const metadata: Metadata = {
