@@ -235,6 +235,8 @@ export class FakeGithub {
   /** Serves api.github.com and github.com. Pass it to `createGithub` as its `fetch`. */
   readonly fetch: Fetch = async (url, init = {}) => {
     const answer = await this.#serve(url, init);
+    // A fetched response says where it came from; Octokit's paginator reads it.
+    Object.defineProperty(answer, "url", { value: url });
     const hold = this.#holds.findIndex((queued) => queued.path === new URL(url).pathname);
     if (hold >= 0) {
       const { arrived, released } = this.#holds.splice(hold, 1)[0]!;
@@ -261,10 +263,13 @@ export class FakeGithub {
     }
     if (hostname !== "api.github.com") return notFound(method, url);
 
-    const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /, "") ?? "";
+    // GitHub reads the scheme in any case.
+    const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /i, "") ?? "";
     const appToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(pathname);
     if (method === "POST" && appToken) {
-      return this.#installationToken(bearer, Number(appToken[1]), JSON.parse(String(init.body)));
+      // A token for everything the installation has is asked for with no body at all.
+      const body = JSON.parse(typeof init.body === "string" ? init.body : "{}");
+      return this.#installationToken(bearer, Number(appToken[1]), body);
     }
     const appInstallation = /^\/app\/installations\/(\d+)$/.exec(pathname);
     if (method === "GET" && appInstallation) {
@@ -308,7 +313,7 @@ export class FakeGithub {
       const reachable = this.installations.filter((installation) =>
         this.#reaches(user, installation),
       );
-      return Response.json({
+      return paged(url, reachable.length, {
         total_count: reachable.length,
         installations: page(reachable, searchParams).map(installationJson),
       });
@@ -321,7 +326,7 @@ export class FakeGithub {
       const reachable = installation.repositories.filter(
         (repository) => repository.access[user.id],
       );
-      return Response.json({
+      return paged(url, reachable.length, {
         total_count: reachable.length,
         repositories: page(reachable, searchParams).map((repository) => ({
           id: repository.id,
@@ -360,7 +365,7 @@ export class FakeGithub {
       ({ id }) => token.repositoryIds === null || token.repositoryIds.includes(id),
     );
     if (method === "GET" && pathname === "/installation/repositories") {
-      return Response.json({
+      return paged(url, repositories.length, {
         total_count: repositories.length,
         repository_selection: installation.repositorySelection,
         repositories: page(repositories, searchParams).map(repositoryJson),
@@ -602,6 +607,16 @@ function page<T>(items: T[], params: URLSearchParams): T[] {
   const size = Number(params.get("per_page") ?? 30);
   const start = (Number(params.get("page") ?? 1) - 1) * size;
   return items.slice(start, start + size);
+}
+
+/** One page of a list of `total`, with GitHub's `Link` to the next page while there is one. */
+function paged(url: string, total: number, body: unknown): Response {
+  const next = new URL(url);
+  const size = Number(next.searchParams.get("per_page") ?? 30);
+  const number = Number(next.searchParams.get("page") ?? 1);
+  if (number * size >= total) return Response.json(body);
+  next.searchParams.set("page", String(number + 1));
+  return Response.json(body, { headers: { link: `<${next}>; rel="next"` } });
 }
 
 function installationJson(installation: FakeInstallation) {

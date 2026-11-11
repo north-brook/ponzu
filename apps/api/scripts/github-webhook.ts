@@ -12,9 +12,8 @@
 // `--since` is an ISO time and defaults to three days ago, about as far back as GitHub keeps them.
 //
 // After a deploy that fixes deliveries, run `redeliver`: GitHub does not retry a failed one.
-import { createPrivateKey } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { signAppJwt } from "../src/deps/github.ts";
+import githubAppJwt from "universal-github-app-jwt";
 
 const API = "https://api.github.com";
 const DEFAULT_URL = "https://api.ponzu.design/v1/github/webhook";
@@ -37,7 +36,7 @@ if (!env.GITHUB_APP_CLIENT_ID || !privateKeyPem || !command) {
   process.exit(2);
 }
 const clientId = env.GITHUB_APP_CLIENT_ID;
-const privateKey = createPrivateKey(privateKeyPem);
+const privateKey = privateKeyPem;
 
 /** One call as the App. Delivery ids are past 2^53, so every `"id"` is read as text. */
 async function asApp(method: string, path: string, body?: unknown) {
@@ -45,7 +44,7 @@ async function asApp(method: string, path: string, body?: unknown) {
     method,
     headers: {
       accept: "application/vnd.github+json",
-      authorization: `Bearer ${await signAppJwt({ clientId, privateKey, now: Date.now() })}`,
+      authorization: `Bearer ${(await githubAppJwt({ id: clientId, privateKey })).token}`,
       "x-github-api-version": "2022-11-28",
       "user-agent": "ponzu-api-scripts",
       ...(body === undefined ? {} : { "content-type": "application/json" }),
