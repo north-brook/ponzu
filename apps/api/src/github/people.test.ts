@@ -9,6 +9,7 @@ import {
   workspacePeople,
   workspaces,
 } from "@ponzu/db";
+import { runDueJobs } from "../jobs/run.ts";
 import type { FakeGithubUser } from "../testing/fake-github.ts";
 import {
   createTestApp,
@@ -16,7 +17,6 @@ import {
   type SignedInPerson,
   type TestApp,
 } from "../testing/index.ts";
-import { runDueJobs } from "../jobs/run.ts";
 import { reconcileInstallation } from "./installations.ts";
 import { MAX_PEOPLE_REPOS, PEOPLE_AFTER_MS, PEOPLE_WINDOW_MS } from "./people.ts";
 import { syncGithub } from "./sync.ts";

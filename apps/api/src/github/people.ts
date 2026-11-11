@@ -96,14 +96,16 @@ export async function readPeopleSoon(
 }
 
 /**
- * A workspace's people are due a read: record one now and, where there is a request to run it
- * beside (`background`), run it there, so a person's sync never waits for it; otherwise the
- * cron makes it. Never throws.
+ * A workspace's people are due a read, found by a reconcile that has just read its installation
+ * (`read`): record one now and, where there is a request to run it beside (`background`), make
+ * it there from what the reconcile read, so a person's sync never waits for it and GitHub is not
+ * asked for the installation twice; otherwise, or if it fails, the cron makes it. Never throws.
  */
 export async function readPeopleNow(
   deps: PeopleDeps & Partial<Pick<Deps, "background">>,
-  installationId: number,
+  read: Parameters<typeof refreshWorkspacePeople>[1],
 ): Promise<void> {
+  const installationId = read.installation.id;
   const now = deps.clock.now();
   const at = Math.floor(now / PEOPLE_WINDOW_MS) * PEOPLE_WINDOW_MS;
   const worker = `${PEOPLE_JOB}:${crypto.randomUUID()}`;
@@ -119,7 +121,7 @@ export async function readPeopleNow(
     if (job && background) {
       background(
         "github_people",
-        runHeldJob(deps, job, worker, () => runPeopleJob(deps, job.payload)),
+        runHeldJob(deps, job, worker, () => refreshWorkspacePeople(deps, read)),
       );
     }
   } catch (error) {

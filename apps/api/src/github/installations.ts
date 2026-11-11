@@ -139,7 +139,7 @@ export async function reconcileInstallation(
   if (people === "read") {
     await refreshWorkspacePeople(deps, { workspace, installation, repositories });
   } else if (peopleDue(workspace, readAt.getTime())) {
-    await readPeopleNow(deps, installationId);
+    await readPeopleNow(deps, { workspace, installation, repositories });
   }
 
   // GitHub may have reported the installation gone while this was reading it, and that

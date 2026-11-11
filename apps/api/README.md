@@ -145,7 +145,11 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    answers at once with `recordReposReachedBy`; a list of repos or designs (or a live query
    over one) joins the table, after `refreshWorkspaceRepoAccess` where it must be current.
    A webhook that cannot say whose access changed calls `markRepoAccessStale`. Never keep a
-   second copy of who can reach what.
+   second copy of who can reach what. The one exception is for show:
+   `workspace_people.repo_permissions` (`github/people.ts`) is the App's snapshot of who
+   GitHub lists in each repo, kept so the team can be shown before people open Ponzu. It is
+   never consulted to grant anything, and for anyone with a `repo_access` answer that answer
+   wins (`listRepoPeople`).
 
    To turn a token into a person anywhere else (a socket, a sealed query), call
    `authenticateUser(deps, token)` from `auth/authenticate.ts`. It verifies the WorkOS token

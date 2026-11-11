@@ -92,7 +92,14 @@ function installOnPerson(person: SignedInPerson, repoNames = ["site"]): FakeInst
   return installation;
 }
 
-const sync = (person: SignedInPerson) => syncGithub(t.deps, person.userId);
+/** A person's sync, and the work it starts beside it (a due read of people). */
+async function sync(person: SignedInPerson) {
+  try {
+    return await syncGithub(t.deps, person.userId);
+  } finally {
+    await t.backgroundDone();
+  }
+}
 
 async function rolesOf(person: SignedInPerson) {
   return Object.fromEntries(

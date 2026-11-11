@@ -226,7 +226,10 @@ test("a read that cannot tell how someone reaches it keeps what was known", asyn
     ],
     { seenAt: at(1) },
   );
-  const people = await listWorkspacePeople(db, { workspaceId: workspace.id, viewerUserId: owner.id });
+  const people = await listWorkspacePeople(db, {
+    workspaceId: workspace.id,
+    viewerUserId: owner.id,
+  });
   expect(
     people
       .filter((person) => person.userId === null)
@@ -252,7 +255,10 @@ test("listWorkspacePeople matches who has joined by GitHub id, joined admins fir
     { seenAt: at(0) },
   );
 
-  const people = await listWorkspacePeople(db, { workspaceId: workspace.id, viewerUserId: maya.id });
+  const people = await listWorkspacePeople(db, {
+    workspaceId: workspace.id,
+    viewerUserId: maya.id,
+  });
   expect(people.map((p) => [p.githubLogin, p.userId !== null, p.role])).toEqual([
     ["maya", true, "admin"],
     ["bryce", true, "member"],
@@ -326,12 +332,7 @@ test("each is shown only whom GitHub would show them", async () => {
     },
   );
 
-  expect(await shown(workspace.id, owner)).toEqual([
-    "guest-q",
-    "mem-q",
-    "push-q",
-    "contractor-q",
-  ]);
+  expect(await shown(workspace.id, owner)).toEqual(["guest-q", "mem-q", "push-q", "contractor-q"]);
   // Mem-q cannot see the secret repo: not its contractor. The guest shares app, which mem-q
   // can push to, so GitHub shows mem-q the guest.
   expect(await shown(workspace.id, member)).toEqual(["own-q", "guest-q", "push-q"]);

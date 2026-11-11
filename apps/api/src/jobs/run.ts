@@ -1,8 +1,8 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { BASE_REBUILD_JOB, runBaseRebuildJob } from "../environments/rebuild.ts";
-import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
 import { PEOPLE_JOB, runPeopleJob } from "../github/people.ts";
+import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
 import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
 import { runWakeJob, WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import { RetryLater } from "./retry.ts";

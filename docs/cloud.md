@@ -138,15 +138,31 @@ takes `members: read`), and for a personal account its person. It keeps them in
 `workspace_people` (workspace, GitHub id, login, name, avatar, how they reach it,
 their best permission and each repo's, when last seen), not as `users` rows; someone
 who signs in is matched by their GitHub id, and only then has a membership and a
-role. It is read when an installation is reconciled and the last read is an hour old,
-and at once on `installation`, `installation_repositories`, `member`, `membership`,
-`organization` and `team` webhooks; at most 100 repos (the most recently pushed) and
-1,000 people a list. A read cut short anywhere, or without `members: read`, only adds
-(`people_complete` is false); a complete one drops whoever it no longer finds. A
-suspended installation's people stay as last seen; an uninstalled one's are
-forgotten. What anyone may do is still their own sync's answer (`memberships`,
-`repo_access`); this list grants nothing. Free credits still count the people who
-have opened Ponzu.
+role. The read is a job of its own (`github.people`), so neither a person's sync nor
+a webhook's work waits on it or fails with it: a reconcile that finds the last read
+an hour old records one and runs it beside the request, and the `installation`,
+`installation_repositories`, `member`, `membership`, `organization` and `team`
+webhooks record one for the end of their minute, after their own work (taking access
+away first), so a burst of deliveries is one read, made by the cron. A read asks about
+at most 100 repos, those asked longest ago first (`repos.people_read_at`), so a bigger
+installation is read whole over a few, and reads 1,000 people a list. Each repo whose
+list came back whole replaces what was known of it, one cut short only adds, a repo
+the installation lost takes its entries with it, and someone left reaching no repo is
+gone; `people_complete` only says, for show, whether the last read was of every repo
+whole. The organization's members only label people owner or member: without
+`members: read`, someone new is taken for an outside collaborator. A suspended
+installation's people stay as last seen; an uninstalled one's are forgotten. What
+anyone may do is still their own sync's answer (`memberships`, `repo_access`, which
+wins over the list's per-repo snapshot for anyone who has one); this list grants
+nothing. Free credits still count the people who have opened Ponzu.
+
+**Who sees whom** follows what GitHub would show them, chosen in the query
+(`listWorkspacePeople`, `countWorkspacePeople`, `listRepoPeople`): an owner of the
+account sees everyone; a member sees its owners and members, and an outside
+collaborator only when they share a repo the member can push to (GitHub shows a
+repo's collaborators only to those); an outside collaborator sees only themselves and
+no count. In Share, someone who can only read the design's repo is not shown its
+outside collaborators.
 
 GitHub's owners are a floor: whoever owns the account (the person, for a personal
 account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
