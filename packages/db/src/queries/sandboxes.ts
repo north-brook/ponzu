@@ -3,6 +3,7 @@ import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   type AgentBlocker,
+  type AgentState,
   type ClaudeAccountKind,
   type ClaudeAccountStatus,
   type DesignStatus,
@@ -10,6 +11,7 @@ import {
   type SandboxStatus,
   sandboxes,
 } from "../schema/index.ts";
+import { TURN_KINDS } from "./events.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
@@ -533,8 +535,22 @@ export interface SweptSandbox {
   designStatus: DesignStatus;
   /** When the design's runner last took the lease or reported its state. */
   heardAt: Date | null;
+  /** When the design's current runner took the lease. */
+  runnerStartedAt: Date | null;
+  /** The runner that holds the lease. */
+  runnerId: string | null;
+  /** When a runner last wrote something of a turn to the thread. */
+  saidAt: Date | null;
+  /** What the design's head says its agent is doing. */
+  agentState: AgentState;
   /** Whether the design's feed has something its agent must take up (`now` or `next`). */
   pending: boolean;
+  /**
+   * The events that are owed a turn (docs/cloud.md, "A turn that never came"): the ones that begin
+   * one (`TURN_KINDS`, `now` or `next`), delivered after the runner last wrote anything of a turn,
+   * that the API has not given up on, oldest first, with when each was delivered.
+   */
+  owed: { id: string; deliveredAt: Date }[];
   /** Whether the Claude account it runs on can run it now. */
   claudeUsable: boolean;
   /**
@@ -560,7 +576,12 @@ export async function listSandboxesToSweep(
       sandbox: Record<string, unknown>;
       design_status: DesignStatus;
       heard_at: string | null;
+      runner_started_at: string | null;
+      runner_id: string | null;
+      said_at: string | null;
+      agent_state: AgentState;
       pending: boolean;
+      owed: { id: string; delivered_at: string }[] | null;
       claude_usable: boolean;
       claude_revoked: boolean;
       owner_member: boolean;
@@ -572,10 +593,26 @@ export async function listSandboxesToSweep(
         'sandbox', row_to_json(s),
         'design_status', d.status,
         'heard_at', r.heard_at,
+        'runner_started_at', r.started_at,
+        'runner_id', r.runner_id,
+        'said_at', r.said_at,
+        'agent_state', d.agent_state,
         'pending', exists (
           select 1 from events e
            where e.design_id = d.id and e.delivered_at is null and e.priority in ('now', 'next')
         ),
+        'owed', case when s.state = 'awake' then (
+          select json_agg(json_build_object('id', e.id, 'delivered_at', e.delivered_at)
+                          order by e.seq)
+            from events e
+           where e.design_id = d.id and e.delivered_at is not null and e.lapsed_at is null
+             and (r.said_at is null or e.delivered_at > r.said_at)
+             and e.priority in ('now', 'next')
+             and e.kind in (${sql.join(
+               TURN_KINDS.map((kind) => sql`${kind}`),
+               sql`, `,
+             )})
+        ) end,
         'claude_usable', exists (
           select 1 from claude_accounts a
            where ${runsOn}
@@ -602,7 +639,12 @@ export async function listSandboxesToSweep(
     sandbox: toSandbox(row.sandbox),
     designStatus: row.design_status,
     heardAt: row.heard_at ? new Date(row.heard_at) : null,
+    runnerStartedAt: row.runner_started_at ? new Date(row.runner_started_at) : null,
+    runnerId: row.runner_id,
+    saidAt: row.said_at ? new Date(row.said_at) : null,
+    agentState: row.agent_state,
     pending: row.pending,
+    owed: (row.owed ?? []).map((e) => ({ id: e.id, deliveredAt: new Date(e.delivered_at) })),
     claudeUsable: row.claude_usable,
     claudeHeld: !row.claude_revoked && row.owner_member,
     ownerMember: row.owner_member,

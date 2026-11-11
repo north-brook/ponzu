@@ -102,6 +102,15 @@ test("between a send and the agent's first word, the line says it is thinking, f
   expect(workingLine([failed], idle, now)).toBeNull();
   // Once the agent has answered, nothing.
   expect(workingLine([sent, reply("Hi.")], idle, now)).toBeNull();
+  // A runner's word that it started is no answer: the line stays for the rest of the while.
+  const resumed = item({ kind: "notice", payload: { type: "resumed" } });
+  expect(workingLine([sent, resumed], idle, now)).toBe("Thinking");
+  // An error the agent or Ponzu wrote is one: the thread says what happened.
+  const lapsed = item({
+    kind: "notice",
+    payload: { type: "error", code: "turn_failed", message: "Claude was cut off." },
+  });
+  expect(workingLine([sent, resumed, lapsed], idle, now)).toBeNull();
 });
 
 test("a running turn shows its messages and none of its work; it folds once it ends", () => {

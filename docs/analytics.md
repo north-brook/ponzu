@@ -94,6 +94,8 @@ Every event about a workspace also carries `workspace_id`.
 | `turn stopped` | `design_id` | A person asked the agent to stop. |
 | `turn started` | `design_id`, `turn_id` | Timed when the turn began. Captured when the runner reports the turn. About the person whose message began it. |
 | `turn finished` | `design_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). |
+| `turn lapsed` | `design_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the design's owner. |
+| `turn stalled` | `design_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the design's owner. |
 | `question asked` | `design_id`, `question_id`, `kind` | The agent asked; about no one. |
 | `question answered` | `design_id`, `question_id`, `kind` | |
 | `pull request created` / `merged` / `closed` | `design_id`, `number` | Once each, whichever of a route and a webhook sees it first. |

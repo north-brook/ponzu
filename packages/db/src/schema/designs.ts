@@ -327,13 +327,22 @@ export const events = pgTable(
      * after its answer was lost hands out the same events.
      */
     claimId: text("claim_id"),
+    /** When the runner said the Claude session holds it, by the API's clock. */
     deliveredAt: instant("delivered_at"),
+    /**
+     * When the API stopped waiting for the turn it was owed (docs/cloud.md, "A turn that never
+     * came"): it was delivered and nothing the runner wrote followed, so the thread said so and,
+     * once, the event was put in the feed again as a copy (`payload.retryOf`).
+     */
+    lapsedAt: instant("lapsed_at"),
   },
   (t) => [
     // What a claim reads.
     index("events_design_id_seq_pending_idx")
       .on(t.designId, t.seq)
       .where(sql`${t.deliveredAt} is null`),
+    // What the sweep reads: what was delivered after the runner last wrote.
+    index("events_design_id_delivered_at_idx").on(t.designId, t.deliveredAt),
     // Deleting a design deletes its events, delivered ones included.
     index("events_design_id_idx").on(t.designId),
     check("events_kind_check", oneOf(t.kind, EVENT_KINDS)),
@@ -495,6 +504,12 @@ export const designRunners = pgTable("design_runners", {
   startedAt: instant("started_at").notNull(),
   /** When the runner last took the lease or reported its state. */
   heardAt: instant("heard_at").notNull(),
+  /**
+   * When a runner last wrote something of a turn to the thread (the agent's text, a turn's work,
+   * a question, a stop, an error), by the API's clock. An event delivered after it has had no
+   * answer yet: the sweep keeps the sandbox awake for it, and lapses it when none comes.
+   */
+  saidAt: instant("said_at"),
   /** The Claude session the next runner resumes, as an ack or a state report last named it. */
   claudeSessionId: text("claude_session_id"),
   /**

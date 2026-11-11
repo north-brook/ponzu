@@ -56,9 +56,17 @@ import {
 } from "./api/protocol.ts";
 import { GitCredentials, type Probe } from "./git-token.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
+import { TurnMarker } from "./inflight.ts";
 import { backoff as BACKOFF, Outbox } from "./pacer.ts";
 import { Previews } from "./previews.ts";
-import { eventText, noticeText, RUNNER_INSTRUCTIONS, turnContext } from "./prompt.ts";
+import {
+  eventText,
+  noticeText,
+  PICK_UP_TEXT,
+  RUNNER_INSTRUCTIONS,
+  retryOf,
+  turnContext,
+} from "./prompt.ts";
 import { BranchPush, type PushOutcome, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
@@ -99,6 +107,16 @@ export interface Timing {
   quiescePushMs: number;
   /** The waits between checks that GitHub honours a token for git (git-token.ts). */
   gitReadyWaitsMs: number[];
+  /**
+   * A turn in which Claude Code has said nothing at all for this long (no stream, no tool's
+   * result, no subagent's step) is stuck: it is stopped and the thread says so. Past Claude Code's
+   * ten-minute limits on a request and on a shell command, with room to spare.
+   */
+  turnQuietMs: number;
+  /** How often a long turn's item is written again, so the API sees it is still going. */
+  turnRefreshMs: number;
+  /** How often the runner looks for a stuck turn. */
+  watchEveryMs: number;
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -118,11 +136,16 @@ export const TIMING: Timing = {
   pushWaitsMs: [2_000, 5_000, 10_000, 15_000],
   quiescePushMs: 8_000,
   gitReadyWaitsMs: [500, 1_000, 1_500, 2_000, 2_500, 3_000, 4_000],
+  turnQuietMs: 20 * 60_000,
+  turnRefreshMs: 5 * 60_000,
+  watchEveryMs: 60_000,
   backoff: BACKOFF,
 };
 
 /** How many times in a row Claude Code may stop by itself before the runner stops starting it. */
 const MAX_RESTARTS = 3;
+/** How many times one broken-off turn is picked up before the person is asked to send again. */
+const MAX_PICKUPS = 2;
 
 /** The tool the agent describes its branch's pull request with, beside the canvas tools. */
 const SUMMARY_TOOL = "describe_pull_request";
@@ -221,6 +244,10 @@ interface Sent {
   /** The event it carries, if any. */
   event: string | null;
   human: boolean;
+  /** For a pickup of a broken-off turn, how many there have been of it. */
+  pickups?: number;
+  /** For a pickup, the event of the turn it picks up, which it does not acknowledge. */
+  carries?: string | null;
 }
 
 /**
@@ -283,6 +310,16 @@ export class Runner {
 
   /** Claude Code is in a turn: from what it took in until its result. */
   private inTurn = false;
+  /** What Claude Code last took in, on the disk until the turn's result (inflight.ts). */
+  private readonly marker: TurnMarker;
+  /** The event of a broken-off turn being picked up: a copy of it the API sends is not put in. */
+  private pickingUp: string | null = null;
+  /** When Claude Code last said anything, and when the turn's item was last written. */
+  private heardAgent = Date.now();
+  private turnWritten = 0;
+  /** The turn was stopped for going quiet once already: the next time, Claude Code is restarted. */
+  private quietStopped = false;
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
   /** A person's stop that is ending the turn, and what had been put in behind it when it came. */
   private ending: { event: string; cancelled: Set<string> } | null = null;
   /** The agent's replies being written: API message id to the thread item and its text so far. */
@@ -384,6 +421,7 @@ export class Runner {
       backoff,
     });
     this.usage = new UsageMeter(join(opts.stateDir, "usage.json"));
+    this.marker = new TurnMarker(join(opts.stateDir, "turn.json"));
     const probe = opts.gitProbe;
     this.credentials = new GitCredentials({
       api: this.api,
@@ -444,6 +482,8 @@ export class Runner {
     // nothing (and Send) for the moment between that and the run their message starts.
     this.claimTimer = setInterval(() => this.claim(), this.timing.claimEveryMs);
     this.claimTimer.unref?.();
+    this.watchTimer = setInterval(() => this.watch(), this.timing.watchEveryMs);
+    this.watchTimer.unref?.();
     this.claim();
   }
 
@@ -494,6 +534,7 @@ export class Runner {
   private async shutdown(): Promise<void> {
     const within = (p: Promise<unknown>) => bounded(p, this.timing.stopStepMs);
     if (this.claimTimer) clearInterval(this.claimTimer);
+    if (this.watchTimer) clearInterval(this.watchTimer);
     if (this.working && this.run) await within(this.run.interrupt());
     // A runner the API has let go of can deliver nothing more: the next one has the design.
     if (this.ws && !this.fatalReason) await this.ws.design.settled(this.timing.stopStepMs);
@@ -680,6 +721,8 @@ export class Runner {
         message:
           "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
       });
+      // The person has been told, and picks it up when they choose: not the next start.
+      this.marker.clear();
     }
     if (this.ws) await this.ws.design.settled(this.timing.settleMs);
     await Promise.all([
@@ -760,6 +803,77 @@ export class Runner {
       this.state.set({ claudeSessionId: this.sessionId });
       this.acks.kick();
     }
+    this.pickUp(history);
+  }
+
+  /**
+   * A turn the last run of Claude Code took in and never finished (inflight.ts): the session
+   * holds its message with no answer after it, and Claude Code, resumed, would wait for another.
+   * It is picked up with a word to the agent and one to the person, at most twice; then the
+   * person is asked to send it again. A message the session does not hold was never delivered,
+   * so the claim brings it back; one whose session is gone is the API's to send again.
+   */
+  private pickUp(history: SessionHistory | null): void {
+    const broke = this.marker.read();
+    if (!broke) return;
+    if (!history?.messages.has(broke.uuid)) {
+      this.marker.clear();
+      return;
+    }
+    this.event("turn_broke_off", { event: broke.event, pickups: broke.pickups });
+    if (broke.pickups >= MAX_PICKUPS) {
+      this.marker.clear();
+      this.notice(randomId("ti"), {
+        type: "error",
+        code: "turn_failed",
+        message: "Claude was cut off again before it finished. Send your message again to retry.",
+      });
+      return;
+    }
+    this.pickingUp = broke.event;
+    this.notice(randomId("ti"), {
+      type: "error",
+      code: "turn_failed",
+      message: "Claude was cut off before it finished this, and is picking it back up.",
+    });
+    this.send(randomUUID(), PICK_UP_TEXT, "next", {
+      human: false,
+      event: null,
+      pickups: broke.pickups + 1,
+      carries: broke.event,
+    });
+  }
+
+  /**
+   * Once a minute: a turn in which Claude Code has said nothing at all for `turnQuietMs` is stuck.
+   * It is interrupted and the person told; if it is still stuck the next time, Claude Code is
+   * closed, and started again on the same session (`exited`).
+   */
+  private watch(): void {
+    if (this.stopping || !this.working || !this.run) return;
+    // Waiting on a person's answer is quiet by design, for as long as they take.
+    if ([...this.asks.values()].some((ask) => ask)) {
+      this.heardAgent = Date.now();
+      return;
+    }
+    const quiet = Date.now() - this.heardAgent;
+    if (quiet < this.timing.turnQuietMs) return;
+    this.heardAgent = Date.now();
+    this.event("turn_quiet", { quietMs: quiet, again: this.quietStopped });
+    if (this.quietStopped) {
+      this.quietStopped = false;
+      void this.run.close();
+      return;
+    }
+    this.quietStopped = true;
+    void this.interrupt();
+    this.marker.clear();
+    const minutes = Math.round(quiet / 60_000);
+    this.notice(randomId("ti"), {
+      type: "error",
+      code: "turn_failed",
+      message: `Claude went quiet for ${minutes} minutes in the middle of this turn, so Ponzu stopped it. Send a message to pick it up again.`,
+    });
   }
 
   /** Where each turn's trace goes, under this design and its workspace. */
@@ -957,7 +1071,16 @@ export class Runner {
       else void this.push("asked");
       return;
     }
-    if (this.inSession(event)) {
+    const copyOf = retryOf(event);
+    if (copyOf !== null && copyOf === this.pickingUp) {
+      // The API sent again what this runner is already picking up: the pickup answers it.
+      this.log(`${event.id} repeats ${copyOf}, which is being picked up`);
+      this.ack(event.id, false);
+      return;
+    }
+    // A copy is new to the session whatever the session holds of what it repeats: the session
+    // holding that is how the turn was lost.
+    if (copyOf === null && this.inSession(event)) {
       this.ack(event.id, true);
       return;
     }
@@ -1024,18 +1147,15 @@ export class Runner {
     this.run.send({ uuid, text: eventText(event), priority: "aside", human: false });
   }
 
-  private send(
-    uuid: string,
-    text: string,
-    priority: AgentInput["priority"],
-    opts: { human: boolean; event: string | null },
-  ): void {
+  private send(uuid: string, text: string, priority: AgentInput["priority"], opts: Sent): void {
     if (!this.run) {
       // Claude Code gave up starting: try again, which puts back every event held.
       void this.restartAgent();
       return;
     }
-    this.sent.set(uuid, { event: opts.event, human: opts.human });
+    // A turn about to start: the watch counts its quiet from now, not from the last turn.
+    if (!this.working) this.heardAgent = Date.now();
+    this.sent.set(uuid, opts);
     this.run.send({ uuid, text, priority, human: opts.human, origin: this.originOf(opts.event) });
     this.refreshState();
   }
@@ -1114,7 +1234,14 @@ export class Runner {
   }
 
   private handle(event: AgentEvent): void {
+    this.heardAgent = Date.now();
     switch (event.type) {
+      case "alive":
+        // A long stretch with nothing for the thread (a subagent, a long command): the turn's
+        // item is written again now and then, which tells the API the turn is still going.
+        if (this.turn && Date.now() - this.turnWritten >= this.timing.turnRefreshMs)
+          this.writeTurn(null);
+        break;
       case "ready":
         this.ready(event.sessionId, event.problems);
         break;
@@ -1182,6 +1309,12 @@ export class Runner {
       if (sent) {
         this.sent.delete(uuid);
         if (sent.event) this.ack(sent.event, true);
+        // On the disk before the turn can be cut off: the next start picks it up.
+        this.marker.write({
+          uuid,
+          event: sent.event ?? sent.carries ?? null,
+          pickups: sent.pickups ?? 0,
+        });
       }
       if (this.ending?.cancelled.delete(uuid)) interrupt = true;
     }
@@ -1307,6 +1440,7 @@ export class Runner {
   private writeTurn(ended: TurnEnding | null): void {
     const turn = this.turn;
     if (!turn) return;
+    this.turnWritten = Date.now();
     this.thread.write({
       id: turn.id,
       kind: "tool",
@@ -1428,8 +1562,12 @@ export class Runner {
     usage: ModelUsage[],
     turn: TurnSummary | null,
   ): void {
+    // A turn that showed nothing still leaves its item: what tells the API the turn it was owed
+    // came (docs/cloud.md, "A turn that never came"), rather than being sent again.
+    if (!this.turn && !error) this.openTurn();
     this.closeStreams(error?.code === "interrupted" ? "stopped" : error ? "failed" : "done");
     this.restarts = 0;
+    this.quietStopped = false;
     if (this.sessionId) {
       const used = this.usage.turn(this.sessionId, usage);
       // Every turn the agent can say something of is reported, what it used or not.
@@ -1461,6 +1599,10 @@ export class Runner {
     this.dropAsks("The turn ended before anyone answered.");
     this.inTurn = false;
     if (!this.working) {
+      // Answered, or ended in a way the thread has said: nothing is left to pick up. Not a turn
+      // the runner's own shutdown cut off, which the next start picks up.
+      if (!this.stopping) this.marker.clear();
+      this.pickingUp = null;
       this.deliverLater("aside");
       this.endTurn();
     }

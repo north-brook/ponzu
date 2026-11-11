@@ -173,7 +173,8 @@ export const runner = new Hono<AppEnv>()
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
     const { designId, runnerId } = c.var.actor;
     const { claimId, limit } = c.req.valid("json");
-    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit });
+    const now = new Date(c.var.deps.clock.now());
+    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit, now });
     if (!claimed) throw new ApiError(404, "not_found", "There is no such design.");
     const response: ClaimResponse = {
       events: claimed.events.map(
@@ -207,6 +208,7 @@ export const runner = new Hono<AppEnv>()
       runnerId: c.var.actor.runnerId,
       ids,
       claudeSessionId,
+      now: new Date(c.var.deps.clock.now()),
     });
     return c.json({ acked } satisfies AckResponse);
   })

@@ -91,6 +91,19 @@ export interface ServerEvents {
     tool_calls: number | null;
     models: string[];
   } & ModelTokens;
+  /**
+   * The API gave up waiting for a turn it was owed (docs/cloud.md, "A turn that never came"): what
+   * was delivered got nothing written after it. `sent_again`: a copy went into the feed.
+   */
+  "turn lapsed": {
+    design_id: string;
+    kinds: string[];
+    sent_again: boolean;
+    agent_state: string;
+    waited_ms: number;
+  };
+  /** A runner said it was working and wrote nothing of the turn for an hour: started again. */
+  "turn stalled": { design_id: string };
   "question asked": { design_id: string; question_id: string; kind: string };
   "question answered": { design_id: string; question_id: string; kind: string };
 

@@ -122,6 +122,16 @@ async function runnerIn(sandbox: Sandbox) {
       call(t, headers, "POST", "/v1/runner/events/claim", { claimId }),
     ack: (ids: string[]) =>
       call(t, headers, "POST", "/v1/runner/events/ack", { ids, claudeSessionId: "session-1" }),
+    /** The agent says something in the thread: the turn it owed has begun. */
+    answer: (text = "On it.") =>
+      call(t, headers, "POST", "/v1/runner/thread", {
+        items: [{ id: newId("ti"), kind: "assistant", payload: { text }, streaming: false }],
+      }),
+    /** A notice of the runner's own, which is no answer. */
+    notice: (type: "waking" | "resumed" | "started") =>
+      call(t, headers, "POST", "/v1/runner/thread", {
+        items: [{ id: newId("ti"), kind: "notice", payload: { type }, streaming: false }],
+      }),
     /**
      * What the runner does when asked for a report: report, and once the answer names a sleep,
      * get ready and report again saying so.
@@ -962,6 +972,7 @@ describe("getting ready to sleep", () => {
     const claimed = await runner.claim(claimId);
     expect(claimed.body.events.length).toBeGreaterThan(0);
     await runner.ack(claimed.body.events.map((e: { id: string }) => e.id));
+    await runner.answer();
     await idleToSleep(runner);
     expect((await live(design.id)).state).toBe("asleep");
   });
@@ -1094,12 +1105,12 @@ describe("a runner that a warm resume does not bring back", () => {
   test("stays down when its design was settled meanwhile: it exited on purpose", async () => {
     const { design, runner } = await awakeDesign();
     await idleToSleep(runner);
-    const healthy = t.poke.port.healthy;
-    t.poke.port.healthy = async () => {
+    const health = t.poke.port.health;
+    t.poke.port.health = async () => {
       await rows(
         `update designs set status = 'settled', settled_at = now() where id = '${design.id}'`,
       );
-      return false;
+      return { ok: false, status: 502, error: null, ms: 0 };
     };
     const before = t.sandbox.commands.length;
     try {
@@ -1110,11 +1121,247 @@ describe("a runner that a warm resume does not bring back", () => {
       );
       expect(logged("runner_down_after_warm_resume", design.id)).toBeUndefined();
       // The sweep retires a settled design's sandbox.
-      t.poke.port.healthy = healthy;
+      t.poke.port.health = health;
       await cron();
       expect(await getLiveSandbox(t.db, design.id)).toBeNull();
     } finally {
-      t.poke.port.healthy = healthy;
+      t.poke.port.health = health;
     }
+  });
+
+  test("is left running when it has called the API since the thaw, however its address answers", async () => {
+    // 2026-11-11: the thawed runner claimed and acknowledged the message within three seconds,
+    // while its address answered no `/health` for eighteen. The wake took it for dead, stopped
+    // the machine under the turn and started it cold, and the turn was lost.
+    const { design, sandbox, runner } = await awakeDesign();
+    const token = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN;
+    await idleToSleep(runner);
+    const health = t.poke.port.health;
+    let thawed = false;
+    t.poke.port.health = async () => {
+      if (!thawed) {
+        thawed = true;
+        // What the thawed process does first: report, claim, and once the session holds the
+        // message, acknowledge it.
+        await runner.beat("working");
+        const claimed = await runner.claim();
+        await runner.ack(claimed.body.events.map((e: { id: string }) => e.id));
+      }
+      return { ok: false, status: null, error: "TimeoutError: The operation timed out.", ms: 3000 };
+    };
+    const before = t.sandbox.commands.length;
+    try {
+      t.clock.advance(MINUTE);
+      await say(design.id, "yes use hugeicons for everything");
+      expect(logged("runner_health_unreachable", design.id)).toMatchObject({
+        sandboxId: sandbox.id,
+        looks: 1,
+        first: "TimeoutError: The operation timed out. in 3000 ms",
+      });
+      expect(logged("runner_down_after_warm_resume", design.id)).toBeUndefined();
+      expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "warm" });
+      // Not started again, not flushed and stopped: the machine and its runner are left be.
+      expect(t.sandbox.commands.slice(before).map((c) => c.command)).toEqual([]);
+      expect(t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN).toBe(token);
+      expect((await runner.beat()).status).toBe(200);
+    } finally {
+      t.poke.port.health = health;
+    }
+    await runner.answer();
+  });
+
+  test("is booted cold, and says what each look got, when nothing has heard from it", async () => {
+    const { design, runner } = await awakeDesign();
+    await idleToSleep(runner);
+    const health = t.poke.port.health;
+    t.poke.port.health = async () => ({ ok: false, status: 302, error: null, ms: 40 });
+    t.sandbox.onExec = ({ command }) =>
+      command.startsWith("sudo systemctl") ? { exitCode: 0 } : undefined;
+    try {
+      t.clock.advance(MINUTE);
+      await say(design.id, "And the footer");
+      expect(logged("runner_revive_failed", design.id)).toMatchObject({
+        heard: false,
+        first: "302 in 40 ms",
+        last: "302 in 40 ms",
+      });
+      expect(logged("runner_down_after_warm_resume", design.id)).toBeDefined();
+      expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "cold" });
+    } finally {
+      t.poke.port.health = health;
+      t.sandbox.onExec = null;
+    }
+  });
+});
+
+describe("a turn that never came", () => {
+  onAppOfTheirOwn();
+
+  /** The thread's items after the person's last message, as kind and payload. */
+  async function threadAfterLastMessage(designId: string) {
+    const all = await rows(
+      `select kind, payload from thread_items where design_id = '${designId}' order by seq`,
+    );
+    const last = all.findLastIndex((row) => row.kind === "message");
+    return all.slice(last + 1) as { kind: string; payload: Record<string, unknown> }[];
+  }
+  /** The design's feed, oldest first. */
+  const feed = async (designId: string) =>
+    (await rows(
+      `select id, kind, payload, delivered_at, lapsed_at from events
+        where design_id = '${designId}' order by seq`,
+    )) as { id: string; kind: string; payload: Record<string, unknown>; lapsed_at: unknown }[];
+  /** Beats for `ms`, and sweeps each minute, or only at the end with `sweep: "end"`. */
+  async function beatFor(
+    runner: { beat: (s?: "working" | "idle") => Promise<unknown> },
+    ms: number,
+    state: "working" | "idle" = "idle",
+    sweep: "minute" | "end" = "minute",
+  ) {
+    for (let at = 0; at < ms; at += 30_000) {
+      t.clock.advance(30_000);
+      await runner.beat(state);
+      if (sweep === "minute" && (at / 30_000) % 2 === 1) await cron();
+    }
+    if (sweep === "end") await cron();
+  }
+
+  test("a message claimed and delivered with nothing after it is not slept on: it is said and sent again", async () => {
+    // 2026-11-11's sequence, from the API's side: the message was claimed and acknowledged by
+    // the runner that was then killed; a new runner started on the same session, wrote only its
+    // `resumed` notice, reported idle every thirty seconds and claimed every minute, getting
+    // nothing; and at five idle minutes the sweep put the sandbox to sleep.
+    const { design, sandbox, runner: killed } = await awakeDesign();
+    const claimed = await killed.claim();
+    const [message] = claimed.body.events as { id: string }[];
+    await killed.ack([message!.id]);
+
+    const next = await runnerIn(await live(design.id));
+    await next.notice("resumed");
+    await next.beat("idle");
+    expect((await next.claim()).body.events).toEqual([]);
+
+    // A minute in: owed, and waited for.
+    await beatFor(next, MINUTE);
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+
+    // Past the sweep's five idle minutes: never put to sleep while it owes the turn. Two
+    // minutes of an idle runner and it lapses: said in the thread, and sent again.
+    await idleToSleep(next);
+    expect((await live(design.id)).state).toBe("awake");
+    expect(logged("turn_lapsed", design.id)).toMatchObject({
+      sandboxId: sandbox.id,
+      events: [message!.id],
+      agentState: "idle",
+    });
+    expect(await threadAfterLastMessage(design.id)).toEqual([
+      { kind: "notice", payload: { type: "resumed" } },
+      {
+        kind: "notice",
+        payload: {
+          type: "error",
+          code: "turn_failed",
+          message: "Claude was cut off before it answered this, so Ponzu is sending it again.",
+        },
+      },
+    ]);
+    const events = await feed(design.id);
+    expect(events.find((e) => e.id === message!.id)!.lapsed_at).not.toBeNull();
+    const copy = events.at(-1)!;
+    expect(copy).toMatchObject({
+      kind: "message",
+      payload: { text: "Draw a calmer pricing page", retryOf: message!.id },
+      lapsed_at: null,
+    });
+
+    // The runner, knowing nothing of any of this, claims the copy as a new message and answers.
+    const again = await next.claim();
+    expect(again.body.events.map((e: { id: string }) => e.id)).toEqual([copy.id]);
+    await next.ack([copy.id]);
+    await next.answer("Using Hugeicons everywhere now.");
+    await idleToSleep(next);
+    expect((await live(design.id)).state).toBe("asleep");
+    expect(t.analytics.of("turn lapsed").at(-1)?.properties).toMatchObject({
+      design_id: design.id,
+      kinds: ["message"],
+      sent_again: true,
+    });
+  });
+
+  test("a copy that gets no turn either says to send it again, and is not sent a third time", async () => {
+    const { design, runner } = await awakeDesign();
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    await idleToSleep(runner);
+    const copy = (await feed(design.id)).at(-1)!;
+    expect(copy.payload.retryOf).toBe(message!.id);
+
+    await runner.ack((await runner.claim()).body.events.map((e: { id: string }) => e.id));
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("awake");
+    expect((await threadAfterLastMessage(design.id)).at(-1)).toEqual({
+      kind: "notice",
+      payload: {
+        type: "error",
+        code: "turn_failed",
+        message: "Claude didn't get to this message. Send it again to try once more.",
+      },
+    });
+    expect(await feed(design.id)).toHaveLength(2);
+    // Nothing is owed now: the next idle sweep puts it to sleep.
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("asleep");
+  });
+
+  test("a runner that says it is working gets fifteen minutes to show something, then starts cold", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    const token = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN;
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+
+    // A long session's first answer can take minutes: working, it is waited for.
+    await beatFor(runner, 10 * MINUTE, "working");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+    expect((await live(design.id)).state).toBe("awake");
+
+    await beatFor(runner, 6 * MINUTE, "working");
+    expect(logged("turn_lapsed", design.id)).toMatchObject({ agentState: "working" });
+    // A warm resume would thaw the same stuck process: it starts cold, and the copy waits for
+    // the next runner.
+    expect(t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN).not.toBe(token);
+    expect((await live(design.id)).state).toBe("awake");
+    const copy = (await feed(design.id)).at(-1)!;
+    expect(copy.payload.retryOf).toBe(message!.id);
+    const fresh = await runnerIn(await live(design.id));
+    expect((await fresh.claim()).body.events.map((e: { id: string }) => e.id)).toEqual([copy.id]);
+  });
+
+  test("a turn that wrote and then went quiet for an hour, its runner still saying working, is started again", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    const token = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN;
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    await runner.answer("Looking at the pricing page.");
+
+    await beatFor(runner, 50 * MINUTE, "working", "end");
+    expect(logged("turn_stalled", design.id)).toBeUndefined();
+    await beatFor(runner, 11 * MINUTE, "working", "end");
+    expect(logged("turn_stalled", design.id)).toBeDefined();
+    expect((await threadAfterLastMessage(design.id)).at(-1)).toMatchObject({
+      kind: "notice",
+      payload: { type: "error", code: "turn_failed" },
+    });
+    expect(t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN).not.toBe(token);
+  });
+
+  test("a message answered is owed nothing, and its sandbox sleeps as before", async () => {
+    const { design, runner } = await awakeDesign();
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    t.clock.advance(20_000);
+    await runner.answer();
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("asleep");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
   });
 });
