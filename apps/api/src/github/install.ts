@@ -2,6 +2,7 @@ import { consumeAuthState, createAuthState } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import type { Binding } from "../vault/vault.ts";
+import { DEFAULT_LINK_SCHEME, type LinkScheme, linkSchemeOf } from "./link-scheme.ts";
 import { syncGithub } from "./sync.ts";
 
 /*
@@ -29,13 +30,18 @@ export type InstallClient = "mac" | "ios";
 export async function createInstallLink(
   { db, clock, vault, config }: Pick<Deps, "db" | "clock" | "vault" | "config">,
   userId: string,
-  { client, githubAccountId }: { client: InstallClient; githubAccountId?: number },
+  {
+    client,
+    githubAccountId,
+    scheme = DEFAULT_LINK_SCHEME,
+  }: { client: InstallClient; githubAccountId?: number; scheme?: LinkScheme },
 ): Promise<{ url: string; expiresAt: Date }> {
   const expiresAt = new Date(clock.now() + STATE_LIFETIME_MS);
+  // The scheme the setup page links back to rides in the row, never in the link.
   const state = await createAuthState(db, {
     kind: "github_install",
     userId,
-    payload: { client },
+    payload: { client, scheme: linkSchemeOf(scheme) },
     expiresAt,
   });
   const base = `https://github.com/apps/${config.githubApp.slug}/installations/new`;
@@ -60,7 +66,14 @@ export type SetupOutcome =
   /** GitHub no longer takes the token Ponzu holds for them: they have to sign in again. */
   | { kind: "sign_in" };
 
-/** Finish a return from GitHub's install page. Parameters are as GitHub sent them, unchecked. */
+/** The page: an outcome, or GitHub failing on the way. */
+export type SetupPage = SetupOutcome | { kind: "failed" };
+
+/**
+ * Finish a return from GitHub's install page. Parameters are as GitHub sent them, unchecked.
+ * Also says which app to send the person back to: the one that asked for the link, as its state
+ * recorded it, or Ponzu when the state says nothing (`link-scheme.ts`).
+ */
 export async function finishSetup(
   deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log">,
   query: {
@@ -68,7 +81,7 @@ export async function finishSetup(
     installationId?: number;
     setupAction?: "install" | "update" | "request";
   },
-): Promise<SetupOutcome> {
+): Promise<{ page: SetupPage; scheme: LinkScheme }> {
   const { db, clock, vault, log } = deps;
   const stateId = query.state && (await vault.open(query.state, STATE_BINDING).catch(() => null));
   const state =
@@ -81,9 +94,19 @@ export async function finishSetup(
   if (!state) {
     // Installed from github.com directly, or a link that was used, ran out, or was made up.
     log.info("github_setup_unclaimed", { stateGiven: query.state !== undefined });
-    return { kind: "pending" };
+    return { page: { kind: "pending" }, scheme: DEFAULT_LINK_SCHEME };
   }
-  const { userId } = state;
+  const payload = state.payload as { scheme?: unknown } | null;
+  const scheme = linkSchemeOf(payload?.scheme);
+  return { page: await settle(deps, state.userId, query), scheme };
+}
+
+async function settle(
+  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log">,
+  userId: string,
+  query: { installationId?: number; setupAction?: "install" | "update" | "request" },
+): Promise<SetupPage> {
+  const { log } = deps;
   if (query.setupAction === "request") return { kind: "requested" };
   if (query.installationId === undefined) return { kind: "pending" };
 
@@ -94,7 +117,9 @@ export async function finishSetup(
     if (error instanceof ApiError && error.code === "github_reauth_required") {
       return { kind: "sign_in" };
     }
-    throw error;
+    // The state is spent; the page still knows which app to send the person back to.
+    log.error("github_setup_failed", { error });
+    return { kind: "failed" };
   }
   const workspace = workspaces.find(
     ({ installationId }) => installationId === query.installationId,

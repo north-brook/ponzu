@@ -10,6 +10,7 @@ import {
   workspaceWithRepo,
 } from "../../../apps/api/src/testing/designs.ts";
 import { createTestApp, type TestApp } from "../../../apps/api/src/testing/index.ts";
+import { authStates } from "../../db/src/index.ts";
 import { type Api, createApi } from "./api.ts";
 import { systemClock } from "./clock.ts";
 import { ApiError } from "./errors.ts";
@@ -25,7 +26,7 @@ beforeAll(async () => {
 afterAll(() => t.close());
 
 /** The client as an app would hold it, signed in as someone `workspaceWithRepo` made. */
-function clientFor(login: string): Api {
+function clientFor(login: string, opts: Parameters<typeof createApi>[1] = {}): Api {
   const person = ws.people[login]!;
   const saved = JSON.stringify({
     accessToken: person.accessToken,
@@ -46,10 +47,24 @@ function clientFor(login: string): Api {
     fetch: async (input, init) => t.app.request(String(input), init),
     client: { platform: "macos", version: "2.0.0" },
   });
-  return createApi(session);
+  return createApi(session, opts);
 }
 
 describe("against the API's own routes", () => {
+  test("an install link remembers which app asked, by its links' scheme", async () => {
+    const link = await clientFor("maya", { linkScheme: "ponzu-preview" }).github.installLink({
+      client: "mac",
+    });
+    const plain = await clientFor("maya").github.installLink({ client: "mac" });
+    const rows = await t.db.select().from(authStates);
+    const schemes = rows
+      .filter((row) => row.userId === ws.people.maya!.userId)
+      .map((row) => (row.payload as { scheme?: string }).scheme);
+    expect(schemes).toEqual(["ponzu-preview", "ponzu"]);
+    expect(link.url).not.toContain("ponzu-preview");
+    expect(plain.url).toStartWith("https://github.com/");
+  });
+
   test("me, the workspace and its repos", async () => {
     const maya = clientFor("maya");
     const me = await maya.me();

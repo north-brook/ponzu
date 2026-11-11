@@ -5,10 +5,12 @@ import { app, type BrowserWindow, session } from "electron";
  * the studio has drawn its sign-in screen on the shell's bridge. That proves the main process
  * loaded, the preload exposed `window.ponzuDesktop` and it answers over IPC (signed out), the
  * studio came off its own scheme, and React ran far enough to put the first screen up. It never
- * touches the keychain (the session lives in memory, so it starts signed out) or the network
- * (every request that would leave the computer is refused, and each is logged). A main process
- * that fails to load hangs on Electron's error dialog until the caller's timeout; a studio that
- * fails, or comes up without the bridge, exits 1.
+ * touches the keychain (the session lives in memory, so it starts signed out), the network
+ * (every request that would leave the computer is refused, and each is logged) or the person's
+ * data: Chromium's profile goes in a throwaway folder (data-folder.ts), so checking a
+ * packaged app on someone's Mac leaves their Ponzu as it was. A main process that fails to load
+ * hangs on Electron's error dialog until the caller's timeout; a studio that fails, or comes up
+ * without the bridge, exits 1.
  */
 export const smoke = Boolean(process.env.PONZU_SMOKE);
 

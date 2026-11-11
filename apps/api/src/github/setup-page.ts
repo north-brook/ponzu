@@ -1,4 +1,5 @@
-import type { SetupOutcome } from "./install.ts";
+import type { SetupPage } from "./install.ts";
+import { DEFAULT_LINK_SCHEME, type LinkScheme, linkSchemeOf } from "./link-scheme.ts";
 
 /*
  * The page a browser lands on after GitHub's install page. It is the API's one HTML answer: no
@@ -11,7 +12,9 @@ import type { SetupOutcome } from "./install.ts";
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
  *
  * The app answers any of them by fetching its accounts again (`POST /v1/github/sync`); on the
- * iPhone, opening it also closes the sheet the install page was shown in.
+ * iPhone, opening it also closes the sheet the install page was shown in. Ponzu Preview and a
+ * development build get the same links in their own schemes (`ponzu-preview://`, `ponzu-dev://`),
+ * as the install's state recorded them (link-scheme.ts).
  */
 
 /** Everything the page may load or do: its own inline style, and nothing else. */
@@ -24,11 +27,12 @@ export const SETUP_PAGE_HEADERS = {
   "x-content-type-options": "nosniff",
 };
 
-export type SetupPage = SetupOutcome | { kind: "failed" };
+export type { SetupPage };
 
-export function renderSetupPage(page: SetupPage): string {
+/** The page, linking back to the app with `scheme`; one not on the list is Ponzu's. */
+export function renderSetupPage(page: SetupPage, scheme: LinkScheme = DEFAULT_LINK_SCHEME): string {
   const { title, body } = copy(page);
-  const link = new URL("ponzu://github/setup");
+  const link = new URL(`${linkSchemeOf(scheme)}://github/setup`);
   link.searchParams.set("result", page.kind);
   if (page.kind === "installed") link.searchParams.set("workspace", page.workspace.id);
   return `<!doctype html>
