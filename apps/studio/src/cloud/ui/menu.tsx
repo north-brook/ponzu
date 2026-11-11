@@ -6,7 +6,7 @@
  * typeahead, Escape, focus back to the trigger) and roles.
  */
 import { Tick02Icon } from "@hugeicons/core-free-icons";
-import type { ComponentProps, ReactNode } from "react";
+import { type ComponentProps, type ReactNode, useRef } from "react";
 import { cn } from "./cn.ts";
 import {
   ContextMenu,
@@ -28,18 +28,52 @@ import {
   DropdownMenuTrigger,
 } from "./dropdown-menu.tsx";
 import { Icon } from "./icon.tsx";
+import { quietFocus } from "./quiet-focus.ts";
 
 export const Menu = DropdownMenu;
 export const MenuTrigger = DropdownMenuTrigger;
 export const MenuGroup = DropdownMenuGroup;
 export const MenuRadioGroup = DropdownMenuRadioGroup;
 
+/**
+ * A menu's surface. Closed by a click, it gives focus back to its trigger without the ring (the
+ * keyboard still starts from there): a ring left on a chip the person just clicked through reads
+ * as something still waiting on them. Closed from the keyboard, the ring shows as Radix gives it.
+ */
 export function MenuContent({
   width,
   style,
+  onPointerUp,
+  onKeyDown,
+  onCloseAutoFocus,
   ...props
 }: ComponentProps<typeof DropdownMenuContent> & { width: number }) {
-  return <DropdownMenuContent style={{ width, ...style }} {...props} />;
+  const clicked = useRef<HTMLElement | null>(null);
+  return (
+    <DropdownMenuContent
+      style={{ width, ...style }}
+      onPointerUp={(e) => {
+        // The trigger is the one open menu's: expanded, and controlling this surface.
+        clicked.current = document.querySelector<HTMLElement>(
+          `[aria-haspopup="menu"][aria-controls="${CSS.escape(e.currentTarget.id)}"]`,
+        );
+        onPointerUp?.(e);
+      }}
+      onKeyDown={(e) => {
+        clicked.current = null;
+        onKeyDown?.(e);
+      }}
+      onCloseAutoFocus={(e) => {
+        onCloseAutoFocus?.(e);
+        const trigger = clicked.current;
+        clicked.current = null;
+        if (e.defaultPrevented || !trigger?.isConnected) return;
+        e.preventDefault();
+        quietFocus(trigger);
+      }}
+      {...props}
+    />
+  );
 }
 
 export function MenuItem({

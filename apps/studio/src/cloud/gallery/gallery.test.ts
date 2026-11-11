@@ -316,6 +316,26 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await questionTop()).toBe(withIdeas);
   });
 
+  test("a menu closed by a click gives focus back without a ring; by the keyboard, with one", async () => {
+    await open("create");
+    const chip = 'button[aria-label^="Model"]';
+    const ring = () => page.$eval(chip, (el) => getComputedStyle(el).boxShadow);
+    // Typing first, as someone does: the keyboard was the last thing used.
+    await page.click("textarea");
+    await page.keyboard.type("A card");
+    await page.click(chip);
+    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
+    expect(await ring()).toBe("none");
+    // From the keyboard it is the keyboard's, ring and all.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]');
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    expect(await ring()).not.toBe("none");
+  });
+
   test("the repo picker filters as you type and chooses with Return", async () => {
     await open("create");
     await page.click('button[aria-label^="Project"]');

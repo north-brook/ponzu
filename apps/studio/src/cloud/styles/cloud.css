@@ -176,8 +176,10 @@
 }
 
 /* Keyboard focus, the same on every control. */
+/* `data-quiet-focus`: focus handed over without the person moving it (a question taking the
+   composer's place), which shows once they press a key. */
 @utility focus-ring {
-  &:focus-visible {
+  &:focus-visible:not([data-quiet-focus]) {
     box-shadow: var(--c-focus);
   }
 }

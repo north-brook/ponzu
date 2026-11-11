@@ -291,5 +291,11 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     await page.waitForSelector('[role="radio"]');
     expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("radio");
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Shorten it");
+    // It takes the keyboard without a ring that claims a choice; the first key shows it.
+    const ring = () =>
+      page.evaluate(() => getComputedStyle(document.activeElement as Element).boxShadow);
+    expect(await ring()).toBe("none");
+    await page.keyboard.press("ArrowDown");
+    expect(await ring()).not.toBe("none");
   });
 });
