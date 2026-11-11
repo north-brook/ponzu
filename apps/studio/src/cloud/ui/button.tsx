@@ -18,7 +18,7 @@ const buttonVariants = cva(
       variant: {
         /** The chrome's one dark button: the next thing to do with the pull request. */
         action:
-          "h-7 gap-1.5 rounded-8 bg-action pr-3 pl-2.5 font-semibold text-12 text-action-ink hover:bg-action-hover",
+          "h-7 gap-1.5 rounded-8 bg-action pr-3 pl-2.5 font-semibold text-12 text-action-ink hover:bg-action-hover active:bg-action-press",
         /** A text control with no fill at rest: the repo chip, the model picker. */
         quiet:
           "h-7 rounded-8 font-medium text-12 text-muted hover:bg-hover active:bg-press [&[aria-haspopup][aria-expanded=true]]:bg-press",
@@ -56,11 +56,14 @@ export function IconButton({
 
 /**
  * The round yuzu send button. Disabled it goes quiet (a chip with a faint arrow) instead of
- * fading, so it still reads as the place to send from.
+ * fading, so it still reads as the place to send from. It stays in reach (aria-disabled, not
+ * disabled), so its tip still says that Return sends.
  */
 export function SendButton({
   size,
   iconSize,
+  disabled,
+  onClick,
   className,
   ...props
 }: Omit<ButtonProps, "variant"> & { size: 28 | 32; iconSize: number }) {
@@ -69,8 +72,10 @@ export function SendButton({
       <button
         type="button"
         aria-label="Send"
+        aria-disabled={disabled || undefined}
+        onClick={disabled ? undefined : onClick}
         className={cn(
-          "app-no-drag grid shrink-0 cursor-default place-items-center rounded-pill bg-yuzu text-yuzu-ink outline-none transition-[background-color,filter] duration-(--dur-hover) focus-ring hover:brightness-[1.04] active:brightness-95 disabled:bg-chip disabled:text-faint",
+          "app-no-drag grid shrink-0 cursor-default place-items-center rounded-pill bg-yuzu text-yuzu-ink outline-none transition-[background-color,filter] duration-(--dur-hover) focus-ring not-aria-disabled:hover:brightness-[1.04] not-aria-disabled:active:brightness-95 aria-disabled:bg-chip aria-disabled:text-faint",
           size === 32 ? "size-8" : "size-7",
           className,
         )}

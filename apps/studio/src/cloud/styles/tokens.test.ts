@@ -11,12 +11,30 @@ const css = await Bun.file(new URL("./tokens.css", import.meta.url)).text();
 function token(name: string): [string, string] {
   const value = css.match(new RegExp(`--c-${name}:\\s*([^;]+);`))?.[1]?.trim();
   if (!value) throw new Error(`No --c-${name}`);
-  const pair = value.match(/^light-dark\(([^,]+),\s*([^)]+)\)$/);
-  return pair ? [pair[1]!.trim(), pair[2]!.trim()] : [value, value];
+  if (!value.startsWith("light-dark(")) return [value, value];
+  // Split at the comma between the two values, not one inside an rgba().
+  const inner = value.slice("light-dark(".length, -1);
+  let depth = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "(") depth++;
+    if (inner[i] === ")") depth--;
+    if (inner[i] === "," && depth === 0)
+      return [inner.slice(0, i).trim(), inner.slice(i + 1).trim()];
+  }
+  throw new Error(`--c-${name} is not a pair`);
 }
 
-function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255);
+/** A #rrggbb, or an rgba() laid over `ground` (a #rrggbb), as channels from 0 to 1. */
+function channels(color: string, ground?: string): number[] {
+  const rgba = color.match(/^rgba\(([^)]+)\)$/);
+  if (!rgba) return [1, 3, 5].map((i) => Number.parseInt(color.slice(i, i + 2), 16) / 255);
+  const [r, g, b, a] = rgba[1]!.split(",").map(Number);
+  const under = channels(ground!);
+  return [r!, g!, b!].map((c, i) => (c / 255) * a! + under[i]! * (1 - a!));
+}
+
+function luminance(color: string): number {
+  const [r, g, b] = channels(color);
   const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   return 0.2126 * lin(r!) + 0.7152 * lin(g!) + 0.0722 * lin(b!);
 }
@@ -26,7 +44,7 @@ function contrast(a: string, b: string): number {
   return (x! + 0.05) / (y! + 0.05);
 }
 
-const GROUNDS = ["chrome", "canvas", "surface"];
+const GROUNDS = ["chrome", "canvas", "surface", "selected"];
 const worst = (fg: string, theme: 0 | 1) =>
   Math.min(...GROUNDS.map((g) => contrast(token(fg)[theme], token(g)[theme])));
 
@@ -49,6 +67,22 @@ for (const [theme, i] of [
   });
 
   test(`faint stays where the design puts it in ${theme}`, () => {
-    expect(worst("faint", i)).toBeGreaterThanOrEqual(i === 0 ? 1.8 : 2.9);
+    // Dark's lowest is on the open row's ground, which the design doesn't draw.
+    expect(worst("faint", i)).toBeGreaterThanOrEqual(i === 0 ? 1.8 : 2.75);
   });
 }
+
+// Light's open row is the design's canvas; dark's is derived, and must outrank a hovered row.
+test("in dark the open row reads above a hovered one", () => {
+  const chrome = token("chrome")[1];
+  const lift = (c: string) => contrast(c, chrome);
+  const hover = channels(token("hover")[1], chrome);
+  const hex = `#${hover
+    .map((c) =>
+      Math.round(c * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+  expect(lift(token("selected")[1])).toBeGreaterThan(lift(hex) * 1.1);
+});

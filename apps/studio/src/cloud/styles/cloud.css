@@ -56,6 +56,7 @@
   --color-sep: var(--c-sep);
   --color-hover: var(--c-hover);
   --color-press: var(--c-press);
+  --color-selected: var(--c-selected);
   --color-outline: var(--c-outline);
   --color-yuzu: var(--c-yuzu);
   --color-yuzu-ink: var(--c-yuzu-ink);
@@ -64,6 +65,7 @@
   --color-action: var(--c-action);
   --color-action-ink: var(--c-action-ink);
   --color-action-hover: var(--c-action-hover);
+  --color-action-press: var(--c-action-press);
   --color-pr-open: var(--c-pr-open);
   --color-pr-failing: var(--c-pr-failing);
   --color-pr-running: var(--c-pr-running);

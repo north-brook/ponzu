@@ -34,20 +34,28 @@
   --c-hover: light-dark(rgba(17, 17, 16, 0.05), rgba(255, 255, 255, 0.06));
   /* A control held down, and the repo chip while its picker is open. Dark: derived. */
   --c-press: light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
+  /*
+   * What is open or chosen: the open design's row, the selected search result, the "+" while
+   * Share is open. Light is the canvas, so the open row reads as part of the pane beside it.
+   * Dark: derived, a step above hover; the dark canvas sits too close to the chrome to show.
+   */
+  --c-selected: light-dark(#f4f3ef, #252523);
   /* The ring of the presence "+" (--n-300). Dark: derived. */
   --c-outline: light-dark(#d3d0c8, #3f3d39);
 
   /* Yuzu: the agent and the brand. Text on it is always ink. */
   --c-yuzu: #ffc81e;
   --c-yuzu-ink: #111110;
-  /* Pith: a search match. Dark: derived (yuzu at a quarter over the dark surface). */
-  --c-pith: light-dark(#fff4d1, rgba(255, 200, 30, 0.24));
+  /* Pith: a search match (the design's --c-pin-soft). */
+  --c-pith: light-dark(#fff4d1, #2e2a1c);
   --c-danger: light-dark(#d93a2b, #ff6b5e);
 
   /* The dark action button, and a checked box. Dark: derived, inverted to stay the strongest thing. */
   --c-action: light-dark(#111110, #f4f3ef);
   --c-action-ink: light-dark(#ffffff, #111110);
   --c-action-hover: light-dark(#262523, #ffffff);
+  /* Held down: a step past the resting button, the other way from hover. Derived. */
+  --c-action-press: light-dark(#000000, #e8e6e0);
 
   /* Pull request states, when the mark is active. Dark: derived, lifted to read on the dark ground. */
   --c-pr-open: light-dark(#3f8a4a, #5fb36b);
@@ -62,10 +70,8 @@
   --c-tip-key: rgba(255, 255, 255, 0.15);
   --c-tip-key-ink: rgba(255, 255, 255, 0.85);
 
-  /* Shadows. */
-  --c-pop:
-    0 1px 2px light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.4)),
-    0 8px 28px light-dark(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.5));
+  /* Shadows. Menus and popovers cast further in dark, so --c-pop is set again below. */
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
   --c-bar-shadow:
     0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)),
     0 6px 20px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4)),
@@ -86,7 +92,7 @@
     0 0 0 1px light-dark(#807c73, #8e8a82),
     0 0 0 4px light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
 
-  /* Type. The families the app ships (index.html loads them). */
+  /* Type. The families the app ships (vite.config.ts links them into every page). */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -105,6 +111,14 @@
   color-scheme: light;
 }
 
+/* What light-dark() can't hold: a shadow's geometry differs between the themes. */
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
 }
