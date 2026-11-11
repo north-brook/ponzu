@@ -16,6 +16,7 @@
     "@ponzu/core": "workspace:*",
     "@ponzu/render": "workspace:*",
     "@ponzu/tools": "workspace:*",
+    "posthog-node": "^5.68.2",
     "zod": "^4"
   },
   "devDependencies": {

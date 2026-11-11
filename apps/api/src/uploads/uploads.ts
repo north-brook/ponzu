@@ -18,7 +18,10 @@ import { checkUpload, type Declared, PRIVATE_PURPOSES, type UploadKind } from ".
  * previews; a person uploads images to a design they can write to.
  */
 
-type UploadDeps = Pick<Deps, "db" | "storage" | "archives" | "clock" | "config" | "background">;
+type UploadDeps = Pick<
+  Deps,
+  "db" | "storage" | "archives" | "clock" | "config" | "background" | "analytics"
+>;
 
 /** How long a signed address takes its bytes. */
 export const UPLOAD_SECONDS = 600;
@@ -139,6 +142,14 @@ export async function completeUploads(
   const served = await Promise.all(
     rows.map(async (row) => {
       if (row.servedKey) return row.servedKey;
+      // A person's file, the first time it is completed: completing it again is no new fact.
+      if (userId) {
+        deps.analytics.capture("file uploaded", {
+          design_id: target.designId,
+          content_type: row.contentType,
+          bytes: row.size,
+        });
+      }
       const key =
         row.purpose === "preview"
           ? `${target.assetKey}/${previewPath(previewSeq!, row.name)}`
