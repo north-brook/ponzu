@@ -9,7 +9,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SandboxAddress, SandboxProvider } from "@ponzu/sandbox";
 import type { RunnerSession, StateRequest, ThreadItem, TurnUsage } from "../src/api/protocol.ts";
-import { bundle, scratch, sh, since, until, upload } from "./harness.ts";
+import { bundle, forget, scratch, sh, since, track, until, upload } from "./harness.ts";
 
 export const RUNNER_PORT = 4600;
 export const FAKE_API_PORT = 8790;
@@ -25,6 +25,8 @@ export interface Trial {
   api: SandboxAddress;
   /** Seconds from the create call to the runner's `/health` answering through its address. */
   healthAfter: number;
+  /** The runner's unit when `/health` first answered, before the trial restarted it. */
+  boot: { ActiveState: string; NRestarts: string };
 }
 
 /** What the fake API recorded (sandbox/fake-api.ts, `GET /control/record`). */
@@ -40,6 +42,8 @@ export interface Recorded {
   events: string[];
   session: Omit<RunnerSession, "runnerId" | "seq">;
   doc: { doc: { pages: { artboards: { id: string; name: string }[] }[] }; seq: number };
+  /** How often the fake wrote its state, and what it read back when it started. */
+  kept: { writes: number; restored: { writes: number; feedSeq: number } };
 }
 
 /**
@@ -78,28 +82,53 @@ export async function startTrial(
     autoStopSeconds: opts.autoStopSeconds ?? 3600,
   });
   const id = created.sandbox.id;
-  const address = (port: number) => {
-    const found = created.addresses.find((a) => a.port === port);
-    if (!found) throw new Error(`boat gave no address for port ${port}`);
-    return found;
-  };
-  const runner = address(RUNNER_PORT);
-  await until("the runner's /health", () => health(runner), 180_000);
-  const trial: Trial = {
-    boat,
-    id,
-    designId,
-    token,
-    runner,
-    api: address(FAKE_API_PORT),
-    healthAfter: since(start),
-  };
-  await installFakeApi(trial);
-  if (opts.session) await control(trial, "PUT", "session", opts.session);
-  // Over the address's TLS, into the fake's memory: never a command, a file or a log.
-  if (opts.gitToken) await control(trial, "PUT", "git-token", opts.gitToken);
-  await restartRunner(trial);
-  return trial;
+  const untrack = track(boat, id);
+  try {
+    const address = (port: number) => {
+      const found = created.addresses.find((a) => a.port === port);
+      if (!found) throw new Error(`boat gave no address for port ${port}`);
+      return found;
+    };
+    const runner = address(RUNNER_PORT);
+    await until("the runner's /health", () => health(runner), 180_000);
+    const healthAfter = since(start);
+    const unit = await sh(boat, id, "systemctl show -p ActiveState -p NRestarts ponzu-runner", {
+      quiet: true,
+    });
+    const boot = Object.fromEntries(
+      unit
+        .trim()
+        .split("\n")
+        .map((l) => l.split("=") as [string, string]),
+    ) as Trial["boot"];
+    const trial: Trial = {
+      boat,
+      id,
+      designId,
+      token,
+      runner,
+      api: address(FAKE_API_PORT),
+      healthAfter,
+      boot,
+    };
+    await installFakeApi(trial);
+    if (opts.session) await control(trial, "PUT", "session", opts.session);
+    // Over the address's TLS, into the fake's memory: never a command, a file or a log.
+    if (opts.gitToken) await control(trial, "PUT", "git-token", opts.gitToken);
+    await restartRunner(trial);
+    return trial;
+  } catch (err) {
+    // A runner that never answers is what the checks are for; its sandbox holds the real env.
+    await boat.destroy(id).catch(() => {});
+    untrack();
+    throw err;
+  }
+}
+
+/** Destroys a trial's sandbox, and stops tracking it. */
+export async function endTrial(trial: Trial): Promise<void> {
+  await trial.boat.destroy(trial.id);
+  forget(trial.id);
 }
 
 /** `/health` through the runner's address: what the API sees. */

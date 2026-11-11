@@ -98,13 +98,38 @@ export function bootChecks(trial: Trial): Check[] {
   const run = (command: string) => sh(trial.boat, trial.id, command, { quiet: true });
   return [
     {
-      name: "the runner is active after boot and /health answers through the address",
+      name: "the runner came up by itself after boot and /health answers through the address",
       run: async () => {
-        const active = (await run("systemctl is-active ponzu-runner")).trim();
+        // As the unit stood when /health first answered, before the trial restarted it.
+        const { boot } = trial;
         const said = await health(trial.runner);
-        if (active !== "active" || !said?.ok)
-          throw new Error(`is-active: ${active}, /health: ${JSON.stringify(said)}`);
-        return `active; /health ${JSON.stringify(said)}`;
+        if (boot.ActiveState !== "active" || boot.NRestarts !== "0" || !said?.ok)
+          throw new Error(`at boot: ${JSON.stringify(boot)}, /health now: ${JSON.stringify(said)}`);
+        return `active at boot with no restarts; /health ${JSON.stringify(said)}`;
+      },
+    },
+    {
+      name: "the canvas tools reach only what the agent's user can",
+      run: async () => {
+        await sendChecks(trial.boat, trial.id);
+        const out = (await run(TOOL_PROBE)).trim().split("\n");
+        const probe = JSON.parse(out[0]!);
+        const left = Object.fromEntries(out.slice(1).map((l) => l.split("=")));
+        const leaks = [
+          ...(probe.asAgent ? [] : ["the unit names no PONZU_AS_AGENT"]),
+          ...Object.entries(probe.reads as Record<string, { taken: boolean; leaked: boolean }>)
+            .filter(([, r]) => r.taken || r.leaked)
+            .map(([name]) => `read ${name}`),
+          ...(probe.asset.taken || probe.asset.stored ? ["add_asset took env.sh"] : []),
+          ...Object.entries(probe.writes as Record<string, { taken: boolean }>)
+            .filter(([, w]) => w.taken)
+            .map(([name]) => `export ${name}`),
+          ...Object.entries(left)
+            .filter(([, v]) => v !== "no")
+            .map(([k]) => `${k} exists`),
+        ];
+        if (leaks.length) throw new Error(`${leaks.join(", ")}\n${JSON.stringify(probe)}`);
+        return "links to env.sh, the runner's environ, /etc/shadow and /home/user refused; exports into /home/user refused";
       },
     },
     {
@@ -159,6 +184,7 @@ async function sendChecks(boat: SandboxProvider, id: string): Promise<void> {
   await scratch(async (dir) => {
     await bundle(join(ROOT, "packages/render/src/stand-ins.test.ts"), dir, "stand-ins.test.js");
     await bundle(join(import.meta.dir, "sandbox/screenshot.ts"), dir, "screenshot.js");
+    await bundle(join(import.meta.dir, "sandbox/tool-probe.ts"), dir, "tool-probe.js");
     mkdirSync(join(dir, "node_modules"));
     await upload(boat, id, dir, CHECKS);
   });
@@ -257,3 +283,21 @@ echo sudo=$(as "sudo -n true")
 echo docker=$(as "docker ps")
 echo groups=$(sudo -u agent id -Gn)
 sudo -u agent test -w /run/ponzu/git.sock && echo socketWritable=yes || echo socketWritable=no`;
+
+/**
+ * The confused deputy: the canvas tools run in the runner's process, which can read its own
+ * token and, through CAP_DAC_READ_SEARCH, any file. The agent plants the links a hostile repo
+ * could commit; sandbox/tool-probe.ts then calls the tools on them as the runner's unit runs
+ * (its user, group, capability and environment), and the files an export must not have made are
+ * looked for as root.
+ */
+const TOOL_PROBE = `set -e
+runner=$(systemctl show -p MainPID --value ponzu-runner)
+d=/home/agent/work/.ponzu-probe
+sudo -u agent sh -c "mkdir -p $d && cd $d && ln -sfn /run/ascii-secrets/env.sh env-file.html && ln -sfn /proc/$runner/environ runner-environ.html && ln -sfn /etc/shadow shadow.html && ln -sfn /home/user/.bashrc runner-home.html && ln -sfn /home/user/ponzu-probe-link.png deputy.png"
+env=$(systemctl show -p Environment --value ponzu-runner)
+sudo systemd-run --wait --pipe --quiet --uid=user --gid=agent \\
+  -p AmbientCapabilities=CAP_DAC_READ_SEARCH -p "Environment=$env" \\
+  /opt/ponzu/bin/bun ${CHECKS}/tool-probe.js $d
+for f in link direct; do sudo test -e /home/user/ponzu-probe-$f.png && echo "$f=yes" || echo "$f=no"; done
+sudo rm -rf $d /home/user/ponzu-probe-*.png`;

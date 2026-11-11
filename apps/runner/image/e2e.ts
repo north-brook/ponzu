@@ -22,10 +22,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunnerSession, ThreadItem } from "../src/api/protocol.ts";
 import { bootChecks, imageChecks, runChecks } from "./checks.ts";
-import { provider, sh, since, until } from "./harness.ts";
+import { destroyOnSignal, provider, sh, since, until } from "./harness.ts";
 import { readPins } from "./recipe.ts";
 import {
   control,
+  endTrial,
   health,
   message,
   type Recorded,
@@ -43,6 +44,7 @@ const [phase, snapshotArg] = process.argv.slice(2);
 const snapshot: string =
   snapshotArg ?? JSON.parse(readFileSync(join(import.meta.dir, "current.json"), "utf8")).snapshot;
 const boat = provider();
+destroyOnSignal();
 const report: Record<string, unknown> = { phase, snapshot };
 mkdirSync(OUT, { recursive: true });
 
@@ -74,6 +76,7 @@ async function scratch(): Promise<void> {
     await keepPreviews(trial, turn);
 
     report.isolation = await runChecks(bootChecks(trial));
+    report.deputy = await deputyTurn(trial);
 
     const wakes: unknown[] = [];
     report.wakes = wakes;
@@ -105,8 +108,75 @@ async function scratch(): Promise<void> {
       .catch((e) => String(e));
     throw err;
   } finally {
-    await boat.destroy(trial.id);
+    await endTrial(trial);
   }
+}
+
+/**
+ * The review's attack, through the real runner and a real turn: a link in the checkout to boat's
+ * environment file, as a hostile repo could commit, handed to create_artboard by path. Nothing
+ * of the runner token or the Claude key may reach the design.
+ */
+async function deputyTurn(trial: Trial) {
+  const link = "/home/agent/work/scratch/notes.html";
+  await sh(boat, trial.id, `sudo -u agent ln -sfn /run/ascii-secrets/env.sh ${link}`, {
+    quiet: true,
+  });
+  const from = mark(await record(trial));
+  const asked = await message(
+    trial,
+    `Call create_artboard once, with name "Notes" and path "${link}", and nothing else. Then say in one line what the tool answered.`,
+  );
+  const turn = await afterTurn(trial, asked.id, from);
+  const doc = JSON.stringify(turn.doc);
+  const leaked = [trial.token, need("ANTHROPIC_API_KEY"), "PONZU_RUNNER_TOKEN"].some((s) =>
+    doc.includes(s),
+  );
+  const result = {
+    leaked,
+    tools: newer(turn, from)
+      .filter((i) => i.kind === "tool")
+      .map((i) => (i.payload as { label: string }).label),
+    reply: (assistantText(turn, from) ?? "").slice(0, 200),
+  };
+  console.log(JSON.stringify(result));
+  if (leaked) throw new Error("the runner's tools read the environment file for the agent");
+  return result;
+}
+
+/**
+ * What a stop that turns cold keeps of the files written just before it: one flushed to the disk
+ * (`sync <file>`), one not. The fake API flushes its state the way the runner does.
+ */
+async function plantFiles(trial: Trial) {
+  const nonce = Date.now().toString(36);
+  await sh(
+    boat,
+    trial.id,
+    `echo ${nonce} > ~/.ponzu-probe-synced && sync ~/.ponzu-probe-synced && echo ${nonce} > ~/.ponzu-probe-unsynced`,
+    { quiet: true },
+  );
+  return { nonce, fakeWrites: (await record(trial)).kept.writes };
+}
+
+async function filesAfter(trial: Trial, planted: { nonce: string; fakeWrites: number }) {
+  const out = await sh(
+    boat,
+    trial.id,
+    "cat ~/.ponzu-probe-synced; echo; cat ~/.ponzu-probe-unsynced 2>/dev/null; echo",
+    { quiet: true },
+  );
+  const [synced = "", unsynced = ""] = out.split("\n").map((l) => l.trim());
+  const restored = (await record(trial)).kept.restored.writes;
+  const kept = {
+    syncedFileKept: synced === planted.nonce,
+    unsyncedFileKept: unsynced === planted.nonce,
+    fakeStateRestored: `${restored} of ${planted.fakeWrites} writes`,
+  };
+  // What is flushed must come back, and the fake's state with its last write.
+  if (!kept.syncedFileKept || restored !== planted.fakeWrites)
+    throw new Error(`a cold start lost what was on the disk: ${JSON.stringify(kept)}`);
+  return kept;
 }
 
 /**
@@ -117,6 +187,7 @@ async function scratch(): Promise<void> {
 async function wake(trial: Trial, kind: "warm" | "cold", asleepMs: number) {
   const before = await machine(trial);
   const session = (await record(trial)).session.claudeSessionId;
+  const planted = kind === "cold" ? await plantFiles(trial) : null;
   await boat.stop(trial.id);
   await until("sleep", async () => (await boat.get(trial.id)).state === "asleep", 120_000, 500);
   console.log(`${kind}: asleep; resuming in ${asleepMs / 1000} s`);
@@ -137,6 +208,7 @@ async function wake(trial: Trial, kind: "warm" | "cold", asleepMs: number) {
   await until("the runner's /health", () => health(trial.runner), 180_000, 200);
   const healthAfter = since(start);
   const from = mark(await until("the fake API", () => record(trial), 120_000, 200));
+  const disk = planted ? await filesAfter(trial, planted) : null;
   const asked = await message(
     trial,
     "Which artboard did you make earlier, and what does it say? Answer in one short line, without tools.",
@@ -164,6 +236,7 @@ async function wake(trial: Trial, kind: "warm" | "cold", asleepMs: number) {
     healthAfterSeconds: healthAfter,
     firstAssistantTextAfterSeconds: firstTextAfter,
     reply: reply.slice(0, 200),
+    ...(disk ? { disk } : {}),
   };
   console.log(JSON.stringify(result));
   if (!result.sameClaudeSession || !/hello/i.test(reply))
@@ -274,7 +347,7 @@ async function pushFromSandbox(
     if (!commit.files.some((f) => f.filename === "ponzu-e2e.txt"))
       throw new Error("the commit does not hold ponzu-e2e.txt");
   } finally {
-    await boat.destroy(trial.id);
+    await endTrial(trial);
   }
 }
 

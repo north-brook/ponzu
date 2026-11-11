@@ -1,11 +1,11 @@
 {
   "apt": [
-    "fontconfig",
-    "fonts-liberation",
-    "fonts-dejavu-mono",
-    "fonts-inter-variable",
-    "fonts-noto-color-emoji",
-    "fonts-noto-cjk"
+    "fontconfig=2.15.0-1.1ubuntu2",
+    "fonts-liberation=1:2.1.5-3",
+    "fonts-dejavu-mono=2.37-8",
+    "fonts-inter-variable=4.0+ds-1",
+    "fonts-noto-color-emoji=2.047-0ubuntu0.24.04.1",
+    "fonts-noto-cjk=1:20230817+repack1-3"
   ],
   "download": [
     {
