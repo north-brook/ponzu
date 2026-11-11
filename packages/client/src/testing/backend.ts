@@ -693,10 +693,18 @@ export class FakeBackend {
             );
             if (account) account.installing = true;
             return {
+              id: "auth_fake",
               url: "https://github.com/apps/ponzu-dev/installations/new?state=fake",
               expiresAt: new Date(this.clock.now() + 15 * 60_000).toISOString(),
             };
           }),
+        // GitHub's page is played by the test, which says how it went with a link: an install
+        // asked about is always still waiting.
+        install: () =>
+          call(() => ({
+            status: "waiting" as const,
+            expiresAt: new Date(this.clock.now() + 15 * 60_000).toISOString(),
+          })),
       },
       workspaces: {
         list: () =>

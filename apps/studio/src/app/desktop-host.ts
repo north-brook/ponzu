@@ -9,6 +9,7 @@ import {
 } from "@ponzu/client";
 import type { PonzuDesktop } from "@ponzu/desktop/bridge";
 import type { Host } from "./host.ts";
+import { linksWithInstalls } from "./installs.ts";
 
 /**
  * The studio inside the Mac app. The main process holds the session; this borrows an access
@@ -34,8 +35,15 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     },
   });
   // GitHub's setup page links back to this app: Ponzu Dev's links aren't Ponzu 1.x's. Ponzu
-  // Local takes no links and says nothing, so the page offers Ponzu's.
+  // Local takes no links and says so: its page links nowhere and says Ponzu has it, which it
+  // does, by asking the API (installs.ts).
   const api = createApi(session, { linkScheme: linkSchemeOf(desktop.config.linkScheme) });
+  const links = linksWithInstalls({
+    api,
+    shellLinks: (listener) => desktop.onLink(listener),
+    openExternal: (url) => desktop.openExternal(url),
+    comeForward: () => desktop.comeForward(),
+  });
   return {
     session,
     api,
@@ -44,7 +52,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     lights: desktop.platform === "darwin" ? "native" : "none",
     signIn: () => desktop.session.signIn(),
     persistence: () => desktop.session.persistence(),
-    onLink: (listener) => desktop.onLink(listener),
+    onLink: links.onLink,
+    installGithub: links.installGithub,
     onCommand: (listener) => desktop.onCommand(listener),
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
@@ -52,9 +61,12 @@ export function desktopHost(desktop: PonzuDesktop): Host {
   };
 }
 
-/** The shell's scheme, when it is one the API links back to; otherwise the API's default. */
-export function linkSchemeOf(scheme: string | undefined): LinkScheme | undefined {
-  return scheme === "ponzu" || scheme === "ponzu-dev" ? scheme : undefined;
+/**
+ * What the API's pages link back to for the shell's scheme: the scheme, or `none` for a build
+ * that takes no links (Ponzu Local's empty one). Never left unsaid, so the page never guesses.
+ */
+export function linkSchemeOf(scheme: string | undefined): LinkScheme | "none" {
+  return scheme === "ponzu" || scheme === "ponzu-dev" ? scheme : "none";
 }
 
 const CACHE = "ponzu.cache.";

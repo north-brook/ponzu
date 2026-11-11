@@ -395,10 +395,8 @@ function WorkspaceWindow({
   );
 
   const addWorkspace = useCallback(() => {
-    host.api.github.installLink({ client: "mac" }).then(
-      ({ url }) => host.openExternal(url),
-      () => say("GitHub's install page couldn't be opened. Try again."),
-    );
+    // Once GitHub is done, Ponzu comes forward and its link listener above moves on to it.
+    host.installGithub({}).catch(() => say("GitHub's install page couldn't be opened. Try again."));
   }, [host, say]);
 
   const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
