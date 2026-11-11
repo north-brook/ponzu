@@ -18,16 +18,21 @@ const EVERY_MS = 2500;
 
 declare global {
   interface Window {
-    livePreviews?: { patch(id: string, changes: Partial<DesignSummary>): void };
+    livePreviews?: {
+      patch(id: string, changes: Partial<DesignSummary>): void;
+      /** The whole list: a long sidebar, or a design that has no preview yet. */
+      set(designs: DesignSummary[] | ((now: DesignSummary[]) => DesignSummary[])): void;
+    };
   }
 }
 
 export function LivePreviews() {
-  const [designs, setDesigns] = useState(f.teamDesigns);
+  const [designs, setDesigns] = useState<DesignSummary[]>(f.teamDesigns);
   useEffect(() => {
     window.livePreviews = {
       patch: (id, changes) =>
         setDesigns((now) => now.map((d) => (d.id === id ? { ...d, ...changes } : d))),
+      set: setDesigns,
     };
     if (new URLSearchParams(location.search).has("still")) return;
     let turn = 0;
@@ -47,7 +52,7 @@ export function LivePreviews() {
     }, EVERY_MS);
     return () => clearInterval(timer);
   }, []);
-  const open = designs.find((d) => d.id === "dsn_quieter")!;
+  const open = designs.find((d) => d.id === "dsn_quieter") ?? designs[0] ?? f.teamDesigns[0]!;
   return (
     <Harness
       designs={designs}

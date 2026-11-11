@@ -40,7 +40,7 @@ interface Frame {
   t: number;
   row: string;
   tile: string;
-  layers: { seq: number; theme: string; loaded: boolean; opacity: number }[];
+  layers: { seq: number; theme: string; loaded: boolean; opacity: number; blend: string }[];
 }
 
 describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
@@ -111,6 +111,7 @@ describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
                     css.display === "none" || css.visibility !== "visible"
                       ? 0
                       : Number(css.opacity),
+                  blend: css.mixBlendMode,
                 },
               ];
             }),
@@ -133,14 +134,20 @@ describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
   const wait = (ms: number) => page.waitForTimeout(ms);
   const frames = () => page.evaluate(() => (window as unknown as { frames_: Frame[] }).frames_);
 
-  /** What each frame shows: the newest picture drawn, and whether one covers the whole tile. */
+  /**
+   * What each frame shows: the newest picture drawn, and whether the pictures cover the whole tile:
+   * one fully in, or two mid cross-fade, which plus-lighter adds up to exactly one.
+   */
   const read = (all: Frame[]) =>
     all.map((f) => {
       const drawn = f.layers.filter((l) => l.loaded && l.opacity > 0);
+      const sum = drawn.reduce((s, l) => s + l.opacity, 0);
       return {
         ...f,
         newest: drawn.length ? Math.max(...drawn.map((l) => l.seq)) : null,
-        covered: drawn.some((l) => l.opacity >= 0.999),
+        covered:
+          drawn.some((l) => l.opacity >= 0.999) ||
+          (drawn.length > 1 && drawn.every((l) => l.blend === "plus-lighter") && sum >= 0.98),
         themes: drawn.map((l) => l.theme),
       };
     });
@@ -214,6 +221,14 @@ describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
     expect(
       shown.some((f) => f.layers.some((l) => l.loaded && l.opacity > 0 && l.opacity < 1)),
     ).toBe(true);
+    // A true cross-fade: while two pictures show, the old fades out as the new fades in, added so
+    // they sum to one. Previews have clear parts, which must never show the old one through.
+    const swapping = shown.filter((f) => f.layers.filter((l) => l.loaded).length === 2);
+    expect(swapping.some((f) => f.layers.every((l) => l.opacity > 0 && l.opacity < 1))).toBe(true);
+    for (const f of swapping) {
+      expect(f.layers.every((l) => l.blend === "plus-lighter")).toBe(true);
+      expect(Math.abs(f.layers.reduce((sum, l) => sum + l.opacity, 0) - 1)).toBeLessThan(0.02);
+    }
     await page.close();
   });
 
