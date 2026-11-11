@@ -14,6 +14,7 @@ import {
   workspaces,
 } from "@ponzu/db";
 import { syncGithub } from "../github/sync.ts";
+import { REFRESH_JOB, refreshSoon } from "../pull-requests/refresh.ts";
 import { refreshPullRequest } from "../pull-requests/sync.ts";
 import {
   createTestApp,
@@ -696,19 +697,22 @@ describe("pull requests, checks and reviews", () => {
     const { repository, design } = await designInRepo("slowreadco");
     const { repo, pull } = openOnGithub(repository);
     const sha = t.github.pulls.head(repo, "pz/checkout")!;
-    t.github.pulls.setChecks(sha, [{ name: "test", state: "in_progress" }]);
+    t.github.pulls.setChecks(sha, [
+      { name: "lint", state: "success" },
+      { name: "test", state: "in_progress" },
+    ]);
     t.clock.advance(MERGEABLE_AFTER_MS);
 
-    // A check starts: its read of GitHub is held on the way back.
+    // One check finishes while another runs: the read it makes is held on the way back.
     const held = t.github.holdNext("/graphql");
     await t.app.request(
       "/v1/github/webhook",
       t.github.delivery("check_run", {
-        action: "created",
+        action: "completed",
         repository: { id: repository.id },
         check_run: {
-          name: "test",
-          conclusion: null,
+          name: "lint",
+          conclusion: "success",
           head_sha: sha,
           pull_requests: [
             { number: pull.number, head: { ref: "pz/checkout", repo: { id: repository.id } } },
@@ -717,8 +721,11 @@ describe("pull requests, checks and reviews", () => {
       }),
     );
     await held.reached;
-    // Meanwhile the check passes, and that is read and recorded first.
-    t.github.pulls.setChecks(sha, [{ name: "test", state: "success" }]);
+    // Meanwhile the other passes, and that is read and recorded first.
+    t.github.pulls.setChecks(sha, [
+      { name: "lint", state: "success" },
+      { name: "test", state: "success" },
+    ]);
     t.clock.advance(1_000);
     await refreshPullRequest(t.deps, design.id, { number: pull.number });
     expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
@@ -726,6 +733,44 @@ describe("pull requests, checks and reviews", () => {
     held.release();
     await t.backgroundDone();
     expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
+  });
+
+  test("deliveries about a design in one window make one read of it", async () => {
+    const { repository, design } = await designInRepo("windowco");
+    const { pull } = openOnGithub(repository);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    const reads = t.github.pulls.queries;
+
+    // A burst of checks finishing, all about the same pull request.
+    const request = { designId: design.id, number: pull.number };
+    await Promise.all([1, 2, 3].map(() => refreshSoon(t.deps, [request, request])));
+
+    expect(t.github.pulls.queries - reads).toBe(1);
+    const reading = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === REFRESH_JOB && job.key?.startsWith(`${design.id}@`),
+    );
+    expect(reading).toHaveLength(1);
+    expect(reading[0]!.completedAt).not.toBeNull();
+    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: pull.number });
+
+    // A delivery after the window is read again.
+    await refreshSoon(t.deps, [request]);
+    expect(t.github.pulls.queries - reads).toBe(2);
+  });
+
+  test("a check run starting is not even taken: the push that started it is read", async () => {
+    const { repository } = await designInRepo("createdco");
+    const response = await deliver("check_run", {
+      action: "created",
+      repository: { id: repository.id },
+      check_run: {
+        name: "test",
+        conclusion: null,
+        head_sha: "abc123",
+        pull_requests: [{ number: 1, head: { ref: "pz/checkout", repo: { id: repository.id } } }],
+      },
+    });
+    expect(response.status).toBe(204);
   });
 
   test("a push is read until GitHub shows its commit and knows whether it can merge", async () => {
@@ -747,6 +792,58 @@ describe("pull requests, checks and reviews", () => {
     // Unknown at first, as GitHub has it for a few seconds after a push; then known.
     expect(t.github.pulls.queries - reads).toBeGreaterThan(1);
     expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
+  });
+
+  test("a push to the default branch reads each open pull request, and one that fails is tried again", async () => {
+    const person = await t.signInAs({ login: "manyprsco-person" });
+    const installation = installOnOrg("manyprsco", [person]);
+    const [workspace] = await syncGithub(t.deps, person.userId);
+    const repository = installation.repositories[0]!;
+    const repoRow = (await t.db.select().from(repos)).find(
+      (r) => r.githubRepoId === repository.id,
+    )!;
+    const repo = t.github.repo(repository.fullName)!;
+    const designs = [];
+    for (const branch of ["pz/one", "pz/two", "pz/three"]) {
+      const made = await createDesign(t.db, {
+        workspaceId: workspace!.id,
+        repoId: repoRow.id,
+        ownerId: person.userId,
+        claudeAccountId: null,
+        name: branch,
+        branch,
+        doc: emptyDoc(branch),
+      });
+      t.github.pulls.push(repo, branch);
+      const pull = t.github.pulls.openAsSomeone(repo, { head: branch, login: "maya" });
+      t.clock.advance(MERGEABLE_AFTER_MS);
+      await refreshPullRequest(t.deps, made.id);
+      pull.conflicting = true;
+      designs.push(made);
+    }
+
+    t.github.failNext("/graphql", 502);
+    await deliver("push", {
+      ref: "refs/heads/main",
+      repository: { id: repository.id, default_branch: "main" },
+    });
+
+    const mergeable = async () =>
+      Promise.all(designs.map(async ({ id }) => (await getDesign(t.db, id))!.prMergeable));
+    // One read failed; the others were not held up by it.
+    expect((await mergeable()).filter((value) => value === false)).toHaveLength(2);
+    const failed = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === REFRESH_JOB && job.lastError !== null && job.completedAt === null,
+    );
+    expect(failed).toHaveLength(1);
+
+    // The cron tries it again.
+    t.clock.advance(120_000);
+    const cron = await t.app.request("/v1/cron/minute", {
+      headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+    });
+    expect(cron.status).toBe(200);
+    expect(await mergeable()).toEqual([false, false, false]);
   });
 
   test("a push to the default branch that gives an open pull request conflicts shows on its design", async () => {

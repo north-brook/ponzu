@@ -4,11 +4,13 @@ import {
   findDesignByBranch,
   getUserByGithubId,
   type Json,
-  listDesignsWithOpenPullRequests,
+  listPullRequestDesigns,
 } from "@ponzu/db";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
-import { type PullRequestDeps, refreshPullRequest } from "../pull-requests/sync.ts";
+import type { JobDeps } from "../jobs/run.ts";
+import { withdrawPictures } from "../pull-requests/open.ts";
+import { type RefreshRequest, refreshSoon } from "../pull-requests/refresh.ts";
 
 /*
  * What GitHub says about a design's pull request. A design owns one branch of its repo
@@ -25,54 +27,63 @@ export interface PullRequestRef {
 
 /**
  * Read again, as the App, the pull requests a delivery is about, for each design that owns one's
- * branch, and record them (`refreshPullRequest`). A delivery says what was true when it was
- * sent, and GitHub sends them late and out of order, so what is recorded is GitHub's word now,
- * never the payload's. With `untilMergeable`, each is read again for a few seconds while GitHub
- * works out whether it can merge, as it does after a push or a change of its base.
+ * branch, and record them (`refreshSoon`). A delivery says what was true when it was sent, and
+ * GitHub sends them late and out of order, so what is recorded is GitHub's word now, never the
+ * payload's.
  */
 export async function refreshDesigns(
-  deps: PullRequestDeps,
-  {
-    githubRepoId,
-    pullRequests,
-    untilMergeable = false,
-  }: { githubRepoId: number; pullRequests: PullRequestRef[]; untilMergeable?: boolean },
+  deps: JobDeps,
+  { githubRepoId, pullRequests }: { githubRepoId: number; pullRequests: PullRequestRef[] },
 ): Promise<void> {
   const ours = pullRequests.filter((pr) => pr.head.repo?.id === githubRepoId);
   const branches = new Map(ours.map((pr) => [pr.head.ref, pr]));
+  const requests: RefreshRequest[] = [];
   for (const [branch, pullRequest] of branches) {
     const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
-    if (!design) continue;
-    await refreshPullRequest(deps, design.id, { number: pullRequest.number, untilMergeable });
+    if (design) requests.push({ designId: design.id, number: pullRequest.number });
   }
+  await refreshSoon(deps, requests);
 }
 
 /**
- * A push. To a design's branch: its pull request is read again until GitHub shows it at the
- * pushed commit and knows whether it can merge. To the branch pull requests merge into: every
- * open one of the repo's designs is read again, since the push may have given it conflicts.
+ * A push. To a design's branch: its pull request is read again, until GitHub shows it at the
+ * branch's commit and knows whether it can merge. To the branch pull requests merge into: the
+ * open ones of the repo's designs are read again (the fifty updated last), since the push may
+ * have given them conflicts.
  */
 export async function refreshAfterPush(
-  deps: PullRequestDeps,
+  deps: JobDeps,
   {
     githubRepoId,
     branch,
-    after,
     defaultBranch,
-  }: { githubRepoId: number; branch: string; after: string | null; defaultBranch: string },
+  }: { githubRepoId: number; branch: string; defaultBranch: string },
 ): Promise<void> {
   if (branch === defaultBranch) {
-    for (const designId of await listDesignsWithOpenPullRequests(deps.db, githubRepoId)) {
-      await refreshPullRequest(deps, designId, { untilMergeable: true });
-    }
+    const designIds = await listPullRequestDesigns(deps.db, { githubRepoId, open: true });
+    await refreshSoon(
+      deps,
+      designIds.map((designId) => ({ designId, number: null })),
+    );
     return;
   }
   const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
-  if (!design) return;
-  await refreshPullRequest(deps, design.id, {
-    ...(after ? { headSha: after } : {}),
-    untilMergeable: true,
-  });
+  if (design) await refreshSoon(deps, [{ designId: design.id, number: null }]);
+}
+
+/**
+ * A repo was made public: the pictures in its designs' pull requests' descriptions, which only
+ * a private repo's get, are taken out (`withdrawPictures`).
+ */
+export async function withdrawRepoPictures(deps: JobDeps, githubRepoId: number): Promise<void> {
+  for (const designId of await listPullRequestDesigns(deps.db, { githubRepoId, open: false })) {
+    try {
+      await withdrawPictures(deps, designId);
+    } catch (error) {
+      // One design's pull request GitHub no longer has does not keep the rest's pictures up.
+      deps.log.warn("pull_request_pictures_kept", { designId, error });
+    }
+  }
 }
 
 /** Someone on GitHub who wrote something a design's agent would read, by their GitHub id. */

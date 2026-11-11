@@ -1,9 +1,13 @@
 // The real GitHub, through this module's own functions: a branch pushed with git and a one-hour
-// installation token, its pull request opened as the App, read until GitHub knows whether it
-// can merge, marked ready and merged as the developer with their own GitHub token, the design
-// settled, and the branches deleted. It merges into a branch of its own made from the default
-// branch, so the repository's default branch is left as it was; the closed pull request stays,
-// as GitHub cannot delete one.
+// installation token, its pull request opened as the developer with their own GitHub token, read
+// as the App until GitHub knows whether it can merge, marked ready, brought up to date with its
+// base and merged as the developer, the design settled, and the branches deleted. It merges into
+// a branch of its own made from the default branch, which the database calls the repo's default
+// branch while it runs, so the repository's own is left as it was; the closed pull request
+// stays, as GitHub cannot delete one.
+//
+// Not covered here: a base the repo's rules protect. Making one takes the repo's administration
+// permission, which neither the App nor a token acting through it has.
 //
 // Skipped unless GITHUB_TEST_REPO (owner/name, where the App is installed), the App's
 // GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET and GITHUB_APP_PRIVATE_KEY_PATH, DATABASE_URL
@@ -29,6 +33,7 @@ import {
 import { systemClock } from "@ponzu/sandbox";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
+import type { ObjectStorage } from "../deps/storage.ts";
 import { createLogger } from "../http/log.ts";
 import { createVault } from "../vault/vault.ts";
 import { actOnPullRequest } from "./actions.ts";
@@ -66,6 +71,10 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     },
     // Only where previews are served from is read, for the pull request's description.
     config: { assetsUrl: "https://assets.ponzu.cloud" } as Config,
+    // A design with no previews yet copies none into its pull request.
+    storage: new Proxy({} as ObjectStorage, {
+      get: () => () => Promise.reject(new Error("The live test uses no storage.")),
+    }),
   });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;
@@ -76,12 +85,12 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     for (const step of cleanup.reverse()) await step().catch(() => {});
   });
 
-  /** A REST call as the App with a token for the test repository's contents. */
+  /** A REST call as the App with a token for the test repository's contents and pull requests. */
   async function asApp(github: Github, installationId: number, repositoryId: number) {
     const { token } = await github.createInstallationToken({
       installationId,
       repositoryIds: [repositoryId],
-      permissions: { contents: "write", metadata: "read" },
+      permissions: { contents: "write", pull_requests: "write", metadata: "read" },
     });
     const rest = async (method: string, path: string, body?: unknown) => {
       const response = await fetch(`https://api.github.com/repos/${fullName}${path}`, {
@@ -125,7 +134,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     }
   }
 
-  test("pushed, opened as the App, read, merged as the person, and the design settled", async () => {
+  test("pushed, opened and merged as the person, read as the App, and the design settled", async () => {
     const deps = liveDeps();
     const { db, github } = deps;
     const repo = (await db.select().from(repos)).find((row) => row.fullName === fullName);
@@ -157,7 +166,13 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
         .status,
     ).toBe(201);
     cleanup.push(() => rest("DELETE", `/git/refs/heads/${base}`));
-    const context = { ...stored, repo: { ...stored.repo!, defaultBranch: base } };
+    // The design's pull request is the one into the repo's default branch, as Ponzu has it: for
+    // the test, that base, until it is over.
+    const setDefaultBranch = (name: string) =>
+      db.execute(`update repos set default_branch = '${name}' where id = '${repo.id}'`);
+    await setDefaultBranch(base);
+    cleanup.push(() => setDefaultBranch(repo.defaultBranch));
+    const context = (await getPullRequestContext(db, design.id))!;
 
     // One commit, pushed with git as the sandbox pushes: authored by the person.
     const dir = mkdtempSync(join(tmpdir(), "ponzu-live-"));
@@ -187,23 +202,26 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     if (target instanceof Error) throw target;
     expect((await readPullRequest(deps, target)).read.branch).toMatchObject({ aheadBy: 1 });
 
-    const { tab, opened } = await openPullRequest(deps, context);
+    const { tab, opened } = await openPullRequest(deps, context, user);
     expect(opened).toBe(true);
+    // GitHub leaves a pull request open when its branches are deleted: a run that fails closes it.
+    cleanup.push(() => rest("PATCH", `/pulls/${tab.pullRequest!.number}`, { state: "closed" }));
+    // Its author is the person, so where the rules want a review, someone else gives it.
     expect(tab.pullRequest).toMatchObject({
       state: "draft",
       base: { ref: base },
       head: { ref: branch },
-      author: { bot: true },
+      author: { login: user.githubLogin, bot: false },
     });
     expect(tab.pullRequest!.body).toContain(`https://ponzu.design/designs/${design.id}`);
-    expect((await openPullRequest(deps, context)).opened).toBe(false);
+    expect((await openPullRequest(deps, context, user)).opened).toBe(false);
     expect(await savePullRequestSummary(deps, design.id, `Adds live-${tag}.md.`)).toBe(
       tab.pullRequest!.number,
     );
 
     // GitHub works out whether it can merge over a few seconds.
     await Promise.all(background);
-    await refreshPullRequest(deps, design.id, { untilMergeable: true });
+    await refreshPullRequest(deps, design.id);
     const read = await readPullRequest(deps, target);
     expect(read.read.pullRequest).toMatchObject({
       body: expect.stringContaining(`Adds live-${tag}.md.`),
@@ -227,12 +245,42 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
       code: expect.stringMatching(/auto_merge_not_allowed|already_mergeable/),
     });
     await expect(
-      actOnPullRequest(deps, context, user, { kind: "merge", headSha: "0".repeat(40) }),
+      actOnPullRequest(deps, context, user, {
+        kind: "merge",
+        headSha: "0".repeat(40),
+        bypass: false,
+      }),
     ).rejects.toMatchObject({ code: "head_moved" });
+
+    // The base moves on, and the branch is brought up to date with it as the person.
+    const moved = await rest("PUT", `/contents/live-base-${tag}.md`, {
+      message: "Move the base on",
+      content: Buffer.from(`The base moved, ${tag}.\n`).toString("base64"),
+      branch: base,
+    });
+    expect(moved.status).toBe(201);
+    const behind = await readPullRequest(deps, target);
+    expect(behind.read.branch).toMatchObject({ behindBy: 1 });
+    await actOnPullRequest(deps, context, user, {
+      kind: "update_branch",
+      headSha: ready.pullRequest!.head.sha,
+    });
+    await Promise.all(background);
+    // GitHub makes the merge commit a moment after it answers.
+    let updated = await readPullRequest(deps, target);
+    for (let tries = 0; tries < 15 && updated.read.branch?.behindBy !== 0; tries++) {
+      await systemClock.sleep(1_000);
+      updated = await readPullRequest(deps, target);
+    }
+    await refreshPullRequest(deps, design.id);
+    updated = await readPullRequest(deps, target);
+    expect(updated.read.branch).toMatchObject({ behindBy: 0 });
+    expect(updated.read.pullRequest!.head.sha).not.toBe(ready.pullRequest!.head.sha);
 
     const merged = await actOnPullRequest(deps, context, user, {
       kind: "merge",
-      headSha: ready.pullRequest!.head.sha,
+      headSha: updated.read.pullRequest!.head.sha,
+      bypass: false,
     });
     expect(merged.pullRequest).toMatchObject({
       state: "merged",

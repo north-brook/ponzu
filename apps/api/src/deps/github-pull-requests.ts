@@ -3,10 +3,10 @@ import { UpstreamError } from "../http/errors.ts";
 import type { AppPermissions, GithubAnswer, GithubTransport } from "./github.ts";
 
 /*
- * A design's pull request on GitHub (docs/cloud.md, "Credentials"). The App opens it, reads it
- * and writes its description, with a token for the one repository; the person merges it, marks
- * it ready, sets auto-merge, closes it and updates its branch with their own user token, so
- * GitHub holds them to their own branch protection and names them as who did it.
+ * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
+ * writes its description, with a token for the one repository; the person opens it, merges it,
+ * marks it ready, sets auto-merge, closes it and updates its branch with their own user token,
+ * so GitHub holds them to the repo's rules as they apply to them and names them as who did it.
  *
  * Everything the pull request tab shows is one GraphQL query. The github-app spike measured
  * what this rests on: `mergeable` is null (`UNKNOWN`) for seconds after a push, check suites are
@@ -23,6 +23,7 @@ export interface PullRequestRepo {
 /** Someone on GitHub: a person, or an app's bot. */
 export interface GithubWho {
   login: string;
+  /** On http(s), or null. */
   avatarUrl: string | null;
   bot: boolean;
 }
@@ -56,6 +57,9 @@ export interface GithubCheck {
   /** The app that ran it; null for a commit status. */
   app: string | null;
   state: CheckState;
+  /** Whether the repo's rules want it to pass before the pull request merges. */
+  required: boolean;
+  /** Its page, when it gave one on http(s). Whoever posts a check chooses it. */
   url: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
@@ -131,7 +135,7 @@ export interface GithubPullRequestRead {
   autoMergeAllowed: boolean;
   /** Null when the branch is not on GitHub. */
   branch: { sha: string; aheadBy: number; behindBy: number } | null;
-  /** The newest pull request from the branch, by number, if there is one. */
+  /** The newest pull request from the branch into the default branch, if there is one. */
   newest: number | null;
   /** The pull request asked for, if a number was given. */
   pullRequest: GithubPullRequest | null;
@@ -146,19 +150,32 @@ export type OpenResult =
   /** The branch is not on GitHub. */
   | { kind: "no_branch" }
   /** The repo's plan has no draft pull requests. */
-  | { kind: "draft_unsupported" };
+  | { kind: "draft_unsupported" }
+  /** GitHub does not let this person open one here. */
+  | { kind: "forbidden" };
 
 /** How GitHub answered something a person asked of it. */
 export type PersonResult =
   | "done"
-  /** A merge GitHub would not do now: protection, checks, reviews or conflicts. */
-  | "not_mergeable"
   /** The branch is no longer at the commit the request named. */
   | "head_moved"
   /** GitHub does not let this person do this here. */
   | "forbidden"
   /** GitHub refused it for some other reason. */
   | "refused";
+
+/**
+ * Why GitHub would not merge, as its answer words it: what the repo's rules still want, or
+ * `not_mergeable` when it does not say.
+ */
+export type MergeRefusal =
+  | "review_required"
+  | "changes_requested"
+  | "checks_pending"
+  | "checks_failing"
+  | "branch_behind"
+  | "merge_conflicts"
+  | "not_mergeable";
 
 export interface GithubChangedFileDiff extends GithubChangedFile {
   previousPath: string | null;
@@ -172,14 +189,24 @@ export interface GithubPullRequests {
     repo: PullRequestRepo,
     query: { branch: string; defaultBranch: string; number: number | null },
   ): Promise<GithubPullRequestRead>;
-  /** As the App. */
+  /** As the person, so that they are its author. */
   openPullRequest(
-    repo: PullRequestRepo,
-    input: { head: string; base: string; title: string; body: string; draft: boolean },
+    userToken: string,
+    input: {
+      fullName: string;
+      head: string;
+      base: string;
+      title: string;
+      body: string;
+      draft: boolean;
+    },
   ): Promise<OpenResult>;
   /** As the App: its description. */
   editPullRequestBody(repo: PullRequestRepo, number: number, body: string): Promise<void>;
-  /** As the App: one changed file with its diff, or null when the pull request has no such file. */
+  /**
+   * As the App: one of the first hundred changed files (those the tab lists) with its diff, or
+   * null when they have no such file.
+   */
   readPullRequestFile(
     repo: PullRequestRepo,
     number: number,
@@ -198,7 +225,7 @@ export interface GithubPullRequests {
   mergePullRequest(
     userToken: string,
     input: { fullName: string; number: number; method: MergeMethod; sha: string },
-  ): Promise<PersonResult>;
+  ): Promise<PersonResult | MergeRefusal>;
   /** As the person: merges the base into the branch, only while the branch is at `sha`. */
   updatePullRequestBranch(
     userToken: string,
@@ -218,13 +245,13 @@ const READ: AppPermissions = {
   statuses: "read",
   metadata: "read",
 };
-/** Opening a pull request and writing its description. */
+/** Writing a pull request's description. */
 const WRITE: AppPermissions = { contents: "read", pull_requests: "write", metadata: "read" };
 
 /** The most of one comment or review the tab is sent. */
 const MAX_TEXT = 8_000;
-/** The most pages of a pull request's files read looking for one: 3,000 files, GitHub's limit. */
-const MAX_FILE_PAGES = 30;
+/** The files the tab lists, and so the most a diff is looked for among: one page of GitHub's. */
+const LISTED_FILES = 100;
 
 const WHO = "__typename login avatarUrl";
 
@@ -237,7 +264,7 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
     ref(qualifiedName: $qualifiedBranch) {
       target { oid }
       compare(headRef: $defaultBranch) { aheadBy behindBy }
-      associatedPullRequests(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number } }
+      associatedPullRequests(first: 1, baseRefName: $defaultBranch, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { number } }
     }
     pullRequest(number: $number) @include(if: $known) {
       id number url title body state isDraft createdAt updatedAt mergedAt closedAt
@@ -252,11 +279,11 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
       commits(last: 100) { totalCount nodes { commit { oid messageHeadline committedDate author { name user { login } } } } }
       head: commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { totalCount nodes {
         __typename
-        ... on CheckRun { name status conclusion detailsUrl startedAt completedAt checkSuite { app { name } } }
-        ... on StatusContext { context state targetUrl createdAt }
+        ... on CheckRun { name status conclusion detailsUrl startedAt completedAt isRequired(pullRequestNumber: $number) checkSuite { app { name } } }
+        ... on StatusContext { context state targetUrl createdAt isRequired(pullRequestNumber: $number) }
       } } } } } }
-      comments(first: 100) { nodes { id url body createdAt author { ${WHO} } } }
-      reviews(first: 100) { nodes { id url state body submittedAt author { ${WHO} }
+      comments(last: 100) { nodes { id url body createdAt author { ${WHO} } } }
+      reviews(last: 100) { nodes { id url state body submittedAt author { ${WHO} }
         comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} } } } } }
     }
   }
@@ -319,24 +346,23 @@ export function createPullRequestCalls({ request, asApp }: GithubTransport): Git
       });
     },
 
-    openPullRequest(repo, { head, base, title, body, draft }) {
-      return asApp(target(repo), WRITE, async (token) => {
-        const path = `/repos/${repo.repository.fullName}/pulls`;
-        const answer = await request("app", "POST", path, token, {
-          title,
-          head,
-          base,
-          body,
-          draft,
-        });
-        if (answer.status === 201) return { kind: "opened", number: answer.body.number };
-        if (answer.status === 422) {
-          const refused = whyRefused(answer);
-          if (refused) return { kind: refused };
-        }
-        throw new UpstreamError("github", `POST ${path} answered ${answer.status}`, {
-          status: answer.status,
-        });
+    async openPullRequest(userToken, { fullName, head, base, title, body, draft }) {
+      const path = `/repos/${fullName}/pulls`;
+      const answer = await request("user", "POST", path, userToken, {
+        title,
+        head,
+        base,
+        body,
+        draft,
+      });
+      if (answer.status === 201) return { kind: "opened", number: answer.body.number };
+      if (answer.status === 403 || answer.status === 404) return { kind: "forbidden" };
+      if (answer.status === 422) {
+        const refused = whyRefused(answer);
+        if (refused) return { kind: refused };
+      }
+      throw new UpstreamError("github", `POST ${path} answered ${answer.status}`, {
+        status: answer.status,
       });
     },
 
@@ -354,32 +380,28 @@ export function createPullRequestCalls({ request, asApp }: GithubTransport): Git
 
     readPullRequestFile(repo, number, wanted) {
       return asApp(target(repo), READ, async (token) => {
-        for (let page = 1; page <= MAX_FILE_PAGES; page++) {
-          const path = `/repos/${repo.repository.fullName}/pulls/${number}/files?per_page=100&page=${page}`;
-          const answer = await request("app", "GET", path, token);
-          if (answer.status !== 200 || !Array.isArray(answer.body)) {
-            throw new UpstreamError(
-              "github",
-              `the files of a pull request answered ${answer.status}`,
-              {
-                status: answer.status,
-              },
-            );
-          }
-          const file = answer.body.find((candidate: any) => candidate.filename === wanted);
-          if (file) {
-            return {
-              path: file.filename,
-              previousPath: file.previous_filename ?? null,
-              change: changeOf(file.status),
-              additions: file.additions,
-              deletions: file.deletions,
-              patch: typeof file.patch === "string" ? file.patch : null,
-            };
-          }
-          if (answer.body.length < 100) return null;
+        // GitHub lists a pull request's files in the same order here as to the tab's query.
+        const path = `/repos/${repo.repository.fullName}/pulls/${number}/files?per_page=${LISTED_FILES}`;
+        const answer = await request("app", "GET", path, token);
+        if (answer.status !== 200 || !Array.isArray(answer.body)) {
+          throw new UpstreamError(
+            "github",
+            `the files of a pull request answered ${answer.status}`,
+            {
+              status: answer.status,
+            },
+          );
         }
-        return null;
+        const file = answer.body.find((candidate: any) => candidate.filename === wanted);
+        if (!file) return null;
+        return {
+          path: file.filename,
+          previousPath: file.previous_filename ?? null,
+          change: changeOf(file.status),
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: typeof file.patch === "string" ? file.patch : null,
+        };
       });
     },
 
@@ -391,7 +413,8 @@ export function createPullRequestCalls({ request, asApp }: GithubTransport): Git
     async mergePullRequest(userToken, { fullName, number, method, sha }) {
       const path = `/repos/${fullName}/pulls/${number}/merge`;
       const answer = await request("user", "PUT", path, userToken, { merge_method: method, sha });
-      return personResult(answer, { 405: "not_mergeable", 409: "head_moved" });
+      if (answer.status === 405) return mergeRefusal(messageOf(answer));
+      return personResult(answer, { 409: "head_moved" });
     },
 
     async updatePullRequestBranch(userToken, { fullName, number, sha }) {
@@ -423,8 +446,23 @@ function messageOf(answer: GithubAnswer): string {
     .join(" ");
 }
 
+/** What GitHub's words for a merge it refused (a 405) say the repo's rules still want. */
+function mergeRefusal(message: string): MergeRefusal {
+  if (/approving review|review is required|code owner/i.test(message)) return "review_required";
+  if (/changes requested|requested changes/i.test(message)) return "changes_requested";
+  if (/status checks? .*(expected|in progress|pending|queued)/i.test(message)) {
+    return "checks_pending";
+  }
+  if (/status check|required check/i.test(message)) return "checks_failing";
+  if (/not up to date|out of date/i.test(message)) return "branch_behind";
+  if (/conflict/i.test(message)) return "merge_conflicts";
+  return "not_mergeable";
+}
+
 /** Why GitHub would not open a pull request, when it is one Ponzu can tell people. */
-function whyRefused(answer: GithubAnswer): Exclude<OpenResult["kind"], "opened"> | null {
+function whyRefused(
+  answer: GithubAnswer,
+): Exclude<OpenResult["kind"], "opened" | "forbidden"> | null {
   const message = messageOf(answer);
   if (/already exists/i.test(message)) return "exists";
   if (/no commits between/i.test(message)) return "no_commits";
@@ -581,9 +619,23 @@ function who(actor: any): GithubWho | null {
   if (!actor?.login) return null;
   return {
     login: actor.login,
-    avatarUrl: actor.avatarUrl ?? null,
+    avatarUrl: httpUrl(actor.avatarUrl),
     bot: actor.__typename === "Bot",
   };
+}
+
+/**
+ * `value` when it is an http(s) address, else null. A check's link is whatever the app or CI
+ * that posted it said, and a client opens it.
+ */
+function httpUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:" ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function remark(node: any, path: string | null, line: number | null): GithubRemark {
@@ -617,7 +669,8 @@ function toCheck(node: any): GithubCheck {
       name: node.context,
       app: null,
       state,
-      url: node.targetUrl ?? null,
+      required: node.isRequired === true,
+      url: httpUrl(node.targetUrl),
       startedAt: dateOrNull(node.createdAt),
       completedAt: null,
     };
@@ -626,7 +679,8 @@ function toCheck(node: any): GithubCheck {
     name: node.name,
     app: node.checkSuite?.app?.name ?? null,
     state: checkRunState(node.status, node.conclusion),
-    url: node.detailsUrl ?? null,
+    required: node.isRequired === true,
+    url: httpUrl(node.detailsUrl),
     startedAt: dateOrNull(node.startedAt),
     completedAt: dateOrNull(node.completedAt),
   };

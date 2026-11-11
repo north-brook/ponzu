@@ -9,8 +9,8 @@ import type { Clock } from "@ponzu/sandbox";
  * open pull request from a branch is the only one, and an installation token does only what its
  * permissions say.
  *
- * Tests shape it with `push`, `setChecks`, `review`, `comment`, `protect` and `conflict`, and
- * read what happened from `pull` and `actions`.
+ * Tests shape it with `push`, `setChecks`, `review`, `comment`, `protect`, `lagHead` and
+ * `conflicting`, and read what happened from `pull` and `actions`.
  */
 
 /** How long after a change GitHub takes to work out whether a pull request can merge. */
@@ -29,6 +29,8 @@ export interface FakeCheck {
   /** A commit status instead of a check run. */
   status?: boolean;
   state: "queued" | "in_progress" | "success" | "failure" | "skipped";
+  /** Its link; `https://ci.example/<name>` when left out. */
+  url?: string;
 }
 
 export interface FakePull {
@@ -45,6 +47,8 @@ export interface FakePull {
   merged: boolean;
   /** The commits a merge took into the base. */
   mergedShas: string[];
+  /** The commit the branch was at when it merged. */
+  mergedHead: string | null;
   mergedBy: string | null;
   author: { login: string; bot: boolean };
   createdAt: number;
@@ -53,6 +57,8 @@ export interface FakePull {
   autoMerge: { method: string; enabledBy: string } | null;
   /** When GitHub will have worked out whether it can merge. */
   mergeableAt: number;
+  /** The commit GitHub still shows it at, until when, as it does for a moment after a push. */
+  shownHead: { sha: string; until: number } | null;
   conflicting: boolean;
   reviews: { id: string; login: string; state: string; body: string; at: number }[];
   comments: { id: string; login: string; body: string; at: number; path?: string; line?: number }[];
@@ -63,6 +69,8 @@ export interface FakeRules {
   requiredChecks?: string[];
   /** The branch must be up to date with its base. */
   strict?: boolean;
+  /** Who may merge whatever the rules still want, as an admin or a ruleset's bypass list. */
+  bypass?: string[];
 }
 
 /** Who a request came from: an installation token with its permissions, or a person. */
@@ -111,6 +119,8 @@ export class FakePullRequests {
   readonly botLogin = "ponzu-test";
   /** How many GraphQL requests it answered. */
   queries = 0;
+  /** How long GraphQL goes on showing a merged pull request open (`hideMerges`). */
+  #mergesHiddenMs = 0;
 
   readonly #clock: Clock;
   readonly #repos = new Map<number, Repo>();
@@ -173,6 +183,20 @@ export class FakePullRequests {
 
   comment(pull: FakePull, login: string, body: string, at?: { path: string; line: number }) {
     pull.comments.push({ id: this.#id("IC"), login, body, at: this.#clock.now(), ...at });
+  }
+
+  /**
+   * GitHub goes on showing the pull request at the commit it is at now for `ms`, whatever is
+   * pushed meanwhile.
+   */
+  lagHead(repo: FakeRepoAccess, pull: FakePull, ms: number): void {
+    const sha = this.head(repo, pull.head)!;
+    pull.shownHead = { sha, until: this.#clock.now() + ms };
+  }
+
+  /** GraphQL goes on showing a pull request open for `ms` after it merges, as a replica lags. */
+  hideMerges(ms: number): void {
+    this.#mergesHiddenMs = ms;
   }
 
   protect(repo: FakeRepoAccess, branch: string, rules: FakeRules): void {
@@ -366,23 +390,46 @@ export class FakePullRequests {
     return approvals >= rules.requiredApprovals ? "APPROVED" : "REVIEW_REQUIRED";
   }
 
+  /**
+   * What the rules of the pull request's base still want before it merges: the merge state it
+   * makes, and GitHub's words for it when a merge is refused.
+   */
+  #wanted(
+    repo: FakeRepoAccess,
+    pull: FakePull,
+  ): { state: "BEHIND" | "BLOCKED"; message: string } | null {
+    const rules = this.#repo(repo).rules.get(pull.base) ?? {};
+    const blocked = (message: string) => ({ state: "BLOCKED" as const, message });
+    if (rules.strict && this.#compare(repo, pull.base, pull.head).behind.length > 0) {
+      return { state: "BEHIND", message: "Head branch is not up to date with the base branch." };
+    }
+    const decision = this.#reviewDecision(repo, pull);
+    if (decision === "CHANGES_REQUESTED") return blocked("Changes requested by a reviewer.");
+    if (decision === "REVIEW_REQUIRED") {
+      return blocked(
+        `At least ${rules.requiredApprovals} approving review is required by reviewers with write access.`,
+      );
+    }
+    const checks = this.#rollup(this.head(repo, pull.head))?.checks ?? [];
+    for (const name of rules.requiredChecks ?? []) {
+      const check = checks.find((candidate) => candidate.name === name);
+      if (!check || check.state === "queued" || check.state === "in_progress") {
+        return blocked(`Required status check "${name}" is expected.`);
+      }
+      if (check.state !== "success") return blocked(`Required status check "${name}" is failing.`);
+    }
+    return null;
+  }
+
   #mergeState(repo: FakeRepoAccess, pull: FakePull): string {
     if (pull.state !== "open") return "UNKNOWN";
     if (pull.draft) return "DRAFT";
     const mergeable = this.#mergeable(pull);
     if (mergeable === "UNKNOWN") return "UNKNOWN";
     if (mergeable === "CONFLICTING") return "DIRTY";
-    const rules = this.#repo(repo).rules.get(pull.base) ?? {};
-    if (rules.strict && this.#compare(repo, pull.base, pull.head).behind.length > 0)
-      return "BEHIND";
+    const wanted = this.#wanted(repo, pull);
+    if (wanted) return wanted.state;
     const checks = this.#rollup(this.head(repo, pull.head))?.checks ?? [];
-    const required = rules.requiredChecks ?? [];
-    const passed = (name: string) =>
-      checks.some((check) => check.name === name && check.state === "success");
-    const decision = this.#reviewDecision(repo, pull);
-    if (!required.every(passed) || (decision !== null && decision !== "APPROVED")) {
-      return "BLOCKED";
-    }
     if (checks.some((check) => check.state === "failure")) return "UNSTABLE";
     return "CLEAN";
   }
@@ -403,12 +450,14 @@ export class FakePullRequests {
       state: "open",
       merged: false,
       mergedShas: [],
+      mergedHead: null,
       mergedBy: null,
       createdAt: now,
       updatedAt: now,
       closedAt: null,
       autoMerge: null,
       mergeableAt: now + MERGEABLE_AFTER_MS,
+      shownHead: null,
       conflicting: false,
       reviews: [],
       comments: [],
@@ -425,7 +474,9 @@ export class FakePullRequests {
     if (!state.branches.has(input.head)) {
       return invalid([{ resource: "PullRequest", field: "head", code: "invalid" }]);
     }
-    if (state.pulls.some((pull) => pull.state === "open" && pull.head === input.head)) {
+    const open = (pull: FakePull) =>
+      pull.state === "open" && pull.head === input.head && pull.base === input.base;
+    if (state.pulls.some(open)) {
       const owner = repo.fullName.split("/")[0];
       return invalid([
         {
@@ -500,10 +551,15 @@ export class FakePullRequests {
         { status: 409 },
       );
     }
-    const mergeState = this.#mergeState(repo, pull);
-    if (!["CLEAN", "UNSTABLE", "HAS_HOOKS"].includes(mergeState)) return notMergeable();
+    if (this.#mergeable(pull) !== "MERGEABLE") return notMergeable();
+    const wanted = this.#wanted(repo, pull);
+    const rules = this.#repo(repo).rules.get(pull.base) ?? {};
+    if (wanted && !rules.bypass?.includes(caller.login)) {
+      return Response.json({ message: wanted.message }, { status: 405 });
+    }
     const ahead = this.#compare(repo, pull.base, pull.head).ahead;
     pull.mergedShas = ahead;
+    pull.mergedHead = this.head(repo, pull.head) ?? null;
     const base = this.#repo(repo).branches.get(pull.base)!;
     base.push(...ahead);
     pull.state = "closed";
@@ -624,7 +680,10 @@ export class FakePullRequests {
     const head = this.head(repo, branch);
     const compare = this.#compare(repo, branch, variables.defaultBranch);
     const fromBranch = state.pulls.filter(
-      (pull) => pull.head === branch && pull.headRepositoryId === repo.id,
+      (pull) =>
+        pull.head === branch &&
+        pull.headRepositoryId === repo.id &&
+        pull.base === variables.defaultBranch,
     );
     const pull = variables.known
       ? state.pulls.find((candidate) => candidate.number === variables.number)
@@ -655,23 +714,28 @@ export class FakePullRequests {
       login,
       avatarUrl: `https://avatars.example/${login}`,
     });
-    const headSha = this.head(repo, pull.head) ?? pull.mergedShas?.at(-1) ?? "0".repeat(40);
+    const shown = pull.shownHead && this.#clock.now() < pull.shownHead.until;
+    const headSha = shown
+      ? pull.shownHead!.sha
+      : (pull.mergedHead ?? this.head(repo, pull.head) ?? "0".repeat(40));
     const files = this.#files(repo, pull);
     const commits =
       (pull.merged ? pull.mergedShas : this.#compare(repo, pull.base, pull.head).ahead) ?? [];
+    const merged = pull.merged && this.#clock.now() >= (pull.closedAt ?? 0) + this.#mergesHiddenMs;
     const rollup = this.#rollup(headSha);
+    const required = this.#repo(repo).rules.get(pull.base)?.requiredChecks ?? [];
     return {
       id: pull.nodeId,
       number: pull.number,
       url: `https://github.com/${repo.fullName}/pull/${pull.number}`,
       title: pull.title,
       body: pull.body,
-      state: pull.merged ? "MERGED" : pull.state === "closed" ? "CLOSED" : "OPEN",
+      state: merged ? "MERGED" : pull.state === "closed" && !pull.merged ? "CLOSED" : "OPEN",
       isDraft: pull.draft,
       createdAt: iso(pull.createdAt),
       updatedAt: iso(pull.updatedAt),
-      mergedAt: pull.merged ? iso(pull.closedAt) : null,
-      closedAt: iso(pull.closedAt),
+      mergedAt: merged ? iso(pull.closedAt) : null,
+      closedAt: merged || !pull.merged ? iso(pull.closedAt) : null,
       mergeable: this.#mergeable(pull),
       mergeStateStatus: this.#mergeState(repo, pull),
       reviewDecision: this.#reviewDecision(repo, pull),
@@ -728,8 +792,9 @@ export class FakePullRequests {
                               : check.state === "failure"
                                 ? "FAILURE"
                                 : "PENDING",
-                          targetUrl: `https://ci.example/${check.name}`,
+                          targetUrl: check.url ?? `https://ci.example/${check.name}`,
                           createdAt: iso(this.#clock.now()),
+                          isRequired: required.includes(check.name),
                         }
                       : {
                           __typename: "CheckRun",
@@ -743,9 +808,10 @@ export class FakePullRequests {
                           conclusion: ["success", "failure", "skipped"].includes(check.state)
                             ? check.state.toUpperCase()
                             : null,
-                          detailsUrl: `https://ci.example/${check.name}`,
+                          detailsUrl: check.url ?? `https://ci.example/${check.name}`,
                           startedAt: iso(this.#clock.now()),
                           completedAt: null,
+                          isRequired: required.includes(check.name),
                           checkSuite: { app: { name: "GitHub Actions" } },
                         },
                   ),

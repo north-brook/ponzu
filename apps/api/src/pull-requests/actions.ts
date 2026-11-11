@@ -1,14 +1,20 @@
 import type { PullRequestContext, User } from "@ponzu/db";
-import type { GithubPullRequest, PersonResult } from "../deps/github-pull-requests.ts";
+import type {
+  GithubPullRequest,
+  MergeRefusal,
+  PersonResult,
+} from "../deps/github-pull-requests.ts";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
 import { ApiError } from "../http/errors.ts";
+import { refreshLater } from "./refresh.ts";
 import {
+  lagsBranch,
   type PullRequestDeps,
   type PullRequestTarget,
   type Read,
   readPullRequest,
-  recordRead,
+  recordCurrent,
   refreshPullRequest,
   targetOf,
 } from "./sync.ts";
@@ -17,8 +23,8 @@ import { type PullRequestTab, toTab } from "./view.ts";
 /*
  * What a person does to a design's pull request: mark it ready, merge it, set auto-merge, close
  * it, or bring its branch up to date. Each is done as them, with their GitHub user token
- * (docs/cloud.md, "Pull requests"): GitHub then holds the merge to the rules of the repo as
- * they apply to that person, and its history names them.
+ * (docs/cloud.md, "Pull requests"): GitHub then holds them to the rules of the repo as they
+ * apply to that person, and its history names them.
  *
  * Each reads the pull request first, refuses what it can name before asking GitHub, and says
  * why GitHub refused with a code a client can show. Each ends by reading it again, and that is
@@ -27,17 +33,26 @@ import { type PullRequestTab, toTab } from "./view.ts";
 
 export type PullRequestAction =
   | { kind: "ready" }
-  /** `headSha` is the commit the person looked at: the merge is refused if the branch moved. */
-  | { kind: "merge"; headSha?: string }
+  /**
+   * `headSha` is the commit the person looked at: the merge is refused if the branch moved.
+   * Merge waits for what the repo's rules still want (a review, a required check) unless
+   * `bypass` says the person chose to merge without it, which GitHub allows only to those its
+   * rules let bypass them.
+   */
+  | { kind: "merge"; headSha: string; bypass: boolean }
   | { kind: "auto_merge"; enabled: boolean }
   | { kind: "close" }
-  | { kind: "update_branch"; headSha?: string };
+  | { kind: "update_branch"; headSha: string };
 
 type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background">;
 
 /** The waits for GitHub to work out whether a pull request can merge, before giving up. */
 const MERGEABLE_WAITS_MS = [1_000, 2_000];
-/** Merge states in which nothing is left for auto-merge to wait on. */
+/** The waits for GitHub's reads to show a merge it has just said it did. */
+const MERGED_WAITS_MS = [1_000, 2_000];
+/** When a merge GitHub's reads did not show yet is read again, whatever its webhook does. */
+const MERGE_CHECKED_AFTER_MS = 60_000;
+/** Merge states in which nothing is left for the repo's rules to want. */
 const MERGEABLE_NOW = ["clean", "unstable", "has_hooks"];
 
 export async function actOnPullRequest(
@@ -80,8 +95,9 @@ async function act(
       if (pr.state === "draft") throw draft();
       current = await untilMergeable(deps, target, current);
       const ready = current.read.pullRequest!;
-      if (action.headSha && action.headSha !== ready.head.sha) throw headMoved();
+      if (action.headSha !== ready.head.sha || lagsBranch(current.read)) throw headMoved();
       if (ready.mergeable === false) throw conflicts(ready);
+      if (!action.bypass && !MERGEABLE_NOW.includes(ready.mergeState)) throw blockedBy(ready);
       const method = current.read.mergeMethods[0];
       if (!method) throw refused();
       const result = await github.mergePullRequest(await personToken(), {
@@ -90,10 +106,12 @@ async function act(
         method,
         sha: ready.head.sha,
       });
+      if (result === "done") return untilMerged(deps, target, number);
       if (result === "not_mergeable") {
         // GitHub does not say why, but the pull request as it is now does.
         throw blockedBy((await readAndRecord(deps, target)).read.pullRequest ?? ready);
       }
+      if (isRefusal(result)) throw refusalError(result, ready);
       expectDone(result, ready);
       break;
     }
@@ -141,7 +159,7 @@ async function act(
           `${pr.head.ref} already has everything in ${pr.base.ref}.`,
         );
       }
-      if (action.headSha && action.headSha !== pr.head.sha) throw headMoved();
+      if (action.headSha !== pr.head.sha || lagsBranch(current.read)) throw headMoved();
       const result = await github.updatePullRequestBranch(await personToken(), {
         fullName,
         number,
@@ -152,7 +170,7 @@ async function act(
       // GitHub makes the merge commit a moment later, and then works out mergeability again.
       deps.background(
         "pull_request_refresh",
-        refreshPullRequest(deps, target.designId, { number, untilMergeable: true }),
+        refreshPullRequest(deps, target.designId, { number }),
       );
       break;
     }
@@ -166,8 +184,7 @@ async function readAndRecord(
   number?: number,
 ): Promise<Read> {
   const read = await readPullRequest(deps, target, number);
-  const { pullRequest } = read.read;
-  if (pullRequest) await recordRead(deps, target.designId, pullRequest, read.readAt);
+  await recordCurrent(deps, target.designId, read);
   return read;
 }
 
@@ -182,12 +199,28 @@ async function untilMergeable(
     await deps.clock.sleep(wait);
     current = await readAndRecord(deps, target, current.read.pullRequest!.number);
   }
-  if (current.read.pullRequest?.mergeable === null) {
-    throw new ApiError(
-      409,
-      "mergeability_unknown",
-      "GitHub is still checking whether this can merge. Try again in a moment.",
-    );
+  if (current.read.pullRequest?.mergeable === null) throw mergeabilityUnknown();
+  return current;
+}
+
+/**
+ * Read a pull request GitHub has just merged until its reads show it merged, which settles the
+ * design, for a few seconds. If they still do not, it is read again in a minute by a job, so the
+ * design settles even if GitHub's webhook for the merge never comes.
+ */
+async function untilMerged(
+  deps: PullRequestDeps,
+  target: PullRequestTarget,
+  number: number,
+): Promise<Read> {
+  let current = await readAndRecord(deps, target, number);
+  for (const wait of MERGED_WAITS_MS) {
+    if (current.read.pullRequest?.state === "merged") return current;
+    await deps.clock.sleep(wait);
+    current = await readAndRecord(deps, target, number);
+  }
+  if (current.read.pullRequest?.state !== "merged") {
+    await refreshLater(deps, { designId: target.designId, number }, MERGE_CHECKED_AFTER_MS);
   }
   return current;
 }
@@ -205,40 +238,66 @@ function expectDone(result: PersonResult, pr: GithubPullRequest): void {
         "forbidden",
         `GitHub does not let you do this to #${pr.number} in its repo.`,
       );
-    case "not_mergeable":
-      throw blockedBy(pr);
     case "refused":
       throw refused();
   }
 }
 
-/** Why GitHub will not merge it now, as far as the pull request says. */
+/** Why the repo's rules do not let it merge now, as far as the pull request says. */
 function blockedBy(pr: GithubPullRequest): ApiError {
   if (pr.mergeable === false) return conflicts(pr);
-  if (pr.reviewDecision === "changes_requested") {
-    return new ApiError(409, "changes_requested", "A reviewer asked for changes.");
+  if (pr.mergeState === "behind") return refusalError("branch_behind", pr);
+  if (pr.reviewDecision === "changes_requested") return refusalError("changes_requested", pr);
+  if (pr.reviewDecision === "review_required") return refusalError("review_required", pr);
+  // Only the checks the rules require hold a merge back; any other may fail.
+  const required = pr.checks.items.filter((check) => check.required);
+  if (required.some((check) => check.state === "failed" || check.state === "cancelled")) {
+    return refusalError("checks_failing", pr);
   }
-  if (pr.reviewDecision === "review_required") {
-    return new ApiError(409, "review_required", "The repo's rules want an approving review first.");
+  if (required.some((check) => check.state === "pending" || check.state === "running")) {
+    return refusalError("checks_pending", pr);
   }
-  if (pr.checks.state === "failing") {
-    return new ApiError(409, "checks_failing", "A required check failed.");
-  }
-  if (pr.checks.state === "running") {
-    return new ApiError(409, "checks_pending", "Required checks have not finished yet.");
-  }
-  if (pr.mergeState === "behind") {
-    return new ApiError(
-      409,
-      "branch_behind",
-      `The repo's rules want ${pr.head.ref} up to date with ${pr.base.ref} first.`,
-    );
-  }
+  if (pr.mergeState === "unknown") return mergeabilityUnknown();
   return new ApiError(
     409,
     "branch_protected",
     `The repo's rules do not allow merging #${pr.number} now.`,
   );
+}
+
+const REFUSALS = [
+  "review_required",
+  "changes_requested",
+  "checks_pending",
+  "checks_failing",
+  "branch_behind",
+  "merge_conflicts",
+] as const;
+
+function isRefusal(result: PersonResult | MergeRefusal): result is (typeof REFUSALS)[number] {
+  return (REFUSALS as readonly string[]).includes(result);
+}
+
+/** What GitHub's reason for not merging means for the person. */
+function refusalError(refusal: (typeof REFUSALS)[number], pr: GithubPullRequest): ApiError {
+  switch (refusal) {
+    case "review_required":
+      return new ApiError(409, refusal, "The repo's rules want an approving review first.");
+    case "changes_requested":
+      return new ApiError(409, refusal, "A reviewer asked for changes.");
+    case "checks_failing":
+      return new ApiError(409, refusal, "A check the repo's rules require failed.");
+    case "checks_pending":
+      return new ApiError(409, refusal, "Checks the repo's rules require have not finished yet.");
+    case "branch_behind":
+      return new ApiError(
+        409,
+        refusal,
+        `The repo's rules want ${pr.head.ref} up to date with ${pr.base.ref} first.`,
+      );
+    case "merge_conflicts":
+      return conflicts(pr);
+  }
 }
 
 const closed = (pr: GithubPullRequest) =>
@@ -252,6 +311,13 @@ const conflicts = (pr: GithubPullRequest) =>
 
 const headMoved = () =>
   new ApiError(409, "head_moved", "The branch has new commits since you looked. Look again first.");
+
+const mergeabilityUnknown = () =>
+  new ApiError(
+    409,
+    "mergeability_unknown",
+    "GitHub is still checking whether this can merge. Try again in a moment.",
+  );
 
 const refused = () =>
   new ApiError(

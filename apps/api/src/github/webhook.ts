@@ -13,6 +13,7 @@ import {
   refreshAfterPush,
   refreshDesigns,
   tellDesigns,
+  withdrawRepoPictures,
 } from "./pull-requests.ts";
 import { forgetRevokedAuthorization } from "./revoked.ts";
 import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
@@ -37,7 +38,10 @@ export function verifySignature(secret: string, body: Uint8Array, header: string
   return timingSafeEqual(expected, Buffer.from(signature, "hex"));
 }
 
-export type WebhookDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
+export type WebhookDeps = Pick<
+  Deps,
+  "db" | "clock" | "vault" | "github" | "log" | "storage" | "config"
+>;
 type Work = (deps: WebhookDeps) => Promise<void>;
 
 export type Plan =
@@ -87,8 +91,6 @@ const PullRequestEvent = z.object({
 });
 const PushEvent = z.object({
   ref: z.string(),
-  after: z.string(),
-  deleted: z.boolean(),
   repository: Id.extend({ default_branch: z.string() }),
 });
 const CheckRunEvent = z.object({
@@ -148,9 +150,11 @@ const PULL_REQUEST_ACTIONS = [
   "auto_merge_enabled",
   "auto_merge_disabled",
 ];
-/** The ones after which GitHub works out again whether the pull request can merge. */
-const MERGEABILITY_ACTIONS = ["opened", "reopened", "synchronize", "edited"];
-const CHECK_RUN_ACTIONS = ["created", "completed", "rerequested"];
+/**
+ * A check run created changes nothing a read would not see from the push that made it, and
+ * there is one for every check of every push.
+ */
+const CHECK_RUN_ACTIONS = ["completed", "rerequested"];
 const REVIEW_ACTIONS = ["submitted", "edited", "dismissed"];
 /** Check conclusions that are something the agent should hear about. */
 const FAILED = ["failure", "timed_out", "action_required", "startup_failure"];
@@ -202,6 +206,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
           if (accessChanged)
             await markRepoAccessStale(deps.db, { githubRepoIds: [e.repository.id] });
           await reconcileRepository(deps, e.repository.id, e.installation?.id);
+          if (e.action === "publicized") await withdrawRepoPictures(deps, e.repository.id);
         };
       });
 
@@ -251,11 +256,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
       return plan(PullRequestEvent, payload, (e) => {
         if (!PULL_REQUEST_ACTIONS.includes(e.action)) return null;
         return (deps) =>
-          refreshDesigns(deps, {
-            githubRepoId: e.repository.id,
-            pullRequests: [e.pull_request],
-            untilMergeable: MERGEABILITY_ACTIONS.includes(e.action),
-          });
+          refreshDesigns(deps, { githubRepoId: e.repository.id, pullRequests: [e.pull_request] });
       });
 
     case "push":
@@ -266,7 +267,6 @@ export function planDelivery(event: string, payload: unknown): Plan {
           refreshAfterPush(deps, {
             githubRepoId: e.repository.id,
             branch,
-            after: e.deleted ? null : e.after,
             defaultBranch: e.repository.default_branch,
           });
       });

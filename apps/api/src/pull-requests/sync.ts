@@ -1,5 +1,5 @@
 import {
-  appendThreadItem,
+  appendThreadItemOnce,
   type Design,
   getPullRequestContext,
   type PullRequestContext,
@@ -65,8 +65,10 @@ export interface Read {
 
 /**
  * Read the design's branch and its pull request: the one `number` names, or, when GitHub has a
- * newer one from the branch, that one. A pull request whose branch is in a fork is never the
- * design's, whatever its branch is called.
+ * newer one from the branch, that one. Only a pull request from the design's branch in its own
+ * repo (never a fork's of the same name) into the default branch is the design's: one someone
+ * pointed at another base merges nothing into the default branch, so it neither shows here nor
+ * settles the design.
  */
 export async function readPullRequest(
   { github, clock }: Pick<Deps, "github" | "clock">,
@@ -80,8 +82,12 @@ export async function readPullRequest(
       defaultBranch: target.defaultBranch,
       number: asked,
     });
-    const ours = read.pullRequest?.head.repositoryId === target.repo.repository.id;
-    return { read: { ...read, pullRequest: ours ? read.pullRequest : null }, readAt };
+    const pr = read.pullRequest;
+    const ours =
+      pr?.head.repositoryId === target.repo.repository.id &&
+      pr.head.ref === target.branch &&
+      pr.base.ref === target.defaultBranch;
+    return { read: { ...read, pullRequest: ours ? pr : null }, readAt };
   };
   const first = await ask(number);
   const { newest } = first.read;
@@ -89,10 +95,39 @@ export async function readPullRequest(
   return first;
 }
 
+/** Whether a pull request is still open (a draft is). */
+export function isOpen(pullRequest: GithubPullRequest | null): pullRequest is GithubPullRequest {
+  return pullRequest?.state === "open" || pullRequest?.state === "draft";
+}
+
+/**
+ * Whether a read shows an open pull request at an older commit than its branch: GitHub's pull
+ * request lags a push by a second or so, and until it catches up its checks and mergeability
+ * are those of a commit nobody is looking at any more.
+ */
+export function lagsBranch({ pullRequest, branch }: GithubPullRequestRead): boolean {
+  return isOpen(pullRequest) && branch !== null && pullRequest.head.sha !== branch.sha;
+}
+
+/**
+ * Record what a read found (`recordRead`), unless it lags the branch: the push that moved the
+ * branch makes a webhook, and its read records the pull request at the new commit. `lagging`
+ * records it all the same, for the last read there will be.
+ */
+export async function recordCurrent(
+  deps: Pick<Deps, "db" | "log">,
+  designId: string,
+  { read, readAt }: Read,
+  { lagging = false } = {},
+): Promise<void> {
+  if (!read.pullRequest || (lagsBranch(read) && !lagging)) return;
+  await recordRead(deps, designId, read.pullRequest, readAt);
+}
+
 /**
  * Record what a read found on the design's row, and in its thread the first time the pull
- * request is seen open, merged or closed. Answers the design as it now stands, or null when a
- * read that began later was recorded first.
+ * request is seen open, merged or closed. Answers the design as it now stands, or null when it
+ * was not applied: a read that began later was recorded first, or the row already says this.
  */
 export async function recordRead(
   { db, log }: Pick<Deps, "db" | "log">,
@@ -112,7 +147,7 @@ export async function recordRead(
     readAt,
   });
   if (!design) return null;
-  await appendThreadItem(db, {
+  await appendThreadItemOnce(db, {
     id: noticeId(number, state),
     designId,
     kind: "notice",
@@ -137,32 +172,28 @@ const CATCH_UP_MS = [1_000, 2_000, 3_000, 4_000];
 
 /**
  * Read a design's pull request from GitHub and record it. Nothing happens for a design that is
- * gone, Scratch, or not on GitHub. With `headSha` (a push), it reads again while GitHub still
- * shows the pull request at an older commit; with `untilMergeable`, while GitHub still works
- * out whether an open one can merge. Each read is recorded as it comes.
+ * gone, Scratch, or not on GitHub. While an open one lags its branch, or GitHub is still working
+ * out whether it can merge (as it does for seconds after a push or a change of base), it is read
+ * again; a read that lags is not recorded unless it is the last.
  */
 export async function refreshPullRequest(
   deps: PullRequestDeps,
   designId: string,
-  {
-    number = null,
-    headSha,
-    untilMergeable = false,
-  }: { number?: number | null; headSha?: string; untilMergeable?: boolean } = {},
+  { number = null }: { number?: number | null } = {},
 ): Promise<void> {
   const context = await getPullRequestContext(deps.db, designId);
   if (!context) return;
   const target = targetOf(context);
   if (target instanceof ApiError) return;
+  let asked = number ?? target.number;
   for (let attempt = 0; ; attempt++) {
-    const { read, readAt } = await readPullRequest(deps, target, number ?? target.number);
-    const { pullRequest } = read;
-    if (pullRequest) await recordRead(deps, designId, pullRequest, readAt);
-    const open = pullRequest?.state === "open" || pullRequest?.state === "draft";
-    const behind = open && headSha !== undefined && pullRequest.head.sha !== headSha;
-    const working = open && untilMergeable && pullRequest.mergeable === null;
+    const found = await readPullRequest(deps, target, asked);
+    const { pullRequest } = found.read;
     const wait = CATCH_UP_MS[attempt];
-    if (!(behind || working) || wait === undefined) return;
+    await recordCurrent(deps, designId, found, { lagging: wait === undefined });
+    const working = isOpen(pullRequest) && pullRequest.mergeable === null;
+    if (!(lagsBranch(found.read) || working) || wait === undefined) return;
+    asked = pullRequest?.number ?? asked;
     await deps.clock.sleep(wait);
   }
 }

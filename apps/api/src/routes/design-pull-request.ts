@@ -10,7 +10,7 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { actOnPullRequest, type PullRequestAction } from "../pull-requests/actions.ts";
 import { openPullRequest } from "../pull-requests/open.ts";
-import { readPullRequest, recordRead, targetOf } from "../pull-requests/sync.ts";
+import { readPullRequest, recordCurrent, targetOf } from "../pull-requests/sync.ts";
 import { PullRequestTabView, toTab } from "../pull-requests/view.ts";
 
 /*
@@ -21,13 +21,17 @@ import { PullRequestTabView, toTab } from "../pull-requests/view.ts";
  */
 
 const Params = z.object({ id: z.string().min(1).max(64) });
-const HeadBody = z.object({
-  /** The commit the person looked at. Left out, the branch's head as the API reads it. */
-  headSha: z
-    .string()
-    .regex(/^[0-9a-f]{40}$/)
-    .optional(),
+/** The commit the person looked at: what they act on, and nothing pushed since. */
+const HeadSha = z.string().regex(/^[0-9a-f]{40}$/);
+const MergeBody = z.object({
+  headSha: HeadSha,
+  /**
+   * The person chose to merge without what the repo's rules still want, which GitHub allows
+   * only to those its rules let bypass them. A client asks them first.
+   */
+  bypass: z.boolean().default(false),
 });
+const UpdateBody = z.object({ headSha: HeadSha });
 const FileQuery = z.object({ path: z.string().min(1).max(4_096) });
 
 /** The most of one file's diff the tab is sent. */
@@ -76,12 +80,15 @@ export const designPullRequest = new Hono<AppEnv>()
     const context = await contextOf(c.var, c.req.valid("param").id, "read");
     const target = targetOf(context);
     if (target instanceof ApiError) throw target;
-    const { read, readAt } = await readPullRequest(deps, target);
-    if (read.pullRequest) await recordRead(deps, target.designId, read.pullRequest, readAt);
-    return c.json(PullRequestTabView.parse(toTab(target, read)));
+    const found = await readPullRequest(deps, target);
+    await recordCurrent(deps, target.designId, found);
+    return c.json(PullRequestTabView.parse(toTab(target, found.read)));
   })
 
-  /** One changed file and its diff. 404 for a path the pull request does not change. */
+  /**
+   * One changed file and its diff: one of the first hundred, which the tab lists. 404 for a path
+   * that is not among them.
+   */
   .get(
     "/:id/pull-request/files",
     access.user,
@@ -103,11 +110,12 @@ export const designPullRequest = new Hono<AppEnv>()
 
   /**
    * Opens a draft pull request from the design's branch into the repo's default branch, as the
-   * App: 201 with the tab. When one is already open from the branch, or merged, 200 with it.
+   * person: 201 with the tab. When one is already open from the branch, or merged with nothing
+   * pushed since, 200 with it.
    */
   .post("/:id/pull-request", access.user, validate("param", Params), async (c) => {
     const context = await contextOf(c.var, c.req.valid("param").id, "write");
-    const { tab, opened } = await openPullRequest(c.var.deps, context);
+    const { tab, opened } = await openPullRequest(c.var.deps, context, c.var.actor.user);
     return c.json(PullRequestTabView.parse(tab), opened ? 201 : 200);
   })
 
@@ -120,10 +128,10 @@ export const designPullRequest = new Hono<AppEnv>()
     "/:id/pull-request/merge",
     access.user,
     validate("param", Params),
-    validate("json", HeadBody),
+    validate("json", MergeBody),
     async (c) => {
-      const { headSha } = c.req.valid("json");
-      return c.json(await act(c.var, c.req.valid("param").id, { kind: "merge", headSha }));
+      const { headSha, bypass } = c.req.valid("json");
+      return c.json(await act(c.var, c.req.valid("param").id, { kind: "merge", headSha, bypass }));
     },
   )
 
@@ -144,7 +152,7 @@ export const designPullRequest = new Hono<AppEnv>()
     "/:id/pull-request/update-branch",
     access.user,
     validate("param", Params),
-    validate("json", HeadBody),
+    validate("json", UpdateBody),
     async (c) => {
       const { headSha } = c.req.valid("json");
       return c.json(await act(c.var, c.req.valid("param").id, { kind: "update_branch", headSha }));

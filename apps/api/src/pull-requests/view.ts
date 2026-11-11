@@ -6,6 +6,12 @@ import type { PullRequestTarget } from "./sync.ts";
 /*
  * What the pull request tab shows, as the API answers it: a small shape of its own, so that
  * nothing of GitHub's reaches a client unless it is listed here.
+ *
+ * UNTRUSTED: every title, body, name and remark here is what someone on GitHub wrote (anyone
+ * who can comment, any app that posts a check), as GitHub's markdown, which may hold raw HTML;
+ * a description holds Ponzu's own `<picture>`. A client renders it with raw HTML off and
+ * remote images neither loaded nor followed, and opens only the links given here, all of which
+ * are http(s).
  */
 
 const Who = z.object({ login: z.string(), avatarUrl: z.string().nullable(), bot: z.boolean() });
@@ -20,6 +26,7 @@ export const NEXT_ACTIONS = [
   "resolve",
   "update_branch",
   "merge",
+  "blocked",
   "none",
 ] as const;
 export type NextAction = (typeof NEXT_ACTIONS)[number];
@@ -27,8 +34,9 @@ export type NextAction = (typeof NEXT_ACTIONS)[number];
 export const PullRequestView = z.object({
   number: z.number(),
   url: z.string(),
+  /** Untrusted. */
   title: z.string(),
-  /** Markdown. */
+  /** Untrusted markdown. */
   body: z.string(),
   state: z.enum(PR_STATES),
   head: z.object({ ref: z.string(), sha: z.string() }),
@@ -59,6 +67,8 @@ export const PullRequestView = z.object({
       z.object({
         name: z.string(),
         app: z.string().nullable(),
+        /** Whether the repo's rules want it to pass before the pull request merges. */
+        required: z.boolean(),
         state: z.enum([
           "pending",
           "running",
@@ -90,6 +100,7 @@ export const PullRequestView = z.object({
     z.object({
       id: z.string(),
       author: Who.nullable(),
+      /** Untrusted markdown. */
       body: z.string(),
       at: z.date(),
       url: z.string(),
@@ -168,9 +179,11 @@ export function toTab(target: PullRequestTarget, read: GithubPullRequestRead): P
 
 /**
  * What the action button offers (the spec's PR states): open one when the branch has changes and
- * no open pull request; then ready a draft, resolve conflicts, fix failing checks, wait on running
- * ones with auto-merge where the repo allows it, update a branch the repo's rules hold back for
- * being behind, and otherwise merge.
+ * no open pull request (or commits since its merged one); then ready a draft, resolve conflicts,
+ * fix failing checks, wait on running ones with auto-merge where the repo allows it, and update a
+ * branch the repo's rules hold back for being behind. What the rules still want (a review, a
+ * required check) is waited for with auto-merge where the repo allows it, and is otherwise
+ * `blocked`, never `merge`: Merge never asks GitHub to set the rules aside.
  */
 export function nextAction({
   pullRequest,
@@ -180,11 +193,15 @@ export function nextAction({
   if (!pullRequest || pullRequest.state === "closed") {
     return branch && branch.aheadBy > 0 ? "create_pr" : "none";
   }
-  if (pullRequest.state === "merged") return "none";
+  if (pullRequest.state === "merged") {
+    const workedOnSince = branch && branch.sha !== pullRequest.head.sha && branch.aheadBy > 0;
+    return workedOnSince ? "create_pr" : "none";
+  }
   if (pullRequest.state === "draft") return "ready";
   if (pullRequest.mergeable === false) return "resolve";
   if (pullRequest.checks.state === "failing") return "fix_checks";
   if (pullRequest.checks.state === "running" && autoMergeAllowed) return "auto_merge";
   if (pullRequest.mergeState === "behind") return "update_branch";
+  if (pullRequest.mergeState === "blocked") return autoMergeAllowed ? "auto_merge" : "blocked";
   return "merge";
 }
