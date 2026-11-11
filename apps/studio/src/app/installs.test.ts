@@ -45,10 +45,19 @@ function world(answers: (Answer | Error)[]) {
     pollMs: 5,
   });
   const heard: DeepLink[] = [];
-  links.onLink((link) => heard.push(link));
+  let told = () => {};
+  /** Settles once the first link reaches the app's listeners, however long the asking took. */
+  const outcome = new Promise<void>((resolve) => {
+    told = resolve;
+  });
+  links.onLink((link) => {
+    heard.push(link);
+    told();
+  });
   return {
     links,
     heard,
+    outcome,
     asked,
     opened,
     forward: () => forward,
@@ -69,6 +78,8 @@ test("a build that takes no links: the install's outcome comes by asking, and Po
   await w.links.installGithub({ githubAccountId: 7 });
   expect(w.opened).toEqual(["https://github.com/apps/ponzu-dev/installations/new?target=7"]);
 
+  // The outcome comes on the second ask, whenever a loaded machine runs it; after it, no more.
+  await w.outcome;
   await settle();
 
   expect(w.asked).toEqual(["auth_1", "auth_1"]);
