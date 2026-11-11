@@ -4,6 +4,7 @@ import {
   createApi,
   createLive,
   type KeyValueStorage,
+  type LinkScheme,
   type Session,
 } from "@ponzu/client";
 import type { PonzuDesktop } from "@ponzu/desktop/bridge";
@@ -32,7 +33,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
       signOut: () => desktop.session.signOut(),
     },
   });
-  const api = createApi(session);
+  // GitHub's setup page links back to this app: Ponzu Preview's links aren't Ponzu 1.x's.
+  const api = createApi(session, { linkScheme: linkSchemeOf(desktop.config.linkScheme) });
   return {
     session,
     api,
@@ -48,6 +50,13 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     openExternal: (url) => desktop.openExternal(url),
     docStorage: signedInCache(session, window.localStorage),
   };
+}
+
+/** The shell's scheme, when it is one the API links back to; otherwise the API's default. */
+export function linkSchemeOf(scheme: string | undefined): LinkScheme | undefined {
+  return scheme === "ponzu" || scheme === "ponzu-preview" || scheme === "ponzu-dev"
+    ? scheme
+    : undefined;
 }
 
 const CACHE = "ponzu.cache.";

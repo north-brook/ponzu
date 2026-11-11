@@ -5,7 +5,9 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -13,10 +15,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { configFor } from "./config.ts";
 import {
   invocation,
   type LegacyHost,
   removeLegacy,
+  removeLegacyFor,
   removeLegacyOnce,
   shimServers,
 } from "./legacy.ts";
@@ -367,4 +371,64 @@ test("runs once: what it did is recorded, and a later launch does nothing", asyn
   put(m.shim, macShim(join(m.home, "Gone/Ponzu.app")));
   expect(await removeLegacyOnce(m.host, record, "2.0.1")).toBeNull();
   expect(existsSync(m.shim)).toBe(true);
+});
+
+/** Every entry under `root`: its kind, mode and contents, or where a link points. */
+function snapshot(root: string): Record<string, string> {
+  const seen: Record<string, string> = {};
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      const entry = lstatSync(path);
+      if (entry.isSymbolicLink()) seen[path] = `link ${readlinkSync(path)}`;
+      else if (entry.isDirectory()) {
+        seen[path] = `dir ${entry.mode}`;
+        walk(path);
+      } else seen[path] = `file ${entry.mode} ${readFileSync(path, "utf8")}`;
+    }
+  };
+  walk(root);
+  return seen;
+}
+
+test("Ponzu Preview and a development build never clean up after 1.x; only a release does", async () => {
+  // A home 1.x left with its server gone, which a release would clean up.
+  const m = machine();
+  m.agents();
+  const app = join(m.home, "Gone/Ponzu.app");
+  put(m.shim, macShim(app));
+  mkdirSync(join(m.home, ".local/bin"), { recursive: true });
+  symlinkSync(m.shim, join(m.home, ".local/bin/ponzu"));
+  put(
+    join(m.home, ".claude.json"),
+    JSON.stringify({ mcpServers: { ponzu: { type: "stdio", command: m.shim, args: ["mcp"] } } }),
+  );
+  m.codex({ type: "stdio", command: m.shim, args: ["mcp"] });
+  put(
+    join(m.home, ".cursor/mcp.json"),
+    JSON.stringify({ mcpServers: { ponzu: { command: m.shim, args: ["mcp"] } } }),
+  );
+  put(
+    join(m.home, "Library/LaunchAgents/design.ponzu.app.wake.plist"),
+    wakePlist(join(app, "Contents/Resources/server/ponzu")),
+  );
+  put(join(m.home, ".ponzu/agents.json"), "{}");
+  const support = join(m.home, "Library/Application Support");
+  put(join(support, "Ponzu/Local State"), "1.x's own");
+  const before = snapshot(m.home);
+
+  for (const build of [configFor(true, {}, false, "preview"), configFor(false, {})]) {
+    const record = join(support, build.appName, "legacy-cleanup.json");
+    expect(await removeLegacyFor(build, m.host, record, "2.0.0")).toBeNull();
+    expect(m.calls).toEqual([]);
+    expect(existsSync(record)).toBe(false);
+    expect(snapshot(m.home)).toEqual(before);
+  }
+
+  const release = configFor(true, {}, false, "release");
+  const record = join(support, release.appName, "legacy-cleanup.json");
+  const steps = await removeLegacyFor(release, m.host, record, "2.0.0");
+  expect(steps?.some((step) => step.outcome === "removed")).toBe(true);
+  expect(existsSync(m.shim)).toBe(false);
+  expect(existsSync(record)).toBe(true);
 });

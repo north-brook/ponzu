@@ -7,6 +7,7 @@ export {
   type ApiOptions,
   type CreateDesignBody,
   createApi,
+  type LinkScheme,
   type OnboardingStep,
   type PullRequestFile,
   type PullRequestTab,
