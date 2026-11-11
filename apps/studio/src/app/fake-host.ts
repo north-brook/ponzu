@@ -53,6 +53,8 @@ export interface FakeWorld {
   signInsStarted: number;
   /** How many of them have ended, signed in or not: only the "browser" ends one. */
   signInsEnded: number;
+  /** The app's asks of the API: how many it has made, and how many it is still waiting on. */
+  answers: { asked: number; waiting: number };
 }
 
 declare global {
@@ -112,6 +114,8 @@ export function fakeHost(): Host {
       return askMe();
     };
   }
+  const answers = { asked: 0, waiting: 0 };
+  countAnswers(client.api, answers);
   const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
@@ -208,6 +212,7 @@ export function fakeHost(): Host {
     },
     signInsStarted: 0,
     signInsEnded: 0,
+    answers,
   };
   const world = window.ponzuFake;
 
@@ -240,6 +245,32 @@ export function fakeHost(): Host {
     openExternal,
     docStorage: null,
   };
+}
+
+/**
+ * Counts, in place, every ask of `api` (each method of it and of the groups in it): Realtime's
+ * reads too, which go through the same object. A test waits on `waiting` reaching none rather
+ * than for a guess at how long the slowest answer takes.
+ */
+function countAnswers(api: object, answers: FakeWorld["answers"]) {
+  const methods = api as Record<string, unknown>;
+  for (const [key, value] of Object.entries(methods)) {
+    if (typeof value === "function") {
+      methods[key] = (...args: unknown[]) => {
+        const result: unknown = value.apply(api, args);
+        if (!(result instanceof Promise)) return result;
+        answers.asked++;
+        answers.waiting++;
+        const done = () => {
+          answers.waiting--;
+        };
+        result.then(done, done);
+        return result;
+      };
+    } else if (value && typeof value === "object") {
+      countAnswers(value, answers);
+    }
+  }
 }
 
 /** One design the agent has worked on, so the sidebar and a canvas have something in them. */
