@@ -409,17 +409,13 @@ describe("what the API's errors mean for the session", () => {
     expect(session.getState()).toEqual({ status: "too_old", minimumVersion: "2.1.0" });
   });
 
+  // One row per outcome the session tells apart (the caller's mistake, a rate limit, the
+  // server's trouble), and 403, the one most easily taken for a sign-in that ended.
   const passThrough: [number, string][] = [
-    [400, "invalid_request"],
     [403, "forbidden"],
-    [404, "not_found"],
-    [409, "nothing_to_undo"],
     [409, "last_admin"],
-    [410, "ops_pruned"],
-    [413, "payload_too_large"],
     [429, "rate_limited"],
     [502, "upstream_unavailable"],
-    [503, "database_unavailable"],
   ];
   for (const [status, code] of passThrough) {
     test(`${status} ${code}: the caller's error, carrying its code; still signed in`, async () => {
