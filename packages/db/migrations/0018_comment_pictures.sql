@@ -1,0 +1,2 @@
+ALTER TABLE "uploads" DROP CONSTRAINT "uploads_purpose_check";--> statement-breakpoint
+ALTER TABLE "uploads" ADD CONSTRAINT "uploads_purpose_check" CHECK ("uploads"."purpose" in ('asset', 'export', 'preview', 'session', 'workspace', 'comment'));

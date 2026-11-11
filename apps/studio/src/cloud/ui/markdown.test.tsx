@@ -180,7 +180,10 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
  * long (a thousand one-letter paragraphs and a long fenced block cost by their number of
  * lines). The
  * bound is against that reply on the same machine, since CI runs slower: a shape that grows with
- * the square of its length costs tens of times more.
+ * the square of its length costs tens of times more. One slow draw proves nothing on a busy
+ * machine (a collection or a neighbour's test lands in it), so a text over the bound is drawn
+ * again, twice at most, and its fastest draw is what counts: a shape that is slow by its nature
+ * is slow every time.
  */
 test("hostile text the size of a GitHub comment draws about as fast as a reply", () => {
   const fill = (unit: string, n = 65_536) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
@@ -196,6 +199,12 @@ test("hostile text the size of a GitHub comment draws about as fast as a reply",
     "I moved the headline into `--hero-measure` and set **B** a step calmer, as [you asked](https://a.test).\n\n- one change\n- another\n\n",
   );
   const ordinary = Math.min(time(reply), time(reply), time(reply));
+  const bound = Math.max(5 * ordinary, 100);
+  const fastest = (text: string) => {
+    let best = time(text);
+    for (let again = 0; again < 2 && best >= bound; again++) best = Math.min(best, time(text));
+    return best;
+  };
   for (const text of [
     fill("*a "),
     fill("_a "),
@@ -239,7 +248,7 @@ test("hostile text the size of a GitHub comment draws about as fast as a reply",
       .join("\n")
       .repeat(20),
   ]) {
-    expect(time(text)).toBeLessThan(Math.max(5 * ordinary, 100));
+    expect(fastest(text)).toBeLessThan(bound);
   }
 });
 
