@@ -375,7 +375,9 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     const box = (await el.boundingBox())!;
     await page.mouse.dblclick(box.x + 4, box.y + box.height / 2);
     expect(await focused()).not.toBe("Message");
-    expect(await page.evaluate(() => getSelection()?.toString().trim().length ?? 0)).toBeGreaterThan(0);
+    expect(
+      await page.evaluate(() => getSelection()?.toString().trim().length ?? 0),
+    ).toBeGreaterThan(0);
   });
 
   test("the note under a question: a press anywhere on its card writes there", async () => {
