@@ -503,7 +503,8 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   when the environment is made ("Repo environments"), so a secret changed later reaches a
   sandbox at its next cold start, not when it wakes from sleep.
 - **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
-  a wake fails saying so.
+  a wake fails saying so. A sandbox made from another image is moved onto this one at its next
+  wake ("How images roll out").
 - **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
   keeps the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
   an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
@@ -705,7 +706,104 @@ The snapshot is named for a hash of all of that, of the checks it passed and of 
 read before the recipe ran, so the same inputs make the same name, and the API creates
 sandboxes `from` the name in its `PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json`
 records the last bake and when it passed the checks from the snapshot, which is what says it
-may be used. About 490 MiB over boat's base.
+may be used. About 810 MiB over boat's base.
+
+### How images roll out
+
+The runner, the canvas tools and the agent's instructions ship in the image, and a design's
+sandbox, once made, sleeps and wakes on its own disk. Until this, a sandbox kept the image it was
+made from for as long as it lived, so a design made in the morning ran the morning's runner
+through every bake after it. Now a design moves onto the image the API has set the next time it
+wakes after that image is set (`sandboxes/orchestrate.ts`, `moveOnto`), with no one doing
+anything.
+
+**What is recorded.** `sandboxes.image` is the `PONZU_SANDBOX_SNAPSHOT` a sandbox was created
+from (null for one made before this was recorded, which counts as another image).
+`design_runners.client` is what the runner holding the lease said it is as it took it, with the
+image it reads from `/opt/ponzu/image.json`. The API logs `runner_started` with both, and
+`runner_image_mismatch` when a runner says another image than its sandbox was made from. `sandbox
+woke` carries the image, `turn finished` the runner and its image, and the runner puts
+`ponzu_runner` on each of its traces, so analytics can say which image a turn ran on.
+
+**A move is the restore of a lost sandbox, chosen on purpose.** The wake claims the sandbox as
+always (asleep or failed), then, when it was made from another image:
+
+1. takes one of the deployment's move slots (`PONZU_SANDBOX_MAX_MOVES`, 3);
+2. creates a sandbox of the next generation from the current image on a new environment and
+   waits, within 100 seconds, for it to be up and for its runner to answer `/health`;
+3. in one statement marks the old row `gone` ("Moved onto <image>.") and inserts the new one,
+   `waking` for the same wake, which the design now points at; destroys the old machine;
+4. finishes as any wake does: awake, every runner token but the new one revoked.
+
+The new runner finds no disk, restores the last checkpoint ("Saving the sandbox": the transcript,
+the work in progress and its unpushed commits) and resumes the same Claude session, and the
+message that woke it is waiting in the feed. The head says `waking` throughout, as for any start;
+the thread says `resumed` as after any wake. Nothing new is shown, because nothing new is
+happening to the person: the wake takes a little longer.
+
+**When it does not happen**, the wake resumes the old sandbox as it would have, logs
+`sandbox_move_held` with why, and the design moves at a later wake:
+
+| Why (`reason`) | What happens next |
+|---|---|
+| it is awake or getting there | nothing: an awake sandbox is never moved, so no turn is ever cut. It moves at the first wake after it next sleeps. |
+| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`) | the old one wakes, its runner saves after its next turn, and the wake after the next sleep moves it |
+| `no_checkpoint`: its runner never saved one (a runner from before checkpoints) | it stays: a move would lose its conversation and what is only on its disk. `scripts/images.ts` lists these; moving one anyway is destroying its sandbox at the provider, which the next wake replaces from the branch, losing exactly that |
+| `image_failed`: a move onto this image failed for this design | it stays until another image is set: one failed start per design per image, never a loop |
+| `moves_at_once`: the slots are taken | it moves at a later wake |
+| `no_time`: too little of the attempt is left for the move and a resume after it (a stop it waited out first) | it moves at a later wake |
+| `moving_off`: `PONZU_SANDBOX_MAX_MOVES=0` | it stays |
+
+**A move that fails is undone in the same attempt.** A create the provider refuses for want of
+starts, or because it is away, before anything was made, is not the image's fault: the job waits
+and tries again, as for any wake. Anything else (the snapshot missing, a machine that does not
+start, a runner that does not answer `/health`) destroys what the move made, revokes its token,
+records `sandboxes.image_failed`, logs `sandbox_move_failed`, and resumes the old sandbox: the
+person's message is answered by the old runner, a little later. The old machine is destroyed only
+after the new runner has answered. A move cut off by a crash leaves the old row `waking`, which the
+sweep sets back to what the provider says after six minutes; the machine the move made is no
+row's then, and the orphan sweep destroys it (while the move holds its slot, a machine of the
+design's labels is not an orphan).
+
+**When: at the wake, not ahead of it.** We decided against a sweep that moves sleeping sandboxes
+as soon as an image is set:
+
+- What a move costs the person, from the image's measurements (`apps/runner/image/README.md`): a
+  create answers `/health` in 7 to 31 s (median about 10), where a warm wake answers in 0.6 s and a
+  cold one in 5 to 16 s. Restoring the checkpoint takes 0.1 to 0.3 s more. A sandbox asleep for
+  over ten minutes would have woken cold anyway, so for most wakes a move costs a few seconds; only
+  a design woken within ten minutes of its sleep, just after a deploy, pays the full difference
+  (about 10 s), once.
+- What a sweep would cost: a start, a boot, a restore and a stop for every sleeping design at every
+  bake, including designs nobody opens again. There were five bakes in one day; boat rations
+  starts (12 a minute, a daily cap by plan), and an awake sandbox is billed. A sweep would also run
+  each design's runner with its owner's Claude credential while nobody asked for it.
+- What the person sees either way is the same waking state.
+
+If the cold start on the first message after a deploy ever matters, a sweep can move a design that
+was active in the last hour, inside the same slots; the move itself would be the same.
+
+**How long an old runner can be out there, and refusing one.** A runner of an older image talks
+to the API only while its sandbox is awake. With moves, that is until its sandbox next sleeps and
+wakes; longer only for a design held back (a checkpoint behind: one more wake; a runner without
+checkpoints: until it is destroyed; a failed image: until the next image). A sandbox that never
+wakes runs nothing, and boat deletes a stopped sandbox's disk after 14 days, after which the next
+wake makes one from the current image. So the rule stands, the deployed API must work with the
+runner of the previous image, and `scripts/images.ts` says when an older one is still out there.
+The API does not refuse a runner for being old: the runner's version stays `0.1.0` (it is not
+released), so `PONZU_MIN_CLIENT_VERSIONS` cannot tell one image from another; a refusal (426)
+would make the runner exit and leave its design unreachable, where the move already replaces it at
+the next wake; and the one thing a refusal could buy, a protocol change that drops an old field,
+can wait until the report shows no runner needs it.
+
+**Rolling out an image**: bake (`bun apps/runner/image/bake.ts`), set `PONZU_SANDBOX_SNAPSHOT` to
+the name it prints, deploy the API. Each design moves the next time it wakes. Where they stand:
+
+```sh
+PONZU_SANDBOX_SNAPSHOT=<the name> bun apps/api/scripts/images.ts   # DATABASE_URL, or NEON_* for dev
+```
+
+`packages/client/src/image-move.live.test.ts` checks a move end to end, by hand, across a deploy.
 
 **Two users.** The runner runs as `user`; Claude Code, its tools, the repo's hooks and the
 checkout's git run as `agent`, which has no sudo, no docker and no way into `/home/user`, the
@@ -896,7 +994,9 @@ behind these routes, and is the reference for what each answers.
   the token's design answers 404 `not_found`. A token that is unknown, expired or revoked
   answers 401 `token_invalid` everywhere. The API revokes a design's runner tokens when the
   design is deleted or settled, so that is also how a runner hears its design is gone. The
-  runner names itself: `X-Ponzu-Client: runner/<version>`.
+  runner names itself: `X-Ponzu-Client: runner/<version>+<image>`, the image as semver build
+  metadata read from the image's record (`runner/0.1.0+ponzu-runner-2de5aff8d903`), or
+  `runner/<version>` outside an image and from runners older than that ("How images roll out").
 - **One runner at a time: the lease.** `POST /v1/runner/session` mints a runner id (`rnr_…`)
   and records it as the design's runner, replacing any before it. Every other call, the
   document routes and git's credential helper included, carries it as `X-Ponzu-Runner`, and
@@ -2186,6 +2286,13 @@ from `cloud` into `main`, released as the next major version.
   runner superseded itself; a report is now ignored until the runner has started. A session
   call retried after a lost answer, with the first landing after the retry, would still do it;
   a session call that names the starting process would close that.
+- A move onto a new image goes by whether the last checkpoint holds every event delivered into
+  the session, and the API counts as held what had been delivered when the checkpoint was
+  recorded. An event the runner took into a new turn while it was still uploading the checkpoint
+  of the last is counted as held though it is not. The turn's own checkpoint, or the one the sleep
+  saves, records it soon after; only when both of those fail and the design moves before another
+  is saved is that turn missing from the conversation after the move (the thread still has it).
+  The runner naming, with each checkpoint, the newest event it holds would close it.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<design>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.

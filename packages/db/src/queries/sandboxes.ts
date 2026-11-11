@@ -189,6 +189,12 @@ export interface SandboxChanges {
   claudeCredential?: string | null;
   autoStopAt?: Date | null;
   failure?: string | null;
+  /** The image it was created from. */
+  image?: string | null;
+  /** An image a move onto failed to start (`sandboxes.image_failed`). */
+  imageFailed?: string | null;
+  /** Gives up the slot a move took (`takeMoveSlot`). Any move out of `waking` does so anyway. */
+  movingSince?: null;
 }
 
 /** A move of a sandbox, and what it holds to beside the states it moves from. */
@@ -241,6 +247,8 @@ async function move(
     to === "failed" || to === "gone"
       ? sql`failure = ${changes.failure ?? null}`
       : sql`failure = null`,
+    // A move onto a new image holds its slot only while its wake does.
+    ...(to === "waking" && changes.movingSince === undefined ? [] : [sql`moving_since = null`]),
   ];
   const column = {
     providerId: "provider_id",
@@ -248,6 +256,8 @@ async function move(
     encryptedAddressToken: "encrypted_address_token",
     runnerTokenId: "runner_token_id",
     claudeCredential: "claude_credential",
+    image: "image",
+    imageFailed: "image_failed",
   } as const;
   for (const [key, name] of Object.entries(column) as [keyof typeof column, string][]) {
     if (changes[key] !== undefined) set.push(sql`${sql.raw(name)} = ${changes[key]}`);
@@ -612,8 +622,9 @@ export async function listSandboxesToSweep(
 /**
  * Whether the provider sandbox `providerId`, which carries the design's label, is one the
  * database still owns: the provider id of a sandbox of a design that exists and is not gone, or
- * possibly one being made right now (a design whose sandbox has been `waking` without a provider
- * id for less than a lease). Past that the sweep's repair has found or given up on it.
+ * possibly one being made right now (a design whose sandbox has been `waking` for less than a
+ * lease: without a provider id yet, or moving onto a new image, whose new machine the row
+ * records only once it is up). Past that the sweep's repair has found or given up on it.
  */
 export async function isSandboxKnown(
   db: Db,
@@ -629,12 +640,190 @@ export async function isSandboxKnown(
           eq(sandboxes.designId, designId),
           ne(sandboxes.state, "gone"),
           sql`(${sandboxes.providerId} = ${providerId}
-               or (${sandboxes.providerId} is null and ${sandboxes.state} = 'waking'
+               or ((${sandboxes.providerId} is null or ${sandboxes.movingSince} is not null)
+                   and ${sandboxes.state} = 'waking'
                    and ${sandboxes.stateAt} >= ${leaseOver}::timestamptz))`,
         ),
       ),
   );
   return row !== undefined;
+}
+
+/**
+ * Whether the design's last checkpoint holds everything its sandbox has done (docs/cloud.md,
+ * "How images roll out"): `covered` when no event went into its session after the checkpoint
+ * was recorded, `behind` when one did, `none` when its runner has saved none though events went
+ * in (a runner older than checkpoints, or one that never managed to).
+ */
+export type CheckpointCover = "covered" | "behind" | "none";
+
+export async function getCheckpointCover(db: Db, designId: string): Promise<CheckpointCover> {
+  const result = await queryJson<{
+    saved_turn: number | null;
+    through: number | null;
+    last: number | null;
+  }>(
+    db,
+    sql`
+      select json_build_object(
+        'saved_turn', (select saved_turn from design_runners where design_id = ${designId}),
+        'through', (select saved_through from design_runners where design_id = ${designId}),
+        'last', (select max(seq) from events
+                  where design_id = ${designId} and delivered_at is not null)
+      ) as result
+    `,
+  );
+  const last = result?.last === null || result?.last === undefined ? null : Number(result.last);
+  if (last === null) return "covered";
+  if (result?.saved_turn === null || result?.saved_turn === undefined) return "none";
+  const through = result.through === null ? null : Number(result.through);
+  return through !== null && through >= last ? "covered" : "behind";
+}
+
+/**
+ * Take one of the deployment's slots for moving a design onto a new image, for the wake `by`
+ * that holds the sandbox `waking`: fewer than `max` other sandboxes are moving (each for at
+ * most a lease). The row as it is now, or null when the slots are taken. Like the other limits,
+ * the count is the statement's view, so moves claimed in the same instant can pass it by one or
+ * two: it keeps the provider's starts in hand, it is not a quota.
+ */
+export async function takeMoveSlot(
+  db: Db,
+  { id, by, now, max }: { id: string; by: string; now: Date; max: number },
+): Promise<Sandbox | null> {
+  const at = timeParam(now);
+  const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
+  const result = await queryJson<{ row: Record<string, unknown> | null }>(
+    db,
+    sql`
+      with taken as (
+        update sandboxes s set moving_since = ${at}::timestamptz
+         where s.id = ${id} and s.state = 'waking' and s.waking_by = ${by}
+           and (select count(*) from sandboxes o
+                 where o.id <> s.id and o.state = 'waking'
+                   and o.moving_since >= ${leaseOver}::timestamptz) < ${max}
+        returning s.*
+      )
+      select json_build_object('row', (select row_to_json(taken) from taken)) as result
+    `,
+  );
+  return result?.row ? toSandbox(result.row) : null;
+}
+
+/** The sandbox a design moved onto, and the one it moved from, now gone. */
+export interface MovedSandbox {
+  sandbox: Sandbox;
+  from: Sandbox;
+}
+
+/**
+ * The design moved onto a new sandbox, in one statement: the sandbox `id`, `waking` and held by
+ * the wake `by`, is marked gone, and a row of the next generation takes its place, `waking` for
+ * the same wake, on the provider's sandbox `changes.providerId` made from `changes.image`, which
+ * the design now points at. Its awake time goes on being put down to whoever it was. Null when
+ * the wake no longer holds the sandbox.
+ */
+export async function moveSandboxOnto(
+  db: Db,
+  {
+    id,
+    nextId,
+    by,
+    now,
+    changes,
+  }: {
+    id: string;
+    /** The new row's id, which its sealed address is bound to. */
+    nextId: string;
+    by: string;
+    now: Date;
+    changes: Required<
+      Pick<
+        SandboxChanges,
+        | "providerId"
+        | "image"
+        | "address"
+        | "encryptedAddressToken"
+        | "runnerTokenId"
+        | "claudeCredential"
+      >
+    >;
+  },
+): Promise<MovedSandbox | null> {
+  const at = sql`${timeParam(now)}::timestamptz`;
+  const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
+  const result = await queryJson<{
+    from: Record<string, unknown> | null;
+    made: Record<string, unknown> | null;
+  }>(
+    db,
+    sql`
+      with gone as (
+        update sandboxes s
+           set state = 'gone', state_at = ${at}, updated_at = ${at}, waking_by = null,
+               moving_since = null, auto_stop_at = null,
+               failure = ${`Moved onto ${changes.image}.`}
+         where s.id = ${id} and s.state = 'waking'
+           and (s.waking_by = ${by} or s.state_at < ${leaseOver}::timestamptz)
+        returning s.*
+      ),
+      made as (
+        insert into sandboxes (id, design_id, generation, provider, provider_id, state, state_at,
+                               waking_by, last_activity_at, awake_user_id, address,
+                               encrypted_address_token, runner_token_id, claude_credential, image)
+        select ${nextId}, g.design_id, g.generation + 1, g.provider, ${changes.providerId},
+               'waking', ${at}, ${by}, ${at}, g.awake_user_id, ${changes.address},
+               ${changes.encryptedAddressToken}, ${changes.runnerTokenId},
+               ${changes.claudeCredential}, ${changes.image}
+          from gone g
+        returning *
+      ),
+      pointed as (
+        update designs set sandbox_id = made.id from made where designs.id = made.design_id
+      )
+      select json_build_object(
+        'from', (select row_to_json(gone) from gone),
+        'made', (select row_to_json(made) from made)
+      ) as result
+    `,
+  );
+  if (!result?.from || !result.made) return null;
+  return { sandbox: toSandbox(result.made), from: toSandbox(result.from) };
+}
+
+/** A design's sandbox with what says which image it runs, for a report on a rollout. */
+export interface SandboxImage {
+  sandbox: Sandbox;
+  designStatus: DesignStatus;
+  /** What its runner said it is when it last started (`design_runners.client`). */
+  client: string | null;
+}
+
+/** Every sandbox that is not gone, oldest first, with what says which image it runs. */
+export async function listSandboxImages(db: Db): Promise<SandboxImage[]> {
+  const result = await queryJson<{
+    rows: {
+      sandbox: Record<string, unknown>;
+      design_status: DesignStatus;
+      client: string | null;
+    }[];
+  }>(
+    db,
+    sql`
+      select json_build_object('rows', coalesce(json_agg(json_build_object(
+        'sandbox', row_to_json(s), 'design_status', d.status, 'client', r.client
+      ) order by s.created_at), '[]'::json)) as result
+        from sandboxes s
+        join designs d on d.id = s.design_id
+        left join design_runners r on r.design_id = s.design_id
+       where s.state <> 'gone'
+    `,
+  );
+  return (result?.rows ?? []).map((row) => ({
+    sandbox: toSandbox(row.sandbox),
+    designStatus: row.design_status,
+    client: row.client,
+  }));
 }
 
 /** The person behind the newest event in a design's feed that a person is behind. */

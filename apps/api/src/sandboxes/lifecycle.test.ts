@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { getDesign, getLiveSandbox, moveSandbox, newId, type Sandbox } from "@ponzu/db";
+import {
+  getDesign,
+  getLiveSandbox,
+  moveSandbox,
+  newId,
+  recordCheckpoint,
+  type Sandbox,
+} from "@ponzu/db";
 import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { SandboxError } from "@ponzu/sandbox";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
@@ -97,11 +104,11 @@ async function cron() {
  * The runner in the design's sandbox, as it starts: it takes the lease with the token its
  * environment carries. `beat` is its heartbeat.
  */
-async function runnerIn(sandbox: Sandbox) {
+async function runnerIn(sandbox: Sandbox, client?: string) {
   const token = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN!;
   const started = await call(
     t,
-    { authorization: `Bearer ${token}` },
+    { authorization: `Bearer ${token}`, ...(client ? { "x-ponzu-client": client } : {}) },
     "POST",
     "/v1/runner/session",
     {},
@@ -117,6 +124,7 @@ async function runnerIn(sandbox: Sandbox) {
     });
   return {
     status: started.status,
+    session: started.body,
     beat,
     claim: (claimId = newId("clm")) =>
       call(t, headers, "POST", "/v1/runner/events/claim", { claimId }),
@@ -1115,6 +1123,429 @@ describe("a runner that a warm resume does not bring back", () => {
       expect(await getLiveSandbox(t.db, design.id)).toBeNull();
     } finally {
       t.poke.port.healthy = healthy;
+    }
+  });
+});
+
+describe("a new image", () => {
+  // Images change under these tests, so they have an app of their own.
+  onAppOfTheirOwn({ sandbox: { maxMoves: 2 } });
+  let baked = 0;
+  let turns = 0;
+
+  /** A new image set, as a deploy with a new PONZU_SANDBOX_SNAPSHOT does. */
+  function newImage(): string {
+    const name = `ponzu-runner-${String(++baked).padStart(12, "0")}`;
+    t.sandbox.seedSnapshot(name);
+    t.deps.config.sandbox.snapshot = name;
+    return name;
+  }
+
+  type Runner = Awaited<ReturnType<typeof runnerIn>>;
+
+  /** The runner takes what waits into its session and works on it. */
+  async function take(runner: Runner) {
+    const claimed = await runner.claim();
+    const ids = (claimed.body.events as { id: string }[]).map((event) => event.id);
+    if (ids.length > 0) expect((await runner.ack(ids)).status).toBe(200);
+    return ids;
+  }
+
+  /** ... and saves a checkpoint once its turn has settled, as the runner does. */
+  async function save(designId: string, runner: Runner) {
+    const saved = await recordCheckpoint(t.db, {
+      designId,
+      runnerId: runner.session.runnerId,
+      now: new Date(t.clock.now()),
+      turn: ++turns,
+      claudeSessionId: "session-1",
+      wipCommit: null,
+      sessionUploadId: null,
+      workspaceUploadId: null,
+    });
+    expect(saved?.saved?.turn).toBe(turns);
+  }
+
+  /** A design that worked, saved and went to sleep on the image of the time. */
+  async function asleepAfterWork() {
+    const awake = await awakeDesign();
+    await take(awake.runner);
+    await save(awake.design.id, awake.runner);
+    await idleToSleep(awake.runner);
+    expect((await live(awake.design.id)).state).toBe("asleep");
+    return awake;
+  }
+
+  /** Counts the provider's creates while `body` runs. */
+  async function counting(body: () => Promise<void>): Promise<number> {
+    const create = t.sandbox.create.bind(t.sandbox);
+    let creates = 0;
+    t.sandbox.create = (options) => {
+      creates++;
+      return create(options);
+    };
+    try {
+      await body();
+    } finally {
+      t.sandbox.create = create;
+    }
+    return creates;
+  }
+
+  test("every sandbox records the image it was made from, and its runner what it says it is", async () => {
+    const image = t.deps.config.sandbox.snapshot!;
+    const design = await fresh();
+    await say(design.id);
+    const sandbox = await live(design.id);
+    expect(sandbox.image).toBe(image);
+
+    await runnerIn(sandbox, `runner/0.1.0+${image}`);
+    expect(
+      await rows(`select client from design_runners where design_id = '${design.id}'`),
+    ).toEqual([{ client: `runner/0.1.0+${image}` }]);
+    expect(logged("runner_started", design.id)).toMatchObject({
+      runnerImage: image,
+      sandboxImage: image,
+    });
+
+    // A runner that says another image than its sandbox was made from shows.
+    await runnerIn(sandbox, "runner/0.1.0+ponzu-runner-ffffffffffff");
+    expect(logged("runner_image_mismatch", design.id)).toMatchObject({
+      sandboxId: sandbox.id,
+      runnerImage: "ponzu-runner-ffffffffffff",
+      sandboxImage: image,
+    });
+    // One older than saying so says only its version.
+    await runnerIn(sandbox, "runner/0.1.0");
+    expect(logged("runner_started", design.id)).toMatchObject({
+      client: "runner/0.1.0",
+      runnerImage: null,
+    });
+  });
+
+  test("the next wake moves the design onto a new sandbox, which restores the checkpoint in the same session", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    const from = sandbox.image;
+    const oldToken = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN!;
+    const image = newImage();
+    t.analytics.events.length = 0;
+
+    t.clock.advance(MINUTE);
+    await say(design.id, "And the footer");
+
+    const moved = await live(design.id);
+    expect(moved).toMatchObject({
+      state: "awake",
+      generation: 2,
+      image,
+      imageFailed: null,
+      movingSince: null,
+    });
+    expect(moved.providerId).not.toBe(sandbox.providerId);
+    // The old row is gone, saying why, and its machine is destroyed.
+    expect(
+      await rows(`select state, failure, image from sandboxes where id = '${sandbox.id}'`),
+    ).toEqual([{ state: "gone", failure: `Moved onto ${image}.`, image: from }]);
+    expect((await t.sandbox.get(sandbox.providerId!)).state).toBe("gone");
+    expect((await machines(design.id)).map((m) => m.labels.generation)).toEqual(["2"]);
+    // The head said waking, as for any start, and points at the new sandbox.
+    expect(await head(design.id)).toMatchObject({
+      sandboxId: moved.id,
+      agentState: "waking",
+      agentBlocker: null,
+    });
+
+    // A new environment: the old runner's token is revoked.
+    const env = t.sandbox.env(moved.providerId!);
+    expect(env.PONZU_RUNNER_TOKEN).not.toBe(oldToken);
+    expect(env.ANTHROPIC_API_KEY).toBe(KEY);
+    const old = await call(
+      t,
+      { authorization: `Bearer ${oldToken}` },
+      "POST",
+      "/v1/runner/session",
+      {},
+    );
+    expect(old.status).toBe(401);
+
+    // Its runner is handed the checkpoint to restore and the Claude session to resume, and the
+    // message that woke it is waiting.
+    const next = await runnerIn(moved, `runner/0.1.0+${image}`);
+    expect(next.session).toMatchObject({
+      claudeSessionId: "session-1",
+      saved: { turn: turns, claudeSessionId: "session-1" },
+    });
+    expect(await take(next)).toHaveLength(1);
+    expect(logged("runner_image_mismatch", design.id)).toBeUndefined();
+
+    expect(logged("sandbox_moved", design.id)).toMatchObject({
+      from,
+      to: image,
+      fromSandboxId: sandbox.id,
+      sandboxId: moved.id,
+    });
+    expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "moved", image });
+    const events = t.analytics.events.map((e) => [e.event, e.properties]);
+    expect(events).toContainEqual([
+      "sandbox moved",
+      expect.objectContaining({ design_id: design.id, from_image: from, to_image: image }),
+    ]);
+    expect(events).toContainEqual([
+      "sandbox woke",
+      expect.objectContaining({ design_id: design.id, start: "moved", image }),
+    ]);
+  });
+
+  test("a sandbox made before images were recorded moves too", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    await rows(`update sandboxes set image = null where id = '${sandbox.id}'`);
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({
+      generation: 2,
+      image: t.deps.config.sandbox.snapshot,
+    });
+    expect(logged("sandbox_moved", design.id)).toMatchObject({ from: null });
+  });
+
+  test("a turn in flight is never interrupted: an awake sandbox moves only after it has slept", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    await take(runner);
+    await runner.beat("working");
+    newImage();
+    const reports = t.poke.reports.length;
+
+    await say(design.id, "While you're at it");
+    expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+    // Nobody asked it to get ready to sleep, and nothing new was made.
+    expect(t.poke.reports.length).toBe(reports);
+    expect(await machines(design.id)).toHaveLength(1);
+
+    // The turn ends and its checkpoint is saved; the sandbox sleeps; the next wake moves it.
+    await take(runner);
+    await save(design.id, runner);
+    await idleToSleep(runner);
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ generation: 2, state: "awake" });
+  });
+
+  test("a checkpoint behind the session wakes the old sandbox, which saves, and moves at the next wake", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    await take(runner);
+    await save(design.id, runner);
+    // A message went into the session after the last checkpoint, and none was saved after it.
+    await say(design.id, "One more thing");
+    await take(runner);
+    await idleToSleep(runner);
+    newImage();
+
+    t.clock.advance(MINUTE);
+    await say(design.id, "Back again");
+    expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+    expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "warm" });
+    expect(logged("sandbox_move_held", design.id)).toMatchObject({
+      sandboxId: sandbox.id,
+      reason: "checkpoint_behind",
+    });
+
+    // Its runner saves after its next turn; the wake after the next sleep moves it.
+    await take(runner);
+    await save(design.id, runner);
+    await idleToSleep(runner);
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ generation: 2 });
+  });
+
+  test("a runner that never saved a checkpoint keeps its sandbox, and the log says why", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    await take(runner);
+    await idleToSleep(runner);
+    newImage();
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+    expect(logged("sandbox_move_held", design.id)).toMatchObject({ reason: "no_checkpoint" });
+  });
+
+  test("an image that does not start is undone: the old sandbox wakes, and the move is not tried again", async () => {
+    const { design, sandbox, runner } = await asleepAfterWork();
+    const image = newImage();
+    t.sandbox.failNext(
+      "ensureAwake",
+      new SandboxError("unavailable", "sandbox did not start: the image is broken"),
+    );
+
+    t.clock.advance(MINUTE);
+    await say(design.id, "Still there?");
+    expect(await live(design.id)).toMatchObject({
+      id: sandbox.id,
+      state: "awake",
+      image: sandbox.image,
+      imageFailed: image,
+      movingSince: null,
+    });
+    expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "warm" });
+    expect(logged("sandbox_move_failed", design.id)).toMatchObject({
+      to: image,
+      reason: expect.stringContaining("the image is broken"),
+    });
+    expect(await head(design.id)).toMatchObject({ agentBlocker: null });
+    // What the move made is destroyed and its token revoked: only the old machine is left.
+    expect((await machines(design.id)).map((m) => m.id)).toEqual([sandbox.providerId!]);
+    expect(
+      await rows(
+        `select count(*)::int as live from runner_tokens
+          where design_id = '${design.id}' and revoked_at is null`,
+      ),
+    ).toEqual([{ live: 1 }]);
+
+    // No loop: the next wake on the same image keeps the old sandbox without trying.
+    await idleToSleep(runner);
+    t.clock.advance(MINUTE);
+    const creates = await counting(() => say(design.id));
+    expect(creates).toBe(0);
+    expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+    expect(logged("sandbox_move_held", design.id)).toMatchObject({ reason: "image_failed" });
+
+    // A later image is tried afresh.
+    await save(design.id, runner);
+    await idleToSleep(runner);
+    const fixed = newImage();
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ generation: 2, image: fixed, imageFailed: null });
+  });
+
+  test("an image the provider does not have is a failed move, not a failed wake", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    const missing = "ponzu-runner-000000000bad";
+    t.deps.config.sandbox.snapshot = missing;
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({
+      id: sandbox.id,
+      state: "awake",
+      imageFailed: missing,
+    });
+    expect(await head(design.id)).toMatchObject({ agentBlocker: null });
+    newImage();
+  });
+
+  test("a provider out of starts makes the move wait, as any wake does, without blaming the image", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    const image = newImage();
+    t.sandbox.failNext(
+      "create",
+      new SandboxError("start_cap_reached", "no starts left", { retryAfterSeconds: 30 }),
+    );
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({
+      id: sandbox.id,
+      state: "waking",
+      imageFailed: null,
+    });
+    expect(await head(design.id)).toMatchObject({
+      agentState: "waking",
+      agentBlocker: "sandbox_busy",
+    });
+
+    t.clock.advance(MINUTE);
+    await cron();
+    expect(await live(design.id)).toMatchObject({ generation: 2, image, state: "awake" });
+  });
+
+  test("past the moves allowed at once, a design wakes on its old sandbox and moves later", async () => {
+    const others = [await asleepAfterWork(), await asleepAfterWork()];
+    const { design, sandbox, runner } = await asleepAfterWork();
+    newImage();
+    // Two moves under way elsewhere hold both slots.
+    const at = new Date(t.clock.now()).toISOString();
+    for (const other of others) {
+      await rows(
+        `update sandboxes set state = 'waking', waking_by = 'job_elsewhere', moving_since = '${at}'
+          where id = '${other.sandbox.id}'`,
+      );
+    }
+    try {
+      await say(design.id);
+      expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+      expect(logged("sandbox_move_held", design.id)).toMatchObject({ reason: "moves_at_once" });
+    } finally {
+      for (const other of others) {
+        await rows(
+          `update sandboxes set state = 'asleep', waking_by = null, moving_since = null
+            where id = '${other.sandbox.id}'`,
+        );
+      }
+    }
+    // With the slots free again, the next wake moves it.
+    await save(design.id, runner);
+    await idleToSleep(runner);
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ generation: 2 });
+  });
+
+  test("the machine a move is starting is not taken for an orphan by a sweep meanwhile", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    const image = newImage();
+    const ensureAwake = t.sandbox.ensureAwake.bind(t.sandbox);
+    let orphaned = -1;
+    t.sandbox.ensureAwake = async (id, options) => {
+      if (id !== sandbox.providerId && orphaned < 0) {
+        orphaned = (await cron()).sandboxes.orphaned ?? -2;
+      }
+      return ensureAwake(id, options);
+    };
+    try {
+      t.clock.advance(MINUTE);
+      await say(design.id);
+    } finally {
+      t.sandbox.ensureAwake = ensureAwake;
+    }
+    expect(orphaned).toBe(0);
+    expect(await live(design.id)).toMatchObject({ generation: 2, image, state: "awake" });
+  });
+
+  test("a move cut off after the provider made its machine is tried afresh, not blamed on the image", async () => {
+    const { design } = await asleepAfterWork();
+    const image = newImage();
+    // What the cut-off attempt left: the next generation's machine, on an environment nothing
+    // recorded.
+    const left = await t.sandbox.create({
+      idempotencyKey: `${design.id}-2`,
+      from: image,
+      size: "small",
+      name: `design-${design.id}`,
+      labels: sandboxLabels(TEST_SCOPE, design.id, 2),
+      env: { PONZU_RUNNER_TOKEN: "pzr_lost" },
+      ports: [4600],
+      autoStopSeconds: 1200,
+    });
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect((await t.sandbox.get(left.sandbox.id)).state).toBe("gone");
+    expect(await live(design.id)).toMatchObject({ state: "waking", imageFailed: null });
+
+    t.clock.advance(MINUTE);
+    await cron();
+    expect(await live(design.id)).toMatchObject({ generation: 2, image, state: "awake" });
+  });
+
+  test("with moving off, every design stays on the image it was made from", async () => {
+    const { design, sandbox } = await asleepAfterWork();
+    newImage();
+    t.deps.config.sandbox.maxMoves = 0;
+    try {
+      t.clock.advance(MINUTE);
+      await say(design.id);
+      expect(await live(design.id)).toMatchObject({ id: sandbox.id, state: "awake" });
+      expect(logged("sandbox_move_held", design.id)).toMatchObject({ reason: "moving_off" });
+    } finally {
+      t.deps.config.sandbox.maxMoves = 2;
     }
   });
 });

@@ -17,8 +17,11 @@ export type DesignSource = "idea" | "prompt" | "scratch";
 /** How a turn ended. */
 export type TurnOutcome = "completed" | "failed" | "stopped";
 
-/** How a sandbox came up: made new, resumed from a snapshot with nothing in memory, or thawed. */
-export type WakeStart = "new" | "cold" | "warm";
+/**
+ * How a sandbox came up: made new, resumed from a snapshot with nothing in memory, thawed, or
+ * made new from the current image in place of one from an older image (the design moved).
+ */
+export type WakeStart = "new" | "cold" | "warm" | "moved";
 
 /** One model's share of a turn, as the runner reported it. */
 export interface ModelTokens {
@@ -90,6 +93,9 @@ export interface ServerEvents {
     duration_ms: number | null;
     tool_calls: number | null;
     models: string[];
+    /** What the runner said it is (`runner/0.1.0+<image>`), and the image it ran in, if it said. */
+    runner: string | null;
+    image: string | null;
   } & ModelTokens;
   "question asked": { design_id: string; question_id: string; kind: string };
   "question answered": { design_id: string; question_id: string; kind: string };
@@ -100,7 +106,23 @@ export interface ServerEvents {
   "pull request closed": { design_id: string; number: number };
 
   // Sandboxes
-  "sandbox woke": { design_id: string; start: WakeStart; duration_ms: number };
+  /** `image`: the sandbox image it runs, null for one made before images were recorded. */
+  "sandbox woke": {
+    design_id: string;
+    start: WakeStart;
+    duration_ms: number;
+    image: string | null;
+  };
+  /**
+   * The design moved onto a new sandbox from the current image, which restored the last
+   * checkpoint. `from_image` is null for a sandbox made before images were recorded.
+   */
+  "sandbox moved": {
+    design_id: string;
+    from_image: string | null;
+    to_image: string;
+    duration_ms: number;
+  };
   /** The sandbox was stopped to save its time. `quiesced`: its runner said it was ready. */
   "sandbox slept": { design_id: string; quiesced: boolean };
   /** The provider lost the sandbox (or its disk), and the next wake starts over. */
