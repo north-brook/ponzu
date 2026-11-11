@@ -538,8 +538,10 @@ export function Canvas({
   // Open where a link said, once the document is in: on its board, or on its page when the board
   // isn't there. After the page's own fit, so the first frame painted is the board's. A
   // fit-content board is framed again once it's measured, still before paint; after that the
-  // camera is the person's. A page alone takes its own fit.
+  // camera is the person's. A page alone takes its own fit, and one already showing is fitted
+  // whole again. A board followed to is marked a moment (`Beacon`), so the eye lands on it.
   const shownLink = useRef<{ key: string; sized: boolean } | null>(null);
+  const [beacon, setBeacon] = useState<{ id: string; at: number } | null>(null);
   useLayoutEffect(() => {
     if (!link || !doc) return;
     const key = `${link.page}:${link.artboard}:${link.thread}:${link.at ?? ""}`;
@@ -567,11 +569,20 @@ export function Canvas({
     const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
     const shown = shownLink.current;
     if (shown?.key === key && (shown.sized || !sized)) return;
+    const first = shown?.key !== key;
     shownLink.current = { key, sized };
-    if (to && ab) showBoard(to.pageId, ab);
-    else if (to && to.pageId !== page?.id) setPageId(to.pageId);
+    if (to && ab) {
+      showBoard(to.pageId, ab);
+      if (first) setBeacon({ id: ab.id, at: Date.now() });
+    } else if (to && to.pageId !== page?.id) setPageId(to.pageId);
+    else if (to && first) fitPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link?.page, link?.artboard, link?.thread, link?.at, doc, measured]);
+  useEffect(() => {
+    if (!beacon) return;
+    const timer = setTimeout(() => setBeacon(null), BEACON_MS);
+    return () => clearTimeout(timer);
+  }, [beacon]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
@@ -1571,6 +1582,18 @@ export function Canvas({
                 </Fragment>
               );
             })}
+            {boards.map((ab) =>
+              beacon?.id === ab.id ? (
+                <Beacon
+                  key={beacon.at}
+                  x={ab.x}
+                  y={ab.y}
+                  w={size(ab).w}
+                  h={boardHeight(ab)}
+                  radius={ringCorners(cornersOf(ab), BOARD_RADIUS, RING_GAP)}
+                />
+              ) : null,
+            )}
             {pinDrag?.moved &&
               pinDrag.target &&
               rectsFor([pinDrag.target]).map((r) => (
@@ -1951,6 +1974,37 @@ function Ring({
         style={{ borderRadius: radius, animationDelay: `${wait}ms` }}
       />
     </div>
+  );
+}
+
+/** How long a board followed to by a link stays marked. */
+const BEACON_MS = 1600;
+
+/**
+ * A board a link took the camera to (a comment's, a deep link's, one the agent pointed at),
+ * marked a moment where the working ring goes: an ink outline that comes in and fades, neutral
+ * like the selection, since the yuzu ring means an agent at work.
+ */
+function Beacon({
+  x,
+  y,
+  w,
+  h,
+  radius,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  radius: string;
+}) {
+  return (
+    <div
+      data-beacon
+      className="pz-beacon pz:pointer-events-none pz:absolute"
+      style={{ ...ringBox({ x, y, w, h }), borderRadius: radius }}
+      aria-hidden
+    />
   );
 }
 

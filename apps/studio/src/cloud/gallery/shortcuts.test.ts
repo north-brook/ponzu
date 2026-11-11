@@ -1,6 +1,6 @@
 /*
  * The number shortcuts in a real Chromium, on the gallery's `shortcuts` boards (twelve designs,
- * eleven pages): ⌘1–9 and ⌘0 over the sidebar, ⌥1–9 over the page tabs, where they hold back,
+ * eleven pages): ⌘1–9 and ⌘0 over the sidebar, ⌃1–9 over the page tabs, where they hold back,
  * and the hints a held modifier shows, frame by frame. Skips where there is no Chrome or
  * Chromium. With PONZU_SHOTS set to a folder, it leaves pictures of the hints there at 2x, in
  * light and dark.
@@ -30,6 +30,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
   let page: Page;
   /** ⌘ on a Mac, Ctrl elsewhere: what the app listens for where the test runs. */
   let mod: "Meta" | "Control";
+  let pageMod: "Control" | "Alt";
 
   beforeAll(async () => {
     built = await buildGallery();
@@ -49,6 +50,8 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await p.goto(`${server.url}/gallery.html?board=${board}&theme=${theme}`);
     await p.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
     mod = await p.evaluate(() => (navigator.userAgent.includes("Mac") ? "Meta" : "Control"));
+    // Pages: ⌃ on a Mac, Alt off it (ui/shortcut.ts).
+    pageMod = mod === "Meta" ? "Control" : "Alt";
   };
   /** The rows top to bottom, by design id, and the open one. */
   const rows = () =>
@@ -93,21 +96,21 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(await openRow()).toBeNull();
   });
 
-  test("⌥1–8 open the pages in tab order, ⌥9 the last; ⌥0 nothing", async () => {
+  test("⌃1–8 (Alt off the Mac) open the pages in tab order, 9 the last; 0 nothing", async () => {
     await open("shortcuts");
     const count = await tabCount();
     expect(count).toBe(11);
     for (let n = 1; n <= 8; n++) {
-      await press(`Alt+Digit${n}`);
+      await press(`${pageMod}+Digit${n}`);
       expect(await activeTab()).toBe(n - 1);
     }
-    await press("Alt+Digit9");
+    await press(`${pageMod}+Digit9`);
     expect(await activeTab()).toBe(count - 1);
-    await press("Alt+Digit0");
+    await press(`${pageMod}+Digit0`);
     expect(await activeTab()).toBe(count - 1);
   });
 
-  test("in a text field ⌘ numbers still jump with no hints, and ⌥ types instead", async () => {
+  test("in a text field ⌘ and ⌃ numbers still jump with no hints, and Alt holds back", async () => {
     await open("shortcuts");
     const order = await rows();
     await press(`${mod}+k`);
@@ -120,12 +123,13 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await page.keyboard.up(mod);
     expect(await openRow()).toBe(order[2]!);
     const tab = await activeTab();
-    await press("Alt+Digit2");
-    expect(await activeTab()).toBe(tab);
-    await page.keyboard.down("Alt");
+    await press(`${pageMod}+Digit2`);
+    // ⌃ types nothing, so it jumps from a field; Alt can type there, so it holds back.
+    expect(await activeTab()).toBe(pageMod === "Control" ? 1 : tab);
+    await page.keyboard.down(pageMod);
     await wait(450);
     expect(await shownHints()).toEqual([]);
-    await page.keyboard.up("Alt");
+    await page.keyboard.up(pageMod);
   });
 
   test("while search shows results, ⌘1–9 rest and ⌘0 still makes a design", async () => {
@@ -145,7 +149,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await page.locator(ROWS).nth(4).click({ button: "right" });
     await page.waitForSelector('[role="menu"][data-state="open"]');
     await press(`${mod}+Digit5`);
-    await press("Alt+Digit3");
+    await press(`${pageMod}+Digit3`);
     expect(await openRow()).toBe(order[1]!);
     expect(await activeTab()).toBe(0);
     await page.keyboard.down(mod);
@@ -170,10 +174,10 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(await shownHints()).toEqual([]);
     await page.keyboard.up(mod);
     // The page tabs are in the chrome, collapsed or not.
-    await page.keyboard.down("Alt");
+    await page.keyboard.down(pageMod);
     await wait(450);
     expect((await shownHints()).filter((h) => h.startsWith("page-")).length).toBe(9);
-    await page.keyboard.up("Alt");
+    await page.keyboard.up(pageMod);
   });
 
   test("filtered, the numbers follow the list as it shows", async () => {
@@ -319,15 +323,15 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(await shownHints()).toEqual([]);
   });
 
-  test("held, ⌥ shows the page tabs' numbers after the delay, without moving a tab", async () => {
+  test("held, ⌃ (Alt off the Mac) shows the page tabs' numbers after the delay, without moving a tab", async () => {
     await open("shortcuts");
-    const frames = await recordHold("Alt", 600, () => page.keyboard.up("Alt"));
+    const frames = await recordHold(pageMod, 600, () => page.keyboard.up(pageMod));
     const first = frames.find((f) => f.shown > 0)!;
     expect(first.t).toBeGreaterThanOrEqual(240);
     expect(frames.some((f) => f.shown === 9 && f.opacity === 1)).toBe(true);
     expect(frames.at(-1)!.shown).toBe(0);
     expect(new Set(frames.map((f) => f.layout)).size).toBe(1);
-    await page.keyboard.down("Alt");
+    await page.keyboard.down(pageMod);
     await wait(450);
     const placed = await page.$$eval(TABS, (tabs) =>
       tabs.map((tab) => {
@@ -347,15 +351,15 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
         text: tab.textContent,
       };
     });
-    await page.keyboard.up("Alt");
+    await page.keyboard.up(pageMod);
     expect(iconless.text).toBe("Checkout");
     expect(iconless.offCentre).toBeLessThan(1);
     expect(iconless.nameOpacity).toBe(0);
     // The tabs' text is still their names alone: the keys are drawn, not written.
+    const glyph = mod === "Meta" ? "⌃" : "Alt";
     expect(await page.$$eval(TABS, (tabs) => tabs.map((t) => t.textContent))).not.toContain(
-      expect.stringContaining("⌥"),
+      expect.stringContaining(glyph),
     );
-    const glyph = mod === "Meta" ? "⌥" : "Alt";
     expect(placed).toEqual([
       ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `${glyph}${n}`),
       "",
@@ -389,14 +393,14 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
       });
       await shot.keyboard.up(mod);
       await shot.waitForTimeout(300);
-      // Tabs: ⌥ held, from the first tab across.
-      await shot.keyboard.down("Alt");
+      // Tabs: the page modifier held, from the first tab across.
+      await shot.keyboard.down(pageMod);
       await shot.waitForTimeout(600);
       await shot.screenshot({
         path: join(dir, `page-tabs-${theme}.png`),
         clip: { x: 290, y: 0, width: 900, height: 48 },
       });
-      await shot.keyboard.up("Alt");
+      await shot.keyboard.up(pageMod);
       await shot.waitForTimeout(300);
       await shot.screenshot({
         path: join(dir, `page-tabs-${theme}-released.png`),

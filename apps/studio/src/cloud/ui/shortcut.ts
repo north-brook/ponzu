@@ -60,9 +60,10 @@ export function ranJustNow(key: string, ms = 250): boolean {
 }
 
 /*
- * The number shortcuts, as the 1.x studio had them: ⌘1–9 (Ctrl off the Mac) open the sidebar's
- * designs, ⌘0 the create page, ⌥1–9 the open design's pages. 9 is always the last, however many
- * there are. Holding the modifier a moment shows each target's number (ShortcutHint).
+ * The number shortcuts: ⌘1–9 open the sidebar's designs and ⌘0 the create page, as the 1.x
+ * studio had them; ⌃1–9 open the open design's pages (1.x used ⌥, which types symbols on a
+ * Mac). Off the Mac, Ctrl stands for ⌘ and Alt for ⌃. 9 is always the last, however many there
+ * are. Holding the modifier a moment shows each target's number (ShortcutHint).
  */
 
 const mac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
@@ -70,13 +71,13 @@ const mac = typeof navigator !== "undefined" && navigator.userAgent.includes("Ma
 /** How long the modifier is held before the numbers show, as in 1.x: ⌘K never flashes them. */
 export const HINT_DELAY = 250;
 
-/** ⌘ jumps between designs; ⌥ between pages. */
+/** ⌘ jumps between designs; ⌃ between pages. */
 export type Jump = "design" | "page";
 
 /** The key each jump goes with, as its hints write it and as KeyboardEvent.key names it. */
 export const JUMP_KEY = {
   design: { glyph: mac ? "⌘" : "Ctrl", key: mac ? "Meta" : "Control" },
-  page: { glyph: mac ? "⌥" : "Alt", key: "Alt" },
+  page: { glyph: mac ? "⌃" : "Alt", key: mac ? "Control" : "Alt" },
 } as const;
 
 type KeyLike = Pick<
@@ -85,17 +86,18 @@ type KeyLike = Pick<
 >;
 
 /**
- * The digit a key press jumps to, or null. By `code`, since ⌥ turns `key` into ¡™£ on a Mac.
- * ⌘ takes 0–9 (either ⌘ or Ctrl, as 1.x did); ⌥ takes 1–9. Nothing with ⇧, or with the other
- * modifier as well, so ⌘⌥1 and ⌘⇧1 stay free.
+ * The digit a key press jumps to, or null. By `code`, since a modifier can change `key`. On a
+ * Mac ⌘ takes 0–9 for designs and ⌃ takes 1–9 for pages; off it Ctrl takes the designs and Alt
+ * the pages. Nothing with ⇧, or with another modifier as well, so ⌘⌥1 and ⌘⇧1 stay free.
  */
-export function jumpDigit(e: KeyLike, jump: Jump): number | null {
+export function jumpDigit(e: KeyLike, jump: Jump, onMac = mac): number | null {
   if (e.shiftKey || e.isComposing) return null;
   const digit = /^Digit([0-9])$/.exec(e.code)?.[1];
   if (!digit) return null;
-  const mod = e.metaKey || e.ctrlKey;
-  if (jump === "design") return mod && !e.altKey ? Number(digit) : null;
-  return e.altKey && !mod && digit !== "0" ? Number(digit) : null;
+  const only = (key: "metaKey" | "ctrlKey" | "altKey") =>
+    e[key] && (["metaKey", "ctrlKey", "altKey"] as const).every((k) => k === key || !e[k]);
+  if (jump === "design") return only(onMac ? "metaKey" : "ctrlKey") ? Number(digit) : null;
+  return only(onMac ? "ctrlKey" : "altKey") && digit !== "0" ? Number(digit) : null;
 }
 
 /** What `n` (1–9) jumps to: the nth, and 9 the last. */
@@ -122,11 +124,11 @@ export function overlayOpen(root: ParentNode = document): boolean {
 }
 
 /**
- * Runs `onJump` with the digit of each ⌘ or ⌥ number shortcut (as `jump` says) and returns
- * whether the modifier's hints should show. Nothing happens while a menu, popover or dialog is
- * open; ⌥ also does nothing while a field has focus, where it types a symbol (⌘ types nothing,
- * so it jumps from the composer as it did in 1.x, but shows no hints there). `onJump` returns
- * false when the digit has nothing to open, so the key goes on to whatever else wants it.
+ * Runs `onJump` with the digit of each number shortcut (as `jump` says) and returns whether
+ * the modifier's hints should show. Nothing happens while a menu, popover or dialog is open.
+ * ⌘ and ⌃ type nothing, so they jump from the composer too, but show no hints there; off the
+ * Mac, Alt does nothing while a field has focus, where it can type. `onJump` returns false
+ * when the digit has nothing to open, so the key goes on to whatever else wants it.
  */
 export function useJumpShortcuts(
   jump: Jump,
@@ -140,7 +142,7 @@ export function useJumpShortcuts(
     const onKeyDown = (e: KeyboardEvent) => {
       const n = jumpDigit(e, jump);
       if (n === null || e.defaultPrevented) return;
-      if (jump === "page" && isTyping(e)) return;
+      if (JUMP_KEY[jump].key === "Alt" && isTyping(e)) return;
       if (overlayOpen()) return;
       if (latest.current(n)) e.preventDefault();
     };

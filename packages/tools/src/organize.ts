@@ -27,7 +27,7 @@ export const organizeTools = [
         .describe("Position in the page list. Default last."),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx);
+      const { key, design } = await designOf(ctx);
       const id = newId("pg");
       apply(
         design,
@@ -38,7 +38,8 @@ export const organizeTools = [
         },
         ctx,
       );
-      return { text: `Created page ${id} "${args.name}".` };
+      const link = ctx.ws.linkTo?.(key, { page: id });
+      return { text: `Created page ${id} "${args.name}".${link ? `\nLink: ${link}` : ""}` };
     },
   }),
 

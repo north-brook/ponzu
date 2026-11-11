@@ -38,6 +38,7 @@ import {
   designOf,
   droppedNote,
   elementsIn,
+  linkNote,
   plural,
   reportIds,
   target,
@@ -128,8 +129,9 @@ export async function createArtboard(
   const where = (await kept?.(open, id)) ?? "";
   const kids = elementsIn(nodes);
   const overlap = await pageOverlaps(ctx, key, design, [id]);
+  const link = ctx.ws.linkTo?.(key, { artboard: id });
   return {
-    text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${made}${where}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
+    text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${made}${where}.${link ? `\nLink: ${link}` : ""}${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
     data: { id },
   };
 }
@@ -394,7 +396,9 @@ export const writeTools = [
             artboard,
           });
           ids[i] = artboard.id;
-          lines[i] = `${id} → ${artboard.id} "${name}" at (${artboard.x}, ${artboard.y})`;
+          lines[i] =
+            `${id} → ${artboard.id} "${name}" at (${artboard.x}, ${artboard.y})` +
+            linkNote(ctx, key, { artboard: artboard.id });
           continue;
         }
         const t = target(doc, id);

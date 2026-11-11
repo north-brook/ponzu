@@ -1,4 +1,5 @@
 import { useLiveQuery } from "@ponzu/client/react";
+import { linkTarget } from "@ponzu/core";
 import { useMutation, useQueries } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
@@ -6,6 +7,8 @@ import { ThreadRail } from "../cloud/thread/rail.tsx";
 import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
 import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
+import type { DesignAddress } from "../cloud/ui/design-address.ts";
+import { type DesignPlaces, DesignPlacesProvider } from "../cloud/ui/place-link.tsx";
 import { CommentScene } from "./comment-picture.tsx";
 import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
@@ -45,6 +48,7 @@ export function DesignRail({
   owner,
   onOpenArtboards,
   onOpenComment,
+  onOpenPlace,
   onOpenPullRequest,
   onConnectClaude,
   say,
@@ -61,6 +65,8 @@ export function DesignRail({
   onOpenArtboards: (artboardIds: string[]) => void;
   /** Takes the canvas to a comment, or to where it was when its thread is gone. */
   onOpenComment: (to: CommentLink) => void;
+  /** Shows a page or board a link in the agent's words points at, in this design or another. */
+  onOpenPlace: (at: DesignAddress) => void;
   onOpenPullRequest: () => void;
   /**
    * Connects the viewer's own Claude, when the design waits on it; absent until it can. Says
@@ -162,6 +168,16 @@ export function DesignRail({
     [shown, doc, onOpenComment, say],
   );
 
+  // What a link in the agent's words can find: the design as it is now, while it streams too.
+  const places = useMemo<DesignPlaces>(
+    () => ({
+      designId,
+      has: (at) => (doc ? linkTarget(doc, at) !== null : undefined),
+      open: onOpenPlace,
+    }),
+    [designId, doc, onOpenPlace],
+  );
+
   // Until the API says what the viewer may do, nothing offers to steer.
   if (access === null) {
     return (
@@ -172,49 +188,51 @@ export function DesignRail({
   }
   const gate = steerGate({ access, repo, head, owner, me: meRow, now });
   return (
-    <ThreadRail
-      designId={designId}
-      meId={me.id}
-      repoName={repo?.name ?? null}
-      items={items}
-      older={thread.older}
-      onLoadOlder={() => open.thread.loadOlder()}
-      agent={agentActivity(head ?? open.fresh?.head)}
-      asks={asks}
-      gate={gate}
-      attachments={attachments}
-      onAttach={(files) => open.uploads.add(files)}
-      onRemoveAttachment={(id) => open.uploads.remove(id)}
-      onRetryAttachment={(id) => open.uploads.retry(id)}
-      onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
-      onStop={() =>
-        stop.mutate(designId, { onError: () => say("Claude couldn't be stopped. Try again.") })
-      }
-      onAnswer={(id, answer) => open.asks.answer(id, answer)}
-      onDismissAsk={(id) => open.asks.dismiss(id)}
-      onTouchAsk={(id) => open.asks.touch(id)}
-      onRetryMessage={(id) => open.thread.retry(id)}
-      onEditMessage={(id) => open.thread.discard(id)}
-      {...(onConnectClaude
-        ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
-        : {})}
-      renderDrawing={(messageId) => {
-        const local = pictures.get(messageId);
-        return local?.state === "drawing" ? (
-          <CommentScene
-            doc={local.doc}
-            threadId={local.threadId}
-            messageId={messageId}
-            theme={theme}
-            assetBase={assetBase}
-          />
-        ) : null;
-      }}
-      onOpenComment={openComment}
-      onOpenArtboards={onOpenArtboards}
-      onOpenPullRequest={onOpenPullRequest}
-      onOpenLink={(url) => host.openExternal(url)}
-    />
+    <DesignPlacesProvider value={places}>
+      <ThreadRail
+        designId={designId}
+        meId={me.id}
+        repoName={repo?.name ?? null}
+        items={items}
+        older={thread.older}
+        onLoadOlder={() => open.thread.loadOlder()}
+        agent={agentActivity(head ?? open.fresh?.head)}
+        asks={asks}
+        gate={gate}
+        attachments={attachments}
+        onAttach={(files) => open.uploads.add(files)}
+        onRemoveAttachment={(id) => open.uploads.remove(id)}
+        onRetryAttachment={(id) => open.uploads.retry(id)}
+        onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
+        onStop={() =>
+          stop.mutate(designId, { onError: () => say("Claude couldn't be stopped. Try again.") })
+        }
+        onAnswer={(id, answer) => open.asks.answer(id, answer)}
+        onDismissAsk={(id) => open.asks.dismiss(id)}
+        onTouchAsk={(id) => open.asks.touch(id)}
+        onRetryMessage={(id) => open.thread.retry(id)}
+        onEditMessage={(id) => open.thread.discard(id)}
+        {...(onConnectClaude
+          ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
+          : {})}
+        renderDrawing={(messageId) => {
+          const local = pictures.get(messageId);
+          return local?.state === "drawing" ? (
+            <CommentScene
+              doc={local.doc}
+              threadId={local.threadId}
+              messageId={messageId}
+              theme={theme}
+              assetBase={assetBase}
+            />
+          ) : null;
+        }}
+        onOpenComment={openComment}
+        onOpenArtboards={onOpenArtboards}
+        onOpenPullRequest={onOpenPullRequest}
+        onOpenLink={(url) => host.openExternal(url)}
+      />
+    </DesignPlacesProvider>
   );
 }
 

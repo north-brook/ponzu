@@ -1534,7 +1534,11 @@ GitHub user token (`githubUserToken`).
 - A person whose GitHub token is dead is asked to sign in again (401 `github_reauth_required`).
 - A design's link, `https://ponzu.design/designs/<id>` (a pull request's description, the
   agent's messages), is a page of apps/web that hands the design to the Mac app as
-  `ponzu://design/<id>`, or offers the app.
+  `ponzu://design/<id>`, or offers the app. `?page=<page id>` or `?artboard=<artboard id>` on it
+  names one page or board, and rides along to the app. The sandbox's tools give the agent each
+  page's and board's link beside its id (`Workspace.linkTo`), and it links the ones it points the
+  person at in its messages; the thread (`PlaceLink` in apps/studio) follows such a link in place,
+  moving the canvas there, and opens another design's in the app.
 
 **Opening** is a draft from the branch into the default branch, titled with the design's name,
 whose description is the agent's summary, the design's first page as its preview showed it
