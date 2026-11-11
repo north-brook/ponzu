@@ -133,6 +133,17 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
   "settings-environments": () => <SettingsWindow section="environments" />,
   "settings-plan": () => <SettingsWindow section="plan" />,
   "settings-plan-solo": () => <SettingsWindow section="plan" data={SOLO_SETTINGS} />,
+  "settings-plan-breakdown": () => (
+    <SettingsWindow
+      section="plan"
+      data={{
+        ...TEAM_SETTINGS,
+        byPerson: s.byPersonWithNobody,
+        unattributedCredits: s.unattributedCredits,
+        byDesign: s.byDesign,
+      }}
+    />
+  ),
 
   "free-credits": () => (
     <OnSend>
