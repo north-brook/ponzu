@@ -30,6 +30,7 @@ export type ClaudeDeps = Pick<
   | "storage"
   | "config"
   | "background"
+  | "analytics"
 >;
 
 /** What a new credential is. */
@@ -72,6 +73,11 @@ export async function connectClaude(
       if (design.pending) deps.background("wake", startWake(deps, design.id, "claude"));
     }
     deps.log.info("claude_connected", { userId, kind: credential.kind, woke: unblocked.length });
+    deps.analytics.capture(
+      "claude connected",
+      { kind: credential.kind, woke_designs: unblocked.filter((d) => d.pending).length },
+      { distinctId: userId, workspaceId: null },
+    );
     return account;
   }
   throw new Error("The Claude account kept changing while it was being stored.");
@@ -99,5 +105,6 @@ export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promis
     designs: blocked.length,
     sandboxes: holding.length,
   });
+  deps.analytics.capture("claude disconnected", {}, { distinctId: userId, workspaceId: null });
   deps.background("claude_disconnected", destroySandboxes(deps, machines.flat()));
 }

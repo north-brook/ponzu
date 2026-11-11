@@ -78,7 +78,8 @@ export interface CanvasProps {
   footer?: boolean;
   /**
    * The footer's page tabs, for a host whose chrome has its own. Default true. Without them the
-   * tools move to the bottom left, apart from the zoom (the Mac app's canvas).
+   * tools move to the bottom left, apart from the zoom (the Mac app's canvas), and the host owns
+   * ⌥1–9 too: the canvas leaves them to it.
    */
   pageBar?: boolean;
   /** Extra content at the start of the tools, before the modes. */
@@ -103,10 +104,20 @@ export interface CanvasProps {
   initialFit?: "page" | "first";
   /**
    * Where a link opens: an artboard, its page showing with the board framed, or a page. With
-   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). A link is
-   * followed once; a new `at` follows the same one again (a comment's board, clicked twice).
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). With `thread`, a
+   * comment: its pin in the middle of the view and its thread open, resolved or not; when the
+   * thread is gone, `spot` on `page` is where it was, and the view goes there instead. A link is
+   * followed once; a new `at` follows the same one again (a comment, clicked twice).
    */
-  link?: { page?: string; artboard?: string; at?: number };
+  link?: {
+    page?: string;
+    artboard?: string;
+    thread?: string;
+    spot?: { x: number; y: number };
+    at?: number;
+  };
+  /** Called when the tool changes, by its button or its key: select, hand or comment. */
+  onModeChange?: (mode: Mode) => void;
   className?: string;
 }
 
@@ -134,6 +145,8 @@ const FIRST_TOP = 16 + 22;
 const LABEL = 22;
 /** Boards are ever so slightly rounded: screen px, at any zoom. */
 const BOARD_RADIUS = 4;
+/** How much of the page round a comment's pin a link to it shows, at most at 100%. */
+const SPOT_ROOM = { w: 720, h: 480 };
 /** The ring round a working board sits this many screen px off its edge. */
 const RING_GAP = 4;
 
@@ -249,6 +262,7 @@ export function Canvas({
   onPageChange,
   initialFit = "page",
   link,
+  onModeChange,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -269,6 +283,17 @@ export function Canvas({
     if (shownId && shownId !== pageId) setOwnPageId(shownId);
   }, [shownId, pageId]);
   const [mode, setMode] = useState<Mode>("select");
+  const modeChanged = useRef(onModeChange);
+  modeChanged.current = onModeChange;
+  const firstMode = useRef(true);
+  useEffect(() => {
+    // The tool it starts on is no change.
+    if (firstMode.current) {
+      firstMode.current = false;
+      return;
+    }
+    modeChanged.current?.(mode);
+  }, [mode]);
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
   const { camera, zoomAt, panBy, fit } = useCameraStore();
@@ -500,6 +525,15 @@ export function Canvas({
     }
     if (ab) fit({ x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) }, viewportSize(), 96, 1);
   };
+  /** A spot on a page in the middle of the view, with room round it to see what is there. */
+  const showSpot = (pageId: string, spot: { x: number; y: number }) => {
+    if (pageId !== page?.id) {
+      fitted.current = `${pageId}:${initialFit}`;
+      setPageId(pageId);
+    }
+    const { w, h } = SPOT_ROOM;
+    fit({ x: spot.x - w / 2, y: spot.y - h / 2, w, h }, viewportSize(), 48, 1);
+  };
 
   // Open where a link said, once the document is in: on its board, or on its page when the board
   // isn't there. After the page's own fit, so the first frame painted is the board's. A
@@ -508,17 +542,36 @@ export function Canvas({
   const shownLink = useRef<{ key: string; sized: boolean } | null>(null);
   useLayoutEffect(() => {
     if (!link || !doc) return;
+    const key = `${link.page}:${link.artboard}:${link.thread}:${link.at ?? ""}`;
+    // A comment: its pin in the middle of the view, its thread open, resolved or not. One that is
+    // gone is the spot it was at, on its page, when the link says where that was.
+    const thread = link.thread ? doc.threads.find((t) => t.id === link.thread) : undefined;
+    const spotPage = thread
+      ? threadPage(doc, thread)?.id
+      : link.spot && link.page
+        ? linkTarget(doc, { page: link.page })?.pageId
+        : undefined;
+    if (spotPage) {
+      if (shownLink.current?.key === key) return;
+      shownLink.current = { key, sized: true };
+      const board = thread?.artboardId ? findArtboard(doc, thread.artboardId)?.artboard : undefined;
+      const spot = thread
+        ? { x: (board?.x ?? 0) + thread.x, y: (board?.y ?? 0) + thread.y }
+        : link.spot!;
+      showSpot(spotPage, spot);
+      if (thread) setOpenThread(thread.id);
+      return;
+    }
     const to = linkTarget(doc, link);
     const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
     const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
-    const key = `${link.page}:${link.artboard}:${link.at ?? ""}`;
     const shown = shownLink.current;
     if (shown?.key === key && (shown.sized || !sized)) return;
     shownLink.current = { key, sized };
     if (to && ab) showBoard(to.pageId, ab);
     else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link?.page, link?.artboard, link?.at, doc, measured]);
+  }, [link?.page, link?.artboard, link?.thread, link?.at, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
@@ -678,9 +731,11 @@ export function Canvas({
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const mod = e.metaKey || e.ctrlKey;
-      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
+      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last. A host that
+      // draws its own page tabs (pageBar off) gives them their shortcuts itself.
       const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
       if (e.altKey && !mod && !e.shiftKey && digit && doc) {
+        if (!pageBar) return;
         e.preventDefault();
         const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
         if (p) goToPage(p.id);

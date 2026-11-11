@@ -1,17 +1,21 @@
 import type { KeyboardEvent } from "react";
 import type { DesignSummary } from "../model.ts";
+import { jumpNumber } from "../ui/shortcut.ts";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { DesignRow, type RowHandlers } from "./design-row.tsx";
 
 /**
  * Rows of designs, one Tab stop for the whole list (the open design, else the first); the arrow
- * keys, Home and End move between rows and Return opens one.
+ * keys, Home and End move between rows and Return opens one. With `shortcuts`, these are the
+ * rows ⌘1–9 open, and `hint` shows their numbers.
  */
 export function DesignList({
   designs,
   openId,
   label,
   indicators = true,
+  shortcuts = false,
+  hint = false,
   onOpen,
   onAction,
   onRename,
@@ -20,6 +24,8 @@ export function DesignList({
   openId: string | null;
   label: string;
   indicators?: boolean;
+  shortcuts?: boolean;
+  hint?: boolean;
 }) {
   const stop = designs.some((d) => d.id === openId) ? openId : designs[0]?.id;
 
@@ -43,20 +49,31 @@ export function DesignList({
   };
 
   return (
-    <ul aria-label={label} onKeyDown={onKeyDown} className="m-0 flex list-none flex-col gap-px p-0">
-      {designs.map((design) => (
-        <li key={design.id}>
-          <DesignRow
-            design={design}
-            open={design.id === openId}
-            indicators={indicators}
-            tabIndex={design.id === stop ? 0 : -1}
-            onOpen={onOpen}
-            onAction={onAction}
-            onRename={onRename}
-          />
-        </li>
-      ))}
+    <ul
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      // Designs' names: masked in a private recording (app/analytics/privacy.ts).
+      data-replay="mask"
+      className="m-0 flex list-none flex-col gap-px p-0"
+    >
+      {designs.map((design, i) => {
+        const shortcut = shortcuts ? jumpNumber(i, designs.length) : undefined;
+        return (
+          <li key={design.id}>
+            <DesignRow
+              design={design}
+              open={design.id === openId}
+              indicators={indicators}
+              tabIndex={design.id === stop ? 0 : -1}
+              shortcut={shortcut}
+              hint={shortcut !== undefined && hint}
+              onOpen={onOpen}
+              onAction={onAction}
+              onRename={onRename}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -65,6 +65,22 @@ export interface RunnerSession {
    * (a rollback) or holds none of it (a new sandbox) restores from it before it resumes.
    */
   saved: SavedPoint | null;
+  /** The workspace the design is in: the group its turns are reported under. */
+  workspaceId?: string;
+  /**
+   * Where the runner reports each turn's trace to PostHog's LLM analytics, or null (or absent,
+   * from an older API) when analytics is off (docs/analytics.md).
+   */
+  analytics?: RunnerAnalytics | null;
+}
+
+/** PostHog, as the API hands it to a runner. Every value is public. */
+export interface RunnerAnalytics {
+  /** The project token, `phc_…`. */
+  key: string;
+  host: string;
+  /** Whether prompts, replies and tool arguments and results go with the trace. */
+  content: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -177,6 +193,11 @@ export type RunnerEvent = {
   priority: Priority;
   /** The person behind it. Null when GitHub was. */
   from: Person | null;
+  /**
+   * The PostHog session of the app that sent it, when it said: the turn it begins is traced
+   * under it, so a session recording links to the agent's work (docs/analytics.md).
+   */
+  posthogSessionId?: string | null;
 } & EventBody;
 
 export type EventBody =
@@ -186,7 +207,12 @@ export type EventBody =
   | { kind: "edit"; payload: EditEvent }
   | { kind: "check"; payload: CheckEvent }
   | { kind: "review"; payload: ReviewEvent }
-  | { kind: "stop"; payload: Record<string, never> };
+  | { kind: "stop"; payload: Record<string, never> }
+  /**
+   * A person pressed Create PR while the branch had commits only this sandbox holds: the runner
+   * pushes them now, without the agent. Nothing goes into the session.
+   */
+  | { kind: "push"; payload: Record<string, never> };
 
 export type EventKind = EventBody["kind"];
 
@@ -222,15 +248,6 @@ export interface CommentEvent {
   artboardName: string | null;
   /** The node the pin points at, if any. */
   nodeId: string | null;
-}
-
-/** An artboard as the document held it at a moment: `Artboard` from @ponzu/core, by shape. */
-export interface FrozenBoard {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  root: unknown;
 }
 
 /** A person changed the canvas: moved, renamed or deleted artboards, managed pages. */
@@ -288,6 +305,17 @@ export interface ClaimResponse {
   events: RunnerEvent[];
   /** The design's head, so the runner's replica can catch up. */
   seq: number;
+  /**
+   * The design's pull request as the app shows it (the design's row): what the agent is told
+   * when a turn starts. Null when it has none; absent from an API that does not say.
+   */
+  pullRequest?: PullRequestState | null;
+}
+
+/** A design's pull request, as the app shows it. */
+export interface PullRequestState {
+  number: number;
+  state: "draft" | "open" | "merged" | "closed";
 }
 
 /** `POST /v1/runner/events/ack`: these are in the Claude session and never to be handed out again. */
@@ -326,24 +354,11 @@ export type ThreadItem = {
 export type ThreadContent =
   /** Written by the API when a person sends a message. */
   | { kind: "message"; payload: { text: string; from: Person } }
-  /** Written by the API when a comment reaches the agent: shown with a thumbnail of its board. */
-  | {
-      kind: "comment";
-      payload: {
-        threadId: string;
-        messageId: string;
-        text: string;
-        artboardId: string | null;
-        artboardName: string | null;
-        from: Person;
-        /**
-         * The board as it was when the comment was made (an @ponzu/core `Artboard`), so its
-         * thumbnail shows what was commented on rather than the board now. Left out on the
-         * open canvas, and for a board too large to keep a copy of: the thumbnail is then live.
-         */
-        board?: FrozenBoard;
-      };
-    }
+  /**
+   * Written by the API when a comment reaches the agent: shown with a picture of where it was
+   * left, once its author's app has attached one.
+   */
+  | { kind: "comment"; payload: CommentItem }
   /** What the agent says. Streams as it is written. */
   | { kind: "assistant"; payload: AssistantItem }
   /** One stretch of work between two things the agent says. While it streams it is the working line. */
@@ -351,6 +366,47 @@ export type ThreadContent =
   | { kind: "notice"; payload: Notice };
 
 export type ThreadKind = ThreadContent["kind"];
+
+/** A person's comment or reply on the canvas, as the thread shows it. */
+export interface CommentItem {
+  threadId: string;
+  messageId: string;
+  text: string;
+  artboardId: string | null;
+  artboardName: string | null;
+  /**
+   * The page it was left on, and that page's name then: where it was, even once the thread is
+   * gone. Left out of comments from before they were kept.
+   */
+  pageId?: string;
+  pageName?: string;
+  /** Where the pin was on that page, in page px. Left out of comments from before it was kept. */
+  at?: { x: number; y: number };
+  from: Person;
+  /**
+   * A picture of the area round the pin as it was when the comment was made, which its author's
+   * app makes and attaches a moment after the comment. Left out until then, for good when it
+   * couldn't be made or kept, and on comments from before there were pictures. (Those may carry
+   * `board`, the copy of a board earlier thumbnails drew; nothing reads it now.)
+   */
+  picture?: CommentPicture;
+}
+
+/**
+ * A comment's picture: the area round its pin, the pin drawn in, in each theme. Each is a WebP
+ * under the design's assets address, `COMMENT_PICTURE.scale` times its size as shown.
+ */
+export interface CommentPicture {
+  /** `comments/<message id>-light.webp`, relative to the design's assets address. */
+  light: string;
+  dark: string;
+  /** Its size as shown, in CSS px. */
+  width: number;
+  height: number;
+}
+
+/** The size a comment's picture is shown at, in CSS px, and how many device px it has to each. */
+export const COMMENT_PICTURE = { width: 240, height: 160, scale: 2 } as const;
 
 export interface AssistantItem {
   /** Markdown. Clipped to `MAX_TEXT` characters. */
@@ -420,7 +476,9 @@ export type RunErrorCode =
   /** The repository's Claude Code settings (a `UserPromptSubmit` hook) turned a message away. */
   | "message_refused"
   /** The API would not take a question, so nobody could answer it and the agent went on. */
-  | "question_failed";
+  | "question_failed"
+  /** Commits on the design's branch could not be pushed to GitHub; the message says why. */
+  | "push_failed";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
 export const MAX_TEXT = 32_000;
@@ -474,6 +532,20 @@ export interface StateRequest {
    * turn, let its edits reach the API, saved a checkpoint and flushed the disk.
    */
   quiesced?: string | null;
+  /**
+   * The design's branch in this sandbox against GitHub, once the runner has looked: what Create
+   * PR goes by while GitHub lacks commits. Absent: unchanged. Null for Scratch, or a checkout
+   * that failed.
+   */
+  branch?: BranchReport | null;
+}
+
+/** The design's branch in the sandbox against GitHub. */
+export interface BranchReport {
+  /** Commits on the branch that GitHub does not have. */
+  unpushed: number;
+  /** Why the last push of them failed, in words for a person; null when it did not. */
+  error: string | null;
 }
 
 export interface StateResponse {
@@ -593,7 +665,32 @@ export interface GitCredentialRequest {
   host: string;
   /** `owner/name.git`: git sends it with `credential.useHttpPath`. */
   path: string;
+  /**
+   * On `erase` only: why the token is given back, as the runner saw GitHub refuse it (its HTTP
+   * status, or git's last words), for the API's log. Never a secret.
+   */
+  reason?: string;
 }
+
+/**
+ * `POST /v1/runner/git-report`: what the runner saw of git and GitHub in the sandbox, for the
+ * API's log, so a push GitHub refuses can be understood from the API's logs alone: its checks of
+ * a token before git gets it (git-token.ts) and each push it makes (push.ts). Only logged; never
+ * a token (`fingerprint` names one) and never anything a person typed.
+ */
+export interface GitReport {
+  name: GitReportName;
+  fields: Record<string, string | number | boolean | null>;
+}
+
+export const GIT_REPORTS = [
+  "git_credential_ready",
+  "git_credential_refused",
+  "git_credential_unchecked",
+  "git_credential_unready",
+  "git_push",
+] as const;
+export type GitReportName = (typeof GIT_REPORTS)[number];
 
 export interface GitCredentialResponse {
   username: string;
@@ -620,6 +717,17 @@ export const MAX_PULL_REQUEST_SUMMARY = 8_000;
 export interface PullRequestSummaryResponse {
   /** The open pull request whose description now says it; null while it waits for one. */
   pullRequest: number | null;
+  /**
+   * The design's pull request as the app shows it, whether or not the summary reached it: so the
+   * agent can say truly whether one exists. Absent from an API that does not say.
+   */
+  open?: PullRequestState | null;
+  /**
+   * Why the summary was only kept: no pull request is open (`none_open`), or one is open and its
+   * description was rewritten on GitHub without Ponzu's part (`rewritten`), or GitHub could not
+   * be read (`unreadable`). Null when it was written in.
+   */
+  kept?: "none_open" | "rewritten" | "unreadable" | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -643,7 +751,31 @@ export interface TurnUsage {
   claudeSessionId: string;
   at: string;
   models: ModelUsage[];
+  /**
+   * How the turn went, for analytics ("turn started" and "turn finished"). Sent for every turn
+   * a runner sees end, used or not; an older runner leaves it out.
+   */
+  turn?: TurnReport;
 }
+
+/** How a turn went. */
+export interface TurnReport {
+  /** When Claude Code took up what began it, as an ISO 8601 time. */
+  startedAt: string;
+  outcome: TurnOutcome;
+  /** Why it failed, as the thread's error notice says; null when it did not. */
+  errorCode: RunErrorCode | null;
+  durationMs: number;
+  /** How many tools the agent called, its subagents' included. */
+  toolCalls: number;
+  /**
+   * The event whose message began it (`evt_…`): the API reads from its row whom the turn was for
+   * and the app session that sent it. Null for a turn no event began (the runner's own notice).
+   */
+  eventId: string | null;
+}
+
+export type TurnOutcome = "completed" | "failed" | "stopped";
 
 /** `POST /v1/runner/usage`. */
 export interface UsageRequest {

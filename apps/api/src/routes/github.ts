@@ -31,7 +31,11 @@ const Accounts = z.object({
       status: z.enum(["ready", "not_installed"]),
       workspaceId: z.string().nullable(),
       suspended: z.boolean(),
-      /** Ready organizations only: the people in its workspace. */
+      /**
+       * Everyone GitHub says can reach its repos, whether or not they have opened Ponzu. Null
+       * while that is not known, for the person's own account, and for an account they reach
+       * only as an outside collaborator.
+       */
       memberCount: z.number().nullable(),
     }),
   ),

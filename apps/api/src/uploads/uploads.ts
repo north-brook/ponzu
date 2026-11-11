@@ -18,7 +18,10 @@ import { checkUpload, type Declared, PRIVATE_PURPOSES, type UploadKind } from ".
  * previews; a person uploads images to a design they can write to.
  */
 
-type UploadDeps = Pick<Deps, "db" | "storage" | "archives" | "clock" | "config" | "background">;
+type UploadDeps = Pick<
+  Deps,
+  "db" | "storage" | "archives" | "clock" | "config" | "background" | "analytics"
+>;
 
 /** How long a signed address takes its bytes. */
 export const UPLOAD_SECONDS = 600;
@@ -38,19 +41,25 @@ export interface Presigned {
  * Check each file and hand back where to put it: every file is checked before any address is
  * made, so a refusal leaves nothing behind. `userId` is the person uploading; null for the
  * runner. A person's image is kept under its own name with a few random characters added, so
- * it never replaces a file the design already has.
+ * it never replaces a file the design already has; a comment's picture under its comment's
+ * message id (`comment`) as well, so each try at one is a file of its own.
  */
 export async function presignUploads(
   deps: UploadDeps,
   target: UploadTarget,
-  files: (Declared & { kind: UploadKind })[],
+  files: (Declared & { kind: UploadKind; comment?: string })[],
   userId: string | null,
 ): Promise<Presigned[]> {
   const checked = files.map((file) => ({ file, stored: checkUpload(file.kind, file) }));
   const expiresAt = new Date(deps.clock.now() + UPLOAD_SECONDS * 1000);
   const rows = checked.map(({ file, stored }) => {
     const id = newId("up");
-    const name = file.kind === "image" ? uniqueName(file.name) : file.name;
+    const name =
+      file.kind === "image"
+        ? uniqueName(file.name)
+        : file.kind === "comment"
+          ? uniqueName(`${file.comment}-${file.name}`)
+          : file.name;
     const purpose = file.kind === "image" ? "asset" : file.kind;
     return {
       row: {
@@ -86,7 +95,10 @@ export async function presignUploads(
 
 export interface Completed {
   id: string;
-  /** An asset's reference, `assets/<name>`; null for the rest. */
+  /**
+   * An asset's reference, `assets/<name>`, or a comment's picture's, `comments/<name>`, under
+   * the design's assets address; null for the rest.
+   */
   ref: string | null;
   url: string;
 }
@@ -139,10 +151,20 @@ export async function completeUploads(
   const served = await Promise.all(
     rows.map(async (row) => {
       if (row.servedKey) return row.servedKey;
+      // A person's file, the first time it is completed: completing it again is no new fact.
+      if (userId) {
+        deps.analytics.capture("file uploaded", {
+          design_id: target.designId,
+          content_type: row.contentType,
+          bytes: row.size,
+        });
+      }
       const key =
         row.purpose === "preview"
           ? `${target.assetKey}/${previewPath(previewSeq!, row.name)}`
-          : row.objectKey;
+          : row.purpose === "comment"
+            ? `${target.assetKey}/${commentRef(row.name)}`
+            : row.objectKey;
       if (key !== row.objectKey) await deps.storage.copy(row.objectKey, key);
       const asset = row.purpose === "asset" ? { path: assetRef(row.name) } : undefined;
       await completeUpload(deps.db, {
@@ -155,13 +177,26 @@ export async function completeUploads(
     }),
   );
   if (previews.length > 0) await showPreviews(deps, target, previews, previewSeq!);
+  const comments = rows.filter((row) => row.purpose === "comment" && !row.servedKey);
+  if (comments.length > 0) {
+    // Copied to where they are served from; the staged copies are no longer anyone's.
+    deps.background(
+      "comment_pictures_staged_cleared",
+      Promise.all(comments.map((row) => deps.storage.delete(row.objectKey))),
+    );
+  }
 
   const byId = new Map(rows.map((row, index) => [row.id, { row, key: served[index]! }]));
   return ids.map((id) => {
     const { row, key } = byId.get(id)!;
     return {
       id,
-      ref: row.purpose === "asset" ? assetRef(row.name) : null,
+      ref:
+        row.purpose === "asset"
+          ? assetRef(row.name)
+          : row.purpose === "comment"
+            ? commentRef(row.name)
+            : null,
       url: `${deps.config.assetsUrl}/${key}`,
     };
   });
@@ -190,12 +225,14 @@ async function showPreviews(
 }
 
 export const assetRef = (name: string) => `assets/${name}`;
+export const commentRef = (name: string) => `comments/${name}`;
 
 /**
- * Where an upload's bytes go. An asset and an export go where they are served from. A
- * preview's place depends on the seq it is completed with, so it waits under `staging/`, apart
- * from every design's files (where a bucket lifecycle rule can clear what is never completed),
- * and is copied into place then.
+ * Where an upload's bytes go. An asset and an export go where they are served from. A preview's
+ * place depends on the seq it is completed with, and a comment's picture is asked for before its
+ * comment is saved (which may never happen: refused, undone, the app closed), so both wait under
+ * `staging/`, apart from every design's files (where a bucket lifecycle rule clears what is
+ * never completed), and are copied into place when completed.
  */
 function uploadKey(assetKey: string, purpose: Upload["purpose"], id: string, name: string): string {
   if (purpose === "asset") return `${assetKey}/${assetRef(name)}`;

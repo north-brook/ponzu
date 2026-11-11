@@ -15,15 +15,21 @@ export type Background = (name: string, work: Promise<unknown>) => void;
 /**
  * `keep` is handed each piece of work so that something waits for it: Vercel's `waitUntil` in
  * a deployment, a list a test can wait on under `createTestApp`. What it is handed never
- * rejects: a failure is logged as `background_failed` and ends there.
+ * rejects: a failure is logged as `background_failed`, handed to `report` (error tracking), and
+ * ends there.
  */
-export function createBackground(log: Logger, keep: (work: Promise<void>) => void): Background {
+export function createBackground(
+  log: Logger,
+  keep: (work: Promise<void>) => void,
+  report: (name: string, error: unknown) => void = () => {},
+): Background {
   return (name, work) =>
     keep(
       work.then(
         () => {},
         (error) => {
           log.error("background_failed", { name, error });
+          report(name, error);
         },
       ),
     );

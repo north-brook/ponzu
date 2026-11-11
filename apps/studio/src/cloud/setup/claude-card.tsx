@@ -152,7 +152,8 @@ function MethodEntry({
   const label = subscription ? "Paste the code from claude.ai" : "Paste your Anthropic API key";
   const id = useId();
   return (
-    <SetupCard>
+    // The code or the key, as it is pasted: never recorded (app/analytics/privacy.ts).
+    <SetupCard className="ph-no-capture">
       <div className="flex items-center gap-2.5 px-4 py-3">
         {subscription ? <ClaudeTile /> : <KeyTile />}
         <span className="flex-1 font-medium text-14 text-ink">

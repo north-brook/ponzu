@@ -452,8 +452,10 @@ describe("the event feed", () => {
           text: "Bigger",
           artboardId: "ab_1",
           artboardName: "Home",
+          pageId: "pg_1",
+          pageName: "First",
+          at: { x: 0, y: 0 },
           from,
-          board: expect.objectContaining({ id: "ab_1", name: "Home", x: 0 }),
         },
       },
       {
@@ -466,23 +468,49 @@ describe("the event feed", () => {
           text: "Yes",
           artboardId: "ab_1",
           artboardName: "Home",
+          pageId: "pg_1",
+          pageName: "First",
+          at: { x: 10, y: 20 },
           from,
-          board: expect.objectContaining({ id: "ab_1", name: "Home", x: 0 }),
         },
       },
     ]);
     expect(
       (await feed(design.id)).map((event) => (event.payload as { reply: boolean }).reply),
     ).toEqual([false, true]);
+  });
 
-    // The board each keeps is the board as it was then, not as it later becomes.
+  test("a comment on the open canvas says its page and where on it", async () => {
+    const design = await sample();
     await post(as("maya"), design.id, [
-      { id: "op_c3", op: { op: "artboard.update", id: "ab_1", x: 50 } },
+      {
+        id: "op_open",
+        op: {
+          op: "thread.create",
+          thread: {
+            id: "th_open",
+            pageId: "pg_2",
+            x: -40,
+            y: 300,
+            status: "open",
+            createdAt: 0,
+            updatedAt: 0,
+            messages: [
+              { id: "m_open", author: { kind: "user", name: "Maya" }, text: "Here", createdAt: 0 },
+            ],
+          },
+        },
+      },
     ]);
-    const kept = await listThreadItems(t.db, { designId: design.id });
-    expect(kept.map((item) => (item.payload as { board?: { x: number } }).board?.x)).toEqual([
-      0, 0,
-    ]);
+    const [item] = await listThreadItems(t.db, { designId: design.id });
+    expect(item!.payload).toMatchObject({
+      artboardId: null,
+      artboardName: null,
+      pageId: "pg_2",
+      pageName: "Second",
+      at: { x: -40, y: 300 },
+    });
+    expect(item!.payload).not.toHaveProperty("picture");
   });
 
   test("a person's ops ask for the design's sandbox, and a comment asks it to wake", async () => {

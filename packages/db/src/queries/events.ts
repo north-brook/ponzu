@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import type { PrState } from "../enums.ts";
 import { newId } from "../ids.ts";
 import { designRunners, designs, events, type Json, users } from "../schema/index.ts";
 import { run } from "./run.ts";
@@ -15,6 +16,8 @@ export interface NewEvent {
   payload: Json;
   /** The person behind it. Null when GitHub was. */
   userId?: string | null;
+  /** The PostHog session of the app that sent it, if it said. */
+  posthogSessionId?: string | null;
 }
 
 /** Someone behind an event, as the runner names them. */
@@ -42,8 +45,20 @@ export function eventRow({
   priority,
   payload,
   userId = null,
-}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & { id: string; userId: string | null } {
-  return { id: newId("evt"), kind, priority, payload: scrubbed(payload), userId };
+  posthogSessionId = null,
+}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & {
+  id: string;
+  userId: string | null;
+  posthogSessionId: string | null;
+} {
+  return {
+    id: newId("evt"),
+    kind,
+    priority,
+    payload: scrubbed(payload),
+    userId,
+    posthogSessionId,
+  };
 }
 
 /**
@@ -58,6 +73,24 @@ export async function appendEvent(db: Db, event: NewEvent): Promise<DesignEvent>
       .returning(),
   );
   return row!;
+}
+
+/**
+ * Who sent each of these events of a design, and from which app session: what a turn the event
+ * began is attributed to. Ids that are not the design's are left out.
+ */
+export async function getEventOrigins(
+  db: Db,
+  { designId, ids }: { designId: string; ids: string[] },
+): Promise<Map<string, { userId: string | null; posthogSessionId: string | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await run(
+    db
+      .select({ id: events.id, userId: events.userId, posthogSessionId: events.posthogSessionId })
+      .from(events)
+      .where(and(eq(events.designId, designId), inArray(events.id, ids))),
+  );
+  return new Map(rows.map(({ id, ...origin }) => [id, origin]));
 }
 
 /** A person as an event names them. */
@@ -101,7 +134,12 @@ export async function claimEvents(
     claimId,
     limit = 100,
   }: { designId: string; runnerId: string; claimId: string; limit?: number },
-): Promise<{ events: ClaimedEvent[]; seq: number } | null> {
+): Promise<{
+  events: ClaimedEvent[];
+  seq: number;
+  /** The design's pull request as its row says, for the agent's next turn. */
+  pullRequest: { number: number; state: PrState } | null;
+} | null> {
   const pending = and(eq(events.designId, designId), isNull(events.deliveredAt));
   const ofThisClaim = and(eq(events.claimedBy, runnerId), eq(events.claimId, claimId));
   const repeated = db.select({ id: events.id }).from(events).where(and(pending, ofThisClaim));
@@ -143,6 +181,8 @@ export async function claimEvents(
       .with(claimed)
       .select({
         seq: designs.seq,
+        prNumber: designs.prNumber,
+        prState: designs.prState,
         event: {
           id: claimed.id,
           designId: claimed.designId,
@@ -150,6 +190,7 @@ export async function claimEvents(
           kind: claimed.kind,
           priority: claimed.priority,
           payload: claimed.payload,
+          posthogSessionId: claimed.posthogSessionId,
           createdAt: claimed.createdAt,
           claimedAt: claimed.claimedAt,
           claimedBy: claimed.claimedBy,
@@ -168,7 +209,11 @@ export async function claimEvents(
   const claimedEvents = rows
     .flatMap(({ event, user }) => (event ? [{ ...event, from: personOf(user) }] : []))
     .sort((a, b) => a.seq - b.seq);
-  return { events: claimedEvents, seq: head.seq };
+  const pullRequest =
+    head.prNumber === null || head.prState === null
+      ? null
+      : { number: head.prNumber, state: head.prState };
+  return { events: claimedEvents, seq: head.seq, pullRequest };
 }
 
 /**

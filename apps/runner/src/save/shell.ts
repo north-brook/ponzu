@@ -16,6 +16,10 @@ export class ShellError extends Error {
   constructor(
     message: string,
     readonly code: number | null,
+    /** All it printed to stderr (up to 64 chunks), for a caller that reads more than the last line. */
+    readonly stderr = "",
+    /** What it printed to stdout before it failed. */
+    readonly stdout = "",
   ) {
     super(message);
   }
@@ -57,8 +61,16 @@ export function agentShell(asAgent: string | undefined, env: NodeJS.ProcessEnv):
       child.on("close", (code) => {
         clearTimeout(timer);
         if (code === 0) return resolve(new Uint8Array(Buffer.concat(out)));
-        const said = Buffer.concat(err).toString("utf8").trim().split("\n").at(-1) ?? "";
-        reject(new ShellError(`${args[0]} exited ${code}${said ? `: ${said}` : ""}`, code));
+        const stderr = Buffer.concat(err).toString("utf8");
+        const said = stderr.trim().split("\n").at(-1) ?? "";
+        reject(
+          new ShellError(
+            `${args[0]} exited ${code}${said ? `: ${said}` : ""}`,
+            code,
+            stderr,
+            Buffer.concat(out).toString("utf8"),
+          ),
+        );
       });
       child.stdin.on("error", () => {});
       child.stdin.end(opts.input);

@@ -309,6 +309,11 @@ export const events = pgTable(
     payload: jsonb("payload").$type<Json>().notNull(),
     /** The person behind it. Null when GitHub was. */
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * The PostHog session of the app that sent it, when it said (docs/analytics.md): the turn
+     * it starts is traced under that session, so a recording links to the agent's work.
+     */
+    posthogSessionId: text("posthog_session_id"),
     createdAt: createdAt(),
     /** When a runner last took it. */
     claimedAt: instant("claimed_at"),
@@ -510,6 +515,12 @@ export const designRunners = pgTable("design_runners", {
    * get ready for. The idle stop waits a little for it to match before it stops the sandbox.
    */
   quiescedFor: instant("quiesced_for"),
+  /**
+   * The design's branch in the sandbox against GitHub, as the runner last said: commits GitHub
+   * lacks, and why the last push of them failed. Create PR goes by it while GitHub lacks them.
+   */
+  unpushed: integer("unpushed").notNull().default(0),
+  pushError: text("push_error"),
 });
 
 /**
