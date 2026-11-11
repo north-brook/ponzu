@@ -28,7 +28,8 @@ export function NewDesignComposer({
   onSend: () => void;
   onAttach: () => void;
   sending?: boolean;
-  model: ModelChoice;
+  /** Null hides the picker: the person's defaults aren't known yet, and the API applies them. */
+  model: ModelChoice | null;
   fieldRef?: Ref<HTMLTextAreaElement>;
   /** Images to send with the prompt, above the field. */
   attachments?: PendingAttachment[];
@@ -80,7 +81,7 @@ export function NewDesignComposer({
           <Icon icon={PlusSignIcon} size={16} stroke={1.9} />
         </IconButton>
         <span className="flex-1" />
-        <ModelPicker {...model} />
+        {model ? <ModelPicker {...model} /> : null}
         <SendButton
           size={32}
           iconSize={15}

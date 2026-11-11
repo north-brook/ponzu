@@ -67,8 +67,13 @@ export function MembersSection({
       <Section
         label="People"
         note={
-          refusal ??
-          (syncFailed ? "Couldn't reach GitHub. This is who was in it last time." : undefined)
+          refusal ? (
+            <span role="alert" className="text-danger">
+              {refusal}
+            </span>
+          ) : syncFailed ? (
+            "Couldn't reach GitHub. This is who was in it last time."
+          ) : undefined
         }
       >
         {sortMembers(members).map((member) => (

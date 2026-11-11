@@ -16,7 +16,8 @@ export interface CreatePageProps {
   onSend: () => void;
   onAttach: () => void;
   sending?: boolean;
-  model: ModelChoice;
+  /** Null until the person's defaults are known: a design sent then starts on them. */
+  model: ModelChoice | null;
   project: ProjectChoice;
   /** The repos the App can see, pushed-to lately first; null while they load. */
   repos: Repo[] | null;

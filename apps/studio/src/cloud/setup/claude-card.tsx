@@ -10,7 +10,7 @@ import { cn } from "../ui/cn.ts";
 import { TextField } from "../ui/field.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
-import { MarkTile, RowButton, SetupCard, SetupRow } from "./step.tsx";
+import { MarkTile, RowButton, SetupCard, SetupRow, Waiting } from "./step.tsx";
 
 export type ClaudeCardState =
   | {
@@ -19,6 +19,8 @@ export type ClaudeCardState =
       starting: boolean;
       /** The sign-in couldn't be started. */
       failed: boolean;
+      /** Claude turned the start away: the person has started too many this hour. */
+      limited?: boolean;
     }
   | {
       mode: "subscription";
@@ -26,15 +28,27 @@ export type ClaudeCardState =
       /**
        * `incomplete`: not the whole code, so it can be pasted again. `wrong`: claude.ai turned it
        * away. `used`, `expired`: the sign-in is spent. Past each of those three only Open
-       * sign-in again helps. `failed`: Claude couldn't be reached.
+       * sign-in again helps. `limited`: too many sign-ins this hour, so even that waits. `failed`:
+       * Claude couldn't be reached.
        */
-      status: "idle" | "connecting" | "incomplete" | "wrong" | "used" | "expired" | "failed";
+      status:
+        | "idle"
+        | "connecting"
+        | "incomplete"
+        | "wrong"
+        | "used"
+        | "expired"
+        | "limited"
+        | "failed";
     }
   | {
       mode: "api_key";
       key: string;
       status: "idle" | "connecting" | "rejected" | "failed";
     };
+
+/** As the API says it when a person has started too many sign-ins in an hour. */
+const LIMITED = "You've started signing in to Claude several times this hour. Try again later.";
 
 /**
  * What each failure says, in place of the field's helper. For a code, Open sign-in again
@@ -45,6 +59,7 @@ const ERRORS: Partial<Record<Exclude<ClaudeCardState, { mode: "choose" }>["statu
   wrong: "That code didn't work.",
   used: "That sign-in has been used.",
   expired: "That code has expired.",
+  limited: LIMITED,
   rejected: "Anthropic didn't accept that key.",
   failed: "Couldn't reach Claude. Try again.",
 };
@@ -53,7 +68,10 @@ const ERRORS: Partial<Record<Exclude<ClaudeCardState, { mode: "choose" }>["statu
 export function signInSpent(state: ClaudeCardState): boolean {
   return (
     state.mode === "subscription" &&
-    (state.status === "wrong" || state.status === "used" || state.status === "expired")
+    (state.status === "wrong" ||
+      state.status === "used" ||
+      state.status === "expired" ||
+      state.status === "limited")
   );
 }
 
@@ -71,6 +89,8 @@ export interface ClaudeCardProps {
   onInput: (text: string) => void;
   /** Start a new sign-in and open claude.ai again; the code is cleared. */
   onReopen: () => void;
+  /** A new sign-in is being started: Open sign-in again waits until claude.ai opens. */
+  reopening?: boolean;
   onSubmit: () => void;
 }
 
@@ -105,9 +125,9 @@ export function ClaudeCard(props: ClaudeCardProps) {
             </RowButton>
           </SetupRow>
         </SetupCard>
-        {state.failed ? (
+        {state.failed || state.limited ? (
           <p role="alert" className="m-0 pt-3.5 text-center text-12 text-danger">
-            Couldn't reach Claude. Try again.
+            {state.limited ? LIMITED : "Couldn't reach Claude. Try again."}
           </p>
         ) : null}
       </>
@@ -121,6 +141,7 @@ function MethodEntry({
   onChange,
   onInput,
   onReopen,
+  reopening = false,
   onSubmit,
 }: ClaudeCardProps & { state: Exclude<ClaudeCardState, { mode: "choose" }> }) {
   const subscription = state.mode === "subscription";
@@ -194,11 +215,20 @@ function MethodEntry({
               <button
                 type="button"
                 onClick={onReopen}
-                disabled={connecting}
-                className="inline-flex cursor-default items-center gap-0.5 rounded-4 font-medium text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink disabled:opacity-35"
+                disabled={connecting || reopening}
+                aria-busy={reopening || undefined}
+                className={cn(
+                  "inline-flex cursor-default items-center gap-0.5 rounded-4 font-medium text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink",
+                  // Waiting on Claude is the turning slice, not a faded link.
+                  reopening ? "disabled:opacity-100" : "disabled:opacity-35",
+                )}
               >
                 Open sign-in again
-                <Icon icon={ArrowUpRight01Icon} size={10} stroke={2} />
+                {reopening ? (
+                  <Waiting size={10} label="Starting a sign-in" />
+                ) : (
+                  <Icon icon={ArrowUpRight01Icon} size={10} stroke={2} />
+                )}
               </button>
             </>
           ) : null}

@@ -1,8 +1,12 @@
 import { ApiError } from "@ponzu/client";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { enteredKey } from "../../cloud/claude.ts";
-import type { ClaudeCardProps, ClaudeCardState } from "../../cloud/setup/claude-card.tsx";
+import {
+  type ClaudeCardProps,
+  type ClaudeCardState,
+  signInSpent,
+} from "../../cloud/setup/claude-card.tsx";
 import { usePonzu } from "../ponzu-query.tsx";
 
 /*
@@ -39,6 +43,14 @@ export function afterRefusal(state: Entry, error: unknown): Entry {
   return { ...state, status: "failed" };
 }
 
+/** What the card says when a sign-in couldn't be started, by where it was asked from. */
+export function afterStartFailed(from: ClaudeCardState, error: unknown): ClaudeCardState {
+  // Each sign-in is a machine Ponzu pays for, so the API starts only so many an hour.
+  const limited = error instanceof ApiError && error.code === "rate_limited";
+  if (from.mode === "choose") return { mode: "choose", starting: false, failed: !limited, limited };
+  return { mode: "subscription", code: "", status: limited ? "limited" : "failed" };
+}
+
 /** Typing clears a mistake that typing can fix; a spent sign-in stays spent until reopened. */
 export function afterInput(state: Entry, text: string): Entry {
   if (state.mode === "api_key") return { ...state, key: enteredKey(text), status: "idle" };
@@ -46,30 +58,57 @@ export function afterInput(state: Entry, text: string): Entry {
   return { ...state, code: text, status: fixable ? "idle" : state.status };
 }
 
+/** The card's own props, and the way straight to the code field a Settings row takes. */
+export interface ClaudeConnect extends ClaudeCardProps {
+  /** Start a claude.ai sign-in from a press elsewhere, with the card on the code field. */
+  openSubscription: () => void;
+}
+
 /**
  * The Claude card, live. `onConnected` runs once the API has the person's Claude; the cache's
- * `me` and Claude answers already say so by then. Starting on the code field starts a claude.ai
- * sign-in at once: the person asked to sign in.
+ * `me` and Claude answers already say so by then, and the card is back on its two ways with
+ * nothing entered kept.
+ *
+ * Each sign-in is a sandbox the API runs until it is used or let go of, and counts toward the
+ * person's sign-ins this hour. So one starts only on a press, never two at once, and is let go
+ * of when the person leaves it: Change, or the card going away (the step moving on, Settings
+ * or a dialog closing). The answer to a start the person has since left is let go of too.
  */
 export function useClaudeConnect({
   openExternal,
   onConnected,
-  initial = CHOOSING,
 }: {
   openExternal: (url: string) => void;
   onConnected?: () => void;
-  initial?: ClaudeCardState;
-}): ClaudeCardProps {
-  const { mutations } = usePonzu();
-  const [state, setState] = useState<ClaudeCardState>(initial);
+}): ClaudeConnect {
+  const { api, mutations } = usePonzu();
+  const [state, setState] = useState<ClaudeCardState>(CHOOSING);
   const [pending, setPending] = useState<PendingSignIn | null>(null);
   const start = useMutation(mutations.startClaudeSignIn());
   const sendCode = useMutation(mutations.sendClaudeCode());
   const connectKey = useMutation(mutations.connectApiKey());
-  const abandon = useMutation(mutations.abandonClaudeSignIn());
   const connected = useRef(onConnected);
   connected.current = onConnected;
-  const startedAtOnce = useRef(false);
+  /** The sign-in open at the API that this card holds, until it is used or let go of. */
+  const held = useRef<string | null>(null);
+  /** Counts starts and leavings: only the answer to the latest start is taken. */
+  const latest = useRef(0);
+  /** A start is on its way: presses wait for it, since each one is another sandbox. */
+  const starting = useRef(false);
+
+  const letGo = useCallback(
+    (id: string) => {
+      // Nothing waits on it: if it doesn't arrive, the API's sweep ends the sign-in.
+      api.claude.abandonSignIn(id).catch(() => {});
+    },
+    [api],
+  );
+  const leave = useCallback(() => {
+    latest.current += 1;
+    if (held.current) letGo(held.current);
+    held.current = null;
+  }, [letGo]);
+  useEffect(() => leave, [leave]);
 
   // Ten minutes after it began, a sign-in takes no code: say so before the person tries one.
   useEffect(() => {
@@ -89,49 +128,66 @@ export function useClaudeConnect({
 
   // A new sign-in replaces the one before it, at the API.
   const signIn = (from: ClaudeCardState) => {
-    if (from.mode === "choose") setState({ ...from, starting: true, failed: false });
-    start.mutate(undefined, {
-      onSuccess: ({ id, authorizeUrl, expiresAt }) => {
-        setPending({ id, expiresAt });
-        setState({ mode: "subscription", code: "", status: "idle" });
-        openExternal(authorizeUrl);
-      },
-      onError: () =>
-        setState(
-          from.mode === "choose"
-            ? { mode: "choose", starting: false, failed: true }
-            : { mode: "subscription", code: "", status: "failed" },
-        ),
-    });
+    if (starting.current) return;
+    starting.current = true;
+    const ticket = ++latest.current;
+    if (from.mode === "choose") setState({ mode: "choose", starting: true, failed: false });
+    start
+      .mutateAsync()
+      .finally(() => {
+        starting.current = false;
+      })
+      .then(
+        ({ id, authorizeUrl, expiresAt }) => {
+          if (ticket !== latest.current) return letGo(id);
+          held.current = id;
+          setPending({ id, expiresAt });
+          setState({ mode: "subscription", code: "", status: "idle" });
+          openExternal(authorizeUrl);
+        },
+        (error: unknown) => {
+          if (ticket === latest.current) setState(afterStartFailed(from, error));
+        },
+      );
   };
-
-  useEffect(() => {
-    if (initial.mode !== "subscription" || startedAtOnce.current) return;
-    startedAtOnce.current = true;
-    signIn(initial);
-  });
 
   return {
     state,
     onSignIn: () => signIn(state),
     onAddKey: () => setState({ mode: "api_key", key: "", status: "idle" }),
     onChange: () => {
-      if (pending) abandon.mutate(pending.id);
+      leave();
       setPending(null);
       setState(CHOOSING);
     },
     onInput: (text) => setState((now) => (now.mode === "choose" ? now : afterInput(now, text))),
     onReopen: () => signIn(state),
+    reopening: start.isPending && state.mode === "subscription",
+    openSubscription: () => {
+      const entry: ClaudeCardState = { mode: "subscription", code: "", status: "idle" };
+      setState(entry);
+      signIn(entry);
+    },
     onSubmit: () => {
       if (state.mode === "choose") return;
       const entry = state;
       setState({ ...entry, status: "connecting" } as Entry);
       const done = {
         onSuccess: () => {
+          held.current = null;
           setPending(null);
+          // Nothing of the key or code stays in the card, or its mutation, once it is sent.
+          setState(CHOOSING);
+          connectKey.reset();
+          sendCode.reset();
           connected.current?.();
         },
-        onError: (error: unknown) => setState(afterRefusal(entry, error)),
+        onError: (error: unknown) => {
+          const next = afterRefusal(entry, error);
+          // A sign-in that took its one code, or ran out, has nothing left to let go of.
+          if (signInSpent(next)) held.current = null;
+          setState(next);
+        },
       };
       if (entry.mode === "api_key") {
         connectKey.mutate(entry.key, done);

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError } from "@ponzu/client";
 import { createFakeBackend, FakeClock } from "@ponzu/client/testing";
+import { type ClaudeCardState, signInSpent } from "../../cloud/setup/claude-card.tsx";
 import { setupStep } from "../../cloud/setup/setup.ts";
-import { afterInput, afterRefusal } from "./claude-connect.ts";
+import { afterInput, afterRefusal, afterStartFailed, CHOOSING } from "./claude-connect.ts";
 import { setupFacts } from "./facts.ts";
 
 /*
@@ -23,6 +24,8 @@ function world() {
   });
   return { clock, backend, maya, own };
 }
+
+type Entry = Exclude<ClaudeCardState, { mode: "choose" }>;
 
 const stepOf = async (api: ReturnType<ReturnType<typeof world>["backend"]["connect"]>["api"]) =>
   setupStep(setupFacts(await api.me()));
@@ -141,6 +144,29 @@ describe("the Claude card, after each answer", () => {
     expect(
       afterRefusal(code("k7#s"), new ApiError(502, "upstream_unavailable", "No.")),
     ).toMatchObject({ status: "failed" });
+  });
+
+  test("too many sign-ins this hour is said in the API's words, and stays until the next", async () => {
+    const { backend, maya } = world();
+    const { api } = backend.connect(maya);
+    backend.claude.limited = true;
+    const limited = await api.claude.startSignIn().catch((e: unknown) => e);
+    expect(afterStartFailed(CHOOSING, limited)).toEqual({
+      mode: "choose",
+      starting: false,
+      failed: false,
+      limited: true,
+    });
+    const reopened = afterStartFailed(code("wrong#s"), limited);
+    expect(reopened).toEqual({ mode: "subscription", code: "", status: "limited" });
+    // Not a mistake typing fixes, and nothing to connect with.
+    expect(reopened.mode === "subscription" && signInSpent(reopened)).toBe(true);
+    expect(afterInput(reopened as Entry, "k7#s").status).toBe("limited");
+
+    backend.claude.limited = false;
+    backend.claude.unreachable = true;
+    const unreachable = await api.claude.startSignIn().catch((e: unknown) => e);
+    expect(afterStartFailed(CHOOSING, unreachable)).toMatchObject({ failed: true, limited: false });
   });
 
   test("typing clears what typing can fix, and nothing a new sign-in must", () => {

@@ -104,7 +104,7 @@ export function CreateView({
 
   const send = async () => {
     const text = prompt.trim();
-    if (!text || !choice || going.current) return;
+    if (!text || going.current) return;
     if (!ready) {
       setNeedsClaude(true);
       return;
@@ -118,8 +118,8 @@ export function CreateView({
         workspaceId,
         repoId: project.kind === "repo" ? project.repo.id : null,
         name: nameFor(text),
-        model: choice.model,
-        effort: choice.effort,
+        // Without an answer about the defaults, the API starts the design on them itself.
+        ...(choice ? { model: choice.model, effort: choice.effort } : {}),
         createKey: createKey.current,
         // With images, the message waits until they are files of the design.
         ...(images.length ? {} : { message: { text } }),
@@ -151,7 +151,6 @@ export function CreateView({
     void latestSend.current();
   }, [sendOnceConnected, ready]);
 
-  if (!defaults.data || !choice) return null;
   return (
     <>
       <CreatePage
@@ -160,13 +159,17 @@ export function CreateView({
         onSend={() => void send()}
         onAttach={() => picker.current?.click()}
         sending={sending}
-        model={{
-          models: defaults.data.models,
-          efforts: defaults.data.efforts,
-          model: choice.model,
-          effort: choice.effort,
-          onChange: (id, effort) => setModel({ model: id, effort }),
-        }}
+        model={
+          defaults.data && choice
+            ? {
+                models: defaults.data.models,
+                efforts: defaults.data.efforts,
+                model: choice.model,
+                effort: choice.effort,
+                onChange: (id, effort) => setModel({ model: id, effort }),
+              }
+            : null
+        }
         project={project}
         repos={repos}
         onProjectChange={setChosen}
@@ -194,7 +197,12 @@ export function CreateView({
       />
       <ClaudeSignedOutDialog
         open={needsClaude}
-        onDismiss={() => setNeedsClaude(false)}
+        onDismiss={() => {
+          // Closing the dialog leaves its sign-in, if one was started: it is let go of.
+          connect.onChange();
+          setNeedsClaude(false);
+          setSendOnceConnected(false);
+        }}
         card={connect}
         connected={me.data?.claudeAccount != null}
       />

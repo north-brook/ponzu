@@ -1,3 +1,4 @@
+import type { Api } from "@ponzu/client";
 import {
   createQueryClient,
   invalidateFromLive,
@@ -17,6 +18,8 @@ import type { Host } from "./host.ts";
  */
 
 interface Ponzu {
+  /** For a call nothing waits on the answer of, such as letting go of a sign-in as a card goes. */
+  api: Api;
   queries: PonzuQueries;
   mutations: PonzuMutations;
 }
@@ -44,7 +47,11 @@ export function PonzuQueryProvider({ host, children }: { host: Host; children: R
   useEffect(() => () => queryClient.clear(), [queryClient]);
   useEffect(() => focusManager.setEventListener(windowFocus), []);
   const ponzu = useMemo(
-    () => ({ queries: ponzuQueries(host.api), mutations: ponzuMutations(host.api, queryClient) }),
+    () => ({
+      api: host.api,
+      queries: ponzuQueries(host.api),
+      mutations: ponzuMutations(host.api, queryClient),
+    }),
     [host, queryClient],
   );
   return (

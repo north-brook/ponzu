@@ -76,6 +76,38 @@ export function Row({
   );
 }
 
+/**
+ * A row that is one action, pressed anywhere along it: what it does on the left and its icon,
+ * at the end, as a row's icon action sits ("Use an API key instead" ›).
+ */
+export function ActionRow({
+  leading,
+  children,
+  icon,
+  onClick,
+}: {
+  leading?: ReactNode;
+  children: ReactNode;
+  icon: IconSvgElement;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-h-12 w-full cursor-default items-center gap-3 border-rule py-1.5 text-left outline-none focus-ring not-last:border-b"
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-2.5">
+        {leading}
+        {children}
+      </span>
+      <span className="grid size-7 place-items-center text-faint transition-colors duration-(--dur-hover) group-hover:text-muted">
+        <Icon icon={icon} size={16} stroke={1.5} />
+      </span>
+    </button>
+  );
+}
+
 /** A row's title over its line in faint. */
 export function TwoLine({ title, line }: { title: ReactNode; line?: ReactNode }) {
   return (
