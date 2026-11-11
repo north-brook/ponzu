@@ -13,14 +13,15 @@ export type Lights = "native" | "drawn" | "none";
 /**
  * The traffic lights' room at the chrome's left. Drawn (the browser and the gallery): three 12px
  * lights 8px apart, as the boards draw them, from 16px in. Native: the Mac draws its own, and
- * since macOS 26 they are 14px across and 9px apart, so they end 76px in; the room is theirs
- * (60px) and 12px more, which with the toggle's own 8px puts its box 20px past the last light
- * and its icon 26px: the lights read as the window's, the toggle as the first of the app's own
- * controls. An older macOS has the smaller lights and so a little more air. The window centres them on
- * the chrome's 44px (apps/desktop/src/traffic-lights.ts).
+ * since macOS 26 they are 14px across and 9px apart; measured in the running app, the last one
+ * ends about 74px in. The room is 60px, which with the toggle's own 8px and its icon's 6px of
+ * inset puts the icon 16px past the last light: the same 16px that separates the icon from the
+ * design's name beside it when the sidebar is closed, so the chrome's left end keeps one rhythm.
+ * An older macOS has the smaller lights and so a little more air. The window centres them on the
+ * chrome's 44px (apps/desktop/src/traffic-lights.ts).
  */
 export function TrafficLights({ drawn }: { drawn: boolean }) {
-  if (!drawn) return <div aria-hidden className="mr-3 h-3 w-[60px] shrink-0" />;
+  if (!drawn) return <div aria-hidden className="h-3 w-[60px] shrink-0" />;
   return (
     <div aria-hidden className="flex shrink-0 gap-2">
       {["#ff5f57", "#febc2e", "#28c840"].map((color) => (
