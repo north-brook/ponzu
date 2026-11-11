@@ -65,7 +65,9 @@ reaches the listener gets a 404 and the wait goes on. The code and verifier then
 
 Tokens are kept by `token-store.ts`, encrypted with `safeStorage` (the login keychain on a
 Mac). Without a keychain (or with Linux's `basic_text`, a key in the clear), nothing is
-written: the session lasts until Ponzu quits, and the sign-in screen says so. The main process
+written: the session lasts until Ponzu quits, and the window says so once signed in. The
+keychain is asked only when there is a session to read or write, so a launch with nobody signed
+in (and the smoke check) never prompts for it. The main process
 is the only refresher, and the rotated pair is written before the new access token is used. The
 studio borrows an access token per request and never sees the refresh token; Sign Out ends the
 session at the API and forgets it here.

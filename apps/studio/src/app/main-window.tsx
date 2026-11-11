@@ -61,6 +61,15 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const [opening, setOpening] = useState<Opening | null>(null);
   const [notice, say] = useNotice();
 
+  // Signed in without a keychain to keep the session in: say so once, now, when it matters.
+  useEffect(() => {
+    void host.persistence().then((persistence) => {
+      if (persistence === "memory") {
+        say("Ponzu can't use this computer's keychain, so you'll sign in again next time.");
+      }
+    });
+  }, [host, say]);
+
   // Back in front: GitHub may have changed who reaches what (docs/cloud.md, "Keeping it true").
   const sync = useCallback(async () => {
     await host.api.github.sync().catch(() => {});

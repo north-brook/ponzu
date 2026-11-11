@@ -1,4 +1,3 @@
-import type { SessionPersistence } from "@ponzu/desktop/bridge";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../cloud/ui/cn.ts";
 import { GithubMark, Slice } from "../cloud/ui/marks.tsx";
@@ -26,7 +25,6 @@ const COPY: Record<SignInReason, { title: string; body: string }> = {
 export function SignInScreen({ host, reason }: { host: Host; reason: SignInReason }) {
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const persistence = usePersistence(host);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -90,24 +88,6 @@ export function SignInScreen({ host, reason }: { host: Host; reason: SignInReaso
           {error}
         </p>
       ) : null}
-      {persistence === "memory" ? (
-        <p className="m-0 mt-8 max-w-[360px] text-center text-12 text-faint leading-[1.5]">
-          Ponzu can't use this computer's keychain, so you'll sign in again the next time you open
-          it.
-        </p>
-      ) : null}
     </div>
   );
-}
-
-function usePersistence(host: Host): SessionPersistence | null {
-  const [persistence, setPersistence] = useState<SessionPersistence | null>(null);
-  useEffect(() => {
-    let live = true;
-    void host.persistence().then((answer) => live && setPersistence(answer));
-    return () => {
-      live = false;
-    };
-  }, [host]);
-  return persistence;
 }

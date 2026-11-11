@@ -143,17 +143,25 @@ function openLink(url: string) {
 
 function fromStudio(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   const frame = event.senderFrame;
+  const top = event.sender.mainFrame;
   return (
-    event.sender === mainWindow?.webContents &&
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender.id === mainWindow.webContents.id &&
     frame !== null &&
-    frame === event.sender.mainFrame &&
+    frame.processId === top.processId &&
+    frame.routingId === top.routingId &&
     isStudio(frame.url, studioOrigins)
   );
 }
 
 function handle(channel: string, answer: (...args: unknown[]) => unknown) {
   ipcMain.handle(channel, (event, ...args) => {
-    if (!fromStudio(event)) throw new Error("Only the studio may ask that.");
+    if (!fromStudio(event)) {
+      throw new Error(
+        `Only the studio may ask that, not ${event.senderFrame?.url ?? "a closed frame"}.`,
+      );
+    }
     return answer(...args);
   });
 }
@@ -166,7 +174,7 @@ function listen(channel: string, act: (...args: unknown[]) => void) {
 
 function registerIpc(session: MainSession, updater: Updates) {
   handle(CHANNELS.sessionState, () => session.session.getState());
-  handle(CHANNELS.sessionPersistence, () => session.persistence);
+  handle(CHANNELS.sessionPersistence, () => session.persistence());
   handle(CHANNELS.accessToken, (rejected) =>
     session.accessToken(typeof rejected === "string" ? rejected : undefined),
   );
@@ -207,11 +215,11 @@ function isBridgeError(value: unknown): value is BridgeError {
  * developer's saved session when one is named, and otherwise the keychain.
  */
 function sessionStorage() {
-  if (smoke) return { storage: memoryStorage(), persistence: "memory" as const };
+  if (smoke) return { storage: memoryStorage(), persistence: () => "memory" as const };
   const file = process.env.PONZU_SESSION_FILE;
   if (file) {
     console.warn(`Using the developer session saved in ${file}, unencrypted.`);
-    return { storage: sessionFileStorage(file), persistence: "keychain" as const };
+    return { storage: sessionFileStorage(file), persistence: () => "keychain" as const };
   }
   return tokenStorage(join(app.getPath("userData"), "session.bin"), {
     available: () =>

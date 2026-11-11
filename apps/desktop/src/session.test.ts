@@ -24,7 +24,7 @@ function harness(browser: (authorize: URL) => Promise<void>) {
     config: configFor(false, { PONZU_API_URL: "https://api.test" }),
     version: "2.0.0",
     storage,
-    persistence: "memory",
+    persistence: () => "memory",
     openBrowser: (url) => browser(new URL(url)),
     focus: () => {
       focused++;

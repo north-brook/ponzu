@@ -19,7 +19,7 @@ import { type SignIn, signInWithBrowser } from "./sign-in.ts";
 
 export interface MainSession {
   session: SessionHost;
-  persistence: SessionPersistence;
+  persistence(): SessionPersistence;
   accessToken(rejected?: string): Promise<BorrowedToken>;
   report(error: BridgeError): void;
   signIn(): Promise<SignInResult>;
@@ -30,7 +30,7 @@ export function mainSession(opts: {
   config: Config;
   version: string;
   storage: KeyValueStorage;
-  persistence: SessionPersistence;
+  persistence: () => SessionPersistence;
   openBrowser: (url: string) => Promise<void>;
   /** Bring Ponzu forward once the browser has come back. */
   focus: () => void;
