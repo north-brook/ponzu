@@ -708,6 +708,9 @@ export class FakeBackend {
           claude_account_kind: null,
           claude_account_status: null,
           claude_plan_label: null,
+          claude_key_hint: null,
+          claude_connected_at: null,
+          claude_expires_at: null,
           claude_limited_until: null,
         };
         return [row];
@@ -731,6 +734,7 @@ export class FakeBackend {
             preview_seq: null,
             agent_state: head.agentState,
             agent_status: head.agentStatus,
+            agent_blocker: null,
             needs_you_count: head.needsYouCount,
             pr_number: null,
             pr_state: null,
@@ -762,6 +766,7 @@ export class FakeBackend {
           pr_mergeable: null,
           pr_auto_merge: false,
           last_activity_at: head.lastActivityAt,
+          agent_blocker: null,
           sandbox_state: null,
         };
         return [row];
@@ -831,6 +836,7 @@ export class FakeBackend {
       agentState: head.agentState,
       agentStatus: head.agentStatus,
       agentArtboards: head.agentArtboards,
+      agentBlocker: null,
       needsYouCount: head.needsYouCount,
       prNumber: null,
       prState: null,

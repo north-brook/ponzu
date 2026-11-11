@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createApi } from "./api.ts";
 import { CloudSource } from "./canvas/cloud-source.ts";
 import { createLive } from "./live/live.ts";
-import { createSession, type KeyValueStorage, SESSION_KEY } from "./session.ts";
+import { createSession } from "./session.ts";
+import { sessionFile } from "./testing/session-file.ts";
 
 /*
  * The real thing, opt in: Ponzu Cloud at PONZU_API_URL (https://api.ponzu.design unless set),
@@ -19,50 +19,6 @@ import { createSession, type KeyValueStorage, SESSION_KEY } from "./session.ts";
  */
 
 const { PONZU_SESSION_FILE: file, WORKOS_CLIENT_ID: workosClientId } = process.env;
-
-/** The session file as the client's storage. */
-function sessionFile(path: string): KeyValueStorage {
-  const read = () =>
-    JSON.parse(readFileSync(path, "utf8")) as {
-      api: string;
-      user: unknown;
-      access_token: string;
-      refresh_token: string;
-    };
-  return {
-    async get(key) {
-      if (key !== SESSION_KEY) return null;
-      const saved = read();
-      return JSON.stringify({
-        accessToken: saved.access_token,
-        refreshToken: saved.refresh_token,
-        user: saved.user,
-      });
-    },
-    async set(key, value) {
-      if (key !== SESSION_KEY) return;
-      const tokens = JSON.parse(value) as {
-        accessToken: string;
-        refreshToken: string;
-        user: unknown;
-      };
-      const next = {
-        ...read(),
-        user: tokens.user,
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
-        saved_at: new Date().toISOString(),
-      };
-      const temporary = `${path}.${process.pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-      chmodSync(temporary, 0o600);
-      renameSync(temporary, path);
-    },
-    async delete() {
-      // A test never signs the developer out.
-    },
-  };
-}
 
 const until = async (done: () => boolean, ms: number, what: string) => {
   const deadline = Date.now() + ms;

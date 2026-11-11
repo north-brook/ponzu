@@ -16,6 +16,7 @@ import {
 import { syncGithub } from "../github/sync.ts";
 import { REFRESH_JOB, refreshSoon } from "../pull-requests/refresh.ts";
 import { refreshPullRequest } from "../pull-requests/sync.ts";
+import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import {
   createTestApp,
   type FakeInstallation,
@@ -221,6 +222,8 @@ describe("what is let in", () => {
   });
 
   test("work that fails after the answer is kept, and the cron runs it again after a wait", async () => {
+    // Run what earlier tests left due first: the wakes their news queued.
+    await cronRun();
     const installation = installOnOrg("flakyco", []);
     const payload = installationPayload("created", installation, 1);
     t.github.failNext(`/app/installations/${installation.id}`);
@@ -946,6 +949,12 @@ describe("pull requests, checks and reviews", () => {
     ]);
     // And the design's row has the checks as GitHub rolls them up.
     expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: 1, prChecks: "failing" });
+    // The news wakes the design's sandbox: one wake waits for the cron.
+    const wakes = (await t.db.select().from(jobs)).filter(
+      (job) => job.kind === WAKE_JOB && job.key === design.id && job.completedAt === null,
+    );
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.lockedBy).toBeNull();
   });
 
   test("a review is news for the agent, but not once the design is settled", async () => {

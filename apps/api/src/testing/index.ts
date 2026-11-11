@@ -9,6 +9,7 @@ import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
 import { DocCache } from "../designs/doc-cache.ts";
+import type { SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
@@ -16,7 +17,7 @@ import { createVault } from "../vault/vault.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
-import { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
 export { FakeModel, type FakeReply } from "./fake-model.ts";
@@ -26,7 +27,14 @@ export {
   MERGEABLE_AFTER_MS,
 } from "./fake-pull-requests.ts";
 export { FakeWorkos } from "./fake-workos.ts";
-export { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+
+/** The sandbox image the test app creates sandboxes from; its provider has it baked. */
+export const TEST_SNAPSHOT = "ponzu-runner-test";
+/** Where the test app tells a sandbox's runner the API is. */
+export const TEST_API_URL = "https://api.test";
+/** The label value the test app's sandboxes carry: its database's, as a deployment's would. */
+export const TEST_SCOPE = "testscope";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
@@ -93,6 +101,13 @@ export async function createTestApp(
     /** Real storage and where it serves from, for an opt-in test against the R2 bucket. */
     storage?: ObjectStorage;
     assetsUrl?: string;
+    /** How sandboxes are made, over the test's own: a snapshot of null acts out it being unset. */
+    sandbox?: Partial<SandboxConfig>;
+    /**
+     * Another test app's provider (and its clock), to act out two deployments sharing one
+     * provider account. Give each its own `sandbox.scope`.
+     */
+    provider?: FakeProvider;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -103,10 +118,12 @@ export async function createTestApp(
   db.transaction = () => {
     throw new Error("No transactions support in neon-http driver");
   };
-  const clock = new FakeClock();
+  const clock = options.provider?.clock ?? new FakeClock();
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
-  const sandbox = new FakeProvider(clock);
+  const sandbox = options.provider ?? new FakeProvider(clock);
+  sandbox.seedSnapshot(TEST_SNAPSHOT);
+  const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
@@ -132,6 +149,7 @@ export async function createTestApp(
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
     sandbox,
+    anthropic,
     storage: options.storage ?? storage,
     poke: poke.poke,
     realtime: options.live?.realtime ?? sealer,
@@ -148,6 +166,15 @@ export async function createTestApp(
         botUserId: TEST_BOT_USER_ID,
       },
       cronSecret: TEST_CRON_SECRET,
+      sandbox: {
+        snapshot: TEST_SNAPSHOT,
+        apiUrl: TEST_API_URL,
+        idleSeconds: 300,
+        // Higher than a deployment's, since a test file keeps many designs awake at once.
+        limits: { perWorkspace: 100, perOwner: 100 },
+        scope: TEST_SCOPE,
+        ...options.sandbox,
+      },
     },
   };
   const app = createApp(deps);
@@ -256,6 +283,7 @@ export async function createTestApp(
     workos,
     github,
     sandbox,
+    anthropic,
     storage,
     poke,
     realtime: sealer,

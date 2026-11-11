@@ -42,10 +42,12 @@ test("a row as Realtime sends it becomes one the apps read", () => {
     pr_mergeable: true,
     pr_auto_merge: false,
     last_activity_at: new Date("2026-11-10T12:00:00Z"),
+    agent_blocker: null,
     sandbox_state: "awake",
   };
   const head = DECODE["design.head"](raw);
   expect(head.seq).toBe(10);
+  expect(head.agentBlocker).toBeNull();
   expect(head.lastActivityAt).toBe("2026-11-10T12:00:00.000Z");
   expect(head.agentArtboards).toEqual(["ab_1"]);
 

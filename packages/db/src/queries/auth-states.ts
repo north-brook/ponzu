@@ -20,6 +20,20 @@ export async function createAuthState(
   return row!;
 }
 
+/** A round trip of this kind that `userId` began, whatever has become of it since. */
+export async function getAuthState(
+  db: Db,
+  { id, kind, userId }: { id: string; kind: AuthState["kind"]; userId: string },
+): Promise<AuthState | null> {
+  const [row] = await run(
+    db
+      .select()
+      .from(authStates)
+      .where(and(eq(authStates.id, id), eq(authStates.kind, kind), eq(authStates.userId, userId))),
+  );
+  return row ?? null;
+}
+
 /**
  * Take a round trip's state as it comes back, once. Null if it is of another kind, has run out
  * at `now`, or was taken before: the first caller gets it and every later one gets nothing, so

@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
   AUTH_STATE_KINDS,
@@ -288,7 +289,12 @@ export const claudeAccounts = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     kind: text("kind", { enum: CLAUDE_ACCOUNT_KINDS }).notNull(),
     status: text("status", { enum: CLAUDE_ACCOUNT_STATUSES }).notNull().default("connected"),
-    encryptedCredential: text("encrypted_credential").notNull(),
+    /**
+     * The subscription token or the API key, sealed to this row. Destroyed when the person
+     * disconnects: the row stays, `revoked`, so the designs that run on it keep pointing at it,
+     * and connecting again fills it in.
+     */
+    encryptedCredential: text("encrypted_credential"),
     planLabel: text("plan_label"),
     email: text("email"),
     /** The last four characters of an API key. */
@@ -305,6 +311,10 @@ export const claudeAccounts = pgTable(
   (t) => [
     check("claude_accounts_kind_check", oneOf(t.kind, CLAUDE_ACCOUNT_KINDS)),
     check("claude_accounts_status_check", oneOf(t.status, CLAUDE_ACCOUNT_STATUSES)),
+    check(
+      "claude_accounts_credential_check",
+      sql`(${t.status} = 'revoked') = (${t.encryptedCredential} is null)`,
+    ),
   ],
 );
 
@@ -350,6 +360,10 @@ export const authStates = pgTable(
   },
   (t) => [
     index("auth_states_expires_at_idx").on(t.expiresAt),
+    // A person has one Claude sign-in open at a time, each with a sandbox of its own.
+    uniqueIndex("auth_states_open_claude_sign_in_key")
+      .on(t.userId)
+      .where(sql`${t.kind} = 'claude_sign_in' and ${t.consumedAt} is null`),
     check("auth_states_kind_check", oneOf(t.kind, AUTH_STATE_KINDS)),
   ],
 );

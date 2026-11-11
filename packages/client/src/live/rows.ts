@@ -5,6 +5,7 @@ import type { Api } from "../api.ts";
 type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
 type DesignStatus = DesignView["status"];
 type AgentState = DesignView["agentState"];
+type AgentBlocker = NonNullable<DesignView["agentBlocker"]>;
 type PrState = NonNullable<DesignView["prState"]>;
 type PrChecks = DesignView["prChecks"];
 type QuestionStatus = "open" | "answered" | "cancelled";
@@ -38,6 +39,9 @@ export const LIVE_COLUMNS = {
     "claude_account_kind",
     "claude_account_status",
     "claude_plan_label",
+    "claude_key_hint",
+    "claude_connected_at",
+    "claude_expires_at",
     "claude_limited_until",
   ],
   "workspace.designs": [
@@ -55,6 +59,7 @@ export const LIVE_COLUMNS = {
     "preview_seq",
     "agent_state",
     "agent_status",
+    "agent_blocker",
     "needs_you_count",
     "pr_number",
     "pr_state",
@@ -82,6 +87,7 @@ export const LIVE_COLUMNS = {
     "pr_mergeable",
     "pr_auto_merge",
     "last_activity_at",
+    "agent_blocker",
     "sandbox_state",
   ],
   "design.thread": [
@@ -148,6 +154,11 @@ export interface MeRow {
     kind: string;
     status: string;
     planLabel: string | null;
+    /** The last four characters of an API key. */
+    keyHint: string | null;
+    connectedAt: string | null;
+    /** When a subscription's token runs out: ask to sign in again a few weeks before. */
+    expiresAt: string | null;
     limitedUntil: string | null;
   } | null;
 }
@@ -168,6 +179,7 @@ export interface DesignListRow {
   previewSeq: number | null;
   agentState: AgentState;
   agentStatus: string | null;
+  agentBlocker: AgentBlocker | null;
   needsYouCount: number;
   prNumber: number | null;
   prState: PrState | null;
@@ -197,6 +209,8 @@ export interface DesignHeadRow {
   prMergeable: boolean | null;
   prAutoMerge: boolean;
   lastActivityAt: string;
+  /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
+  agentBlocker: AgentBlocker | null;
   /** Null while the design has no sandbox. */
   sandboxState: string | null;
 }
@@ -264,6 +278,9 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
             kind: text(r.claude_account_kind),
             status: text(r.claude_account_status),
             planLabel: maybeText(r.claude_plan_label),
+            keyHint: maybeText(r.claude_key_hint),
+            connectedAt: maybeTime(r.claude_connected_at),
+            expiresAt: maybeTime(r.claude_expires_at),
             limitedUntil: maybeTime(r.claude_limited_until),
           },
   }),
@@ -282,6 +299,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     previewSeq: maybeNumber(r.preview_seq),
     agentState: r.agent_state as AgentState,
     agentStatus: maybeText(r.agent_status),
+    agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
     needsYouCount: number(r.needs_you_count),
     prNumber: maybeNumber(r.pr_number),
     prState: (r.pr_state ?? null) as PrState | null,
@@ -309,6 +327,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prMergeable: (r.pr_mergeable ?? null) as boolean | null,
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
+    agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
     sandboxState: maybeText(r.sandbox_state),
   }),
   "design.thread": (r) =>

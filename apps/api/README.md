@@ -30,6 +30,7 @@ src/
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
     poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
+    anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
@@ -49,7 +50,12 @@ src/
                   is what a person does to it, view.ts is what the tab is sent;
                   pull-requests.live.test.ts runs it against the real test repository
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
-  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox
+  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
+                  orchestrate.ts: the wake job (create, resume, a new environment, replace);
+                  environment.ts: what a sandbox starts with; sweep.ts: the minute's idle
+                  stop, dead runners, settled designs, orphans and repairs; retire.ts
+  claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
+                  `claude setup-token` in a utility sandbox), disconnecting, and the models
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
@@ -69,6 +75,14 @@ Hono preset treats both as entry points.
 
 The code runs on Node and is tested on Bun. `src/` outside the tests may use only what Node
 has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
+
+**The sandbox image.** Designs' sandboxes are created from `PONZU_SANDBOX_SNAPSHOT`, and a
+deployment that wakes them must set it; unset, every wake shows `sandbox_failed`. The image's
+runner must speak this API's runner protocol, so bake it (`bun apps/runner/image/bake.ts`) from
+a commit at least as new as the API's protocol: an image from before `claimId` (migration
+0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
+`ponzu-runner-6041787d9d11`. Every deployment shares the boat.dev account; the sweeps keep to
+the sandboxes labelled with their own database (`SandboxConfig.scope`).
 
 ## Adding a route
 
@@ -176,7 +190,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    ```
 
    `createTestApp` is the real app on an in-process Postgres with `t.workos` and `t.github`
-   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`), `t.storage`
+   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`, with the image
+   `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
    signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
    pokes, recorded), `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered

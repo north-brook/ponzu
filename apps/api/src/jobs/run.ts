@@ -2,7 +2,8 @@ import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@p
 import type { Deps } from "../deps/index.ts";
 import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
 import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
-import { runWakeJob, WAKE_JOB } from "../sandboxes/wake.ts";
+import { runWakeJob, WAKE_JOB } from "../sandboxes/orchestrate.ts";
+import { RetryLater } from "./retry.ts";
 
 /*
  * Work that must finish even if the request that started it does not (docs/cloud.md, "The
@@ -14,15 +15,21 @@ import { runWakeJob, WAKE_JOB } from "../sandboxes/wake.ts";
 
 export type JobDeps = Pick<
   Deps,
-  "db" | "clock" | "vault" | "github" | "log" | "storage" | "config"
+  "db" | "clock" | "vault" | "github" | "log" | "sandbox" | "poke" | "storage" | "config"
 >;
+
+/** A job as its handler sees it: which attempt this is, out of how many. */
+export type RunningJob = Pick<Job, "id" | "kind" | "payload" | "attempts" | "maxAttempts">;
 
 /**
  * What runs a job of each kind. A kind is added here by the module whose work it is. Made when
  * asked, not when this module loads: a module that runs its own jobs imports this one, and may
  * be loaded first.
  */
-const handlers = (): Record<string, (deps: JobDeps, payload: Job["payload"]) => Promise<void>> => ({
+const handlers = (): Record<
+  string,
+  (deps: JobDeps, payload: Job["payload"], job: RunningJob) => Promise<void>
+> => ({
   [WEBHOOK_JOB]: runWebhookJob,
   [WAKE_JOB]: runWakeJob,
   [REFRESH_JOB]: runRefreshJob,
@@ -40,25 +47,26 @@ const CLAIM_LIMIT = 10;
  * again later (or, on its last attempt, to have failed for good). Never rejects for the job's
  * own failure: that is logged and recorded on the row.
  */
-export async function runJob(
-  deps: JobDeps,
-  job: Pick<Job, "id" | "kind" | "payload" | "attempts">,
-  worker: string,
-): Promise<void> {
+export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Promise<void> {
   const { db, clock, log } = deps;
   try {
     const handler = handlers()[job.kind];
     if (!handler) throw new Error(`Nothing runs jobs of kind ${job.kind}.`);
-    await handler(deps, job.payload);
+    await handler(deps, job.payload, job);
   } catch (error) {
-    const wait = Math.min(RETRY_BASE_MS * 2 ** (job.attempts - 1), RETRY_MAX_MS);
+    const later = error instanceof RetryLater;
+    const wait = later ? error.ms : Math.min(RETRY_BASE_MS * 2 ** (job.attempts - 1), RETRY_MAX_MS);
     await failJob(db, {
       id: job.id,
       worker,
       error: error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 500) : "failed",
       retryAt: new Date(clock.now() + wait),
     });
-    log.warn("job_failed", { jobId: job.id, kind: job.kind, attempts: job.attempts, error });
+    if (later) {
+      log.info("job_waiting", { jobId: job.id, kind: job.kind, attempts: job.attempts, wait });
+    } else {
+      log.warn("job_failed", { jobId: job.id, kind: job.kind, attempts: job.attempts, error });
+    }
     return;
   }
   await completeJob(db, { id: job.id, worker });

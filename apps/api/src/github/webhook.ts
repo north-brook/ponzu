@@ -40,7 +40,7 @@ export function verifySignature(secret: string, body: Uint8Array, header: string
 
 export type WebhookDeps = Pick<
   Deps,
-  "db" | "clock" | "vault" | "github" | "log" | "storage" | "config"
+  "db" | "clock" | "vault" | "github" | "log" | "sandbox" | "poke" | "storage" | "config"
 >;
 type Work = (deps: WebhookDeps) => Promise<void>;
 

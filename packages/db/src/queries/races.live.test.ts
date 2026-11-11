@@ -2,12 +2,13 @@
 // working from the statistics of a table that was empty a moment ago. Runs only when
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
-import { designOps, events, jobs, memberships } from "../schema/index.ts";
+import { authStates, designOps, events, jobs, memberships } from "../schema/index.ts";
 import { upsertMembership } from "./accounts.ts";
+import { openClaudeSignIn } from "./claude-sign-ins.ts";
 import { getDesign, getDesignHead } from "./designs.ts";
 import { appendEvent, claimEvents } from "./events.ts";
 import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
@@ -17,6 +18,7 @@ import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
 import { claimRepoIdeas, type IdeasPolicy } from "./repo-ideas.ts";
 import { takeRunnerLease } from "./runners.ts";
+import { beginSandbox, claimSandbox, moveSandbox } from "./sandboxes.ts";
 import { commitReversal } from "./undo.ts";
 
 const times = <T>(count: number, make: (index: number) => T): T[] =>
@@ -286,6 +288,62 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     expect(raised.filter((result) => result.raised)).toHaveLength(1);
     expect(raised.every((result) => result.status === "open")).toBe(true);
     expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
+  }, 60_000);
+
+  test("wakes claiming one sandbox at once: one holds it, and only it moves it on", async () => {
+    const { design } = await seedDesign(db);
+    const now = new Date();
+    const limits = { perWorkspace: 100, perOwner: 100 };
+    const begun = await beginSandbox(db, {
+      designId: design.id,
+      provider: "boat",
+      now,
+      by: "job_first",
+      limits,
+    });
+    if (!begun || "full" in begun) throw new Error("expected a sandbox");
+    await moveSandbox(db, { id: begun.sandbox.id, from: ["waking"], to: "asleep", now });
+
+    const claims = await Promise.all(
+      times(8, (racer) =>
+        claimSandbox(db, {
+          id: begun.sandbox.id,
+          from: ["asleep", "waking"],
+          now,
+          by: `job_${racer}`,
+          limits,
+        }),
+      ),
+    );
+    const held = claims.flatMap((claim) => (claim && "sandbox" in claim ? [claim.sandbox] : []));
+    expect(held).toHaveLength(1);
+    expect(claims.filter((claim) => claim === null)).toHaveLength(7);
+  }, 60_000);
+
+  test("one person starting Claude sign-ins at once has one open", async () => {
+    const user = await seedUser(db);
+    const now = new Date();
+    const open = () =>
+      openClaudeSignIn(db, {
+        userId: user.id,
+        now,
+        expiresAt: new Date(now.getTime() + 600_000),
+        perHour: 100,
+      });
+    await open();
+    // Each either replaced the one before it or lost to one started at the same moment.
+    const opened = await Promise.all(times(8, open));
+    expect(opened.some((signIn) => signIn !== null)).toBe(true);
+    expect(
+      await db.$count(
+        authStates,
+        and(
+          eq(authStates.userId, user.id),
+          eq(authStates.kind, "claude_sign_in"),
+          isNull(authStates.consumedAt),
+        ),
+      ),
+    ).toBe(1);
   }, 60_000);
 
   test("claims of one repo's ideas at once: exactly one takes it", async () => {

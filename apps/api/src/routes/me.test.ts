@@ -57,13 +57,25 @@ test("someone set up: their workspaces with roles, and their Claude account with
     kind: "subscription",
     encryptedCredential: "pzv1.sealed.claude.credential",
     email: "maya@example.com",
+    expiresAt: new Date(t.clock.now() + 10 * 24 * 3600_000),
   });
 
   const response = await t.app.request("/v1/me", { headers: person.headers });
 
   const text = await response.text();
   const body = JSON.parse(text);
-  expect(body.claudeAccount).toEqual({ kind: "subscription", status: "connected" });
+  expect(body.claudeAccount).toEqual({
+    kind: "subscription",
+    status: "connected",
+    label: "Claude subscription",
+    email: "maya@example.com",
+    connectedAt: expect.any(String),
+    expiresAt: new Date(t.clock.now() + 10 * 24 * 3600_000).toISOString(),
+    // Ten days left: time to sign in again.
+    expiresSoon: true,
+    limitedUntil: null,
+  });
+  expect(text).not.toContain("sealed");
   expect(
     body.workspaces.sort((a: any, b: any) => a.githubLogin.localeCompare(b.githubLogin)),
   ).toEqual([

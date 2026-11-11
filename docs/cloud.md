@@ -423,7 +423,7 @@ detection and no wake-on-request, so the API owns the lifecycle.
 
 | Step | What happens |
 |---|---|
-| Create | On the first message. The API checks credits, creates the sandbox from the repo's base snapshot (or Ponzu's base image), and the runner checks out `pz/<topic>` from the default branch. |
+| Create | On the first message, which `POST /v1/designs` takes with the design (and a create key, so a double tap makes one). The API names the branch `pz/<topic>` from the message's first words that say something, numbered when taken, and never renames it; it creates the sandbox from Ponzu's image (a repo's base snapshot later; credits are not checked yet), and the runner checks out the branch from the default branch. |
 | First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen. |
 | Sleep | Five minutes after the last activity the API stops the sandbox. A stop keeps the disk; memory survives for about ten minutes. |
@@ -432,7 +432,52 @@ detection and no wake-on-request, so the API owns the lifecycle.
 | Lost | A sandbox that cannot be resumed is recreated from the branch and the base. |
 
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
-one-minute cron finishes anything a function did not.
+one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
+
+- **The database decides.** A design has at most one `sandboxes` row that is not `gone`
+  (`waking`, `awake`, `stopping`, `asleep` or `failed`, with when it got there and why it
+  failed), and each move holds to the states it moves from, so of two function instances
+  racing only one makes it. A wake claims the row before it creates or starts anything: `waking`
+  records the wake job that holds it (`waking_by`), only that job moves it on, and another may
+  take it over only once it has sat unmoved for six minutes. A wake that loses the claim does
+  nothing, and when the sandbox is awake every runner token of the design but the one its
+  environment carries is revoked. A row of the next generation replaces a lost one; the design
+  and the generation are the provider's idempotency key, so a create sent again after a crash
+  finds the sandbox the first made. A wake that finds the sandbox `stopping` waits for the stop
+  to land before it resumes it (Known constraints). The design's head shows `waking` at once,
+  and `agent_blocker` says why a design waits: `claude_not_connected`, `claude_expired`,
+  `claude_owner_left` (whose Claude it runs on is no longer in the workspace), `sandbox_busy`
+  (out of starts: the job waits as long as the provider says, or past the limits below) or
+  `sandbox_failed`.
+- **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
+  design's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
+  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
+  `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
+  designs landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
+- **The environment** is `PONZU_API_URL`, `PONZU_DESIGN_ID`, a runner token issued for it
+  (hashed; good for 30 days and renewed with a day left) and exactly one Claude credential,
+  the one the design runs on, opened from the vault. It goes only into the provider's `env`.
+  The row records which token and which credential (the account and when it was connected),
+  and a wake whose credential changed resumes on a new environment, which is a cold start;
+  the old token is revoked. Repo secrets are not in it yet.
+- **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
+  a wake fails saying so.
+- **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
+  keeps the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
+  an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
+  safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
+  a new environment, and after three restarts in a row with nothing heard it is `failed`.
+- **The rest of the sweep.** A settled design's sandbox is destroyed and its runner tokens
+  revoked, and so is any sandbox, asleep or awake, whose environment holds a Claude credential
+  that was disconnected or whose owner has left the workspace. A design sandbox at the provider
+  that no row knows is destroyed; a row left in `waking` or `stopping` for six minutes is set to
+  what the provider says, and woken if its feed still has work. One left `waking` before the
+  provider answered its create is failed, and whatever the provider made for it, found by its
+  labels, destroyed.
+- **Whose sandboxes.** Every deployment shares the boat.dev account, so every sandbox carries
+  `scope=<a hash of the database it belongs to>` beside `ponzu=design` (with `design=<id>` and
+  `generation=<n>`) or `ponzu=claude-sign-in`, and a sweep lists and destroys only its own
+  scope's. A sandbox with another scope, or none, is never touched.
 
 ### The runner
 
@@ -616,7 +661,21 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed as an environment variable when the sandbox starts or
   resumes. It is never written to disk or baked into a snapshot. Moving it behind
-  an egress proxy is hardening work, tracked below.
+  an egress proxy is hardening work, tracked below. A design runs on its owner's account from
+  start to finish (`designs.claude_account_id`). `/v1/claude` connects one: an API key once
+  Anthropic takes it (a free `GET /v1/models`), or a subscription by `claude setup-token`, run
+  in a utility sandbox created with no environment and no command history: `POST
+  /v1/claude/sign-ins` answers the claude.ai address, and `POST /v1/claude/sign-ins/:id/code`
+  writes the pasted code into the sandbox as a file, reads the token back as one, seals it and
+  destroys the sandbox. A sign-in is good for ten minutes and one code (`claude_code_invalid`,
+  `claude_sign_in_expired`, `claude_sign_in_used`). Each sign-in is a machine Ponzu pays for, so a
+  person has one open at a time (a new one replaces the last, and its sandbox is destroyed) and
+  starts at most five an hour (429 `rate_limited`). Disconnecting destroys the credential, keeps
+  the row (`revoked`), and destroys every sandbox whose environment may hold it, asleep or awake:
+  a stopped sandbox keeps its environment at the provider until its disk goes. The next wake
+  starts the design over from its branch. A design whose owner leaves the workspace stops
+  running on their Claude the same way: it does not wake (`claude_owner_left`), and the sweep
+  destroys its sandbox.
 - **Repo secrets** are stored encrypted per repo and injected as environment
   variables at start.
 
@@ -944,7 +1003,9 @@ Each of these, and every op a person commits (undo and redo included), then call
 wake for the design, one at a time, and every reason pokes the runner when the design's
 sandbox is awake. A stop and an edit record none: a sleeping sandbox is running nothing to stop,
 and an edit is `later`. `requestWake` never fails the request that called it: what that wrote
-is written, and a wake it could not record is logged (`wake_failed`).
+is written, and a wake it could not record is logged (`wake_failed`). A failed check or a review
+comes in a webhook's job, which records a wake for the cron to run (`queueWake`) rather than
+waiting on a sandbox to start.
 
 ### The other way: poke and health
 
@@ -1241,7 +1302,10 @@ Pay as you go in credits: $0.10 a credit, 5 credits per awake hour, 100 free per
 member each month, pooled across a workspace. A card is asked for only when the
 free credits are used up. A workspace has a monthly cap.
 
-- Awake time is metered from the sandbox's state changes into `usage_events`.
+- Awake time is metered from the sandbox's state changes into `usage_events`: each stretch
+  from `awake` to whatever it moved to, in the statement that moved it, put down to the
+  workspace and to the person behind the newest event of the design's feed when it was woken
+  or last kept awake.
 - `credit_ledger` holds grants, use and adjustments. Balance and cap are checked
   before every wake. A running turn is never cut off.
 - Stripe receives the billed part as metered usage.

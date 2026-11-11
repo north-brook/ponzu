@@ -11,6 +11,7 @@ import type { Deps } from "../deps/index.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { withdrawPictures } from "../pull-requests/open.ts";
 import { type RefreshRequest, refreshSoon } from "../pull-requests/refresh.ts";
+import { queueWake } from "../sandboxes/wake.ts";
 
 /*
  * What GitHub says about a design's pull request. A design owns one branch of its repo
@@ -135,6 +136,8 @@ export async function tellDesigns(
       payload: payload(pullRequest),
       userId: person?.id ?? null,
     });
+    // `next` wakes a sleeping sandbox (docs/cloud.md, "Events").
+    await queueWake(deps, design.id, kind);
     log.info("design_event_appended", { designId: design.id, kind });
   }
 }

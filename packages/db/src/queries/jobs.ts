@@ -16,6 +16,8 @@ export interface NewJob {
   payload?: Json;
   /** Now, when left out. */
   runAt?: Date;
+  /** How many times it may be tried before it has failed for good. Five when left out. */
+  maxAttempts?: number;
   /**
    * Take the job as it is recorded, for a request that records a job and runs it itself. If
    * that request dies, the lock runs out and the cron takes the job over.

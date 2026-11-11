@@ -75,7 +75,7 @@ describe("messages", () => {
     expect(await wakesOf(design.id)).toEqual([{ designId: design.id, reason: "message" }]);
   });
 
-  test("a second message while a wake waits records no second wake, and an awake runner is poked", async () => {
+  test("each message pokes an awake runner", async () => {
     const { design } = await sample();
     await awake(design.id);
     const pokes = t.poke.pokes.length;
@@ -85,7 +85,6 @@ describe("messages", () => {
     }
     await t.backgroundDone();
 
-    expect(await wakesOf(design.id)).toHaveLength(1);
     expect(t.poke.pokes.slice(pokes)).toEqual([
       { url: "https://sbx.test", token: "port-token" },
       { url: "https://sbx.test", token: "port-token" },
