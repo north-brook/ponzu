@@ -54,6 +54,9 @@ test("Claude Code is the pinned version's native binary, fetched as a file and c
     recipe.indexOf('install -D -m 0755 "$work/claude"'),
   );
   expect(recipe).not.toMatch(/\bnpm (install|i)\b/);
+  // boat puts its own /usr/local/bin/claude back at every create: the agent runs ours by path.
+  expect(recipe).not.toMatch(/ln [^\n]*\/usr\/local\/bin\/claude/);
+  expect(recipe).toContain('as-agent %s "$@"\\n\' "$PONZU" "$CLAUDE"');
 });
 
 test("the headless shell is the build playwright-core pins, fetched from where its installer would", () => {

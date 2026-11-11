@@ -545,7 +545,8 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   which brings it back to a disk that lost it ("Saving the sandbox"). A session whose transcript
   is gone from both starts over. The SDK is pinned to the version
   released with the image's Claude Code (0.3.322 with 2.1.322), and runs the image's
-  `/usr/local/bin/claude`, never a copy of its own.
+  `/opt/ponzu/claude/<version>/claude` (checked against the SDK manifest's hash), never a copy
+  of its own and never boat's `/usr/local/bin/claude`.
 - **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
   AskUserQuestion, plan approval and any other prompt still reach `canUseTool`, and become
   questions ("Needs you"). The result message is the only success signal: an API failure

@@ -54,10 +54,11 @@ echo "boat's base ships Claude Code $(/usr/local/bin/claude --version 2>/dev/nul
 curl -fsSL --retry 3 -o "$work/claude" "$CLAUDE_URL"
 echo "$CLAUDE_SHA256  $work/claude" | sha256sum --check --quiet
 install -D -m 0755 "$work/claude" "$CLAUDE"
+# The agent's PATH puts /opt/ponzu/bin first, and the unit names it (PONZU_CLAUDE, through
+# agent-claude). /usr/local/bin/claude is boat's: a sandbox made from the snapshot has boat's
+# there again, whatever the image left, so nothing of ours goes by it.
 ln -sfn "$CLAUDE" "$PONZU/bin/claude"
-# So a `claude` on any PATH is this one, as is the runner's default when PONZU_CLAUDE is unset.
-ln -sfn "$CLAUDE" /usr/local/bin/claude
-[ "$(sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1)" = "$CLAUDE_SHA256" ] ||
+[ "$(sha256sum "$CLAUDE" | cut -d' ' -f1)" = "$CLAUDE_SHA256" ] ||
   { echo "claude is not $CLAUDE_VERSION's binary" >&2; exit 1; }
 
 step "the runner"
