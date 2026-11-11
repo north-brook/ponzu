@@ -150,13 +150,15 @@ export function DesignChrome({
        * before the cluster, and the cluster just before the thread toggle, so none of them moves
        * between the canvas and the pull request tab, as the rail opens and closes, or with the
        * width of the next action. Open, the block reaches at least to the rail's edge (the
-       * header's 10 of right padding and this 350 make the rail's 360), which keeps the page
+       * header's 10 of right padding and this, the rail's width less 10), which keeps the page
        * tabs over the canvas; the space it adds is empty header, before the divider.
        */}
       <div
         className={cn(
+          // Open, at least to the rail's edge (`--pane-rail`, which follows its drag), less the
+          // header's 10 of right padding.
           "pane-motion flex shrink-0 items-center transition-[min-width]",
-          rail.open ? "min-w-[350px]" : "min-w-0",
+          rail.open ? "min-w-[calc(var(--pane-rail,360px)-10px)]" : "min-w-0",
         )}
       >
         <span className="flex-1" />
