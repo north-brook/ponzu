@@ -1,0 +1,22 @@
+#!/bin/sh
+# The one command the API runs at every start of a design's sandbox: root, detached, with the
+# runner's environment in this command's env only (StartEnv). Fetches the runner bundle the API
+# names when this disk does not have it yet, checks its hash and that it fits this image, then
+# runs its supervisor: one at a time, whatever retries the start.
+set -eu
+case "${PONZU_RUNNER_BUNDLE:-}" in
+  *[!0-9a-f]* | "") echo "PONZU_RUNNER_BUNDLE is not a sha256"; exit 78 ;;
+esac
+dir=/opt/ponzu/runners/$PONZU_RUNNER_BUNDLE
+log=/var/log/ponzu/runner.log   # 0640 root:ponzu; Vercel's command log sees only this script's own lines
+if [ ! -f "$dir/supervise.js" ]; then
+  tmp=$(mktemp -d /opt/ponzu/runners/.in.XXXXXX)
+  printf 'Authorization: Bearer %s\n' "$PONZU_RUNNER_TOKEN" |      # builtin: the token never reaches an argv
+    curl -fsS --retry 3 --compressed -H @- -o "$tmp/b.tgz" "$PONZU_API_URL/v1/runner/bundle"
+  echo "$PONZU_RUNNER_BUNDLE  $tmp/b.tgz" | sha256sum --check --quiet || { echo "bundle hash"; rm -rf "$tmp"; exit 78; }
+  tar -xzf "$tmp/b.tgz" -C "$tmp" && rm "$tmp/b.tgz"
+  /opt/ponzu/libexec/bundle-fits "$tmp/manifest.json" /opt/ponzu/image.json || { echo "bundle does not fit image"; rm -rf "$tmp"; exit 78; }
+  chmod -R a+rX "$tmp"; mv -T "$tmp" "$dir" 2>/dev/null || rm -rf "$tmp"
+  ls -1dt /opt/ponzu/runners/*/ | tail -n +4 | xargs -r rm -rf   # keep three
+fi
+exec /usr/bin/flock -n /run/ponzu-supervisor.lock /opt/ponzu/bin/bun "$dir/supervise.js" >>"$log" 2>&1

@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 # Turns ubuntu:24.04 into the image every design's sandbox starts from. The Dockerfile beside it
-# runs it once, as root, in the build, from a folder with the runner's dist/, the font manifest
-# and pins.env (recipe.ts stages it); README.md says what each step is for.
+# runs it once, as root, in the build, from a folder holding this script, pins.json, the font
+# manifest and libexec/ (build.ts stages it); README.md says what each step is for.
 #
 # Vercel Sandbox boots the image's filesystem and runs nothing of it (no ENTRYPOINT, no CMD, no
-# systemd): the API starts the runner's supervisor with a command at every start of the sandbox
-# (supervise.ts), and the commands the API runs are the image's USER's (`ubuntu`, with sudo).
+# systemd). The API runs /opt/ponzu/bin/ponzu-start at every start of a sandbox; it fetches the
+# runner bundle the API names and starts its supervisor. No runner is in the image: only what the
+# runner needs of a machine, and image.json saying which versions those are.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=/dev/null
-. "$here/pins.env"
 
 PONZU=/opt/ponzu
-BUN="$PONZU/bun/$BUN_VERSION/bun"
-CLAUDE="$PONZU/claude/$CLAUDE_VERSION/claude"
 AGENT_PATH="$PONZU/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 FONTS="$here/sandbox-fonts.json"
 work=$(mktemp -d)
@@ -23,20 +20,30 @@ apt_install() { apt-get install -y -qq --no-install-recommends "$@" >/dev/null; 
 
 step "packages"
 apt-get update -qq
-# What the recipe and the runner use, sudo for the API's user, git for checkouts, and the
-# libraries Chrome Headless Shell links against (it ships none of them).
-apt_install ca-certificates curl jq unzip sudo git procps util-linux \
+# What this script and the runner use, sudo for Vercel's user, git for checkouts, tmux for the
+# Claude sign-in's terminal, and the libraries Chrome Headless Shell links against (it ships
+# none of them).
+apt_install ca-certificates curl jq unzip sudo git procps util-linux tmux \
   libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libxkbcommon0 \
   libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 \
   libasound2t64 libdbus-1-3 libdrm2 libexpat1 libglib2.0-0t64 libx11-6 libxcb1 libxext6
 
+# The pins, from pins.json: the one place a version or hash is written.
+pin() { jq -er ".$1" "$here/pins.json"; }
+BUN_VERSION=$(pin bunVersion)
+CLAUDE_VERSION=$(pin claudeVersion)
+PLAYWRIGHT_CORE_VERSION=$(pin playwrightCoreVersion)
+CHROMIUM_REVISION=$(pin headlessShellRevision)
+BUN="$PONZU/bun/$BUN_VERSION/bun"
+CLAUDE="$PONZU/claude/$CLAUDE_VERSION/claude"
+
 step "the three users"
-# ubuntu: the image's USER, whose commands the API runs (Vercel's own images give it sudo and
+# ubuntu: the image's USER, whose commands Vercel runs (Vercel's own images give it sudo and
 #   /vercel, and so does this one).
 # ponzu: the runner. No sudo but to become the agent, and no login.
 # agent: Claude Code, its tools and the checkout's git. No sudo, and no way into the runner's
-#   home, its environment or its tokens. The runner's user joins its group to read and write
-#   the checkout.
+#   home, its environment, its log or its tokens. The runner's user joins its group to read and
+#   write the checkout.
 install -d -o ubuntu -g ubuntu /vercel
 usermod --home /vercel ubuntu
 id ponzu >/dev/null 2>&1 || useradd --create-home --shell /usr/sbin/nologin --user-group ponzu
@@ -55,11 +62,15 @@ ponzu ALL=(agent) NOPASSWD:SETENV: ALL
 EOF
 chmod 0440 /etc/sudoers.d/ponzu
 visudo -cq
+# The runner's output, which ponzu-start sends here rather than to Vercel's command log. The
+# runner's user reads it; the agent's cannot.
+install -d -o root -g ponzu -m 0750 /var/log/ponzu
+install -o root -g ponzu -m 0640 /dev/null /var/log/ponzu/runner.log
 
 step "Bun $BUN_VERSION"
 curl -fsSL --retry 3 -o "$work/bun.zip" \
   "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-linux-x64.zip"
-echo "$BUN_SHA256  $work/bun.zip" | sha256sum --check --quiet
+echo "$(pin bunSha256)  $work/bun.zip" | sha256sum --check --quiet
 unzip -q "$work/bun.zip" -d "$work"
 install -D -m 0755 "$work/bun-linux-x64/bun" "$BUN"
 install -d "$PONZU/bin"
@@ -68,20 +79,25 @@ ln -sfn "$BUN" "$PONZU/bin/bunx"
 
 step "Claude Code $CLAUDE_VERSION"
 # The runner's Agent SDK speaks to exactly this version, and its manifest says the binary's hash.
-curl -fsSL --retry 3 -o "$work/claude" "$CLAUDE_URL"
-echo "$CLAUDE_SHA256  $work/claude" | sha256sum --check --quiet
+curl -fsSL --retry 3 -o "$work/claude" "$(pin claudeUrl)"
+echo "$(pin claudeSha256)  $work/claude" | sha256sum --check --quiet
 install -D -m 0755 "$work/claude" "$CLAUDE"
 ln -sfn "$CLAUDE" "$PONZU/bin/claude"
 
-step "the runner"
-rm -rf "$PONZU/runner"
-cp -R "$here/runner" "$PONZU/runner"
-(cd "$PONZU/runner" && BUN_INSTALL_CACHE_DIR="$work/cache" "$BUN" install --production --silent)
-chown -R root:root "$PONZU/runner"
+step "playwright-core $PLAYWRIGHT_CORE_VERSION"
+# The one module the runner bundle leaves out (it finds its own files at run time). runner.js
+# in /opt/ponzu/runners/<sha256>/ finds it here by walking up. --ignore-scripts: it would
+# download browsers of its own.
+echo '{"private":true}' > "$PONZU/package.json"
+(cd "$PONZU" && BUN_INSTALL_CACHE_DIR="$work/cache" "$BUN" add --exact --ignore-scripts --silent \
+  "playwright-core@$PLAYWRIGHT_CORE_VERSION")
+[ "$(jq -r .version "$PONZU/node_modules/playwright-core/package.json")" = "$PLAYWRIGHT_CORE_VERSION" ]
+chown -R root:root "$PONZU/node_modules"
+install -d -m 0755 "$PONZU/runners"
 
 step "Chrome Headless Shell for playwright-core $PLAYWRIGHT_CORE_VERSION"
-curl -fsSL --retry 3 -o "$work/shell.zip" "$CHROMIUM_URL"
-echo "$CHROMIUM_SHA256  $work/shell.zip" | sha256sum --check --quiet
+curl -fsSL --retry 3 -o "$work/shell.zip" "$(pin headlessShellUrl)"
+echo "$(pin headlessShellSha256)  $work/shell.zip" | sha256sum --check --quiet
 browsers="$PONZU/browsers/chromium_headless_shell-$CHROMIUM_REVISION"
 rm -rf "$browsers"
 install -d "$browsers"
@@ -115,14 +131,16 @@ exec sudo -n -E -u agent -- /usr/bin/env -u PONZU_RUNNER_TOKEN -u PONZU_PORT_TOK
 EOF
 printf '#!/bin/sh\nexec %s/libexec/as-agent %s "$@"\n' "$PONZU" "$CLAUDE" >"$PONZU/libexec/agent-claude"
 printf '#!/bin/sh\nexec %s/libexec/as-agent /usr/bin/git "$@"\n' "$PONZU" > "$PONZU/libexec/agent-git"
-chmod 0755 "$PONZU"/libexec/*
 
-step "the runner's start"
+step "the runner's start and stop"
+install -m 0755 "$here/libexec/bundle-fits" "$PONZU/libexec/bundle-fits"
+install -m 0755 "$here/libexec/ponzu-start" "$PONZU/bin/ponzu-start"
+install -m 0755 "$here/libexec/ponzu-stop" "$PONZU/bin/ponzu-stop"
+chmod 0755 "$PONZU"/libexec/*
 # What the unit's drop-in was: where things are, for the supervisor to put in the runner's
 # environment under what the API's start command brings. No secrets.
-jq -n --arg bun "$BUN" --arg runner "$PONZU/runner/runner.js" --arg shell "$shell" --arg p "$PONZU" '{
-  bun: $bun, runner: $runner, user: "ponzu", group: "agent", home: "/home/ponzu",
-  runtimeDir: "/run/ponzu",
+jq -n --arg bun "$BUN" --arg shell "$shell" --arg p "$PONZU" --arg path "$AGENT_PATH" '{
+  bun: $bun, user: "ponzu", group: "agent", home: "/home/ponzu", runtimeDir: "/run/ponzu",
   env: {
     PONZU_AS_AGENT: "\($p)/libexec/as-agent",
     PONZU_CLAUDE: "\($p)/libexec/agent-claude",
@@ -132,23 +150,16 @@ jq -n --arg bun "$BUN" --arg runner "$PONZU/runner/runner.js" --arg shell "$shel
     PONZU_STATE_DIR: "/home/ponzu/.ponzu",
     CLAUDE_CONFIG_DIR: "/home/agent/.claude",
     PONZU_CHROMIUM: $shell,
-    PATH: "\($p)/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    PATH: $path
   }}' > "$PONZU/runner.json"
-# The one command the API runs, as root, at every start: one supervisor at a time, whatever
-# retries the start command.
-cat > "$PONZU/bin/ponzu-start" <<EOF
-#!/bin/sh
-exec /usr/bin/flock -n /run/ponzu-supervisor.lock $BUN $PONZU/runner/supervise.js
-EOF
-chmod 0755 "$PONZU/bin/ponzu-start"
 
-step "what was baked"
-jq -n --arg inputs "$INPUTS_HASH" --arg bun "$BUN" --arg chromium "$shell" --arg claudePath "$CLAUDE" \
-  --arg bunVersion "$BUN_VERSION" --arg claude "$CLAUDE_VERSION" --arg playwright "$PLAYWRIGHT_CORE_VERSION" \
-  '{inputs: $inputs, bun: {path: $bun, version: $bunVersion}, claude: {path: $claudePath, version: $claude},
-    playwrightCore: $playwright, chromium: $chromium}' > "$PONZU/image.json"
+step "what this image has"
+# What bundle-fits holds a runner bundle's manifest to.
+jq -n --arg claude "$CLAUDE_VERSION" --arg playwright "$PLAYWRIGHT_CORE_VERSION" \
+  '{claude: $claude, playwrightCore: $playwright}' > "$PONZU/image.json"
+chmod 0644 "$PONZU/image.json" "$PONZU/runner.json"
 
 step "leaving nothing behind"
 apt-get clean
-rm -rf "$work" /var/lib/apt/lists/* /var/log/apt /var/log/dpkg.log
+rm -rf "$work" "$PONZU/package.json" "$PONZU/bun.lock" /root/.bun /var/lib/apt/lists/* /var/log/apt /var/log/dpkg.log
 echo "== provisioned in $SECONDS s; /opt/ponzu is $(du -sh "$PONZU" | cut -f1)"

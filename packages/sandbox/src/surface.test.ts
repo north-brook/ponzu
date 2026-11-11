@@ -18,13 +18,10 @@ const ROOT = join(import.meta.dir, "../../..");
 const VERCEL_TS = join(import.meta.dir, "vercel.ts");
 
 /**
- * The spike's harness, which the image track deletes or ports onto this module. Each entry must
- * still import the SDK, so the list can only shrink, and the image track empties it.
+ * Files outside this package still allowed to import the SDK while a track ports them. Each
+ * entry must still import the SDK, so the list can only shrink. The image track emptied it.
  */
-const PENDING_IMAGE_TRACK = [
-  "apps/runner/image/vercel-inventory.ts",
-  "apps/runner/image/vercel.ts",
-];
+const PENDING_IMAGE_TRACK: string[] = [];
 
 const STATIC_ALLOWED = new Set(["get", "create", "getOrCreate", "list"]);
 const INSTANCE_ALLOWED = new Set([
