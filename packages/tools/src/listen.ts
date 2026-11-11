@@ -32,8 +32,7 @@ export const listenTools = [
       const { key, design } = await designOf(ctx, args.artboards);
       for (const id of args.artboards ?? [])
         if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
-      if (args.artboards)
-        ws.presence.touch(caller, { file: key, working: args.artboards, status: args.status });
+      if (args.artboards) ws.presence.claimed(caller, key, args.artboards, args.status);
       else ws.presence.worked(caller, key, { status: args.status });
       if (args.intent) ws.intent?.(key, args.intent.trim(), caller.author);
       return { text: `Status: ${args.status}.` };

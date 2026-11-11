@@ -45,9 +45,10 @@ const STATE_ICON: Record<PrState, { icon: IconSvgElement; color: string }> = {
 
 /**
  * The pull request tab, in the canvas's pane: what it is, whether it is green, what people said
- * and what changed. Details, checks, comments and approvals in a 380 column, each scrolling on
- * its own beside the diffs, which take the rest. Read-only: replying is GitHub's, or the agent's
- * when asked in the thread. Sections with nothing in them are left out.
+ * and what changed. Details, checks, comments and approvals, then the files and their diffs:
+ * stacked in a narrow column, side by side in a wide one (`Columns`). Read-only: replying is
+ * GitHub's, or the agent's when asked in the thread, which stays open beside it. Sections with
+ * nothing in them are left out.
  */
 export function PullRequestView({
   state,
@@ -181,20 +182,28 @@ export function PullRequestView({
   );
 }
 
-/** Each column scrolls on its own, side by side; stacked, the pane scrolls them as one. */
-const COLUMN =
-  "flex min-h-0 min-w-0 flex-col overflow-y-auto pt-11 pb-11 [scrollbar-width:thin] @max-[720px]:overflow-visible @max-[720px]:not-last:pb-0 @max-[720px]:last:pt-9";
-
 /**
- * The 380 column beside the files. In a narrow pane (the smallest window, with the sidebar and
- * the rail open) there is no room for both, so the details stack above the files, which get the
- * pane's whole width.
+ * The tab lives in the canvas's column, which runs from about 400 (the smallest window with both
+ * panes open, or the panes dragged wide) to the whole window. Narrower than 1080, the details
+ * stack above the files in one column at a reading measure (680 at most), centred, and the pane
+ * scrolls them as one; 24 at the sides under 520, 40 above. From 1080, room for the board's two
+ * columns with the files at least 550, the details take the board's 380 column and the files the
+ * rest, each scrolling on its own, the pair no wider than 1480 so a diff on a wide screen still
+ * reads as lines.
  */
+const COLUMN =
+  "flex min-w-0 flex-col @min-[1080px]:min-h-0 @min-[1080px]:overflow-y-auto @min-[1080px]:py-11 @min-[1080px]:[scrollbar-width:thin]";
+
 function Columns({ children }: { children: ReactNode }) {
   return (
     <div className="@container absolute inset-0">
-      <div className="grid h-full grid-cols-[380px_minmax(0,1fr)] gap-12 pr-12 pl-14 @max-[720px]:block @max-[720px]:overflow-y-auto @max-[720px]:px-10 @max-[720px]:[scrollbar-width:thin]">
-        {children}
+      <div className="h-full overflow-y-auto [scrollbar-width:thin] @min-[1080px]:overflow-visible">
+        <div
+          data-pr-columns
+          className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-8 pb-11 @min-[520px]:px-10 @min-[520px]:pt-11 @min-[1080px]:grid @min-[1080px]:h-full @min-[1080px]:max-w-[1480px] @min-[1080px]:grid-cols-[380px_minmax(0,1fr)] @min-[1080px]:gap-12 @min-[1080px]:py-0 @min-[1080px]:pr-12 @min-[1080px]:pl-14"
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

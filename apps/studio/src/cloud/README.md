@@ -39,8 +39,23 @@ gallery/          dev-only: every board composed from fixtures, every component'
 `AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
 create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
 is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
-request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
-the same way.
+request tab is open. Settings plugs in the same way.
+
+### Three zones
+
+The window is three zones, and the chrome's two dividers mark them: the sidebar is navigation,
+the thread rail is the conversation with the agent, and everything between the dividers belongs
+to the middle (the page tabs and the pull request tab on its left, presence, Share, the pull
+request mark and the next action on its right, and below them what the chosen tab shows).
+Choosing the pull request tab swaps what the middle shows and nothing else: the rail stays as it
+was (open at its width or closed, its scroll, its draft, its working state), so does the
+sidebar, both toggles and ⌘B, ⌘J keep working, the chrome reads as on any page, and no pane
+moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
+`inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
+`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
+page, position, zoom and selection. The tab fits whatever width the middle has: details over
+files in one column at a reading measure below 1080, the board's two columns from there
+(`Columns` in `pr-tab/pull-request-view.tsx`).
 
 ### The window chrome
 
@@ -168,7 +183,15 @@ The thread and the pull request's keys:
 - Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
   URL; a new family or weight goes there, so the gallery always measures what ships.
 - What is open or chosen (the open row, the selected result, the open "+") takes `bg-selected`,
-  not `bg-canvas`: in dark the canvas is too close to the chrome to show.
+  not `bg-canvas`: in dark the black canvas would read as a hole in the shell.
+- The grounds, at the founder's direction: the canvas (`--c-canvas`) is pure white or pure black,
+  the canvas package's ground too; the shell round it is a little tinted, and on a Mac a little
+  glassy. `--c-chrome` is the solid shell (a browser, the gallery, Windows and Linux, Reduce
+  Transparency) and `--c-chrome-glass` the tint laid over the Mac's window material, which the
+  shell says it has over the bridge (`glass`, from apps/desktop/src/shell-ground.ts). Paint the
+  shell with `bg-shell`, never `bg-chrome`: over the glass only `<html>` paints the tint, once.
+  Raised things on the shell (the composer, cards, menus, popovers) stay solid. `bun
+  scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
 - One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
   doesn't scan this folder.
 

@@ -199,7 +199,10 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/3-pull-request-tab.html",
     ...WINDOW,
     open: 'button[aria-controls="file-src/components/hero.tsx"]',
+    masks: DESIGN,
     reference: true,
+    differs:
+      "the tab no longer folds the thread away: the rail stays as it was (open here), and the pull request fits the canvas's column, stacked at this width (both masked)",
   },
   {
     id: "together-on-a-design",
@@ -238,6 +241,24 @@ export const COMPOSITIONS: Composition[] = [
     id: "pull-request-one-file",
     title: "Pull request · merged, one file, no checks, a long branch",
     ...WINDOW,
+  },
+  {
+    id: "pull-request-rail-closed",
+    title: "Pull request · the thread closed: two columns",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "pull-request-min-window",
+    title: "Pull request · the smallest window, both panes open, a long title",
+    ...MIN,
+    reference: true,
+  },
+  {
+    id: "pull-request-wide",
+    title: "Pull request · a wide screen, the sidebar closed",
+    width: 2240,
+    height: 1100,
   },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },

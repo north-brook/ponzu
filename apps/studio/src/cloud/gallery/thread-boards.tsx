@@ -188,6 +188,49 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       tab="pull-request"
     />
   ),
+  "pull-request-rail-closed": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.pullRequest }}
+      tab="pull-request"
+      rail={false}
+    />
+  ),
+  "pull-request-min-window": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{
+        kind: "ready",
+        pr: {
+          ...t.busyPullRequest,
+          title:
+            "Quieter hero, editorial take: the paragraph goes, the photo carries it, and the headline moves to Instrument Serif",
+          head: "pz/quieter-hero-editorial-take-with-instrument-serif",
+        },
+      }}
+      tab="pull-request"
+    />
+  ),
+  "pull-request-wide": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.pullRequest }}
+      tab="pull-request"
+      sidebar="closed"
+    />
+  ),
   "pull-request-loading": () => (
     <DesignHarness
       designs={f.soloDesigns}
