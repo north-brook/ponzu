@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { RateCardNumbers, UsagePerson, WorkspaceUsageRead } from "@ponzu/db";
+import fc from "fast-check";
 import {
+  apportion,
   awakeUnits,
   billedCredits,
   centsFor,
@@ -223,9 +225,11 @@ describe("who sees what", () => {
     const usage = workspaceUsage(team, period, viewer("bryce"));
     expect(usage.canManage).toBe(true);
     expect(usage.unattributedCredits).toBe(10);
+    // A deleted design's use is its own line, not "designs you can't open".
     expect(usage.byDesign).toEqual([
-      { design: { id: "des_a", name: "Checkout" }, usedCredits: 50 },
-      { design: null, usedCredits: 30 },
+      { kind: "design", design: { id: "des_a", name: "Checkout" }, usedCredits: 50 },
+      { kind: "deleted", design: null, usedCredits: 10 },
+      { kind: "hidden", design: null, usedCredits: 20 },
     ]);
   });
 
@@ -281,5 +285,117 @@ describe("the billing period", () => {
       start: at("2026-12-20T00:00:00Z"),
       end: at("2027-01-20T00:00:00Z"),
     });
+  });
+});
+
+describe("a breakdown adds up to the headline", () => {
+  const minutes = (m: number) => m * 60;
+
+  test("the second run's numbers: 4 credits used, and the designs share all 4", () => {
+    // Designs at 1.6, 0.4 and 2.4 credits of awake time (4.4 in all, 4 used): rounded each on
+    // its own they read 1 + 0 + 2 = 3 against a headline of 4.
+    const usage = workspaceUsage(
+      read(
+        { bryce: 0 },
+        {
+          rows: [
+            ["des_a", 19.2],
+            ["des_b", 4.8],
+            [null, 28.8],
+          ].map(([designId, m]) => ({
+            userId: "bryce",
+            designId: designId as string | null,
+            rateCardVersion: 1,
+            seconds: minutes(m as number),
+            modelCredits: 0,
+          })),
+          designs: [
+            { id: "des_a", name: "Checkout", readable: true },
+            { id: "des_b", name: "Onboarding", readable: true },
+          ],
+        },
+      ),
+      period,
+      viewer("bryce"),
+    );
+    expect(usage.usedCredits).toBe(4);
+    expect(usage.byDesign?.map((row) => [row.kind, row.usedCredits])).toEqual([
+      ["design", 2],
+      ["design", 0],
+      ["deleted", 2],
+    ]);
+    expect(usage.byPerson?.map((row) => row.usedCredits)).toEqual([4]);
+  });
+
+  test("apportion: each part is its use rounded down or up, and they sum to the total", () => {
+    fc.assert(
+      fc.property(fc.array(fc.nat({ max: 50 * HOUR }), { maxLength: 40 }), (seconds) => {
+        const parts = seconds.map((s) => awakeUnits(s, 5));
+        const credits = apportion(parts);
+        const total = creditsOf(parts.reduce((sum, units) => sum + units, 0));
+        expect(credits.reduce((sum, n) => sum + n, 0)).toBe(total);
+        for (const [i, units] of parts.entries()) {
+          expect([0, 1]).toContain(credits[i]! - creditsOf(units));
+        }
+      }),
+    );
+  });
+
+  test("by design and by person, for any usage, sum exactly to what was used", () => {
+    const people = ["ada", "bryce", "maya"];
+    const designs = ["des_a", "des_b", "des_c", "des_d"];
+    const second: RateCardNumbers = { ...CARD, version: 2, sandboxCreditsPerAwakeHour: 2.5 };
+    const row = fc.record({
+      userId: fc.constantFrom<string | null>(null, ...people),
+      designId: fc.constantFrom<string | null>(null, "des_unknown", ...designs),
+      rateCardVersion: fc.constantFrom(1, 2),
+      seconds: fc.nat({ max: 20 * HOUR }),
+      modelCredits: fc.integer({ min: 0, max: 99_999 }).map((n) => n / 10_000),
+    });
+    const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+    fc.assert(
+      fc.property(
+        fc.array(row, { maxLength: 30 }),
+        fc.array(fc.boolean(), { minLength: designs.length, maxLength: designs.length }),
+        (rows, readable) => {
+          const got = workspaceUsage(
+            {
+              ...read({}),
+              cards: [CARD, second],
+              rows,
+              people: people.map((id) => person(id, "admin")),
+              designs: designs.map((id, i) => ({ id, name: id, readable: readable[i]! })),
+            },
+            period,
+            viewer("ada"),
+          );
+          expect(sum(got.byDesign!.map((d) => d.usedCredits))).toBe(got.usedCredits);
+          expect(sum(got.byPerson!.map((p) => p.usedCredits)) + got.unattributedCredits!).toBe(
+            got.usedCredits,
+          );
+          // The viewer's own line is the number the admin's list shows for them.
+          expect(got.mine.usedCredits).toBe(
+            got.byPerson!.find((p) => p.person.id === "ada")!.usedCredits,
+          );
+        },
+      ),
+    );
+  });
+
+  test("a tie goes the same way however the rows came back", () => {
+    // Half a credit in each of three designs: 1.5 in all, 1 used.
+    const rows = ["des_a", "des_b", "des_c"].map((designId) => ({
+      userId: "bryce",
+      designId,
+      rateCardVersion: 1,
+      seconds: 360,
+      modelCredits: 0,
+    }));
+    const designs = ["des_a", "des_b", "des_c"].map((id) => ({ id, name: id, readable: true }));
+    const credited = (order: typeof rows) =>
+      workspaceUsage(read({ bryce: 0 }, { rows: order, designs }), period, viewer("bryce"))
+        .byDesign?.find((row) => row.usedCredits === 1)?.design?.id;
+    expect(credited(rows)).toBe("des_a");
+    expect(credited(rows.toReversed())).toBe("des_a");
   });
 });

@@ -14,7 +14,7 @@ import { GithubSection, type Installation } from "../settings/github.tsx";
 import type { Member } from "../settings/members.ts";
 import { MembersSection } from "../settings/members.tsx";
 import { NotificationsSection, type PingDevice } from "../settings/notifications.tsx";
-import { PlanSection } from "../settings/plan.tsx";
+import { type DesignUsage, PlanSection } from "../settings/plan.tsx";
 import {
   SettingsModal,
   SettingsPanel,
@@ -179,6 +179,9 @@ export interface SettingsData {
   open: string[];
   usage: Usage;
   byPerson: PersonUsage[] | null;
+  /** Put down to nobody, beside `byPerson`. */
+  unattributedCredits?: number;
+  byDesign?: DesignUsage[];
 }
 
 export const TEAM_SETTINGS: SettingsData = {
@@ -292,10 +295,12 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
                 name: data.workspace.name,
                 people: data.members.length,
                 byPerson: data.byPerson,
+                unattributedCredits: data.unattributedCredits,
                 mine: s.byPerson.find((p) => p.person.id === data.meId) ?? s.byPerson[0]!,
               }
             : null
         }
+        byDesign={data.byDesign}
         canManage={!team || data.byPerson !== null}
         onCapChange={(capUsd) => set({ usage: { ...data.usage, capUsd } })}
         onManageCard={ignore}

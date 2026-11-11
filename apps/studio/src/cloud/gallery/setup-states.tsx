@@ -100,6 +100,15 @@ const STATES: [string, SettingsSection, SettingsData][] = [
     { ...SOLO_SETTINGS, usage: { ...s.soloUsage, card: failedPayment } },
   ],
   ["Plan and usage · a team's member", "plan", team({ meId: f.maya.id, byPerson: null })],
+  [
+    "Plan and usage · by design, a deleted account and deleted designs",
+    "plan",
+    team({
+      byPerson: s.byPersonWithNobody,
+      unattributedCredits: s.unattributedCredits,
+      byDesign: s.byDesign,
+    }),
+  ],
 ];
 
 export function SetupStates({

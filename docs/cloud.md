@@ -1049,7 +1049,8 @@ token-gated address. `POST /poke` carries nothing, and the runner trusts nothing
 only claims, from the API, with its own token. The API pokes when it adds an event to an awake
 design's feed and when a person's op moves an awake design's head, and does not retry a poke
 that fails: the runner also claims once a minute, and each claim and state answer carries the
-head. `GET /health` answers `{ "ok": true, "state": "working" | "needs_you" | "idle" }`.
+head. A wake that has just made the sandbox does not poke it: its runner is still booting and
+claims by itself once it is up. `GET /health` answers `{ "ok": true, "state": "working" | "needs_you" | "idle" }`.
 
 ### Environment
 
@@ -1393,9 +1394,12 @@ integer:
 - Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
   sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
   legend in whole dollars rounded down.
-- A person's and a design's credits are their own exact use rounded down the same way: gross,
-  before the pooled free credits, so a breakdown adds up to what was used, not to what is
-  billed. Use put down to nobody (a deleted account) is `unattributedCredits`.
+- A breakdown (by person, by design) is the rounded total shared out, not each part rounded on
+  its own, so its lines always add up to the headline: every line gets its exact use rounded
+  down, and the credits the fractions add up to go one each to the lines with the largest
+  fractions (largest remainder, ties by id; `apportion` in `credits.ts`). It is gross, before
+  the pooled free credits, so it adds up to what was used, not to what is billed. Use put down
+  to nobody (a deleted account) is `unattributedCredits`, one of the by-person lines.
 - The cap is whole dollars, $1 to $1,000,000, stored in cents (`monthly_cap_cents`; the card's
   default, $100, until one is set). It may not be set below what the period has billed, rounded
   up to the dollar (400 `cap_too_low`, with `details.lowestUsd`).
@@ -1403,8 +1407,8 @@ integer:
 **Who sees what.** Every member sees the totals, the free credits, what would be billed and the
 cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted, highest
 first), `unattributedCredits` and `byDesign`: designs named only where they may read the repo
-(or their own Scratch), the rest, deleted designs included, summed in a last entry with no
-design. An admin who reaches the workspace only through repos shared with them sees no other
+(or their own Scratch, `kind: "design"`), then designs since deleted in one entry with no design
+(`kind: "deleted"`), then the designs they may not know of in another (`kind: "hidden"`). An admin who reaches the workspace only through repos shared with them sees no other
 member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
 `{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
 state.

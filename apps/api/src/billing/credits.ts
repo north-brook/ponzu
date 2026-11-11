@@ -14,8 +14,11 @@
  *   a cap           whole dollars; it may not be set below what the period has billed, rounded
  *                   up to the dollar, nor below $1
  *
- * A person's or a design's credits are their own exact use, rounded down the same way, so a
- * breakdown never overstates anyone; it adds up to the gross use, not to what was billed.
+ * A breakdown (by person, by design) shares out the rounded total rather than rounding each
+ * part on its own, so its parts always add up to the headline: each part gets its own use
+ * rounded down, and the credits the fractions add up to go one each to the parts with the
+ * largest fractions (`apportion`). A part never gets more than its exact use rounded up. It adds
+ * up to the gross use, not to what was billed.
  */
 
 /** Rates and credits carry four decimal places (`numeric(14, 4)` in the schema). */
@@ -44,6 +47,42 @@ export function creditUnits(credits: number): Units {
 /** Whole credits used: rounded down, so a partial credit is never charged. */
 export function creditsOf(units: Units): number {
   return Math.floor(units / UNITS_PER_CREDIT);
+}
+
+/**
+ * Whole credits for each part of a total, adding up to `creditsOf` the total exactly (largest
+ * remainder): every part gets its use rounded down, then the credits left over go one each to
+ * the parts with the largest fractions, a tie to the earlier part. In the order given.
+ */
+export function apportion(parts: readonly Units[]): number[] {
+  const total = creditsOf(parts.reduce((sum, units) => sum + units, 0));
+  const credits = parts.map(creditsOf);
+  let left = total - credits.reduce((sum, n) => sum + n, 0);
+  const byFraction = parts
+    .map((units, i) => ({ i, fraction: units - credits[i]! * UNITS_PER_CREDIT }))
+    .filter(({ fraction }) => fraction > 0)
+    .sort((a, b) => b.fraction - a.fraction || a.i - b.i);
+  for (const { i } of byFraction) {
+    if (left <= 0) break;
+    credits[i]! += 1;
+    left -= 1;
+  }
+  return credits;
+}
+
+/**
+ * `apportion` over a map's values, keyed as the map is. Ties go by key, not by the order the
+ * map was filled in, so the same use reads the same however its rows came back.
+ */
+export function apportionMap<K extends string | null>(
+  parts: ReadonlyMap<K, Units>,
+): Map<K, number> {
+  const order = (key: K) => key ?? "";
+  const keys = [...parts.keys()].sort((a, b) =>
+    order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0,
+  );
+  const credits = apportion(keys.map((key) => parts.get(key)!));
+  return new Map(keys.map((key, i) => [key, credits[i]!]));
 }
 
 /** The free credits of a period: each counted person's allowance, pooled. */
