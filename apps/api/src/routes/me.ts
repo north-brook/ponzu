@@ -1,15 +1,9 @@
-import {
-  CLAUDE_ACCOUNT_KINDS,
-  CLAUDE_ACCOUNT_STATUSES,
-  getClaudeAccount,
-  listUserWorkspaces,
-  MEMBER_ROLES,
-  WORKSPACE_KINDS,
-} from "@ponzu/db";
+import { getClaudeAccount, listUserWorkspaces, MEMBER_ROLES, WORKSPACE_KINDS } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import type { AppEnv } from "../http/context.ts";
+import { ClaudeAccountView, claudeAccountView } from "./claude.ts";
 import { Profile, toProfile } from "./profile.ts";
 
 /**
@@ -24,13 +18,11 @@ const Me = z.object({
     whereConfirmedAt: z.date().nullable(),
     iphoneStepSeenAt: z.date().nullable(),
   }),
-  /** The person's own Claude, or null if none is connected. Never its credential. */
-  claudeAccount: z
-    .object({
-      kind: z.enum(CLAUDE_ACCOUNT_KINDS),
-      status: z.enum(CLAUDE_ACCOUNT_STATUSES),
-    })
-    .nullable(),
+  /**
+   * The person's own Claude, or null if none is connected: whether their designs can run, and
+   * whether it runs out soon. Never its credential.
+   */
+  claudeAccount: ClaudeAccountView.nullable(),
   /** As of the last sync with GitHub, which the workspaces module does. */
   workspaces: z.array(
     z.object({
@@ -61,7 +53,7 @@ export const me = new Hono<AppEnv>().get("/", access.user, async (c) => {
         whereConfirmedAt: user.onboardingWhereAt,
         iphoneStepSeenAt: user.onboardingIphoneAt,
       },
-      claudeAccount,
+      claudeAccount: claudeAccountView(claudeAccount, c.var.deps.clock.now()),
       workspaces: workspaces.map((workspace) => ({
         ...workspace,
         installed: workspace.installationId !== null,

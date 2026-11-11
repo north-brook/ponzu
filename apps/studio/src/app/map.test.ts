@@ -32,6 +32,7 @@ const row = (over: Partial<DesignListRow> = {}): DesignListRow => ({
   previewSeq: null,
   agentState: "idle",
   agentStatus: null,
+  agentBlocker: null,
   needsYouCount: 0,
   prNumber: null,
   prState: null,

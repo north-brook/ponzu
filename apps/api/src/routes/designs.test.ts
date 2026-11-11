@@ -81,6 +81,89 @@ describe("POST /v1/designs", () => {
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([404, "not_found"]);
   });
 
+  test("with a first message: its thread, its feed, a wake and a branch named for it, at once", async () => {
+    const { status, body } = await call(t, as("maya"), "POST", "/v1/designs", {
+      workspaceId: ws.id,
+      repoId: ws.repo.id,
+      message: { text: "Make the pricing page calmer, with a quieter hero" },
+    });
+
+    expect(status).toBe(201);
+    expect(body).toMatchObject({ name: "Untitled", branch: "pz/pricing-page-calmer" });
+    const thread = await call(t, as("maya"), "GET", `/v1/designs/${body.id}/thread`);
+    expect(thread.body.items).toMatchObject([
+      { kind: "message", payload: { text: "Make the pricing page calmer, with a quieter hero" } },
+    ]);
+    expect((await feedOf(t.db, body.id)).map((event) => [event.kind, event.priority])).toEqual([
+      ["message", "now"],
+    ]);
+    const jobs = (await t.db.execute(
+      `select kind from jobs where key = '${body.id}'`,
+    )) as unknown as { rows: unknown[] };
+    expect(jobs.rows).toEqual([{ kind: "sandbox.wake" }]);
+    await t.backgroundDone();
+    // Maya has no Claude connected here, so the design says what it waits for.
+    expect((await call(t, as("maya"), "GET", `/v1/designs/${body.id}`)).body.agentBlocker).toBe(
+      "claude_not_connected",
+    );
+  });
+
+  test("a branch already taken in the repo gets the next number; Scratch has none", async () => {
+    const create = (repoId: string | null) =>
+      call(t, as("maya"), "POST", "/v1/designs", {
+        workspaceId: ws.id,
+        repoId,
+        message: { text: "A darker footer" },
+      });
+    const [first, second] = [await create(ws.repo.id), await create(ws.repo.id)];
+    const scratch = await create(null);
+    expect([first.body.branch, second.body.branch]).toEqual([
+      "pz/darker-footer",
+      "pz/darker-footer-2",
+    ]);
+    expect(scratch.body.branch).toBeNull();
+  });
+
+  test("the same create key twice makes one design, however close together", async () => {
+    const create = () =>
+      call(t, as("maya"), "POST", "/v1/designs", {
+        workspaceId: ws.id,
+        repoId: ws.repo.id,
+        message: { text: "Onboarding, but kinder" },
+        createKey: "composer-7f3a9c21",
+      });
+    const [one, two] = await Promise.all([create(), create()]);
+    const three = await create();
+
+    expect(new Set([one.body.id, two.body.id, three.body.id]).size).toBe(1);
+    expect([one.status, two.status, three.status].sort()).toEqual([200, 200, 201]);
+    expect(await feedOf(t.db, one.body.id)).toHaveLength(1);
+  });
+
+  test("a model and effort are taken, and the person's defaults fill in for them", async () => {
+    const chosen = await call(t, as("maya"), "POST", "/v1/designs", {
+      workspaceId: ws.id,
+      model: "claude-sonnet-5-5",
+      effort: "low",
+    });
+    const defaulted = await call(t, as("maya"), "POST", "/v1/designs", { workspaceId: ws.id });
+    const bad = await call(t, as("maya"), "POST", "/v1/designs", {
+      workspaceId: ws.id,
+      model: "gpt-9",
+    });
+    const session = async (id: string) =>
+      (await call(t, await runnerHeaders(t, id), "POST", "/v1/runner/session", {})).body;
+    expect(await session(chosen.body.id)).toMatchObject({
+      model: "claude-sonnet-5-5",
+      effort: "low",
+    });
+    expect(await session(defaulted.body.id)).toMatchObject({
+      model: "claude-opus-5-5",
+      effort: "high",
+    });
+    expect(bad.status).toBe(400);
+  });
+
   test("a runner cannot start one", async () => {
     const design = await designIn(t, ws, "maya", emptyDoc("Runner's"));
     const { status } = await call(t, await runnerHeaders(t, design.id), "POST", "/v1/designs", {

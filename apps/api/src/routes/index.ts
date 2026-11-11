@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../http/context.ts";
 import { auth } from "./auth.ts";
+import { claude } from "./claude.ts";
 import { cron } from "./cron.ts";
 import { designPullRequest } from "./design-pull-request.ts";
 import { designThread } from "./design-thread.ts";
@@ -21,6 +22,7 @@ export const v1 = new Hono<AppEnv>()
   .route("/health", health)
   .route("/auth", auth)
   .route("/me", me)
+  .route("/claude", claude)
   .route("/github", github)
   .route("/workspaces", workspaces)
   .route("/designs", designs)

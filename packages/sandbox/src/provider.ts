@@ -47,6 +47,11 @@ export interface CreateOptions {
   labels?: Record<string, string>;
   /** The sandbox's whole environment. The only place a secret may go. */
   env?: Record<string, string>;
+  /**
+   * False asks the provider to keep no history of the commands run in it and what they printed,
+   * for a sandbox whose screen can show a secret. Defaults to true.
+   */
+  commandHistory?: boolean;
   /** Ports to give a public address. Their addresses come back at once, before anything listens. */
   ports?: number[];
   /**

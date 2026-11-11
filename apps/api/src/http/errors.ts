@@ -80,6 +80,17 @@ export type ErrorCode =
   | "file_too_large"
   /** An upload of a kind of file this place does not take, or whose name and type disagree. */
   | "unsupported_file_type"
+  /** Anthropic does not take this API key. */
+  | "claude_key_invalid"
+  /**
+   * A Claude sign-in's code that is not whole, or that claude.ai turned away (wrong, from an
+   * earlier sign-in, or past its time there). Open sign-in again for a new one.
+   */
+  | "claude_code_invalid"
+  /** A Claude sign-in that waited longer than ten minutes for its code. Open sign-in again. */
+  | "claude_sign_in_expired"
+  /** A Claude sign-in whose one code was already sent, or that was given up. Open sign-in again. */
+  | "claude_sign_in_used"
   /** A pull request needs a repo, and this design is Scratch. */
   | "no_repository"
   /** Nothing has been pushed to the design's branch yet, so GitHub does not have it. */
@@ -159,7 +170,7 @@ export class UpstreamError extends Error {
   readonly status?: number;
 
   constructor(
-    readonly service: "workos" | "github" | "storage" | "model",
+    readonly service: "workos" | "github" | "storage" | "model" | "anthropic" | "sandbox",
     message: string,
     options: { status?: number; cause?: unknown } = {},
   ) {
@@ -174,6 +185,9 @@ const SERVICE_NAME = {
   github: "GitHub",
   storage: "its file storage",
   model: "the model it asks",
+  anthropic: "Anthropic",
+  // Only a Claude sign-in waits on a sandbox in a person's request.
+  sandbox: "Claude",
 } as const;
 
 /** What Hono's own middleware (a body limit, a rate limiter) means by each status it refuses with. */

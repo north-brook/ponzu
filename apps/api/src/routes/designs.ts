@@ -1,22 +1,21 @@
 import {
   type CommittedOp,
   type Doc,
-  emptyDoc,
   InvalidOpError,
   MAX_COMMIT_BYTES,
   MAX_NAME_LENGTH,
-  newId,
   newOpId,
   type Op,
   PAGE_ICONS,
   validateCommit,
 } from "@ponzu/core";
 import {
+  AGENT_BLOCKERS,
   AGENT_STATES,
-  createDesign,
   DESIGN_STATUSES,
   type Design,
   deleteDesign,
+  findDesignByCreateKey,
   getDesign,
   getDesignAssetKey,
   getMemberWorkspace,
@@ -30,20 +29,24 @@ import {
   settleDesign,
   touchPresence,
 } from "@ponzu/db";
+import { MAX_TEXT } from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type DesignGrant, requireDesign, requireWorkspace } from "../auth/authorize.ts";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
+import { EFFORTS, MODEL_IDS } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
 import { toCommittedOp } from "../designs/actor.ts";
 import { commitPost } from "../designs/commit.ts";
+import { startDesign } from "../designs/create.ts";
 import { readCurrentDoc } from "../designs/document.ts";
 import { reverse } from "../designs/undo.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
 
 /*
  * A design: its row, its document and how it changes (docs/cloud.md, "The document and how it
@@ -73,6 +76,8 @@ const DesignView = z.object({
   agentState: z.enum(AGENT_STATES),
   agentStatus: z.string().nullable(),
   agentArtboards: z.array(z.string()),
+  /** Why the agent cannot run now ("connect Claude", "waiting for a machine"), or null. */
+  agentBlocker: z.enum(AGENT_BLOCKERS).nullable(),
   needsYouCount: z.number(),
   prNumber: z.number().nullable(),
   prState: z.enum(PR_STATES).nullable(),
@@ -116,6 +121,19 @@ const CreateBody = z.object({
   /** A repo of the workspace the person can push to. Null or left out for Scratch. */
   repoId: Id.nullable().optional(),
   name: Name.optional(),
+  /** What the person says first, which sets the agent going and names the design's branch. */
+  message: z.object({ text: z.string().trim().min(1).max(MAX_TEXT) }).optional(),
+  /** What it runs on; the person's defaults when left out. */
+  model: z.enum(MODEL_IDS).optional(),
+  effort: z.enum(EFFORTS).optional(),
+  /**
+   * The app's own id for this create, new for each design it means to make and the same when it
+   * sends the create again (a double tap, a retry after a lost answer): it makes one design.
+   */
+  createKey: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{8,64}$/)
+    .optional(),
 });
 
 const PatchBody = z
@@ -190,11 +208,18 @@ const SeenBody = z.object({
 export const designs = new Hono<AppEnv>()
   /**
    * Starts a design: in a repo the person can push to, or Scratch, which is theirs alone. It
-   * has one empty page and nothing else; the first message is what sets it going.
+   * has one empty page and nothing else. With a first message, which is what the composer
+   * sends, the message is in its thread and on its way to the agent, and its sandbox is waking,
+   * all at once. A `createKey` sent again answers with the design it made the first time (200).
    */
   .post("/", access.user, validate("json", CreateBody), async (c) => {
     const { deps, actor } = c.var;
-    const { workspaceId, repoId, name = "Untitled" } = c.req.valid("json");
+    const body = c.req.valid("json");
+    const { workspaceId, repoId, name = "Untitled", message, createKey } = body;
+    if (createKey) {
+      const made = await findDesignByCreateKey(deps.db, { ownerId: actor.user.id, createKey });
+      if (made) return c.json(await viewOf(deps, await requireDesign(c, made.id, "read")), 200);
+    }
     const workspace = await requireWorkspace(c, workspaceId);
     const repo = repoId ? await getWorkspaceRepo(deps.db, { workspaceId, repoId }) : null;
     if (repoId) {
@@ -206,20 +231,17 @@ export const designs = new Hono<AppEnv>()
         throw new ApiError(403, "forbidden", "Designs need a repo you can push to.");
       }
     }
-    const doc: Doc = {
-      ...emptyDoc(name),
-      pages: [{ id: newId("pg"), name: "Page 1", artboards: [] }],
-    };
-    const design = await createDesign(deps.db, {
+    const { design, created } = await startDesign(deps, {
+      user: actor.user,
       workspaceId,
-      repoId: repo?.id ?? null,
-      ownerId: actor.user.id,
-      claudeAccountId: null,
+      repo,
       name,
-      branch: null,
-      doc,
+      ...(message ? { message } : {}),
+      ...(body.model ? { model: body.model } : {}),
+      ...(body.effort ? { effort: body.effort } : {}),
+      ...(createKey ? { createKey } : {}),
     });
-    return c.json(await viewOf(deps, { design, repo, access: "write" }), 201);
+    return c.json(await viewOf(deps, { design, repo, access: "write" }), created ? 201 : 200);
   })
 
   /** What the app's chrome shows about a design, and where its files are. */
@@ -256,6 +278,13 @@ export const designs = new Hono<AppEnv>()
             now: new Date(deps.clock.now()),
           });
     if (!design) throw new ApiError(404, "not_found", "There is no such design.");
+    if (settled) {
+      // A settled design needs no sandbox; the minute's sweep does this too, for a merge.
+      deps.background(
+        "retire",
+        retireSandboxes(deps, design.id).then((ids) => destroySandboxes(deps, ids)),
+      );
+    }
     return c.json(await viewOf(deps, { ...grant, design }));
   })
 
@@ -272,7 +301,10 @@ export const designs = new Hono<AppEnv>()
         throw new ApiError(403, "forbidden", "Only its owner or a workspace admin can delete it.");
       }
     }
+    // Its sandboxes first, while the design is there to put their awake time down to.
+    const sandboxes = await retireSandboxes(deps, design.id);
     await deleteDesign(deps.db, design.id);
+    deps.background("retire", destroySandboxes(deps, sandboxes));
     return c.body(null, 204);
   })
 
