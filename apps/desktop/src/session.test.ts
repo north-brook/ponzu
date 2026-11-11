@@ -106,6 +106,7 @@ test("a sign-in GitHub turned down says so, and leaves the person signed out", a
     ok: false,
     reason: "failed",
     message: "GitHub didn't let Ponzu in. Try again.",
+    code: "access_denied",
   });
   expect(exchanges).toHaveLength(0);
   expect(main.session.getState().status).toBe("signed_out");

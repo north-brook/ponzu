@@ -32,6 +32,8 @@ export interface CreatePageProps {
    * "loading" none yet, with their room kept.
    */
   ideas: Idea[] | "loading" | null;
+  /** An idea was picked into the composer: its place in the list, from 0. */
+  onIdeaPicked?: (idea: Idea, position: number) => void;
   /** Images to send with the prompt. */
   attachments?: PendingAttachment[];
   onRemoveAttachment?: (id: string) => void;
@@ -56,6 +58,7 @@ export function CreatePage({
   onProjectChange,
   onAllowMore,
   ideas,
+  onIdeaPicked,
   attachments,
   onRemoveAttachment,
 }: CreatePageProps) {
@@ -73,6 +76,7 @@ export function CreatePage({
 
   const pick = (idea: Idea) => {
     onPromptChange(idea.prompt);
+    onIdeaPicked?.(idea, Array.isArray(ideas) ? ideas.indexOf(idea) : -1);
     requestAnimationFrame(() => {
       const el = field.current;
       if (!el) return;
@@ -119,7 +123,8 @@ export function CreatePage({
         {/* 8 after the chip, as the column spaces its rows, and 22 more. Nothing while they're
             made (onboarding 4.6): they rise into the room the column already left them. */}
         {Array.isArray(ideas) && ideas.length > 0 ? (
-          <div className="mt-[30px]">
+          // Prompts made from the repo: masked in a private recording (app/analytics/privacy.ts).
+          <div data-replay="mask" className="mt-[30px]">
             <Ideas ideas={ideas} onPick={pick} />
           </div>
         ) : null}

@@ -1,5 +1,9 @@
 import { isTyping, useModifierHint } from "@ponzu/canvas/modifier-hint";
 import { useEffect, useRef } from "react";
+import { useAnalytics } from "../../app/analytics/provider.tsx";
+
+/** Key presses already counted: two shortcuts on one key (⌘, has two) are one use. */
+const counted = new WeakSet<KeyboardEvent>();
 
 /** When each shortcut last ran, by key: a menu item with the same accelerator checks it. */
 const ran = new Map<string, number>();
@@ -7,11 +11,13 @@ const ran = new Map<string, number>();
 /**
  * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window, text fields
  * included: none of the app's take rich text, so no shortcut here shadows one of theirs. `key`
- * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",".
+ * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",". Each use is counted
+ * (`hotkey used`), by key.
  */
 export function useShortcut(key: string, handler: () => void, enabled = true): void {
   const latest = useRef(handler);
   latest.current = handler;
+  const analytics = useAnalytics();
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -19,11 +25,15 @@ export function useShortcut(key: string, handler: () => void, enabled = true): v
       if (e.key.toLowerCase() !== key) return;
       e.preventDefault();
       ran.set(key, performance.now());
+      if (!counted.has(e)) {
+        counted.add(e);
+        analytics.capture("hotkey used", { hotkey: `mod+${key}` });
+      }
       latest.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [key, enabled]);
+  }, [key, enabled, analytics]);
 }
 
 /**

@@ -10,6 +10,7 @@ import { railSignal } from "../cloud/status.ts";
 import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { DesignChrome } from "../cloud/window/design-chrome.tsx";
+import { useAnalytics } from "./analytics/provider.tsx";
 import { AskStore } from "./ask-store.ts";
 import { drawCommentPicture, hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
@@ -367,6 +368,7 @@ export function DesignCanvas({
   // A design you can open always has its head row: none, live, is one deleted or taken away.
   const gone = state.status === "error" || (head.status === "live" && head.rows?.length === 0);
   const unsaved = useUnsaved(source);
+  const analytics = useAnalytics();
 
   // The person has seen it as it stands: the sidebar's dot goes.
   useEffect(() => {
@@ -421,6 +423,9 @@ export function DesignCanvas({
         {...(page ? { page } : {})}
         onPageChange={onPage}
         {...(link ? { link } : {})}
+        onModeChange={(mode) => {
+          if (mode === "comment") analytics.capture("comment mode entered", { design_id: id });
+        }}
       />
       {state.status === "offline" ? (
         <Banner>You're offline. Your changes are kept here and sent when you're back.</Banner>
