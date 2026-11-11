@@ -3,7 +3,8 @@
  * the canvas package's controls, draw on `:focus-visible` but skip `[data-quiet-focus]`, and
  * everything that takes focus is marked quiet unless keyboard navigation put it there: Tab or
  * Shift-Tab, or an arrow, Home or End moving focus inside a menu, a list, the page tabs, the
- * people in the chrome. Focus from a click, from a shortcut acting through a control, or from
+ * people in the chrome; and Return or Space on a control so reached, handing focus on to the
+ * popover or dialog it opens (presses). Focus from a click, from a shortcut acting through a control, or from
  * our own code handing it on (a question taking the composer's place, a surface closing) is
  * quiet for as long as it stays, however many keys are pressed after it: holding ⌘ for ⌘K, or ⌥
  * for a page's number, never lights the control last touched.
@@ -122,6 +123,25 @@ export function giveFocusBack(
  */
 const TOOLBAR_PRESS = "[data-toolbar] button:not([aria-haspopup]):not(:disabled)";
 
+/** What Return and Space press: a control, not a field. */
+const PRESSABLE =
+  "button, a[href], summary, [role=button], [role=link], [role^=menuitem], [role=option], [role=tab], [role=radio], [role=checkbox], [role=switch]";
+
+/**
+ * Return or Space on a control that has the keyboard's focus, its ring showing: the press is the
+ * keyboard's too, so focus it hands on (a popover or dialog opening onto its first control) rings
+ * where it lands, as Tab's would. On a control a click or a shortcut focused, it stays quiet.
+ */
+function presses(e: KeyboardEvent): boolean {
+  if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== "Enter" && e.key !== " ")) return false;
+  return e.target instanceof Element && e.target.matches(PRESSABLE) && hasKeyboardFocus(e.target);
+}
+
+/** A press is handing focus on (presses): from its key until a moment after it's released. */
+let handingOn = false;
+let handOff: ReturnType<typeof setTimeout> | undefined;
+const HAND_ON_MS = 500;
+
 let installed = false;
 
 /**
@@ -143,21 +163,46 @@ export function installFocusRule(): void {
     "pointerdown",
     () => {
       navigating = false;
+      handingOn = false;
       reached = new WeakSet();
     },
     options,
   );
   // Tab moves focus after its keydown, Radix's roving focus during it: both land while the key is
   // down. Any other key ends it.
-  document.addEventListener("keydown", (e) => (navigating = navigates(e)), options);
-  document.addEventListener("keyup", () => (navigating = false), options);
-  window.addEventListener("blur", () => (navigating = false));
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      navigating = navigates(e);
+      handingOn = presses(e);
+      clearTimeout(handOff);
+    },
+    options,
+  );
+  document.addEventListener(
+    "keyup",
+    (e) => {
+      navigating = false;
+      // Space presses on its release, Return on its press; whatever the press opens takes focus
+      // a moment after (a popover's first control, a dialog's field), and then it's over.
+      if (handingOn && (e.key === "Enter" || e.key === " ")) {
+        clearTimeout(handOff);
+        handOff = setTimeout(() => (handingOn = false), HAND_ON_MS);
+      }
+    },
+    options,
+  );
+  window.addEventListener("blur", () => {
+    navigating = false;
+    handingOn = false;
+  });
   document.addEventListener(
     "focusin",
     (e) => {
       const el = e.target;
       if (!(el instanceof HTMLElement)) return;
-      if (navigating) {
+      // Handed on by a press, unless our own code asked for it quiet (quietFocus marks first).
+      if (navigating || (handingOn && !("quietFocus" in el.dataset))) {
         reached.add(el);
         unhush(el);
       } else if (!reached.has(el)) {

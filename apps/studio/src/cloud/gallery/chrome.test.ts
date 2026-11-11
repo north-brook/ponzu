@@ -438,4 +438,48 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       await page.evaluate(() => document.activeElement?.getAttribute("data-design-row")),
     ).not.toBe("dsn_quieter");
   });
+
+  test("a popover the keyboard opens rings where it puts focus; one a click opens doesn't", async () => {
+    await open("team-sidebar");
+    const share = 'header button[aria-label="Share"]';
+    const inside = () =>
+      page.evaluate(() => {
+        const el = document.activeElement!;
+        return {
+          inPopover: !!el.closest("[data-radix-popper-content-wrapper]"),
+          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
+        };
+      });
+    // Tab to Share and press Return: the popover's first control is the keyboard's.
+    await page.mouse.click(700, 500);
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      if (await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Share"))
+        break;
+    }
+    expect(await rings()).toEqual(["Share"]);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => !!document.activeElement?.closest("[data-radix-popper-content-wrapper]"),
+    );
+    expect(await inside()).toEqual({ inPopover: true, ring: true });
+    // Escape gives focus back to Share, ringed.
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Share");
+    expect(await rings()).toEqual(["Share"]);
+    // Opened by a click, it's quiet inside and after, whatever is held.
+    await page.click(share);
+    await page.waitForFunction(
+      () => !!document.activeElement?.closest("[data-radix-popper-content-wrapper]"),
+    );
+    expect(await inside()).toEqual({ inPopover: true, ring: false });
+    await page.keyboard.press("Escape");
+    await page.keyboard.down("Meta");
+    expect(await rings()).toEqual([]);
+    await page.keyboard.up("Meta");
+    // A moment after a press, focus our own code moves is quiet again.
+    await new Promise((r) => setTimeout(r, 700));
+    await page.evaluate(() => document.querySelector<HTMLElement>('[aria-label="Filter"]')!.focus());
+    expect(await rings()).toEqual([]);
+  });
 });
