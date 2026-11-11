@@ -291,8 +291,8 @@ which it flushes and checks on every start:
 
 **Checkpoints, for real** (`durability.ts`; first on `ponzu-runner-9866a3cd969c`,
 `ponzu-runner-0b599d9a201c` and `ponzu-runner-b06c59b6e389`, which kept work in progress on a ref
-on GitHub, then on `ponzu-runner-80375d620254` and `ponzu-runner-13c05061cbbd`, which keep it in a
-bundle with the checkpoint). The fake API holds the runner off after each boot until the driver
+on GitHub, then on `ponzu-runner-80375d620254`, `ponzu-runner-13c05061cbbd` and, after `cloud`
+was merged in, `ponzu-runner-97c629db44bc`, which keep it in a bundle with the checkpoint). The fake API holds the runner off after each boot until the driver
 hands back the memory it kept, as the real API is never on the sandbox's disk; each sleep is done
 as the API does it (the stop asks, the runner gets ready, `sync`, stop), and each wake as the API
 does it (the row says awake, the runner is only poked), timed from the resume to `/health` and
@@ -313,7 +313,8 @@ to the runner's first claim.
   one's. A runner restarted while it cloned left a `.git` with no `origin` branches, and every
   start after failed to make the design's branch (`invalid reference: origin/main`); the
   checkout now makes such a clone whole.
-- **The proof** (a repo design, on `ponzu-runner-13c05061cbbd`): a turn wrote `notes/plan.md`
+- **The proof** (a repo design, on `ponzu-runner-13c05061cbbd`, and again with the same result on
+  `ponzu-runner-97c629db44bc`): a turn wrote `notes/plan.md`
   without committing; its checkpoint carried the commit in its workspace archive, and GitHub had
   neither a `refs/ponzu/wip/<design>` ref nor the branch. A folder was made beside the session's
   transcript (`<session>/subagents/`, as Claude Code makes for subagents) before that turn. A
