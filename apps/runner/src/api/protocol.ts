@@ -65,6 +65,22 @@ export interface RunnerSession {
    * (a rollback) or holds none of it (a new sandbox) restores from it before it resumes.
    */
   saved: SavedPoint | null;
+  /** The workspace the design is in: the group its turns are reported under. */
+  workspaceId?: string;
+  /**
+   * Where the runner reports each turn's trace to PostHog's LLM analytics, or null (or absent,
+   * from an older API) when analytics is off (docs/analytics.md).
+   */
+  analytics?: RunnerAnalytics | null;
+}
+
+/** PostHog, as the API hands it to a runner. Every value is public. */
+export interface RunnerAnalytics {
+  /** The project token, `phc_…`. */
+  key: string;
+  host: string;
+  /** Whether prompts, replies and tool arguments and results go with the trace. */
+  content: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -177,6 +193,11 @@ export type RunnerEvent = {
   priority: Priority;
   /** The person behind it. Null when GitHub was. */
   from: Person | null;
+  /**
+   * The PostHog session of the app that sent it, when it said: the turn it begins is traced
+   * under it, so a session recording links to the agent's work (docs/analytics.md).
+   */
+  posthogSessionId?: string | null;
 } & EventBody;
 
 export type EventBody =
@@ -643,7 +664,31 @@ export interface TurnUsage {
   claudeSessionId: string;
   at: string;
   models: ModelUsage[];
+  /**
+   * How the turn went, for analytics ("turn started" and "turn finished"). Sent for every turn
+   * a runner sees end, used or not; an older runner leaves it out.
+   */
+  turn?: TurnReport;
 }
+
+/** How a turn went. */
+export interface TurnReport {
+  /** When Claude Code took up what began it, as an ISO 8601 time. */
+  startedAt: string;
+  outcome: TurnOutcome;
+  /** Why it failed, as the thread's error notice says; null when it did not. */
+  errorCode: RunErrorCode | null;
+  durationMs: number;
+  /** How many tools the agent called, its subagents' included. */
+  toolCalls: number;
+  /**
+   * The event whose message began it (`evt_…`): the API reads from its row whom the turn was for
+   * and the app session that sent it. Null for a turn no event began (the runner's own notice).
+   */
+  eventId: string | null;
+}
+
+export type TurnOutcome = "completed" | "failed" | "stopped";
 
 /** `POST /v1/runner/usage`. */
 export interface UsageRequest {

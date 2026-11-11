@@ -24,6 +24,7 @@ type MeWorkspace = Awaited<ReturnType<Api["me"]>>["workspaces"][number];
 type WorkspaceView = Awaited<ReturnType<Api["workspaces"]["get"]>>;
 type RepoView = WorkspaceView["repos"][number];
 type MemberView = WorkspaceView["members"][number];
+type DesignPeopleView = Awaited<ReturnType<Api["designs"]["people"]>>;
 
 /** What anyone the API names carries: a person, a member, someone present. */
 interface Someone {
@@ -213,16 +214,34 @@ export function contributors(
 }
 
 /**
- * Who can reach the design, as Share lists it: the workspace's members, its owner first. GitHub
- * decides what each may do; until the API says per person, everyone but the owner edits.
+ * Who can reach the design, as Share lists it: everyone GitHub gives access to its repo, as the
+ * API says (`designs.people`), whether or not they have opened Ponzu, its owner first. Until
+ * that answer is in (or from an API that doesn't give it), the workspace's members who have
+ * opened Ponzu, everyone but the owner editing.
  */
-export function designMembers(members: MemberView[], ownerId: string | null): DesignMember[] {
+export function designMembers(
+  members: MemberView[],
+  ownerId: string | null,
+  people?: DesignPeopleView["people"],
+): DesignMember[] {
+  if (people) {
+    return people.map((someone) => ({
+      person: toPerson(someone.userId ?? githubPersonId(someone.githubUserId), someone),
+      access: someone.access,
+      joined: someone.joined,
+    }));
+  }
   return members
     .map((member) => {
       const access: DesignAccess = member.userId === ownerId ? "owner" : "edit";
-      return { person: toPerson(member.userId, member), access };
+      return { person: toPerson(member.userId, member), access, joined: true };
     })
     .toSorted((a, b) => Number(b.access === "owner") - Number(a.access === "owner"));
+}
+
+/** The id the UI keys someone by before they have a Ponzu user: their GitHub id. */
+export function githubPersonId(githubUserId: number): string {
+  return `github:${githubUserId}`;
 }
 
 /**

@@ -11,8 +11,7 @@ import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
-import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
-import { agentEnv, EnvError, readEnv } from "./env.ts";
+import { agentEnv, EnvError, readEnv, secretValues } from "./env.ts";
 import { agentFiles } from "./files.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
@@ -20,6 +19,7 @@ import { agentShell } from "./save/shell.ts";
 import { Transcripts } from "./save/transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
 import { serve, serveCredentials } from "./server.ts";
+import { posthogTelemetry } from "./telemetry.ts";
 import { VERSION } from "./version.ts";
 
 /**
@@ -27,8 +27,6 @@ import { VERSION } from "./version.ts";
  * lease): systemd is told not to try (RestartPreventExitStatus).
  */
 const EXIT_CONFIG = 78;
-/** Where the environment carries the owner's Claude credential. */
-const CLAUDE_CREDENTIALS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
 /** The Claude Code the sandbox image installs. */
 const IMAGE_CLAUDE = "/usr/local/bin/claude";
 
@@ -117,10 +115,7 @@ const runner = new Runner({
     if (session.repo && !checkedOut) return { transcripts, work: null };
     // What a checkpoint never carries: the repo's secrets and the Claude credential, which the
     // next sandbox's environment brings back.
-    const secrets = [
-      ...Object.values(decodeRepoSecrets(process.env[REPO_SECRETS_VARIABLE])),
-      ...CLAUDE_CREDENTIALS.flatMap((name) => process.env[name] ?? []),
-    ];
+    const secrets = secretValues(process.env);
     const work =
       session.repo && session.branch
         ? new GitWork({
@@ -138,6 +133,9 @@ const runner = new Runner({
   },
   boot,
   log,
+  // Each turn's trace, to PostHog, when the API's session says analytics is on.
+  // With content on, what the agent saw and said is scrubbed of every secret its environment holds.
+  telemetry: (config) => posthogTelemetry(config, { log, secrets: secretValues(process.env) }),
   event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
   onFatal: () => {
     server.stop();

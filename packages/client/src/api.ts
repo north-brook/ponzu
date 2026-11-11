@@ -163,6 +163,11 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       /** 409 `nothing_to_redo` when nothing is left. */
       redo: async (id: string) => (await v1.designs[":id"].redo.$post(design(id))).json(),
 
+      /**
+       * Who can open it, for Share: everyone GitHub gives access to its repo, whether or not
+       * they have opened Ponzu (`joined`), its owner first.
+       */
+      people: async (id: string) => (await v1.designs[":id"].people.$get(design(id))).json(),
       /** "I have it open", on opening and every 30 seconds: who else does. */
       presence: async (id: string, pageId?: string | null) =>
         (await v1.designs[":id"].presence.$put({ ...design(id), json: { pageId } })).json(),

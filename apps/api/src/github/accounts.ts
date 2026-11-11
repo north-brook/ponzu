@@ -1,9 +1,4 @@
-import {
-  countWorkspaceMembers,
-  listUserWorkspaces,
-  type User,
-  type WorkspaceKind,
-} from "@ponzu/db";
+import { countWorkspacePeople, listUserWorkspaces, type User, type WorkspaceKind } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 
 /** One row of the "Where do you design?" step: a GitHub account the person could design in. */
@@ -22,7 +17,12 @@ export interface GithubAccountRow {
   /** The workspace it is, once ready. */
   workspaceId: string | null;
   suspended: boolean;
-  /** How many people are in a ready organization's workspace: those who have signed in. */
+  /**
+   * How many people GitHub says can reach a ready workspace's repos, whether or not they have
+   * opened Ponzu (`github/people.ts`). Null until GitHub has been read for it, for the
+   * person's own account, whose row shows no count, and for one they reach only as an outside
+   * collaborator, who is not shown who else is in it.
+   */
   memberCount: number | null;
 }
 
@@ -42,12 +42,17 @@ export async function listGithubAccounts(
     .filter((workspace) => workspace !== own)
     .sort((a, b) => a.name.localeCompare(b.name) || a.githubLogin.localeCompare(b.githubLogin));
   const counts = new Map(
+    // Each counts only the people this person is shown (docs/cloud.md, "Identity and access"):
+    // someone who reaches a workspace only through repos shared with them is not shown who
+    // else is in it, nor how many.
     (
-      await countWorkspaceMembers(
-        db,
-        others.filter((workspace) => workspace.kind === "org").map((workspace) => workspace.id),
-      )
-    ).map(({ workspaceId, members }) => [workspaceId, members]),
+      await countWorkspacePeople(db, {
+        viewerUserId: user.id,
+        workspaceIds: others
+          .filter((workspace) => workspace.githubAccess !== "collaborator")
+          .map((workspace) => workspace.id),
+      })
+    ).map(({ workspaceId, people }) => [workspaceId, people]),
   );
 
   return [

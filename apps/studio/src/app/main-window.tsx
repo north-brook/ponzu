@@ -236,6 +236,11 @@ function WorkspaceWindow({
   // The design the create page just made, as its answer said, for it to open on.
   const [fresh, setFresh] = useState<FreshDesign | null>(null);
   const open = useOpenDesign(host, me, openId, say, fresh);
+  // Share's list: everyone GitHub gives access to the open design's repo.
+  const sharePeople = useQuery({
+    ...queries.designPeople(openId ?? ""),
+    enabled: openId !== null,
+  });
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
@@ -396,7 +401,11 @@ function WorkspaceWindow({
     open: lost ? null : open,
     summary: openSummary,
     people,
-    members: designMembers(detail.data?.members ?? [], openSummary?.owner?.id ?? null),
+    members: designMembers(
+      detail.data?.members ?? [],
+      openSummary?.owner?.id ?? null,
+      sharePeople.data?.people,
+    ),
     workspaceKind: workspace.kind,
     sidebarOpen: !firstDesign && sidebarOpen,
     rail: {

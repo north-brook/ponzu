@@ -8,6 +8,7 @@ import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
 import { type DesignFilter, NO_FILTER } from "../filter.ts";
 import type {
   Contributor,
+  DesignMember,
   DesignSummary,
   Effort,
   Match,
@@ -154,12 +155,15 @@ export function DesignChromeHarness({
   onToggleRail,
   threadUnseen = false,
   changes = true,
+  members = f.members,
   overrides = {},
 }: {
   design: DesignSummary;
   sidebarOpen: boolean;
   /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
   contributors: Contributor[] | null;
+  /** Who Share lists. */
+  members?: DesignMember[];
   railOpen: boolean;
   /** The window's rail follows the toggle: without it, only the toggle does. */
   onToggleRail?: () => void;
@@ -191,7 +195,7 @@ export function DesignChromeHarness({
               meId: f.bryce.id,
               contributors,
               repo: design.project.repo,
-              members: f.members,
+              members,
               onOpenRepo: ignore,
             }
           : null

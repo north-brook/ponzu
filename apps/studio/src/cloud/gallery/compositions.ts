@@ -102,6 +102,15 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter.
+    id: "share-not-joined",
+    title: "Share · some haven't opened Ponzu",
+    ...WINDOW,
+    open: 'button[aria-label="Share"]',
+    masks: DESIGN,
+    reference: true,
+  },
+  {
     id: "thread-in-the-right-rail",
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",

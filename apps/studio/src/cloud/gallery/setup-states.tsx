@@ -50,10 +50,18 @@ const STATES: [string, SettingsSection, SettingsData][] = [
       meId: f.sam.id,
       members: s.members.map((m) => ({
         ...m,
+        joined: true,
         role: m.person.id === f.sam.id ? "admin" : "member",
         owner: false,
       })),
     }),
+  ],
+  // GitHub gives access to people who haven't opened Ponzu: listed, quieter, with no role.
+  ["Members · some haven't opened Ponzu", "members", team({ members: s.membersMixed })],
+  [
+    "Members · some haven't opened Ponzu, as a member",
+    "members",
+    team({ members: s.membersMixed, meId: f.maya.id }),
   ],
   ["Members · GitHub unreachable", "members", team({ syncFailed: true })],
   [

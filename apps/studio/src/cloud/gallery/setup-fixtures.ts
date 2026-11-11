@@ -17,11 +17,13 @@ import {
   fernwood,
   jordan,
   lenny,
+  leo,
   maya,
   NOW,
   northbrook,
   repos,
   sam,
+  ting,
 } from "./fixtures.ts";
 
 const local = (month: number, day: number, hour = 12, minute = 0, year = 2026) =>
@@ -152,11 +154,18 @@ export const iphone: PingDevice = {
 };
 
 export const members: Member[] = [
-  { person: bryce, role: "admin", owner: true },
-  { person: sam, role: "admin", owner: false },
-  { person: maya, role: "member", owner: false },
-  { person: jordan, role: "member", owner: false },
-  { person: alex, role: "member", owner: false },
+  { person: bryce, joined: true, role: "admin", owner: true },
+  { person: sam, joined: true, role: "admin", owner: false },
+  { person: maya, joined: true, role: "member", owner: false },
+  { person: jordan, joined: true, role: "member", owner: false },
+  { person: alex, joined: true, role: "member", owner: false },
+];
+
+/** The team with two people GitHub gives access who haven't opened Ponzu yet. */
+export const membersMixed: Member[] = [
+  ...members.slice(0, 3),
+  { person: ting, joined: false, role: null, owner: true },
+  { person: leo, joined: false, role: null, owner: false },
 ];
 
 export const installation: Installation = {

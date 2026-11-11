@@ -34,7 +34,7 @@ import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
  * thread and pull request are work others share, in a repo others reach.
  */
 
-export type DeleteAccountDeps = ClaudeDeps & Pick<Deps, "workos" | "archives">;
+export type DeleteAccountDeps = ClaudeDeps & Pick<Deps, "workos" | "archives" | "analytics">;
 
 export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promise<void> {
   const { db, log } = deps;
@@ -67,6 +67,11 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
     deletedDesigns: plan.deleted.length,
     keptDesigns: plan.kept.length,
   });
+  deps.analytics.capture(
+    "account deleted",
+    { deleted_designs: plan.deleted.length, kept_designs: plan.kept.length },
+    { distinctId: user.id },
+  );
 
   deps.background("account_deleted", destroySandboxes(deps, machines));
   // The transcripts and work in progress of the designs that went with them.

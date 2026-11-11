@@ -38,7 +38,9 @@ import { githubUserToken } from "./user-token.ts";
  * out of the installation's budget, which its git and permission checks share.
  */
 
-type SyncDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
+/** `background`, where there is a request to run work beside (`reconcileInstallation`). */
+type SyncDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics"> &
+  Partial<Pick<Deps, "background">>;
 
 /** How old Ponzu's copy of an installation may be before a person's sync reads it again. */
 const RECONCILE_AFTER_MS = 10 * 60_000;

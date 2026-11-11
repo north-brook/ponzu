@@ -111,6 +111,8 @@ export type DesignAccess = "owner" | "edit" | "view";
 export interface DesignMember {
   person: Person;
   access: DesignAccess;
+  /** Whether they have opened Ponzu: GitHub gives access to people who haven't yet. */
+  joined: boolean;
 }
 
 /** A prompt the create page offers for the chosen repo. */

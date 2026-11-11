@@ -12,6 +12,7 @@ import type {
   TurnError,
 } from "./agent.ts";
 import { Channel } from "./channel.ts";
+import type { TurnSummary } from "./trace.ts";
 
 /**
  * An agent a test drives by hand, for the runner's logic without Claude: each start is a
@@ -145,13 +146,16 @@ export class ScriptedRun implements AgentRun {
     this.emit({ type: "tool-done", id, error: false });
   }
 
-  end(opts: { error?: TurnError; usage?: ModelUsage[]; id?: string } = {}): void {
+  end(
+    opts: { error?: TurnError; usage?: ModelUsage[]; id?: string; turn?: TurnSummary } = {},
+  ): void {
     this.emit({
       type: "result",
       id: opts.id ?? `res_${Math.random().toString(36).slice(2)}`,
       ok: !opts.error,
       error: opts.error ?? null,
       usage: opts.usage ?? [],
+      ...(opts.turn ? { turn: opts.turn } : {}),
     });
   }
 

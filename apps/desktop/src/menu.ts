@@ -70,6 +70,9 @@ export function buildMenu(actions: MenuActions): void {
     { role: "editMenu" },
     {
       label: "View",
+      // No zoom roles, as in 1.x: the studio takes ⌘0 (the create page) with ⌘1–9 (designs),
+      // and the canvas takes ⌘= and ⌘- for its own zoom. Electron's default menu would make
+      // ⌘0 Actual Size and scale the whole window.
       submenu: [
         // The studio takes these keys itself, from anywhere in the window (text fields too), and
         // the page has a key before the menu does; a click here reaches it as a command. It

@@ -28,6 +28,7 @@ import type {
   SessionHistory,
   TurnError,
 } from "./agent/agent.ts";
+import type { Origin, TraceOptions, TurnSummary } from "./agent/trace.ts";
 import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
 import {
   type AgentState,
@@ -39,9 +40,12 @@ import {
   type ModelUsage,
   type QuestionBody,
   type QuestionRequest,
+  type RunnerAnalytics,
   type RunnerEvent,
   type RunnerNotice,
   type RunnerSession,
+  type TurnOutcome,
+  type TurnReport,
   type TurnUsage,
 } from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
@@ -53,6 +57,7 @@ import type { Transcripts } from "./save/transcripts.ts";
 import type { WorkSaver } from "./save/work.ts";
 import { StateReporter } from "./state.ts";
 import { stepLabel, stepWeight } from "./steps.ts";
+import type { Telemetry } from "./telemetry.ts";
 import { ThreadWriter } from "./thread.ts";
 import { UsageMeter } from "./usage.ts";
 
@@ -150,6 +155,11 @@ export interface RunnerOptions {
    * took the lease). Called once the runner has stopped.
    */
   onFatal?(reason: string): void;
+  /**
+   * Where turns' traces go, made from what the session says of analytics (`telemetry.ts`).
+   * Without it, or when the session says analytics is off, nothing is traced.
+   */
+  telemetry?(config: RunnerAnalytics): Telemetry;
   timing?: Partial<Timing>;
 }
 
@@ -218,6 +228,8 @@ export class Runner {
   private ws!: CloudWorkspace;
   private previews: Previews | null = null;
   private run: AgentRun | null = null;
+  /** Where turns' traces go, once the session has said; null when analytics is off. */
+  private telemetry: Telemetry | null = null;
 
   /** The Claude session the run is on, once known: Claude Code said, or it was resumed. */
   private sessionId: string | null = null;
@@ -321,6 +333,7 @@ export class Runner {
   /** Start: read the session, ready the checkout, open the design, start Claude, claim. */
   async start(): Promise<void> {
     this.session = await this.retry(() => this.api.session());
+    this.telemetry = this.startTelemetry(this.session.analytics ?? null);
     this.notice(this.wakeItem, { type: "waking" }, true);
     this.state.set({ state: "working", status: "Waking up", claudeSessionId: null });
     this.state.start();
@@ -442,7 +455,35 @@ export class Runner {
     for (const outbox of [this.thread, this.acks, this.questions, this.turns]) outbox.close();
     this.ws?.close();
     this.replica?.close();
+    // Claude Code has closed, so the last turn's trace is queued: it leaves before the machine.
+    await within(this.telemetry?.shutdown() ?? Promise.resolve());
     await within(this.opts.renderer?.close() ?? Promise.resolve());
+  }
+
+  /** Sends the queued traces, within a stop step; a PostHog that fails or hangs costs nothing. */
+  private flushTelemetry(): Promise<void> {
+    if (!this.telemetry) return Promise.resolve();
+    let flushing: Promise<void>;
+    try {
+      flushing = this.telemetry.flush();
+    } catch (err) {
+      flushing = Promise.reject(err);
+    }
+    return bounded(
+      flushing.catch((err) => this.log(`sending the turns' traces failed: ${said(err)}`)),
+      this.timing.stopStepMs,
+    );
+  }
+
+  /** PostHog, when the session says analytics is on. Failing to start it starts no trace. */
+  private startTelemetry(config: RunnerAnalytics | null): Telemetry | null {
+    if (!config || !this.opts.telemetry) return null;
+    try {
+      return this.opts.telemetry(config);
+    } catch (err) {
+      this.log(`analytics could not start: ${said(err)}`);
+      return null;
+    }
   }
 
   /** The API has let this process go: stop at once, and for good. */
@@ -556,16 +597,22 @@ export class Runner {
       });
     }
     if (this.ws) await this.ws.design.settled(this.timing.settleMs);
-    await bounded(
-      Promise.all([
-        this.thread.flush(),
-        this.acks.flush(),
-        this.questions.flush(),
-        this.turns.flush(),
-        this.previews?.flush(),
-      ]),
-      this.timing.stopStepMs,
-    );
+    await Promise.all([
+      bounded(
+        Promise.all([
+          this.thread.flush(),
+          this.acks.flush(),
+          this.questions.flush(),
+          this.turns.flush(),
+          this.previews?.flush(),
+        ]),
+        this.timing.stopStepMs,
+      ),
+      // The turns' traces, before the machine is frozen with them in memory. Beside the product's
+      // own flushes, never among them: a PostHog that fails at once must not cut short the wait
+      // for the thread, and one that hangs waits no longer than they may.
+      this.flushTelemetry(),
+    ]);
     await bounded(this.checkpoint(), this.timing.checkpointMs);
     if (!current()) return;
     this.sleep!.ready = true;
@@ -615,6 +662,7 @@ export class Runner {
       effort: this.session.effort,
       instructions: this.instructions(),
       tools: this.tools().map((def) => this.tool(def)),
+      ...(this.telemetry ? { trace: this.traceOptions(this.telemetry) } : {}),
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
@@ -622,6 +670,22 @@ export class Runner {
       this.state.set({ claudeSessionId: this.sessionId });
       this.acks.kick();
     }
+  }
+
+  /** Where each turn's trace goes, under this design and its workspace. */
+  private traceOptions(telemetry: Telemetry): TraceOptions {
+    return {
+      sink: (events) => {
+        try {
+          telemetry.capture(events);
+        } catch (err) {
+          this.log(`a turn's trace was lost: ${said(err)}`);
+        }
+      },
+      content: this.session.analytics?.content ?? false,
+      designId: this.session.design.id,
+      workspaceId: this.session.workspaceId ?? null,
+    };
   }
 
   /** What Claude is told about this sandbox, after Ponzu's own instructions. */
@@ -864,8 +928,19 @@ export class Runner {
       return;
     }
     this.sent.set(uuid, { event: opts.event, human: opts.human });
-    this.run.send({ uuid, text, priority, human: opts.human });
+    this.run.send({ uuid, text, priority, human: opts.human, origin: this.originOf(opts.event) });
     this.refreshState();
+  }
+
+  /** Who sent the event a message carries, and from which app session: whose turn it begins. */
+  private originOf(eventId: string | null): Origin | null {
+    const event = eventId ? this.held.get(eventId) : undefined;
+    if (!event) return null;
+    return {
+      eventId: event.id,
+      userId: event.from?.id ?? null,
+      sessionId: event.posthogSessionId ?? null,
+    };
   }
 
   /** In a turn, or about to be: something was put in that Claude Code has not taken yet. */
@@ -962,7 +1037,7 @@ export class Runner {
         this.raise(event.id, event.ask);
         break;
       case "result":
-        this.result(event.id, event.error, event.usage);
+        this.result(event.id, event.error, event.usage, event.turn ?? null);
         break;
       case "exit":
         this.exited(event.error);
@@ -1179,18 +1254,27 @@ export class Runner {
     }
   }
 
-  private result(id: string, error: TurnError | null, usage: ModelUsage[]): void {
+  private result(
+    id: string,
+    error: TurnError | null,
+    usage: ModelUsage[],
+    turn: TurnSummary | null,
+  ): void {
     this.closeStreams();
     this.restarts = 0;
     if (this.sessionId) {
       const used = this.usage.turn(this.sessionId, usage);
-      if (used.length)
+      // Every turn the agent can say something of is reported, what it used or not.
+      if (used.length || turn) {
+        const at = new Date();
         this.turns.put(id, {
           id,
           claudeSessionId: this.sessionId,
-          at: new Date().toISOString(),
+          at: at.toISOString(),
           models: used,
+          ...(turn ? { turn: turnReport(turn, error, at) } : {}),
         });
+      }
     }
     if (error?.code === "interrupted") {
       // Written by the stop's id: a stop that ends two turns says so once.
@@ -1333,6 +1417,23 @@ export class Runner {
   private log(message: string): void {
     this.opts.log(message);
   }
+}
+
+/** How a turn went, for the API's "turn started" and "turn finished". */
+function turnReport(turn: TurnSummary, error: TurnError | null, at: Date): TurnReport {
+  const outcome: TurnOutcome = !error
+    ? "completed"
+    : error.code === "interrupted"
+      ? "stopped"
+      : "failed";
+  return {
+    startedAt: turn.startedAt,
+    outcome,
+    errorCode: error && error.code !== "interrupted" ? error.code : null,
+    durationMs: Math.max(0, at.getTime() - Date.parse(turn.startedAt)),
+    toolCalls: turn.toolCalls,
+    eventId: turn.eventId,
+  };
 }
 
 function questionBody(ask: Ask): QuestionBody {

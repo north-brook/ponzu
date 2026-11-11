@@ -238,6 +238,16 @@ export const Usage: z.ZodType<UsageRequest> = z.object({
             }),
           )
           .max(16),
+        turn: z
+          .object({
+            startedAt: z.iso.datetime({ offset: true }),
+            outcome: z.enum(["completed", "failed", "stopped"]),
+            errorCode: z.enum(RUN_ERRORS).nullable(),
+            durationMs: Count,
+            toolCalls: Count,
+            eventId: ShortId.nullable(),
+          })
+          .optional(),
       }),
     )
     .max(CLAIM_LIMIT),
