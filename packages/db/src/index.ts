@@ -227,6 +227,7 @@ export {
   getRepoIdeasAccess,
   type IdeasClaim,
   type IdeasPolicy,
+  markDefaultBranchPushed,
   type RepoIdeasAccess,
   type RepoIdeasRow,
   releaseRepoIdeas,

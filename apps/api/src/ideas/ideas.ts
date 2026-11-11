@@ -63,9 +63,12 @@ export const IDEAS_POLICY = {
   /** How long after one try (that worked or not) the next may begin. */
   retryMs: HOUR,
   /**
-   * Ideas this old are made again once the repo has been pushed to since: a month of work
-   * may have changed what it is. An empty list is made again after any push, once `retryMs`
-   * has passed. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
+   * Ideas are made again when the repo's default branch has moved since (GitHub's push webhook
+   * says when), once `retryMs` has passed since the last try: what they were made from changed.
+   * A push to another branch (a design's own, say) changes nothing they were made from, and is
+   * only known from the repo list's `pushed_at`; it counts once the ideas are this old, which
+   * also catches a default-branch push whose webhook never came. An empty list is made again
+   * after any push. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
    */
   staleMs: 30 * DAY,
   /**
@@ -161,6 +164,7 @@ function isDue(repo: RepoIdeasRow, now: number): boolean {
     if (repo.ideasVersion < IDEAS_VERSION) return true;
     if (generated.getTime() <= now - IDEAS_POLICY.emptyRetryMs) return true;
   }
+  if (repo.defaultPushedAt && repo.defaultPushedAt > generated) return true;
   if (!repo.pushedAt || repo.pushedAt <= generated) return false;
   return repo.ideas.length === 0 || generated.getTime() <= now - IDEAS_POLICY.staleMs;
 }
@@ -239,7 +243,9 @@ export async function generateRepoIdeas(
     const saved = await saveRepoIdeas(deps.db, {
       repoId: repo.id,
       ideas,
-      generatedAt: new Date(deps.clock.now()),
+      // As of the claim, taken before the repo was read: a push that lands while these are
+      // being made is then newer than them, and they are made again.
+      generatedAt: claimedAt,
       claimedAt,
       version: IDEAS_VERSION,
     });

@@ -25,6 +25,7 @@ export interface RepoIdeasRow {
   fullName: string;
   defaultBranch: string;
   pushedAt: Date | null;
+  defaultPushedAt: Date | null;
   ideas: string[];
   ideasGeneratedAt: Date | null;
   ideasVersion: number;
@@ -62,6 +63,7 @@ export async function getRepoIdeasAccess(
           fullName: repos.fullName,
           defaultBranch: repos.defaultBranch,
           pushedAt: repos.pushedAt,
+          defaultPushedAt: repos.defaultPushedAt,
           ideas: repos.ideas,
           ideasGeneratedAt: repos.ideasGeneratedAt,
           ideasVersion: repos.ideasVersion,
@@ -126,7 +128,9 @@ export type IdeasClaim =
  * only one of them claims it; the allowance errs that way, never the other.
  *
  * Due: never generated; generated empty by an earlier `version`, or at or before
- * `emptyBefore`; or generated empty, or at or before `staleBefore`, and pushed since.
+ * `emptyBefore`; the default branch has moved since (`default_pushed_at`); or generated empty,
+ * or at or before `staleBefore`, and pushed to on any branch since (`pushed_at`, which also
+ * covers a push whose webhook never came).
  */
 export async function claimRepoIdeas(
   db: Db,
@@ -173,9 +177,31 @@ function due(policy: IdeasPolicy): SQL {
     and (repos.ideas_generated_at is null
       or (jsonb_array_length(repos.ideas) = 0 and (repos.ideas_version < ${policy.version}
         or repos.ideas_generated_at <= ${timeParam(policy.emptyBefore)}::timestamptz))
+      or repos.default_pushed_at > repos.ideas_generated_at
       or (repos.pushed_at > repos.ideas_generated_at
         and (jsonb_array_length(repos.ideas) = 0
           or repos.ideas_generated_at <= ${timeParam(policy.staleBefore)}::timestamptz)))`;
+}
+
+/**
+ * The repo's default branch moved at `at` (GitHub's push webhook): what its ideas were made
+ * from has changed, so they are due the next time someone asks. Never moves the time back.
+ */
+export async function markDefaultBranchPushed(
+  db: Db,
+  { githubRepoId, at }: { githubRepoId: number; at: Date },
+): Promise<void> {
+  await run(
+    db
+      .update(repos)
+      .set({ defaultPushedAt: at })
+      .where(
+        and(
+          eq(repos.githubRepoId, githubRepoId),
+          sql`(${repos.defaultPushedAt} is null or ${repos.defaultPushedAt} < ${timeParam(at)}::timestamptz)`,
+        ),
+      ),
+  );
 }
 
 /**
