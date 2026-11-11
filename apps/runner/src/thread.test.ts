@@ -24,7 +24,7 @@ test("a write the API refuses outright is dropped, not sent again and again", as
 
 test("only the latest payload of each item is sent, items that changed together in one write", async () => {
   const api = new FakeRunnerApi();
-  const thread = new ThreadWriter(api, { gapMs: 50 });
+  const thread = new ThreadWriter(await api.connect(), { gapMs: 50 });
   thread.write({ id: "ti_a", kind: "assistant", payload: { text: "H" }, streaming: true });
   await Bun.sleep(5);
   for (const text of ["He", "Hel", "Hell", "Hello"])
@@ -43,7 +43,7 @@ test("only the latest payload of each item is sent, items that changed together 
 
 test("a write that fails is sent again, with whatever came in meanwhile", async () => {
   const api = new FakeRunnerApi();
-  const thread = new ThreadWriter(api, { gapMs: 1 });
+  const thread = new ThreadWriter(await api.connect(), { gapMs: 1 });
   api.down = true;
   thread.write({ id: "ti_a", kind: "assistant", payload: { text: "One" }, streaming: true });
   await thread.flush();
@@ -56,7 +56,7 @@ test("a write that fails is sent again, with whatever came in meanwhile", async 
 
 test("nothing more is sent for an item the API has as finished", async () => {
   const api = new FakeRunnerApi();
-  const thread = new ThreadWriter(api, { gapMs: 1 });
+  const thread = new ThreadWriter(await api.connect(), { gapMs: 1 });
   thread.write({ id: "ti_a", kind: "notice", payload: { type: "started" }, streaming: false });
   await thread.flush();
   thread.write({ id: "ti_a", kind: "notice", payload: { type: "resumed" }, streaming: false });
@@ -67,7 +67,7 @@ test("nothing more is sent for an item the API has as finished", async () => {
 
 test("agent text longer than a thread item holds is clipped", async () => {
   const api = new FakeRunnerApi();
-  const thread = new ThreadWriter(api, { gapMs: 1 });
+  const thread = new ThreadWriter(await api.connect(), { gapMs: 1 });
   thread.write({
     id: "ti_a",
     kind: "assistant",
@@ -78,5 +78,30 @@ test("agent text longer than a thread item holds is clipped", async () => {
   const text = (api.thread.get("ti_a")!.payload as { text: string }).text;
   expect(text.length).toBe(MAX_TEXT);
   expect(text.endsWith("…")).toBe(true);
+  thread.close();
+});
+
+test("a runner cannot write the API's own notices", async () => {
+  const api = new FakeRunnerApi();
+  const errors: unknown[] = [];
+  const thread = new ThreadWriter(await api.connect(), {
+    gapMs: 1,
+    onError: (e) => errors.push(e),
+  });
+  thread.write({
+    id: "ti_pr",
+    kind: "notice",
+    payload: {
+      type: "pull_request",
+      number: 12,
+      url: "https://evil.test",
+      title: "",
+      state: "open",
+    },
+    streaming: false,
+  } as never);
+  await thread.flush();
+  expect(api.thread.size).toBe(0);
+  expect(errors[0]).toMatchObject({ status: 400 });
   thread.close();
 });

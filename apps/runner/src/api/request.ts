@@ -1,4 +1,4 @@
-import type { ErrorBody } from "./protocol.ts";
+import { type ErrorBody, RUNNER_HEADER } from "./protocol.ts";
 
 /** Long enough for a cold function and a slow database across the Atlantic, and no longer. */
 export const TIMEOUT_MS = 15_000;
@@ -11,6 +11,8 @@ export interface Endpoint {
   token: string;
   /** Sent as `X-Ponzu-Client`, like `runner/0.1.0`. */
   client: string;
+  /** The runner's lease, from the session: sent as `X-Ponzu-Runner` once there is one. */
+  runnerId?: string | null;
   fetch?: typeof fetch;
 }
 
@@ -31,7 +33,10 @@ export class ApiError extends Error {
   }
 }
 
-/** One JSON call with the runner token as the bearer. Rejects with `ApiError` for an error answer. */
+/**
+ * One JSON call with the runner token as the bearer, and the lease once there is one. Rejects
+ * with `ApiError` for an error answer.
+ */
 export async function request<T>(
   endpoint: Endpoint,
   method: string,
@@ -42,6 +47,7 @@ export async function request<T>(
     authorization: `Bearer ${endpoint.token}`,
     "x-ponzu-client": endpoint.client,
   };
+  if (endpoint.runnerId) headers[RUNNER_HEADER] = endpoint.runnerId;
   if (body !== undefined) headers["content-type"] = "application/json";
   const response = await (endpoint.fetch ?? fetch)(new URL(path, endpoint.baseUrl), {
     method,

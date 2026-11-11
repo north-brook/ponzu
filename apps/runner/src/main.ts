@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
-import { ApiError } from "./api/api.ts";
+import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
 import { EnvError, readEnv } from "./env.ts";
 import { checkout } from "./repo.ts";
@@ -15,7 +15,10 @@ import { Runner } from "./run.ts";
 import { serve } from "./server.ts";
 import { VERSION } from "./version.ts";
 
-/** Configuration that a restart will not mend: systemd is told not to try (RestartPreventExitStatus). */
+/**
+ * What a restart will not mend (configuration, a revoked token, a newer runner holding the
+ * lease): systemd is told not to try (RestartPreventExitStatus).
+ */
 const EXIT_CONFIG = 78;
 /** The Claude Code the sandbox image installs. */
 const IMAGE_CLAUDE = "/usr/local/bin/claude";
@@ -52,10 +55,18 @@ const runner = new Runner({
     log: (line) => log(`claude: ${line}`),
   }),
   renderer: new ChromiumRenderer(env.chromium ? { executablePath: env.chromium } : {}),
+  // The helper names this process's lease, so git of a runner that was superseded gets nothing.
   prepare: (session) =>
-    checkout(session, { root: env.workRoot, helper: `!'${process.execPath}' '${helperFile}'` }),
+    checkout(session, {
+      root: env.workRoot,
+      helper: `!'${process.execPath}' '${helperFile}' '${session.runnerId}'`,
+    }),
   stateDir: env.stateDir,
   log,
+  onFatal: () => {
+    server.stop();
+    process.exit(EXIT_CONFIG);
+  },
 });
 
 const server = serve({ port: env.port, poke: () => runner.poke(), health: () => runner.health() });
@@ -76,5 +87,5 @@ try {
 } catch (err) {
   log(`could not start: ${err instanceof Error ? err.message : err}`);
   // A token the API refuses stays refused: only a new start of the sandbox brings a new one.
-  process.exit(err instanceof ApiError && err.status === 401 ? EXIT_CONFIG : 1);
+  process.exit(fatal(err) ? EXIT_CONFIG : 1);
 }

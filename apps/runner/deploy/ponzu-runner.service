@@ -17,8 +17,9 @@ WorkingDirectory=/home/user
 ExecStart=/bin/bash -c 'until [ -r /run/ascii-secrets/env.sh ]; do sleep 0.2; done; set -a; . /run/ascii-secrets/env.sh; set +a; exec {{BUN}} {{RUNNER_DIR}}/runner.js'
 Restart=on-failure
 RestartSec=3
-# 78: the environment is wrong (a variable is missing, or both Claude credentials are set).
-# Starting again will not mend it; a new environment comes with a new start of the sandbox.
+# 78: the environment is wrong (a variable is missing, or both Claude credentials are set), the
+# API revoked the runner token, or a newer runner took over the design. Starting again will not
+# mend it; a new environment comes with a new start of the sandbox.
 RestartPreventExitStatus=78
 # The runner finishes in order on SIGTERM: the turn, the edits, the final state.
 KillSignal=SIGTERM

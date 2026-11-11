@@ -47,6 +47,50 @@ const CANVAS_OTHER: Record<string, string> = {
   send_feedback: "Telling Ponzu",
 };
 
+const CANVAS_MAKES = new Set([
+  ...CANVAS_DRAWS,
+  "create_artboard",
+  "set_tokens",
+  "write_note",
+  "create_page",
+  "update_page",
+  "archive",
+  "update_design",
+  "add_asset",
+]);
+const CANVAS_TAKES_IN = new Set([
+  ...CANVAS_READS,
+  ...CANVAS_LOOKS,
+  "get_guide",
+  "list_comments",
+  "get_comment",
+  "set_status",
+]);
+const MAKES = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+const TAKES_IN = new Set([
+  "Read",
+  "Glob",
+  "Grep",
+  "LS",
+  "WebFetch",
+  "WebSearch",
+  "TodoWrite",
+  "AskUserQuestion",
+  "ExitPlanMode",
+]);
+
+/**
+ * How much one step says about a stretch of work, which a finished stretch is named by: what
+ * the agent made (2) over what it ran (1) over what it read or looked at (0).
+ */
+export function stepWeight(name: string): number {
+  if (name.startsWith(CANVAS)) {
+    const tool = name.slice(CANVAS.length);
+    return CANVAS_MAKES.has(tool) ? 2 : CANVAS_TAKES_IN.has(tool) ? 0 : 1;
+  }
+  return MAKES.has(name) ? 2 : TAKES_IN.has(name) ? 0 : 1;
+}
+
 /** A few words for one tool call, read against the design as it is. */
 export function stepLabel(name: string, input: Record<string, unknown>, doc: Doc): string {
   if (name.startsWith(CANVAS)) return canvasLabel(name.slice(CANVAS.length), input, doc);

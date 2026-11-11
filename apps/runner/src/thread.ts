@@ -1,6 +1,6 @@
 import { type RunnerApi, retryable } from "./api/api.ts";
 import { MAX_TEXT, MAX_THREAD_WRITE, type ThreadWrite } from "./api/protocol.ts";
-import { Pacer } from "./pacer.ts";
+import { Outbox } from "./pacer.ts";
 
 /**
  * Writes the thread for the API, coalesced. Each item is written by id and only its latest
@@ -8,54 +8,48 @@ import { Pacer } from "./pacer.ts";
  * the items that changed together in one request, and nothing at all while nothing changes.
  */
 export class ThreadWriter {
-  /** The latest of each item not yet sent, in the order the items first appeared. */
-  private pending = new Map<string, ThreadWrite>();
   /** Items the API has as finished: nothing more is sent for them. */
   private finished = new Set<string>();
-  private readonly pacer: Pacer;
+  private readonly outbox: Outbox<ThreadWrite>;
 
   constructor(
     private readonly api: RunnerApi,
-    private readonly opts: { gapMs: number; onError?: (err: unknown) => void },
+    private readonly opts: {
+      gapMs: number;
+      onError?: (err: unknown) => void;
+      backoff?: (failures: number) => number;
+    },
   ) {
-    this.pacer = new Pacer(() => this.send(), opts.gapMs, opts.onError);
+    this.outbox = new Outbox((items) => this.send(items), {
+      gapMs: opts.gapMs,
+      max: MAX_THREAD_WRITE,
+      onError: opts.onError,
+      backoff: opts.backoff,
+    });
   }
 
   write(item: ThreadWrite): void {
     if (this.finished.has(item.id)) return;
-    this.pending.set(item.id, item.kind === "assistant" ? clipped(item) : item);
-    this.pacer.kick();
+    this.outbox.put(item.id, item.kind === "assistant" ? clipped(item) : item);
   }
 
   /** Send everything written so far. */
   flush(): Promise<void> {
-    return this.pacer.flush();
+    return this.outbox.flush();
   }
 
   close(): void {
-    this.pacer.close();
+    this.outbox.close();
   }
 
-  private async send(): Promise<void> {
-    const batch = [...this.pending.values()].slice(0, MAX_THREAD_WRITE);
-    for (const item of batch) this.pending.delete(item.id);
-    if (!batch.length) return;
+  private async send(batch: ThreadWrite[]): Promise<void> {
     try {
       const { items } = await this.api.writeThread(batch);
       for (const item of items) if (!item.streaming) this.finished.add(item.id);
     } catch (err) {
+      if (retryable(err)) throw err;
       // Refused outright: sending the same again cannot help, so it is dropped.
-      if (!retryable(err)) {
-        this.opts.onError?.(err);
-        return;
-      }
-      // Back in front, unless a newer payload for the same item came in meanwhile.
-      const newer = this.pending;
-      this.pending = new Map(batch.filter((i) => !newer.has(i.id)).map((i) => [i.id, i]));
-      for (const [id, item] of newer) this.pending.set(id, item);
-      throw err;
-    } finally {
-      if (this.pending.size) this.pacer.kick();
+      this.opts.onError?.(err);
     }
   }
 }

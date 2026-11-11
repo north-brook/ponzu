@@ -1,8 +1,10 @@
 /*
- * git's credential helper for github.com in a design's sandbox: `bun git-credential.js <op>`,
- * with git's request on stdin. It asks the API for a one-hour token for the design's own
- * repository each time git needs one, and keeps nothing (docs/cloud.md, "Credentials").
- * It needs PONZU_API_URL and PONZU_RUNNER_TOKEN, which git passes on from whoever ran it.
+ * git's credential helper for github.com in a design's sandbox: `bun git-credential.js
+ * <runner id> <op>`, with git's request on stdin. It asks the API for a one-hour token for the
+ * design's own repository each time git needs one, and keeps nothing (docs/cloud.md, "Git").
+ * The runner id is the lease of the runner that configured git, which the API checks like any
+ * other call's. It needs PONZU_API_URL and PONZU_RUNNER_TOKEN, which git passes on from
+ * whoever ran it.
  */
 import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
 import { type Endpoint, request } from "./api/request.ts";
@@ -44,9 +46,10 @@ if (import.meta.main) {
   const { PONZU_API_URL: baseUrl, PONZU_RUNNER_TOKEN: token } = process.env;
   try {
     if (!baseUrl || !token) throw new Error("PONZU_API_URL and PONZU_RUNNER_TOKEN must be set.");
+    const [runnerId, op = ""] = process.argv.slice(2);
     const input = await new Response(Bun.stdin.stream()).text();
-    const op = process.argv[2] ?? "";
-    process.stdout.write(await helper(op, input, { baseUrl, token, client: `runner/${VERSION}` }));
+    const client = `runner/${VERSION}`;
+    process.stdout.write(await helper(op, input, { baseUrl, token, client, runnerId }));
   } catch (err) {
     process.stderr.write(`ponzu credential helper: ${err instanceof Error ? err.message : err}\n`);
   }

@@ -37,30 +37,38 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 const error = (status: number, code: string) =>
   json({ error: { code, message: `It was ${code}.` } }, status);
 
-test("every call carries the runner token, the client and JSON", async () => {
-  const { http, seen } = api(() => json({ events: [], seq: 3 }));
-  expect(await http.claim({ restart: true })).toEqual({ events: [], seq: 3 });
-  expect(seen[0]).toEqual({
-    method: "POST",
-    url: "https://api.test/v1/runner/events/claim",
-    headers: {
-      authorization: "Bearer pzr_secret",
-      "x-ponzu-client": "runner/0.1.0",
-      "content-type": "application/json",
+test("every call carries the runner token, the client and JSON, and after the session its lease", async () => {
+  const { http, seen } = api((s) =>
+    s.url.endsWith("/session") ? json({ runnerId: "rnr_1" }) : json({ events: [], seq: 3 }),
+  );
+  await http.session();
+  expect(await http.claim({ limit: 100 })).toEqual({ events: [], seq: 3 });
+  const headers = {
+    authorization: "Bearer pzr_secret",
+    "x-ponzu-client": "runner/0.1.0",
+    "content-type": "application/json",
+  };
+  expect(seen).toEqual([
+    { method: "POST", url: "https://api.test/v1/runner/session", headers, body: {} },
+    {
+      method: "POST",
+      url: "https://api.test/v1/runner/events/claim",
+      headers: { ...headers, "x-ponzu-runner": "rnr_1" },
+      body: { limit: 100 },
     },
-    body: { restart: true },
-  });
+  ]);
 });
 
 test("each method is its route", async () => {
   const { http, seen } = api((s) =>
     s.url.endsWith("/state") ? json({ seq: 1 }) : new Response(null, { status: 204 }),
   );
-  await http.ack(["evt_1"]);
+  await http.ack(["evt_1"], "sess_1");
   await http.putState({ state: "idle", status: null, artboards: [], claudeSessionId: null });
   await http.withdraw(["q_1"]);
   await http.eraseGitCredential({ protocol: "https", host: "github.com", path: "n/f.git" });
   await http.recordUsage([]);
+  expect(seen[0]?.body).toEqual({ ids: ["evt_1"], claudeSessionId: "sess_1" });
   expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname}`)).toEqual([
     "POST /v1/runner/events/ack",
     "PUT /v1/runner/state",

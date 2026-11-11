@@ -39,9 +39,10 @@ export interface AgentInput {
   text: string;
   /**
    * `now`: into the running turn at once, interrupting it if need be. `next`: once the step
-   * running now finishes, or as the next turn.
+   * running now finishes, or as the next turn. `aside`: into the transcript without starting a
+   * turn, for the agent to read with whatever starts the next one; only while no turn runs.
    */
-  priority: "now" | "next";
+  priority: "now" | "next" | "aside";
   /** A person typed it, rather than the runner writing it for them. */
   human: boolean;
 }
@@ -101,7 +102,10 @@ export interface AgentRun extends AsyncIterable<AgentEvent> {
 export interface SessionHistory {
   /** The uuids of the messages put into it. */
   messages: Set<string>;
-  /** The tool calls whose results are in it. */
+  /**
+   * The tool calls whose results are in it and went through: an answered question, not one
+   * that was denied or taken back unanswered.
+   */
   toolResults: Set<string>;
 }
 

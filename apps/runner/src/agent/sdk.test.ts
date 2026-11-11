@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { callResult, repoServers, Translator, turnError } from "./sdk.ts";
+import { callResult, repoServers, sessionHistory, Translator, turnError } from "./sdk.ts";
 
 // Shapes as Claude Code 2.1.322 sent them through the Agent SDK 0.3.322, trimmed to what is read.
 const SESSION = { session_id: "sess_1", uuid: "00000000-0000-4000-8000-000000000000" };
@@ -152,6 +152,34 @@ test("a result carries the running usage by model", () => {
       },
     ],
   });
+});
+
+test("the result Claude Code writes for a message sent aside is no turn", () => {
+  const t = new Translator();
+  t.aside("u_edit");
+  // As 2.1.322 sent it for `shouldQuery: false`: a result at once, costing nothing.
+  const aside = result({ result: "", total_cost_usd: 0, user_message_uuids: ["u_edit"] });
+  expect(t.events(aside)).toEqual([{ type: "taken", uuids: ["u_edit"] }]);
+  // A real turn's result still ends the turn.
+  const turn = t.events(result({ user_message_uuids: ["u_msg"] }));
+  expect(turn.map((e) => e.type)).toEqual(["taken", "result"]);
+});
+
+test("a transcript holds its messages and the tool calls that went through, not those denied", () => {
+  const result = (id: string, is_error: boolean) => ({
+    type: "user",
+    uuid: `u_${id}`,
+    message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error }] },
+  });
+  const history = sessionHistory([
+    { type: "user", uuid: "u_msg", message: { role: "user", content: "Hello" } },
+    { type: "assistant", uuid: "a_1", message: { content: [] } },
+    result("toolu_answered", false),
+    // A withdrawn question: canUseTool's deny, as the transcript keeps it.
+    result("toolu_withdrawn", true),
+  ]);
+  expect([...history.messages]).toEqual(["u_msg", "u_toolu_answered", "u_toolu_withdrawn"]);
+  expect([...history.toolResults]).toEqual(["toolu_answered"]);
 });
 
 test("is_error decides a turn failed, even when the subtype says success", () => {

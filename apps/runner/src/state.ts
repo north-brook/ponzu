@@ -26,9 +26,10 @@ export class StateReporter {
       /** The design's head, from each answer. */
       onSeq(seq: number): void;
       onError?(err: unknown): void;
+      backoff?: (failures: number) => number;
     },
   ) {
-    this.pacer = new Pacer(() => this.send(), opts.gapMs, opts.onError);
+    this.pacer = new Pacer(() => this.send(), opts.gapMs, opts.onError, opts.backoff);
   }
 
   get current(): StateRequest {

@@ -1,6 +1,7 @@
 import type { ClientOp } from "@ponzu/core";
 import { ApiError } from "./api.ts";
 import type { FakeRunnerApi } from "./fake.ts";
+import { RUNNER_HEADER } from "./protocol.ts";
 
 /**
  * The fake API behind the runner protocol's routes, as docs/cloud.md writes them down: for
@@ -28,26 +29,29 @@ export function fakeApiHandler(
       }
       if (request.headers.get("authorization") !== `Bearer ${opts.token}`)
         throw new ApiError(401, "token_invalid", "This runner token is not valid.");
+      const runner = request.headers.get(RUNNER_HEADER) ?? "";
       const body = request.method === "GET" ? undefined : ((await request.json()) as any);
       switch (route) {
-        case "GET /v1/runner/session":
+        case "POST /v1/runner/session":
           return Response.json(await fake.session());
         case "POST /v1/runner/events/claim":
-          return Response.json(await fake.claim(body));
+          return Response.json(await fake.claim(runner, body));
         case "POST /v1/runner/events/ack":
-          await fake.ack(body.ids);
+          await fake.ack(runner, body.ids, body.claudeSessionId);
           return Response.json({ acked: body.ids.length });
         case "POST /v1/runner/thread":
-          return Response.json(await fake.writeThread(body.items));
+          return Response.json(await fake.writeThread(runner, body.items));
         case "PUT /v1/runner/state":
-          return Response.json(await fake.putState(body));
+          return Response.json(await fake.putState(runner, body));
         case "POST /v1/runner/questions":
-          await fake.ask(body);
+          await fake.ask(runner, body);
           return Response.json({ id: body.id, status: fake.questions.get(body.id)?.status });
         case "POST /v1/runner/questions/withdraw":
-          await fake.withdraw(body.ids);
+          await fake.withdraw(runner, body.ids);
           return Response.json({ withdrawn: body.ids.length });
         case "POST /v1/runner/uploads":
+          // Asking for addresses is a call like the rest; the bytes are counted when they land.
+          await fake.upload(runner, []);
           return Response.json({
             files: body.files.map((f: { purpose: string; name: string; contentType: string }) => {
               const id = `up_${++uploads}`;
@@ -63,34 +67,32 @@ export function fakeApiHandler(
             }),
           });
         case "POST /v1/runner/uploads/complete":
+          await fake.upload(runner, []);
           return Response.json({
             files: body.ids.map((id: string) => {
-              const file = pending.get(id)!;
-              const asset = file.purpose === "asset";
-              return {
-                id,
-                ref: asset ? `assets/${file.name}` : null,
-                url: `${fake.sessionInfo.assetBase}/${asset ? "" : `${file.purpose}s/`}${file.name}`,
-              };
+              const file = pending.get(id);
+              if (!file) throw new ApiError(404, "not_found", "Those bytes never arrived.");
+              const { ref, url } = fake.placed(file);
+              return { id, ref, url };
             }),
           });
         case "POST /v1/runner/git-credential":
-          return Response.json(await fake.gitCredential(body));
+          return Response.json(await fake.gitCredential(runner, body));
         case "POST /v1/runner/git-credential/erase":
-          await fake.eraseGitCredential(body);
+          await fake.eraseGitCredential(runner, body);
           return new Response(null, { status: 204 });
         case "POST /v1/runner/usage":
-          await fake.recordUsage(body.turns);
+          await fake.recordUsage(runner, body.turns);
           return Response.json({ recorded: body.turns.length });
         case `POST ${design}/ops`:
-          return Response.json(await fake.sync.commit(body.ops as ClientOp[]));
+          return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
         case `GET ${design}/ops`: {
-          const ops = await fake.sync.fetchOps(Number(url.searchParams.get("after")));
+          const ops = await fake.fetchOps(runner, Number(url.searchParams.get("after")));
           if (ops === "gone") throw new ApiError(410, "gone", "Those ops are no longer kept.");
           return Response.json(ops);
         }
         case `GET ${design}/doc`:
-          return Response.json(await fake.sync.fetchDoc());
+          return Response.json(await fake.fetchDoc(runner));
       }
       throw new ApiError(404, "not_found", "There is nothing at this address.");
     } catch (err) {

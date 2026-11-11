@@ -20,8 +20,19 @@ export interface Person {
 /* Session                                                             */
 /* ------------------------------------------------------------------ */
 
-/** `GET /v1/runner/session`: everything the runner needs to start. */
+/**
+ * The header every call after the session carries: which runner process is making it. The
+ * API answers 409 `superseded` to any process but the one it started last.
+ */
+export const RUNNER_HEADER = "x-ponzu-runner";
+
+/** `POST /v1/runner/session`: everything the runner needs to start, and its lease. */
 export interface RunnerSession {
+  /**
+   * This process, `rnr_` and 16 characters: minted by this call, which makes it the design's
+   * one runner. Sent as `X-Ponzu-Runner` on every later call.
+   */
+  runnerId: string;
   design: { id: string; name: string };
   /** Null for Scratch. */
   repo: { owner: string; name: string; defaultBranch: string } | null;
@@ -42,7 +53,10 @@ export interface RunnerSession {
   link: string;
   /** The theme of the canvas of the person the agent works for, once known. */
   theme: Theme | null;
-  /** Questions an earlier run left open. Nobody can answer them in this run. */
+  /**
+   * Questions an earlier run left open, which people can still answer: the answer comes in as
+   * a message. They stay open until the next turn ends.
+   */
   openQuestions: string[];
   /** The design's head: its latest committed op. */
   seq: number;
@@ -84,6 +98,8 @@ export interface MessageEvent {
 /** A person answered a question the runner raised. */
 export interface AnswerEvent {
   questionId: string;
+  /** What the runner asked, as it raised it: the agent may no longer have the question in mind. */
+  question: QuestionBody;
   /**
    * For a `question`: each question's text, to the label chosen (labels joined with ", " for
    * several), the person's own words, or both. A client folds a note into the answer it goes with.
@@ -128,22 +144,32 @@ export interface CheckEvent {
 /** Someone reviewed the pull request. */
 export interface ReviewEvent {
   state: "approved" | "changes_requested" | "commented";
+  /** The reviewer on GitHub, who need not be a Ponzu user (then `from` is null). */
+  reviewer: { login: string };
   body: string;
   url: string | null;
-  /** How many line comments came with it. */
-  comments: number;
+  /** The line comments that came with it: the first `MAX_REVIEW_COMMENTS`, each body clipped. */
+  comments: ReviewComment[];
 }
+
+export interface ReviewComment {
+  path: string;
+  /** The line in the new file, or null for a comment on the whole file. */
+  line: number | null;
+  body: string;
+}
+
+/** The most line comments a review event carries, and the longest each body is. */
+export const MAX_REVIEW_COMMENTS = 20;
+export const MAX_REVIEW_COMMENT = 2_000;
 
 /** `POST /v1/runner/events/claim`. */
 export interface ClaimRequest {
-  /**
-   * The first claim of a process: also hand back events an earlier process claimed and never
-   * acknowledged. It is gone, so they are this one's now.
-   */
-  restart?: boolean;
-  /** At most this many, oldest first. 100 when absent. */
+  /** At most this many, oldest first. `CLAIM_LIMIT` when absent, and never more. */
   limit?: number;
 }
+
+export const CLAIM_LIMIT = 100;
 
 export interface ClaimResponse {
   events: RunnerEvent[];
@@ -154,6 +180,12 @@ export interface ClaimResponse {
 /** `POST /v1/runner/events/ack`: these are in the Claude session and never to be handed out again. */
 export interface AckRequest {
   ids: string[];
+  /**
+   * The Claude session that holds them, stored as the design's session in the same
+   * transaction, so the next runner resumes the session its events went into. Null only when
+   * none of them went into a session (a stop, a kind this runner does not know).
+   */
+  claudeSessionId: string | null;
 }
 
 export interface AckResponse {
@@ -219,18 +251,11 @@ export interface WorkItem {
   artboards: string[];
 }
 
+/** A notice as clients read it. */
 export type Notice =
-  /** The runner is starting; it becomes `resumed` or `started` once Claude is up. */
-  | { type: "waking" }
-  /** Claude picked up the design's session where it left off. */
-  | { type: "resumed" }
-  /** Claude started a new session for the design. */
-  | { type: "started" }
-  /** The agent asked something; the question itself is a question row. */
-  | { type: "question"; questionId: string; header: string; text: string }
-  /** A person stopped the run. */
+  | Exclude<RunnerNotice, { type: "stopped" }>
+  /** A person stopped the run: the API names them from the stop event the runner wrote. */
   | { type: "stopped"; by: Person | null }
-  | { type: "error"; code: RunErrorCode; message: string }
   /** Written by the API: the design's pull request opened, merged or closed. */
   | {
       type: "pull_request";
@@ -239,6 +264,24 @@ export type Notice =
       title: string;
       state: "draft" | "open" | "merged" | "closed";
     };
+
+/**
+ * The notices a runner may write. The API refuses any other type with 400: what only the API
+ * knows (a pull request, who stopped the run) is never taken from the sandbox, where the agent
+ * can run anything.
+ */
+export type RunnerNotice =
+  /** The runner is starting; it becomes `resumed` or `started` once Claude is up. */
+  | { type: "waking" }
+  /** Claude picked up the design's session where it left off. */
+  | { type: "resumed" }
+  /** Claude started a new session for the design. */
+  | { type: "started" }
+  /** The agent asked something; the question itself is a question row. */
+  | { type: "question"; questionId: string; header: string; text: string }
+  /** The stop event that ended the turn. The API stores `{ type: "stopped", by }` from it. */
+  | { type: "stopped"; eventId: string }
+  | { type: "error"; code: RunErrorCode; message: string };
 
 export type RunErrorCode =
   /** The repository could not be cloned or its branch checked out. */
@@ -254,7 +297,11 @@ export type RunErrorCode =
   /** The turn failed some other way; the message says how. */
   | "turn_failed"
   /** Claude Code itself stopped and had to be started again. */
-  | "agent_exited";
+  | "agent_exited"
+  /** The repository's Claude Code settings (a `UserPromptSubmit` hook) turned a message away. */
+  | "message_refused"
+  /** The API would not take a question, so nobody could answer it and the agent went on. */
+  | "question_failed";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
 export const MAX_TEXT = 32_000;
@@ -264,12 +311,15 @@ export type ThreadWrite = {
   /** Chosen by the runner, `ti_` and 16 characters: writing the same id again is safe. */
   id: string;
   streaming: boolean;
-} & Extract<ThreadContent, { kind: "assistant" | "tool" | "notice" }>;
+} & (
+  | Extract<ThreadContent, { kind: "assistant" | "tool" }>
+  | { kind: "notice"; payload: RunnerNotice }
+);
 
 /**
- * `POST /v1/runner/thread`. Each item is written by id: an id the thread does not have is
- * appended, one that is still streaming has its payload replaced, and one that has finished
- * stays as it is.
+ * `POST /v1/runner/thread`. Each item is written by id within the design: an id the thread
+ * does not have is appended, one that is still streaming has its payload replaced, and one
+ * that has finished stays as it is.
  */
 export interface ThreadRequest {
   items: ThreadWrite[];

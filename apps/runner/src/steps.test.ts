@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { emptyDoc, parseHtml } from "@ponzu/core";
-import { stepLabel } from "./steps.ts";
+import { stepLabel, stepWeight } from "./steps.ts";
 
 const doc = emptyDoc("Fern");
 doc.pages.push({
@@ -64,4 +64,15 @@ test("code steps say what they are for, never the command", () => {
     "Reading tailwindcss.com",
   );
   expect(label("Unknown")).toBe("Working");
+});
+
+test("a stretch is named by what it made over what it ran over what it read", () => {
+  expect(stepWeight("mcp__ponzu__write_html")).toBe(2);
+  expect(stepWeight("mcp__ponzu__create_artboard")).toBe(2);
+  expect(stepWeight("Edit")).toBe(2);
+  expect(stepWeight("Bash")).toBe(1);
+  expect(stepWeight("mcp__ponzu__reply")).toBe(1);
+  expect(stepWeight("mcp__ponzu__list_comments")).toBe(0);
+  expect(stepWeight("mcp__ponzu__screenshot")).toBe(0);
+  expect(stepWeight("Read")).toBe(0);
 });

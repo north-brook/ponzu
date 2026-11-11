@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { CommitRefusedError, type SyncTransport } from "@ponzu/core";
 import type { RunnerApi, Uploaded, UploadFile } from "./api.ts";
 import type {
+  AckRequest,
   ClaimResponse,
   CompleteResponse,
   GitCredentialRequest,
@@ -17,24 +18,31 @@ import type {
 } from "./protocol.ts";
 import { ApiError, type Endpoint, request, TIMEOUT_MS } from "./request.ts";
 
-/** `RunnerApi` over HTTP: the runner token as the bearer on every call, JSON both ways. */
+/**
+ * `RunnerApi` over HTTP: the runner token as the bearer on every call, JSON both ways, and
+ * after the session the lease it handed out.
+ */
 export class HttpRunnerApi implements RunnerApi {
   readonly sync: SyncTransport;
+  private readonly endpoint: Endpoint & { designId: string };
 
-  constructor(private readonly endpoint: Endpoint & { designId: string }) {
+  constructor(endpoint: Endpoint & { designId: string }) {
+    this.endpoint = { ...endpoint, runnerId: null };
     this.sync = this.transport();
   }
 
-  session(): Promise<RunnerSession> {
-    return this.call("GET", "/v1/runner/session");
+  async session(): Promise<RunnerSession> {
+    const session = await this.call<RunnerSession>("POST", "/v1/runner/session", {});
+    this.endpoint.runnerId = session.runnerId;
+    return session;
   }
 
-  claim(opts: { restart?: boolean } = {}): Promise<ClaimResponse> {
-    return this.call("POST", "/v1/runner/events/claim", opts.restart ? { restart: true } : {});
+  claim(opts: { limit?: number } = {}): Promise<ClaimResponse> {
+    return this.call("POST", "/v1/runner/events/claim", opts);
   }
 
-  async ack(ids: string[]): Promise<void> {
-    await this.call("POST", "/v1/runner/events/ack", { ids });
+  async ack(ids: string[], claudeSessionId: string | null): Promise<void> {
+    await this.call("POST", "/v1/runner/events/ack", { ids, claudeSessionId } satisfies AckRequest);
   }
 
   writeThread(items: ThreadWrite[]): Promise<ThreadResponse> {

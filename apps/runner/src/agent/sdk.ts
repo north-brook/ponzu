@@ -64,20 +64,31 @@ export class ClaudeAgent implements Agent {
 
   async history(sessionId: string): Promise<SessionHistory | null> {
     if (!(await getSessionInfo(sessionId))) return null;
-    const messages = new Set<string>();
-    const toolResults = new Set<string>();
-    for (const m of await getSessionMessages(sessionId)) {
-      if (m.type !== "user") continue;
-      messages.add(m.uuid);
-      const content = (m.message as { content?: unknown })?.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content) {
-        if (block?.type === "tool_result" && typeof block.tool_use_id === "string")
-          toolResults.add(block.tool_use_id);
-      }
-    }
-    return { messages, toolResults };
+    return sessionHistory(await getSessionMessages(sessionId));
   }
+}
+
+/**
+ * What a transcript holds. A tool result that is an error is left out: a question denied or
+ * withdrawn (the turn stopped, the sandbox slept) was never answered, so a late answer to it
+ * must still go in.
+ */
+export function sessionHistory(
+  transcript: { type: string; uuid: string; message: unknown }[],
+): SessionHistory {
+  const messages = new Set<string>();
+  const toolResults = new Set<string>();
+  for (const m of transcript) {
+    if (m.type !== "user") continue;
+    messages.add(m.uuid);
+    const content = (m.message as { content?: unknown })?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "tool_result" && !block.is_error && typeof block.tool_use_id === "string")
+        toolResults.add(block.tool_use_id);
+    }
+  }
+  return { messages, toolResults };
 }
 
 interface Pending {
@@ -136,17 +147,23 @@ class ClaudeRun implements AgentRun {
   }
 
   send(input: AgentInput): void {
-    this.inbox.push({
+    const message: SDKUserMessage = {
       type: "user",
       uuid: input.uuid as SDKUserMessage["uuid"],
       message: { role: "user", content: input.text },
       parent_tool_use_id: null,
-      priority: input.priority,
-      // Text the runner wrote is delivered as written: no `@path` expansion, no slash commands.
-      ...(input.human
-        ? { origin: { kind: "human" as const } }
-        : { client_composed: true as const }),
-    });
+    };
+    if (input.priority === "aside") {
+      // Into the transcript, to be read with the next message that starts a turn.
+      this.translate.aside(input.uuid);
+      message.shouldQuery = false;
+    } else {
+      message.priority = input.priority;
+    }
+    // Text the runner wrote is delivered as written: no `@path` expansion, no slash commands.
+    if (input.human) message.origin = { kind: "human" };
+    else message.client_composed = true;
+    this.inbox.push(message);
   }
 
   reply(askId: string, reply: Reply): void {
@@ -276,12 +293,23 @@ export class Translator {
   /** Streamed text by API message id, until the reply ends. */
   private texts = new Map<string, string>();
   private current: string | null = null;
+  /** Messages sent `aside`: Claude Code ends each with a result of its own, which is no turn. */
+  private asides = new Set<string>();
+
+  /** `uuid` goes in without starting a turn (`shouldQuery: false`). */
+  aside(uuid: string): void {
+    this.asides.add(uuid);
+  }
 
   events(m: SDKMessage): AgentEvent[] {
     if ("parent_tool_use_id" in m && m.parent_tool_use_id) return [];
     const out: AgentEvent[] = [];
     const uuids = (m as { user_message_uuids?: string[] }).user_message_uuids;
     if (uuids?.length) out.push({ type: "taken", uuids });
+    if (m.type === "result" && uuids?.length && uuids.every((u) => this.asides.has(u))) {
+      for (const u of uuids) this.asides.delete(u);
+      return out;
+    }
     // Not in the SDK's types, but on its stream: each message's progress through the queue.
     const lifecycle = m as unknown as { type: string; command_uuid?: string; state?: string };
     if (lifecycle.type === "command_lifecycle" && lifecycle.command_uuid) {

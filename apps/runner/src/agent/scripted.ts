@@ -22,6 +22,8 @@ export class ScriptedAgent implements Agent {
   readonly runs: ScriptedRun[] = [];
   /** What each session's transcript holds, for `history`. */
   readonly sessions = new Map<string, SessionHistory>();
+  /** While set, reading a transcript fails with it, as with a disk that refuses. */
+  historyError: Error | null = null;
   private started: ((run: ScriptedRun) => void)[] = [];
 
   start(opts: AgentOptions): AgentRun {
@@ -32,6 +34,7 @@ export class ScriptedAgent implements Agent {
   }
 
   async history(sessionId: string): Promise<SessionHistory | null> {
+    if (this.historyError) throw this.historyError;
     return this.sessions.get(sessionId) ?? null;
   }
 

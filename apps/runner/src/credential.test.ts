@@ -4,15 +4,21 @@ import { formatCredential, helper, parseRequest } from "./credential.ts";
 const ASK = "protocol=https\nhost=github.com\npath=north/fern.git\n\n";
 
 function endpoint(reply: (path: string, body: unknown) => Response) {
-  const calls: { path: string; body: unknown }[] = [];
+  const calls: { path: string; body: unknown; runner: string | null }[] = [];
   const fetch = (async (url: URL | string, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
     const body = JSON.parse(String(init?.body));
-    calls.push({ path, body });
+    calls.push({ path, body, runner: new Headers(init?.headers).get("x-ponzu-runner") });
     return reply(path, body);
   }) as typeof globalThis.fetch;
   return {
-    endpoint: { baseUrl: "https://api.test", token: "pzr_x", client: "runner/0", fetch },
+    endpoint: {
+      baseUrl: "https://api.test",
+      token: "pzr_x",
+      client: "runner/0",
+      runnerId: "rnr_1",
+      fetch,
+    },
     calls,
   };
 }
@@ -40,6 +46,7 @@ test("get answers with the API's token and when git should drop it", async () =>
     {
       path: "/v1/runner/git-credential",
       body: { protocol: "https", host: "github.com", path: "north/fern.git" },
+      runner: "rnr_1",
     },
   ]);
 });

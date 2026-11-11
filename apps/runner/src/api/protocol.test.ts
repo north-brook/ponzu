@@ -31,7 +31,13 @@ function served(fake = new FakeRunnerApi()) {
       token,
       client: "runner/test",
     });
-  return { fake, http };
+  /** A client that has taken the lease. */
+  const connected = async () => {
+    const client = http();
+    await client.session();
+    return client;
+  };
+  return { fake, http, connected };
 }
 
 test("a token the API does not know is refused on every route", async () => {
@@ -54,7 +60,7 @@ test("the runner over HTTP: an event in, an artboard drawn, the thread and state
     prepare: async () => dir,
     stateDir: dir,
     log: () => {},
-    timing: { threadGapMs: 5, stateGapMs: 5, ackGapMs: 5, settleMs: 2_000 },
+    timing: { threadGapMs: 5, stateGapMs: 5, batchGapMs: 5, settleMs: 2_000 },
   });
   stops.push(() => runner.stop());
   await runner.start();
@@ -94,8 +100,8 @@ test("the runner over HTTP: an event in, an artboard drawn, the thread and state
 });
 
 test("an upload goes to the address the API gave, and comes back as a reference", async () => {
-  const { fake, http } = served();
-  const [stored] = await http().upload([
+  const { fake, connected } = served();
+  const [stored] = await (await connected()).upload([
     {
       purpose: "asset",
       name: "logo.svg",
@@ -112,13 +118,55 @@ test("an upload goes to the address the API gave, and comes back as a reference"
 });
 
 test("a Scratch design has no git credential, and another repository's is refused", async () => {
-  const { fake, http } = served();
+  const { fake, connected } = served();
+  const http = await connected();
   const ask = { protocol: "https", host: "github.com", path: "north/fern.git" };
-  await expect(http().gitCredential(ask)).rejects.toMatchObject({ status: 404 });
+  await expect(http.gitCredential(ask)).rejects.toMatchObject({ status: 404 });
   fake.sessionInfo.repo = { owner: "north", name: "fern", defaultBranch: "main" };
-  expect(await http().gitCredential(ask)).toMatchObject({ username: "x-access-token" });
-  await expect(http().gitCredential({ ...ask, path: "north/other.git" })).rejects.toMatchObject({
+  expect(await http.gitCredential(ask)).toMatchObject({ username: "x-access-token" });
+  await expect(http.gitCredential({ ...ask, path: "north/other.git" })).rejects.toMatchObject({
     status: 403,
     code: "forbidden",
+  });
+});
+
+test("only the runner that started last is answered: an older one is told it was superseded", async () => {
+  const { connected } = served();
+  const older = await connected();
+  const newer = await connected();
+  expect(await newer.claim()).toMatchObject({ events: [] });
+  await expect(older.claim()).rejects.toMatchObject({ status: 409, code: "superseded" });
+  await expect(older.sync.fetchDoc()).rejects.toMatchObject({ status: 409, code: "superseded" });
+});
+
+test("a notice only the API writes is refused from a runner", async () => {
+  const { fake, connected } = served();
+  const http = await connected();
+  const pr = {
+    id: "ti_pr",
+    kind: "notice" as const,
+    payload: {
+      type: "pull_request",
+      number: 12,
+      url: "https://evil.test",
+      title: "",
+      state: "open",
+    },
+    streaming: false,
+  };
+  await expect(http.writeThread([pr as never])).rejects.toMatchObject({ status: 400 });
+  // Who stopped the run is the API's to say, from the stop event.
+  const stop = fake.push({ kind: "stop", payload: {} });
+  await http.writeThread([
+    {
+      id: "ti_stop",
+      kind: "notice",
+      payload: { type: "stopped", eventId: stop.id },
+      streaming: false,
+    },
+  ]);
+  expect(fake.thread.get("ti_stop")?.payload).toEqual({
+    type: "stopped",
+    by: fake.events[0]!.event.from,
   });
 });
