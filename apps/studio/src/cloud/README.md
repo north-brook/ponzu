@@ -169,6 +169,14 @@ repaint something or say what isn't so. The usual swaps:
 - The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
   first visit the column sits at the top from its first frame, where the ideas will go, and they
   rise into that room when they come; if none do, nothing moves.
+- The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
+  metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
+  no line under Scratch), a search only from seven repos (`SEARCH_FROM`), and Scratch's
+  temporary-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
+  Its composition masks the picker and says so in `compare`. In a 900pt window a picker without
+  search (Scratch and up to six repos) fits under the centred composer and never moves it; one
+  with search lifts the composer to the top while it is open, by design: its ten-row list needs
+  the room, and a shorter list would scroll sooner for everyone with many repos.
 
 ### When you need
 

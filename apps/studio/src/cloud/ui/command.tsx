@@ -4,7 +4,9 @@
  * field keeps focus. With a popover it is shadcn's combobox: the repo picker.
  *
  * Changed from shadcn's: the field is a label, so a click on its icon focuses it, and its rule
- * under it is the caller's; shadcn's CommandDialog (a palette in a dialog) isn't used yet.
+ * under it is the caller's; the field and the rows take the menus' one-line metrics (32 tall, the
+ * mark 9px before the text, a 16px icon), so a command reads as one of the menus' family;
+ * shadcn's CommandDialog (a palette in a dialog) isn't used yet.
  */
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { Command as CommandPrimitive } from "cmdk";
@@ -23,34 +25,41 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
   );
 }
 
-function CommandInput({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
-  const ref = useRef<HTMLInputElement>(null);
-  // cmdk names the highlighted row for assistive tech only once the keys or pointer move it; the
-  // row it opens on (a controlled `value`) is named too, once that row marks itself.
+/**
+ * cmdk names the highlighted row for assistive tech only once the keys or pointer move it; the
+ * row it opens on (a controlled `value`) is named too, on whichever holds focus (the field, or
+ * the list when there is no field), once that row marks itself.
+ */
+function useNamesOpeningRow(ref: React.RefObject<HTMLElement | null>) {
   useLayoutEffect(() => {
-    const input = ref.current;
-    const root = input?.closest("[cmdk-root]");
-    if (!input || !root) return;
+    const el = ref.current;
+    const root = el?.closest("[cmdk-root]");
+    if (!el || !root) return;
     const name = () => {
-      if (input.hasAttribute("aria-activedescendant")) return;
+      if (el.hasAttribute("aria-activedescendant")) return;
       const row = root.querySelector<HTMLElement>('[cmdk-item][data-selected="true"]');
-      if (row?.id) input.setAttribute("aria-activedescendant", row.id);
+      if (row?.id) el.setAttribute("aria-activedescendant", row.id);
     };
     name();
     const observer = new MutationObserver(name);
     observer.observe(root, { subtree: true, attributeFilter: ["data-selected"] });
     return () => observer.disconnect();
-  }, []);
+  }, [ref]);
+}
+
+function CommandInput({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  const ref = useRef<HTMLInputElement>(null);
+  useNamesOpeningRow(ref);
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: cmdk's input inside it is the control
     <label
       data-slot="command-input-wrapper"
-      className="flex h-[34px] items-center gap-2 px-2.5 text-13"
+      className="flex h-8 shrink-0 items-center gap-[9px] px-2 text-13"
     >
-      <Icon icon={Search01Icon} size={14} stroke={1.7} className="text-faint" />
+      <Icon icon={Search01Icon} size={16} stroke={1.7} className="text-faint" />
       <CommandPrimitive.Input
         ref={ref}
         data-slot="command-input"
@@ -64,9 +73,21 @@ function CommandInput({
   );
 }
 
-function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
+/** The rows. With no field above them, give it focus: it takes the keys and names the row. */
+function CommandList({
+  className,
+  ref: given,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.List>) {
+  const ref = useRef<HTMLDivElement>(null);
+  useNamesOpeningRow(ref);
   return (
     <CommandPrimitive.List
+      ref={(el) => {
+        ref.current = el;
+        if (typeof given === "function") given(el);
+        else if (given) given.current = el;
+      }}
       data-slot="command-list"
       className={cn("flex flex-col outline-none", className)}
       {...props}
@@ -81,7 +102,7 @@ function CommandEmpty({
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
-      className={cn("m-0 px-2.5 py-2 text-13 text-muted", className)}
+      className={cn("m-0 flex h-8 items-center px-2 text-13 text-muted", className)}
       {...props}
     />
   );
@@ -110,19 +131,19 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn("mx-1.5 my-1 h-px bg-rule", className)}
+      className={cn("mx-1 my-[5px] h-px shrink-0 bg-rule", className)}
       {...props}
     />
   );
 }
 
-/** A row: the hover wash on the one the keyboard or the pointer is on. */
+/** A row, 32 tall like a menu's: the hover wash on the one the keyboard or the pointer is on. */
 function CommandItem({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "flex cursor-default select-none items-center gap-2.5 rounded-8 px-2.5 py-[7px] data-[disabled=true]:opacity-35 data-[selected=true]:bg-hover",
+        "flex h-8 shrink-0 cursor-default select-none items-center gap-[9px] rounded-7 px-2 text-13 data-[disabled=true]:opacity-35 data-[selected=true]:bg-hover",
         className,
       )}
       {...props}
