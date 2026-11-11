@@ -1,9 +1,11 @@
 // Rows for this package's tests to hang things on. Not exported from the package.
 import { emptyDoc } from "@ponzu/core";
+import { eq } from "drizzle-orm";
 import type { Db } from "./client.ts";
 import { upsertRepos, upsertUser, upsertWorkspace } from "./queries/accounts.ts";
 import { createDesign } from "./queries/designs.ts";
 import type { Actor, NewOp } from "./queries/ops.ts";
+import { events } from "./schema/index.ts";
 
 // GitHub ids must be unique; tests in one database take the next.
 let nextGithubId = 1;
@@ -72,6 +74,11 @@ export const actorFor = (user: { id: string; name: string | null }): Actor => ({
 });
 
 export const agent: Actor = { kind: "agent", id: "agent", name: "Ponzu" };
+
+/** A design's feed, oldest first, whatever has been claimed or delivered. */
+export function feedOf(db: Db, designId: string) {
+  return db.select().from(events).where(eq(events.designId, designId)).orderBy(events.seq);
+}
 
 /** A rename: the smallest op there is, and its inverse. */
 export const rename = (id: string, name: string, was = "Lisbon"): NewOp => ({

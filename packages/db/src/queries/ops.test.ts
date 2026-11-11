@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { actorFor, agent, rename, seedDesign } from "../fixtures.ts";
+import { actorFor, agent, feedOf, rename, seedDesign } from "../fixtures.ts";
 import { designOps } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getDesign } from "./designs.ts";
-import { claimEvents } from "./events.ts";
 import { commit, commitOps, findOps, type OpEvent, readOps } from "./ops.ts";
 import { QueryError } from "./run.ts";
+import { listThreadItems } from "./thread.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -360,11 +360,50 @@ describe("commitOps with events and the design's head", () => {
       events: [edit("b", user.id, "second\u0000"), edit("a", user.id, "first")],
     });
 
-    const claimed = await claimEvents(db, { designId: design.id });
+    const claimed = await feedOf(db, design.id);
     expect(claimed.map((event) => [event.payload, event.userId])).toEqual([
       [{ summary: "second\ufffd", seq: 2 }, user.id],
       [{ summary: "first", seq: 1 }, user.id],
     ]);
+  });
+
+  test("a comment's thread item goes in with its event, and only when its op does", async () => {
+    const { design, user } = await seedDesign(db);
+    const comment = (opId: string, text: string): OpEvent => ({
+      opId,
+      kind: "comment",
+      priority: "next",
+      payload: { text },
+      userId: user.id,
+      comment: { text, from: { id: user.id } },
+    });
+    const actor = actorFor(user);
+
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+      events: [comment("a", "Tighter"), edit("b", user.id, "renamed")],
+    });
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("c", "Three")],
+      events: [comment("c", "Missed")],
+    });
+
+    const thread = await listThreadItems(db, { designId: design.id });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]).toMatchObject({
+      kind: "comment",
+      userId: user.id,
+      streaming: false,
+      payload: { text: "Tighter", from: { id: user.id } },
+    });
+    expect(thread[0]!.id).toMatch(/^ti_/);
+    expect((await feedOf(db, design.id)).map((event) => event.kind)).toEqual(["comment", "edit"]);
   });
 
   test("appends no event when the commit misses, or for an op the log already has", async () => {
@@ -389,7 +428,7 @@ describe("commitOps with events and the design's head", () => {
 
     expect(missed.kind).toBe("conflict");
     expect(replayed).toMatchObject({ kind: "committed", seq: 2, replayed: ["a"] });
-    const claimed = await claimEvents(db, { designId: design.id });
+    const claimed = await feedOf(db, design.id);
     expect(claimed.map((event) => event.payload)).toEqual([{ summary: "new", seq: 2 }]);
   });
 

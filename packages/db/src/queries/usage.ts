@@ -65,6 +65,80 @@ export async function recordUsage(
   return result?.recorded ?? false;
 }
 
+/** What one of a runner's turns used of one model. */
+export interface TurnModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costMicrousd: number;
+}
+
+/** One turn of a design's agent, as its runner reports it. */
+export interface TurnUsage {
+  /** Claude Code's id for the turn's result: what makes reporting it again change nothing. */
+  id: string;
+  at: Date;
+  models: TurnModelUsage[];
+}
+
+/**
+ * Record what a design's agent used, a usage event per turn and model, put down to the
+ * design's workspace and owner, paid from the owner's own Claude plan (no credits), priced by
+ * the rate card in effect. One statement. A turn recorded before changes nothing, and its id
+ * is the design's own: another design's turn of the same id is another event. Answers how many
+ * of the turns were new.
+ */
+export async function recordTurnUsage(
+  db: Db,
+  { designId, turns }: { designId: string; turns: TurnUsage[] },
+): Promise<number> {
+  const rows = turns.flatMap((turn) =>
+    turn.models.map((usage) => ({
+      ...usage,
+      // A turn id is Claude Code's uuid and a design id has no slash, so the turn is the
+      // second part of this, which is how the statement counts what was new.
+      id: `${designId}/${turn.id}/${usage.model}`,
+      at: timeParam(turn.at),
+    })),
+  );
+  if (rows.length === 0) return 0;
+  const result = await queryJson<{ turns: string[] }>(
+    db,
+    sql`
+      with recorded as (
+        insert into usage_events (
+          id, workspace_id, design_id, user_id, kind, model, input_tokens, output_tokens,
+          cache_read_tokens, cache_write_tokens, cost_microusd, credits, payer,
+          rate_card_version, occurred_at
+        )
+        select u.id, d.workspace_id, d.id, d.owner_id, 'model', u.model, u."inputTokens",
+               u."outputTokens", u."cacheReadTokens", u."cacheWriteTokens", u."costMicrousd", 0,
+               'own_plan',
+               -- The card in effect when it happened; the first one for a time before any.
+               coalesce(
+                 (select max(version) from rate_cards where effective_from <= u.at),
+                 (select min(version) from rate_cards)
+               ),
+               u.at
+          from json_to_recordset(${JSON.stringify(rows)}::json) as u(
+                 id text, at timestamptz, model text, "inputTokens" bigint,
+                 "outputTokens" bigint, "cacheReadTokens" bigint, "cacheWriteTokens" bigint,
+                 "costMicrousd" bigint
+               )
+          join designs d on d.id = ${designId}
+        on conflict (id) do nothing
+        returning id
+      )
+      select json_build_object(
+        'turns', coalesce((select json_agg(distinct split_part(id, '/', 2)) from recorded), '[]'::json)
+      ) as result
+    `,
+  );
+  return result?.turns.length ?? 0;
+}
+
 export interface NewLedgerEntry {
   workspaceId: string;
   /** Credits. Positive for everything but an adjustment, which may take credits away. */

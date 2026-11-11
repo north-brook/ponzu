@@ -3,7 +3,6 @@ import {
   bigint,
   boolean,
   check,
-  foreignKey,
   index,
   integer,
   jsonb,
@@ -242,34 +241,6 @@ export const repoAccess = pgTable(
     primaryKey({ columns: [t.userId, t.repoId] }),
     index("repo_access_repo_id_idx").on(t.repoId),
     check("repo_access_permission_check", oneOf(t.permission, REPO_PERMISSIONS)),
-  ],
-);
-
-/**
- * Retired: what `repo_access` holds now. It stays only so the build before this one, which
- * reads and writes it, keeps working while this one deploys; nothing here reads or writes it,
- * and the next migration drops it.
- *
- * @deprecated Use `repoAccess`.
- */
-export const memberRepos = pgTable(
-  "member_repos",
-  {
-    workspaceId: text("workspace_id").notNull(),
-    userId: text("user_id").notNull(),
-    repoId: text("repo_id")
-      .notNull()
-      .references(() => repos.id, { onDelete: "cascade" }),
-    canPush: boolean("can_push").notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.workspaceId, t.userId, t.repoId] }),
-    foreignKey({
-      name: "member_repos_membership_fk",
-      columns: [t.workspaceId, t.userId],
-      foreignColumns: [memberships.workspaceId, memberships.userId],
-    }).onDelete("cascade"),
-    index("member_repos_repo_id_idx").on(t.repoId),
   ],
 );
 

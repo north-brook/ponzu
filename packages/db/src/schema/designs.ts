@@ -29,6 +29,7 @@ import {
   SANDBOX_PROVIDERS,
   SANDBOX_STATES,
   THREAD_ITEM_KINDS,
+  UPLOAD_PURPOSES,
 } from "../enums.ts";
 import { claudeAccounts, repos, users, workspaces } from "./accounts.ts";
 import { atMostBytes, createdAt, instant, type Json, oneOf, updatedAt } from "./columns.ts";
@@ -244,12 +245,14 @@ export const assets = pgTable(
 /**
  * The agent thread: what people said, what the agent said, and the tool steps between.
  * `seq` orders it. It comes from one sequence shared by every design, so it has gaps.
+ * An item is found by its design and its id, so an id a runner chose reaches its own design's
+ * thread and nothing else.
  */
 export const threadItems = pgTable(
   "thread_items",
   {
     /** Chosen by the writer, so the runner can post an item again without doubling it. */
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     designId: text("design_id")
       .notNull()
       .references(() => designs.id, { onDelete: "cascade" }),
@@ -264,6 +267,7 @@ export const threadItems = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    primaryKey({ columns: [t.designId, t.id] }),
     index("thread_items_design_id_seq_idx").on(t.designId, t.seq),
     check("thread_items_kind_check", oneOf(t.kind, THREAD_ITEM_KINDS)),
     check("thread_items_payload_check", atMostBytes(t.payload, WATCHED_PAYLOAD_BYTES)),
@@ -285,8 +289,13 @@ export const events = pgTable(
     /** The person behind it. Null when GitHub was. */
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
-    /** When a runner last took it. Taken and not delivered, it can be taken again. */
+    /** When a runner last took it. */
     claimedAt: instant("claimed_at"),
+    /**
+     * The runner process (`design_runners.runner_id`) it was last handed to. It is handed to
+     * each runner once: taken and not delivered, it is the next runner's.
+     */
+    claimedBy: text("claimed_by"),
     deliveredAt: instant("delivered_at"),
   },
   (t) => [
@@ -301,11 +310,14 @@ export const events = pgTable(
   ],
 );
 
-/** Something the agent needs a person for: a question, a permission, a plan, a secret, a link. */
+/**
+ * Something the agent needs a person for: a question, a permission, a plan, a secret, a link.
+ * The runner chooses the id, and a question is found by its design and its id.
+ */
 export const questions = pgTable(
   "questions",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     designId: text("design_id")
       .notNull()
       .references(() => designs.id, { onDelete: "cascade" }),
@@ -321,6 +333,7 @@ export const questions = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
+    primaryKey({ columns: [t.designId, t.id] }),
     index("questions_design_id_status_idx").on(t.designId, t.status),
     check("questions_kind_check", oneOf(t.kind, QUESTION_KINDS)),
     check("questions_status_check", oneOf(t.status, QUESTION_STATUSES)),
@@ -352,8 +365,6 @@ export const sandboxes = pgTable(
     /** Set while it is awake. Awake time is billed from here when it next sleeps. */
     awakeSince: instant("awake_since"),
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),
-    /** The Claude session to resume. */
-    claudeSessionId: text("claude_session_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -390,4 +401,62 @@ export const runnerTokens = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("runner_tokens_design_id_idx").on(t.designId)],
+);
+
+/**
+ * The runner a design has now: its lease and when it was last heard from. One row per design,
+ * apart from `designs` so that a heartbeat every 30 seconds does not touch the row clients
+ * watch. The Claude session is kept here because it is the design's: a runner that starts
+ * again, in this sandbox or a new one, resumes the session the design's events went into.
+ */
+export const designRunners = pgTable("design_runners", {
+  designId: text("design_id")
+    .primaryKey()
+    .references(() => designs.id, { onDelete: "cascade" }),
+  /**
+   * The lease, `rnr_…`: the one runner process the API takes calls from. Each new session
+   * replaces it, and a call that carries any other is refused.
+   */
+  runnerId: text("runner_id").notNull(),
+  startedAt: instant("started_at").notNull(),
+  /** When the runner last took the lease or reported its state. */
+  heardAt: instant("heard_at").notNull(),
+  /** The Claude session the next runner resumes, as an ack or a state report last named it. */
+  claudeSessionId: text("claude_session_id"),
+});
+
+/**
+ * Bytes on their way to storage: a signed address was handed out for exactly these, and the
+ * file is recorded where it belongs (an asset, the design's previews) once it is completed.
+ */
+export const uploads = pgTable(
+  "uploads",
+  {
+    id: text("id").notNull(),
+    designId: text("design_id")
+      .notNull()
+      .references(() => designs.id, { onDelete: "cascade" }),
+    purpose: text("purpose", { enum: UPLOAD_PURPOSES }).notNull(),
+    /** The file name it was asked for under, with its extension. */
+    name: text("name").notNull(),
+    /** Where the signed address puts the bytes, from the bucket's root. */
+    objectKey: text("object_key").notNull(),
+    contentType: text("content_type").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
+    /** Hex. */
+    sha256: text("sha256").notNull(),
+    /** The person who asked for it. Null for the runner. */
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: instant("expires_at").notNull(),
+    /** Where it is served from, set once the bytes were found and recorded. */
+    servedKey: text("served_key"),
+    completedAt: instant("completed_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.designId, t.id] }),
+    check("uploads_purpose_check", oneOf(t.purpose, UPLOAD_PURPOSES)),
+    check("uploads_size_check", sql`${t.size} >= 0`),
+    check("uploads_completed_check", sql`(${t.completedAt} is null) = (${t.servedKey} is null)`),
+  ],
 );

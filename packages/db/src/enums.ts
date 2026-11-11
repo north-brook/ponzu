@@ -26,7 +26,15 @@ export const PR_CHECKS = ["none", "running", "failing", "passing"] as const;
 export const OP_KINDS = ["do", "undo", "redo"] as const;
 export const ACTOR_KINDS = ["user", "agent"] as const;
 export const THREAD_ITEM_KINDS = ["message", "comment", "assistant", "tool", "notice"] as const;
-export const EVENT_KINDS = ["message", "answer", "comment", "edit", "check", "review"] as const;
+export const EVENT_KINDS = [
+  "message",
+  "answer",
+  "comment",
+  "edit",
+  "check",
+  "review",
+  "stop",
+] as const;
 export const EVENT_PRIORITIES = ["now", "next", "later"] as const;
 export const QUESTION_KINDS = [
   "question",
@@ -39,6 +47,8 @@ export const QUESTION_KINDS = [
 export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
 export const SANDBOX_PROVIDERS = ["boat"] as const;
 export const SANDBOX_STATES = ["starting", "awake", "asleep", "gone"] as const;
+/** What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's picture. */
+export const UPLOAD_PURPOSES = ["asset", "export", "preview"] as const;
 
 export const USAGE_KINDS = ["sandbox", "model"] as const;
 export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;
@@ -61,3 +71,4 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 export type EventPriority = (typeof EVENT_PRIORITIES)[number];
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
+export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];

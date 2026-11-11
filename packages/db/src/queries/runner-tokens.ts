@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId, randomString } from "../ids.ts";
-import { runnerTokens } from "../schema/index.ts";
+import { designRunners, runnerTokens } from "../schema/index.ts";
 import { run } from "./run.ts";
 
 /**
@@ -28,15 +28,23 @@ export async function createRunnerToken(
   return { ...row!, token };
 }
 
-/** The design a token is good for, or null if it is unknown, expired or revoked. */
+/**
+ * The design a token is good for, with the runner that holds the design's lease now (null
+ * before any has started), or null if the token is unknown, expired or revoked.
+ */
 export async function verifyRunnerToken(
   db: Db,
   token: string,
-): Promise<{ id: string; designId: string } | null> {
+): Promise<{ id: string; designId: string; leaseRunnerId: string | null } | null> {
   const [row] = await run(
     db
-      .select({ id: runnerTokens.id, designId: runnerTokens.designId })
+      .select({
+        id: runnerTokens.id,
+        designId: runnerTokens.designId,
+        leaseRunnerId: designRunners.runnerId,
+      })
       .from(runnerTokens)
+      .leftJoin(designRunners, eq(designRunners.designId, runnerTokens.designId))
       .where(
         and(
           eq(runnerTokens.tokenHash, await hash(token)),

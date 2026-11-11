@@ -1,14 +1,26 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { seedDesign } from "../fixtures.ts";
+import { newId } from "../ids.ts";
+import { events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { QueryError } from "./run.ts";
-import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
+import {
+  appendThreadItem,
+  listThreadItems,
+  postMessage,
+  type ThreadWrite,
+  writeThreadItems,
+} from "./thread.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
   db = await createTestDb();
 });
 afterAll(() => db.$client.close());
+
+const texts = (items: { payload: unknown }[]) =>
+  items.map((item) => (item.payload as { text: string }).text);
 
 test("items come back in the order they were appended", async () => {
   const { design, user } = await seedDesign(db);
@@ -19,7 +31,7 @@ test("items come back in the order they were appended", async () => {
     userId: user.id,
     payload: { text: "Make the hero shorter" },
   });
-  await appendThreadItem(db, { designId: design.id, kind: "tool", payload: { name: "get_tree" } });
+  await appendThreadItem(db, { designId: design.id, kind: "tool", payload: { label: "Reading" } });
   await appendThreadItem(db, {
     designId: design.id,
     kind: "assistant",
@@ -27,7 +39,7 @@ test("items come back in the order they were appended", async () => {
   });
 
   expect(asked).toMatchObject({ kind: "message", userId: user.id, streaming: false });
-  expect(asked!.id).toMatch(/^ti_/);
+  expect(asked.id).toMatch(/^ti_/);
   const thread = await listThreadItems(db, { designId: design.id });
   expect(thread.map((item) => item.kind)).toEqual(["message", "tool", "assistant"]);
   expect(thread[0]!.payload).toEqual({ text: "Make the hero shorter" });
@@ -42,7 +54,7 @@ test("a thread is one design's", async () => {
   expect(await listThreadItems(db, { designId: other.design.id })).toEqual([]);
 });
 
-test("posting an id again changes nothing and returns the item as it stands", async () => {
+test("appending an id again changes nothing and returns the item as it stands", async () => {
   const { design } = await seedDesign(db);
   const item = { id: "ti_retry", designId: design.id, kind: "assistant" as const };
   const first = await appendThreadItem(db, { ...item, payload: { text: "First" } });
@@ -53,78 +65,116 @@ test("posting an id again changes nothing and returns the item as it stands", as
   expect(await listThreadItems(db, { designId: design.id })).toHaveLength(1);
 });
 
-test("an id cannot be used to reach into another design's thread", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  await appendThreadItem(db, {
-    id: "ti_theirs",
-    designId: one.design.id,
-    kind: "assistant",
-    payload: { text: "Private" },
-  });
-
-  const reached = await appendThreadItem(db, {
-    id: "ti_theirs",
-    designId: other.design.id,
-    kind: "assistant",
-    payload: { text: "Mine now" },
-  });
-
-  expect(reached).toBeNull();
-  const [theirs] = await listThreadItems(db, { designId: one.design.id });
-  expect(theirs!.payload).toEqual({ text: "Private" });
+const write = (id: string, text: string, streaming: boolean): ThreadWrite => ({
+  id,
+  kind: "assistant",
+  payload: { text },
+  streaming,
 });
 
-test("a streaming item is replaced as text arrives, then closed", async () => {
+test("a runner's write appends new items in order and answers each as it stands", async () => {
   const { design } = await seedDesign(db);
-  const item = await appendThreadItem(db, {
+  const [a, b] = [newId("ti"), newId("ti")];
+
+  const written = await writeThreadItems(db, {
     designId: design.id,
-    kind: "assistant",
-    payload: { text: "" },
-    streaming: true,
+    items: [write(a, "one", true), write(b, "two", false)],
   });
-  const update = (text: string, streaming: boolean) =>
-    updateThreadItem(db, { designId: design.id, id: item!.id, payload: { text }, streaming });
 
-  expect(await update("I'll shorten", true)).toMatchObject({
-    payload: { text: "I'll shorten" },
-    streaming: true,
-  });
-  const done = await update("I'll shorten the hero.", false);
-  expect(done).toMatchObject({ payload: { text: "I'll shorten the hero." }, streaming: false });
-  expect(done!.updatedAt.getTime()).toBeGreaterThanOrEqual(item!.updatedAt.getTime());
+  const thread = await listThreadItems(db, { designId: design.id });
+  expect(texts(thread)).toEqual(["one", "two"]);
+  expect(written).toEqual([
+    { id: a, seq: thread[0]!.seq, streaming: true },
+    { id: b, seq: thread[1]!.seq, streaming: false },
+  ]);
+});
 
-  // A partial that was still in the air when the item closed must not win.
-  expect(await update("I'll sho", true)).toBeNull();
+test("a streaming item is replaced as it grows, and once finished never changes again", async () => {
+  const { design } = await seedDesign(db);
+  const id = newId("ti");
+  const send = (text: string, streaming: boolean) =>
+    writeThreadItems(db, { designId: design.id, items: [write(id, text, streaming)] });
+  const [first] = await send("I'll", true);
+
+  expect(await send("I'll shorten", true)).toEqual([{ ...first!, streaming: true }]);
+  expect(await send("I'll shorten the hero.", false)).toEqual([{ ...first!, streaming: false }]);
+  // A partial still in the air when the item finished, and a replay of the finish.
+  expect(await send("I'll sho", true)).toEqual([{ ...first!, streaming: false }]);
+  expect(await send("Something else", false)).toEqual([{ ...first!, streaming: false }]);
+
   const [stored] = await listThreadItems(db, { designId: design.id });
   expect(stored).toMatchObject({ payload: { text: "I'll shorten the hero." }, streaming: false });
 });
 
-test("an update needs the right design and an item that streams", async () => {
+test("a write cannot change an item's kind, nor reach another design's item of the same id", async () => {
   const one = await seedDesign(db);
   const other = await seedDesign(db);
-  const streaming = await appendThreadItem(db, {
+  const id = newId("ti");
+  await writeThreadItems(db, { designId: one.design.id, items: [write(id, "theirs", true)] });
+
+  await writeThreadItems(db, {
     designId: one.design.id,
+    items: [{ id, kind: "tool", payload: { label: "x" }, streaming: true }],
+  });
+  const [mine] = await writeThreadItems(db, {
+    designId: other.design.id,
+    items: [write(id, "mine", false)],
+  });
+
+  expect((await listThreadItems(db, { designId: one.design.id }))[0]).toMatchObject({
     kind: "assistant",
-    payload: {},
+    payload: { text: "theirs" },
     streaming: true,
   });
-  const finished = await appendThreadItem(db, {
-    designId: one.design.id,
+  expect(mine!.streaming).toBe(false);
+  expect(texts(await listThreadItems(db, { designId: other.design.id }))).toEqual(["mine"]);
+});
+
+test("an item the API wrote is finished, so a runner's write cannot touch it", async () => {
+  const { design, user } = await seedDesign(db);
+  const message = await postMessage(db, {
+    designId: design.id,
+    userId: user.id,
+    item: { text: "Hello" },
+    event: { text: "Hello" },
+  });
+
+  await writeThreadItems(db, {
+    designId: design.id,
+    items: [{ id: message.id, kind: "notice", payload: { type: "waking" }, streaming: false }],
+  });
+
+  expect((await listThreadItems(db, { designId: design.id }))[0]).toMatchObject({
     kind: "message",
     payload: { text: "Hello" },
   });
-  const change = { payload: { text: "Changed" }, streaming: false };
+});
 
-  expect(
-    await updateThreadItem(db, { ...change, designId: other.design.id, id: streaming!.id }),
-  ).toBeNull();
-  expect(
-    await updateThreadItem(db, { ...change, designId: one.design.id, id: finished!.id }),
-  ).toBeNull();
-  expect(
-    await updateThreadItem(db, { ...change, designId: one.design.id, id: "ti_missing" }),
-  ).toBeNull();
+test("a message is a thread item and a `now` event, written together", async () => {
+  const { design, user } = await seedDesign(db);
+
+  const item = await postMessage(db, {
+    designId: design.id,
+    userId: user.id,
+    item: { text: "Make it blue", from: { id: user.id } },
+    event: { text: "Make it blue" },
+  });
+
+  expect(item).toMatchObject({
+    designId: design.id,
+    kind: "message",
+    userId: user.id,
+    streaming: false,
+    payload: { text: "Make it blue", from: { id: user.id } },
+  });
+  const feed = await db.select().from(events).where(eq(events.designId, design.id));
+  expect(feed).toHaveLength(1);
+  expect(feed[0]).toMatchObject({
+    kind: "message",
+    priority: "now",
+    userId: user.id,
+    payload: { text: "Make it blue" },
+  });
 });
 
 test("pages backwards from the newest", async () => {
@@ -132,8 +182,6 @@ test("pages backwards from the newest", async () => {
   for (const text of ["1", "2", "3", "4", "5"]) {
     await appendThreadItem(db, { designId: design.id, kind: "assistant", payload: { text } });
   }
-  const texts = (items: { payload: unknown }[]) =>
-    items.map((item) => (item.payload as { text: string }).text);
 
   const newest = await listThreadItems(db, { designId: design.id, limit: 2 });
   expect(texts(newest)).toEqual(["4", "5"]);
@@ -152,27 +200,20 @@ test("tool output Postgres cannot store is kept, with the stray characters repla
   // A NUL from `cat` on a binary, and an emoji cut in half by truncation, in a key as well.
   const payload = {
     output: "PNG\u0000\u0001 done \ud83d",
-    "bad\u0000key": ["ok \ud83d\ude00", "\ude00"],
+    "bad\u0000key": ["ok 😀", "\ude00"],
   };
+  const id = newId("ti");
 
-  const item = await appendThreadItem(db, {
-    designId: design.id,
-    kind: "assistant",
-    payload,
-    streaming: true,
-  });
-  const updated = await updateThreadItem(db, {
-    designId: design.id,
-    id: item!.id,
-    payload: { text: "more\u0000" },
-    streaming: false,
-  });
+  const item = await appendThreadItem(db, { designId: design.id, kind: "assistant", payload });
+  await writeThreadItems(db, { designId: design.id, items: [write(id, "more\u0000", false)] });
 
-  expect(item!.payload).toEqual({
-    output: "PNG\ufffd\u0001 done \ufffd",
-    "bad\ufffdkey": ["ok \ud83d\ude00", "\ufffd"],
+  expect(item.payload).toEqual({
+    output: "PNG�\u0001 done �",
+    "bad�key": ["ok 😀", "�"],
   });
-  expect(updated!.payload).toEqual({ text: "more\ufffd" });
+  expect((await listThreadItems(db, { designId: design.id }))[1]!.payload).toEqual({
+    text: "more�",
+  });
 });
 
 test("a refused write says what Postgres said and none of what was sent", async () => {
@@ -198,8 +239,7 @@ test("refuses a payload too large for a row that clients watch", async () => {
   const { design } = await seedDesign(db);
   const item = { designId: design.id, kind: "tool" as const };
 
-  const fits = await appendThreadItem(db, { ...item, payload: { output: "x".repeat(200_000) } });
-  expect(fits).not.toBeNull();
+  await appendThreadItem(db, { ...item, payload: { output: "x".repeat(200_000) } });
   await expect(
     appendThreadItem(db, { ...item, payload: { output: "x".repeat(300_000) } }),
   ).rejects.toThrow();

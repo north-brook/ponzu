@@ -1,7 +1,8 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { type Json, threadItems } from "../schema/index.ts";
+import { events, type Json, threadItems } from "../schema/index.ts";
+import { eventRow } from "./events.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
@@ -15,61 +16,125 @@ export interface NewThreadItem {
   /** The person who wrote it. Null for the agent and for Ponzu. */
   userId?: string | null;
   payload: Json;
-  /** True for agent text that is still being written; finish it with `updateThreadItem`. */
+  /** True for agent text that is still being written. */
   streaming?: boolean;
 }
 
 /**
- * Add an item to the end of a design's thread. Posting an id that is already there changes
- * nothing and answers with the item as it stands. Null if that id belongs to another design.
+ * Add an item to the end of a design's thread, for what the API writes itself (a pull
+ * request's notice). Posting an id the design's thread already has changes nothing and answers
+ * with the item as it stands; the same id in another design is another item.
  *
  * A NUL or half a surrogate pair in the payload, which tool output can hold and Postgres
- * cannot, is stored as U+FFFD; `updateThreadItem` does the same.
+ * cannot, is stored as U+FFFD. So it is in every write here.
  */
-export async function appendThreadItem(db: Db, item: NewThreadItem): Promise<ThreadItem | null> {
+export async function appendThreadItem(db: Db, item: NewThreadItem): Promise<ThreadItem> {
   const [row] = await run(
     db
       .insert(threadItems)
       .values({ ...item, payload: scrubbed(item.payload), id: item.id ?? newId("ti") })
       .onConflictDoUpdate({
-        target: threadItems.id,
+        target: [threadItems.designId, threadItems.id],
         // Sets the row to what it already holds, so that `returning` has it to return.
         set: { updatedAt: sql`${threadItems.updatedAt}` },
-        setWhere: eq(threadItems.designId, item.designId),
       })
       .returning(),
   );
-  return row ?? null;
+  return row!;
+}
+
+/** One item a runner writes: appended when new, its payload replaced while it streams. */
+export interface ThreadWrite {
+  id: string;
+  kind: Extract<ThreadItem["kind"], "assistant" | "tool" | "notice">;
+  payload: Json;
+  streaming: boolean;
+}
+
+/** Where a written item stands afterwards. */
+export interface WrittenItem {
+  id: string;
+  seq: number;
+  streaming: boolean;
 }
 
 /**
- * Replace a streaming item's payload as more of it arrives, and end the stream with
- * `streaming: false`. Null when there is no such item or it has already ended, so an update
- * that arrives late cannot overwrite the finished text.
+ * Write a runner's items to a design's thread by their ids, in one statement: an id the thread
+ * does not have is appended (in the order given), an item still streaming has its payload and
+ * `streaming` replaced, and a finished one, or one of another kind, is left as it is. Every item
+ * comes back as it stands, in the order given, so sending the same write again is safe and a
+ * late write cannot reopen what has finished. The ids must be distinct.
  */
-export async function updateThreadItem(
+export async function writeThreadItems(
   db: Db,
-  {
-    designId,
-    id,
-    payload,
-    streaming,
-  }: { designId: string; id: string; payload: Json; streaming: boolean },
-): Promise<ThreadItem | null> {
+  { designId, items }: { designId: string; items: ThreadWrite[] },
+): Promise<WrittenItem[]> {
+  if (items.length === 0) return [];
+  const ids = items.map((item) => item.id);
+  if (new Set(ids).size !== ids.length) throw new Error("A thread write's ids must be distinct.");
+  const written = db.$with("written").as(
+    db
+      .insert(threadItems)
+      .values(items.map((item) => ({ ...item, designId, payload: scrubbed(item.payload) })))
+      .onConflictDoUpdate({
+        target: [threadItems.designId, threadItems.id],
+        set: {
+          payload: sql`excluded.payload`,
+          streaming: sql`excluded.streaming`,
+          updatedAt: sql`now()`,
+        },
+        setWhere: and(eq(threadItems.streaming, true), sql`${threadItems.kind} = excluded.kind`),
+      })
+      .returning({ id: threadItems.id, seq: threadItems.seq, streaming: threadItems.streaming }),
+  );
+  // Each id as the write left it, or, for one it left alone, as it stood before the statement
+  // (which is what `thread_items` reads as here).
+  const asked = sql`json_array_elements_text(${JSON.stringify(ids)}::json) with ordinality as asked(id, ord)`;
+  const rows = await run(
+    db
+      .with(written)
+      .select({
+        id: sql<string>`asked.id`,
+        seq: sql<number>`coalesce(${written.seq}, ${threadItems.seq})`.mapWith(Number),
+        streaming: sql<boolean>`coalesce(${written.streaming}, ${threadItems.streaming})`,
+      })
+      .from(asked)
+      .leftJoin(written, sql`${written.id} = asked.id`)
+      .leftJoin(
+        threadItems,
+        and(eq(threadItems.designId, designId), sql`${threadItems.id} = asked.id`),
+      )
+      .orderBy(sql`asked.ord`),
+  );
+  return rows;
+}
+
+/**
+ * A person's message: the thread item everyone sees and the `now` event that puts it into the
+ * run, in one statement, so neither is ever there without the other.
+ */
+export async function postMessage(
+  db: Db,
+  { designId, userId, item, event }: { designId: string; userId: string; item: Json; event: Json },
+): Promise<ThreadItem> {
+  // Postgres runs a data-modifying `with` whether or not the statement reads it.
+  const queued = db.$with("queued").as(
+    db
+      .insert(events)
+      .values({
+        designId,
+        ...eventRow({ kind: "message", priority: "now", payload: event, userId }),
+      })
+      .returning({ id: events.id }),
+  );
   const [row] = await run(
     db
-      .update(threadItems)
-      .set({ payload: scrubbed(payload), streaming })
-      .where(
-        and(
-          eq(threadItems.id, id),
-          eq(threadItems.designId, designId),
-          eq(threadItems.streaming, true),
-        ),
-      )
+      .with(queued)
+      .insert(threadItems)
+      .values({ id: newId("ti"), designId, kind: "message", userId, payload: scrubbed(item) })
       .returning(),
   );
-  return row ?? null;
+  return row!;
 }
 
 /** A page of a design's thread, oldest first: the newest `limit` items, or those before `before`. */
