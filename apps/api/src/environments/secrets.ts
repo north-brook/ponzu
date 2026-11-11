@@ -17,8 +17,10 @@ export const MAX_SECRET_BYTES = 16 * 1024;
 
 /**
  * What one repo's secrets may hold. They travel to a sandbox in one variable, each value in
- * base64 (`sandboxes/environment.ts`), and a sandbox's environment takes at most 64 KB
- * (boat.dev): 44 KiB of names and values is 60 KB encoded, which leaves room for Ponzu's own.
+ * base64 (`sandboxes/environment.ts`), and the runner's start command carries at most 64 KB of
+ * environment: Ponzu's own cap, under Linux's 128 KiB for one variable (a 64 KB command env was
+ * accepted live, 128 KB in one variable refused). 44 KiB of names and values is 60 KB encoded,
+ * which leaves room for Ponzu's own.
  */
 export const SECRET_LIMITS: SecretLimits = { count: 50, totalBytes: 44 * 1024 };
 
@@ -26,7 +28,7 @@ export const SECRET_LIMITS: SecretLimits = { count: 50, totalBytes: 44 * 1024 };
  * Prefixes a secret's name may not start with: Ponzu's own (`PONZU_RUNNER_TOKEN`, …), Claude
  * Code's and Anthropic's (a second credential, or one that points Claude elsewhere: Claude Code
  * would use `ANTHROPIC_API_KEY` over the owner's plan, or send their token to
- * `ANTHROPIC_BASE_URL`), the sandbox provider's, git's (its credential helper is Ponzu's), and
+ * `ANTHROPIC_BASE_URL`), an old sandbox provider's, git's (its credential helper is Ponzu's), and
  * those that load code into a program as it starts: the dynamic loader's, Bun's (`BUN_OPTIONS`
  * is extra flags, `--preload` among them), Node's and npm's, and bash's.
  */
@@ -35,7 +37,6 @@ const RESERVED_PREFIXES = [
   "CLAUDE_",
   "ANTHROPIC_",
   "ASCII_",
-  "BOAT_",
   "GIT_",
   "LD_",
   "DYLD_",

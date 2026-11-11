@@ -18,10 +18,22 @@ export type DesignSource = "idea" | "prompt" | "scratch";
 export type TurnOutcome = "completed" | "failed" | "stopped";
 
 /**
- * How a sandbox came up: made new, resumed from a snapshot with nothing in memory, thawed, or
- * made new from the current image in place of one from an older image (the design moved).
+ * How a sandbox came up: on a new disk (made, made again on a new image, or after its snapshot
+ * expired), resumed from its snapshot, or its runner started again in a session that was running
+ * (a changed Claude credential, or a session left running).
  */
-export type WakeStart = "new" | "cold" | "warm" | "moved";
+export type WakeStart = "create" | "resume" | "restart";
+
+/** Why a sandbox was put to sleep (`sandboxes/stop.ts`), or `expired` when Vercel stopped it. */
+export type SleepWhy =
+  | "idle"
+  | "claude_unusable"
+  | "claude_disconnected"
+  | "owner_left"
+  | "restart"
+  | "failed"
+  | "cycle"
+  | "expired";
 
 /** One model's share of a turn, as the runner reported it. */
 export interface ModelTokens {
@@ -119,27 +131,21 @@ export interface ServerEvents {
   "pull request closed": { design_id: string; number: number };
 
   // Sandboxes
-  /** `image`: the sandbox image it runs, null for one made before images were recorded. */
+  /**
+   * A wake got the runner started: `duration_ms` from the wake's start, `fresh` when the disk
+   * was empty (the runner rebuilds from git and the last checkpoint), `recreated` when the
+   * sandbox was made again on a new image.
+   */
   "sandbox woke": {
     design_id: string;
     start: WakeStart;
     duration_ms: number;
-    image: string | null;
+    fresh: boolean;
+    recreated: boolean;
+    image: string;
   };
-  /**
-   * The design moved onto a new sandbox from the current image, which restored the last
-   * checkpoint. `from_image` is null for a sandbox made before images were recorded.
-   */
-  "sandbox moved": {
-    design_id: string;
-    from_image: string | null;
-    to_image: string;
-    duration_ms: number;
-  };
-  /** The sandbox was stopped to save its time. `quiesced`: its runner said it was ready. */
-  "sandbox slept": { design_id: string; quiesced: boolean };
-  /** The provider lost the sandbox (or its disk), and the next wake starts over. */
-  "sandbox lost": { design_id: string };
+  /** The sandbox was stopped, after its runner shut down, and `awake_ms` metered. */
+  "sandbox slept": { design_id: string; why: SleepWhy; awake_ms: number };
   /** A runner found its disk behind the last checkpoint and restored from it. */
   "sandbox restored": { design_id: string; kind: "rollback" | "rebuilt" };
 

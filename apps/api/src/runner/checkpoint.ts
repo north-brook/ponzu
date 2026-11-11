@@ -1,7 +1,6 @@
 import {
   completeUpload,
-  countSandboxRollback,
-  getLiveSandbox,
+  getSandbox,
   getSavedPoint,
   getUploads,
   listUploadKeys,
@@ -157,25 +156,21 @@ export async function restoreFor(deps: CheckpointDeps, designId: string): Promis
 
 /**
  * The runner found its disk behind the design's last checkpoint and restored from it. Logged
- * with the sandbox it happened in, its generation and how often it has happened there, which is
- * what to show boat.dev; a rollback is counted on the sandbox's row.
+ * with the session it happened in and the image: an empty disk (`rebuilt`) is what a new
+ * sandbox, a new image or an expired snapshot gives; a disk that came back old (`rollback`)
+ * should not happen with one snapshot kept, and is what to show Vercel.
  */
 export async function recordRestored(
   deps: CheckpointDeps,
   designId: string,
   report: RestoredReport,
 ): Promise<void> {
-  const sandbox =
-    report.kind === "rollback"
-      ? await countSandboxRollback(deps.db, designId)
-      : await getLiveSandbox(deps.db, designId);
+  const sandbox = await getSandbox(deps.db, designId);
   const fields = {
     designId,
-    sandboxId: sandbox?.id ?? null,
-    providerId: sandbox?.providerId ?? null,
-    generation: sandbox?.generation ?? null,
+    sessionId: sandbox?.sessionId ?? null,
+    image: sandbox?.image ?? null,
     sandboxState: sandbox?.state ?? null,
-    rollbacks: sandbox && "rollbacks" in sandbox ? sandbox.rollbacks : null,
     diskTurn: report.disk?.turn ?? null,
     diskSavedAt: report.disk?.at ?? null,
     diskBootId: report.disk?.bootId ?? null,

@@ -112,10 +112,10 @@ describe("usage this period", () => {
     const designId = (await designIn(t, ws, "maya", sampleDoc())).id;
     const now = new Date(t.clock.now());
     const limits = { perWorkspace: 10, perOwner: 10 };
-    const begun = await beginSandbox(t.db, { designId, provider: "boat", now, by: "test", limits });
+    const begun = await beginSandbox(t.db, { designId, now, by: "test", limits });
     if (!begun || !("sandbox" in begun)) throw new Error("no sandbox");
     await moveSandbox(t.db, {
-      id: begun.sandbox.id,
+      designId,
       from: ["waking"],
       to: "awake",
       now,

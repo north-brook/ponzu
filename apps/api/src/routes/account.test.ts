@@ -4,14 +4,15 @@ import {
   createDesign,
   deleteUser,
   getDesign,
-  getLiveSandbox,
+  getSandbox,
   recordUsage,
   upsertMembership,
   upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
+import { designSandboxName } from "@ponzu/sandbox";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
-import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
+import { createTestApp, type SignedInPerson, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 /*
  * Deleting an account through the route: what blocks it, what goes, what stays with the team,
@@ -190,7 +191,7 @@ describe("deleting Rae", () => {
     expect(said.status).toBe(201);
     await call(t, rae.headers, "PATCH", `/v1/designs/${teamDesign}`, { name: "Pricing, tighter" });
     await t.backgroundDone();
-    expect((await getLiveSandbox(t.db, teamDesign))?.state).toBe("awake");
+    expect((await getSandbox(t.db, teamDesign))?.state).toBe("awake");
 
     // Her Scratch design, and one in her own account's workspace.
     scratchDesign = (await designIn(t, ws, "rae", sampleDoc(), "scratch")).id;
@@ -267,10 +268,8 @@ describe("deleting Rae", () => {
   test("keeps the team's design, owned by nobody, its sandbox retired", async () => {
     const design = await getDesign(t.db, teamDesign);
     expect(design?.ownerId).toBeNull();
-    expect(await getLiveSandbox(t.db, teamDesign)).toBeNull();
-    expect(
-      (await t.sandbox.list({ labels: { design: teamDesign } })).filter((s) => s.state !== "gone"),
-    ).toEqual([]);
+    expect(await getSandbox(t.db, teamDesign)).toBeNull();
+    expect(await t.sandboxes.status(designSandboxName(TEST_SCOPE, teamDesign))).toBeNull();
     expect((await getDesign(t.db, solsDesign))?.ownerId).not.toBeNull();
   });
 

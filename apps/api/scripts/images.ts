@@ -1,12 +1,13 @@
 // `bun scripts/images.ts`: where a rollout of a new sandbox image stands. For every design's
-// sandbox: the image it was made from, what its runner says it runs, and what its next wake will
-// do about PONZU_SANDBOX_SNAPSHOT (docs/cloud.md, "How images roll out"). It only reads.
+// sandbox: the image it runs, what its runner says it is, and what its next wake will do about
+// the image this checkout ships, apps/runner/image/current.json (docs/cloud.md, "How images roll
+// out"). It only reads. Run it from the commit the deployed API was built from.
 //
 // The database is DATABASE_URL, or the Neon branch named by --branch (default "dev") when
-// NEON_API_KEY and NEON_PROJECT_ID are set, as `bun run dev` finds it. The image it compares
-// against is PONZU_SANDBOX_SNAPSHOT, which must be what the deployed API has. `--json` prints
-// the rows as JSON.
+// NEON_API_KEY and NEON_PROJECT_ID are set, as `bun run dev` finds it. `--json` prints the rows
+// as JSON.
 import { createDb, getCheckpointCover, listSandboxImages } from "@ponzu/db";
+import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import { rollout } from "../src/sandboxes/rollout.ts";
 import { branchDatabaseUrl } from "./neon.ts";
 
@@ -14,8 +15,7 @@ const { env } = process;
 const args = process.argv.slice(2);
 const named = args.indexOf("--branch");
 const branch = (named >= 0 && args[named + 1]) || "dev";
-const image = env.PONZU_SANDBOX_SNAPSHOT;
-if (!image) throw new Error("Set PONZU_SANDBOX_SNAPSHOT to the image the deployed API has.");
+const image = current.image;
 
 const url =
   env.DATABASE_URL ||
@@ -34,31 +34,26 @@ const covers = new Map(
     ),
   ),
 );
-const rows = rollout(sandboxes, covers, {
-  image,
-  maxMoves: Number(env.PONZU_SANDBOX_MAX_MOVES ?? 3),
-});
+const rows = rollout(sandboxes, covers, { image });
 
 if (args.includes("--json")) {
   console.log(JSON.stringify(rows, null, 2));
 } else {
   const SAYS = {
     current: "on the current image",
-    moves: "moves at its next wake",
-    moves_after_sleep: "moves at the first wake after it next sleeps",
-    moves_after_a_checkpoint:
-      "its next wake resumes it to save a checkpoint; the one after moves it",
-    stays_image_failed: "stays: a move onto this image failed for it (see sandbox_move_failed)",
+    recreates: "is recreated on it at its next wake",
+    recreates_after_sleep: "is recreated at the first wake after it next sleeps",
+    recreates_after_a_checkpoint:
+      "its next wake resumes it to save a checkpoint; a later one recreates it",
     stays_no_checkpoint:
-      "stays: its runner has saved no checkpoint, so a move would lose its conversation and unpushed work",
-    stays_moving_off: "stays: PONZU_SANDBOX_MAX_MOVES is 0",
-    retired: "settled: the sweep destroys it",
+      "stays: its runner has saved no checkpoint, so a recreate would lose its conversation and unpushed work",
+    retired: "settled: the sweep retires it",
   } as const;
   console.log(`Current image: ${image}\n`);
   for (const row of rows) {
     console.log(
-      `${row.designId}  ${row.state.padEnd(8)} gen ${row.generation}  ${row.image ?? "(not recorded)"}` +
-        `  runner says ${row.runnerImage ?? "(nothing)"}\n    ${SAYS[row.next]}`,
+      `${row.designId}  ${row.state.padEnd(8)} ${row.image ?? "(no session yet)"}` +
+        `  runner says ${row.client ?? "(nothing)"}\n    ${SAYS[row.next]}`,
     );
   }
   const counts = new Map<string, number>();

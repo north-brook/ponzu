@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { beginSandbox, getDesignAssetKey, getLiveSandbox } from "@ponzu/db";
+import { beginSandbox, getDesignAssetKey, moveSandbox } from "@ponzu/db";
 import {
   call,
   designWithRunner,
@@ -15,7 +15,7 @@ import { createTestApp, type TestApp } from "../testing/index.ts";
 /*
  * A runner's checkpoints through the routes (docs/cloud.md, "Saving the sandbox"): archives that
  * no client can reach, a turn marker that only goes up, reading them back, and a rollback logged
- * with the sandbox it happened in.
+ * with the session it happened in.
  */
 
 let t: TestApp;
@@ -187,14 +187,22 @@ describe("checkpoints", () => {
     expect((await t.storage.fetch(url)).status).toBe(403);
   });
 
-  test("a rollback is logged with the sandbox it happened in, and counted", async () => {
+  test("a rollback is logged with the session it happened in", async () => {
     const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const now = new Date(t.clock.now());
     await beginSandbox(t.db, {
       designId: design.id,
-      provider: "boat",
-      now: new Date(t.clock.now()),
+      now,
       by: "job_test",
       limits: { perWorkspace: 100, perOwner: 100 },
+    });
+    await moveSandbox(t.db, {
+      designId: design.id,
+      from: ["waking"],
+      to: "awake",
+      now,
+      by: "job_test",
+      changes: { sessionId: "sbx_session_1", image: "ponzu-runner@sha256:aa" },
     });
     const report = {
       kind: "rollback",
@@ -205,16 +213,13 @@ describe("checkpoints", () => {
       restored: { session: true, workspace: true },
     };
     expect((await send(runner, "POST", "/restored", report)).status).toBe(204);
-    expect((await send(runner, "POST", "/restored", report)).status).toBe(204);
-    const sandbox = (await getLiveSandbox(t.db, design.id))!;
-    expect(sandbox.rollbacks).toBe(2);
     expect(
       t.logs.findLast((l) => l.event === "sandbox_rollback" && l.designId === design.id),
     ).toMatchObject({
       level: "warn",
-      sandboxId: sandbox.id,
-      generation: 1,
-      rollbacks: 2,
+      sessionId: "sbx_session_1",
+      image: "ponzu-runner@sha256:aa",
+      sandboxState: "awake",
       diskTurn: 3,
       diskBootId: "boot-a",
       savedTurn: 5,
@@ -227,7 +232,6 @@ describe("checkpoints", () => {
       disk: null,
     });
     expect(rebuilt.status).toBe(204);
-    expect((await getLiveSandbox(t.db, design.id))!.rollbacks).toBe(2);
     expect(
       t.logs.findLast((l) => l.event === "sandbox_rebuilt" && l.designId === design.id),
     ).toMatchObject({ level: "info", savedTurn: 5, diskTurn: null });

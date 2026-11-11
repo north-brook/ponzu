@@ -150,7 +150,6 @@ export const State: z.ZodType<StateRequest, unknown> = z.object({
   status: text(500).nullable(),
   artboards: Artboards,
   claudeSessionId: SessionId.nullable(),
-  quiesced: z.iso.datetime({ offset: true }).nullable().optional(),
   branch: z
     .object({
       unpushed: z

@@ -33,8 +33,8 @@ src/
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
                     delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
-    poke.ts         real: `POST /poke` and `POST /report` to an awake runner through its
-                    sandbox's address, and whether its `/health` answers (`runnerPort`)
+    poke.ts         real: `POST /poke` to an awake runner on its sandbox's public port, with
+                    the port's bearer token; a 502 or 503 just after a start is tried again
     anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku (ideas) and Sonnet (their gate) via the AI SDK on Ponzu's own key, structured answers
@@ -50,7 +50,7 @@ src/
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
                   session, thread writes, git credentials, checkpoints (checkpoint.ts: the
                   transcript and work-in-progress archives, kept where no client reads them,
-                  restoring them, and rollbacks logged and counted); runner.e2e.test.ts runs the
+                  restoring them, and rebuilds and rollbacks logged); runner.e2e.test.ts runs the
                   real runner against these routes
   pull-requests/  a design's pull request: sync.ts reads it and records it (the one place a
                   merge settles a design), refresh.ts reads it again after webhooks, as jobs,
@@ -59,11 +59,13 @@ src/
                   pull-requests.live.test.ts runs it against the real test repository
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
   sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
-                  orchestrate.ts: the wake job (create, resume, a new environment, replace);
-                  quiesce.ts: every stop asks the runner to get ready, waits, syncs, stops,
-                  and a warm resume starts a runner that had exited;
-                  environment.ts: what a sandbox starts with; sweep.ts: the minute's idle
-                  stop, dead runners, settled designs, orphans and repairs; retire.ts
+                  orchestrate.ts: the wake job, one path for a create, a resume and a restart
+                  in place (`up()`, `ponzu-stop` if it was running, `ponzu-start`);
+                  stop.ts: putToSleep (`ponzu-stop`, then Vercel's stop, then the pending
+                  rule); retire.ts: a settled or deleted design's sandbox, holding its row
+                  until the delete; environment.ts: what a runner starts with; sweep.ts: the
+                  minute's look (retire, stop, restart, lapse, sleep, cycle, extend, repair)
+                  and the tenth minute's reconcile; constants.ts: the session's numbers
   claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
                   `claude setup-token` in a utility sandbox), disconnecting, and the models
   environments/   a repo's secrets (what a name may be, how a value is sealed) and its base's
@@ -83,6 +85,8 @@ scripts/
   neon.ts         a Neon branch's connection string and Realtime, by branch name
   github-webhook.ts  the App's webhook: where it points, its secret, redelivering failures
   ideas.ts        a real repo's ideas, made as the API makes them, with what they cost
+  images.ts       which image each design's sandbox runs, and what its next wake does about it
+  build.ts        bun run build: the runner bundle, then the API with it inlined
 ```
 
 No file is named `app.ts` or `server.ts`, and nothing lives under `apps/api/api/`: Vercel's
@@ -91,17 +95,19 @@ Hono preset treats both as entry points.
 The code runs on Node and is tested on Bun. `src/` outside the tests may use only what Node
 has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
-**The sandbox image.** Designs' sandboxes are created from `PONZU_SANDBOX_SNAPSHOT`, and a
-deployment that wakes them must set it; unset, every wake shows `sandbox_failed`. The image's
-runner must speak this API's runner protocol, so bake it (`bun apps/runner/image/bake.ts`) from
-a commit at least as new as the API's protocol: an image from before `claimId` (migration
-0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
-`ponzu-runner-6041787d9d11`. Checkpoints, getting ready to sleep and `POST /report` need an image
-from this API's checkpoint routes on (migration 0014), and one from this API's `keep` on, whose
-runner keeps work in progress off GitHub: `apps/runner/image/current.json` names it. An older
-image still works against this API: its runner has no `/report` (a stop then does not wait for
-it, and still runs `sync`), and it saves no checkpoint, so its disk stays the only copy. Every deployment shares the boat.dev account; the sweeps keep to
-the sandboxes labelled with their own database (`SandboxConfig.scope`).
+**Sandboxes.** Designs' sandboxes are Vercel Sandboxes in the ponzu-api project, named
+`pz-<scope>-<designId>` (the scope is the database's, `SandboxConfig.scope`, so deployments
+sharing the project keep apart). On Vercel the API reaches them with its functions' OIDC token,
+which exists only inside a request: `@ponzu/sandbox` is called from a handler, or from work a
+handler handed to `deps.background` (the cron is a request too), never at module load or from a
+stray timer. Off Vercel, set `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` together.
+
+The image is not a variable: `apps/runner/image/current.json` names it by digest, and the build
+inlines it, so an image ships with the API deploy. A design on another image is recreated on
+this one at its next wake, unless its last checkpoint is behind its session
+(`bun scripts/images.ts` shows where a rollout stands). The runner itself is not in the image:
+`bun run build` builds it, inlines it, and `GET /v1/runner/bundle` serves it to `ponzu-start`,
+which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
 
 ## Adding a route
 
@@ -168,7 +174,7 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
-   `sandbox`, `storage`, `poke`, `runnerPort`, `realtime`, `model`, `docs`, `gitTokens`,
+   `sandboxes`, `runnerBundle`, `storage`, `poke`, `realtime`, `model`, `docs`, `gitTokens`,
    `background`, `log`, `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
@@ -215,12 +221,12 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    ```
 
    `createTestApp` is the real app on an in-process Postgres with `t.workos` and `t.github`
-   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`, with the image
-   `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
+   (in-memory services behind the real clients), `t.sandboxes` (`FakeSandboxes`, which models
+   Vercel as the live suite recorded it: sessions, snapshots, the commands each session ran),
+   `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
    signed addresses and refuses other bytes, headers, sizes or a late PUT, and serves a signed
-   GET), `t.poke` (the pokes, report requests and health checks, recorded: `onReport` plays a
-   runner that answers a request for a report, `healthy` one whose `/health` answers),
+   GET), `t.poke` (the pokes, recorded with the port token each carried),
    `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
    from `reply(…)`), `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
    `startSignIn` stops before it. Give GitHub installations and repositories with
@@ -351,16 +357,16 @@ a deployment made from a connected repository, and this one is deliberately not 
 **Why the build is ours.** Vercel's default Hono builder transpiles file by file and leaves
 import specifiers alone, which cannot run this repo's style (workspace packages that export
 TypeScript source, `.ts` specifiers): it deploys green and every request fails. Of the three
-builds that do work we use the one with nothing experimental in it: `bun build` bundles
-`src/index.ts` and the workspace packages into `dist/index.js`, with `hono` left external so
-the preset still recognises the entry. The costs: the Vercel build does not typecheck (CI
+builds that do work we use the one with nothing experimental in it: `scripts/build.ts` builds
+the runner bundle, then `Bun.build` bundles `src/index.ts` and the workspace packages into
+`dist/index.js` with that bundle inlined (`define`, through Bun's API since it is about a
+megabyte), and `hono` left external so the preset still recognises the entry. The costs: the Vercel build does not typecheck (CI
 does, and `scripts/ci/api-bundle.ts` loads the bundle in Node), and a `maxDuration` in
 `vercel.json` is not applied to a bundled entry, so the function has the platform default of
 300 seconds. Every call out (WorkOS, GitHub, the database) has ten seconds. The longest waits
-are the sandbox wake job's (a stop to wait out, getting the runner ready, `sync`, the resume,
-starting a runner that a warm resume did not bring back, and a cold start after that):
-`sandboxes/quiesce.ts` adds them up, and one attempt keeps to a 260-second budget, going cold
-early or leaving the rest to the job's next attempt when it would not fit. If a route ever needs
+are a stop's (`ponzu-stop` has 30 seconds, then Vercel's stop and snapshot, a few seconds) and
+a wake's (up to 30 seconds waiting out a stop under way, `up()`, a stop of what was running,
+the start); a wake that has to wait longer leaves the rest to the job's next attempt. If a route ever needs
 longer than the default, switch to
 `VERCEL_EXPERIMENTAL_BACKENDS=1`, which honours `maxDuration`.
 

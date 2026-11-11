@@ -6,11 +6,12 @@ import { sessionFile } from "./testing/session-file.ts";
 
 /*
  * A design's whole life on the real services, opt in, observed through the API alone: a design
- * made with its first message in the test repository's workspace, its sandbox made from the
- * baked image on boat.dev, Claude Code drawing an artboard on the developer's Anthropic key,
- * the agent going idle, the idle stop putting the sandbox to sleep, a second message waking it
- * and being answered in the same Claude session, and the design deleted with its sandbox.
- * It spends real money (a few cents on Haiku, a few minutes of a small sandbox).
+ * made with its first message in the test repository's workspace, its Vercel sandbox created
+ * from current.json's image, Claude Code drawing an artboard on the developer's Anthropic key,
+ * the agent going idle, the idle stop putting the sandbox to sleep (ponzu-stop, then Vercel's
+ * stop and snapshot), a second message resuming it from its snapshot and being answered in the
+ * same Claude session, and the design deleted with its sandbox. It spends real money (a few
+ * cents on Haiku, a few minutes of a 2 vCPU sandbox).
  *
  *   PONZU_LIFECYCLE_LIVE=1 PONZU_API_URL=… PONZU_SESSION_FILE=… WORKOS_CLIENT_ID=… \
  *   ANTHROPIC_API_KEY=… GITHUB_TEST_REPO=owner/name CRON_SECRET=… \
@@ -18,8 +19,9 @@ import { sessionFile } from "./testing/session-file.ts";
  *
  * The API it talks to must be one the sandbox can reach, run with a short idle window
  * (PONZU_SANDBOX_IDLE_SECONDS=60) so that the stop comes within the test; it calls the
- * minute's cron itself, as Vercel would. PONZU_LIFECYCLE_COLD=1 also waits out the warm window
- * for a cold wake. Run one live test with the session file at a time.
+ * minute's cron itself, as Vercel would. PONZU_LIFECYCLE_TWICE=1 also sleeps and resumes it a
+ * second time. Every wake on Vercel boots from the snapshot, so there is no warm or cold to tell
+ * apart. Run one live test with the session file at a time.
  */
 
 const env = process.env;
@@ -180,29 +182,27 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
             ? text
             : undefined;
         });
-        marks["warm wake to answer"] = at() - asked;
+        marks["wake to answer"] = at() - asked;
         console.log(`answered in the same session: ${answered}`);
 
-        if (env.PONZU_LIFECYCLE_COLD === "1") {
+        if (env.PONZU_LIFECYCLE_TWICE === "1") {
           await until("the idle stop again", 5 * MINUTE, async () => {
             await cron();
             return sandboxState() === "asleep" || undefined;
           });
-          // A stop keeps the machine about ten minutes; after that a wake is a boot.
-          await new Promise((resolve) => setTimeout(resolve, 11 * MINUTE));
-          const coldAsked = at();
+          const againAsked = at();
           await call("POST", `designs/${designId}/messages`, { text: "Reply with the word ok." });
-          await until("the sandbox to wake cold", 3 * MINUTE, async () =>
+          await until("the sandbox to wake again", 3 * MINUTE, async () =>
             sandboxState() === "awake" ? true : undefined,
           );
-          marks["cold wake to awake"] = at() - coldAsked;
-          await until("the cold answer", 5 * MINUTE, async () => {
+          marks["second wake to awake"] = at() - againAsked;
+          await until("the second answer", 5 * MINUTE, async () => {
             const last = fromRunner((await thread()).items).at(-1);
             return last?.kind === "assistant" && /ok/i.test(String(last.payload.text))
               ? true
               : undefined;
           });
-          marks["cold wake to answer"] = at() - coldAsked;
+          marks["second wake to answer"] = at() - againAsked;
         }
       } finally {
         stop();

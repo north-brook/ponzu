@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SandboxLimits } from "@ponzu/db";
+import current from "@ponzu/runner/image/current.json" with { type: "json" };
+import type { VercelCredentials } from "@ponzu/sandbox";
 import { z } from "zod";
 import type { PosthogConfig } from "./analytics/posthog.ts";
 import type { R2Config } from "./deps/storage.ts";
@@ -26,15 +28,16 @@ const schema = z.object({
   GITHUB_APP_BOT_USER_ID: z.coerce.number().int().positive(),
   /** What Vercel's cron sends as its bearer token: the only way into `/v1/cron`. */
   CRON_SECRET: z.string().min(32),
-  BOAT_API_KEY: z.string(),
   /**
-   * The sandbox image every design's sandbox is created from: the name a bake of
-   * apps/runner/image prints. Unset, a wake fails saying so and nothing else is affected.
+   * Vercel Sandbox, off Vercel (a laptop, a script, CI): a token scoped to the team and the
+   * ponzu-api project, with their ids. All three or none. On Vercel (`VERCEL=1`) the API uses
+   * the function's OIDC token instead, and a VERCEL_TOKEN there is refused.
    */
-  PONZU_SANDBOX_SNAPSHOT: z
-    .string()
-    .regex(/^[a-z0-9-]+$/)
-    .optional(),
+  VERCEL_TOKEN: z.string().optional(),
+  VERCEL_TEAM_ID: z.string().optional(),
+  VERCEL_PROJECT_ID: z.string().optional(),
+  /** Set to "1" by Vercel on every deployment. */
+  VERCEL: z.string().optional(),
   /** Where a sandbox's runner reaches this API. */
   PONZU_API_URL: z.url().default("https://api.ponzu.design"),
   /** How long a sandbox stays awake after the last activity, in seconds. */
@@ -42,11 +45,6 @@ const schema = z.object({
   /** How many sandboxes may be waking or awake at once in one workspace, and for one owner. */
   PONZU_SANDBOX_MAX_PER_WORKSPACE: z.coerce.number().int().min(1).default(5),
   PONZU_SANDBOX_MAX_PER_OWNER: z.coerce.number().int().min(1).default(3),
-  /**
-   * How many designs may be moving onto a new image at once, across the deployment: each move
-   * is a create, a start the provider rations. A wake past it wakes the old sandbox instead.
-   */
-  PONZU_SANDBOX_MAX_MOVES: z.coerce.number().int().min(0).default(3),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
   /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
@@ -88,8 +86,11 @@ const schema = z.object({
 
 /** How designs' sandboxes are made and kept. */
 export interface SandboxConfig {
-  /** The snapshot a sandbox is created from; null when PONZU_SANDBOX_SNAPSHOT is unset. */
-  snapshot: string | null;
+  /**
+   * The image every sandbox runs: `ponzu-runner@sha256:…` in the ponzu-api project's container
+   * registry, from apps/runner/image/current.json at build time, so an image ships with the API.
+   */
+  image: string;
   /** The API's own address as a sandbox reaches it, with no trailing slash. */
   apiUrl: string;
   /** How long a sandbox stays awake after the last activity. */
@@ -97,16 +98,13 @@ export interface SandboxConfig {
   /** How many may be up at once. Until billing exists, this is what bounds the provider's bill. */
   limits: SandboxLimits;
   /**
-   * How many designs may be moving onto a new image at once (docs/cloud.md, "How images roll
-   * out"). 0 turns moving off: every design stays on the image its sandbox was made from.
-   */
-  maxMoves: number;
-  /**
-   * The label value that marks this database's sandboxes at the provider (`scope`). Every
-   * deployment shares the provider account, and a sweep destroys only what its own database
-   * should know of, so it must never take another database's sandboxes for orphans.
+   * What this database's sandbox names begin with after `pz-` (`pz-<scope>-…`). Every
+   * deployment shares the Vercel project, and reconcile looks only at its own database's names,
+   * so it never takes another database's sandboxes for orphans.
    */
   scope: string;
+  /** The token triple off Vercel; null for OIDC (on Vercel). */
+  vercel: VercelCredentials | null;
 }
 
 /**
@@ -139,7 +137,6 @@ export interface Env {
     botUserId: number;
   };
   cronSecret: string;
-  boatApiKey: string;
   sandbox: SandboxConfig;
   vault: { key: string; oldKeys: string[] };
   realtime: { url: string; secret: string };
@@ -168,6 +165,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     );
   }
   const env = parsed.data;
+  const vercel = vercelCredentials(env);
 
   let minimumClientVersions: MinimumVersions;
   try {
@@ -188,17 +186,16 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       botUserId: env.GITHUB_APP_BOT_USER_ID,
     },
     cronSecret: env.CRON_SECRET,
-    boatApiKey: env.BOAT_API_KEY,
     sandbox: {
-      snapshot: env.PONZU_SANDBOX_SNAPSHOT ?? null,
+      image: current.image,
       apiUrl: env.PONZU_API_URL.replace(/\/+$/, ""),
       idleSeconds: env.PONZU_SANDBOX_IDLE_SECONDS,
       limits: {
         perWorkspace: env.PONZU_SANDBOX_MAX_PER_WORKSPACE,
         perOwner: env.PONZU_SANDBOX_MAX_PER_OWNER,
       },
-      maxMoves: env.PONZU_SANDBOX_MAX_MOVES,
       scope: sandboxScope(env.DATABASE_URL),
+      vercel,
     },
     vault: {
       key: env.PONZU_VAULT_KEY,
@@ -223,5 +220,31 @@ export function readEnv(source: Record<string, string | undefined>): Env {
           aiContent: env.PONZU_POSTHOG_AI_CONTENT === "1",
         }
       : null,
+  };
+}
+
+/**
+ * The Vercel token triple, or null for OIDC. All three or none, and none on Vercel itself: a
+ * deployment's sandboxes run on the function's own token, which nothing can leak.
+ */
+function vercelCredentials(env: z.infer<typeof schema>): VercelCredentials | null {
+  const given = [env.VERCEL_TOKEN, env.VERCEL_TEAM_ID, env.VERCEL_PROJECT_ID];
+  if (env.VERCEL === "1") {
+    // Vercel sets project and team ids of its own on a deployment; only a token is a mistake.
+    if (env.VERCEL_TOKEN) {
+      throw new EnvError(["VERCEL_TOKEN is set on Vercel, where sandboxes use OIDC: remove it."]);
+    }
+    return null;
+  }
+  if (given.every((value) => value === undefined)) return null;
+  if (given.some((value) => value === undefined)) {
+    throw new EnvError([
+      "VERCEL_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID are all set or none of them.",
+    ]);
+  }
+  return {
+    token: env.VERCEL_TOKEN!,
+    teamId: env.VERCEL_TEAM_ID!,
+    projectId: env.VERCEL_PROJECT_ID!,
   };
 }

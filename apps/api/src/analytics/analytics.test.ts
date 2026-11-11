@@ -51,11 +51,11 @@ test("inside a request, a capture is the person's, in the workspace they reached
 test("an event about no one is kept off every profile, keyed by its workspace or its design", () => {
   const { tracked, sink } = analytics();
   tracked.capture(
-    "sandbox lost",
-    { design_id: "des_1" },
+    "sandbox restored",
+    { design_id: "des_1", kind: "rebuilt" },
     { distinctId: null, workspaceId: "ws_1" },
   );
-  tracked.capture("sandbox lost", { design_id: "des_2" });
+  tracked.capture("sandbox restored", { design_id: "des_2", kind: "rebuilt" });
   expect(sink.events.map((e) => [e.distinctId, e.properties.$process_person_profile])).toEqual([
     ["ws_1", false],
     ["des_2", false],

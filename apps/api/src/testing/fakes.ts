@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import type { Anthropic } from "../deps/anthropic.ts";
-import type { Poke, RunnerPort } from "../deps/poke.ts";
+import type { Poke } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
   type ObjectStorage,
@@ -126,42 +126,17 @@ export class FakeAnthropic implements Anthropic {
 }
 
 /**
- * Pokes, report requests and health checks, recorded instead of sent. Set `failing` to act out a
- * runner that cannot be reached at all, and `healthy` to false for one whose `/health` does not
- * answer (it exited, or is still booting). `onReport` acts out a runner that answers a request for
- * a report, as it would by calling the state route; without one the request fails as against an
- * old runner that has no such door, so a stop does not wait for a runner no test plays.
+ * Pokes, recorded instead of sent, each with the port's bearer token it carried. Set `failing` to
+ * act out a runner that cannot be reached at all (createPoke's own retry of a 502 or 503 is
+ * tested against a fetch in wake.test.ts).
  */
 export class FakePoke {
-  readonly pokes: { url: string; token: string | null }[] = [];
-  readonly reports: { url: string; token: string | null }[] = [];
-  readonly checks: { url: string; token: string | null }[] = [];
+  readonly pokes: { url: string; token: string }[] = [];
   failing = false;
-  healthy = true;
-  onReport: (() => Promise<void>) | null = null;
 
-  readonly poke: Poke = async (address) => {
-    this.pokes.push(address);
+  readonly poke: Poke = async (target) => {
+    this.pokes.push(target);
     if (this.failing) throw new Error("The runner could not be reached.");
-  };
-
-  readonly port: RunnerPort = {
-    report: async (address) => {
-      this.reports.push(address);
-      if (this.failing) throw new Error("The runner could not be reached.");
-      if (!this.onReport) throw new Error("The runner answered a report with 404.");
-      await this.onReport();
-    },
-    health: async (address) => {
-      this.checks.push(address);
-      const ok = !this.failing && this.healthy;
-      return {
-        ok,
-        status: this.failing ? null : ok ? 200 : 502,
-        error: this.failing ? "The runner could not be reached." : null,
-        ms: 0,
-      };
-    },
   };
 }
 

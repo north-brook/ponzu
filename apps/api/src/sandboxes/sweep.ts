@@ -2,44 +2,61 @@ import {
   appendThreadItemOnce,
   countSandboxRestart,
   getDesign,
-  hasHeldEvents,
-  isSandboxKnown,
+  getSandboxOwners,
   lapseEvents,
   listSandboxesToSweep,
   moveSandbox,
-  revokeRunnerTokens,
+  type SandboxRow,
   type SweptSandbox,
-  setSandboxAutoStop,
+  setSandboxExpiry,
   showAgentWaiting,
   WAKING_LEASE_MS,
 } from "@ponzu/db";
+import { parseSandboxName, type SandboxInfo, scopePrefix } from "@ponzu/sandbox";
 import type { ServerEvents } from "../analytics/events.ts";
 import type { JobDeps } from "../jobs/run.ts";
-import { AUTO_STOP_SECONDS, designSandboxes, sandboxLabels } from "./orchestrate.ts";
-import { runnerAddress, stopSandbox } from "./quiesce.ts";
-import { destroySandboxes, retireSandboxes } from "./retire.ts";
-import { startWake } from "./wake.ts";
+import {
+  EXTEND_BY_MS,
+  EXTEND_MARGIN_MS,
+  EXTEND_WITHIN_MS,
+  MAX_SESSION_MS,
+  SESSION_CYCLE_MS,
+} from "./constants.ts";
+import { runnerTarget } from "./environment.ts";
+import { sandboxName } from "./orchestrate.ts";
+import { retire } from "./retire.ts";
+import { captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
 
 /*
  * The minute's look over every sandbox that costs something or is moving (docs/cloud.md, "The
- * sandbox"). boat has no idle detection, so this is what puts sandboxes to sleep: with an
- * explicit stop, which keeps the machine warm for about ten minutes, where the provider's own
- * auto-stop (kept well ahead while awake) would not. It also brings back runners that went
- * quiet; destroys the sandboxes of settled designs, the ones whose environment carries a Claude
- * credential that was disconnected or whose owner left, and the ones nothing knows; and repairs
- * rows a crashed function left halfway through a move.
+ * sandbox"). It never resumes anything: every call it makes is pinned to a session, or reads.
+ * Each sandbox gets at most one step, the first that applies, in this order:
  *
- * Each sandbox's step is a move that holds to the state it moves from, so two sweeps at once,
- * or a sweep and a wake, cannot both act on it. Only this database's sandboxes are looked at
- * (the `scope` label): every deployment shares the provider account.
+ *   retire     the design is settled
+ *   stop       its Claude can no longer run it, or its owner left the workspace
+ *   restart    awake and its runner unheard for 90 s (after 3 in a row, it fails)
+ *   lapse      a turn it owes is past waiting for (docs/cloud.md, "A turn that never came")
+ *   stalled    its runner says it works and has written nothing for an hour
+ *   sleep      idle for the idle window, owing no turn
+ *   cycle      its session is 23.5 hours old: slept, then woken if there is work
+ *   extend     its session's deadline is less than 10 minutes off
+ *   repair     a waking or stopping row left past its lease
+ *
+ * and every tenth minute, `reconcile` compares this database's names at Vercel with its rows.
+ * Each step is a move that holds to the state it moves from, so two sweeps at once, or a sweep
+ * and a wake, cannot both act on one sandbox.
  */
 
 /** A runner unheard from for this long (the heartbeat is every 30 s) is taken as dead. */
 export const DEAD_AFTER_MS = 90_000;
-/** The provider's auto-stop is moved out once it is closer than this. */
-const EXTEND_WITHIN_MS = 10 * 60_000;
 /** Restarts in a row of a runner that never answers before the sandbox is failed. */
 const MAX_RESTARTS = 3;
+/** Reconcile runs on minutes divisible by this, and acts at most `RECONCILE_ACTIONS` times. */
+const RECONCILE_EVERY_MINUTES = 10;
+/** Vercel caps deletes at 20 a second per team; a run stays well under that. */
+const RECONCILE_ACTIONS = 10;
+/** A sign-in's sandbox this old, or whose sign-in is over, is removed by reconcile. */
+const SIGN_IN_MAX_MS = 3600_000;
 
 /*
  * A turn that never came (docs/cloud.md). An event that begins a turn and was delivered, so the
@@ -51,28 +68,28 @@ const MAX_RESTARTS = 3;
  * holds it started, whichever is later, so a cold start or a long session's resume gets its own
  * time. Two minutes is many times what a runner takes to write a turn's first item after the
  * model's first token, which comes before it reports idle; fifteen is past the slowest first
- * output of a model on a long session (a minute or so of reading the context, then thinking at
- * the most effort), and past Claude Code's own ten-minute limit on a request.
+ * output of a model on a long session, and past Claude Code's own ten-minute limit on a request.
  */
 export const OWED_IDLE_MS = 2 * 60_000;
 export const OWED_SILENT_MS = 15 * 60_000;
 /**
  * A runner that says it is working and has written nothing of the turn for an hour is stuck:
- * its sandbox is started again cold and the thread says so. The runner's own watchdog stops a
- * silent turn after twenty minutes and rewrites a long turn's item every few minutes, so this
- * is for a runner older than that, or one that is wedged.
+ * it is restarted and the thread says so. The runner's own watchdog stops a silent turn after
+ * twenty minutes and rewrites a long turn's item every few minutes, so this is for one that is
+ * wedged.
  */
 export const STALLED_MS = 60 * 60_000;
 
 export type SweepStep =
   | "retire"
-  | "sleep"
   | "stop"
   | "restart"
-  | "repair"
-  | "extend"
   | "lapse"
-  | "stalled";
+  | "stalled"
+  | "sleep"
+  | "cycle"
+  | "extend"
+  | "repair";
 
 /**
  * Whether the design owes a turn: `wait` while the one it owes may still come (the sandbox stays
@@ -97,10 +114,10 @@ function stalled(row: SweptSandbox, now: number): boolean {
 /** What the sweep does with one sandbox now, or null for nothing. */
 export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepStep | null {
   const { sandbox } = row;
-  if (row.designStatus === "settled" || !row.claudeHeld) return "retire";
+  if (row.designStatus === "settled") return "retire";
   if (sandbox.state === "awake") {
-    // Its owner disconnected Claude: nothing more may run on the credential it holds.
-    if (!row.claudeUsable) return "stop";
+    // Nothing more may run on the credential its runner holds, or for an owner who left.
+    if (!row.claudeUsable || !row.ownerMember) return "stop";
     const heard = Math.max(sandbox.awakeSince?.getTime() ?? 0, row.heardAt?.getTime() ?? 0);
     if (heard < now - DEAD_AFTER_MS) return "restart";
     const owes = owing(row, now);
@@ -108,7 +125,10 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
     if (stalled(row, now)) return "stalled";
     // A turn owed is work, whatever the runner reports: never slept on.
     if (!owes && sandbox.lastActivityAt.getTime() < now - idleMs) return "sleep";
-    if (!sandbox.autoStopAt || sandbox.autoStopAt.getTime() < now + EXTEND_WITHIN_MS) {
+    if (sandbox.sessionStartedAt && sandbox.sessionStartedAt.getTime() < now - SESSION_CYCLE_MS) {
+      return "cycle";
+    }
+    if (!sandbox.expiresAt || sandbox.expiresAt.getTime() < now + EXTEND_WITHIN_MS) {
       return "extend";
     }
     return null;
@@ -119,21 +139,33 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
   return null;
 }
 
-export type SweepCounts = Record<SweepStep | "orphaned", number>;
+/**
+ * How long to extend a session by: `EXTEND_BY_MS`, clamped so its whole length stays a margin
+ * inside Vercel's cap. Vercel caps the session's timeout from its start, so what counts is the
+ * deadline it has now, not the time already run. Zero or less means do not extend.
+ */
+export function extendBy(sandbox: Pick<SandboxRow, "sessionStartedAt" | "expiresAt">): number {
+  if (!sandbox.sessionStartedAt || !sandbox.expiresAt) return EXTEND_BY_MS;
+  const length = sandbox.expiresAt.getTime() - sandbox.sessionStartedAt.getTime();
+  return Math.min(EXTEND_BY_MS, MAX_SESSION_MS - length - EXTEND_MARGIN_MS);
+}
+
+export type SweepCounts = Record<SweepStep | "reconciled", number>;
 
 export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
   const now = deps.clock.now();
   const idleMs = deps.config.sandbox.idleSeconds * 1000;
   const counts: SweepCounts = {
     retire: 0,
-    sleep: 0,
     stop: 0,
     restart: 0,
-    repair: 0,
-    extend: 0,
     lapse: 0,
     stalled: 0,
-    orphaned: 0,
+    sleep: 0,
+    cycle: 0,
+    extend: 0,
+    repair: 0,
+    reconciled: 0,
   };
   const rows = await listSandboxesToSweep(deps.db, { now: new Date(now) });
   await Promise.all(
@@ -143,16 +175,18 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
       try {
         if (await STEPS[step](deps, row, now - idleMs)) counts[step]++;
       } catch (error) {
-        deps.log.warn("sweep_failed", { sandboxId: row.sandbox.id, step, error });
+        deps.log.warn("sweep_failed", { designId: row.sandbox.designId, step, error });
         deps.analytics.exception(error, { sweep_step: step, design_id: row.sandbox.designId });
       }
     }),
   );
-  try {
-    counts.orphaned = await destroyOrphans(deps);
-  } catch (error) {
-    deps.log.warn("sweep_failed", { step: "orphaned", error });
-    deps.analytics.exception(error, { sweep_step: "orphaned" });
+  if (new Date(now).getUTCMinutes() % RECONCILE_EVERY_MINUTES === 0) {
+    try {
+      counts.reconciled = await reconcile(deps);
+    } catch (error) {
+      deps.log.warn("sweep_failed", { step: "reconcile", error });
+      deps.analytics.exception(error, { sweep_step: "reconcile" });
+    }
   }
   return counts;
 }
@@ -160,108 +194,36 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
 type Step = (deps: JobDeps, row: SweptSandbox, idleBefore: number) => Promise<boolean>;
 
 const STEPS: Record<SweepStep, Step> = {
-  retire: async (deps, row) => {
-    const { designId } = row.sandbox;
-    await destroySandboxes(deps, await retireSandboxes(deps, designId));
-    if (row.designStatus !== "settled" && !row.ownerMember) {
-      await showAgentWaiting(deps.db, { designId, waking: false, blocker: "claude_owner_left" });
-    }
+  retire: async (deps, { sandbox }) => {
+    await retire(deps, sandbox.designId);
     return true;
   },
 
-  sleep: (deps, { sandbox }, idleBefore) => putToSleep(deps, sandbox, new Date(idleBefore)),
-
-  stop: (deps, { sandbox }) => putToSleep(deps, sandbox),
+  stop: async (deps, row) => {
+    const { designId } = row.sandbox;
+    const why = row.ownerMember ? "claude_unusable" : "owner_left";
+    const slept = await putToSleep(deps, row.sandbox, why);
+    if (!row.ownerMember) {
+      await showAgentWaiting(deps.db, { designId, waking: false, blocker: "claude_owner_left" });
+    }
+    return slept;
+  },
 
   restart: async (deps, { sandbox }) => {
-    const { db, clock, log } = deps;
-    const restarts = await countSandboxRestart(db, sandbox.id);
+    const { db, log } = deps;
+    const { designId } = sandbox;
+    const restarts = await countSandboxRestart(db, designId);
     if (restarts > MAX_RESTARTS) {
-      const failed = await moveSandbox(db, {
-        id: sandbox.id,
-        from: ["awake"],
-        to: "failed",
-        now: new Date(clock.now()),
-        changes: { failure: `Its runner stopped answering ${restarts} times in a row.` },
-      });
-      if (!failed) return false;
-      await deps.sandbox.stop(sandbox.providerId!);
-      await showAgentWaiting(db, {
-        designId: sandbox.designId,
-        waking: false,
-        blocker: "sandbox_failed",
-      });
-      log.error("runner_dead", { designId: sandbox.designId, sandboxId: sandbox.id, restarts });
+      const failure = `Its runner stopped answering ${restarts} times in a row.`;
+      if (!(await putToSleep(deps, sandbox, "failed", { failure }))) return false;
+      await showAgentWaiting(db, { designId, waking: false, blocker: "sandbox_failed" });
+      log.error("runner_dead", { designId, restarts });
       return true;
     }
     // A runner that exited for good (a revoked token, a lost lease, a bad environment) comes
-    // back only with a new start of the sandbox on a new environment: stop it, forget the
-    // environment it had, and wake it.
-    log.warn("runner_dead", { designId: sandbox.designId, sandboxId: sandbox.id, restarts });
-    if (!(await putToSleep(deps, sandbox, undefined, { claudeCredential: null }))) return false;
-    await startWake(deps, sandbox.designId, "restart");
-    return true;
-  },
-
-  repair: async (deps, row) => {
-    const { db, clock, config } = deps;
-    const { sandbox } = row;
-    const now = new Date(clock.now());
-    const moving = ["waking", "stopping"] as const;
-    // Only a move nobody has made progress on since the sweep looked.
-    const stateBefore = new Date(sandbox.stateAt.getTime() + 1);
-    if (!sandbox.providerId) {
-      // A create that never got as far as the provider, or whose answer never came back. What
-      // it may have made carries the row's labels and an environment nothing recorded, the
-      // owner's Claude credential in it: destroy that, and the runner tokens issued for it.
-      const failed = await moveSandbox(db, {
-        id: sandbox.id,
-        from: moving,
-        to: "failed",
-        now,
-        stateBefore,
-        changes: { failure: "Its wake was cut off." },
-      });
-      if (!failed) return false;
-      const made = await deps.sandbox.list({
-        labels: sandboxLabels(config.sandbox.scope, sandbox.designId, sandbox.generation),
-      });
-      await revokeRunnerTokens(db, sandbox.designId);
-      // One whose destroy fails is no row's now: the orphan sweep finds it next.
-      await destroySandboxes(
-        deps,
-        made.filter((found) => found.state !== "gone").map((found) => found.id),
-      );
-    } else {
-      const seen = await deps.sandbox.get(sandbox.providerId);
-      if (seen.state === "starting" || seen.state === "stopping") return false;
-      const moved = await moveSandbox(db, {
-        id: sandbox.id,
-        from: moving,
-        to: seen.state,
-        now,
-        stateBefore,
-        changes:
-          seen.state === "gone"
-            ? { failure: seen.reason ?? "The provider lost it." }
-            : seen.state === "awake"
-              ? { autoStopAt: seen.autoStopAt ? new Date(seen.autoStopAt) : null }
-              : {},
-      });
-      if (!moved) return false;
-      if (seen.state === "awake") return true;
-    }
-    if (row.pending) await startWake(deps, sandbox.designId, "repair");
-    return true;
-  },
-
-  extend: async (deps, { sandbox }) => {
-    await deps.sandbox.extend(sandbox.providerId!, AUTO_STOP_SECONDS);
-    await setSandboxAutoStop(deps.db, {
-      id: sandbox.id,
-      autoStopAt: new Date(deps.clock.now() + AUTO_STOP_SECONDS * 1000),
-    });
-    return true;
+    // back only with a new start: shut down what is left, and wake it.
+    log.warn("runner_dead", { designId, restarts });
+    return putToSleep(deps, sandbox, "restart", { wake: "restart" });
   },
 
   lapse: async (deps, row) => {
@@ -291,7 +253,6 @@ const STEPS: Record<SweepStep, Step> = {
     const starting = row.agentState === "working" || row.agentState === "waking";
     const fields = {
       designId,
-      sandboxId: sandbox.id,
       runnerId: row.runnerId,
       events: lapsed.map((event) => event.id),
       copies,
@@ -309,10 +270,9 @@ const STEPS: Record<SweepStep, Step> = {
       waited_ms: fields.deliveredMs,
     });
     if (starting) {
-      // It says it is working and has said nothing in all this time: a warm resume would thaw
-      // the same stuck process, so it starts cold, and the copy is the next runner's.
-      if (!(await putToSleep(deps, sandbox, undefined, { claudeCredential: null }))) return true;
-      await startWake(deps, designId, "lapsed");
+      // It says it is working and has said nothing in all this time: its runner is started
+      // again, and the copy is the next runner's.
+      await putToSleep(deps, sandbox, "restart", { wake: "lapsed" });
       return true;
     }
     // An idle runner claims the copy at once; failing that, within the minute by itself.
@@ -326,21 +286,76 @@ const STEPS: Record<SweepStep, Step> = {
     const { designId } = sandbox;
     const now = clock.now();
     await appendThreadItemOnce(db, {
-      id: `ti_stalled-${row.runnerId ?? sandbox.id}`,
+      id: `ti_stalled-${row.runnerId ?? designId}`,
       designId,
       kind: "notice",
       payload: { type: "error", code: "turn_failed", message: STALLED_SAID },
     });
     log.warn("turn_stalled", {
       designId,
-      sandboxId: sandbox.id,
       runnerId: row.runnerId,
       saidMs: row.saidAt ? now - row.saidAt.getTime() : null,
       runnerMs: row.runnerStartedAt ? now - row.runnerStartedAt.getTime() : null,
     });
     await captureAbout(deps, designId, "turn stalled", {});
-    if (!(await putToSleep(deps, sandbox, undefined, { claudeCredential: null }))) return false;
-    await startWake(deps, designId, "stalled");
+    return putToSleep(deps, sandbox, "restart", { wake: "stalled" });
+  },
+
+  sleep: (deps, { sandbox }, idleBefore) =>
+    putToSleep(deps, sandbox, "idle", { idleBefore: new Date(idleBefore) }),
+
+  // Before the session reaches Vercel's cap: a sleep, then the pending rule.
+  cycle: (deps, { sandbox }) => putToSleep(deps, sandbox, "cycle"),
+
+  extend: async (deps, { sandbox }) => {
+    const { designId, sessionId } = sandbox;
+    const by = extendBy(sandbox);
+    if (by <= 0 || !sessionId) return false;
+    const deadline = await deps.sandboxes.extend(
+      { name: sandboxName(deps, designId), sessionId },
+      by,
+    );
+    if (deadline !== null) {
+      await setSandboxExpiry(deps.db, { designId, sessionId, expiresAt: new Date(deadline) });
+      return true;
+    }
+    // Vercel already stopped the session: the row follows, and the pending rule wakes it.
+    const asleep = await moveSandbox(deps.db, {
+      designId,
+      from: ["awake"],
+      to: "asleep",
+      now: new Date(deps.clock.now()),
+      sessionId,
+    });
+    if (!asleep) return false;
+    deps.log.warn("sandbox_expired", { designId, sessionId });
+    const awakeMs = sandbox.awakeSince ? deps.clock.now() - sandbox.awakeSince.getTime() : 0;
+    await captureSlept(deps, designId, "expired", awakeMs);
+    await wakeIfPending(deps, designId);
+    return true;
+  },
+
+  repair: async (deps, row) => {
+    const { db, clock, sandboxes } = deps;
+    const { sandbox } = row;
+    const { designId } = sandbox;
+    // (A settled design's row, a retire that died among them, is the retire step's.)
+    const name = sandboxName(deps, designId);
+    const seen = await sandboxes.status(name);
+    if (seen?.status === "running" && seen.sessionId) {
+      await sandboxes.stop({ name, sessionId: seen.sessionId });
+    }
+    // Only a move nobody has made progress on since the sweep looked.
+    const asleep = await moveSandbox(db, {
+      designId,
+      from: ["waking", "stopping"],
+      to: "asleep",
+      now: new Date(clock.now()),
+      stateBefore: new Date(sandbox.stateAt.getTime() + 1),
+    });
+    if (!asleep) return false;
+    deps.log.warn("sandbox_repaired", { designId, was: sandbox.state, by: sandbox.wakingBy });
+    await wakeIfPending(deps, designId);
     return true;
   },
 };
@@ -354,10 +369,10 @@ export const STALLED_SAID =
   "Claude went quiet for an hour in the middle of this turn, so Ponzu restarted it. Send a message to pick it up again.";
 
 /** Ask the runner to claim now. A runner that does not answer claims within the minute anyway. */
-async function pokeRunner(deps: JobDeps, sandbox: SweptSandbox["sandbox"]): Promise<void> {
+async function pokeRunner(deps: JobDeps, sandbox: SandboxRow): Promise<void> {
   try {
-    const address = await runnerAddress(deps, sandbox);
-    if (address) await deps.poke(address);
+    const target = await runnerTarget(deps, sandbox);
+    if (target) await deps.poke(target);
   } catch (error) {
     deps.log.info("poke_missed", { designId: sandbox.designId, error });
   }
@@ -379,62 +394,72 @@ async function captureAbout<E extends "turn lapsed" | "turn stalled">(
 }
 
 /**
- * Put an awake sandbox to sleep with an explicit stop, once its runner is ready for it or has
- * had its time (quiesce.ts). With `idleBefore`, only if nobody has kept it awake since. False
- * when it was not this call that stopped it.
+ * This database's names at Vercel against its rows, at most `RECONCILE_ACTIONS` actions a run.
+ * Answers how many it took.
+ *
+ *   design names   a row waking or stopping inside its lease is left alone, whatever its
+ *                  session; a running sandbox is stopped, pinned to its own session, when its
+ *                  row is missing, asleep, or awake on another session (`sandbox_leak`); a name
+ *                  whose design was deleted is removed. A settled design's is retire's.
+ *   sign-in names  removed once the sign-in is over or an hour old.
  */
-async function putToSleep(
-  deps: JobDeps,
-  sandbox: SweptSandbox["sandbox"],
-  idleBefore?: Date,
-  changes?: { claudeCredential: null },
-): Promise<boolean> {
-  const { db, clock } = deps;
-  const stopping = await moveSandbox(db, {
-    id: sandbox.id,
-    from: ["awake"],
-    to: "stopping",
-    now: new Date(clock.now()),
-    ...(idleBefore ? { idleBefore } : {}),
-    ...(changes ? { changes } : {}),
+export async function reconcile(deps: JobDeps): Promise<number> {
+  const { scope } = deps.config.sandbox;
+  const now = deps.clock.now();
+  const listed = await deps.sandboxes.list(scopePrefix(scope));
+  const named = listed.flatMap((info) => {
+    const parsed = parseSandboxName(info.name);
+    // Checked again here: another deployment's sandbox is never this one's to touch.
+    return parsed && parsed.scope === scope ? [{ info, parsed }] : [];
   });
-  if (!stopping) return false;
-  // A runner that is being restarted for going quiet has nothing to say.
-  await stopSandbox(deps, stopping, { quiesce: !changes });
-  // The stop is under way; a wake that comes now waits it out.
-  await moveSandbox(db, {
-    id: sandbox.id,
-    from: ["stopping"],
-    to: "asleep",
-    now: new Date(clock.now()),
+  const owners = await getSandboxOwners(deps.db, {
+    designIds: named.filter((n) => n.parsed.kind === "design").map((n) => n.parsed.id),
+    signInIds: named.filter((n) => n.parsed.kind === "signin").map((n) => n.parsed.id),
   });
-  // A claim the runner had out as it got ready brought events it held back for the wake
-  // (docs/cloud.md, "Getting ready to sleep"); asleep, nothing would wake the design for them.
-  if (idleBefore && (await hasHeldEvents(db, sandbox.designId))) {
-    await startWake(deps, sandbox.designId, "held");
+  let actions = 0;
+  for (const { info, parsed } of named) {
+    if (actions >= RECONCILE_ACTIONS) break;
+    const action =
+      parsed.kind === "design"
+        ? designAction(info, owners.designs.get(parsed.id)!, now)
+        : signInAction(owners.signIns.get(parsed.id)!, now);
+    if (!action) continue;
+    try {
+      if (action === "remove") {
+        await deps.sandboxes.remove(info.name);
+        deps.log.warn("sandbox_orphan_removed", { name: info.name, kind: parsed.kind });
+      } else {
+        await deps.sandboxes.stop({ name: info.name, sessionId: info.sessionId! });
+        deps.log.warn("sandbox_leak", { name: info.name, sessionId: info.sessionId });
+      }
+      actions++;
+    } catch (error) {
+      deps.log.warn("reconcile_failed", { name: info.name, action, error });
+    }
   }
-  return true;
+  return actions;
 }
 
-/**
- * Destroy the design sandboxes at the provider that no design's row knows: a design deleted
- * while its destroy failed, or a sandbox a lost create made. Answers how many.
- */
-async function destroyOrphans(deps: JobDeps): Promise<number> {
-  const { scope } = deps.config.sandbox;
-  const listed = await deps.sandbox.list({ labels: designSandboxes(scope) });
-  const now = new Date(deps.clock.now());
-  const orphans: string[] = [];
-  await Promise.all(
-    listed.map(async (sandbox) => {
-      const designId = sandbox.labels.design;
-      // Checked again here: another deployment's sandbox is never this sweep's to destroy.
-      if (!designId || sandbox.state === "gone" || sandbox.labels.scope !== scope) return;
-      if (await isSandboxKnown(deps.db, { designId, providerId: sandbox.id, now })) return;
-      orphans.push(sandbox.id);
-    }),
-  );
-  if (orphans.length > 0) deps.log.warn("sandbox_orphaned", { count: orphans.length });
-  await destroySandboxes(deps, orphans);
-  return orphans.length;
+function designAction(
+  info: SandboxInfo,
+  { exists, sandbox }: { exists: boolean; sandbox: SandboxRow | null },
+  now: number,
+): "remove" | "stop" | null {
+  const held = sandbox && (sandbox.state === "waking" || sandbox.state === "stopping");
+  if (held && sandbox.stateAt.getTime() >= now - WAKING_LEASE_MS) return null;
+  // Its design was deleted; its id never comes back.
+  if (!exists) return "remove";
+  if (info.status !== "running" || !info.sessionId) return null;
+  if (!sandbox || sandbox.state === "asleep") return "stop";
+  if (sandbox.state === "awake" && sandbox.sessionId !== info.sessionId) return "stop";
+  return null;
+}
+
+function signInAction(
+  state: { exists: boolean; consumedAt: Date | null; createdAt: Date | null },
+  now: number,
+): "remove" | null {
+  if (!state.exists || state.consumedAt) return "remove";
+  if (state.createdAt && state.createdAt.getTime() < now - SIGN_IN_MAX_MS) return "remove";
+  return null;
 }

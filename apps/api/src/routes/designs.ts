@@ -49,7 +49,7 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
-import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
+import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
 import { toPersonView, WorkspacePersonView } from "./workspaces.ts";
 
 /*
@@ -357,11 +357,9 @@ export const designs = new Hono<AppEnv>()
       });
     }
     if (settled) {
-      // A settled design needs no sandbox; the minute's sweep does this too, for a merge.
-      deps.background(
-        "retire",
-        retireSandboxes(deps, design.id).then((ids) => destroySandboxes(deps, ids)),
-      );
+      // A settled design needs no sandbox; the minute's sweep does this too, for a merge. The
+      // row is held until its sandbox is deleted, so a reopen meanwhile waits for it.
+      deps.background("retire", retire(deps, design.id));
     }
     return c.json(await viewOf(deps, { ...grant, design }));
   })
@@ -379,15 +377,16 @@ export const designs = new Hono<AppEnv>()
         throw new ApiError(403, "forbidden", "Only its owner or a workspace admin can delete it.");
       }
     }
-    // Its sandboxes first, while the design is there to put their awake time down to.
-    const sandboxes = await retireSandboxes(deps, design.id);
+    // Its sandbox's row first, while the design is there to put its awake time down to.
+    const retiring = await holdForRetire(deps, design.id);
     const forget = await forgetCheckpoints(deps, design.id);
     await deleteDesign(deps.db, design.id);
     deps.analytics.capture("design deleted", {
       design_id: design.id,
       by_owner: design.ownerId === actor.user.id,
     });
-    deps.background("retire", destroySandboxes(deps, sandboxes));
+    // The row went with the design; its id never comes back, so the delete at Vercel follows.
+    deps.background("retire", finishRetire(deps, design.id, retiring));
     // Its transcripts and work in progress, which no row knows of any more.
     deps.background("checkpoints_deleted", forget());
     return c.body(null, 204);

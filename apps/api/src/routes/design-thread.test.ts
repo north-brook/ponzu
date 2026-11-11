@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import { getDesignAssetKey, getDesignHead, getQuestion, listThreadItems, newId } from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
+import { portBinding } from "../sandboxes/environment.ts";
 import {
   call,
   designIn,
@@ -33,16 +34,11 @@ const wakesOf = async (designId: string) => {
 
 /** Gives the design an awake sandbox the API can reach, as the orchestrator will record one. */
 async function awake(designId: string) {
-  const sandboxId = newId("sbx");
-  const token = await t.deps.vault.seal("port-token", {
-    column: "sandboxes.encrypted_address_token",
-    row: sandboxId,
-  });
+  const token = await t.deps.vault.seal("port-token", portBinding(designId));
   await t.db.execute(
-    `insert into sandboxes (id, design_id, provider, provider_id, state, address, encrypted_address_token, awake_since)
-     values ('${sandboxId}', '${designId}', 'boat', '${sandboxId}', 'awake', 'https://sbx.test', '${token}', now())`,
+    `insert into sandboxes (design_id, state, session_id, address, encrypted_port_token, awake_since)
+     values ('${designId}', 'awake', 'sbx_session', 'https://sbx.test', '${token}', now())`,
   );
-  await t.db.execute(`update designs set sandbox_id = '${sandboxId}' where id = '${designId}'`);
 }
 
 describe("messages", () => {

@@ -122,10 +122,10 @@ test("a failed job goes back with its error, to be tried again when asked", asyn
   await claimJobs(db, { worker: "w1" });
 
   const retryAt = new Date(Date.now() + 60_000);
-  expect(await failJob(db, { id: job!.id, worker: "w1", error: "boat 503", retryAt })).toBe(true);
+  expect(await failJob(db, { id: job!.id, worker: "w1", error: "vercel 503", retryAt })).toBe(true);
 
   expect(await stored(job!.id)).toMatchObject({
-    lastError: "boat 503",
+    lastError: "vercel 503",
     lockedBy: null,
     attempts: 1,
     runAt: retryAt,
@@ -146,15 +146,15 @@ test("a job that fails its last attempt has failed for good, and frees its key",
     expect(await enqueueJob(db, { kind: "wake", key: "des_1" })).toBeNull();
     const [claimed] = await claimJobs(db, { worker: "w1" });
     expect(claimed).toMatchObject({ id: job!.id, attempts: attempt });
-    await failJob(db, { id: job!.id, worker: "w1", error: "boat 503" });
+    await failJob(db, { id: job!.id, worker: "w1", error: "vercel 503" });
   }
 
   const dead = await stored(job!.id);
-  expect(dead).toMatchObject({ attempts: 5, lastError: "boat 503", lockedBy: null });
+  expect(dead).toMatchObject({ attempts: 5, lastError: "vercel 503", lockedBy: null });
   expect(dead.failedAt).toBeInstanceOf(Date);
   expect(dead.completedAt).toBeNull();
   expect(await claimJobs(db, { worker: "w2" })).toEqual([]);
-  // boat.dev was down for a few minutes. The design can be woken again.
+  // Vercel was down for a few minutes. The design can be woken again.
   const next = await enqueueJob(db, { kind: "wake", key: "des_1" });
   expect(next).toMatchObject({ kind: "wake", key: "des_1", attempts: 0 });
 });

@@ -83,12 +83,7 @@ export async function getAwakeSandboxAddress(
  */
 export async function beginSandbox(
   db: Db,
-  {
-    designId,
-    now,
-    by,
-    limits,
-  }: { designId: string; now: Date; by: string; limits: SandboxLimits },
+  { designId, now, by, limits }: { designId: string; now: Date; by: string; limits: SandboxLimits },
 ): Promise<SandboxClaim> {
   const at = timeParam(now);
   const result = await queryJson<MoveResult>(

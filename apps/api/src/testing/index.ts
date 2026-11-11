@@ -1,6 +1,7 @@
 import type { Db } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
-import { FakeClock, FakeProvider } from "@ponzu/sandbox";
+import type { RunnerBundle } from "@ponzu/runner/bundle";
+import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
 import { createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
 import { createApp } from "../create-app.ts";
@@ -40,12 +41,18 @@ export {
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
-/** The sandbox image the test app creates sandboxes from; its provider has it baked. */
-export const TEST_SNAPSHOT = "ponzu-runner-test";
+/** The image the test app's sandboxes run, as current.json names one. */
+export const TEST_IMAGE = `ponzu-runner@sha256:${"a".repeat(64)}`;
+/** The runner bundle the test app serves and names at every start. */
+export const TEST_BUNDLE: RunnerBundle = {
+  sha256: "b".repeat(64),
+  requires: { claude: "2.1.322", playwrightCore: "1.64.1" },
+  tgz: Buffer.from("not really a tgz").toString("base64"),
+};
 /** Where the test app tells a sandbox's runner the API is. */
 export const TEST_API_URL = "https://api.test";
-/** The label value the test app's sandboxes carry: its database's, as a deployment's would. */
-export const TEST_SCOPE = "testscope";
+/** The scope the test app's sandbox names carry (`pz-<scope>-…`): its database's, as a deployment's would. */
+export const TEST_SCOPE = "7e57000000a0";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
@@ -93,8 +100,8 @@ export type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
 /**
  * The real app on an in-process Postgres, with a fake for everything outside the process:
- * WorkOS and GitHub served from memory through the API's real clients, the in-memory sandbox
- * provider, storage and sealer, and a clock that moves only when the test moves it. Nothing a
+ * WorkOS and GitHub served from memory through the API's real clients, Vercel's sandboxes in
+ * memory (`FakeSandboxes`), storage and sealer, and a clock that moves only when the test moves it. Nothing a
  * test does through this can reach the network: no part of it holds the real `fetch`.
  *
  * Call the app with `app.request(path, init)` so routing, validation, auth and serialization
@@ -112,13 +119,13 @@ export async function createTestApp(
     /** Real storage and where it serves from, for an opt-in test against the R2 bucket. */
     storage?: ObjectStorage;
     assetsUrl?: string;
-    /** How sandboxes are made, over the test's own: a snapshot of null acts out it being unset. */
+    /** How sandboxes are made, over the test's own. */
     sandbox?: Partial<SandboxConfig>;
     /**
-     * Another test app's provider (and its clock), to act out two deployments sharing one
-     * provider account. Give each its own `sandbox.scope`.
+     * Another test app's sandboxes and clock, to act out two deployments sharing one Vercel
+     * project. Give each its own `sandbox.scope`.
      */
-    provider?: FakeProvider;
+    shared?: { sandboxes: FakeSandboxes; clock: FakeClock };
     /** What the runner is told to report its turns to PostHog with; none by default. */
     posthog?: PosthogConfig;
   } = {},
@@ -131,11 +138,10 @@ export async function createTestApp(
   db.transaction = () => {
     throw new Error("No transactions support in neon-http driver");
   };
-  const clock = options.provider?.clock ?? new FakeClock();
+  const clock = options.shared?.clock ?? new FakeClock();
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
-  const sandbox = options.provider ?? new FakeProvider(clock);
-  sandbox.seedSnapshot(TEST_SNAPSHOT);
+  const sandboxes = options.shared?.sandboxes ?? new FakeSandboxes(clock);
   const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
@@ -168,12 +174,12 @@ export async function createTestApp(
       clock,
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
-    sandbox,
+    sandboxes,
+    runnerBundle: () => TEST_BUNDLE,
     anthropic,
     storage: options.storage ?? storage,
     archives: options.storage ?? storage,
     poke: poke.poke,
-    runnerPort: poke.port,
     realtime: options.live?.realtime ?? sealer,
     model,
     reviewer,
@@ -191,13 +197,13 @@ export async function createTestApp(
       },
       cronSecret: TEST_CRON_SECRET,
       sandbox: {
-        snapshot: TEST_SNAPSHOT,
+        image: TEST_IMAGE,
         apiUrl: TEST_API_URL,
         idleSeconds: 300,
         // Higher than a deployment's, since a test file keeps many designs awake at once.
         limits: { perWorkspace: 100, perOwner: 100 },
-        maxMoves: 3,
         scope: TEST_SCOPE,
+        vercel: null,
         ...options.sandbox,
       },
     },
@@ -307,7 +313,7 @@ export async function createTestApp(
     clock,
     workos,
     github,
-    sandbox,
+    sandboxes,
     anthropic,
     storage,
     poke,

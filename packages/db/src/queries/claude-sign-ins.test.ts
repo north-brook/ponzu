@@ -24,7 +24,11 @@ test("a new sign-in replaces the open one, and hands back its id", async () => {
   const first = await open(user.id, 0);
   expect(first).toEqual({ id: expect.stringMatching(/^auth_/), replaced: [] });
   expect(await setClaudeSignInSession(db, { id: first!.id, sessionId: "sbx_1" })).toBe(true);
-  const recorded = await getAuthState(db, { id: first!.id, kind: "claude_sign_in", userId: user.id });
+  const recorded = await getAuthState(db, {
+    id: first!.id,
+    kind: "claude_sign_in",
+    userId: user.id,
+  });
   expect(recorded!.payload).toEqual({ sessionId: "sbx_1" });
 
   const second = await open(user.id, 1);
