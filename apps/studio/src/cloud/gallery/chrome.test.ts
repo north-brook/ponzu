@@ -465,7 +465,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     expect(await inside()).toEqual({ inPopover: true, ring: true });
     // Escape gives focus back to Share, ringed.
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Share");
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("aria-label") === "Share",
+    );
     expect(await rings()).toEqual(["Share"]);
     // Opened by a click, it's quiet inside and after, whatever is held.
     await page.click(share);
@@ -479,7 +481,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     await page.keyboard.up("Meta");
     // A moment after a press, focus our own code moves is quiet again.
     await new Promise((r) => setTimeout(r, 700));
-    await page.evaluate(() => document.querySelector<HTMLElement>('[aria-label="Filter"]')!.focus());
+    await page.evaluate(() =>
+      document.querySelector<HTMLElement>('[aria-label="Filter"]')!.focus(),
+    );
     expect(await rings()).toEqual([]);
   });
 });
