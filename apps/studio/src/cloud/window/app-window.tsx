@@ -193,6 +193,8 @@ export function AppWindow({
    */
   const layoutFor = useCallback(
     (opened: Record<Pane, boolean>): Layout | null => {
+      // Measured afresh: the window lays the panes out itself only now and then, never per move.
+      if (group.current) groupWidth.current = group.current.clientWidth;
       const size = axis();
       if (size <= 0) return null;
       const wanted: Partial<Record<Pane, number>> = {};
@@ -216,13 +218,23 @@ export function AppWindow({
     },
     [axis, present],
   );
+  const settle = useRef(0);
   const place = useCallback(
     (opened: Record<Pane, boolean>) => {
       const layout = layoutFor(opened);
       if (layout) groupRef.current?.setLayout(layout);
+      // Once more a frame on, unless a drag has begun: the group may lay itself out again as a
+      // pane's panel first registers, or only then take its final width.
+      cancelAnimationFrame(settle.current);
+      settle.current = requestAnimationFrame(() => {
+        if (frame.current?.hasAttribute("data-pane-drag")) return;
+        const again = layoutFor(now.current.open);
+        if (again) groupRef.current?.setLayout(again);
+      });
     },
     [layoutFor, groupRef],
   );
+  useEffect(() => () => cancelAnimationFrame(settle.current), []);
 
   // The window resized: the panes back toward the widths they were left at, as far as the
   // canvas's room allows (not during a drag, or while a toggle eases).
@@ -230,18 +242,24 @@ export function AppWindow({
     const el = group.current;
     if (!el) return;
     groupWidth.current = el.clientWidth;
+    let later: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(([entry]) => {
-      const width = entry?.borderBoxSize?.[0]?.inlineSize ?? el.clientWidth;
-      if (Math.abs(width - groupWidth.current) < 0.5) return;
-      groupWidth.current = width;
-      const busy =
-        frame.current?.hasAttribute("data-pane-drag") ||
-        frame.current?.hasAttribute("data-pane-motion");
-      if (!busy) place(now.current.open);
+      groupWidth.current = entry?.borderBoxSize?.[0]?.inlineSize ?? el.clientWidth;
+      if (frame.current?.hasAttribute("data-pane-drag")) return;
+      clearTimeout(later);
+      // While a toggle eases, once it has.
+      if (frame.current?.hasAttribute("data-pane-motion")) {
+        later = setTimeout(() => place(now.current.open), motion.ms() + 64);
+      } else {
+        place(now.current.open);
+      }
     });
     observer.observe(el);
-    return () => observer.disconnect();
-  }, [place]);
+    return () => {
+      clearTimeout(later);
+      observer.disconnect();
+    };
+  }, [place, motion]);
 
   // Opens and closes the panes as their toggles say: at once when the window first draws them,
   // easing after that. A panel may collapse only while its pane is closing or closed, so that
