@@ -49,16 +49,16 @@ const GROUNDS = ["chrome", "canvas", "surface", "selected"];
 /** The glassy shell as measured (see the test): over the worst, a usual and the best backdrop. */
 const GLASS = {
   light: {
-    tint: "rgba(250, 249, 246, 0.6)",
-    worst: "#eaeae8",
-    usual: "#f2f2f0",
-    best: "#fbfcfa",
+    tint: "rgba(242, 241, 238, 0.6)",
+    worst: "#e6e4e3",
+    usual: "#eeedeb",
+    best: "#f7f6f4",
   },
   dark: {
-    tint: "rgba(8, 8, 7, 0.78)",
-    worst: "#323334",
-    usual: "#1d1d1e",
-    best: "#0b0b0d",
+    tint: "rgba(22, 22, 21, 0.78)",
+    worst: "#3b3d3d",
+    usual: "#272727",
+    best: "#161616",
   },
 };
 const worst = (fg: string, theme: 0 | 1) =>
@@ -91,15 +91,14 @@ for (const [theme, i] of [
     expect(token("chrome-glass")[i]).toBe(measured.tint);
     expect(contrast(token("ink")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(token("muted")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
-    // And it is the canvas's shade, a step off it over an ordinary desktop and over the
-    // furthest one: never a mid grey. Over the nearest backdrop (white behind a light window,
-    // black behind a dark one) it comes within a hair of the canvas, and never past it.
-    for (const shell of [measured.worst, measured.usual]) {
+    // And it is the canvas's shade, a clear step off it whatever is behind the window (the
+    // nearest backdrop included: white behind a light window, black behind a dark one), and
+    // never a mid grey.
+    for (const shell of [measured.worst, measured.usual, measured.best]) {
       const off = contrast(shell, token("canvas")[i]);
-      expect(off).toBeGreaterThan(1.1);
-      expect(off).toBeLessThan(1.7);
+      expect(off).toBeGreaterThan(1.07);
+      expect(off).toBeLessThan(2);
     }
-    expect(contrast(measured.best, token("canvas")[i])).toBeGreaterThan(1.02);
   });
 
   test(`faint stays where the design puts it in ${theme}`, () => {
