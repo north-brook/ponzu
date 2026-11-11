@@ -346,11 +346,16 @@ export function sampleToggle(page: Page, selector: string): Promise<Frame[]> {
         measure();
         ro.observe(main);
         (document.querySelector(selector) as HTMLElement).click();
-        setTimeout(() => {
-          ro.disconnect();
-          measure();
-          resolve(frames);
-        }, 700);
+        // Rested: the panes' clock and as much again.
+        const pane = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
+        setTimeout(
+          () => {
+            ro.disconnect();
+            measure();
+            resolve(frames);
+          },
+          Math.max(700, 2 * (Number.parseFloat(pane) || 0) + 300),
+        );
       }),
     selector,
   );

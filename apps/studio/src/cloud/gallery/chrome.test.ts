@@ -74,6 +74,11 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
 
   test("each pane opens and closes on one clock, and the chrome moves on it within a pixel", async () => {
     await open("team-sidebar", "no-preference");
+    // The panes' clock slowed to a second, so even a busy machine (CI) draws many frames of each
+    // move; the hover clock with it, in proportion (the name's fade).
+    await page.addStyleTag({
+      content: ":root { --dur-pane: 1000ms !important; --dur-hover: 545ms !important; }",
+    });
     const times: number[] = [];
     const gaps: number[] = [];
     for (const state of ["closing", "opening"]) {
@@ -82,7 +87,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       // Frames between, not a jump (a busy CI machine draws fewer of them).
       expect(
         sidebar.filter((_, i) => clock[i]! > 0.05 && clock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(2);
+      ).toBeGreaterThanOrEqual(5);
       gaps.push(gap(sidebar));
       expect(drift(sidebar, clock, "divider")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "tab")).toBeLessThanOrEqual(1);
@@ -100,7 +105,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       const railClock = progress(rail, "right");
       expect(
         rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(2);
+      ).toBeGreaterThanOrEqual(5);
       gaps.push(gap(rail));
       // The cluster's divider keeps to the cluster, which holds still at the window's edge.
       expect(drift(rail, railClock, "railDivider")).toBe(0);
