@@ -52,8 +52,9 @@ The image installs `dist/` (say in `/opt/ponzu-runner`), runs `bun install --pro
 for playwright-core, and installs `ponzu-runner.service` with `{{BUN}}` and `{{RUNNER_DIR}}`
 filled in. The unit waits for the environment file boat writes at every start
 (`/run/ascii-secrets/env.sh`), exports it and starts `bun runner.js` as `user`. It restarts on
-failure, except on exit 78, which means the environment is wrong and only a new start of the
-sandbox can mend it. On SIGTERM the runner stops the turn, lets the agent's edits reach the
+failure, except on exit 78, which means only a new start of the sandbox can mend it: the
+environment is wrong, the API revoked the runner token (the design was deleted or settled), or
+a newer runner took over the design's lease. On SIGTERM the runner stops the turn, lets the agent's edits reach the
 API, writes the final state and exits, within the unit's 20 seconds.
 
 Tested on Bun 1.4.2 (the repo's) on macOS, and the built bundle uses only what Bun 1.3 has
@@ -83,8 +84,10 @@ Tested on Bun 1.4.2 (the repo's) on macOS, and the built bundle uses only what B
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
 
 Repo secrets arrive as more variables in the same file and pass through to Claude Code and its
-tools. The agent's environment holds the runner token too: git's credential helper needs it,
-and anything running as `user` could read it from the runner anyway.
+tools. The agent's environment holds the runner token and the Claude credential too: git's
+credential helper needs the one and Claude Code the other, and anything running as `user` could
+read both from `/proc` anyway. What that exposes, and to whom, is under "What a hostile repo
+or a hostile comment can do" below.
 
 ## The port
 
@@ -121,8 +124,15 @@ token it issued for the design.
 - Ponzu's instructions are appended to the `claude_code` system prompt; the canvas tools are
   the in-process MCP server `ponzu`, always loaded rather than behind tool search.
 
-**What a hostile repo can therefore do:** anything its hooks, MCP servers, skills or code can
-do as `user` in the sandbox, which is what running its dev server could do anyway. That
-reaches the Claude credential, a one-hour token for that one repository, the runner token
-(this design's canvas, thread and events) and the repo's own secrets, and nothing of any
-other design. The sandbox is the boundary (docs/cloud.md, "Security").
+**What a hostile repo or a hostile comment can do.** A repo's hooks, MCP servers, skills and
+code run as `user` in the sandbox. So does whatever the agent is talked into: anyone whose
+words become a prompt (a person commenting on the design, anyone reviewing its pull request,
+which on a public repo is anyone on GitHub, a check's log) can try to make the agent run a
+command. Either way that reaches the Claude credential, a one-hour token for that one
+repository, the runner token and the repo's own secrets, and nothing of any other design.
+The runner keeps the exposure down where it can: other people's words reach the model quoted,
+under instructions that quoted text never directs it; the runner token can only write what an
+agent could anyway (a runner cannot write the API's own notices, such as a pull request's); and
+the lease means a stolen token can stop this design's runner but not act beside it. It cannot
+hide the credentials from what runs as the same user. docs/cloud.md ("Security") has the whole
+threat and the hardening that closes it.

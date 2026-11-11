@@ -404,6 +404,7 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   `ponzu`, so they start without an approval prompt nobody could answer. A hostile repo can
   therefore do anything as `user` that its code could: reach the Claude credential, a token
   for its own repository, the runner token and its own secrets. Nothing of another design.
+  So can anyone who talks the agent into it ("Security": prompt injection).
 - **Ponzu's part.** `CLOUD_INSTRUCTIONS` and a line on the checkout are appended to the
   `claude_code` system prompt. The canvas tools are the in-process MCP server `ponzu`,
   always loaded rather than behind tool search, each tool's `ToolDef` mapped to the SDK's
@@ -522,6 +523,13 @@ When Claude asks a question, wants a secret, or hands off a link, the runner wri
 a question row. Every client shows it in the composer, the design's row shows a
 count, and the phone gets a push. An answer is an event with priority `now`.
 
+A question outlives the sandbox's sleep. The API keeps a sandbox awake only while its
+runner is `working`, so one that waits on a person sleeps after five minutes; its question
+stays open, the design stays `needs_you`, and the answer wakes the sandbox and goes into
+the resumed session as a message that says again what was asked. A question is withdrawn
+only when the run moves on: a person stops the turn, or the turn ends, or the next turn
+ends for one an earlier run left open.
+
 Questions are rows that clients watch, and neither they nor events are encrypted.
 The answer to a request for a secret is therefore not the secret: the API encrypts
 the value into the repo's secrets, and the question and the event carry only the
@@ -555,32 +563,46 @@ behind these routes, and is the reference for what each answers.
 - **Who.** The bearer is the runner token (`pzr_…`), declared with `access.runner`. A runner
   route acts on `actor.designId` and takes no design id; a document route's `:id` that is not
   the token's design answers 404 `not_found`. A token that is unknown, expired or revoked
-  answers 401 `token_invalid` everywhere, and the runner then stops for good (exit 78) until
-  the sandbox is started with a new one. The runner names itself: `X-Ponzu-Client:
-  runner/<version>`.
+  answers 401 `token_invalid` everywhere. The API revokes a design's runner tokens when the
+  design is deleted or settled, so that is also how a runner hears its design is gone. The
+  runner names itself: `X-Ponzu-Client: runner/<version>`.
+- **One runner at a time: the lease.** `POST /v1/runner/session` mints a runner id (`rnr_…`)
+  and records it as the design's runner, replacing any before it. Every other call, the
+  document routes and git's credential helper included, carries it as `X-Ponzu-Runner`, and
+  the API answers 409 `superseded` to a call without the current one. Two processes for one
+  design (a botched restart, a second sandbox) would otherwise resume the same Claude session
+  and act on the same events twice; with the lease the older one is refused at its next call.
+- **Stopping for good.** On 401 `token_invalid` or 409 `superseded`, from any call, the
+  runner interrupts the turn, writes nothing more, closes Claude Code and exits 78, which
+  systemd does not restart (`RestartPreventExitStatus`). Only a new start of the sandbox, with
+  a new environment, brings a runner back.
 - **Batch, never chat.** The sandbox is in the EU and the API in US East, about 100 ms each
   way, so each route takes many things at once and the runner sends what piled up: thread
-  writes at most about three a second, state when it changes and on a heartbeat, acks in
-  batches. Nothing on the runner waits on a call except its start and an upload.
+  writes at most about three a second, state when it changes and on a heartbeat, acks,
+  questions and usage in batches. Nothing on the runner waits on a call except its start and
+  an upload.
 - **Retries.** A call that gets no answer, or 408, 429 or a 5xx, is sent again unchanged after
-  a wait that doubles from half a second to half a minute. Every route is safe to repeat, as
-  each says below. Any other 4xx is not retried: it is logged, and what it carried is dropped,
-  except an acknowledgement, which the runner keeps sending until the API takes it. The
-  thread, state and acks are retried for as long as the runner lives; a question, a
-  withdrawal or usage is given up after five tries.
+  a wait that doubles from half a second to half a minute, for as long as the runner lives:
+  thread writes, state, acks, questions, withdrawals and usage alike. Every route is safe to
+  repeat, as each says below. Any other 4xx is not retried: the runner logs it and drops what
+  it carried. A question the API refuses is taken back from the agent (its tool call is denied
+  with a reason, so the turn goes on) and said in the thread (`question_failed`).
 - **Errors** are the API's: `{ "error": { "code", "message" } }`. Beyond the common ones
   (`invalid_request`, `payload_too_large`, `rate_limited`, `database_unavailable`,
   `upstream_unavailable`), a route lists those that mean something to the runner.
-- JSON is camelCase; times are ISO 8601; ids the runner chooses are a prefix and 16
-  characters of the API's alphabet (`packages/db/src/ids.ts`).
+- **Ids the runner chooses** (`ti_…`, `q_…`) are a prefix and 16 characters of the API's
+  alphabet (`packages/db/src/ids.ts`), and the API keys them by design: a thread item or a
+  question is found by `(design_id, id)`, so the same id in another design is another row,
+  and nothing a runner sends can reach or reveal another design's.
+- JSON is camelCase; times are ISO 8601.
 
 ### Routes
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/v1/runner/session` | none | `RunnerSession` |
-| POST | `/v1/runner/events/claim` | `{ restart?: boolean, limit?: number }` | `{ events: RunnerEvent[], seq }` |
-| POST | `/v1/runner/events/ack` | `{ ids: string[] }` | `{ acked: number }` |
+| POST | `/v1/runner/session` | `{}` | `RunnerSession`, with the lease `runnerId` |
+| POST | `/v1/runner/events/claim` | `{ limit?: number }` | `{ events: RunnerEvent[], seq }` |
+| POST | `/v1/runner/events/ack` | `{ ids: string[], claudeSessionId: string \| null }` | `{ acked: number }` |
 | POST | `/v1/runner/thread` | `{ items: ThreadWrite[] }` | `{ items: [{ id, seq, streaming }] }` |
 | PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId }` | `{ seq }` |
 | POST | `/v1/runner/questions` | `{ id, kind, payload }` | `{ id, status }` |
@@ -597,29 +619,35 @@ behind these routes, and is the reference for what each answers.
 | POST | runner `/poke` | none | 204 |
 | GET | runner `/health` | none | `{ ok: true, state }` |
 
+Every route but the session's, the upload `PUT` and the runner's own two answers 409
+`superseded` without the current `X-Ponzu-Runner`.
+
 ### Session
 
-`GET /v1/runner/session` is the runner's first call: everything it needs to start, read-only.
+`POST /v1/runner/session` is the runner's first call: everything it needs to start, and the
+lease.
 
 ```
 RunnerSession = {
+  runnerId,                                      // rnr_…, this process's lease: X-Ponzu-Runner
   design: { id, name },
   repo: { owner, name, defaultBranch } | null,   // null for Scratch
   branch: string | null,                         // pz/<topic>, null for Scratch
-  claudeSessionId: string | null,                // the last one the runner reported
+  claudeSessionId: string | null,                // the last one an ack or a state report named
   model: string | null, effort: "low" | "medium" | "high" | "xhigh" | "max" | null,
   author: { name, email },                       // the person: <id>+<login>@users.noreply.github.com
   committer: { name, email },                    // the App's bot
   assetBase,                                     // https://assets.ponzu.cloud/<asset key>
   link,                                          // opens the design in Ponzu
   theme: "light" | "dark" | null,                // the owner's canvas, once known
-  openQuestions: string[],                       // left open by an earlier run
+  openQuestions: string[],                       // still open from an earlier run
   seq                                            // the design's head
 }
 ```
 
-The runner withdraws `openQuestions` at once: the run that asked them is gone. 404
-`not_found` when the design is gone or settled.
+Each call mints a new `runnerId` and makes it the design's; the runner keeps the last one it
+was answered with, so a retry after a lost answer is safe. `openQuestions` stay open: their
+answers come in as messages (Questions).
 
 ### Events
 
@@ -631,34 +659,50 @@ Person      = { id, name, login }
 | Kind | Priority | Payload | Into the run |
 |---|---|---|---|
 | `message` | now | `{ text }` | a user message, priority `now`, as from a person |
-| `answer` | now | `{ questionId, answers?: { [question]: answer }, approved?, note? }` | to the question waiting for it; when none is (its run ended), a message |
+| `answer` | now | `{ questionId, question: { kind, payload }, answers?: { [question]: answer }, approved?, note? }` | to the question waiting for it; when none is (its run ended, the sandbox slept), a message that says again what was asked, from `question` |
 | `comment` | now on a board in `agent_artboards`, else next | `{ threadId, messageId, text, reply, artboardId, artboardName, nodeId }` | a user message, priority `now` or `next` |
-| `edit` | later | `{ summary, artboards: [{ id, name }] }` | held until the agent next calls a canvas tool (then priority `next`, read right after that call) or something starts its next turn (then ahead of it); never starts a turn |
+| `edit` | later | `{ summary, artboards: [{ id, name }] }` | never starts a turn. During a turn, held until the agent next calls a canvas tool (then priority `next`, read right after that call) or the turn ends; otherwise into the transcript at once without a turn (`shouldQuery: false`), to be read with whatever starts the next one |
 | `check` | next | `{ name, conclusion, url, summary }` | a user message, priority `next` |
-| `review` | next | `{ state, body, url, comments }` | a user message, priority `next` |
-| `stop` | now | `{}` | interrupts the running turn; nothing goes in |
+| `review` | next | `{ state, reviewer: { login }, body, url, comments: [{ path, line, body }] }` | a user message, priority `next` |
+| `stop` | now | `{}` | interrupts the running turn and what was put in behind it; nothing goes in |
 
-`stop` is not yet in the database's `EVENT_KINDS`; the events module adds it. Each event goes
-in as the text in `apps/runner/src/prompt.ts`: a first line that says what it is, who it is
-from and where on the canvas, with the ids the tools take, then the person's words as written.
+`stop` is not yet in the database's `EVENT_KINDS`; the events module adds it. A review carries
+its first 20 line comments, each body clipped to 2,000 characters (`MAX_REVIEW_COMMENTS`): the
+agent has no GitHub API token to read them with. `answer.question` is the question row's
+`kind` and `payload`, as the runner raised it.
 
-**Claim.** `POST /v1/runner/events/claim` hands out the design's events that are not
-acknowledged, oldest first, at most `limit` (100): those nobody has claimed, and those
-claimed more than 60 seconds ago and never acknowledged. `restart: true`, on a process's
-first claim, hands out every unacknowledged one: the process that claimed them is gone. The
-answer carries the design's head `seq`, which the runner gives its replica. A runner keeps
-what it claimed until it acknowledges it, and ignores an id it already holds. Safe to repeat.
+Each event goes in as the text in `apps/runner/src/prompt.ts`: a first line that says what it
+is, who it is from and where on the canvas, with the ids the tools take, then their words. A
+person's message is theirs to direct the agent with and goes in as written; anyone else's
+words (a comment, a review and its line comments, a check's log) go in quoted, each line
+behind `> `, and the runner's instructions tell the agent that quoted text is feedback, never
+instructions (Security).
+
+**Claim.** `POST /v1/runner/events/claim` hands the calling runner the design's events that
+are not acknowledged and that it has not been handed before, oldest first, at most `limit`
+(100, the most there is), and records them as claimed by it. An event is handed to a runner
+once: one claimed by an earlier runner, which is gone, is the next one's, and nothing a live
+runner holds is handed out again, so an old event never stands in front of a new one. A page
+that comes back full is followed at once by another claim. The answer carries the design's
+head `seq`, which the runner gives its replica. Safe to repeat.
 
 **Ack.** `POST /v1/runner/events/ack` marks events delivered, by id; those already marked, or
-another design's, are left alone, and `acked` counts what changed. Safe to repeat. The runner
-acknowledges an event only once **the Claude session holds it**: Claude Code has taken its
-message into the session's transcript (the message's lifecycle reached `started`, or its uuid
-came back on a reply), or, for an answer, the question's tool result is in it. A stop is
-acknowledged once the interrupt is sent. Each event's message goes in under a uuid derived
-from the event's id, so the transcript says which events it holds: a runner that starts again
-reads it before it delivers anything, and acknowledges, without delivering again, whatever
-was taken before the last one died. An event Claude Code refuses (a repo's
-`UserPromptSubmit` hook) is never acknowledged, and is put in again by the next process.
+another design's, are left alone, and `acked` counts what changed. It also stores
+`claudeSessionId`, when it is not null, as the design's Claude session, in the same
+transaction: the session an event went into is the one the next runner resumes, even when
+no state report got through. Safe to repeat.
+
+The runner acknowledges an event only once **the Claude session holds it**: Claude Code has
+taken its message into the session's transcript (the message's lifecycle reached `started`,
+or its uuid came back on a reply), or, for an answer, the question's tool result is in it.
+Until Claude Code has said which session that is, those acks wait. Each event's message goes
+in under a uuid derived from the event's id, so the transcript says which events it holds: a
+runner that starts again reads it before it delivers anything, and acknowledges, without
+delivering again, whatever was taken before the last one died. Some are acknowledged without
+going in, with `claudeSessionId` null when nothing else in the batch went in: a stop once its
+interrupt is sent; what a stop cancelled; a kind this runner does not know; and a message
+Claude Code turned away (a repo's `UserPromptSubmit` hook), which would only be turned away
+again and is said in the thread instead (`message_refused`).
 
 ### The thread
 
@@ -671,24 +715,34 @@ assistant   { text }                    markdown, streams                 the ru
 tool        { label, steps, artboards } one stretch of work               the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
             { type: "question", questionId, header, text }                the runner
-            { type: "stopped", by: Person | null }                        the runner
             { type: "error", code, message }                              the runner
+            { type: "stopped", by: Person | null }                        the API, from the runner's
+                                                                          { type: "stopped", eventId }
             { type: "pull_request", number, url, title, state }           the API
 ```
 
 A client renders the thread from these alone. A `tool` item is a stretch of tool calls
 between two things the agent says, folded to one line: while it streams it is the working
 line ("Reading the repo", `Drawing "Pricing · B"`, "Running the dev server", or what the agent
-said with set_status); finished ones may be folded or hidden. No tool input or output is
-written. `error` codes: `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`,
-`max_turns`, `turn_failed`, `agent_exited`. The `waking` notice becomes `resumed` or
+said with set_status); once finished it is named by the step that says most about it (what
+the agent made over what it ran over what it read), and may be folded or hidden. `artboards`
+are the boards the agent is on during the stretch. No tool input or output is written. An
+`assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
+`clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
+`agent_exited`, `message_refused`, `question_failed`. The `waking` notice becomes `resumed` or
 `started` once Claude Code is up.
 
 `POST /v1/runner/thread` writes items by the id the runner chose (`ti_…`): an id the thread
 does not have is appended, an item still streaming has its payload replaced, and a finished
 one is left as it is (the answer says `streaming: false`, and the runner sends nothing more
-for it). At most 32 items a call; agent text is clipped to 32,000 characters, so a payload
-stays far under the table's 256 KB. Safe to repeat.
+for it). A runner writes only `assistant`, `tool` and the notices it owns (`ThreadWrite`):
+`waking`, `resumed`, `started`, `question`, `error`, and `stopped` as `{ type: "stopped",
+eventId }` naming one of the design's `stop` events, which the API stores as `{ type:
+"stopped", by }` with the person from that event. Any other notice type, or a `stopped` that
+names no stop of the design, is 400 `invalid_request` and the whole write is refused: what only
+the API knows (a pull request, who stopped the run) is never taken from a sandbox, where the
+agent can run anything. At most 32 items a call; agent text is clipped to 32,000 characters,
+so a payload stays far under the table's 256 KB. Safe to repeat.
 
 ### State
 
@@ -701,10 +755,13 @@ stays far under the table's 256 KB. Safe to repeat.
   claudeSessionId: string | null }
 ```
 
-The runner sends it when it changes, at most twice a second, and every 30 seconds whatever
-happens: the **heartbeat**. The API stores the session id for the next resume, keeps a
-sandbox awake while its runner reports `working`, and takes one it has not heard from in 90
-seconds as dead. The answer is the design's head `seq`. Safe to repeat: the last one wins.
+`needs_you` while the agent waits on a person, and while a question it asked stays open
+after its run (Questions); `status` while not working is a clone that failed or a turn that
+failed on Claude's credential or limit, until a turn works. The runner sends it when it
+changes, at most twice a second, and every 30 seconds whatever happens: the **heartbeat**.
+The API stores the session id, when not null, for the next resume, keeps a sandbox awake while
+its runner reports `working`, and takes one it has not heard from in 90 seconds as dead. The
+answer is the design's head `seq`. Safe to repeat: the last one wins.
 
 ### Questions
 
@@ -719,9 +776,12 @@ permission  { tool, title, description }
 ```
 
 The person's answer comes back as an `answer` event. When the run moves on without one (the
-turn ended, a person stopped it, the sandbox is going to sleep), the runner withdraws it
-with `POST /v1/runner/questions/withdraw`; the API marks open ones cancelled and leaves
-the rest. Both are safe to repeat.
+turn ended, a person stopped it), the runner withdraws it with `POST
+/v1/runner/questions/withdraw`; the API marks open ones cancelled and leaves the rest. A
+question is never withdrawn because the sandbox goes to sleep: it stays open, and its answer
+wakes the sandbox and goes into the resumed session as a message (Needs you). One left open
+by an earlier run is withdrawn when the next turn ends. The runner sends a question before
+any withdrawal of it. Both are safe to repeat.
 
 ### Uploads
 
@@ -738,22 +798,25 @@ for an id whose bytes never arrived.
 
 ### Git
 
-The checkout's git asks for credentials through a helper, `bun git-credential.js`
+The checkout's git asks for credentials through a helper, `bun git-credential.js <runner id>`
 (`credential.https://github.com.helper`, with `credential.https://github.com.useHttpPath
 true`, and an empty helper before it so no other is asked). It reads the runner token from the
-environment git passes on, writes nothing down, and calls `POST /v1/runner/git-credential`
-with what git asked: `{ protocol: "https", host: "github.com", path: "<owner>/<name>.git" }`.
-The API mints a one-hour installation token for that one repository (`contents: write`,
-`metadata: read`), or reuses one with ten minutes or more left. 403 `forbidden` for any other
-host or repository, 404 `not_found` for Scratch, 502 `upstream_unavailable` when GitHub
-fails. When GitHub refuses a token, git calls `erase`, and the API drops the token it was
-reusing. Both are safe to repeat.
+environment git passes on, sends the runner id it was configured with as `X-Ponzu-Runner`, so
+the git of a superseded runner gets nothing, writes nothing down, and calls `POST
+/v1/runner/git-credential` with what git asked: `{ protocol: "https", host: "github.com",
+path: "<owner>/<name>.git" }`. The API mints a one-hour installation token for that one
+repository (`contents: write`, `metadata: read`), or reuses one with ten minutes or more
+left. 403 `forbidden` for any other host or repository, 404 `not_found` for Scratch, 502
+`upstream_unavailable` when GitHub fails. When GitHub refuses a token, git calls `erase`, and
+the API drops the token it was reusing. Both are safe to repeat.
 
 At start the runner sets `author.*` to the person and `committer.*` to the App's bot in the
 global git config, clones the repository into `~/work/<name>` (or fetches, when the disk kept
 it), and checks out the design's branch: the local one, else the one on GitHub, else a new one
 from `origin/<default branch>`. Work on disk is never reset. A clone that fails is a
-`clone_failed` notice and the run goes on in an empty folder, so the canvas still works.
+`clone_failed` notice and the design's status, and the run goes on in an empty folder, so the
+canvas still works; the agent is told the repository could not be checked out, and the next
+start of the sandbox tries again.
 
 ### Usage
 
@@ -786,7 +849,8 @@ The sandbox starts the runner (a systemd service that sources boat's
 exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to
 start: Claude Code would use the key without a word and bill its account. The rest is
 optional and in `apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
-the agent's edits to reach the API, reports its final state and exits.
+the agent's edits to reach the API, reports its final state (`needs_you` when a question
+stays open) and exits.
 
 ## Assets and previews
 
@@ -852,6 +916,24 @@ with a key that exists only in the API's environment. Each is bound to the row a
 column it is stored in, so a value copied anywhere else does not decrypt, and each
 names the key that encrypted it, so the key can be rotated.
 
+**Prompt injection.** The agent runs as the sandbox's user with permissions bypassed, beside
+the owner's Claude credential (in Claude Code's environment, and in `/proc` for anything
+running as that user), the runner token and the repo's secrets. Anyone whose words reach the
+model can try to talk it into a command: a person commenting on the design, anyone reviewing
+its pull request (on a public repository, anyone on GitHub), a check's log, the repo's own
+files. Such a command can read and send the Claude credential, the runner token and the repo's
+secrets. What limits it today: other people's words reach the model quoted, under instructions
+that quoted text is feedback and never asks for credentials or for anything to be sent
+elsewhere; the runner token is good for one design and can write nothing an agent could not
+(a runner cannot write the API's notices, such as a pull request's), and a stolen one can at
+most take the lease and stop that design's runner; a git token is good for an hour and one
+repository. Scrubbing the credential from what the agent's tools inherit
+(`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`) is not used: in Claude Code 2.1.322 it turns
+`bypassPermissions` back to `default` unless every tool is listed in `allowedTools`, and
+anything running as the same user reads the environment from `/proc` anyway. The boundary that
+closes this is in Hardening: Claude Code's tools as a user of their own, and the Claude
+credential behind an egress proxy, so nothing in the sandbox holds it.
+
 Every route says who may call it (anyone, a signed-in person, a design's
 runner, or either of those two), and a route that does not is refused. A whole
 area can be declared for people or for runners; opening a route to anyone is
@@ -891,8 +973,8 @@ from `cloud` into `main`, released as the next major version.
 3. **The apps.** Desktop shell, studio, mobile.
 4. **Billing.**
 5. **Cutover.** Delete the local runtime, rewrite the docs and the site, release.
-6. **Hardening.** Egress proxy for credentials, limits, observability, abuse
-   controls, the picture tier.
+6. **Hardening.** Egress proxy for credentials, Claude Code's tools as a user apart
+   from the runner's, limits, observability, abuse controls, the picture tier.
 
 ## Known constraints
 
