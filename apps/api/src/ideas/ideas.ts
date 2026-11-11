@@ -26,9 +26,11 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
 /**
  * The way ideas are made, kept with them (`repos.ideas_version`). An empty list an earlier way
  * wrote is made again at the next ask, push or not. 1: a repo with nothing built yet gets
- * ideas, where before it got none, so those it was skipped for get theirs.
+ * ideas, where before it got none, so those it was skipped for get theirs. 2: a product may be
+ * named by its own name even when that is a word like "ponzu" or "gpt", which had every answer
+ * for such a repo turned away.
  */
-export const IDEAS_VERSION = 1;
+export const IDEAS_VERSION = 2;
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -264,7 +266,7 @@ export interface Tally {
  */
 export async function askForIdeas(
   model: Model,
-  { instructions, prompt, fresh }: IdeasRequest,
+  { instructions, prompt, fresh, own }: IdeasRequest,
   {
     signal,
     tally,
@@ -290,7 +292,7 @@ export async function askForIdeas(
     tally.usage.input += answer.usage.input;
     tally.usage.output += answer.usage.output;
     const checked: ReturnType<typeof checkIdeas> = answer.output
-      ? checkIdeas(answer.output, { fresh, instructions })
+      ? checkIdeas(answer.output, { fresh, instructions, own })
       : { ok: false, reason: `it was not in the shape asked for (${answer.finishReason})` };
     if (checked.ok) return { ideas: checked.ideas };
     rejected = checked.reason;
