@@ -21,7 +21,7 @@ import type { Sequencer } from "@ponzu/core/testing";
 import type { Renderer, RenderRequest } from "@ponzu/render";
 import type { Telemetry } from "../context.ts";
 import { jsonSchema, runTool } from "../define.ts";
-import { readGiven } from "../disk.ts";
+import { type AgentFiles, FileError, localFiles, readGiven } from "../disk.ts";
 import { tools as localTools } from "../local/tools.ts";
 import { MAX_ASSET_BYTES } from "./asset.ts";
 import { CLOUD_INSTRUCTIONS, cloudGuides } from "./guides.ts";
@@ -691,7 +691,7 @@ test("add_asset says plainly what it won't take", async () => {
   expect(await fails({ path: join(dir, "ok.png"), name: "ok" })).toContain("isn't a kind of file");
   expect(await fails({ path: join(dir, "empty.png") })).toBe(`${join(dir, "empty.png")} is empty.`);
   expect(await fails({ path: join(dir, "huge.mp4") })).toContain(
-    "huge.mp4 is 20 MB; the most is 20 MB. Make it smaller first",
+    "huge.mp4 is more than 20 MB, the most it takes. Make it smaller first",
   );
   expect(host.assets.size).toBe(0);
 });
@@ -746,12 +746,48 @@ test.skipIf(process.platform !== "linux")(
   async () => {
     const environ = "/proc/self/environ";
     expect((await readFile(environ)).length).toBeGreaterThan(64);
-    await expect(readGiven(environ, 64, "Use less.")).rejects.toThrow(
-      `${environ} is more than 1 KB; the most is 1 KB. Use less.`,
+    await expect(readGiven(localFiles, environ, 64, "Use less.")).rejects.toThrow(
+      `${environ} is more than 1 KB, the most it takes. Use less.`,
     );
-    expect((await readGiven(environ, MAX_ASSET_BYTES, "")).length).toBeGreaterThan(64);
+    expect((await readGiven(localFiles, environ, MAX_ASSET_BYTES, "")).length).toBeGreaterThan(64);
   },
 );
+
+test("every path the agent names goes through the host's files, which say what the agent may reach", async () => {
+  const asked: string[] = [];
+  const files: AgentFiles = {
+    async read(path) {
+      asked.push(`read ${path}`);
+      if (path.endsWith("secret.html")) throw new FileError("denied", "Permission denied");
+      if (path.endsWith("gone.png")) throw new FileError("missing", path);
+      return new TextEncoder().encode("<p>From the agent's side</p>");
+    },
+    async write(path) {
+      asked.push(`write ${path}`);
+      throw new FileError("denied", "Permission denied");
+    },
+  };
+  const { renderer } = fakeRenderer();
+  const { call, host } = setup({ files, renderer });
+
+  const denied = await call("create_artboard", { name: "Notes", path: "/work/secret.html" });
+  expect(denied.isError).toBe(true);
+  expect(denied.text).toBe("You can't read /work/secret.html: Permission denied");
+  const read = await call("write_html", { target: "ab_hero", path: "/work/ok.html" });
+  expect(read.isError).toBeFalsy();
+  expect((await call("get_html", { id: "ab_hero" })).text).toContain("From the agent's side");
+  const gone = await call("add_asset", { path: "/work/gone.png" });
+  expect(gone.text).toBe("There is no file at /work/gone.png.");
+  const exported = await call("export", { id: "ab_hero", path: "/home/user/board.png" });
+  expect(exported.text).toBe("You can't write /home/user/board.png: Permission denied");
+  expect(host.published).toEqual([]);
+  expect(asked).toEqual([
+    "read /work/secret.html",
+    "read /work/ok.html",
+    "read /work/gone.png",
+    "write /home/user/board.png",
+  ]);
+});
 
 test("write_html and create_artboard take a file of HTML by path, cleaned like any other", async () => {
   const { call, replica, synced, api } = setup();
@@ -789,7 +825,9 @@ test("write_html and create_artboard take a file of HTML by path, cleaned like a
   await truncate(big, MAX_OP_BYTES + 1);
   const tooBig = await call("write_html", { target: "ab_hero", path: big });
   expect(tooBig.isError).toBe(true);
-  expect(tooBig.text).toContain("big.html is 1 MB; the most is 1 MB. Split the HTML into parts");
+  expect(tooBig.text).toContain(
+    "big.html is more than 1 MB, the most it takes. Split the HTML into parts",
+  );
   // A path that isn't HTML at all: a picture, say.
   const picture = join(dir, "logo.png");
   await writeFile(picture, bytesOf(ASSET_HEADS.png!));

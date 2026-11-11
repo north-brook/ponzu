@@ -18,6 +18,11 @@ export interface RunnerEnv {
   claude?: string;
   /** The `git` checkouts run. Unset, the one on the PATH. */
   git?: string;
+  /**
+   * Runs a command as the agent's user. The canvas tools read and write the files the agent
+   * names through it. Unset, the agent is the runner's own user and they use the runner's access.
+   */
+  asAgent?: string;
   /** A Chromium for screenshots. Unset, the renderer looks for one. */
   chromium?: string;
 }
@@ -63,6 +68,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
     gitSocket: env.PONZU_GIT_SOCKET ?? join(stateDir, "git.sock"),
     ...(env.PONZU_CLAUDE ? { claude: env.PONZU_CLAUDE } : {}),
     ...(env.PONZU_GIT ? { git: env.PONZU_GIT } : {}),
+    ...(env.PONZU_AS_AGENT ? { asAgent: env.PONZU_AS_AGENT } : {}),
     ...(env.PONZU_CHROMIUM ? { chromium: env.PONZU_CHROMIUM } : {}),
   };
 }

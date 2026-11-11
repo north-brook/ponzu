@@ -10,6 +10,7 @@ import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
 import { agentEnv, EnvError, readEnv } from "./env.ts";
+import { agentFiles } from "./files.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
 import { serve, serveCredentials } from "./server.ts";
@@ -55,6 +56,7 @@ const runner = new Runner({
     log: (line) => log(`claude: ${line}`),
     env: agentEnv(process.env),
   }),
+  ...(env.asAgent ? { files: agentFiles(env.asAgent, agentEnv(process.env)) } : {}),
   // The repo's dev server is on this machine, so a design may load from it.
   renderer: new ChromiumRenderer({
     loopback: true,

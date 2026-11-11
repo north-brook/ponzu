@@ -65,6 +65,10 @@ state and exits, within the unit's 20 seconds; what is left of the agent's side 
 In the image, Claude Code and the checkout's git run as a second user, `agent`, that cannot
 read the runner's environment (`PONZU_CLAUDE` and `PONZU_GIT` are wrappers that switch to it),
 and git's credential helper asks the runner over a socket instead of holding the runner token.
+The canvas tools run in the runner's process, but a file the agent names to one (`write_html`
+and `create_artboard` by path, `add_asset`, `export`) is read and written as `agent`, through
+`PONZU_AS_AGENT` (`src/files.ts`): a path, or a link a repo committed, reaches only what the
+agent could reach with its own tools, never the runner's environment or home.
 git 2.40 or later is needed, for `password_expiry_utc`.
 
 ## Environment
@@ -80,6 +84,7 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `PONZU_STATE_DIR` | What the runner keeps across restarts (usage totals). `~/.ponzu` by default. |
 | `PONZU_CLAUDE` | The `claude` binary, when it is not `/usr/local/bin/claude`. The image's runs it as `agent`. |
 | `PONZU_GIT` | The `git` the checkout runs, when it is not the one on the PATH. The image's runs it as `agent`. |
+| `PONZU_AS_AGENT` | A command that runs its arguments as the agent's user; the tools read and write the agent's files through it. Unset, they use the runner's own access, which is right only where the agent is the runner's user. The image's is `sudo -u agent`. |
 | `PONZU_GIT_SOCKET` | Where git's credential helper asks the runner. `$PONZU_STATE_DIR/git.sock` by default; `/run/ponzu/git.sock` in the image. |
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
 
@@ -132,7 +137,8 @@ reviewing its pull request, which on a public repo is anyone on GitHub, a check'
 to make the agent run a command. Either way that reaches the Claude credential, a one-hour
 token for that one repository (through the runner's socket) and the repo's own secrets, and
 nothing of any other design. In the image it does not reach the runner token: `agent` cannot
-read the runner's `/proc` or boat's environment file, and has no sudo. The runner keeps the
+read the runner's `/proc` or boat's environment file, and has no sudo, and the canvas tools
+read and write the paths it names as `agent` (`PONZU_AS_AGENT`). The runner keeps the
 exposure down where it can: other people's words reach the model quoted, under instructions
 that quoted text never directs it; the runner token can only write what an agent could anyway
 (a runner cannot write the API's own notices, such as a pull request's); and the lease means a

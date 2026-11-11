@@ -15,6 +15,7 @@ import {
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import type { OpenDesign } from "./design.ts";
+import type { AgentFiles } from "./disk.ts";
 
 /** Bytes on their way out of the tools, under the name to keep them by. */
 export interface NamedBytes {
@@ -37,6 +38,8 @@ export interface Workspace {
   /** Create a new .design and open it. */
   create?(path: string, doc: Doc): Promise<OpenDesign>;
   renderer?: Renderer;
+  /** How a path the agent names is read and written. This process's own access when absent. */
+  files?: AgentFiles;
   /** Where a renderer loads this design's assets/ from, when the host serves them. */
   assetBase?(key: string): string | undefined;
   /** Ask any open studio to show this artboard. */
