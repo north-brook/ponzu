@@ -31,7 +31,7 @@ src/
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
-                    delete)
+                    delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
     poke.ts         real: `POST /poke` and `POST /report` to an awake runner through its
                     sandbox's address, and whether its `/health` answers (`runnerPort`)
@@ -96,7 +96,8 @@ runner must speak this API's runner protocol, so bake it (`bun apps/runner/image
 a commit at least as new as the API's protocol: an image from before `claimId` (migration
 0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
 `ponzu-runner-6041787d9d11`. Checkpoints, getting ready to sleep and `POST /report` need an image
-from this API's checkpoint routes on (migration 0014): `ponzu-runner-b06c59b6e389`. An older
+from this API's checkpoint routes on (migration 0014), and one from this API's `keep` on, whose
+runner keeps work in progress off GitHub: `apps/runner/image/current.json` names it. An older
 image still works against this API: its runner has no `/report` (a stop then does not wait for
 it, and still runs `sync`), and it saves no checkpoint, so its disk stays the only copy. Every deployment shares the boat.dev account; the sweeps keep to
 the sandboxes labelled with their own database (`SandboxConfig.scope`).
@@ -347,8 +348,12 @@ builds that do work we use the one with nothing experimental in it: `bun build` 
 the preset still recognises the entry. The costs: the Vercel build does not typecheck (CI
 does, and `scripts/ci/api-bundle.ts` loads the bundle in Node), and a `maxDuration` in
 `vercel.json` is not applied to a bundled entry, so the function has the platform default of
-300 seconds. Nothing waits that long: every call out (WorkOS, GitHub, the database) has ten
-seconds. If a route ever needs longer than the default, switch to
+300 seconds. Every call out (WorkOS, GitHub, the database) has ten seconds. The longest waits
+are the sandbox wake job's (a stop to wait out, getting the runner ready, `sync`, the resume,
+starting a runner that a warm resume did not bring back, and a cold start after that):
+`sandboxes/quiesce.ts` adds them up, and one attempt keeps to a 260-second budget, going cold
+early or leaving the rest to the job's next attempt when it would not fit. If a route ever needs
+longer than the default, switch to
 `VERCEL_EXPERIMENTAL_BACKENDS=1`, which honours `maxDuration`.
 
 The environment variables live on the Vercel project, for Production and Preview, as
