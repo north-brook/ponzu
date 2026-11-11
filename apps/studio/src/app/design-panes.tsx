@@ -1,6 +1,7 @@
 import type { CanvasProps } from "@ponzu/canvas";
 import { type ReactNode, useCallback, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
+import { useAnalytics } from "./analytics/provider.tsx";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
@@ -19,6 +20,8 @@ export interface DesignPanes {
   chrome: ReactNode;
   rail: ReactNode | null;
   pane: ReactNode;
+  /** What the canvas's pane shows: the canvas, or the pull request tab over it. */
+  tab: "canvas" | "pull-request";
 }
 
 export function useDesignPanes({
@@ -68,7 +71,13 @@ export function useDesignPanes({
   const [showing, setShowing] = useState<{ designId: string; link: CanvasLink }>();
   const prTab = designId !== null && tabFor === designId;
   const shown = showing?.designId === designId ? showing.link : null;
-  const setPrTab = (open: boolean) => setTabFor(open ? designId : null);
+  const analytics = useAnalytics();
+  const setPrTab = (open: boolean) => {
+    if (designId && open !== prTab) {
+      analytics.capture("pane toggled", { pane: "pull_request", open, design_id: designId });
+    }
+    setTabFor(open ? designId : null);
+  };
 
   const onOpenArtboards = useCallback(
     (ids: string[]) => {
@@ -103,6 +112,7 @@ export function useDesignPanes({
   };
 
   return {
+    tab: prTab ? "pull-request" : "canvas",
     chrome: (
       <DesignChromeSlot
         open={open}
@@ -151,7 +161,8 @@ export function useDesignPanes({
         </div>
         {prTab ? (
           // Over the canvas and everything it floats, which stays put underneath for coming back.
-          <div className="absolute inset-0 z-20 bg-canvas">
+          // A repo's code and file names: masked in a private recording (analytics/privacy.ts).
+          <div data-replay="mask" className="absolute inset-0 z-20 bg-canvas">
             <PullRequestPane host={host} open={open} viewerLogin={me.login} />
           </div>
         ) : null}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type SignInCopy, type SignInState, SignInStep } from "../cloud/setup/sign-in.tsx";
+import { useAnalytics } from "./analytics/provider.tsx";
 import type { Host } from "./host.ts";
 
 /*
@@ -59,6 +60,7 @@ export function SignInScreen({ host, reason }: { host: Host; reason: SignInReaso
   const [state, setState] = useState<SignInState>("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const mounted = useRef(true);
+  const analytics = useAnalytics();
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -76,7 +78,12 @@ export function SignInScreen({ host, reason }: { host: Host; reason: SignInReaso
     if (state === "waiting") return;
     setState("waiting");
     setFailure(null);
+    analytics.capture("sign in started");
     const result = await host.signIn();
+    if (result.ok) analytics.capture("sign in completed");
+    else if (result.reason === "failed")
+      analytics.capture("sign in failed", { reason: result.code });
+    else analytics.capture("sign in cancelled");
     if (!mounted.current) return;
     // A sign-in that ended quietly (another finished, it ran out) changes nothing here.
     if (!result.ok && result.reason === "failed") {

@@ -5,8 +5,12 @@ import { Button } from "../cloud/ui/button.tsx";
 import { Icon } from "../cloud/ui/icon.tsx";
 import { Slice } from "../cloud/ui/marks.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "../cloud/ui/popover.tsx";
+import { useAnalytics } from "./analytics/provider.tsx";
 
 type Updater = PonzuDesktop["update"];
+
+/** The versions this window has said are available: the mark moves between windows. */
+const announced = new Set<string>();
 
 /** The shell's update state, kept current; null until it answers, or with no updater at all. */
 export function useUpdate(updater: Updater | null): UpdateState | null {
@@ -31,6 +35,13 @@ export function useUpdate(updater: Updater | null): UpdateState | null {
 export function UpdateMark({ updater }: { updater: Updater | null }) {
   const state = useUpdate(updater);
   const [open, setOpen] = useState(false);
+  const analytics = useAnalytics();
+  const ready = state?.ready?.version ?? null;
+  useEffect(() => {
+    if (!ready || announced.has(ready)) return;
+    announced.add(ready);
+    analytics.capture("update available", { version: ready });
+  }, [analytics, ready]);
   if (!updater || !state?.ready) return null;
   const { version, notes } = state.ready;
   return (
@@ -51,7 +62,10 @@ export function UpdateMark({ updater }: { updater: Updater | null }) {
           version={version}
           notes={notes}
           installing={state.installing}
-          onRestart={() => updater.install()}
+          onRestart={() => {
+            analytics.capture("update restart clicked", { version });
+            updater.install();
+          }}
           onLater={() => setOpen(false)}
         />
       </PopoverContent>

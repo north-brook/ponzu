@@ -31,7 +31,9 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    sourcemap: false,
+    // Written only for PostHog's CLI to upload, which the desktop package does before packing
+    // and then deletes them (apps/desktop/scripts/sourcemaps.ts): the app never ships a map.
+    sourcemap: Boolean(process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID),
     // The cloud gallery (gallery.html) is dev-only; `--mode gallery` builds it alone for the
     // visual scripts (scripts/visual.ts), never into the app.
     rollupOptions:

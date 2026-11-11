@@ -2,7 +2,8 @@
  * The studio's content security policy. The canvas draws agent-authored HTML in the app's own
  * document (each board in a shadow root, sanitized on its way into the database), so this is the
  * wall behind the sanitizer: no script but the studio's own, no frames, no plugins, no forms,
- * and nothing reached but the API, Neon Realtime and the design's files.
+ * and nothing reached but the API, Neon Realtime, the design's files and, in a build that
+ * reports usage, PostHog's ingestion.
  *
  * Images are the one thing loaded from anywhere on https: a design may show a photo from the
  * web, as the runner's previews of it do (docs/cloud.md, "Security"). An image runs no script;
@@ -16,10 +17,25 @@ const ANY_REALTIME = "https://*.neon.tech";
 const FONT_CSS = "https://fonts.googleapis.com";
 const FONT_FILES = "https://fonts.gstatic.com";
 
+/**
+ * Where PostHog's browser SDK sends to, for a build that reports (docs/analytics.md): the
+ * ingestion host, and for PostHog's own cloud the `-assets` host beside it, which answers the
+ * project's remote config (whether to record, capture exceptions and the rest). Nothing is a
+ * script source: the studio bundles every part of the SDK it uses, and the SDK it bundles never
+ * loads one. Session replay's compression worker runs from a blob, which `worker-src` has.
+ */
+export function posthogOrigins(host: string): string[] {
+  const origin = new URL(host).origin;
+  const cloud = /^https:\/\/(us|eu)\.i\.posthog\.com$/.exec(origin);
+  return cloud ? [origin, `https://${cloud[1]}-assets.i.posthog.com`] : [origin];
+}
+
 export function contentSecurityPolicy(where: {
   apiUrl: string;
   realtimeUrl: string | null;
   assetsUrl: string | null;
+  /** Null when this build, or this person, doesn't report: then PostHog is reached by nothing. */
+  posthog: { host: string } | null;
 }): string {
   const assets = where.assetsUrl ? new URL(where.assetsUrl).origin : ANY_ASSETS;
   const realtime = where.realtimeUrl ? new URL(where.realtimeUrl).origin : ANY_REALTIME;
@@ -42,6 +58,7 @@ export function contentSecurityPolicy(where: {
       assets,
       FONT_CSS,
       FONT_FILES,
+      ...(where.posthog ? posthogOrigins(where.posthog.host) : []),
     ],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
