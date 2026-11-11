@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   readdirSync,
@@ -7,6 +9,7 @@ import {
   renameSync,
   rmdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -32,7 +35,7 @@ export interface LegacyHost {
   uid: number;
   /** Whether a program is there: a server binary, an agent's CLI. */
   exists(path: string): boolean;
-  /** Runs a program and says how it exited. Never through a shell. */
+  /** Runs a program and says how it exited: `runProgram`. */
   run(
     command: string,
     args: string[],
@@ -87,12 +90,19 @@ export async function removeLegacy(host: LegacyHost): Promise<Step[]> {
     removeIfEmpty(dirname(shim));
   }
 
-  steps.push(await removeClaude(host, cliPath, ours));
-  steps.push(await removeCodex(host, cliPath, ours));
-  steps.push(removeCursor(host.home, ours));
-
-  if (host.platform === "darwin") steps.push(await removeLaunchAgent(host));
-  if (host.platform === "linux") steps.push(...(await removeSystemdWake(host)));
+  /** One step, whose failure is its own: the rest still run. */
+  const attempt = async (what: string, step: () => Step | Step[] | Promise<Step | Step[]>) => {
+    try {
+      steps.push(...[await step()].flat());
+    } catch (error) {
+      steps.push({ what, outcome: "failed", why: String(error) });
+    }
+  };
+  await attempt("Claude Code's ponzu MCP server", () => removeClaude(host, cliPath, ours));
+  await attempt("Codex's ponzu MCP server", () => removeCodex(host, cliPath, ours));
+  await attempt("Cursor's ponzu MCP server", () => removeCursor(host.home, ours));
+  if (host.platform === "darwin") await attempt("the wake helper", () => removeLaunchAgent(host));
+  if (host.platform === "linux") await attempt("the wake helper", () => removeSystemdWake(host));
   return steps.filter((step) => step.outcome !== "kept" || step.why);
 }
 
@@ -106,6 +116,7 @@ export async function removeLegacyOnce(
   version: string,
 ): Promise<Step[] | null> {
   if (existsSync(record)) return null;
+  // A step that failed is recorded with the rest: each is tried once.
   const steps = await removeLegacy(host);
   const at = new Date().toISOString();
   writeFileSync(record, `${JSON.stringify({ version, at, steps }, null, 2)}\n`);
@@ -215,15 +226,26 @@ function removeCursor(home: string, ours: (entry: McpEntry | null) => entry is M
   const config = readJson(file) as { mcpServers?: Record<string, unknown> } | null;
   if (!config?.mcpServers || !ours(entryOf(config.mcpServers.ponzu)))
     return { what, outcome: "kept" };
+  // A link into the person's dotfiles is theirs: writing over it would cut the link.
+  if (lstatSync(file).isSymbolicLink()) {
+    return { what, outcome: "kept", why: `${file} is a link, which Ponzu leaves to its owner` };
+  }
   delete config.mcpServers.ponzu;
   try {
+    const mode = statSync(file).mode & 0o777;
     const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`);
+    writeFileSync(temporary, `${JSON.stringify(config, null, indentOf(readText(file) ?? ""))}\n`);
+    chmodSync(temporary, mode);
     renameSync(temporary, file);
     return { what, outcome: "removed" };
   } catch (error) {
     return { what, outcome: "failed", why: String(error) };
   }
+}
+
+/** A JSON file's indent, to write it back as it was: two spaces unless it says otherwise. */
+function indentOf(text: string): string | number {
+  return /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? 2;
 }
 
 /** The LaunchAgent the iPhone woke Ponzu through, when the server it starts is gone. */
@@ -323,6 +345,53 @@ function findCommand(name: string, path: string, host: LegacyHost): string | nul
     }
   }
   return null;
+}
+
+/**
+ * Runs a program without a shell and says how it exited. On Windows an npm-installed agent is a
+ * `.cmd`, which Node won't start without one, so cmd.exe runs it, given only the quoted path and
+ * this module's fixed arguments, so nothing in them is read as a command.
+ */
+export function runProgram(
+  command: string,
+  args: string[],
+  path: string,
+): Promise<{ status: number | null; stdout: string }> {
+  const { file, argv, verbatim } = invocation(command, args, process.platform, process.env.ComSpec);
+  return new Promise((done) =>
+    execFile(
+      file,
+      argv,
+      {
+        timeout: 15_000,
+        windowsHide: true,
+        windowsVerbatimArguments: verbatim,
+        env: { ...process.env, PATH: path },
+      },
+      (error, stdout) => done({ status: error ? ((error.code as number) ?? 1) : 0, stdout }),
+    ),
+  );
+}
+
+/** What to start for `command args`: itself, or a Windows `.cmd` through cmd.exe. */
+export function invocation(
+  command: string,
+  args: string[],
+  platform: NodeJS.Platform,
+  comSpec = "cmd.exe",
+): { file: string; argv: string[]; verbatim: boolean } {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(command)) {
+    return { file: command, argv: args, verbatim: false };
+  }
+  if (/["%]/.test(command) || !args.every((arg) => /^[\w.-]+$/.test(arg))) {
+    throw new Error(`cmd.exe would read more than a command in ${command} ${args.join(" ")}`);
+  }
+  // /s: cmd.exe takes the outer quotes off and runs what's between them as it stands.
+  return {
+    file: comSpec,
+    argv: ["/d", "/s", "/c", `""${command}" ${args.join(" ")}"`],
+    verbatim: true,
+  };
 }
 
 function readText(path: string): string | null {

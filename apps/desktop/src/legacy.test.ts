@@ -1,17 +1,25 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type LegacyHost, removeLegacy, removeLegacyOnce, shimServers } from "./legacy.ts";
+import {
+  invocation,
+  type LegacyHost,
+  removeLegacy,
+  removeLegacyOnce,
+  shimServers,
+} from "./legacy.ts";
 
 /*
  * Each case lays out a home folder the way Ponzu 1.x left it (apps/cli/src/install.ts,
@@ -273,6 +281,76 @@ done
     "C:\\Users\\me\\AppData\\Local\\Programs\\ponzu\\resources\\server\\ponzu.exe",
   ]);
   expect(shimServers("#!/bin/sh\nexec ponzu-dev\n", host)).toBeNull();
+});
+
+test("a step whose program won't even start fails alone, and the rest still run and are recorded", async () => {
+  const m = machine();
+  m.agents();
+  put(
+    join(m.home, ".cursor/mcp.json"),
+    JSON.stringify({ mcpServers: { ponzu: { command: m.shim, args: ["mcp"] } } }),
+  );
+  // As Node does for a Windows .cmd started without a shell: it throws, it doesn't exit.
+  m.host.run = () => {
+    throw Object.assign(new Error("spawn EINVAL"), { code: "EINVAL" });
+  };
+  const record = join(m.home, "userData/legacy-cleanup.json");
+  mkdirSync(dirname(record), { recursive: true });
+
+  const steps = await removeLegacyOnce(m.host, record, "2.0.0");
+
+  expect(steps?.map((s) => [s.what, s.outcome])).toEqual([
+    ["Codex's ponzu MCP server", "failed"],
+    ["Cursor's ponzu MCP server", "removed"],
+  ]);
+  expect(steps?.[0]?.why).toContain("spawn EINVAL");
+  expect(JSON.parse(readFileSync(record, "utf8")).steps).toEqual(steps);
+});
+
+test("Cursor's file keeps its mode and indent, and a link to the person's dotfiles stays a link", async () => {
+  const m = machine();
+  const file = join(m.home, ".cursor/mcp.json");
+  const servers = (ponzu: boolean) => ({
+    mcpServers: {
+      ...(ponzu ? { ponzu: { command: m.shim, args: ["mcp"] } } : {}),
+      figma: { url: "http://127.0.0.1:3845/mcp" },
+    },
+  });
+  put(file, `${JSON.stringify(servers(true), null, "\t")}\n`);
+  chmodSync(file, 0o640);
+  await removeLegacy(m.host);
+  expect(readFileSync(file, "utf8")).toBe(`${JSON.stringify(servers(false), null, "\t")}\n`);
+  if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o640);
+
+  const dotfiles = join(m.home, "dotfiles/cursor/mcp.json");
+  put(dotfiles, JSON.stringify(servers(true)));
+  rmSync(file);
+  symlinkSync(dotfiles, file);
+  const steps = await removeLegacy(m.host);
+  expect(steps).toEqual([
+    {
+      what: "Cursor's ponzu MCP server",
+      outcome: "kept",
+      why: `${file} is a link, which Ponzu leaves to its owner`,
+    },
+  ]);
+  expect(lstatSync(file).isSymbolicLink()).toBe(true);
+  expect(JSON.parse(readFileSync(dotfiles, "utf8"))).toEqual(servers(true));
+});
+
+test("on Windows an npm agent's .cmd runs through cmd.exe, with nothing but its fixed arguments", () => {
+  const claude = "C:\\Users\\Jane Doe\\AppData\\Roaming\\npm\\claude.cmd";
+  expect(invocation(claude, ["mcp", "remove", "--scope", "user", "ponzu"], "win32")).toEqual({
+    file: "cmd.exe",
+    argv: ["/d", "/s", "/c", `""${claude}" mcp remove --scope user ponzu"`],
+    verbatim: true,
+  });
+  // An .exe, and every other platform, runs as it is.
+  const exe = "C:\\Users\\me\\.local\\bin\\claude.exe";
+  expect(invocation(exe, ["mcp"], "win32")).toEqual({ file: exe, argv: ["mcp"], verbatim: false });
+  expect(invocation("/opt/homebrew/bin/codex", ["mcp"], "darwin").verbatim).toBe(false);
+  expect(() => invocation(claude, ["mcp", "a & calc"], "win32")).toThrow();
+  expect(() => invocation("C:\\100%\\claude.cmd", ["mcp"], "win32")).toThrow();
 });
 
 test("runs once: what it did is recorded, and a later launch does nothing", async () => {
