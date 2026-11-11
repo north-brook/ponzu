@@ -10,6 +10,7 @@ import {
   type Workspace,
   wasUninstalled,
 } from "@ponzu/db";
+import { type CaptureOptions, stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
 
 /*
@@ -23,7 +24,7 @@ import type { Deps } from "../deps/index.ts";
  * see `syncGithub`.
  */
 
-type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log">;
+type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics">;
 
 /** All it takes to read an installation's account and repo list. */
 const READ_REPOSITORIES = { metadata: "read" } as const;
@@ -47,9 +48,16 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  * installer and never replaces a known one. Safe to run any number of times, at once.
  */
 export async function reconcileInstallation(
-  { db, clock, github, log }: ReconcileDeps,
+  { db, clock, github, log, analytics }: ReconcileDeps,
   installationId: number,
-  { installedByUserId = null }: { installedByUserId?: string | null } = {},
+  {
+    installedByUserId = null,
+    reposChanged = false,
+  }: {
+    installedByUserId?: string | null;
+    /** GitHub said the repos the installation reaches changed: said in analytics once read. */
+    reposChanged?: boolean;
+  } = {},
 ): Promise<Workspace | null> {
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
@@ -60,9 +68,23 @@ export async function reconcileInstallation(
   const reachChanged = async () => {
     if (before) await markRepoAccessStale(db, { workspaceId: before.id });
   };
+  // This runs at once from a webhook and from the setup or the sweep, and each read `before`
+  // for itself: what two of them could both see is said once, on the database's word or under
+  // one id that both give it (PostHog keeps one event per id).
+  const disconnected = (reason: "uninstalled" | "suspended", options: CaptureOptions = {}) => {
+    if (before?.suspendedAt === null) {
+      analytics.capture(
+        "workspace disconnected",
+        { workspace_id: before.id, reason },
+        { distinctId: null, workspaceId: before.id, ...options },
+      );
+    }
+  };
   if (!installation) {
-    await markWorkspaceUninstalled(db, installationId);
+    // Only the call that took the installation off the workspace says it went.
+    const uninstalled = await markWorkspaceUninstalled(db, installationId);
     await reachChanged();
+    if (uninstalled) disconnected("uninstalled");
     return null;
   }
   if (installation.suspendedAt) {
@@ -72,6 +94,11 @@ export async function reconcileInstallation(
       reconciledAt: readAt,
     });
     if (before?.suspendedAt === null) await reachChanged();
+    // GitHub's own time for the suspension, which every reader of it agrees on.
+    disconnected("suspended", {
+      timestamp: installation.suspendedAt,
+      uuid: stableUuid(`${installationId}/suspended/${installation.suspendedAt.toISOString()}`),
+    });
     return suspended;
   }
 
@@ -86,7 +113,7 @@ export async function reconcileInstallation(
     github.listRepositoriesAsInstallation(token),
   ]);
 
-  const workspace = await upsertWorkspace(db, {
+  const { connected, ...workspace } = await upsertWorkspace(db, {
     githubAccountId: account.id,
     githubLogin: account.login,
     kind: account.type === "Organization" ? "org" : "personal",
@@ -127,6 +154,33 @@ export async function reconcileInstallation(
   if (await wasUninstalled(db, installationId)) {
     await markWorkspaceUninstalled(db, installationId);
     return null;
+  }
+  const kind = workspace.kind === "org" ? "organization" : "user";
+  analytics.group({
+    workspaceId: workspace.id,
+    name: account.login,
+    kind,
+    repos: repositories.items.length,
+    repositorySelection: installation.repositorySelection,
+  });
+  // Connected: an account new to Ponzu, back after an uninstall, or out of a suspension, which
+  // the database says to exactly one caller. It is about whoever installed it when Ponzu knows
+  // them, and otherwise the person whose sign-in or setup found it (the request's scope).
+  if (connected) {
+    analytics.capture(
+      "workspace connected",
+      { workspace_id: workspace.id, kind, repos: repositories.items.length },
+      {
+        ...(workspace.installedByUserId ? { distinctId: workspace.installedByUserId } : {}),
+        workspaceId: workspace.id,
+      },
+    );
+  } else if (reposChanged) {
+    analytics.capture(
+      "repo access changed",
+      { workspace_id: workspace.id, repos: repositories.items.length },
+      { distinctId: null, workspaceId: workspace.id },
+    );
   }
   return workspace;
 }

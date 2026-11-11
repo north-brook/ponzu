@@ -83,6 +83,7 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
         if (await STEPS[step](deps, row, now - idleMs)) counts[step]++;
       } catch (error) {
         deps.log.warn("sweep_failed", { sandboxId: row.sandbox.id, step, error });
+        deps.analytics.exception(error, { sweep_step: step, design_id: row.sandbox.designId });
       }
     }),
   );
@@ -90,6 +91,7 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
     counts.orphaned = await destroyOrphans(deps);
   } catch (error) {
     deps.log.warn("sweep_failed", { step: "orphaned", error });
+    deps.analytics.exception(error, { sweep_step: "orphaned" });
   }
   return counts;
 }

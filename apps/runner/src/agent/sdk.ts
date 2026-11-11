@@ -29,6 +29,7 @@ import type {
 } from "./agent.ts";
 import { Channel } from "./channel.ts";
 import { PartialInput } from "./partial.ts";
+import { type TurnSummary, TurnTrace } from "./trace.ts";
 
 /** The MCP server the canvas tools are served as: the agent calls them `mcp__ponzu__<name>`. */
 export const SERVER = "ponzu";
@@ -105,10 +106,13 @@ class ClaudeRun implements AgentRun {
   private readonly out = new Channel<AgentEvent>();
   private readonly pending = new Map<string, Pending>();
   private readonly translate = new Translator();
+  /** Each turn as a trace in LLM analytics, and what the runner reports of it. */
+  private readonly trace: TurnTrace;
   private readonly q: ReturnType<typeof query>;
   private readonly done: Promise<void>;
 
   constructor(agent: ClaudeAgentOptions, opts: AgentOptions) {
+    this.trace = new TurnTrace(opts.trace ?? null);
     const server = createSdkMcpServer({
       name: SERVER,
       tools: opts.tools.map(sdkTool),
@@ -166,6 +170,7 @@ class ClaudeRun implements AgentRun {
     // Text the runner wrote is delivered as written: no `@path` expansion, no slash commands.
     if (input.human) message.origin = { kind: "human" };
     else message.client_composed = true;
+    this.trace.put(input.uuid, input.text, input.origin ?? null, input.priority === "aside");
     this.inbox.push(message);
   }
 
@@ -206,6 +211,15 @@ class ClaudeRun implements AgentRun {
     return pending;
   }
 
+  /** The trace's reading of a message, which can never stop the run reading the next. */
+  private observe(message: SDKMessage): TurnSummary | null {
+    try {
+      return this.trace.observe(message);
+    } catch {
+      return null;
+    }
+  }
+
   /** In `bypassPermissions` this is called only for what needs a person. */
   private ask: CanUseTool = (name, input, options) =>
     new Promise<PermissionResult>((resolve) => {
@@ -219,11 +233,15 @@ class ClaudeRun implements AgentRun {
     let error: string | null = null;
     try {
       for await (const message of this.q) {
-        for (const event of this.translate.events(message)) this.out.push(event);
+        const turn = this.observe(message);
+        for (const event of this.translate.events(message)) {
+          this.out.push(event.type === "result" ? { ...event, turn } : event);
+        }
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
+    this.trace.abandon();
     this.out.push({ type: "exit", error });
     this.out.close();
   }
