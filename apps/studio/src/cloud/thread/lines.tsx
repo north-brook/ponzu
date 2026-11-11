@@ -185,7 +185,7 @@ function Undelivered({ id, handlers }: { id: string; handlers: LineHandlers }) {
     "cursor-default rounded-4 px-1 font-medium text-ink outline-none focus-ring hover:underline";
   return (
     <div role="alert" className="flex items-center gap-1.5 text-12 text-faint leading-[1.4]">
-      <Icon icon={Alert02Icon} size={12} stroke={2} className="text-danger" />
+      <Icon icon={Alert02Icon} step="small" className="text-danger" />
       <span>Didn't send.</span>
       {handlers.onRetryMessage ? (
         <button type="button" onClick={() => handlers.onRetryMessage?.(id)} className={action}>
@@ -350,7 +350,7 @@ function NoticeLine({
     case "error":
       return (
         <div role="note" className="flex gap-2 px-[2px] text-13 leading-[1.5]">
-          <Icon icon={Alert02Icon} size={14} stroke={1.9} className="mt-[3px] text-danger" />
+          <Icon icon={Alert02Icon} step="inline" className="mt-[3px] text-danger" />
           <div className="flex min-w-0 flex-col gap-0.5">
             <span>{ERROR_COPY[notice.code]}</span>
             {ERROR_DETAIL.has(notice.code) && notice.message ? (
@@ -397,7 +397,7 @@ function NoticeLine({
             "-mx-1 -my-0.5 min-w-0 max-w-full cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
           )}
         >
-          <Icon icon={icon} size={12} stroke={2} className={color} />
+          <Icon icon={icon} step="small" className={color} />
           <span className="shrink-0">
             Pull request <span className="font-mono text-11">#{notice.number}</span> {verb}
           </span>
@@ -421,7 +421,7 @@ export function SandboxLine({ text, failed }: { text: string; failed: boolean })
       className="flex min-w-0 items-start gap-2 px-[2px] text-12 text-faint leading-[1.4]"
     >
       {failed ? (
-        <Icon icon={Alert02Icon} size={13} stroke={1.9} className="mt-[1px] text-danger" />
+        <Icon icon={Alert02Icon} step="small" className="mt-[1px] text-danger" />
       ) : (
         <Slice size={13} className="mt-[1px] text-dry" />
       )}

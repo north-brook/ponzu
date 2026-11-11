@@ -1,4 +1,11 @@
-import { getDesign, getQuiescedFor, getWakeContext, type Sandbox } from "@ponzu/db";
+import {
+  getDesign,
+  getQuiescedFor,
+  getWakeContext,
+  runnerHeardSince,
+  type Sandbox,
+} from "@ponzu/db";
+import type { HealthCheck } from "../deps/poke.ts";
 import type { JobDeps } from "../jobs/run.ts";
 
 /*
@@ -13,7 +20,8 @@ import type { JobDeps } from "../jobs/run.ts";
  * itself through the provider, and stops. A runner that never answers is stopped all the same.
  *
  * After a warm resume, which thaws the same boot, a runner that had exited stays exited: the API
- * looks at `/health` and starts the unit again through the provider.
+ * looks at `/health`, and at whether the runner has called it since the thaw, and only when
+ * neither says it is up starts the unit again through the provider.
  *
  * Function time. Every wait here runs inside a function with 300 seconds (apps/api/README.md),
  * so each is bounded, and one attempt of a wake keeps to a budget (orchestrate.ts,
@@ -136,22 +144,54 @@ export async function syncDisk(deps: JobDeps, providerId: string, designId: stri
 export type Revived = "up" | "revived" | "down" | "stay_down";
 
 /**
- * After a warm resume: whether the runner answers `/health`, and if it does not, start its unit
+ * After a warm resume: whether the runner is up, and if it does not seem to be, start its unit
  * again through the provider (`systemctl start`, which does nothing to one that runs) and look
- * again. `down` when it still does not answer: only a cold start on a new environment is left.
+ * again. `down` when it still does not: only a cold start on a new environment is left.
  * `stay_down` when the design was settled or deleted meanwhile: its runner exited on purpose,
  * the sweep destroys the sandbox, and nothing is started. With `startUnit` false (the wake has
- * no time left for it), a runner that does not answer is `down` at once.
+ * no time left for it), a runner that does not seem up is `down` at once.
+ *
+ * Up is either of two things. `/health` answers through the sandbox's address; or the runner has
+ * called the API since `since` (the resume began): a state report, a claim, an ack. The second
+ * is what the thawed process does first, and on 2026-11-11 it did so for eighteen seconds while
+ * its address answered nothing (docs/cloud.md, "A warm resume and a stopped runner"): taking a
+ * failed health check alone for a dead runner had the wake stop the machine under a turn that
+ * had just begun. A runner that calls in is up whatever its address does, and that is logged
+ * (`runner_health_unreachable`) with what each look got, never the address's token.
  */
 export async function reviveRunner(
   deps: JobDeps,
   sandbox: Sandbox,
-  { startUnit = true }: { startUnit?: boolean } = {},
+  { startUnit = true, since }: { startUnit?: boolean; since?: number } = {},
 ): Promise<Revived> {
   const { clock, log } = deps;
   const address = await runnerAddress(deps, sandbox);
   if (!address) return "up";
-  if (await deps.runnerPort.healthy(address, HEALTH_MS)) return "up";
+  const ids = { designId: sandbox.designId, sandboxId: sandbox.id };
+  const looks: HealthCheck[] = [];
+  const look = async () => {
+    const check = await deps.runnerPort.health(address, HEALTH_MS);
+    looks.push(check);
+    return check.ok;
+  };
+  /** What the looks got, for the log: how many, the first and the last. */
+  const seen = () => ({
+    host: hostOf(address.url),
+    looks: looks.length,
+    first: looks[0] && describe(looks[0]),
+    last: looks.length > 1 ? describe(looks.at(-1)!) : undefined,
+  });
+  const heard = async () => {
+    if (since === undefined) return false;
+    if (!(await runnerHeardSince(deps.db, { designId: sandbox.designId, since: new Date(since) })))
+      return false;
+    log.warn("runner_health_unreachable", { ...ids, ...seen(), sinceMs: clock.now() - since });
+    return true;
+  };
+
+  if (await look()) return "up";
+  log.info("runner_health_failed", { ...ids, ...seen() });
+  if (await heard()) return "up";
   const context = await getWakeContext(deps.db, sandbox.designId);
   if (!context || context.status === "settled") return "stay_down";
   if (!startUnit) return "down";
@@ -163,28 +203,37 @@ export async function reviveRunner(
       { timeoutSeconds: SYSTEMCTL_SECONDS },
     );
     if (started.exitCode !== 0) {
-      log.warn("runner_revive_failed", {
-        designId: sandbox.designId,
-        sandboxId: sandbox.id,
-        exitCode: started.exitCode,
-      });
+      if (await heard()) return "up";
+      log.warn("runner_revive_failed", { ...ids, ...seen(), exitCode: started.exitCode });
       return "down";
     }
   } catch (error) {
-    log.warn("runner_revive_failed", { designId: sandbox.designId, sandboxId: sandbox.id, error });
+    if (await heard()) return "up";
+    log.warn("runner_revive_failed", { ...ids, ...seen(), error });
     return "down";
   }
   while (clock.now() - began < REVIVE_MS) {
-    if (await deps.runnerPort.healthy(address, HEALTH_MS)) {
-      log.info("runner_revived", {
-        designId: sandbox.designId,
-        sandboxId: sandbox.id,
-        ms: clock.now() - began,
-      });
+    if (await look()) {
+      log.info("runner_revived", { ...ids, ...seen(), ms: clock.now() - began });
       return "revived";
     }
+    if (await heard()) return "up";
     await clock.sleep(REVIVE_POLL_MS);
   }
-  log.warn("runner_revive_failed", { designId: sandbox.designId, sandboxId: sandbox.id });
+  log.warn("runner_revive_failed", { ...ids, ...seen(), heard: false });
   return "down";
+}
+
+/** One look as a log field: what answered, or what the request failed with, and how long. */
+function describe(check: HealthCheck): string {
+  return `${check.status ?? check.error ?? "no answer"} in ${check.ms} ms`;
+}
+
+/** An address's host alone: the path and the token are no business of a log. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
 }

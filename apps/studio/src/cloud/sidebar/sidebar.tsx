@@ -161,7 +161,7 @@ export function Sidebar(props: SidebarProps) {
             onClick={openSearch}
             className="h-[26px] w-6"
           >
-            <Icon icon={Search01Icon} size={15} stroke={1.7} />
+            <Icon icon={Search01Icon} step="control" />
           </IconButton>
           <FilterMenu
             filter={filter}
@@ -174,9 +174,9 @@ export function Sidebar(props: SidebarProps) {
             label="New design"
             keys={["⌘", "N"]}
             onClick={props.onNewDesign}
-            className="h-[26px] w-6 text-icon-strong"
+            className="h-[26px] w-6"
           >
-            <Icon icon={PencilEdit02Icon} size={15} stroke={1.7} />
+            <Icon icon={PencilEdit02Icon} step="control" />
           </IconButton>
         </div>
       ) : (

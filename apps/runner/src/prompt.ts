@@ -52,8 +52,31 @@ export function turnContext({
   return `(From Ponzu: ${where}${pending})`;
 }
 
+/**
+ * What the agent is told when the runner finds its last turn broke off: the session holds a
+ * message it never finished answering (the machine stopped under it, or Claude Code died).
+ */
+export const PICK_UP_TEXT =
+  "(From Ponzu: your last turn was cut off before you finished it, because the sandbox restarted under it. Carry on from where you were and answer the last message above. Check what is already on the canvas and in the checkout before you redo anything.)";
+
+/**
+ * The event a copy repeats (`payload.retryOf`): the API put it in the feed again because the turn
+ * it began never came (docs/cloud.md, "A turn that never came").
+ */
+export function retryOf(event: RunnerEvent): string | null {
+  const of = (event.payload as { retryOf?: unknown }).retryOf;
+  return typeof of === "string" ? of : null;
+}
+
 /** The text an event goes into the session as. A stop and a push are not: neither reaches the agent. */
 export function eventText(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string {
+  const text = textOf(event);
+  return retryOf(event)
+    ? `(From Ponzu: this was sent before, and your turn was cut off before you answered it. Here it is again.)\n${text}`
+    : text;
+}
+
+function textOf(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string {
   const who = name(event.from);
   switch (event.kind) {
     case "message":

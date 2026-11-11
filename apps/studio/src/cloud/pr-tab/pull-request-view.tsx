@@ -23,6 +23,7 @@ import { Avatar } from "../ui/avatar.tsx";
 import { Button, IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon, type IconSvgElement } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { safeHref } from "../ui/markdown.ts";
 import { AgentMark } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
@@ -242,14 +243,14 @@ function Subtitle({
       <div className="-ml-[23px] flex flex-wrap items-center gap-y-1 font-mono text-12 text-muted">
         <span className="flex min-w-0 max-w-full items-center gap-2 pl-[23px]">
           <span className="flex shrink-0 items-center gap-1">
-            <Icon icon={icon} size={12} stroke={2} className={color} />#{number}
+            <Icon icon={icon} step="small" className={color} />#{number}
             {onOpen ? (
               <IconButton
                 label="Open on GitHub"
                 onClick={onOpen}
-                className="-m-1 size-[19px] rounded-5 text-faint"
+                className="-m-1 size-[19px] rounded-5 text-icon-soft"
               >
-                <Icon icon={LinkSquare02Icon} size={11} stroke={1.9} />
+                <Icon icon={LinkSquare02Icon} step="meta" />
               </IconButton>
             ) : null}
           </span>
@@ -279,7 +280,7 @@ function Subtitle({
 function Section({ title, gap, children }: { title: string; gap?: boolean; children: ReactNode }) {
   return (
     <section aria-label={title}>
-      <h2 className="m-0 pb-3 font-semibold text-11 text-faint">{title}</h2>
+      <h2 className={cn("m-0 pb-3", TEXT.label)}>{title}</h2>
       <div className={cn("flex flex-col", gap && "gap-3")}>{children}</div>
     </section>
   );
@@ -289,9 +290,9 @@ function CheckGlyph({ state }: { state: CheckRun["state"] }) {
   const box = "grid size-[13px] shrink-0 place-items-center";
   switch (state) {
     case "passing":
-      return <Icon icon={Tick02Icon} size={13} stroke={2.4} className="text-pr-open" />;
+      return <Icon icon={Tick02Icon} step="small" className="text-pr-open" />;
     case "failing":
-      return <Icon icon={Cancel01Icon} size={13} stroke={2.4} className="text-pr-failing" />;
+      return <Icon icon={Cancel01Icon} step="small" className="text-pr-failing" />;
     case "running":
       return (
         <span className={box}>
@@ -305,7 +306,7 @@ function CheckGlyph({ state }: { state: CheckRun["state"] }) {
         </span>
       );
     case "skipped":
-      return <Icon icon={MinusSignIcon} size={13} stroke={2} className="text-faint" />;
+      return <Icon icon={MinusSignIcon} step="small" className="text-faint" />;
   }
 }
 
@@ -329,7 +330,7 @@ function CheckRow({ check, onOpenLink }: { check: CheckRun; onOpenLink: (url: st
       <span className="sr-only">{CHECK_WORD[check.state]}: </span>
       <CheckGlyph state={check.state} />
       <span className="min-w-0 truncate">{check.name}</span>
-      <span className="ml-auto shrink-0 font-mono text-11 text-faint">{meta}</span>
+      <span className={cn("ml-auto shrink-0", TEXT.meta)}>{meta}</span>
     </>
   );
   const row = "flex h-7 items-center gap-2 text-13";
@@ -415,9 +416,7 @@ function ReviewRow({ review, viewerLogin }: { review: PrReview; viewerLogin: str
         {authorName(review.author, viewerLogin)}{" "}
         {review.state === "approved" ? "approved" : "requested changes"}
       </span>
-      <span className="ml-auto shrink-0 font-mono text-11 text-faint">
-        {ago(review.at, now, "compact")}
-      </span>
+      <span className={cn("ml-auto shrink-0", TEXT.meta)}>{ago(review.at, now, "compact")}</span>
     </div>
   );
 }

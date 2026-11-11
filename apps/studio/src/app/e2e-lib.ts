@@ -5,13 +5,17 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { prebuilt } from "../../scripts/prebuilt.ts";
 import { STUDIO } from "../../scripts/visual-lib.ts";
 
 /**
  * Builds the app as the desktop package does, into a fresh directory. `e2e` keeps Ponzu Cloud in
- * memory in, which a production build leaves out.
+ * memory in, which a production build leaves out. When PONZU_PREBUILT_STUDIO names the builds made
+ * before the tests (scripts/prebuilt.ts), the directory is a copy of that mode's.
  */
 export async function buildApp(mode: "e2e" | "production"): Promise<string> {
+  const ready = prebuilt(mode);
+  if (ready) return ready;
   const dir = mkdtempSync(join(tmpdir(), "ponzu-studio-"));
   const build = Bun.spawn(["bunx", "vite", "build", "--mode", mode, "--outDir", dir], {
     cwd: STUDIO,

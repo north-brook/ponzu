@@ -421,6 +421,8 @@ async function resume(
     autoStopSeconds: AUTO_STOP_SECONDS,
     timeoutMs: WAKE_TIMEOUT_MS,
   };
+  // A runner that calls the API after this was thawed by this resume, and is up.
+  const since = clock.now();
   try {
     let wake: Awaited<ReturnType<typeof deps.sandbox.ensureAwake>>;
     try {
@@ -438,12 +440,16 @@ async function resume(
       const left = deadline - clock.now();
       const runner = await reviveRunner(deps, waking, {
         startUnit: left >= REVIVE_BUDGET_MS + COLD_MS,
+        since,
       });
       if (runner === "stay_down") return null;
       if (runner === "down") {
+        // Neither `/health` nor any call from it since the thaw: there is no runner here to
+        // lose a turn, so the machine is stopped without asking it to get ready.
         deps.log.warn("runner_down_after_warm_resume", {
           designId: waking.designId,
           sandboxId: waking.id,
+          start: wake.start,
         });
         // The next attempt starts here again, on a machine that is up.
         if (deadline - clock.now() < COLD_MS)
@@ -663,7 +669,7 @@ async function answers(
 ): Promise<boolean> {
   const address = { url: port.url, token: port.token };
   for (;;) {
-    if (await deps.runnerPort.healthy(address, HEALTH_MS)) return true;
+    if ((await deps.runnerPort.health(address, HEALTH_MS)).ok) return true;
     if (deps.clock.now() >= until) return false;
     await deps.clock.sleep(HEALTH_POLL_MS);
   }

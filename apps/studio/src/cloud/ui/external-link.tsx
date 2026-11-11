@@ -2,6 +2,7 @@ import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "./cn.ts";
 import { Icon } from "./icon.tsx";
+import type { IconStep } from "./ladder.ts";
 
 /**
  * A link that leaves the app, inline in a line of text or a row: muted, with the arrow out after
@@ -12,17 +13,15 @@ import { Icon } from "./icon.tsx";
  */
 export function ExternalLink({
   tone = "muted",
-  arrow = 11,
-  stroke = 2,
+  arrow = "meta",
   trailing,
   className,
   children,
   ...props
 }: ComponentProps<"button"> & {
   tone?: "muted" | "ink";
-  /** The arrow's size and stroke. */
-  arrow?: number;
-  stroke?: number;
+  /** The arrow's step on the ladder: `meta` beside 11–12px words, `small` beside 13px. */
+  arrow?: IconStep;
   trailing?: ReactNode;
 }) {
   return (
@@ -47,7 +46,7 @@ export function ExternalLink({
             tone === "muted" ? "text-icon-soft" : "text-muted",
           )}
         >
-          <Icon icon={ArrowUpRight01Icon} size={arrow} stroke={stroke} />
+          <Icon icon={ArrowUpRight01Icon} step={arrow} />
         </span>
       )}
     </button>

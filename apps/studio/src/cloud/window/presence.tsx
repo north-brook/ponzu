@@ -69,7 +69,7 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
           aria-label="Share"
           className="app-no-drag ml-[3px] grid size-[22px] shrink-0 cursor-default place-items-center rounded-pill text-muted shadow-[inset_0_0_0_1px_var(--c-outline)] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover aria-expanded:bg-selected aria-expanded:shadow-none"
         >
-          <Icon icon={PlusSignIcon} size={11} stroke={2.4} />
+          <Icon icon={PlusSignIcon} step="meta" />
         </PopoverTrigger>
       </Tip>
     </div>

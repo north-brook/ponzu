@@ -4,6 +4,7 @@ import {
   createQuestion,
   getRunnerContext,
   markEventsDelivered,
+  noteRunnerSaid,
   type RunnerContext,
   recordTurnUsage,
   reportRunnerState,
@@ -178,7 +179,8 @@ export const runner = new Hono<AppEnv>()
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
     const { designId, runnerId } = c.var.actor;
     const { claimId, limit } = c.req.valid("json");
-    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit });
+    const now = new Date(c.var.deps.clock.now());
+    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit, now });
     if (!claimed) throw new ApiError(404, "not_found", "There is no such design.");
     const response: ClaimResponse = {
       events: claimed.events.map(
@@ -212,6 +214,7 @@ export const runner = new Hono<AppEnv>()
       runnerId: c.var.actor.runnerId,
       ids,
       claudeSessionId,
+      now: new Date(c.var.deps.clock.now()),
     });
     return c.json({ acked } satisfies AckResponse);
   })
@@ -411,6 +414,14 @@ export const runner = new Hono<AppEnv>()
         })),
       })),
     });
+    // A turn that finished answered what it took in, even one that wrote nothing to the thread
+    // (docs/cloud.md, "A turn that never came"): nothing delivered before it is owed a turn.
+    if (turns.some((turn) => turn.turn)) {
+      await noteRunnerSaid(c.var.deps.db, {
+        designId: c.var.actor.designId,
+        now: new Date(c.var.deps.clock.now()),
+      });
+    }
     // Off the runner's path: the row is what matters to it, and analytics never fails a call.
     c.var.deps.background(
       "turns_reported",
