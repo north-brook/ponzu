@@ -1,9 +1,9 @@
-import { FolderGitIcon } from "@hugeicons/core-free-icons";
 import { shortDate } from "../claude.ts";
 import type { Repo } from "../model.ts";
 import { ExternalLink } from "../ui/external-link.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
+import { REPO_ICON } from "../ui/project-icons.ts";
 import { Row, Section, TwoLine } from "./parts.tsx";
 
 /** Ponzu's GitHub App on a workspace's account. */
@@ -69,9 +69,7 @@ export function GithubSection({ installation, repos, onManage, onInstall }: Gith
             repos.map((repo) => (
               <Row
                 key={repo.id}
-                leading={
-                  <Icon icon={FolderGitIcon} size={16} stroke={1.6} className="text-muted" />
-                }
+                leading={<Icon icon={REPO_ICON} size={16} stroke={1.6} className="text-muted" />}
               >
                 <TwoLine title={repo.name} line={`${repo.owner}/${repo.name}`} />
               </Row>

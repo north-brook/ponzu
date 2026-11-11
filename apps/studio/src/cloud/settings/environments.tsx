@@ -2,7 +2,6 @@ import {
   Add01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  FolderGitIcon,
   Key01Icon,
   Layers01Icon,
   PencilEdit02Icon,
@@ -14,6 +13,7 @@ import { ago, useNow } from "../time.ts";
 import { TextField } from "../ui/field.tsx";
 import { useFocusReturn } from "../ui/focus-return.ts";
 import { Icon } from "../ui/icon.tsx";
+import { REPO_ICON } from "../ui/project-icons.ts";
 import {
   canSaveSecret,
   type RepoEnvironment,
@@ -110,7 +110,7 @@ function RepoEnvironmentRow({
         onClick={onToggle}
         className="flex min-h-12 cursor-default items-center gap-2.5 rounded-6 py-1.5 text-left outline-none focus-ring"
       >
-        <Icon icon={FolderGitIcon} size={16} stroke={1.6} className="text-muted" />
+        <Icon icon={REPO_ICON} size={16} stroke={1.6} className="text-muted" />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate font-medium text-13 text-ink">{repo.name}</span>
           <span className="truncate text-12 text-faint">
