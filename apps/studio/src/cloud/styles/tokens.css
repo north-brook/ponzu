@@ -162,13 +162,14 @@
   /* The soft halo round the yuzu dot that heads a question. */
   --c-yuzu-halo: rgba(255, 200, 30, 0.25);
   /*
-   * A board's edge, on the canvas and in a miniature (the canvas package's --pz-board-shadow,
-   * below). The design's --c-board, its hairlines a step firmer: a white board on the white
-   * canvas, or a near-black one on the black, is held by the hairline alone.
+   * A board's edge, on the canvas and in a miniature (the canvas package's --pz-board-*,
+   * below): its hairline's colour and the shadow under it. The design's --c-board, its hairlines
+   * a step firmer: a white board on the white canvas, or a near-black one on the black, is held
+   * by the hairline alone, which the canvas draws one screen px wide at any zoom.
    */
-  --c-board:
-    0 0 0 1px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1)),
-    0 2px 10px light-dark(rgba(0, 0, 0, 0.05), transparent);
+  --c-board-edge: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1));
+  --c-board-drop: 0 2px 10px light-dark(rgba(0, 0, 0, 0.05), transparent);
+  --c-board: 0 0 0 1px var(--c-board-edge), var(--c-board-drop);
   /* The canvas pane's edge on the shell: a hairline, so it keeps a crisp edge over the glass. */
   --c-canvas-edge: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
   /* Where a comment's pin landed on a board's miniature (the canvas's pin, small). */
@@ -248,5 +249,7 @@
 :root .pz-root,
 :root .pz-root.pz-dark {
   --pz-canvas: var(--c-canvas);
+  --pz-board-edge: var(--c-board-edge);
+  --pz-board-drop: var(--c-board-drop);
   --pz-board-shadow: var(--c-board);
 }

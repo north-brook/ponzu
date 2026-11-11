@@ -1481,6 +1481,9 @@ export function Canvas({
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
                   radius={(BOARD_RADIUS * dpr) / scale}
+                  // Its edge, one px on screen at any zoom, the same way: zoomed out, a board the
+                  // canvas's own colour is held by its hairline alone.
+                  edge={dpr / scale}
                   corners={rounding.get(ab.id)}
                   onCorners={reportCorners}
                   hold={
@@ -2287,6 +2290,7 @@ const Board = memo(function Board({
   rankOf,
   arrivals,
   radius,
+  edge,
   corners: measuredCorners,
   onCorners,
   hold,
@@ -2318,6 +2322,8 @@ const Board = memo(function Board({
   arrivals: Arrivals;
   /** Its corners' radius, in its own px. */
   radius: number;
+  /** Its hairline's width, in its own px. */
+  edge: number;
   /** Its corners as its live root resolved them, once it has been live (corners.ts). */
   corners?: Radii;
   onCorners: (id: string, corners: Radii) => void;
@@ -2354,7 +2360,7 @@ const Board = memo(function Board({
         const at = el ? arrivals.takeBoard(ab.id) : undefined;
         if (el && at !== undefined) arriveBoard(el, at);
       }}
-      className="pz:absolute pz:shadow-board"
+      className="pz:absolute pz:shadow-[0_0_0_var(--pz-board-edge-width)_var(--pz-board-edge),var(--pz-board-drop)]"
       data-pz-board={ab.id}
       style={
         {
@@ -2364,6 +2370,7 @@ const Board = memo(function Board({
           height: fixed ?? undefined,
           borderRadius: corners,
           "--pz-board-radius": `${radius}px`,
+          "--pz-board-edge-width": `${edge}px`,
         } as CSSProperties
       }
     >
