@@ -169,13 +169,24 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
  * micromark slows with the square of some shapes (a 16 KB address of dots took 1.5 s, 16 KB of
  * `![` 5 s at 64 KB) and runs out of stack on a line of nested lists. `parseable` sends those to
  * plain text; what it lets through, shaped to sit just under each of its limits, measured under
- * 100 ms at the 32 KB limit on an M-series Mac.
+ * 100 ms at the 32 KB limit on an M-series Mac, about twice an ordinary reply that long. The
+ * bound is against that reply on the same machine, since CI runs slower: a shape that grows with
+ * the square of its length costs tens of times more.
  */
-test("hostile text the size of a GitHub comment draws quickly", () => {
+test("hostile text the size of a GitHub comment draws about as fast as a reply", () => {
   const fill = (unit: string, n = 65_536) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
   const under = (unit: string) => fill(unit, PROSE_LIMIT - 1);
+  const time = (text: string) => {
+    const started = performance.now();
+    html(text);
+    return performance.now() - started;
+  };
   // Warm the parser once, as the app has by the time anything arrives.
   html("*warm* `up`");
+  const reply = under(
+    "I moved the headline into `--hero-measure` and set **B** a step calmer, as [you asked](https://a.test).\n\n- one change\n- another\n\n",
+  );
+  const ordinary = Math.min(time(reply), time(reply), time(reply));
   for (const text of [
     fill("*a "),
     fill("_a "),
@@ -203,9 +214,7 @@ test("hostile text the size of a GitHub comment draws quickly", () => {
       .join("\n")
       .repeat(20),
   ]) {
-    const started = performance.now();
-    html(text);
-    expect(performance.now() - started).toBeLessThan(300);
+    expect(time(text)).toBeLessThan(Math.max(5 * ordinary, 100));
   }
 });
 
