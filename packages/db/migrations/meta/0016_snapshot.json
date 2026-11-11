@@ -1,5 +1,5 @@
 {
-  "id": "6a4bb4aa-79fe-4bb3-a594-cebb1389a7b2",
+  "id": "3d9c9452-486b-482e-ba55-7cc66278212c",
   "prevId": "a74907ab-0525-45d8-9603-2af1fe67db93",
   "version": "7",
   "dialect": "postgresql",
@@ -884,12 +884,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "people_read_at": {
-          "name": "people_read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1201,125 +1195,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.workspace_people": {
-      "name": "workspace_people",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "github_user_id": {
-          "name": "github_user_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "github_login": {
-          "name": "github_login",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "avatar_url": {
-          "name": "avatar_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "github_access": {
-          "name": "github_access",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "permission": {
-          "name": "permission",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo_permissions": {
-          "name": "repo_permissions",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "workspace_people_github_user_id_idx": {
-          "name": "workspace_people_github_user_id_idx",
-          "columns": [
-            {
-              "expression": "github_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workspace_people_workspace_id_workspaces_id_fk": {
-          "name": "workspace_people_workspace_id_workspaces_id_fk",
-          "tableFrom": "workspace_people",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "workspace_people_workspace_id_github_user_id_pk": {
-          "name": "workspace_people_workspace_id_github_user_id_pk",
-          "columns": [
-            "workspace_id",
-            "github_user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "workspace_people_github_access_check": {
-          "name": "workspace_people_github_access_check",
-          "value": "\"workspace_people\".\"github_access\" in ('owner', 'member', 'collaborator')"
-        },
-        "workspace_people_permission_check": {
-          "name": "workspace_people_permission_check",
-          "value": "\"workspace_people\".\"permission\" in ('admin', 'write', 'read', 'none')"
-        },
-        "workspace_people_permission_not_none_check": {
-          "name": "workspace_people_permission_not_none_check",
-          "value": "\"workspace_people\".\"permission\" <> 'none'"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.workspaces": {
       "name": "workspaces",
       "schema": "",
@@ -1445,19 +1320,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
-        },
-        "people_synced_at": {
-          "name": "people_synced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "people_complete": {
-          "name": "people_complete",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -2986,6 +2848,12 @@
         },
         "user_id": {
           "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posthog_session_id": {
+          "name": "posthog_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false

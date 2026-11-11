@@ -5,11 +5,12 @@ import { join } from "node:path";
 import { type Actor, type Doc, emptyDoc, findArtboard, parseHtml } from "@ponzu/core";
 import type { Renderer, RenderRequest } from "@ponzu/render";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
+import type { AiEvent } from "./agent/trace.ts";
 import { ApiError } from "./api/api.ts";
 import { ADA, FakeRunnerApi } from "./api/fake.ts";
-import type { AskedQuestion, RunnerSession } from "./api/protocol.ts";
+import type { AskedQuestion, RunnerAnalytics, RunnerSession } from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
-import { Runner, type Timing } from "./run.ts";
+import { Runner, type RunnerOptions, type Timing } from "./run.ts";
 
 const FAST: Partial<Timing> = {
   threadGapMs: 5,
@@ -98,6 +99,7 @@ async function setup(
     timing?: Partial<Timing>;
     renderer?: Renderer;
     flush?: () => void;
+    telemetry?: RunnerOptions["telemetry"];
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -112,6 +114,7 @@ async function setup(
     prepare: opts.prepare ?? (async () => work),
     renderer: opts.renderer,
     flush: opts.flush,
+    ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
     stateDir,
     log: (m) => logs.push(m),
     onFatal: (reason) => fatal.push(reason),
@@ -419,6 +422,8 @@ test("a message goes in at once, and is acknowledged once the session holds it, 
     text: "Message from Ada:\nMake the hero quieter.",
     priority: "now",
     human: true,
+    // Whose turn it begins: the event, its sender, and their app session (none here).
+    origin: { eventId: event.id, userId: ADA.id, sessionId: null },
   });
   await until(() => api.lastState?.state === "working");
   await Bun.sleep(30);
@@ -1102,4 +1107,143 @@ test("stopping waits for the agent's edits to reach the API, then reports idle",
   expect(s.api.lastState?.state).toBe("idle");
   expect(s.run.interrupts).toBe(1);
   expect(s.run.closed).toBe(true);
+});
+
+/* ------------------------------------------------------------------ */
+/* Analytics                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Telemetry that keeps what it is handed, and says when it was flushed and shut down. */
+function recordingTelemetry() {
+  const made: RunnerAnalytics[] = [];
+  const captured: AiEvent[][] = [];
+  const calls: string[] = [];
+  const telemetry: RunnerOptions["telemetry"] = (config) => {
+    made.push(config);
+    return {
+      capture: (events) => void captured.push(events),
+      flush: async () => void calls.push("flush"),
+      shutdown: async () => void calls.push("shutdown"),
+    };
+  };
+  return { telemetry, made, captured, calls };
+}
+
+const ANALYTICS: RunnerAnalytics = { key: "phc_test", host: "https://ph.test", content: false };
+
+test("with analytics on, each turn is traced under its design and workspace, for whoever began it", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({
+    session: { analytics: ANALYTICS, workspaceId: "ws_test" },
+    telemetry: t.telemetry,
+  });
+  expect(t.made).toEqual([ANALYTICS]);
+  const trace = s.run.opts.trace!;
+  expect(trace).toMatchObject({ content: false, designId: "des_test", workspaceId: "ws_test" });
+
+  s.run.ready("sess_1");
+  const sent = s.api.push(
+    { kind: "message", payload: { text: "Go" } },
+    { posthogSessionId: "0192e0a0-0000-7000-8000-000000000001" },
+  );
+  s.runner.poke();
+  const input = await s.run.input();
+  // The message carries who sent it and from which app session.
+  expect(input.origin).toEqual({
+    eventId: sent.id,
+    userId: ADA.id,
+    sessionId: "0192e0a0-0000-7000-8000-000000000001",
+  });
+  s.run.take(input);
+  // What the agent's trace hands over goes to PostHog's client.
+  trace.sink([{ event: "$ai_trace", distinctId: ADA.id, properties: {} }]);
+  expect(t.captured).toHaveLength(1);
+
+  // The turn's report goes with its usage: how it went, and the event that began it.
+  s.run.end({
+    id: "res_1",
+    error: { code: "claude_limit", message: "Limit." },
+    turn: { startedAt: new Date(Date.now() - 5_000).toISOString(), toolCalls: 3, eventId: sent.id },
+  });
+  await until(() => s.api.usage.has("res_1"));
+  const report = s.api.usage.get("res_1")!;
+  expect(report.models).toEqual([]);
+  expect(report.turn).toMatchObject({
+    outcome: "failed",
+    errorCode: "claude_limit",
+    toolCalls: 3,
+    eventId: sent.id,
+  });
+  expect(report.turn!.durationMs).toBeGreaterThanOrEqual(5_000);
+});
+
+test("a turn a person stopped is reported as stopped, with no error code", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: recordingTelemetry().telemetry,
+  });
+  s.run.ready("sess_1");
+  await turn(s);
+  s.run.end({
+    id: "res_1",
+    error: { code: "interrupted", message: "Stopped." },
+    turn: { startedAt: new Date().toISOString(), toolCalls: 0, eventId: null },
+  });
+  await until(() => s.api.usage.has("res_1"));
+  expect(s.api.usage.get("res_1")!.turn).toMatchObject({ outcome: "stopped", errorCode: null });
+});
+
+test("with analytics off the agent traces nothing, and the runner never makes a client", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: null }, telemetry: t.telemetry });
+  expect(t.made).toEqual([]);
+  expect(s.run.opts.trace).toBeUndefined();
+});
+
+test("the traces are flushed as the sandbox gets ready to sleep, and sent off as the runner stops", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: ANALYTICS }, telemetry: t.telemetry });
+  s.run.ready("sess_1");
+  s.api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => s.api.quiesced.length === 1);
+  expect(t.calls).toEqual(["flush"]);
+  await s.runner.stop();
+  expect(t.calls).toEqual(["flush", "shutdown"]);
+});
+
+test("a PostHog that fails to send does not cut short the wait for the thread before sleep", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => ({
+      capture: () => {},
+      flush: () => Promise.reject(new Error("PostHog is down")),
+      shutdown: async () => {},
+    }),
+  });
+  s.run.ready("sess_1");
+  await turn(s);
+  // The API is slow to take the thread: the reply is still on its way when the sleep comes.
+  s.api.delays.set("writeThread", 150);
+  s.run.say("m1", "Drawn.");
+  s.run.end();
+  s.api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => s.api.quiesced.length === 1);
+  expect(s.api.items().find((i) => i.kind === "assistant")).toMatchObject({
+    streaming: false,
+    payload: { text: "Drawn." },
+  });
+  expect(s.logs).toContain("sending the turns' traces failed: PostHog is down");
+});
+
+test("telemetry that cannot start leaves the runner running, untraced", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => {
+      throw new Error("no PostHog here");
+    },
+  });
+  expect(s.run.opts.trace).toBeUndefined();
+  expect(s.logs).toContain("analytics could not start: no PostHog here");
 });

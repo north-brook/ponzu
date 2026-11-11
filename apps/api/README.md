@@ -275,6 +275,7 @@ subscribes, commits an op through the API and waits for the change. It is skippe
 | `Authorization: Bearer <WorkOS access token>` | Every route but health and the exchange. `token_expired` means refresh with WorkOS and retry; `token_invalid`, `session_unknown` and `github_reauth_required` mean sign in again. |
 | `X-Ponzu-Client: <platform>/<version>` | `macos/2.0.0`, `ios/1.4.2`. When the API answers 426 `client_too_old`, offer the update; `details.minimumVersion` says what is enough. Off unless `PONZU_MIN_CLIENT_VERSIONS` is set. |
 | `X-Request-Id` | Optional, 8 to 64 of `A-Za-z0-9_-`. Every answer carries one; quote it when something fails. |
+| `X-POSTHOG-SESSION-ID` | Optional: posthog-js's `tracing_headers` sends it. What the request captures goes under that session ([docs/analytics.md](../../docs/analytics.md)). `X-POSTHOG-DISTINCT-ID` is allowed and ignored: who a request is about is who it authenticated as. |
 
 A client imports `AppType` from `@ponzu/api/types` and nothing else from this package.
 

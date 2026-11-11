@@ -1,4 +1,4 @@
-import { getQuiescedFor, getWakeContext, type Sandbox } from "@ponzu/db";
+import { getDesign, getQuiescedFor, getWakeContext, type Sandbox } from "@ponzu/db";
 import type { JobDeps } from "../jobs/run.ts";
 
 /*
@@ -108,6 +108,15 @@ export async function stopSandbox(
     quiesceMs,
     syncMs,
   });
+  // Under its workspace, which the row does not say. The stop is done whatever this finds.
+  const design = await getDesign(deps.db, stopping.designId).catch(() => null);
+  if (design) {
+    deps.analytics.capture(
+      "sandbox slept",
+      { design_id: design.id, quiesced: ready },
+      { distinctId: design.ownerId, workspaceId: design.workspaceId },
+    );
+  }
 }
 
 /**

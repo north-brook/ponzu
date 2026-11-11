@@ -27,6 +27,7 @@ export type JobDeps = Pick<
   | "runnerPort"
   | "storage"
   | "config"
+  | "analytics"
 >;
 
 /** A job as its handler sees it: which attempt this is, out of how many. */
@@ -74,7 +75,7 @@ export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Pr
  * cron runs any retry through `runJob`.
  */
 export async function runHeldJob(
-  { db, clock, log }: Pick<JobDeps, "db" | "clock" | "log">,
+  { db, clock, log, analytics }: Pick<JobDeps, "db" | "clock" | "log" | "analytics">,
   job: RunningJob,
   worker: string,
   work: () => Promise<void>,
@@ -94,6 +95,11 @@ export async function runHeldJob(
       log.info("job_waiting", { jobId: job.id, kind: job.kind, attempts: job.attempts, wait });
     } else {
       log.warn("job_failed", { jobId: job.id, kind: job.kind, attempts: job.attempts, error });
+      analytics.exception(error, {
+        job_kind: job.kind,
+        job_id: job.id,
+        attempt: job.attempts,
+      });
     }
     return;
   }

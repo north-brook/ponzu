@@ -309,6 +309,11 @@ export const events = pgTable(
     payload: jsonb("payload").$type<Json>().notNull(),
     /** The person behind it. Null when GitHub was. */
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * The PostHog session of the app that sent it, when it said (docs/analytics.md): the turn
+     * it starts is traced under that session, so a recording links to the agent's work.
+     */
+    posthogSessionId: text("posthog_session_id"),
     createdAt: createdAt(),
     /** When a runner last took it. */
     claimedAt: instant("claimed_at"),

@@ -106,6 +106,7 @@ export {
   type DesignEvent,
   type EventPerson,
   findStops,
+  getEventOrigins,
   hasHeldEvents,
   markEventsDelivered,
   type NewEvent,

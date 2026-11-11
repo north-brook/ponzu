@@ -39,7 +39,7 @@ import { githubUserToken } from "./user-token.ts";
  */
 
 /** `background`, where there is a request to run work beside (`reconcileInstallation`). */
-type SyncDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log"> &
+type SyncDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics"> &
   Partial<Pick<Deps, "background">>;
 
 /** How old Ponzu's copy of an installation may be before a person's sync reads it again. */

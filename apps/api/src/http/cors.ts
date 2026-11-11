@@ -1,4 +1,5 @@
 import { cors as honoCors } from "hono/cors";
+import { DISTINCT_ID_HEADER, SESSION_HEADER } from "../analytics/middleware.ts";
 import { CLIENT_HEADER } from "./client-version.ts";
 import { REQUEST_ID_HEADER } from "./request.ts";
 
@@ -36,7 +37,15 @@ export function isAllowedOrigin(origin: string): boolean {
 export const cors = honoCors({
   origin: (origin) => (isAllowedOrigin(origin) ? origin : null),
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  allowHeaders: ["authorization", "content-type", CLIENT_HEADER, REQUEST_ID_HEADER],
+  allowHeaders: [
+    "authorization",
+    "content-type",
+    CLIENT_HEADER,
+    REQUEST_ID_HEADER,
+    // posthog-js's `tracing_headers`: the app's session, which links a recording to what it did.
+    SESSION_HEADER,
+    DISTINCT_ID_HEADER,
+  ],
   exposeHeaders: [REQUEST_ID_HEADER],
   maxAge: 600,
 });

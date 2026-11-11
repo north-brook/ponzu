@@ -220,6 +220,7 @@ export const environments = new Hono<AppEnv>()
       }
       if (added === "full") throw FULL();
       c.var.log.info("repo_secret_added", { repoId: repo.id });
+      c.var.deps.analytics.capture("repo secret changed", { repo_id: repo.id, action: "added" });
       return c.json(await answer(c, repo.id), 201);
     },
   )
@@ -240,6 +241,7 @@ export const environments = new Hono<AppEnv>()
       if (replaced === "missing") throw new ApiError(404, "not_found", "There is no such secret.");
       if (replaced === "full") throw FULL();
       c.var.log.info("repo_secret_replaced", { repoId: repo.id });
+      c.var.deps.analytics.capture("repo secret changed", { repo_id: repo.id, action: "replaced" });
       return c.json(await answer(c, repo.id));
     },
   )
@@ -256,6 +258,7 @@ export const environments = new Hono<AppEnv>()
         throw new ApiError(404, "not_found", "There is no such secret.");
       }
       c.var.log.info("repo_secret_removed", { repoId: repo.id });
+      c.var.deps.analytics.capture("repo secret changed", { repo_id: repo.id, action: "removed" });
       return c.json(await answer(c, repo.id));
     },
   );

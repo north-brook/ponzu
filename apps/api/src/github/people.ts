@@ -40,7 +40,7 @@ import { reconcileInstallation } from "./installations.ts";
  * replaces what was known of it; one cut short only adds. Someone left reaching no repo is gone.
  */
 
-type PeopleDeps = Pick<Deps, "db" | "clock" | "github" | "log">;
+type PeopleDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics">;
 type RecordDeps = Pick<Deps, "db" | "clock" | "log">;
 
 /** How old the last read of a workspace's people may be before a reconcile reads it again. */
