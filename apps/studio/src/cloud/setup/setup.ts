@@ -58,11 +58,6 @@ export function setupStep(facts: SetupFacts): SetupStep {
   return "done";
 }
 
-/** How many of the three progress bars are filled on a step. Skipped steps keep their places. */
-export function setupProgress(step: "where" | "claude" | "iphone"): 1 | 2 | 3 {
-  return step === "where" ? 1 : step === "claude" ? 2 : 3;
-}
-
 /** An account Ponzu can work in now: installed, and not suspended on GitHub. */
 export function isReady(account: GithubAccount): boolean {
   return account.status === "ready" && !account.suspended;

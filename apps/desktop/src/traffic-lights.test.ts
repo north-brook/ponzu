@@ -11,16 +11,16 @@ test("the chrome is as tall as the studio draws it", async () => {
   expect(source).toContain(`app-drag flex h-[${CHROME}px] `);
 });
 
-test("the larger lights of macOS 26 and later sit centred on the chrome", () => {
-  expect(centre("26.0", 14)).toBe(CHROME / 2);
-  expect(centre("27.0.1", 14)).toBe(CHROME / 2);
-});
-
-test("the smaller lights of an older macOS sit centred too", () => {
-  expect(centre("15.6.1", 12)).toBe(CHROME / 2);
-  expect(centre("14.0", 12)).toBe(CHROME / 2);
-});
-
-test("a version it cannot read is taken for a current one", () => {
-  expect(trafficLights("")).toEqual({ x: 16, y: (CHROME - 14) / 2 });
+test("the lights sit centred on the chrome on every macOS, and a version it cannot read is a current one", () => {
+  // macOS 26 and later draw them 14px tall, an older macOS 12.
+  for (const [version, height] of [
+    ["26.0", 14],
+    ["27.0.1", 14],
+    ["15.6.1", 12],
+    ["14.0", 12],
+    ["", 14],
+  ] as const) {
+    expect({ version, centre: centre(version, height) }).toEqual({ version, centre: CHROME / 2 });
+  }
+  expect(trafficLights("").x).toBe(16);
 });

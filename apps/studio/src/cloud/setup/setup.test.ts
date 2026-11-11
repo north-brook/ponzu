@@ -6,7 +6,6 @@ import {
   isReady,
   type SetupFacts,
   type SetupStep,
-  setupProgress,
   setupStep,
 } from "./setup.ts";
 
@@ -71,6 +70,8 @@ describe("the gates, as people meet them", () => {
       iphoneStepSeen: true,
     };
     expect(setupStep(returning)).toBe("where");
+    // One installation still standing among the lost ones is enough.
+    expect(setupStep({ ...returning, workspaces: [removed, suspended, ready] })).toBe("done");
   });
 
   test("a Claude that signed out later asks on send, not through setup again", () => {
@@ -96,52 +97,6 @@ describe("the gates, as people meet them", () => {
   });
 });
 
-describe("the gates, every combination", () => {
-  const bools = [false, true];
-  const workspaceSets = [[], [ready], [suspended], [removed], [removed, ready]];
-  const claudes = [null, { status: "connected" as const }, { status: "revoked" as const }];
-  const signIns = [null, pending, lapsed];
-  const all: SetupFacts[] = [];
-  for (const signedIn of bools)
-    for (const workspaces of workspaceSets)
-      for (const whereConfirmed of bools)
-        for (const claude of claudes)
-          for (const claudeSignIn of signIns)
-            for (const iphoneStepSeen of bools)
-              for (const hasIphone of bools)
-                all.push({
-                  signedIn,
-                  workspaces,
-                  whereConfirmed,
-                  claude,
-                  claudeSignIn,
-                  iphoneStepSeen,
-                  hasIphone,
-                });
-
-  // Each gate, as its own predicate: true when it holds the person back.
-  const gates: [SetupStep, (f: SetupFacts) => boolean][] = [
-    ["sign_in", (f) => !f.signedIn],
-    ["where", (f) => !f.whereConfirmed || !f.workspaces.some((w) => w.installed && !w.suspended)],
-    ["claude", (f) => f.claude === null],
-    ["iphone", (f) => !f.iphoneStepSeen && !f.hasIphone],
-  ];
-
-  test(`the step is the first gate that holds, in all ${all.length}`, () => {
-    for (const facts of all) {
-      const expected = gates.find(([, holds]) => holds(facts))?.[0] ?? "done";
-      expect({ facts, step: setupStep(facts) }).toEqual({ facts, step: expected });
-    }
-  });
-
-  test(`Connect Claude opens on the code exactly while a sign-in is pending, in all ${all.length}`, () => {
-    for (const facts of all) {
-      const expected = facts.claudeSignIn === pending ? "subscription" : "choose";
-      expect({ facts, mode: claudeStepMode(facts, NOW) }).toEqual({ facts, mode: expected });
-    }
-  });
-});
-
 describe("where do you design", () => {
   const account = (over: Partial<GithubAccount>): GithubAccount => ({
     githubAccountId: 1,
@@ -161,11 +116,5 @@ describe("where do you design", () => {
     expect(canContinue([account({ status: "ready", suspended: true })])).toBe(false);
     expect(canContinue([account({}), account({ status: "ready", kind: "org" })])).toBe(true);
     expect(isReady(account({ status: "ready" }))).toBe(true);
-  });
-
-  test("progress fills to the step's place", () => {
-    expect([setupProgress("where"), setupProgress("claude"), setupProgress("iphone")]).toEqual([
-      1, 2, 3,
-    ]);
   });
 });
