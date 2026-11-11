@@ -144,7 +144,7 @@ test("a ping toggle shows at once, and is put back when the API turns it down", 
   const needsYou = () => queryClient.getQueryData(queries.notifications().queryKey)?.prefs.needsYou;
   await queryClient.fetchQuery(queries.notifications());
   // Answers take a moment: what shows before one is the toggle as flipped.
-  backend.latencyMs = 20;
+  backend.latencyMs = 300;
   const flipped = mutate(mutations.setPings(), { needsYou: false });
   await settle();
   expect(needsYou()).toBe(false);
