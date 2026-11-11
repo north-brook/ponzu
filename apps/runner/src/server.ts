@@ -8,10 +8,8 @@ import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol
  * with the URL can reach, so the runner checks the caller itself: every request carries
  * `authorization: Bearer <portToken>`, which the API handed this start of the runner (and only
  * this process holds; the agent's environment never has it). Even then nothing that arrives is
- * trusted:
- * `POST /poke` says there may be something to claim, and the runner only claims, from the API,
- * with its own token; `POST /report` asks for a state report now, and only the API's answer to
- * that report can tell the runner to get ready for sleep. `GET /health` says it is up.
+ * trusted: `POST /poke` says there may be something to claim, and the runner only claims, from
+ * the API, with its own token. `GET /health` says it is up, and whether it has started.
  */
 export function serve(opts: {
   port: number;
@@ -19,7 +17,6 @@ export function serve(opts: {
   portToken: string;
   hostname?: string;
   poke(): void;
-  report?(): void;
   health(): unknown;
 }): {
   port: number;
@@ -35,11 +32,6 @@ export function serve(opts: {
       if (pathname === "/poke") {
         if (request.method !== "POST") return new Response(null, { status: 405 });
         opts.poke();
-        return new Response(null, { status: 204 });
-      }
-      if (pathname === "/report") {
-        if (request.method !== "POST") return new Response(null, { status: 405 });
-        opts.report?.();
         return new Response(null, { status: 204 });
       }
       if (pathname === "/health") {

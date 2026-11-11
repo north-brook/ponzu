@@ -153,7 +153,6 @@ const server = serve({
   port: env.port,
   portToken: env.portToken,
   poke: () => runner.poke(),
-  report: () => runner.report(),
   health: () => runner.health(),
 });
 log(`listening on ${server.port}`);

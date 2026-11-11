@@ -17,6 +17,51 @@ export interface Person {
 }
 
 /* ------------------------------------------------------------------ */
+/* Starting                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The runner's one port, which the sandbox makes public at `https://<sub>.vercel.run`. Every
+ * route answers 401 without `authorization: Bearer <PONZU_PORT_TOKEN>`: `POST /poke` (204) and
+ * `GET /health` (200 `{ started }`).
+ */
+export const RUNNER_PORT = 4600;
+
+/**
+ * The image's own commands for the runner, root-owned, which the API runs as root
+ * (`runCommand({ sudo: true })`).
+ */
+export const IMAGE_COMMANDS = {
+  /**
+   * Detached, at every start of the sandbox: fetch the runner bundle `PONZU_RUNNER_BUNDLE` names
+   * if it is missing, then the supervisor behind its lock, its output in /var/log/ponzu/runner.log.
+   */
+  start: "/opt/ponzu/bin/ponzu-start",
+  /** Waited (30 s): SIGTERM the supervisor, wait up to 25 s for its lock, sync. Idempotent. */
+  stop: "/opt/ponzu/bin/ponzu-stop",
+} as const;
+
+/**
+ * The environment of `IMAGE_COMMANDS.start`, the one place the runner's secrets go: never the
+ * sandbox's own environment, never a file. Exactly one Claude credential.
+ */
+export type StartEnv = {
+  PONZU_API_URL: string;
+  PONZU_DESIGN_ID: string;
+  /** `pzr_…`, 25 h, new at every start. */
+  PONZU_RUNNER_TOKEN: string;
+  /** 32 random bytes, base64url: the bearer of the runner's port. */
+  PONZU_PORT_TOKEN: string;
+  /** The sha256 (hex) of the runner bundle this API serves (`@ponzu/runner/bundle`). */
+  PONZU_RUNNER_BUNDLE: string;
+  /** The repo's secrets (`REPO_SECRETS_VARIABLE`), at most 64 KB: our own cap. */
+  PONZU_REPO_SECRETS?: string;
+} & (
+  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never }
+  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never }
+);
+
+/* ------------------------------------------------------------------ */
 /* Session                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -584,11 +629,6 @@ export interface StateRequest {
   /** The Claude session, once Claude Code has said which it is. Stored for the next resume. */
   claudeSessionId: string | null;
   /**
-   * The sleep this runner is ready for: the `sleep` an answer named, once it has finished its
-   * turn, let its edits reach the API, saved a checkpoint and flushed the disk.
-   */
-  quiesced?: string | null;
-  /**
    * The design's branch in this sandbox against GitHub, once the runner has looked: what Create
    * PR goes by while GitHub lacks commits. Absent: unchanged. Null for Scratch, or a checkout
    * that failed.
@@ -607,12 +647,6 @@ export interface BranchReport {
 export interface StateResponse {
   /** The design's head, so the runner's replica can catch up. */
   seq: number;
-  /**
-   * While the API is putting the sandbox to sleep: which stop (an ISO 8601 time). The runner
-   * takes no new work and gets ready, then says so with `quiesced`. Null otherwise; absent from
-   * an API that does not ask.
-   */
-  sleep?: string | null;
 }
 
 /** How often a live runner reports its state, changed or not. */

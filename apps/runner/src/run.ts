@@ -87,16 +87,10 @@ export interface Timing {
   previewDelayMs: number;
   /** The wait before Claude Code is started again after it stopped by itself. */
   restartMs: number;
-  /**
-   * Getting ready to sleep: how long a running turn may go on finishing, and how long the
-   * checkpoint may take. The API stops the sandbox after its own wait whatever happens.
-   */
-  quiesceTurnMs: number;
+  /** How long the checkpoint after a turn may take. */
   checkpointMs: number;
   /** The waits between tries of a push that may pass again (push.ts). */
   pushWaitsMs: number[];
-  /** How long getting ready to sleep may spend pushing. */
-  quiescePushMs: number;
   /** The waits between checks that GitHub honours a token for git (git-token.ts). */
   gitReadyWaitsMs: number[];
   /** The wait before a failed call is made again, after `failures` in a row. */
@@ -113,10 +107,8 @@ export const TIMING: Timing = {
   stopStepMs: 2_500,
   previewDelayMs: 3_000,
   restartMs: 2_000,
-  quiesceTurnMs: 15_000,
   checkpointMs: 10_000,
   pushWaitsMs: [2_000, 5_000, 10_000, 15_000],
-  quiescePushMs: 8_000,
   gitReadyWaitsMs: [500, 1_000, 1_500, 2_000, 2_500, 3_000, 4_000],
   backoff: BACKOFF,
 };
@@ -341,11 +333,6 @@ export class Runner {
   private checkpoints: Checkpoints | null = null;
   /** What starting found of the disk against the API's last checkpoint. */
   recovery: Recovery = { kind: "none", restored: { session: false, workspace: false } };
-  /**
-   * The sleep the API is putting the sandbox through, as its state answers name it: no new work
-   * is claimed until it says the sandbox is awake again. `ready` once the runner said so.
-   */
-  private sleep: { id: string; ready: boolean } | null = null;
 
   constructor(private readonly opts: RunnerOptions) {
     this.api = watchFatal(opts.api, (err) => this.fatal(err));
@@ -361,7 +348,6 @@ export class Runner {
       gapMs: this.timing.stateGapMs,
       heartbeatMs: this.timing.heartbeatMs,
       onSeq: (seq) => this.replica?.notify(seq),
-      onSleep: (sleep) => this.onSleep(sleep),
       onError: onError("state report"),
       backoff,
     });
@@ -453,19 +439,11 @@ export class Runner {
   }
 
   /**
-   * Report the state now. What arrives is never trusted: only the API's answer to the report can
-   * say the sandbox is going to sleep.
+   * What `/health` says: `started` once the design is open, Claude Code is up and the claims
+   * have begun, until the runner starts stopping.
    */
-  report(): void {
-    // Not started: a report now would carry no lease, and the API would answer `superseded`.
-    // The reports that start the heartbeat hear any sleep there is.
-    if (this.stopping || !this.claimTimer) return;
-    this.state.now();
-  }
-
-  /** What `/health` says. */
-  health(): { ok: true; state: AgentState } {
-    return { ok: true, state: this.state.current.state };
+  health(): { started: boolean; state: AgentState } {
+    return { started: this.claimTimer !== null && !this.stopping, state: this.state.current.state };
   }
 
   /**
@@ -482,9 +460,12 @@ export class Runner {
   }
 
   /**
-   * Shut down in order, within a few seconds: stop the turn, let the agent's edits reach the
-   * API, report the final state, close. Whatever was not acknowledged is claimed again next
-   * time, and questions stay open for people to answer while the sandbox sleeps.
+   * Shut down in order, within the supervisor's 20 s grace: stop the turn, let the agent's edits
+   * reach the API, report the final state, close Claude Code, save a checkpoint and flush the
+   * disk, then push what GitHub lacks while the traces leave. This is every stop of the sandbox:
+   * the API runs `ponzu-stop` (SIGTERM) and waits for it before it stops the session. Whatever
+   * was not acknowledged is claimed again next time, and questions stay open for people to
+   * answer while the sandbox sleeps.
    */
   stop(): Promise<void> {
     this.stopping ??= this.shutdown();
@@ -494,7 +475,18 @@ export class Runner {
   private async shutdown(): Promise<void> {
     const within = (p: Promise<unknown>) => bounded(p, this.timing.stopStepMs);
     if (this.claimTimer) clearInterval(this.claimTimer);
-    if (this.working && this.run) await within(this.run.interrupt());
+    if (this.working && this.run) {
+      await within(this.run.interrupt());
+      // The stop cut the turn: the thread says where it stopped, so the person knows to pick it
+      // up. A runner the API has let go of can write nothing more.
+      if (!this.fatalReason)
+        this.notice(randomId("ti"), {
+          type: "error",
+          code: "turn_failed",
+          message:
+            "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
+        });
+    }
     // A runner the API has let go of can deliver nothing more: the next one has the design.
     if (this.ws && !this.fatalReason) await this.ws.design.settled(this.timing.stopStepMs);
     this.dropAsks("The sandbox is going to sleep.");
@@ -523,24 +515,15 @@ export class Runner {
     for (const outbox of [this.thread, this.acks, this.questions, this.turns]) outbox.close();
     this.ws?.close();
     this.replica?.close();
-    // Claude Code has closed, so the last turn's trace is queued: it leaves before the machine.
-    await within(this.telemetry?.shutdown() ?? Promise.resolve());
-    await within(this.opts.renderer?.close() ?? Promise.resolve());
-  }
-
-  /** Sends the queued traces, within a stop step; a PostHog that fails or hangs costs nothing. */
-  private flushTelemetry(): Promise<void> {
-    if (!this.telemetry) return Promise.resolve();
-    let flushing: Promise<void>;
-    try {
-      flushing = this.telemetry.flush();
-    } catch (err) {
-      flushing = Promise.reject(err);
-    }
-    return bounded(
-      flushing.catch((err) => this.log(`sending the turns' traces failed: ${said(err)}`)),
-      this.timing.stopStepMs,
-    );
+    const pushMs = this.timing.stopStepMs * 2;
+    await Promise.all([
+      // The checkpoint holds the commits whatever happens; GitHub gets them too if it can in time.
+      // The next start pushes what is left.
+      bounded(this.push("stop", { deadline: Date.now() + pushMs }), pushMs),
+      // Claude Code has closed, so the last turn's trace is queued: it leaves before the machine.
+      within(this.telemetry?.shutdown() ?? Promise.resolve()),
+      within(this.opts.renderer?.close() ?? Promise.resolve()),
+    ]);
   }
 
   /** PostHog, when the session says analytics is on. Failing to start it starts no trace. */
@@ -633,81 +616,6 @@ export class Runner {
       }
     }
     this.api.reportGit({ name: name as GitReportName, fields: scalars }).catch(() => {});
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Sleep                                                             */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * What the API's state answer says of sleep. A stop under way makes the runner take no new
-   * work, finish the turn (for a while), let its edits reach the API, save a checkpoint, flush
-   * the disk and say it is ready; the API stops the sandbox after its own wait either way. The
-   * sandbox awake again (a warm resume thaws this same process) makes it take work again.
-   */
-  private onSleep(sleep: string | null): void {
-    if (sleep === null) {
-      if (!this.sleep) return;
-      this.sleep = null;
-      this.log("awake again");
-      this.state.set({ quiesced: null });
-      this.claim();
-      return;
-    }
-    if (this.sleep?.id === sleep || this.stopping) return;
-    this.sleep = { id: sleep, ready: false };
-    void this.quiesce(sleep).catch((err) =>
-      this.log(`getting ready to sleep failed: ${said(err)}`),
-    );
-  }
-
-  private async quiesce(id: string): Promise<void> {
-    const current = () => this.sleep?.id === id && !this.stopping;
-    this.log(`getting ready to sleep (${id})`);
-    const until = Date.now() + this.timing.quiesceTurnMs;
-    // A claim already out may bring work: `claim` holds back what it brings, once it is in.
-    if (this.claiming) await bounded(this.claiming, this.timing.quiesceTurnMs);
-    while (this.working && Date.now() < until && current()) await sleep(50);
-    if (!current()) return;
-    if (this.working && this.run) {
-      // The stop would cut the turn anyway: end it here, so the transcript and the thread say
-      // where it stopped, and the person knows to pick it up.
-      this.log("the turn did not finish before the sleep: interrupting it");
-      await bounded(this.interrupt(), this.timing.stopStepMs);
-      this.notice(randomId("ti"), {
-        type: "error",
-        code: "turn_failed",
-        message:
-          "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
-      });
-    }
-    if (this.ws) await this.ws.design.settled(this.timing.settleMs);
-    await Promise.all([
-      bounded(
-        Promise.all([
-          this.thread.flush(),
-          this.acks.flush(),
-          this.questions.flush(),
-          this.turns.flush(),
-          this.previews?.flush(),
-        ]),
-        this.timing.stopStepMs,
-      ),
-      // The turns' traces, before the machine is frozen with them in memory. Beside the product's
-      // own flushes, never among them: a PostHog that fails at once must not cut short the wait
-      // for the thread, and one that hangs waits no longer than they may.
-      this.flushTelemetry(),
-    ]);
-    await bounded(this.checkpoint(), this.timing.checkpointMs);
-    // The checkpoint holds the commits whatever happens; GitHub gets them too if it can in time.
-    if (current()) {
-      const deadline = Date.now() + this.timing.quiescePushMs;
-      await bounded(this.push("sleep", { deadline }), this.timing.quiescePushMs);
-    }
-    if (!current()) return;
-    this.sleep!.ready = true;
-    this.state.set({ quiesced: id });
-    this.log("ready to sleep");
   }
 
   private async prepare(): Promise<string> {
@@ -879,13 +787,6 @@ export class Runner {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
     // the design and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
-    // Going to sleep, or just thawed from it: what arrives now waits in the feed until the API
-    // says the sandbox is awake. A warm wake only pokes, so ask it now; an answer with no sleep
-    // claims (`onSleep`).
-    if (this.sleep) {
-      this.state.now();
-      return;
-    }
     if (this.claiming) {
       this.claimAgain = true;
       return;
@@ -904,10 +805,9 @@ export class Runner {
           this.claimFailures = 0;
           if (pullRequest !== undefined) this.pullRequest = pullRequest;
           this.replica.notify(seq);
-          if (this.sleep) {
-            // The sleep came while this claim was out: nothing it brought starts a turn the stop
-            // would cut. Unacknowledged, they are handed out again to the same claim id (this
-            // process, after a warm wake) or to the next runner (after a cold one).
+          if (this.stopping) {
+            // The stop came while this claim was out: nothing it brought starts a turn the stop
+            // would cut. Unacknowledged, they are handed out again to the next runner.
             break;
           }
           this.claimId = null;
@@ -1571,16 +1471,16 @@ export class Runner {
   /**
    * Push the design's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
    * how it stands: to the API with the state (what Create PR goes by), and in the thread when a
-   * push failed for good. The end of a turn, a sleep, a start and a person's Create PR ask for it.
+   * push failed for good. The end of a turn, a stop, a start and a person's Create PR ask for it.
    */
-  private push(why: "turn" | "sleep" | "start" | "asked", opts: { deadline?: number } = {}) {
+  private push(why: "turn" | "stop" | "start" | "asked", opts: { deadline?: number } = {}) {
     const pusher = this.pusher;
     if (!pusher || this.fatalReason) return Promise.resolve();
     const run = async () => {
       try {
         const ahead = await pusher.unpushed();
-        // Said while it lasts, but not on the way to sleep: that would read as work to keep awake for.
-        if ((ahead > 0 || why === "asked") && why !== "sleep") {
+        // Said while it lasts, but not on the way to a stop: that would read as work to keep awake for.
+        if ((ahead > 0 || why === "asked") && why !== "stop") {
           this.pushingNow = true;
           this.refreshState();
         }

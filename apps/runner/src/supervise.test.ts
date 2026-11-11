@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { backoffMs, type Child, EXIT_CONFIG, STOP_GRACE_MS, supervise } from "./supervise.ts";
+import { join } from "node:path";
+import {
+  backoffMs,
+  type Child,
+  EXIT_CONFIG,
+  runnerEntry,
+  STOP_GRACE_MS,
+  supervise,
+} from "./supervise.ts";
 
 /** A clock and children the test ends by hand. */
 function world(stopAfter?: number) {
@@ -60,6 +68,13 @@ function world(stopAfter?: number) {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+test("the supervisor starts the runner beside it: the bundle's runner.js, or the source's main.ts", () => {
+  const dir = "/opt/ponzu/runners/d477fcea";
+  expect(runnerEntry(dir, `${dir}/supervise.js`)).toBe(`${dir}/runner.js`);
+  expect(runnerEntry("/src", "/src/supervise.ts")).toBe("/src/main.ts");
+  expect(runnerEntry()).toBe(join(import.meta.dir, "main.ts"));
+});
 
 test("the backoff doubles from a second to thirty", () => {
   expect([1, 2, 3, 4, 5, 6, 7].map(backoffMs)).toEqual([
