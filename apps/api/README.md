@@ -37,7 +37,7 @@ src/
                     sandbox's address, and whether its `/health` answers (`runnerPort`)
     anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
-    model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
+    model.ts        real: Claude Haiku (ideas) and Sonnet (their gate) via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets

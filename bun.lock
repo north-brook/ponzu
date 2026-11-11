@@ -8,6 +8,7 @@
         "@biomejs/biome": "^2.5.15",
         "@commitlint/cli": "^21.2.4",
         "@commitlint/config-conventional": "^21.2.4",
+        "@ponzu/evals": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.3",
       },
@@ -42,6 +43,7 @@
         "zod": "^4",
       },
       "devDependencies": {
+        "@ponzu/evals": "workspace:*",
         "@types/node": "^26.6.5",
         "fast-check": "4.3.0",
       },
@@ -161,7 +163,9 @@
         "zod": "^4",
       },
       "devDependencies": {
+        "@ponzu/evals": "workspace:*",
         "@ponzu/sandbox": "workspace:*",
+        "mdast-util-from-markdown": "2.1.0",
       },
     },
     "apps/studio": {
@@ -310,6 +314,14 @@
         "@types/pg": "^8.23.1",
         "drizzle-kit": "^0.31.11",
         "pg": "^8.23.1",
+      },
+    },
+    "packages/evals": {
+      "name": "@ponzu/evals",
+      "dependencies": {
+        "@ai-sdk/anthropic": "^4.0.102",
+        "ai": "^7.0.169",
+        "zod": "^4",
       },
     },
     "packages/mcp": {
@@ -1011,6 +1023,8 @@
     "@ponzu/db": ["@ponzu/db@workspace:packages/db"],
 
     "@ponzu/desktop": ["@ponzu/desktop@workspace:apps/desktop"],
+
+    "@ponzu/evals": ["@ponzu/evals@workspace:packages/evals"],
 
     "@ponzu/mcp": ["@ponzu/mcp@workspace:packages/mcp"],
 
