@@ -156,6 +156,33 @@ export async function getUser(db: Db, userId: string): Promise<User | null> {
   return user ?? null;
 }
 
+/** A guided setup step that leaves no other trace: "Where do you design?" and the iPhone step. */
+export type OnboardingStep = "where" | "iphone";
+
+/**
+ * Records that the person finished a step of guided setup, the first time only: a step done
+ * again on another device keeps when it was first done. Answers both steps as they now stand.
+ */
+export async function recordOnboardingStep(
+  db: Db,
+  { userId, step, at }: { userId: string; step: OnboardingStep; at: Date },
+): Promise<{ whereAt: Date | null; iphoneAt: Date | null }> {
+  const first = (column: typeof users.onboardingWhereAt) =>
+    sql`coalesce(${column}, ${at.toISOString()}::timestamptz)`;
+  const [row] = await run(
+    db
+      .update(users)
+      .set(
+        step === "where"
+          ? { onboardingWhereAt: first(users.onboardingWhereAt) }
+          : { onboardingIphoneAt: first(users.onboardingIphoneAt) },
+      )
+      .where(eq(users.id, userId))
+      .returning({ whereAt: users.onboardingWhereAt, iphoneAt: users.onboardingIphoneAt }),
+  );
+  return row ?? { whereAt: null, iphoneAt: null };
+}
+
 /** The person signed in as this GitHub account, or null if they never signed in to Ponzu. */
 export async function getUserByGithubId(db: Db, githubUserId: number): Promise<User | null> {
   const [user] = await run(db.select().from(users).where(eq(users.githubUserId, githubUserId)));
