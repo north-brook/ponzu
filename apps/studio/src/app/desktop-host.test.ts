@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import type { SessionState } from "@ponzu/client";
-import { signedInCache } from "./desktop-host.ts";
+import { linkSchemeOf, signedInCache } from "./desktop-host.ts";
+
+test("the API links back to Ponzu or Ponzu Dev; Ponzu Local, with no scheme, gets Ponzu's", () => {
+  expect(linkSchemeOf("ponzu")).toBe("ponzu");
+  expect(linkSchemeOf("ponzu-dev")).toBe("ponzu-dev");
+  for (const scheme of ["", undefined, "ponzu-preview", "javascript"]) {
+    expect(linkSchemeOf(scheme)).toBeUndefined();
+  }
+});
 
 /** localStorage, as much of it as the cache uses. */
 function memoryStore(): Storage {

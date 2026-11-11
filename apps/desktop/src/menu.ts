@@ -9,7 +9,7 @@ import type { MenuCommand } from "./bridge.ts";
 
 export interface MenuActions {
   command(command: MenuCommand): void;
-  /** Null in a build that doesn't update itself (Ponzu Preview): the menus leave the item out. */
+  /** Null in a build that doesn't update itself (Ponzu Dev): the menus leave the item out. */
   checkForUpdates: (() => void) | null;
   signOut(): void;
   /** Whether View has Toggle Developer Tools: development and test builds only. */

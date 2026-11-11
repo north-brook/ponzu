@@ -9,21 +9,27 @@ declare const PONZU_TEST_BUILD: boolean;
 export const testBuild = typeof PONZU_TEST_BUILD === "boolean" && PONZU_TEST_BUILD;
 
 /**
- * Which packaged app this is. `release` is Ponzu, what ponzu.design ships. `preview` is Ponzu
- * Preview (`bun run package:preview`): the release under a name of its own, for running the cloud
- * app on a Mac that still uses Ponzu 1.x. Set by scripts/build.ts from PONZU_VARIANT.
+ * Which packaged app this is. `release` is Ponzu, what ponzu.design ships. `dev` is Ponzu Dev
+ * (`bun run package:dev`): the release under a name of its own, for running the cloud app on a
+ * Mac that still uses Ponzu 1.x. Set by scripts/build.ts from PONZU_VARIANT.
  */
-export type Variant = "release" | "preview";
+export type Variant = "release" | "dev";
 declare const PONZU_VARIANT: Variant;
 export const variant: Variant = typeof PONZU_VARIANT === "string" ? PONZU_VARIANT : "release";
 
-/** The links each app answers. The API's setup page links back to exactly these (apps/api). */
-export type LinkScheme = "ponzu" | "ponzu-preview" | "ponzu-dev";
+/**
+ * The links a packaged app answers: Ponzu's, and Ponzu Dev's. The API's setup page links back to
+ * these (apps/api), and still to `ponzu-preview` for a Ponzu Preview built before the rename.
+ */
+export type LinkScheme = "ponzu" | "ponzu-dev";
+
+/** What each app goes by. A run from a checkout is Ponzu Local, never an installed app. */
+export const APP_NAMES = { release: "Ponzu", dev: "Ponzu Dev", local: "Ponzu Local" } as const;
 
 export interface Config {
   /**
-   * `Ponzu`, `Ponzu Preview` or `Ponzu Dev`: the name the data folder, keychain item and instance
-   * lock go by.
+   * `Ponzu`, `Ponzu Dev` or `Ponzu Local`: the name the data folder, keychain item ("Ponzu Dev
+   * Safe Storage") and instance lock go by.
    */
   appName: string;
   apiUrl: string;
@@ -38,10 +44,11 @@ export interface Config {
   /** Vite's dev server, when a development build loads the studio from it. */
   studioDevUrl: string | null;
   /**
-   * `ponzu`, or `ponzu-preview` and `ponzu-dev`, so a preview or a development build never takes
-   * an installed Ponzu's links.
+   * `ponzu`, or Ponzu Dev's `ponzu-dev`, so it never takes an installed Ponzu's links. Null for
+   * Ponzu Local, which takes none: on a Mac it runs inside node_modules' Electron.app, which can't
+   * declare a scheme, and a scheme of its own elsewhere would only differ from the Mac's.
    */
-  linkScheme: LinkScheme;
+  linkScheme: LinkScheme | null;
   /** Whether this build removes what Ponzu 1.x left on the computer (legacy.ts): a release only. */
   cleansUpLegacy: boolean;
   /** Whether this build looks for updates of itself: a release only, the one with a feed. */
@@ -69,28 +76,30 @@ export function configFor(
   if (packaged) {
     const release = of === "release";
     return {
-      // A preview is the release in all but who it is: it never touches Ponzu 1.x (its folders,
+      // Ponzu Dev is the release in all but who it is: it never touches Ponzu 1.x (its folders,
       // its keychain item, its ponzu:// links), and with no feed of its own it never updates.
-      appName: release ? "Ponzu" : "Ponzu Preview",
+      appName: release ? APP_NAMES.release : APP_NAMES.dev,
       apiUrl: API_URL,
       workosClientId: WORKOS_CLIENT_ID,
       realtimeUrl: REALTIME_URL,
       assetsUrl: ASSETS_URL,
       studioDevUrl: null,
-      linkScheme: release ? "ponzu" : "ponzu-preview",
+      linkScheme: release ? "ponzu" : "ponzu-dev",
       cleansUpLegacy: release,
       updates: release,
       ...(test ? developer : { sessionFile: null, remoteDebugging: false }),
     };
   }
   return {
-    appName: "Ponzu Dev",
+    // A run from a checkout: neither installed app, so it never shares their folder, keychain
+    // item or lock, and an installed Ponzu Dev can run beside it.
+    appName: APP_NAMES.local,
     apiUrl: localOrHttps(env.PONZU_API_URL) ?? API_URL,
     workosClientId: env.PONZU_WORKOS_CLIENT_ID || WORKOS_CLIENT_ID,
     realtimeUrl: null,
     assetsUrl: null,
     studioDevUrl: localOrHttps(env.PONZU_STUDIO_URL),
-    linkScheme: "ponzu-dev",
+    linkScheme: null,
     cleansUpLegacy: false,
     updates: false,
     ...developer,
@@ -110,8 +119,8 @@ function localOrHttps(value: string | undefined): string | null {
  * Why a packaged app must not start, or null. Which bundle this is (its name, bundle id and link
  * scheme) is electron-builder's doing; which app the main process thinks it is (`variant`, and so
  * its data folder, keychain item and whether it removes Ponzu 1.x) was fixed when scripts/build.ts
- * compiled it. A bundle named "Ponzu Preview" running a release's main process would take
- * Ponzu's folder and clean up 1.x, so a mismatch stops it before anything reads either.
+ * compiled it. A bundle named "Ponzu Dev" running a release's main process would take Ponzu's
+ * folder and clean up 1.x, so a mismatch stops it before anything reads either.
  * `bundleName` is `app.name` before the app renames itself: the bundle's productName.
  */
 export function bundleMismatch(
@@ -120,23 +129,16 @@ export function bundleMismatch(
   config: Config,
 ): string | null {
   if (!packaged || bundleName === config.appName) return null;
-  return `This app is "${bundleName}", but its main process was built for "${config.appName}". Build it again with its own command (bun run package, or bun run package:preview).`;
+  return `This app is "${bundleName}", but its main process was built for "${config.appName}". Build it again with its own command (bun run package:dir, or bun run package:dev).`;
 }
 
 /**
- * How this build registers its link scheme with the system, if it does. A packaged app declares
- * its scheme in its bundle (Info.plist on a Mac, the .desktop file on Linux) and claims it as the
- * default at launch. A development build points the scheme at this checkout, except on a Mac,
- * where it runs inside node_modules' Electron.app, which declares no schemes. The smoke check
- * claims nothing: registering writes the person's LaunchServices or xdg settings, and would make
- * a copy in a build folder the one their links open.
+ * Whether this build claims its link scheme as the system's default at launch. A packaged app
+ * does, for the scheme its bundle declares (Info.plist on a Mac, the .desktop file on Linux).
+ * Ponzu Local has no scheme to claim. The smoke check claims nothing: registering writes the
+ * person's LaunchServices or xdg settings, and would make a copy in a build folder the one their
+ * links open.
  */
-export function schemeRegistration(
-  packaged: boolean,
-  platform: NodeJS.Platform,
-  smoke: boolean,
-): "bundle" | "checkout" | null {
-  if (smoke) return null;
-  if (packaged) return "bundle";
-  return platform === "darwin" ? null : "checkout";
+export function claimsScheme(config: Pick<Config, "linkScheme">, smoke: boolean): boolean {
+  return !smoke && config.linkScheme !== null;
 }

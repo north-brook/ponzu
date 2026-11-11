@@ -33,7 +33,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
       signOut: () => desktop.session.signOut(),
     },
   });
-  // GitHub's setup page links back to this app: Ponzu Preview's links aren't Ponzu 1.x's.
+  // GitHub's setup page links back to this app: Ponzu Dev's links aren't Ponzu 1.x's. Ponzu
+  // Local takes no links and says nothing, so the page offers Ponzu's.
   const api = createApi(session, { linkScheme: linkSchemeOf(desktop.config.linkScheme) });
   return {
     session,
@@ -54,9 +55,7 @@ export function desktopHost(desktop: PonzuDesktop): Host {
 
 /** The shell's scheme, when it is one the API links back to; otherwise the API's default. */
 export function linkSchemeOf(scheme: string | undefined): LinkScheme | undefined {
-  return scheme === "ponzu" || scheme === "ponzu-preview" || scheme === "ponzu-dev"
-    ? scheme
-    : undefined;
+  return scheme === "ponzu" || scheme === "ponzu-dev" ? scheme : undefined;
 }
 
 const CACHE = "ponzu.cache.";
