@@ -133,6 +133,54 @@ async function settle(page: Page) {
   });
 }
 
+/**
+ * What the page paints, as lines a person can read in a diff: every piece of text with its color,
+ * weight, size and family; every icon with its color and stroke; every ground and shadow. Computed
+ * styles don't depend on the machine's fonts or GPU, so these catch on any machine what a
+ * picture with its text hidden can't: a changed text or icon color, a wrong weight or size.
+ */
+export async function paintedStyles(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const lines: string[] = [];
+    const clip = (s: string) => (s.length > 40 ? `${s.slice(0, 39)}…` : s);
+    const name = (el: Element) => {
+      const label = el.closest("[aria-label]")?.getAttribute("aria-label");
+      return `${el.tagName.toLowerCase()}${label ? `[${clip(label)}]` : ""}`;
+    };
+    for (const el of document.body.querySelectorAll("*")) {
+      if (el.closest("svg") && el.tagName.toLowerCase() !== "svg") continue;
+      if (!el.getClientRects().length) continue;
+      const css = getComputedStyle(el);
+      if (css.visibility !== "visible") continue;
+      const opacity = css.opacity === "1" ? "" : ` opacity ${css.opacity}`;
+      if (el.tagName.toLowerCase() === "svg") {
+        const shape = el.querySelector("path, circle, rect, line, polyline");
+        const stroke = shape ? ` stroke ${getComputedStyle(shape).strokeWidth}` : "";
+        const size = `${el.getAttribute("width")}×${el.getAttribute("height")}`;
+        lines.push(`icon ${name(el)} ${size} ${css.color}${stroke}${opacity}`);
+        continue;
+      }
+      const own = [...el.childNodes]
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent ?? "")
+        .join("")
+        .trim();
+      if (own) {
+        const family = css.fontFamily.split(",")[0]!.replaceAll('"', "");
+        lines.push(
+          `text "${clip(own)}" ${css.color} ${css.fontWeight} ${css.fontSize} ${family}${opacity}`,
+        );
+      }
+      const ground = css.backgroundColor === "rgba(0, 0, 0, 0)" ? "" : ` ${css.backgroundColor}`;
+      // Tailwind composes its shadows with empty layers; they paint nothing.
+      const layers = css.boxShadow.replaceAll(/rgba\(0, 0, 0, 0\) 0px 0px 0px 0px(, )?/g, "");
+      const shadow = layers === "none" || !layers ? "" : ` shadow ${layers}`;
+      if (ground || shadow) lines.push(`ground ${name(el)}${ground}${shadow}`);
+    }
+    return `${lines.join("\n")}\n`;
+  });
+}
+
 /** Whether the app's three families loaded: without them, text measures differently. */
 export async function fontsLoaded(page: Page): Promise<boolean> {
   return page.evaluate(async () => {

@@ -1,0 +1,116 @@
+ground div rgb(232, 230, 224)
+ground span rgb(255, 95, 87)
+ground span rgb(254, 188, 46)
+ground span rgb(40, 200, 64)
+icon svg 16×16 rgb(17, 17, 16) stroke 3.4px
+text "ponzu" rgb(17, 17, 16) 700 16px Funnel Display
+icon svg[Toggle sidebar] 16×16 rgb(94, 91, 84) stroke 1.7px
+ground span rgba(17, 17, 16, 0.1)
+ground button[Pages] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px
+icon svg[Pages] 14×14 rgb(63, 61, 57) stroke 1.7px
+text "Home" rgb(17, 17, 16) 500 13px Inter
+icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
+text "Product" rgb(94, 91, 84) 400 13px Inter
+icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
+text "Care cards" rgb(94, 91, 84) 400 13px Inter
+icon svg[New page] 14×14 rgb(169, 165, 155) stroke 1.9px
+ground img[Bryce (you)] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground img[Sam] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground img[Maya] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground img[Jordan · last here 2 days ago] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground button[Share] shadow rgb(211, 208, 200) 0px 0px 0px 1px inset
+icon svg[Share] 11×11 rgb(94, 91, 84) stroke 2.4px
+text "#412" rgb(94, 91, 84) 400 11px IBM Plex Mono
+icon svg[Pull request #412] 11×11 rgb(128, 124, 115) stroke 2px
+icon svg[Checks passed] 10×10 rgb(128, 124, 115) stroke 2.6px
+text "Merge" rgb(255, 255, 255) 600 12px Inter
+ground button rgb(17, 17, 16)
+icon svg 13×13 rgb(255, 255, 255) stroke 2px
+ground span rgba(17, 17, 16, 0.1)
+icon svg[Thread] 16×16 rgb(94, 91, 84) stroke 1.7px
+ground button[Workspace: Northbrook] rgba(17, 17, 16, 0.05)
+text "Northbrook" rgb(17, 17, 16) 600 13px Inter
+icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
+icon svg[Search] 15×15 rgb(94, 91, 84) stroke 1.7px
+icon svg[Filter] 15×15 rgb(94, 91, 84) stroke 1.9px
+icon svg[New design] 15×15 rgb(63, 61, 57) stroke 1.7px
+ground button[Quieter shop hero, 2 waiting for you, f…] rgb(244, 243, 239)
+ground span[Quieter shop hero, 2 waiting for you, f…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+ground img[Quieter shop hero, 2 waiting for you, f…] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground img[Quieter shop hero, 2 waiting for you, f…] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+text "Quieter shop hero" rgb(17, 17, 16) 500 13px Inter
+text "2" rgb(17, 17, 16) 600 9px Inter
+ground span[Quieter shop hero, 2 waiting for you, f…] rgb(255, 200, 30)
+text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[Quieter shop hero, 2 waiting for you, f…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/hero-refresh" rgb(169, 165, 155) 400 11px IBM Plex Mono
+text "#412" rgb(94, 91, 84) 400 11px IBM Plex Mono
+icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(94, 91, 84) stroke 2px
+icon svg[Checks passed] 10×10 rgb(94, 91, 84) stroke 2.6px
+ground span[One-page checkout, working, fernwood, p…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+text "One-page checkout" rgb(17, 17, 16) 500 13px Inter
+icon svg[Working] 13×13 rgb(255, 200, 30) stroke 3.4px
+text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[One-page checkout, working, fernwood, p…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[One-page checkout, working, fernwood, p…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/checkout" rgb(169, 165, 155) 400 11px IBM Plex Mono
+ground span[Pricing page, three takes, new activity…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+ground img[Pricing page, three takes, new activity…] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+text "Pricing page, three takes" rgb(17, 17, 16) 500 13px Inter
+ground span[Pricing page, three takes, new activity…] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
+text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Pricing page, three takes, new activity…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[Pricing page, three takes, new activity…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/pricing" rgb(169, 165, 155) 400 11px IBM Plex Mono
+text "#405" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Pricing page, three takes, new activity…] 11×11 rgb(169, 165, 155) stroke 2px
+ground span[Survey results readout, new activity, l…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+text "Survey results readout" rgb(17, 17, 16) 500 13px Inter
+ground span[Survey results readout, new activity, l…] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
+text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Survey results readout, new activity, l…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[Survey results readout, new activity, l…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/survey-readout" rgb(169, 165, 155) 400 11px IBM Plex Mono
+ground span[Support inbox triage, lenny, pz/inbox-t…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
+text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[Support inbox triage, lenny, pz/inbox-t…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
+ground span[Brand kit for the relaunch, brand, pz/r…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+text "Brand kit for the relaunch" rgb(17, 17, 16) 500 13px Inter
+text "brand" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(169, 165, 155) stroke 1.9px
+text "·" rgb(201, 197, 188) 400 11px IBM Plex Mono
+icon svg[Brand kit for the relaunch, brand, pz/r…] 10×10 rgb(169, 165, 155) stroke 2px
+text "pz/relaunch" rgb(169, 165, 155) 400 11px IBM Plex Mono
+text "Settled" rgb(94, 91, 84) 400 12px Inter
+text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
+ground main rgb(244, 243, 239)
+ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.1) 0px 8px 28px 0px
+ground div rgba(17, 17, 16, 0.05)
+text "Northbrook" rgb(17, 17, 16) 400 13px Inter
+icon svg 14×14 rgb(17, 17, 16) stroke 2.2px
+text "F" rgb(255, 255, 255) 600 11px Funnel Display
+ground span rgb(61, 90, 64)
+text "Fablefuel" rgb(17, 17, 16) 400 13px Inter
+text "Personal" rgb(17, 17, 16) 400 13px Inter
+icon svg 16×16 rgb(128, 124, 115) stroke 1.8px
+text "Set up another on GitHub" rgb(94, 91, 84) 400 13px Inter
+icon svg 12×12 rgb(169, 165, 155) stroke 2px
+ground div rgb(232, 230, 224)
+icon svg 16×16 rgb(94, 91, 84) stroke 1.8px
+text "Settings" rgb(17, 17, 16) 400 13px Inter
+text "⌘," rgb(169, 165, 155) 400 11px Inter
+icon svg 16×16 rgb(94, 91, 84) stroke 1.8px
+text "Plan and usage" rgb(17, 17, 16) 400 13px Inter
+ground div rgb(232, 230, 224)
+icon svg 16×16 rgb(94, 91, 84) stroke 1.8px
+text "Sign out" rgb(17, 17, 16) 400 13px Inter

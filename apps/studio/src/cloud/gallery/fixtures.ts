@@ -268,6 +268,9 @@ export const contributors: Contributor[] = [
   { person: jordan, here: false, lastHereAt: minutesAgo(60 * 24 * 2) },
 ];
 
+/** A design only you have worked on: the spec's default still shows you and the "+". */
+export const justYou: Contributor[] = [{ person: bryce, here: true, lastHereAt: null }];
+
 export const members: DesignMember[] = [
   { person: bryce, access: "owner" },
   { person: sam, access: "edit" },

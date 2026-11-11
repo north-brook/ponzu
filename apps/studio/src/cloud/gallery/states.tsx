@@ -3,7 +3,7 @@ import { GitMergeIcon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useState } from "react";
 import { NewDesignComposer } from "../create/composer.tsx";
 import { Ideas } from "../create/ideas.tsx";
-import { type DesignFilter, NO_FILTER, repoCounts } from "../filter.ts";
+import { type DesignFilter, NO_FILTER, projectCounts, repoKey } from "../filter.ts";
 import type { DesignSummary, PullRequestSummary } from "../model.ts";
 import { type NextAction, nextAction } from "../pull-request.ts";
 import { DesignList, DesignListSkeleton } from "../sidebar/design-list.tsx";
@@ -124,14 +124,17 @@ const ROWS: DesignSummary[] = [
 ];
 
 function FilterDemo() {
-  const [filter, setFilter] = useState<DesignFilter>({ person: null, repos: [f.fernwood.id] });
+  const [filter, setFilter] = useState<DesignFilter>({
+    person: null,
+    projects: [repoKey(f.fernwood)],
+  });
   return (
     <FilterMenu
       filter={filter}
       onChange={setFilter}
       me={f.bryce}
       teammates={f.teammates}
-      repos={repoCounts(f.teamDesigns)}
+      projects={projectCounts(f.teamDesigns)}
     />
   );
 }
@@ -296,7 +299,7 @@ export function States() {
               onChange={ignore}
               me={f.bryce}
               teammates={null}
-              repos={repoCounts(f.soloDesigns)}
+              projects={projectCounts(f.soloDesigns)}
             />
           </Labelled>
           <Labelled label="checkbox">

@@ -37,6 +37,10 @@ rail, needs you, the pull request tab and settings plug into those slots.
 - Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at the design's
   size and stroke; color them with a text token. Brand marks are in `ui/marks.tsx`.
 - Motion: durations and easings are tokens; reduced motion stills every animation.
+- Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
+  URL; a new family or weight goes there, so the gallery always measures what ships.
+- What is open or chosen (the open row, the selected result, the open "+") takes `bg-selected`,
+  not `bg-canvas`: in dark the canvas is too close to the chrome to show.
 - One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
   doesn't scan this folder.
 
@@ -64,8 +68,16 @@ dark, and writes ours, theirs, the difference and the pair to `.context/visual`,
 of pixels that differ, overall and outside the regions this code doesn't draw (the canvas's
 boards, the thread rail). The design file is not in the repo.
 
-`references` redraws `gallery/references/`, the pictures `gallery.test.ts` compares the
-compositions against, with text hidden so they hold across machines' font rendering. Redraw them
-when a change is meant to move pixels, and look at them before committing. The test needs Chrome
-or Chromium (`PONZU_CHROMIUM`) and skips without one; without the app's web fonts it doesn't
-compare.
+`references` redraws `gallery/references/`, what `gallery.test.ts` compares the compositions
+against, two ways:
+
+- a picture of each, with its text hidden so it holds across machines' font rendering. It catches
+  layout, grounds and shadows: a moved row, a changed surface.
+- `<id>-<theme>.styles.txt`, the styles it paints with (`paintedStyles`): every text's color,
+  weight, size and family, every icon's color, size and stroke, every ground and shadow. It
+  catches what is too small for the picture's tolerance: a changed text or icon token, a wrong
+  `text-*` class or weight. A failure prints the lines that changed.
+
+Redraw them when a change is meant to move pixels or styles, and read the diff before
+committing. The test needs Chrome or Chromium (`PONZU_CHROMIUM`) and skips without one; without
+the app's web fonts it doesn't compare the pictures (the styles don't depend on them).

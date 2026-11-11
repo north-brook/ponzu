@@ -1,6 +1,7 @@
 /* What each composition in compositions.ts draws. */
 import type { ReactNode } from "react";
-import type { DesignSummary } from "../model.ts";
+import { repoKey } from "../filter.ts";
+import type { Contributor, DesignSummary } from "../model.ts";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
 
@@ -13,11 +14,13 @@ function quieter(designs: DesignSummary[]): DesignSummary {
 /** A design open in Northbrook with teammates around: the team boards' window. */
 function DesignWindow({
   designs = f.teamDesigns,
+  contributors = f.contributors,
   query = null,
   sidebar = "open",
   rail = true,
 }: {
   designs?: DesignSummary[];
+  contributors?: Contributor[];
   query?: string | null;
   sidebar?: "open" | "closed";
   rail?: boolean;
@@ -33,7 +36,7 @@ function DesignWindow({
         <DesignChromeHarness
           design={quieter(designs)}
           sidebarOpen={sidebarOpen}
-          team
+          contributors={contributors}
           railOpen={rail}
         />
       )}
@@ -50,7 +53,9 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search": () => <DesignWindow query="" />,
   "sidebar-search-results": () => <DesignWindow query="hero" />,
   share: () => <DesignWindow />,
-  "thread-in-the-right-rail": () => <DesignWindow designs={f.soloWorking} />,
+  "thread-in-the-right-rail": () => (
+    <DesignWindow designs={f.soloWorking} contributors={f.justYou} />
+  ),
   "claude-sets-it-up": () => (
     <Harness
       designs={[f.justCreated, ...f.soloDesigns]}
@@ -60,7 +65,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
         <DesignChromeHarness
           design={f.justCreated}
           sidebarOpen={sidebarOpen}
-          team={false}
+          contributors={f.justYou}
           railOpen
           changes={false}
           overrides={{ pages: f.onboardingPages, activePageId: "pg_welcome" }}
@@ -110,7 +115,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
     <Harness
       designs={f.teamDesigns}
       openId={null}
-      initialFilter={{ person: f.alex.id, repos: [f.lenny.id] }}
+      initialFilter={{ person: f.alex.id, projects: [repoKey(f.lenny)] }}
     >
       {null}
     </Harness>

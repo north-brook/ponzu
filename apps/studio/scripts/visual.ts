@@ -9,8 +9,9 @@
  *     masked regions this code doesn't draw.
  *
  *   bun scripts/visual.ts references
- *     Redraws the reference pictures the gallery test compares against (text hidden, so they
- *     hold on any machine's font rendering). Look at what changed before committing them.
+ *     Redraws what the gallery test compares against: a picture of each composition with its
+ *     text hidden (so it holds on any machine's font rendering), and the styles it paints with
+ *     (paintedStyles). Look at what changed before committing them.
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -22,6 +23,7 @@ import {
   fontsLoaded,
   launch,
   type Page,
+  paintedStyles,
   REFERENCES,
   STUDIO,
   serve,
@@ -62,7 +64,8 @@ try {
         if (!(await fontsLoaded(page)))
           throw new Error("The app's fonts didn't load; references would be wrong.");
         await Bun.write(join(REFERENCES, `${c.id}-${theme}.png`), shot);
-        console.log(`${c.id}-${theme}.png`);
+        await Bun.write(join(REFERENCES, `${c.id}-${theme}.styles.txt`), await paintedStyles(page));
+        console.log(`${c.id}-${theme}`);
       }
     }
   } else {

@@ -2,11 +2,18 @@
  * Stand-ins for the app around the components: local state where the data layer will be, so
  * every composition can be clicked through.
  */
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import type { ProjectChoice } from "../create/create.ts";
 import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
 import { type DesignFilter, NO_FILTER } from "../filter.ts";
-import type { DesignSummary, Effort, Match, SearchResults, Workspace } from "../model.ts";
+import type {
+  Contributor,
+  DesignSummary,
+  Effort,
+  Match,
+  SearchResults,
+  Workspace,
+} from "../model.ts";
 import { nextAction } from "../pull-request.ts";
 import { Sidebar } from "../sidebar/sidebar.tsx";
 import { railSignal } from "../status.ts";
@@ -80,6 +87,7 @@ export function Harness({
   const [query, setQuery] = useState<string | null>(initialQuery);
   const [settledOpen, setSettledOpen] = useState(initialSettledOpen);
   const results = query?.trim() ? searchFixtures(query, designs ?? []) : null;
+  const openDesign = useCallback((d: DesignSummary) => setOpenId(d.id), []);
 
   return (
     <AppWindow
@@ -100,6 +108,8 @@ export function Harness({
                   settled={{ count: settledCount, designs: f.settled, expanded: settledOpen }}
                   onSettledExpandedChange={setSettledOpen}
                   openDesignId={openId}
+                  collapsed={!open}
+                  onExpand={() => setOpen(true)}
                   filter={filter}
                   onFilterChange={setFilter}
                   query={query}
@@ -109,7 +119,7 @@ export function Harness({
                     if (key.startsWith("design:")) setOpenId(key.slice("design:".length));
                     setQuery(null);
                   }}
-                  onOpen={(d) => setOpenId(d.id)}
+                  onOpen={openDesign}
                   onAction={ignore}
                   onRename={ignore}
                   onNewDesign={() => setOpenId(null)}
@@ -136,7 +146,7 @@ type ChromeOverrides = Partial<Omit<DesignChromeProps, "sidebarOpen">>;
 export function DesignChromeHarness({
   design,
   sidebarOpen,
-  team,
+  contributors,
   railOpen,
   threadUnseen = false,
   changes = true,
@@ -144,7 +154,8 @@ export function DesignChromeHarness({
 }: {
   design: DesignSummary;
   sidebarOpen: boolean;
-  team: boolean;
+  /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
+  contributors: Contributor[] | null;
   railOpen: boolean;
   threadUnseen?: boolean;
   /** The branch has commits, so a design with no pull request offers Create PR. */
@@ -168,10 +179,10 @@ export function DesignChromeHarness({
       }}
       onAddPage={ignore}
       team={
-        team && design.project.kind === "repo"
+        contributors && design.project.kind === "repo"
           ? {
               meId: f.bryce.id,
-              contributors: f.contributors,
+              contributors,
               repo: design.project.repo,
               members: f.members,
               onOpenRepo: ignore,
