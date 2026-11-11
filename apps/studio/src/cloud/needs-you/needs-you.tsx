@@ -174,7 +174,11 @@ export function NeedsYou({
         // The whole card is the field's: a press on it, past send, writes.
         <div
           onMouseDown={pressToFocus}
-          className="flex cursor-text items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field"
+          // A secret's value as it is pasted: never recorded (app/analytics/privacy.ts).
+          className={cn(
+            "flex cursor-text items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field",
+            ask.kind === "secret" && "ph-no-capture",
+          )}
         >
           {ask.kind === "secret" ? (
             <input

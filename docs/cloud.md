@@ -1969,7 +1969,8 @@ main process for each request (`borrowSession` in `packages/client`) and sends
 the request itself, from the studio's origin. The window shows the studio and
 nothing else, under a content security policy that runs only the studio's own
 script and reaches only the API, Neon Realtime and a design's files (each its
-environment's exact host). A design's images may come from any https host, as they
+environment's exact host), and, in a build that reports usage, its PostHog project's ingestion
+host ([analytics.md](analytics.md)). A design's images may come from any https host, as they
 do in the runner's previews. The packaged app's Electron fuses refuse to run it as
 Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the

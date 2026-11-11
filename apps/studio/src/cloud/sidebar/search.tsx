@@ -164,7 +164,15 @@ export function SearchResultsView({
 
   return (
     <FadeScroll className="flex-1">
-      <div id={LIST_ID} role="listbox" aria-label="Search results" className="flex flex-col">
+      <div
+        id={LIST_ID}
+        role="listbox"
+        aria-label="Search results"
+        // Designs' and boards' names and people's comments: masked in a private recording
+        // (app/analytics/privacy.ts).
+        data-replay="mask"
+        className="flex flex-col"
+      >
         <Group label="Designs" hits={results.designs}>
           {(hit: DesignHit) =>
             option(

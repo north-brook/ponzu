@@ -26,6 +26,32 @@ export type LinkScheme = "ponzu" | "ponzu-dev";
 /** What each app goes by. A run from a checkout is Ponzu Local, never an installed app. */
 export const APP_NAMES = { release: "Ponzu", dev: "Ponzu Dev", local: "Ponzu Local" } as const;
 
+/**
+ * Which PostHog project this build reports to (docs/analytics.md): public values, baked in by
+ * scripts/build.ts from PONZU_POSTHOG_KEY, PONZU_POSTHOG_HOST and PONZU_POSTHOG_REPLAY, so the
+ * environment a build was made for decides the project. Empty strings when the build had none.
+ */
+declare const PONZU_POSTHOG: { key: string; host: string; replay: string };
+const BAKED_POSTHOG =
+  typeof PONZU_POSTHOG === "object" ? PONZU_POSTHOG : { key: "", host: "", replay: "" };
+
+/**
+ * What session replay may show (docs/analytics.md, "Session replay"): `full`, everything a person
+ * sees; `private`, the chrome and how it is used, with designs, the thread and the composer
+ * blocked or masked. `private` unless a build is told otherwise.
+ */
+export type ReplayMode = "full" | "private";
+
+export interface PosthogConfig {
+  /** The project token, `phc_…`: safe in client code. */
+  key: string;
+  /** The ingestion host's origin. */
+  host: string;
+  replay: ReplayMode;
+}
+
+export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
+
 export interface Config {
   /**
    * `Ponzu`, `Ponzu Dev` or `Ponzu Local`: the name the data folder, keychain item ("Ponzu Dev
@@ -57,6 +83,11 @@ export interface Config {
   sessionFile: string | null;
   /** Whether a remote debugging port may be opened on this build's windows. */
   remoteDebugging: boolean;
+  /**
+   * The PostHog project this build reports to, or null: no key, a test build, or a key or host
+   * that doesn't parse. The person's own choice (telemetry-consent.ts) is applied on top.
+   */
+  posthog: PosthogConfig | null;
 }
 
 const API_URL = "https://api.ponzu.design";
@@ -70,10 +101,14 @@ export function configFor(
   env: NodeJS.ProcessEnv,
   test = testBuild,
   of: Variant = variant,
+  baked: { key: string; host: string; replay: string } = BAKED_POSTHOG,
 ): Config {
   // A test build is the real app with two doors a developer's tools need, and nothing else.
   const developer = { sessionFile: env.PONZU_SESSION_FILE || null, remoteDebugging: true };
   if (packaged) {
+    // A packaged build reports to the project it was built for; a test build, which spare and CI
+    // drive, to none.
+    const posthog = test ? null : posthogFrom(baked.key, baked.host, baked.replay);
     const release = of === "release";
     return {
       // Ponzu Dev is the release in all but who it is: it never touches Ponzu 1.x (its folders,
@@ -88,6 +123,7 @@ export function configFor(
       cleansUpLegacy: release,
       updates: release,
       ...(test ? developer : { sessionFile: null, remoteDebugging: false }),
+      posthog,
     };
   }
   return {
@@ -103,7 +139,21 @@ export function configFor(
     cleansUpLegacy: false,
     updates: false,
     ...developer,
+    // A developer may point a development build at a project of their own, or at a local sink.
+    posthog: posthogFrom(
+      env.PONZU_POSTHOG_KEY || baked.key,
+      env.PONZU_POSTHOG_HOST || baked.host,
+      env.PONZU_POSTHOG_REPLAY || baked.replay,
+    ),
   };
+}
+
+/** A project token and host that parse, or null: nothing is half switched on. */
+export function posthogFrom(key: string, host: string, replay: string): PosthogConfig | null {
+  if (!/^phc_[A-Za-z0-9_-]+$/.test(key.trim())) return null;
+  const origin = localOrHttps(host.trim() || DEFAULT_POSTHOG_HOST);
+  if (!origin) return null;
+  return { key: key.trim(), host: origin, replay: replay.trim() === "full" ? "full" : "private" };
 }
 
 /** An https URL, or http on this computer; anything else is ignored. Without a trailing slash. */
