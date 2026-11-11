@@ -42,8 +42,8 @@ export interface DesignChromeProps {
 }
 
 /**
- * The chrome past the left block while a design is open: its pages, who is in it, its pull
- * request and next action, then the thread toggle just past the rail's divider. The spacing
+ * The chrome past the left block while a design is open: its pages, then at the window's right
+ * edge who is in it, its pull request and next action, and the thread toggle last. The spacing
  * between the right-hand pieces is the design's, whichever of them a design has.
  */
 export function DesignChrome({
@@ -106,9 +106,6 @@ export function DesignChrome({
       ))}
     </div>
   );
-  // After the last piece, 10 between two header gaps to the divider.
-  const beforeDivider = right.length ? <span className="w-2.5 shrink-0" /> : null;
-
   return (
     <>
       <ChromeDivider />
@@ -118,28 +115,38 @@ export function DesignChrome({
       )}
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
       <span className="min-w-2 flex-1" />
-      {team ? (
-        <Popover>
-          <PopoverAnchor asChild>{cluster}</PopoverAnchor>
-          <SharePopover
-            designName={name}
-            repo={team.repo}
-            members={team.members}
-            meId={team.meId}
-            onOpenRepo={team.onOpenRepo}
-          />
-        </Popover>
-      ) : right.length ? (
-        cluster
-      ) : null}
-      {beforeDivider}
-      <ChromeDivider />
+      {/*
+       * The right block, flush with the window's right edge in every state: the divider 18px
+       * before the cluster, and the cluster just before the thread toggle, so none of them moves
+       * between the canvas and the pull request tab, as the rail opens and closes, or with the
+       * width of the next action. Open, the block reaches at least to the rail's edge (the
+       * header's 10 of right padding and this 350 make the rail's 360), which keeps the page
+       * tabs over the canvas; the space it adds is empty header, before the divider.
+       */}
       <div
         className={cn(
-          "flex shrink-0 items-center pl-2.5 transition-[width] duration-(--dur-pane) ease-out",
-          rail.open ? "w-[346px]" : "w-auto",
+          "flex shrink-0 items-center transition-[min-width] duration-(--dur-pane) ease-out",
+          rail.open ? "min-w-[350px]" : "min-w-0",
         )}
       >
+        <span className="flex-1" />
+        <ChromeDivider />
+        <span className="w-[18px] shrink-0" />
+        {team ? (
+          <Popover>
+            <PopoverAnchor asChild>{cluster}</PopoverAnchor>
+            <SharePopover
+              designName={name}
+              repo={team.repo}
+              members={team.members}
+              meId={team.meId}
+              onOpenRepo={team.onOpenRepo}
+            />
+          </Popover>
+        ) : right.length ? (
+          cluster
+        ) : null}
+        {right.length ? <span className="w-3 shrink-0" /> : null}
         <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />
       </div>
     </>

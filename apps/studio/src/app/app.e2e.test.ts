@@ -93,8 +93,44 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await shoot("1-sign-in");
   });
 
+  test("a sign-in outlives the window coming forward; the button waits a moment, then is ready", async () => {
+    const button = page.getByRole("button", { name: "Continue with GitHub" });
+    const busy = () => button.getAttribute("aria-busy");
+    await page.evaluate(() => window.ponzuFake!.holdSignIn());
+    const pressed = Date.now();
+    await button.click();
+    expect(await busy()).toBe("true");
+    await shoot("1-sign-in-waiting");
+    // No Cancel any more, and a press while it waits starts nothing.
+    expect(await page.getByRole("button", { name: "Cancel" }).count()).toBe(0);
+    await button.click({ force: true });
+    expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(1);
+
+    // Back in the window while the browser is still out: past the old 1.5 s grace, nothing ends.
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("blur"));
+      window.dispatchEvent(new Event("focus"));
+    });
+    await page.waitForTimeout(2_000);
+    expect(await busy()).toBe("true");
+    // The attempt is still out in the browser: nothing the window did ended it.
+    expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
+    await waitUntil(async () => (await busy()) === null);
+    expect(Date.now() - pressed).toBeGreaterThanOrEqual(3_900);
+    await shoot("1-sign-in-ready-again");
+
+    // A second press starts another attempt beside the first; the first tab back signs in.
+    await button.click();
+    expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(2);
+    expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
+    await page.evaluate(() => window.ponzuFake!.finishSignIn());
+    // Both held attempts finish and the person is in: first run asks where they design.
+    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+    expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(2);
+    expect(errors).toEqual([]);
+  });
+
   test("first run: where they design, set up on GitHub and Ready on the way back", async () => {
-    await page.getByRole("button", { name: "Continue with GitHub" }).click();
     await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
     // The team's account is set up already; their own is not.
     await page.getByText("Ready").waitFor();

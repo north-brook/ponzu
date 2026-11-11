@@ -53,8 +53,15 @@ export interface Session {
    * and the request sent once more; a session the API no longer honors signs out.
    */
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  /** Finish a sign-in from the browser's redirect (`readRedirect`). */
-  completeSignIn(input: { code: string; codeVerifier: string }): Promise<Profile>;
+  /**
+   * Finish a sign-in from the browser's redirect (`readRedirect`). Once `signal` has aborted,
+   * the exchange is given up and nothing it might still answer is kept.
+   */
+  completeSignIn(input: {
+    code: string;
+    codeVerifier: string;
+    signal?: AbortSignal;
+  }): Promise<Profile>;
   /** Ends the session at the API, then forgets it here whether or not that worked. */
   signOut(): Promise<void>;
 }
@@ -153,12 +160,21 @@ class TokenSession implements SessionHost {
     });
   }
 
-  async completeSignIn({ code, codeVerifier }: { code: string; codeVerifier: string }) {
+  async completeSignIn({
+    code,
+    codeVerifier,
+    signal,
+  }: {
+    code: string;
+    codeVerifier: string;
+    signal?: AbortSignal;
+  }) {
     await this.loaded;
     const response = await this.sendToApi(`${this.apiUrl}/v1/auth/exchange`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code, code_verifier: codeVerifier }),
+      ...(signal ? { signal } : {}),
     });
     if (!response.ok) throw this.taken(await errorOf(response));
     const body = (await response.json()) as {
@@ -166,6 +182,8 @@ class TokenSession implements SessionHost {
       access_token: string;
       refresh_token: string;
     };
+    // Given up on while it answered: whoever gave up has already said it failed.
+    if (signal?.aborted) throw networkError(signal.reason);
     this.generation++;
     this.tokens = this.received(body, body.user);
     this.unsaved = true;
