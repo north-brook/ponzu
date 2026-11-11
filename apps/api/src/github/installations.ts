@@ -1,5 +1,7 @@
 import {
+  getWorkspaceByInstallation,
   listStaleInstallations,
+  markRepoAccessStale,
   markReposRemovedExcept,
   markWorkspaceUninstalled,
   suspendWorkspace,
@@ -51,16 +53,26 @@ export async function reconcileInstallation(
 ): Promise<Workspace | null> {
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
+  const before = await getWorkspaceByInstallation(db, installationId);
+  // Whether anyone can reach its repos through Ponzu changed: every answer kept about them is
+  // asked again before it is trusted (`repo_access`). Without the App or while it is suspended
+  // the answer is `none`; once it is back, GitHub's.
+  const reachChanged = async () => {
+    if (before) await markRepoAccessStale(db, { workspaceId: before.id });
+  };
   if (!installation) {
     await markWorkspaceUninstalled(db, installationId);
+    await reachChanged();
     return null;
   }
   if (installation.suspendedAt) {
-    return suspendWorkspace(db, {
+    const suspended = await suspendWorkspace(db, {
       installationId,
       suspendedAt: installation.suspendedAt,
       reconciledAt: readAt,
     });
+    if (before?.suspendedAt === null) await reachChanged();
+    return suspended;
   }
 
   // Never stored: it is good for an hour and minted again next time.
@@ -86,6 +98,7 @@ export async function reconcileInstallation(
     suspendedAt: null,
     reconciledAt: readAt,
   });
+  if (before?.suspendedAt != null) await reachChanged();
   await upsertRepos(db, {
     workspaceId: workspace.id,
     repos: repositories.items.map((repository) => ({

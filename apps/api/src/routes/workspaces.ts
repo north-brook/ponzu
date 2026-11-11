@@ -70,8 +70,8 @@ const WorkspaceProfile = z.object({
       .nullable(),
   }),
   /**
-   * The repos of it the caller can open, as GitHub last said (`repo_access`, which their sync
-   * and the design lists keep current), most recently pushed first.
+   * The repos of it the caller can open, as GitHub said within the last minute (`repo_access`,
+   * refreshed before answering), most recently pushed first.
    */
   repos: z.array(
     z.object({
@@ -146,6 +146,12 @@ export const workspaces = new Hono<AppEnv>()
     const { db } = c.var.deps;
     const { user } = c.var.actor;
     const member = await requireWorkspace(c, c.req.valid("param").id);
+    // The repos are listed from `repo_access`, so what it says is brought up to the minute
+    // first, as for the design list: a repo they lost leaves the list within it.
+    await refreshWorkspaceRepoAccess(
+      { ...c.var.deps, log: c.var.log },
+      { user, workspace: member },
+    );
     const [workspace, repos, everyone] = await Promise.all([
       getWorkspace(db, member.id),
       listWorkspaceRepos(db, { workspaceId: member.id, userId: user.id }),

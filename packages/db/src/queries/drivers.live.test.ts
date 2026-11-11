@@ -46,7 +46,7 @@ import { listPresence, touchPresence } from "./presence.ts";
 import { findDesignByBranch, recordPullRequest } from "./pull-requests.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
 import {
-  listDesignRepoAccess,
+  listWorkspaceRepoAccess,
   markRepoAccessStale,
   recordReachableRepos,
   recordRepoAccess,
@@ -171,10 +171,12 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       { userId: user.id, repoId: repo.id, permission: "read", checkedAt },
     ]);
     expect(
-      await listDesignRepoAccess(db, { workspaceId: workspace.id, userId: user.id }),
+      await listWorkspaceRepoAccess(db, { workspaceId: workspace.id, userId: user.id }),
     ).toContainEqual({
       repoId: repo.id,
       githubRepoId: repo.githubRepoId,
+      fullName: repo.fullName,
+      hasDesign: true,
       permission: "read",
       checkedAt,
     });

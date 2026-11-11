@@ -28,8 +28,12 @@ export interface FakeRepository {
   id: number;
   fullName: string;
   defaultBranch?: string;
+  /** Private unless it says otherwise. */
   private?: boolean;
-  /** Who can reach it, by GitHub user id, and whether they can push. */
+  /**
+   * Who has explicit access to it, by GitHub user id, and whether they can push: all a
+   * person's own token lists (GitHub's documented rule). On a public one anyone can read.
+   */
   access: Record<number, "read" | "write">;
 }
 
@@ -439,7 +443,7 @@ export class FakeGithub {
   /**
    * `GET /repos/{owner}/{repo}/collaborators/{login}/permission`, asked with an installation
    * token that reaches the repository. A login GitHub does not know is a 404; someone it knows
-   * without access is `none`.
+   * without access is `none`, or `read` on a public repository, which anyone can read.
    */
   #permission(reachable: FakeRepository[], fullName: string, login: string): Response {
     const repository = reachable.find((candidate) => candidate.fullName === fullName);
@@ -447,7 +451,9 @@ export class FakeGithub {
     const user = [...this.#users.values()].find((candidate) => candidate.login === login);
     if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
     this.permissionRequests.push(`${fullName} ${login}`);
-    const permission = repository.access[user.id] ?? "none";
+    // Anyone may read a public repository, collaborator or not.
+    const permission =
+      repository.access[user.id] ?? (repository.private === false ? "read" : "none");
     return Response.json({
       permission,
       role_name: permission,

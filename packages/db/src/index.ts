@@ -131,14 +131,15 @@ export {
   type Question,
 } from "./queries/questions.ts";
 export {
-  type DesignRepoAccess,
   getRepoAccess,
-  listDesignRepoAccess,
+  listWorkspaceRepoAccess,
   markRepoAccessStale,
   READABLE_PERMISSIONS,
   type RepoAccessAnswer,
+  recordNoRepoAccess,
   recordReachableRepos,
   recordRepoAccess,
+  type WorkspaceRepoAccess,
   WRITABLE_PERMISSIONS,
 } from "./queries/repo-access.ts";
 export { QueryError } from "./queries/run.ts";

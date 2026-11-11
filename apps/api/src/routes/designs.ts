@@ -198,14 +198,9 @@ export const designs = new Hono<AppEnv>()
     const workspace = await requireWorkspace(c, workspaceId);
     const repo = repoId ? await getWorkspaceRepo(deps.db, { workspaceId, repoId }) : null;
     if (repoId) {
-      const permission =
-        repo && workspace.installationId !== null
-          ? await repoPermission(deps, {
-              user: actor.user,
-              repo,
-              installationId: workspace.installationId,
-            })
-          : "none";
+      const permission = repo
+        ? await repoPermission(deps, { user: actor.user, repo, installation: workspace })
+        : "none";
       if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
       if (!canWrite(permission)) {
         throw new ApiError(403, "forbidden", "Designs need a repo you can push to.");

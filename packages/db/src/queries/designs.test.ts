@@ -364,6 +364,7 @@ describe("getDesignAccess", () => {
       design: (await getDesign(db, design.id))!,
       repo: { id: repo.id, githubRepoId: repo.githubRepoId, fullName: "north-brook/harbor" },
       installationId: workspace.installationId,
+      suspendedAt: null,
       known: null,
       member: false,
     });

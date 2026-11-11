@@ -24,7 +24,7 @@ import {
   users,
   workspaces,
 } from "../schema/index.ts";
-import { READABLE_PERMISSIONS } from "./repo-access.ts";
+import { markRepoAccessStale, READABLE_PERMISSIONS } from "./repo-access.ts";
 import { run } from "./run.ts";
 
 export type User = typeof users.$inferSelect;
@@ -430,6 +430,32 @@ export async function upsertRepos(
   { workspaceId, repos: seen }: { workspaceId: string; repos: GithubRepo[] },
 ): Promise<Repo[]> {
   if (seen.length === 0) return [];
+  // A repo that moved to another account or changed visibility changed who may read it, so
+  // what anyone was told about it is asked again before it is trusted (`repo_access`), however
+  // Ponzu learned of the change: a webhook, someone's sync, or the sweep.
+  const known = await run(
+    db
+      .select({
+        githubRepoId: repos.githubRepoId,
+        workspaceId: repos.workspaceId,
+        private: repos.private,
+      })
+      .from(repos)
+      .where(
+        inArray(
+          repos.githubRepoId,
+          seen.map(({ githubRepoId }) => githubRepoId),
+        ),
+      ),
+  );
+  const visibility = new Map(seen.map((repo) => [repo.githubRepoId, repo.private]));
+  const changed = known
+    .filter(
+      (repo) =>
+        repo.workspaceId !== workspaceId || repo.private !== visibility.get(repo.githubRepoId),
+    )
+    .map(({ githubRepoId }) => githubRepoId);
+  await markRepoAccessStale(db, { githubRepoIds: changed });
   return run(
     db
       .insert(repos)

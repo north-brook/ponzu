@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { getUserByWorkosId, listDesignRepoAccess, type User } from "@ponzu/db";
+import { getUserByWorkosId, listWorkspaceRepoAccess, type User } from "@ponzu/db";
 import { createGithub } from "../deps/github.ts";
 import { designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
@@ -82,11 +82,14 @@ describe("the workspace's design list", () => {
   const refresh = async (deps: typeof t.deps, login: string) =>
     refreshWorkspaceRepoAccess(deps, {
       user: await userOf(login),
-      workspace: { id: ws.id, installationId: ws.installationId },
+      workspace: { id: ws.id, installationId: ws.installationId, suspendedAt: null },
     });
   const kept = async (login: string) =>
     (
-      await listDesignRepoAccess(t.db, { workspaceId: ws.id, userId: ws.people[login]!.userId })
+      await listWorkspaceRepoAccess(t.db, {
+        workspaceId: ws.id,
+        userId: ws.people[login]!.userId,
+      })
     ).map(({ permission }) => permission);
 
   test("is checked with the person's own token, once for every repo, at most once a minute", async () => {

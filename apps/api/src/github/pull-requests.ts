@@ -126,12 +126,11 @@ async function canPushTo(
   author: GithubAuthor,
   userId: string | null,
 ): Promise<boolean> {
-  // Without the App there is nobody to ask.
-  if (design.installationId === null) return false;
+  // Without the App, or while it is suspended, nobody can: there is nobody to ask.
   const permission = await repoPermission(deps, {
     user: { id: userId, githubUserId: author.githubUserId, githubLogin: author.login },
     repo: design.repo,
-    installationId: design.installationId,
+    installation: design,
   });
   return canWrite(permission);
 }

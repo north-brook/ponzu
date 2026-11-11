@@ -6,6 +6,7 @@ import {
   upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
+import type { FakeInstallation, FakeRepository } from "./fake-github.ts";
 import type { SignedInPerson, TestApp } from "./index.ts";
 
 /*
@@ -26,6 +27,8 @@ export interface Workspace {
   people: Record<string, SignedInPerson>;
   /** Change what GitHub says a person may do in the repository. */
   grant(login: string, access: Exclude<Access, "admin">): void;
+  /** The installation and repository as the fake GitHub holds them, to change behind Ponzu's back. */
+  github: { installation: FakeInstallation; repository: FakeRepository };
 }
 
 /**
@@ -35,6 +38,7 @@ export interface Workspace {
 export async function workspaceWithRepo(
   t: TestApp,
   access: Record<string, Access>,
+  { private: isPrivate = true }: { private?: boolean } = {},
 ): Promise<Workspace> {
   const accountId = nextGithubId++;
   const installationId = nextGithubId++;
@@ -53,15 +57,16 @@ export async function workspaceWithRepo(
   });
   const [repo] = await upsertRepos(t.db, {
     workspaceId: workspace.id,
-    repos: [{ githubRepoId, fullName, defaultBranch: "main", private: true, pushedAt: null }],
+    repos: [{ githubRepoId, fullName, defaultBranch: "main", private: isPrivate, pushedAt: null }],
   });
-  const repository = { id: githubRepoId, fullName, access: {} as Record<number, "read" | "write"> };
-  t.github.installations.push({
+  const repository: FakeRepository = { id: githubRepoId, fullName, private: isPrivate, access: {} };
+  const installation: FakeInstallation = {
     id: installationId,
     account: { id: accountId, login, type: "Organization" },
     repositorySelection: "selected",
     repositories: [repository],
-  });
+  };
+  t.github.installations.push(installation);
 
   const people: Record<string, SignedInPerson> = {};
   const grant = (who: string, level: Exclude<Access, "admin">) => {
@@ -84,6 +89,7 @@ export async function workspaceWithRepo(
     repo: { id: repo!.id, githubRepoId, fullName },
     people,
     grant,
+    github: { installation, repository },
   };
 }
 

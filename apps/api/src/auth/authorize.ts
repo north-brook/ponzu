@@ -85,15 +85,16 @@ export async function requireDesign(
 async function personAccess(
   deps: Pick<Deps, "db" | "github" | "clock">,
   user: User,
-  { design, repo, installationId, known, member }: DesignAccess,
+  { design, repo, installationId, suspendedAt, known, member }: DesignAccess,
 ): Promise<DesignGrant["access"] | null> {
   // Membership is GitHub's too, and a person who loses it loses the workspace's designs at
   // once, whatever answer about the repo is still kept.
   if (!member) return null;
   if (!repo) return design.ownerId === user.id ? "write" : null;
-  // Without the App there is nobody to ask, and nothing the design could do anyway.
-  if (installationId === null) return null;
-  const permission = await repoPermission(deps, { user, repo, installationId, known });
+  // Without the App, or while it is suspended, it is `none`: nobody to ask, and nothing the
+  // design could do anyway.
+  const installation = { installationId, suspendedAt };
+  const permission = await repoPermission(deps, { user, repo, installation, known });
   if (canWrite(permission)) return "write";
   return permission === "read" ? "read" : null;
 }

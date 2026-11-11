@@ -137,7 +137,8 @@ only by an Admin in Ponzu, never by a sync.
 **Keeping it true.** `syncGithub` brings one person's workspaces in line with GitHub,
 as that person, against their own rate limit: the installations their token lists,
 their membership of each with what they may do in each of its repos (`write` or
-`read` for the repos it lists, `none` for its others), and none of any other but
+`read` for the repos it lists, and for its others `read` if public, `none` if
+private), and none of any other but
 their own account's. An installation is read as the App (its workspace and every repo
 it can see) only when Ponzu's copy is ten minutes old, disagrees with the person's
 view, or lacks a repo they reach: those reads come out of the installation's hourly
@@ -148,7 +149,8 @@ an upsert or a reconciliation, so it is safe twice at once and again after a fai
 memberships are dropped only once every installation is accounted for, and nothing is
 dropped or marked removed from a list GitHub served only in part (more than 2,000
 items). A repo the App loses is marked removed, never deleted. A suspended
-installation keeps its workspace, marked. An uninstall is remembered by installation
+installation keeps its workspace, marked, and while it is suspended nobody reaches its
+repos through Ponzu (below). An uninstall is remembered by installation
 id, which GitHub never reuses, so a read of GitHub that began before it cannot bring
 the installation back. A one-minute cron reads again any installation nobody has read
 for six hours, which is how an uninstall whose webhook was lost is found.
@@ -181,7 +183,10 @@ dead, their kept answers go stale (below), and one that says they lost access re
 them from that workspace at once. A `team` event, which names nobody, makes the
 workspace's answers stale and syncs everyone in it; so does a change to the
 installation's repos (`installation_repositories`), and a repo going private or
-public, moving or being deleted makes the answers about that repo stale. A pull
+public, moving or being deleted makes the answers about that repo stale. However
+Ponzu learns that a repo moved account or changed visibility (a webhook, a sync, the
+sweep), the answers about it go stale; and the App being suspended, unsuspended or
+uninstalled makes all of its workspace's answers stale. A pull
 request event updates the design that owns its branch, newest `updated_at` wins, and
 a merge settles the design. A failed check run or suite is an event with priority
 `next` on that design's feed, and so is a submitted review by someone GitHub says can
@@ -206,15 +211,25 @@ Every one of these questions is answered from one table, `repo_access`: (person,
 by numeric ids, and reaches the table one of two ways:
 
 - **A list, as the person.** `GET /user/installations/{id}/repositories` on their own
-  token names every repo of the installation they reach and whether they can push:
-  `write` or `read` for those, and `none` for the workspace's others when the list is
-  whole. One call for the whole workspace, on their own rate limit. Their sync does it
-  for every workspace; the designs list and each renewal of `workspace.designs` do it
-  for one, when its answers are more than a minute old.
+  token names every repo of the installation they were given permission on, and
+  whether they can push: `write` or `read` for those. When the list is whole, the
+  workspace's others are `read` if public (anyone can read one, and GitHub leaves it
+  out of this list) and `none` if private. One call for the whole workspace, on their
+  own rate limit. Their sync does it for every workspace; the workspace's repo list
+  (`GET /v1/workspaces/:id`), its designs list and each renewal of `workspace.designs`
+  do it for one, when any answer about any of its repos is more than a minute old. A
+  list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
+  the oldest of those whose answer a reader acts on (one that lets them read, or a
+  repo with a design), up to 20 at a time, are asked about as the App.
 - **A question, as the App.** `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
-  about one repo, asked by `requireDesign` (and by a review's check) when there is no
-  fresh answer. It takes the answer only when the account it names has the person's
-  GitHub id (a login can change hands).
+  about one repo, asked by `requireDesign`, `POST /v1/designs` and a review's check
+  when there is no fresh answer. It takes the answer only when the account it names
+  has the person's GitHub id (a login can change hands). GitHub answers `read` on a
+  public repo for anyone, so the list and the question agree.
+
+While the App is not installed on a workspace, or is suspended, the answer for every
+repo of it is `none` without asking GitHub: its designs open for nobody (404), none
+are listed, and no review reaches an agent.
 
 The rules for reading it:
 

@@ -108,6 +108,8 @@ export interface DesignAccess {
   repo: { id: string; githubRepoId: number; fullName: string } | null;
   /** The App's installation on the design's workspace. Null while the App is not installed. */
   installationId: number | null;
+  /** Set while the App is suspended on the workspace, when nobody can reach its repos. */
+  suspendedAt: Date | null;
   /** What GitHub last said the person asking may do in the repo, if it was ever asked. */
   known: { permission: RepoPermission; checkedAt: Date } | null;
   /**
@@ -132,6 +134,7 @@ export async function getDesignAccess(
         githubRepoId: repos.githubRepoId,
         fullName: repos.fullName,
         installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
         permission: repoAccess.permission,
         checkedAt: repoAccess.checkedAt,
         member: sql<boolean>`${memberships.userId} is not null`.mapWith(Boolean),
@@ -156,7 +159,9 @@ export async function getDesignAccess(
       .where(eq(designs.id, designId)),
   );
   if (!row) return null;
-  const { design, githubRepoId, fullName, installationId, permission, checkedAt, member } = row;
+  const { design, githubRepoId, fullName, installationId, suspendedAt, permission, checkedAt } =
+    row;
+  const { member } = row;
   return {
     design,
     repo:
@@ -164,6 +169,7 @@ export async function getDesignAccess(
         ? null
         : { id: design.repoId, githubRepoId, fullName },
     installationId,
+    suspendedAt,
     known: permission === null || checkedAt === null ? null : { permission, checkedAt },
     member,
   };

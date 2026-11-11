@@ -49,8 +49,11 @@ export async function recordRepoAccess(db: Db, answers: RepoAccessAnswer[]): Pro
  * Record what one person's own token lists of an installation's repos
  * (`GET /user/installations/{id}/repositories`), asked at `checkedAt`: each listed repo of the
  * workspace with the permission it shows, and, when the list is `complete`, every other repo
- * of the workspace as `none`. A list GitHub cut short only adds. As with `recordRepoAccess`,
- * nothing replaces a newer answer.
+ * of the workspace as what GitHub gives someone with no permission of their own there: `read`
+ * on a public repo, which anyone can read (and which GitHub leaves out of that list, since it
+ * lists only repos the person was given permission on), and `none` on a private one. That is
+ * what asking as the App says of them too, so the two never disagree. A list GitHub cut short
+ * only adds. As with `recordRepoAccess`, nothing replaces a newer answer.
  *
  * Only repos Ponzu already has for the workspace are recorded. Answers the GitHub ids it does
  * not have, which mean the workspace's own copy of its installation is behind.
@@ -85,7 +88,7 @@ export async function recordReachableRepos(
       ), answers as (
         select distinct on (repo_id) repo_id, permission from seen where repo_id is not null
         union all
-        select repos.id, 'none' from repos
+        select repos.id, case when repos.private then 'none' else 'read' end from repos
         where ${complete}::boolean and repos.workspace_id = ${workspaceId}
           and repos.id not in (select repo_id from seen where repo_id is not null)
       ), recorded as (
@@ -157,35 +160,58 @@ export async function markRepoAccessStale(
   return touched.length;
 }
 
-/** A repo with a design in it, and what GitHub last said one person may do there. */
-export interface DesignRepoAccess {
+/**
+ * Record that one person may do nothing in any repo of a workspace, as of `checkedAt`: what
+ * holds while the App is not installed on it or is suspended, when Ponzu has no way to reach
+ * its repos for anyone. Nothing replaces a newer answer.
+ */
+export async function recordNoRepoAccess(
+  db: Db,
+  { workspaceId, userId, checkedAt }: { workspaceId: string; userId: string; checkedAt: Date },
+): Promise<void> {
+  const ids = await run(
+    db.select({ id: repos.id }).from(repos).where(eq(repos.workspaceId, workspaceId)),
+  );
+  await recordRepoAccess(
+    db,
+    ids.map(({ id }) => ({ userId, repoId: id, permission: "none", checkedAt })),
+  );
+}
+
+/** A repo of a workspace, and what GitHub last said one person may do there. */
+export interface WorkspaceRepoAccess {
   repoId: string;
   githubRepoId: number;
+  fullName: string;
+  /** Whether it holds a design. */
+  hasDesign: boolean;
   /** Null when nobody has asked GitHub about this person and repo yet. */
   permission: RepoPermission | null;
   checkedAt: Date | null;
 }
 
-/** The repos of a workspace that hold at least one design, with what `userId` may do in each. */
-export function listDesignRepoAccess(
+/**
+ * Every repo of a workspace, the App's removed ones too (a design may still be in one), with
+ * what `userId` may do in each: every answer some reader of the workspace may act on.
+ */
+export function listWorkspaceRepoAccess(
   db: Db,
   { workspaceId, userId }: { workspaceId: string; userId: string },
-): Promise<DesignRepoAccess[]> {
+): Promise<WorkspaceRepoAccess[]> {
   return run(
     db
       .select({
         repoId: repos.id,
         githubRepoId: repos.githubRepoId,
+        fullName: repos.fullName,
+        hasDesign: exists(
+          db.select({ one: sql`1` }).from(designs).where(eq(designs.repoId, repos.id)),
+        ).mapWith(Boolean),
         permission: repoAccess.permission,
         checkedAt: repoAccess.checkedAt,
       })
       .from(repos)
       .leftJoin(repoAccess, and(eq(repoAccess.repoId, repos.id), eq(repoAccess.userId, userId)))
-      .where(
-        and(
-          eq(repos.workspaceId, workspaceId),
-          exists(db.select({ one: sql`1` }).from(designs).where(eq(designs.repoId, repos.id))),
-        ),
-      ),
+      .where(eq(repos.workspaceId, workspaceId)),
   );
 }

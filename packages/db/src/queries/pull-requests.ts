@@ -16,6 +16,8 @@ export interface BranchDesign {
   repo: { id: string; githubRepoId: number; fullName: string };
   /** The App's installation on the design's workspace. Null while the App is not installed. */
   installationId: number | null;
+  /** Set while the App is suspended on the workspace. */
+  suspendedAt: Date | null;
 }
 
 /** The design that owns a branch of a repo, or null when no design does. */
@@ -31,6 +33,7 @@ export async function findDesignByBranch(
         repoId: repos.id,
         fullName: repos.fullName,
         installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
       })
       .from(designs)
       .innerJoin(repos, eq(repos.id, designs.repoId))
