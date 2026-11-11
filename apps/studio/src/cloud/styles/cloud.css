@@ -342,6 +342,71 @@
   animation: rise var(--dur-pop) var(--ease-out);
 }
 
+/*
+ * A fold opening on what it holds, and closing again: its height to Radix's measure of the
+ * content, at the pane's pace. Closing is quicker than opening, like a menu leaving.
+ */
+@keyframes fold-open {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes fold-close {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+@utility fold {
+  overflow: hidden;
+  &[data-state="open"] {
+    animation: fold-open var(--dur-pane) var(--ease-out);
+  }
+  &[data-state="closed"] {
+    animation: fold-close var(--dur-pop) var(--ease-out);
+  }
+}
+
+/*
+ * The room a line held, let go: the thread's foot settles into it rather than jumping. Height 0
+ * once done, and at once under reduced motion.
+ */
+@keyframes leave {
+  from {
+    height: var(--room);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@utility leave {
+  height: 0;
+  animation: leave var(--dur-pane) var(--ease-out);
+}
+
+/* A new working state settling in where the last one was. */
+@keyframes settle {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility settle {
+  animation: settle var(--dur-pane) var(--ease-out);
+}
+
 /* A design's new preview and the one it replaces: a short, quiet cross-fade. The two run on
    the same timing so, added with plus-lighter, they always sum to one (design-preview.tsx). */
 @keyframes preview-in {

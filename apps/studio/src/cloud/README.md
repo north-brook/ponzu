@@ -15,14 +15,16 @@ gate.ts           what keeps someone from steering a design (read access, the ow
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
-                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
+                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton, trace
+                  and collapsible, from its AI Elements…), the
                   product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
                   marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
 create/           the create page: composer, model picker, repo picker, ideas
-thread/           the thread rail: its lines, following the foot, the composer, drafts
+thread/           the thread rail: its lines, the working line, finished turns folded (thread.ts
+                  has the rules, fold.tsx the line), following the foot, the composer, drafts
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
 setup/            guided first run: the gates (setup.ts), sign in, where you design, Connect
@@ -185,6 +187,16 @@ repaint something or say what isn't so. The usual swaps:
   questionnaire and message-scroller parts are the path once they settle; they are too young to
   build on now.
 - `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
+- AI Elements (now shadcn/ui's own patterns, built on its Trace): a finished turn's fold is its
+  Chain of Thought pattern, on `ui/trace.tsx` (added from the registry's `radix-nova` style,
+  which is the one that carries it: `bun run shadcn add
+  https://ui.shadcn.com/r/styles/radix-nova/trace.json`). The rest stay ours: Chat and Message
+  Scroller (the follow-the-foot logic above; ours also windows a thousand lines and anchors by
+  hand), Message and its Bubble (the design's bubble, avatars and comment frames), the streaming
+  response (`Prose`, with its rules for untrusted Markdown), Tool and Reasoning (the thread never
+  shows a tool's input or output, and Claude Code's thinking isn't streamed to it), the shimmer
+  utility for the working line (the design draws the turning slice, not a sweep of light), and
+  Prompt Input (the composer, the product's own).
 - The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
   first visit the column sits at the top from its first frame, where the ideas will go, and they
   rise into that room when they come; if none do, nothing moves.
