@@ -4,11 +4,11 @@ import {
   findDesignByBranch,
   getUserByGithubId,
   type Json,
-  type PrState,
-  recordPullRequest,
+  listDesignsWithOpenPullRequests,
 } from "@ponzu/db";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
+import { type PullRequestDeps, refreshPullRequest } from "../pull-requests/sync.ts";
 
 /*
  * What GitHub says about a design's pull request. A design owns one branch of its repo
@@ -23,47 +23,56 @@ export interface PullRequestRef {
   head: { ref: string; repo: { id: number } | null };
 }
 
-/** What the pull request is now, from its object in any `pull_request` event. */
-export function pullRequestState(pr: { state: string; draft: boolean; merged?: boolean | null }) {
-  const state: PrState = pr.merged
-    ? "merged"
-    : pr.state === "closed"
-      ? "closed"
-      : pr.draft
-        ? "draft"
-        : "open";
-  return state;
+/**
+ * Read again, as the App, the pull requests a delivery is about, for each design that owns one's
+ * branch, and record them (`refreshPullRequest`). A delivery says what was true when it was
+ * sent, and GitHub sends them late and out of order, so what is recorded is GitHub's word now,
+ * never the payload's. With `untilMergeable`, each is read again for a few seconds while GitHub
+ * works out whether it can merge, as it does after a push or a change of its base.
+ */
+export async function refreshDesigns(
+  deps: PullRequestDeps,
+  {
+    githubRepoId,
+    pullRequests,
+    untilMergeable = false,
+  }: { githubRepoId: number; pullRequests: PullRequestRef[]; untilMergeable?: boolean },
+): Promise<void> {
+  const ours = pullRequests.filter((pr) => pr.head.repo?.id === githubRepoId);
+  const branches = new Map(ours.map((pr) => [pr.head.ref, pr]));
+  for (const [branch, pullRequest] of branches) {
+    const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
+    if (!design) continue;
+    await refreshPullRequest(deps, design.id, { number: pullRequest.number, untilMergeable });
+  }
 }
 
 /**
- * Record a pull request's state on the design that owns its branch. A merge settles the
- * design. Older news than what is recorded changes nothing (see `recordPullRequest`).
+ * A push. To a design's branch: its pull request is read again until GitHub shows it at the
+ * pushed commit and knows whether it can merge. To the branch pull requests merge into: every
+ * open one of the repo's designs is read again, since the push may have given it conflicts.
  */
-export async function recordPullRequestEvent(
-  { db, log }: Pick<Deps, "db" | "log">,
+export async function refreshAfterPush(
+  deps: PullRequestDeps,
   {
     githubRepoId,
-    pullRequest,
-  }: {
-    githubRepoId: number;
-    pullRequest: PullRequestRef & {
-      state: string;
-      draft: boolean;
-      merged?: boolean | null;
-      updatedAt: Date;
-    };
-  },
+    branch,
+    after,
+    defaultBranch,
+  }: { githubRepoId: number; branch: string; after: string | null; defaultBranch: string },
 ): Promise<void> {
-  if (pullRequest.head.repo?.id !== githubRepoId) return;
-  const state = pullRequestState(pullRequest);
-  const designId = await recordPullRequest(db, {
-    githubRepoId,
-    branch: pullRequest.head.ref,
-    number: pullRequest.number,
-    state,
-    updatedAt: pullRequest.updatedAt,
+  if (branch === defaultBranch) {
+    for (const designId of await listDesignsWithOpenPullRequests(deps.db, githubRepoId)) {
+      await refreshPullRequest(deps, designId, { untilMergeable: true });
+    }
+    return;
+  }
+  const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
+  if (!design) return;
+  await refreshPullRequest(deps, design.id, {
+    ...(after ? { headSha: after } : {}),
+    untilMergeable: true,
   });
-  if (designId) log.info("pull_request_recorded", { designId, state });
 }
 
 /** Someone on GitHub who wrote something a design's agent would read, by their GitHub id. */
