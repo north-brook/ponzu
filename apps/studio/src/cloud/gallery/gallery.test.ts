@@ -576,7 +576,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and ⌥1 work there", async () => {
+  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and the page numbers work there", async () => {
     await open("pull-request-tab");
     const heading = 'h1:text-is("Quieter hero, editorial take")';
     const thread = () =>
@@ -594,11 +594,13 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Meta+j");
     expect(await expanded()).toBe("true");
     // What is typed in the thread outlives leaving the tab (board 3 asks a question: its note
-    // field is in the composer's place). ⌥1 opens the first page; the thread doesn't move.
+    // field is in the composer's place). ⌃1 (Alt off the Mac) opens the first page; the thread
+    // doesn't move.
     const field = "#thread textarea";
     await page.fill(field, "Half typed");
     await page.click(heading);
-    await page.keyboard.press("Alt+Digit1");
+    const mac = await page.evaluate(() => navigator.userAgent.includes("Mac"));
+    await page.keyboard.press(`${mac ? "Control" : "Alt"}+Digit1`);
     await page.waitForSelector(heading, { state: "detached" });
     const chosen = await page.$$eval(
       '[role="tablist"][aria-label="Pages"] [role="tab"][aria-selected="true"]',

@@ -2,6 +2,7 @@ import type { CanvasProps } from "@ponzu/canvas";
 import { isTyping } from "@ponzu/canvas/modifier-hint";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
+import type { DesignAddress } from "../cloud/ui/design-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
@@ -41,6 +42,7 @@ export function useDesignPanes({
   page,
   onPage,
   link,
+  onOpenDesign,
   seenThreadSeq,
   say,
   onClose,
@@ -61,6 +63,8 @@ export function useDesignPanes({
   onPage: (id: string) => void;
   /** Where a ponzu:// link asked to open it. */
   link: { page?: string; artboard?: string } | null;
+  /** Opens another design, on a page or board of it, as a ponzu:// link does. */
+  onOpenDesign: (at: DesignAddress) => void;
   seenThreadSeq: number | null;
   say: (notice: string) => void;
   /** Leave it: back to the create page. */
@@ -97,22 +101,35 @@ export function useDesignPanes({
     return () => window.removeEventListener("keydown", onKey);
   }, [prTab]);
 
-  const onOpenArtboards = useCallback(
-    (ids: string[]) => {
-      const [artboard] = ids;
-      if (!artboard || !designId) return;
-      setTabFor(null);
-      setShowing({ designId, link: { artboard, at: Date.now() } });
-    },
-    [designId],
-  );
-  const onOpenComment = useCallback(
-    (to: CommentLink) => {
+  // Every jump the thread makes (a comment, a stretch of work, a link in a reply) is the canvas
+  // following a link, as a ponzu:// one does: the same framing and the same mark.
+  const show = useCallback(
+    (to: Omit<CanvasLink, "at">) => {
       if (!designId) return;
       setTabFor(null);
       setShowing({ designId, link: { ...to, at: Date.now() } });
     },
     [designId],
+  );
+  const onOpenArtboards = useCallback(
+    (ids: string[]) => {
+      const [artboard] = ids;
+      if (artboard) show({ artboard });
+    },
+    [show],
+  );
+  const onOpenComment = useCallback((to: CommentLink) => show(to), [show]);
+  // A link to a page or board: on this design's canvas, or another design opened there.
+  const onOpenPlace = useCallback(
+    (at: DesignAddress) => {
+      if (at.designId !== designId) onOpenDesign(at);
+      else if (at.artboard) show({ artboard: at.artboard });
+      else if (at.page) show({ page: at.page });
+      // The design itself, as older replies link it: show the page that's open, whole.
+      else if (page) show({ page });
+      else setTabFor(null);
+    },
+    [designId, page, show, onOpenDesign],
   );
 
   if (!open) return null;
@@ -151,6 +168,7 @@ export function useDesignPanes({
         owner={owner}
         onOpenArtboards={onOpenArtboards}
         onOpenComment={onOpenComment}
+        onOpenPlace={onOpenPlace}
         onOpenPullRequest={() => setPrTab(true)}
         say={say}
         {...(onConnectClaude ? { onConnectClaude } : {})}

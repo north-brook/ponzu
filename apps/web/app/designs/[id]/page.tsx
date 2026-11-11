@@ -8,7 +8,8 @@ import { designAppLink } from "./app-link";
  * request's description and the agent's messages give it. A browser can't show the design (it
  * is the team's, behind their sign-in), so the page hands it to the Mac app as
  * ponzu://design/<id>, which opens it for whoever may, or offers the app, like /local does for a
- * design on someone's Mac. `?app=ponzu-dev` hands it to Ponzu Dev instead (app-link.ts).
+ * design on someone's Mac. `?app=ponzu-dev` hands it to Ponzu Dev instead, and `?page=` or
+ * `?artboard=` opens it on that page or board (app-link.ts).
  */
 
 export const metadata: Metadata = {
@@ -19,8 +20,8 @@ export const metadata: Metadata = {
 
 export default async function Page(props: PageProps<"/designs/[id]">) {
   const { id } = await props.params;
-  const { app } = await props.searchParams;
-  const to = designAppLink(id, app);
+  const { app, page, artboard } = await props.searchParams;
+  const to = designAppLink(id, app, { page, artboard });
   return (
     <div className="mx-auto flex min-h-dvh max-w-[1440px] flex-col px-16 max-[720px]:px-5">
       <div className="flex h-[82px] items-center">
