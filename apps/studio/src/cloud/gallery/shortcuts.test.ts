@@ -77,6 +77,21 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     );
   const press = (keys: string) => page.keyboard.press(keys);
   const wait = (ms: number) => page.waitForTimeout(ms);
+  /**
+   * Waits out a held modifier's delay: hints (named from `prefix`) showing, and their fade, and
+   * the names' they cover, run to its end. How many show is for the test to check.
+   */
+  const hintsUp = (prefix = "") =>
+    page.waitForFunction(
+      (prefix) =>
+        [...document.querySelectorAll("[data-hint][data-shown]")].some((el) =>
+          el.getAttribute("data-hint")?.startsWith(prefix),
+        ) &&
+        !document
+          .getAnimations()
+          .some((a) => a instanceof CSSTransition && a.playState === "running"),
+      prefix,
+    );
 
   test("⌘1–8 open the sidebar's designs in order, ⌘9 the last, ⌘0 the create page", async () => {
     await open("shortcuts");
@@ -175,7 +190,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await page.keyboard.up(mod);
     // The page tabs are in the chrome, collapsed or not.
     await page.keyboard.down(pageMod);
-    await wait(450);
+    await hintsUp("page-");
     expect((await shownHints()).filter((h) => h.startsWith("page-")).length).toBe(9);
     await page.keyboard.up(pageMod);
   });
@@ -191,7 +206,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(await openRow()).toBe(order.at(-1)!);
     // Fewer than nine: each shows its place, and ⌘9 reaches the last as well.
     await page.keyboard.down(mod);
-    await wait(450);
+    await hintsUp();
     const hints = await shownHints();
     await page.keyboard.up(mod);
     expect(hints).toEqual(order.map((_, i) => `design-${i + 1}`));
@@ -273,7 +288,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(new Set(frames.map((f) => f.layout)).size).toBe(1);
     // On the right rows: the first eight and the last.
     await page.keyboard.down(mod);
-    await wait(450);
+    await hintsUp();
     const placed = await page.evaluate((rowsSel) => {
       const rowEls = [...document.querySelectorAll(rowsSel)];
       return rowEls.map((row) => {
@@ -307,7 +322,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     // Shown, then another key (⌘E: not ⌘B, which takes the sidebar and its numbers away): gone
     // on the next frame, though ⌘ is still down.
     await page.keyboard.down(mod);
-    await wait(450);
+    await hintsUp();
     expect((await shownHints()).length).toBe(9);
     await page.keyboard.press("KeyE");
     expect(await shownHints()).toEqual([]);
@@ -316,7 +331,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await page.keyboard.up(mod);
     // A number keeps them up, so you can keep jumping while you hold.
     await page.keyboard.down(mod);
-    await wait(450);
+    await hintsUp();
     await page.keyboard.press("Digit2");
     expect((await shownHints()).length).toBe(9);
     await page.keyboard.up(mod);
@@ -332,7 +347,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(frames.at(-1)!.shown).toBe(0);
     expect(new Set(frames.map((f) => f.layout)).size).toBe(1);
     await page.keyboard.down(pageMod);
-    await wait(450);
+    await hintsUp();
     const placed = await page.$$eval(TABS, (tabs) =>
       tabs.map((tab) => {
         const hint = tab.querySelector("[data-hint][data-shown]");
@@ -371,7 +386,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
   test("the window losing focus takes them away", async () => {
     await open("shortcuts");
     await page.keyboard.down(mod);
-    await wait(450);
+    await hintsUp();
     expect((await shownHints()).length).toBe(9);
     await page.evaluate(() => window.dispatchEvent(new Event("blur")));
     expect(await shownHints()).toEqual([]);
