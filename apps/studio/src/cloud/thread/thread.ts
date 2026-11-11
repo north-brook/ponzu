@@ -125,8 +125,8 @@ function live(turn: Turn, agent: AgentActivity | undefined): boolean {
  * The lines the thread shows, in order: what people said, what the agent said, and how a turn
  * ended. What the run says about itself while starting (waking, resumed, started) has no line,
  * and neither do the agent's tools: while a turn runs, the working line at the foot says what
- * it is doing, and once it has ended nothing of its work is kept in the thread. What the agent
- * said on the way to its answer stays, marked as an aside.
+ * it is doing, and what the agent says on the way shows as asides; once the turn has ended
+ * only its answer stays.
  */
 export function threadRows(items: ThreadItem[], agent?: AgentActivity): Row[] {
   const shown = items.filter((item) => {
@@ -138,8 +138,14 @@ export function threadRows(items: ThreadItem[], agent?: AgentActivity): Row[] {
   const out: ThreadItem[] = [...before];
   const asides = new Set<string>();
   turns.forEach((turn, i) => {
-    for (const id of asidesOf(turn, i === turns.length - 1 && live(turn, agent))) asides.add(id);
-    out.push(...turn.items.filter((item) => item.kind !== "tool"));
+    const running = i === turns.length - 1 && live(turn, agent);
+    const these = new Set(asidesOf(turn, running));
+    // What the agent said on the way shows only while it is on the way: a finished turn keeps
+    // its answer and how it ended.
+    out.push(
+      ...turn.items.filter((item) => item.kind !== "tool" && (running || !these.has(item.id))),
+    );
+    if (running) for (const id of these) asides.add(id);
   });
   return withRuns(out, asides);
 }
