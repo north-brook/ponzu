@@ -156,7 +156,10 @@ passes; a new bake makes a new name.
 **How the API learns the image.** `PONZU_SANDBOX_SNAPSHOT` in the API's environment names the
 snapshot new sandboxes are created `from`; `current.json` is the record of the last bake for
 people, and the value to set. Baking does not change the API: set the variable and deploy.
-Sandboxes already made keep their image.
+Sandboxes already made move onto the new image the next time they wake (docs/cloud.md, "How
+images roll out"); `bun apps/api/scripts/images.ts` says where each stands. The runner reads
+`inputs` from `/opt/ponzu/image.json` and names its image by it (`ponzu-runner-<12 hex>`, the
+snapshot's name) in every call's `X-Ponzu-Client`.
 
 ## The checks
 

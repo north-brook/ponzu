@@ -21,7 +21,7 @@ import { Transcripts } from "./save/transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
 import { serve, serveCredentials } from "./server.ts";
 import { posthogTelemetry } from "./telemetry.ts";
-import { VERSION } from "./version.ts";
+import { runnerClient } from "./version.ts";
 
 /**
  * What a restart will not mend (configuration, a revoked token, a newer runner holding the
@@ -58,7 +58,7 @@ try {
   process.exit(EXIT_CONFIG);
 }
 
-const client = `runner/${VERSION}`;
+const client = runnerClient();
 const here = dirname(fileURLToPath(import.meta.url));
 // Beside this file: the source in a checkout, the bundle in the image.
 const helperFile = join(
@@ -142,7 +142,8 @@ const runner = new Runner({
   log,
   // Each turn's trace, to PostHog, when the API's session says analytics is on.
   // With content on, what the agent saw and said is scrubbed of every secret its environment holds.
-  telemetry: (config) => posthogTelemetry(config, { log, secrets: secretValues(process.env) }),
+  telemetry: (config) =>
+    posthogTelemetry(config, { log, secrets: secretValues(process.env), client }),
   event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
   onFatal: () => {
     server.stop();
