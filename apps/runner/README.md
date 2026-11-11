@@ -82,9 +82,12 @@ Tested on Bun 1.4.2 (the repo's) on macOS, and the built bundle uses only what B
 | `PONZU_STATE_DIR` | What the runner keeps across restarts (usage totals). `~/.ponzu` by default. |
 | `PONZU_CLAUDE` | The `claude` binary, when it is not `/usr/local/bin/claude`. |
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
+| `PONZU_REPO_SECRETS` | The repo's secrets, `NAME:base64(value)` comma-separated. |
 
-Repo secrets arrive as more variables in the same file and pass through to Claude Code and its
-tools. The agent's environment holds the runner token and the Claude credential too: git's
+Repo secrets arrive packed in `PONZU_REPO_SECRETS`, so none is ever a variable of the runner's
+own (a `BUN_OPTIONS` would load code into it before it starts, and a value is only base64 in
+the file the unit sources). `agentEnv` unpacks them under the runner's own variables for Claude
+Code, its tools and the checkout's git. The agent's environment holds the runner token and the Claude credential too: git's
 credential helper needs the one and Claude Code the other, and anything running as `user` could
 read both from `/proc` anyway. What that exposes, and to whom, is under "What a hostile repo
 or a hostile comment can do" below.

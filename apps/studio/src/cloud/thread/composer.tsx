@@ -37,7 +37,7 @@ export function RailComposer({
   onTextChange: (text: string) => void;
   working: boolean;
   /** A wait on the owner's Claude; read-only access has no composer at all. */
-  gate: Extract<SteerGate, { kind: "claude_limit" | "claude_disconnected" }> | null;
+  gate: Exclude<SteerGate, { kind: "read_only" }> | null;
   meId: string;
   attachments: PendingAttachment[];
   onAttach: (files: File[]) => void;
@@ -45,7 +45,7 @@ export function RailComposer({
   onRetryAttachment: (id: string) => void;
   onSend: () => void;
   onStop: () => void;
-  /** Offered when the wait is the viewer's own Claude, disconnected. */
+  /** Offered when the wait is the viewer's own Claude, disconnected or run out. */
   onConnectClaude?: () => void;
 }) {
   const button = composerButton({ working, text, attachments, gate });
@@ -94,7 +94,9 @@ export function RailComposer({
           <span role="status" className="min-w-0 flex-1">
             {gateMessage(gate, meId)}
           </span>
-          {gate.kind === "claude_disconnected" && gate.owner.id === meId && onConnectClaude ? (
+          {(gate.kind === "claude_disconnected" || gate.kind === "claude_expired") &&
+          gate.owner.id === meId &&
+          onConnectClaude ? (
             <Button variant="quiet" onClick={onConnectClaude} className="-my-1 px-2 text-ink">
               Connect
             </Button>

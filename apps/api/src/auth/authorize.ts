@@ -83,11 +83,13 @@ export async function requireDesign(
 /**
  * The repo `repoId` names, with its ideas, if the signed-in person may read it: a member of its
  * workspace whom GitHub lets read the repo (as `requireDesign` asks for a design in it). The
- * same 404 when it does not exist, the App has lost it, or the person may not read it.
+ * same 404 when it does not exist, the App has lost it, or the person may not read it. Pass
+ * `"write"` for something only someone who can push to it may do: 403 for a reader.
  */
 export async function requireRepo(
   c: { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: UserActor } },
   repoId: string,
+  need: "read" | "write" = "read",
 ): Promise<RepoIdeasAccess> {
   const { deps, actor } = c.var;
   const found = await getRepoIdeasAccess(deps.db, { repoId, userId: actor.user.id });
@@ -99,6 +101,9 @@ export async function requireRepo(
     known: found.known,
   });
   if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
+  if (need === "write" && !canWrite(permission)) {
+    throw new ApiError(403, "forbidden", "You can read this repo but not push to it.");
+  }
   return found;
 }
 

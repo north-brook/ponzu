@@ -85,6 +85,26 @@ const pending: PendingAttachment[] = [
   },
 ];
 
+/** The viewer's two newest messages: one still on its way, one that didn't arrive. */
+const unsent: ThreadItem[] = [
+  ...t.setUpThread,
+  ...(["sending", "failed"] as const).map(
+    (delivery, i): ThreadItem => ({
+      id: `unsent-${delivery}`,
+      seq: 1000 + i,
+      at: "2026-11-10T12:00:00Z",
+      streaming: false,
+      kind: "message",
+      payload: {
+        text: delivery === "sending" ? "Keep the green." : "And a fourth plan, for teams.",
+        from: f.bryce,
+        attachments: [],
+        delivery,
+      },
+    }),
+  ),
+];
+
 export function ThreadStates({
   Section,
 }: {
@@ -113,6 +133,27 @@ export function ThreadStates({
           gate={{ kind: "claude_disconnected", owner: f.maya }}
           label="Maya's Claude disconnected"
         />
+        <Rail
+          designId="expired"
+          gate={{ kind: "claude_expired", owner: f.bryce }}
+          label="your Claude sign-in ran out"
+        />
+        <Rail
+          designId="owner-left"
+          gate={{ kind: "claude_owner_left" }}
+          label="its owner left the workspace"
+        />
+        <Rail
+          designId="busy"
+          agent={{ state: "waking", status: null, sandbox: "busy" }}
+          label="waiting for a free machine"
+        />
+        <Rail
+          designId="failed"
+          agent={{ state: "idle", status: null, sandbox: "failed" }}
+          label="a machine couldn't start"
+        />
+        <Rail designId="unsent" thread={unsent} label="a message on its way, and one that failed" />
         <Rail
           designId="read"
           gate={{ kind: "read_only", repo: f.fernwood }}
@@ -162,6 +203,9 @@ export function ThreadStates({
           blocked="Bryce's plan is at its limit until 4:00 PM. This design waits."
           onRun={ignore}
         />
+        <NextActionButton action="update_branch" onRun={ignore} />
+        <NextActionButton action="blocked" onRun={ignore} />
+        <NextActionButton action="merge" busy onRun={ignore} />
       </Section>
     </>
   );

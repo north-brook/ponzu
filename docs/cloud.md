@@ -459,7 +459,9 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   the one the design runs on, opened from the vault. It goes only into the provider's `env`.
   The row records which token and which credential (the account and when it was connected),
   and a wake whose credential changed resumes on a new environment, which is a cold start;
-  the old token is revoked. Repo secrets are not in it yet.
+  the old token is revoked. Beside them go the design's repo's secrets, opened from the vault
+  when the environment is made ("Repo environments"), so a secret changed later reaches a
+  sandbox at its next cold start, not when it wakes from sleep.
 - **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
   a wake fails saying so.
 - **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
@@ -677,7 +679,7 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   running on their Claude the same way: it does not wake (`claude_owner_left`), and the sweep
   destroys its sandbox.
 - **Repo secrets** are stored encrypted per repo and injected as environment
-  variables at start.
+  variables when a sandbox starts on a new environment ("Repo environments").
 
 ## The runner protocol
 
@@ -1021,8 +1023,10 @@ head. `GET /health` answers `{ "ok": true, "state": "working" | "needs_you" | "i
 The sandbox starts the runner (a systemd service that sources boat's
 `/run/ascii-secrets/env.sh`) with `PONZU_API_URL`, `PONZU_DESIGN_ID`, `PONZU_RUNNER_TOKEN` and
 exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to
-start: Claude Code would use the key without a word and bill its account. The rest is
-optional and in `apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
+start: Claude Code would use the key without a word and bill its account. The repo's secrets
+come packed in one more variable, `PONZU_REPO_SECRETS`, which the runner unpacks only into the
+environment of what it starts, never its own ("Repo environments"). The rest is optional and in
+`apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
 the agent's edits to reach the API, reports its final state (`needs_you` when a question
 stays open) and exits.
 
@@ -1310,6 +1314,237 @@ free credits are used up. A workspace has a monthly cap.
   before every wake. A running turn is never cut off.
 - Stripe receives the billed part as metered usage.
 - The iPhone shows usage and sells nothing.
+
+What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
+the rate card. There is no Stripe, no ledger write and no cap enforcement yet; the cap is stored
+for when there is.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/workspaces/:id/usage` | none | `WorkspaceUsage` |
+| PATCH | `/v1/workspaces/:id/billing` | `{ capUsd }` | `WorkspaceUsage` |
+
+**The period.** A workspace's anchor is the day it was made (`billing_period_anchor`). Its
+period starts at midnight UTC on that day of every month, or on the month's last day when the
+month is shorter (a workspace made on the 31st starts on February 28), and ends where the next
+starts (`billing/period.ts`). `period.end` is the day Plan and usage "bills" or "resets" on; an
+app formats it in UTC, or a person west of Greenwich reads the day before. A stretch of awake
+time counts in the period it began in, as its usage event is dated, and the stretch awake right
+now counts up to the moment of asking, under the card in effect.
+
+**The arithmetic** is one module, `billing/credits.ts`, and every number it answers is an
+integer:
+
+- Used credits: awake seconds × the card's credits per awake hour ÷ 3,600 (each stretch priced
+  by the card that was in effect when it began), plus what model turns cost (zero while every
+  design runs on its owner's own plan), added up exactly and rounded down to a whole credit. A
+  partial credit, under twelve minutes awake at 5 an hour, is never charged.
+- Free credits: the card's free credits per member × the people counted, pooled. The people
+  counted are everyone who has been a member at any point in the period, plus anyone else whose
+  use is in it. A member's allowance is granted once a period and never taken back: it is a
+  `grant` row in `credit_ledger` for the period's start (`credit_ledger_grant_key` keeps it to
+  one), written for every member the first time Plan and usage reads the period with them in
+  it, and for a person as they leave (a sync that drops their membership, or deleting their
+  account, whose grants stay with no person). So the count is the members now, everyone with a
+  grant for the period, and everyone whose use is in it, and someone who leaves mid-period
+  without using anything still counts. Only people who have signed in are members, so a
+  collaborator who never signed in adds nothing.
+- Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
+  sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
+  legend in whole dollars rounded down.
+- A person's and a design's credits are their own exact use rounded down the same way: gross,
+  before the pooled free credits, so a breakdown adds up to what was used, not to what is
+  billed. Use put down to nobody (a deleted account) is `unattributedCredits`.
+- The cap is whole dollars, $1 to $1,000,000, stored in cents (`monthly_cap_cents`; the card's
+  default, $100, until one is set). It may not be set below what the period has billed, rounded
+  up to the dollar (400 `cap_too_low`, with `details.lowestUsd`).
+
+**Who sees what.** Every member sees the totals, the free credits, what would be billed and the
+cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted, highest
+first), `unattributedCredits` and `byDesign`: designs named only where they may read the repo
+(or their own Scratch), the rest, deleted designs included, summed in a last entry with no
+design. An admin who reaches the workspace only through repos shared with them sees no other
+member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
+`{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
+state.
+
+## Notifications
+
+Settings › Notifications chooses what pings a person and where. Nothing sends pushes yet; the
+API keeps what sending will need.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
+| PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
+| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
+| PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
+| DELETE | `/v1/me/devices/:id` | none | 204 |
+
+`prefs` is `{ needsYou, replies, prReady, teammateComments, emailDigest }`, on the person's row:
+the first three start on, the last two off, as the board draws them. A toggle saves as it is
+flipped and every device reads the same row. A device is an install of the app: `pushToken` is
+its APNs device token in hex (`ios`; `macos` is kept for the Mac's own notifications later) and
+`pushEnvironment` which APNs it is for. The iPhone registers after the person turns
+notifications on, and again at each launch, which updates the row in place and keeps
+`lastSeenAt`. `installId` is the app's own random id for the install (16 to 64 letters, digits
+or dashes), made once and kept in the Keychain, and never returned. A token another person
+registered moves to whoever registers it now, with pings on, only when the same install
+registers it (the phone signed in as someone else; logged `device_token_moved` with both
+people). From any other install it stays where it is and the answer is 409 `push_token_taken`
+(logged `device_token_conflict`): knowing a token is not enough to take someone's pings. `pings` is the person's toggle for one device;
+`blocked` is the phone saying iOS has notifications for Ponzu off, which the app reports and
+Settings shows as "Turned off in iOS Settings". A person keeps twenty devices; registering a
+21st forgets the one unseen longest. Signing out of the phone deletes its device. No answer
+carries a push token back.
+
+**What is worth a ping**, and who gets it, once sending is built. Each goes to the person's
+devices with `pings` on and not `blocked`, never to the person who caused it, and speaks as
+Ponzu:
+
+| Event | Toggle | Who | When |
+|---|---|---|---|
+| A question for you | `needsYou` | everyone who can steer the design (write access), the design's owner first | a question row opens (`questions`, the runner's `POST /v1/runner/questions`): a question, a plan, a permission, a sign-in or a secret the agent waits on |
+| A reply | `replies` | everyone who commented on the design | the agent's `assistant` item finishes in a turn that a comment of theirs started |
+| A pull request is ready | `prReady` | the design's owner and whoever pressed Create PR | `recordRead` records the design's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
+| A design finished | `needsYou` | the design's owner | a turn the owner started ends with the agent `idle` and no question open, after more than a minute of work, and the owner is not looking at it (no presence row) |
+| A teammate comments | `teammateComments` | the design's owner | a person other than the owner comments on it |
+| The cap at 80%, the cap reached | always | the workspace's admins | once a period each, with billing |
+
+The email digest (`emailDigest`) is one email a day of the same events and nothing else.
+
+## Repo environments
+
+Settings › Environments shows, per repo, the base its designs start from and the secrets its
+sandboxes receive. A repo is listed once it has something to show: a base, a rebuild asked for,
+or a secret.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/workspaces/:id/environments` | none | `{ repos: Environment[], canManageSecrets }` |
+| GET | `/v1/repos/:id/environment` | none | `{ environment, canManageSecrets, canRebuild }` |
+| POST | `/v1/repos/:id/environment/rebuild` | none | 202, as GET |
+| POST | `/v1/repos/:id/environment/secrets` | `{ name, value }` | 201, as GET |
+| PUT | `/v1/repos/:id/environment/secrets/:name` | `{ value }` | as GET |
+| DELETE | `/v1/repos/:id/environment/secrets/:name` | none | as GET |
+
+`Environment` is the repo (`id`, `owner`, `name`, `fullName`), its base (`status`: `none`,
+`building`, `ready` or `failed`; `builtAt`; `stack`, each a Simple Icons slug and a label;
+`rebuild`: when one was asked for and whether its job still waits) and its secrets by name with
+when each last changed. Anyone `requireRepo` lets read the repo sees it; anyone else gets a
+404, a repo of the same workspace included. Anyone who can push to the repo may ask for a
+rebuild; only an admin of the workspace adds, replaces or removes a secret (403 `forbidden`).
+
+**Rebuild** records a `repo.base_rebuild` job, keyed by the repo, and answers at once. The
+sandbox side of building a base (Claude setting the repo up again from its default branch, the
+result saved as its snapshot and its stack written down) is not built, so the job's handler is
+only a mark: `repos.base_rebuild_requested_at`, for the repo's next start to act on once it can.
+Designs that have a sandbox keep it.
+
+**Secrets.** A name is capitals, digits and underscores, starting with a letter, at most 64
+characters; a value is 1 byte to 16 KiB with no NUL; a repo holds at most 50, 44 KiB of names
+and values in all, because they all go into one sandbox's environment (boat.dev takes 64 KB)
+in base64, which is a third larger, beside Ponzu's own (409 `secrets_full`). A name that would
+replace or steer what Ponzu puts there, or change how a program loads code or checks TLS, is
+refused (400 `secret_name_reserved`): anything starting `PONZU_`, `CLAUDE_`, `ANTHROPIC_` (a
+second credential, or `ANTHROPIC_BASE_URL` sending the owner's to someone else), `ASCII_` or
+`BOAT_` (the provider's), `GIT_` (the credential helper is Ponzu's), `LD_` or `DYLD_` (the
+loader's), `BUN_` (`BUN_OPTIONS` is flags, `--preload` among them), `NODE_` or `NPM_CONFIG_`
+(but `NODE_ENV` and `NODE_AUTH_TOKEN`, which only say how the repo's own code runs and
+installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `USER`, `LOGNAME`,
+`SHELL`, `PWD`, `TMPDIR`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `PS4`, `IFS`, `PROMPT_COMMAND`,
+`PYTHONSTARTUP`, `XDG_CONFIG_HOME`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`,
+`REQUESTS_CA_BUNDLE` and the proxy variables. Adding a name
+the repo has is 409 `secret_exists`; replacing or removing one it lacks is 404. The value is
+sealed in the vault bound to `repo_secrets.encrypted_value` and `<repo id>/<name>`, and is
+never returned, logged or put in an event or a question. A secret the agent asks for in the
+thread goes to the same row (`answerSecretQuestion`, which no route calls yet) and the question
+keeps only its name; that name comes from the sandbox, so the route that wires it must check it
+as these routes do, and the sandbox's environment checks it again either way.
+
+**Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the design's repo's
+secrets, read in one statement, and packs them into one variable of the provider's `env`,
+`PONZU_REPO_SECRETS`: `NAME:base64(value)`, comma-separated (`encodeRepoSecrets` in
+`@ponzu/runner/protocol`). They never become variables of the runner's own: the runner is a Bun
+process that holds the runner token and the Claude credential, and a variable like
+`BUN_OPTIONS` would load code into it before it starts. The runner unpacks them only into the
+environment of what it starts for the agent (`agentEnv`), under its own variables, so none can
+stand in for those either, and without the runner token. Base64 also means boat's
+`/run/ascii-secrets/env.sh`, which the runner's unit sources with bash, holds nothing a shell
+could read as a command whatever an admin typed (a quote, `$(…)`, a newline in a PEM). A
+Scratch design has none. It never fails a
+wake: a name that is reserved now (one stored before it was) and a value the vault cannot open
+are left out, and anything past the provider's limits is too, each logged by count only. A
+changed secret takes effect at the sandbox's next cold start: a new design, a sandbox replaced
+or rebuilt, a new Claude credential, or a runner token near its end. A sandbox that only went to
+sleep wakes on the values it had. Settings says so under the secrets, in the words "New values
+reach a design the next time its sandbox starts fresh. Designs running now keep the ones they
+started with."
+
+## Deleting an account
+
+`DELETE /v1/me` with `{ confirm }`, the person's GitHub login typed out (any case; 400
+`confirmation_mismatch` otherwise), answers 204 once the account is gone, and the app signs out.
+While the person is the only admin of a workspace that others are in it is refused, 409
+`sole_admin` ("Make someone else an admin first.") with `details.workspaces`, and nothing
+changes: a workspace always has an admin. That is an organization's workspace, and their own
+account's too when collaborators on their repos are in it: it still bills, and someone must be
+able to set its cap. The check is made first, and again in the statement that deletes the row,
+on the admins' membership rows locked, so two admins deleting themselves at once cannot each
+see the other stay; the second is refused there, after the steps before it, which are safe to
+have taken.
+There is nothing else to change about a profile: a person's name, avatar and email are GitHub's
+and change there, coming through at their next sign-in.
+
+In this order, each step safe to repeat, so a request that fails partway can be sent again:
+
+1. Their Claude credential is destroyed, and with it every sandbox that held it (as
+   disconnecting does).
+2. Every sandbox of a design they own is retired, its awake time metered and its runner tokens
+   revoked; the provider destroys the machines in the background, and the sweep catches what
+   that misses.
+3. Their designs that are theirs alone are deleted with everything under them: their Scratch
+   designs, and their designs in a workspace nobody else is in.
+4. Their name is taken out of what stays: in every design of a workspace they are in, or that
+   they own, a thread item they wrote or stopped a run in names them as
+   `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under
+   their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
+5. This period's free allowance is granted to them in every workspace they are in, so their
+   leaving does not take it back ("Billing").
+6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+   token of theirs stops working at once), GitHub token, memberships, repo access answers,
+   Claude account, devices and open sign-ins. What other people's work points at forgets them:
+   a design's owner, who wrote a thread item, who answered a question, who changed a secret,
+   whom usage is put down to (the workspace's usage history stays, put down to nobody).
+7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+
+**Designs they own in a workspace others are in stay with it**, owned by nobody: a team's, or
+their own account's when collaborators on their repos are in it. Their canvas, thread and pull
+request are work shared with people in a repo they reach, who have commented on it and may be
+about to merge it; deleting them would take that from people who did not ask, and
+GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
+Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
+one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
+says so: "Your designs, threads and settings are deleted. Designs in a team stay with the team.
+Your repos and pull requests on GitHub are not touched."
+
+What is not rewritten: the name a design's document carries for a comment's author (inside the
+op and the checkpoints, whose history is not rewritten), and their words in workspaces they had
+already left.
+
+## Search
+
+Not built. Searching the sidebar for design names alone is cheap (the `designs` row has the
+name and the access joins `workspace.designs` uses), but the board shows boards and comments
+too, and those live only inside a design's document, as `json` in checkpoints and ops. Reading
+every readable design's document per keystroke is not an answer, so search needs a small table
+kept at commit time: `search_entries (design_id, kind: design | board | comment, ref, text,
+author_id, at)`, written by the statement that commits ops (the same one that copies the name
+and icon to `designs`) from what each op changed, and rebuilt for a design from its checkpoint
+when its shape changes. `GET /v1/workspaces/:id/search?q=` then reads it with a trigram index
+(`pg_trgm`), joined to `repo_access` as the designs list is, at most 8 designs, 8 boards and 8
+comments, with the match offsets the results board highlights. That is a change to the commit
+path, which is its own pull request.
 
 ## Clients
 

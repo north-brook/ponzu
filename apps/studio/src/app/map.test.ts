@@ -181,6 +181,32 @@ test("who is here: the viewer first in the chrome, and never among the others", 
     ["maya", true],
     ["sam", true],
   ]);
+  // Whoever worked on it and has gone is there too, faded, with when the thread last heard them.
+  const jordan = toPerson("usr_jordan", { githubLogin: "jordan", name: null, avatarUrl: null });
+  const sam = toPerson("usr_sam", { githubLogin: "sam", name: null, avatarUrl: null });
+  const worked = [
+    { person: sam, at: "2026-11-10T09:00:00.000Z" },
+    { person: jordan, at: "2026-11-08T09:00:00.000Z" },
+  ];
+  expect(contributors(rows, me, worked).map((c) => [c.person.login, c.here, c.lastHereAt])).toEqual(
+    [
+      ["maya", true, null],
+      ["sam", true, null],
+      ["jordan", false, "2026-11-08T09:00:00.000Z"],
+    ],
+  );
+});
+
+test("a row's preview is under its files, at the seq its pictures show; none before it has one", () => {
+  const people = new Map();
+  expect(toSummary(row(), { people, assetsUrl: "https://assets.test/k/" }).preview).toBeNull();
+  expect(toSummary(row({ previewSeq: 12 }), { people }).preview).toBeNull();
+  expect(
+    toSummary(row({ previewSeq: 12 }), { people, assetsUrl: "https://assets.test/k/" }).preview,
+  ).toEqual({
+    light: "https://assets.test/k/previews/12-light.png",
+    dark: "https://assets.test/k/previews/12-dark.png",
+  });
 });
 
 test("Share lists the owner first, then everyone who can edit", () => {

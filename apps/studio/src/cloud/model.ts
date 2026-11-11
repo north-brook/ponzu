@@ -175,7 +175,10 @@ export interface Attachment {
   contentType: string;
 }
 
-/** Where a comment's pin sits on its board, as fractions of the board's width and height. */
+/**
+ * Where a comment's pin sits in its board's miniature (`renderBoard`), as fractions of the
+ * miniature's width and height.
+ */
 export interface Pin {
   x: number;
   y: number;
@@ -210,7 +213,16 @@ export type ThreadItem = {
   /** Still being written: its payload will change. */
   streaming: boolean;
 } & (
-  | { kind: "message"; payload: { text: string; from: Person; attachments: Attachment[] } }
+  | {
+      kind: "message";
+      payload: {
+        text: string;
+        from: Person;
+        attachments: Attachment[];
+        /** The viewer's own message on its way, or one that didn't arrive; absent once it has. */
+        delivery?: "sending" | "failed";
+      };
+    }
   | {
       kind: "comment";
       payload: {
@@ -234,6 +246,11 @@ export type ThreadItem = {
 export interface AgentActivity {
   state: AgentState;
   status: string | null;
+  /**
+   * Why its sandbox isn't running: every machine it may start is taken, so it waits its turn;
+   * or starting one failed. Messages are kept either way, and go in once it runs.
+   */
+  sandbox?: "busy" | "failed" | null;
 }
 
 /** Older items of the thread: more to fetch, fetching, or none. */
@@ -255,7 +272,11 @@ export interface PendingAttachment {
 export type SteerGate =
   | { kind: "read_only"; repo: Repo | null }
   | { kind: "claude_limit"; owner: Person; until: string }
-  | { kind: "claude_disconnected"; owner: Person };
+  | { kind: "claude_disconnected"; owner: Person }
+  /** The owner's subscription sign-in ran out: they connect it again. */
+  | { kind: "claude_expired"; owner: Person }
+  /** Whoever it runs on left the workspace: nobody else's Claude stands in. */
+  | { kind: "claude_owner_left" };
 
 /*
  * Needs you: what the agent waits on a person for, in the composer's slot. `question`, `plan`
@@ -272,8 +293,12 @@ export interface AskedQuestion {
   multiSelect: boolean;
 }
 
-/** `sending` is the viewer's own answer on its way; `answered` and `cancelled` are closed. */
-export type AskStatus = "open" | "sending" | "answered" | "cancelled";
+/**
+ * `sending` is the viewer's own answer on its way; `answered`, `cancelled` and `closed` are
+ * closed. `closed` is one that left while the viewer was answering it, by a teammate's answer or
+ * the run moving on: which, nothing says.
+ */
+export type AskStatus = "open" | "sending" | "answered" | "cancelled" | "closed";
 
 export type Ask = {
   id: string;
@@ -351,9 +376,17 @@ export interface PrFile {
   status: "added" | "removed" | "modified" | "renamed";
   additions: number;
   deletions: number;
-  /** The unified diff GitHub gives; null for a binary file or one too large for GitHub to show. */
-  patch: string | null;
-  binary: boolean;
+  /** Its diff, or null until it is asked for, when its card first opens. */
+  diff: PrDiff | null;
+}
+
+/** A file's unified diff as GitHub gives it, or why there is none to show. */
+export type PrDiff = { kind: "text"; patch: string } | { kind: "binary" } | { kind: "too_large" };
+
+/** A file's diff as its card asks for it, with where a renamed file was. */
+export interface LoadedDiff {
+  diff: PrDiff;
+  previousPath: string | null;
 }
 
 export interface PullRequestDetail {
@@ -363,6 +396,8 @@ export interface PullRequestDetail {
   /** Markdown, from GitHub: untrusted text. */
   body: string;
   head: string;
+  /** The commit the tab shows: an open file's diff is read again when it moves. */
+  headSha: string;
   base: string;
   state: PrState;
   /** When it merged or closed, for a pull request that has. */
@@ -370,8 +405,13 @@ export interface PullRequestDetail {
   additions: number;
   deletions: number;
   checks: CheckRun[];
+  /** False when GitHub has more checks than `checks` holds. */
+  checksComplete: boolean;
   /** Oldest first. */
   comments: PrComment[];
   reviews: PrReview[];
+  /** The first of them, when there are more than GitHub lists at once. */
   files: PrFile[];
+  /** How many files the pull request changes. */
+  filesTotal: number;
 }

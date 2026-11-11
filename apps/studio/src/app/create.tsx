@@ -235,11 +235,11 @@ async function sayWithImages(
   try {
     const uploaded = await Promise.all(
       images.map(async ({ file }) =>
-        api.designs.upload(
-          designId,
-          { name: file.name, type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) },
-          "attachment",
-        ),
+        api.designs.upload(designId, {
+          name: file.name,
+          type: file.type,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        }),
       ),
     );
     const attachments = uploaded.flatMap((file) => (file.ref ? [file.ref] : []));

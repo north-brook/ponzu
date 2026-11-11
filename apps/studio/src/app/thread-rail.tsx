@@ -1,129 +1,167 @@
-import { bySeq, type LiveRows } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { canSend } from "../cloud/create/create.ts";
-import { SendButton } from "../cloud/ui/button.tsx";
-import { FadeScroll } from "../cloud/ui/fade-scroll.tsx";
-import { type OpenDesign, useSourceState } from "./design.tsx";
+import { useCallback, useEffect, useMemo } from "react";
+import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
+import { ThreadRail } from "../cloud/thread/rail.tsx";
+import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
+import { useNow } from "../cloud/time.ts";
+import { useColorScheme } from "../cloud/ui/color-scheme.ts";
+import { BoardMiniature } from "./board-miniature.tsx";
+import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
+import {
+  agentActivity,
+  shownItems,
+  steerGate,
+  type ThreadContext,
+  toThreadItem,
+} from "./thread-map.ts";
+import type { PendingMessage } from "./thread-store.ts";
+import { useSnapshot } from "./use-snapshot.ts";
 
 /*
- * SEAM(thread rail): the thread track builds the real rail (needs you, the working line,
- * comments with their boards, markdown) against the AppWindow `rail` slot. Until it lands this
- * is the least that keeps a design steerable: the thread as plain lines, live, and a field that
- * sends a message. Replace the component where main-window.tsx mounts it; nothing else uses it.
+ * The thread rail of an open design on live data (AppWindow's `rail`): its thread, what its agent
+ * is doing, what it waits on in the composer's place, and the composer, with every send, answer,
+ * upload and stop going to the API through the open design's stores.
  */
 
-type ThreadItem = LiveRows["design.thread"];
-
-export function ThreadRail({ host, open }: { host: Host; open: OpenDesign }) {
+export function DesignRail({
+  host,
+  open,
+  me,
+  people,
+  repo,
+  owner,
+  onOpenArtboards,
+  onOpenPullRequest,
+  onConnectClaude,
+  say,
+}: {
+  host: Host;
+  open: OpenDesign;
+  me: Person;
+  /** The workspace's members by id. */
+  people: ReadonlyMap<string, Person>;
+  /** Its repo; null for Scratch. */
+  repo: Repo | null;
+  owner: Person | null;
+  /** Shows these boards on the canvas. */
+  onOpenArtboards: (artboardIds: string[]) => void;
+  onOpenPullRequest: () => void;
+  /** Connects the viewer's own Claude, when the design waits on it; absent until it can. */
+  onConnectClaude?: () => void;
+  /** Says over the window what didn't happen. */
+  say: (notice: string) => void;
+}) {
   const designId = open.id;
-  // The source learns whether the person may steer once the API has answered.
-  useSourceState(open.source);
-  const writable = open.source.writable;
-  const { rows } = useLiveQuery("design.thread", { designId });
-  const items = rows ? bySeq(rows) : null;
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const end = useRef<HTMLDivElement>(null);
-  const count = items?.length ?? 0;
+  const state = useSourceState(open.source);
+  const access = useAccess(open);
+  const thread = useSnapshot(open.thread);
+  const asks = useSnapshot(open.asks);
+  const attachments = useSnapshot(open.uploads);
+  const head = useLiveQuery("design.head", { designId }).rows?.[0];
+  const meRow = useLiveQuery("me", {}).rows?.[0];
+  const theme = useColorScheme();
+  const now = useNow();
+  const doc = state.doc;
+  const assetBase = open.source.assetBase;
+
+  // A question waiting in the composer's place isn't in the thread as well.
+  const waiting = useMemo(
+    () =>
+      new Set(
+        asks.filter((ask) => ask.status === "open" || ask.status === "sending").map((a) => a.id),
+      ),
+    [asks],
+  );
+  const items = useMemo(() => {
+    if (!thread.items) return null;
+    const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
+    return [
+      ...shownItems(thread.items, waiting).map((item) => toThreadItem(item, ctx)),
+      ...thread.pending.map((message, i) => pendingItem(message, me, i)),
+    ];
+  }, [thread, waiting, people, assetBase, doc, me]);
+
+  // With the rail open, the viewer has read the thread as far as it goes.
+  const newest = thread.items?.at(-1)?.seq;
   useEffect(() => {
-    if (count) end.current?.scrollIntoView({ block: "end" });
-  }, [count]);
+    if (newest === undefined || access === null) return;
+    const timer = setTimeout(
+      () => void host.api.designs.seen(designId, { threadSeq: newest }).catch(() => {}),
+      1000,
+    );
+    return () => clearTimeout(timer);
+  }, [host, designId, newest, access]);
 
-  const send = async () => {
-    if (!canSend(text, sending)) return;
-    setSending(true);
-    setFailed(false);
-    try {
-      await host.api.designs.sendMessage(designId, { text: text.trim() });
-      setText("");
-    } catch {
-      setFailed(true);
-    } finally {
-      setSending(false);
-    }
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void send();
-    }
-  };
+  const onOpenComment = useCallback(
+    (threadId: string) => {
+      const artboard = doc?.threads.find((t) => t.id === threadId)?.artboardId;
+      if (artboard) onOpenArtboards([artboard]);
+    },
+    [doc, onOpenArtboards],
+  );
 
+  // Until the API says what the viewer may do, nothing offers to steer.
+  if (access === null) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ThreadSkeleton />
+      </div>
+    );
+  }
+  const gate = steerGate({ access, repo, head, owner, me: meRow, now });
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <FadeScroll className="flex-1">
-        <div className="flex flex-col gap-3 px-1.5 py-3 text-13 leading-[1.5]">
-          {items?.map((item) => (
-            <ThreadLine key={item.id} item={item} />
-          ))}
-          <div ref={end} />
-        </div>
-      </FadeScroll>
-      {writable ? (
-        <div className="mt-2 flex flex-col gap-1">
-          <div className="flex items-end gap-2 rounded-14 bg-surface p-2 pl-3 shadow-bar">
-            <textarea
-              aria-label="Message Claude"
-              placeholder="Reply to Claude"
-              rows={1}
-              value={text}
-              onChange={(e) => setText(e.currentTarget.value)}
-              onKeyDown={onKeyDown}
-              className="max-h-40 min-h-7 flex-1 resize-none bg-transparent py-1 text-13 text-ink outline-none [caret-color:var(--c-yuzu)] [field-sizing:content] placeholder:text-faint"
-            />
-            <SendButton size={28} iconSize={14} disabled={!canSend(text, sending)} onClick={send} />
-          </div>
-          {failed ? (
-            <p role="alert" className="m-0 px-2 text-12 text-danger">
-              That didn't send. Try again.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <ThreadRail
+      designId={designId}
+      meId={me.id}
+      repoName={repo?.name ?? null}
+      items={items}
+      older={thread.older}
+      onLoadOlder={() => open.thread.loadOlder()}
+      agent={agentActivity(head)}
+      asks={asks}
+      gate={gate}
+      attachments={attachments}
+      onAttach={(files) => open.uploads.add(files)}
+      onRemoveAttachment={(id) => open.uploads.remove(id)}
+      onRetryAttachment={(id) => open.uploads.retry(id)}
+      onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
+      onStop={() =>
+        void host.api.designs
+          .stop(designId)
+          .catch(() => say("Claude couldn't be stopped. Try again."))
+      }
+      onAnswer={(id, answer) => open.asks.answer(id, answer)}
+      onDismissAsk={(id) => open.asks.dismiss(id)}
+      onTouchAsk={(id) => open.asks.touch(id)}
+      onRetryMessage={(id) => open.thread.retry(id)}
+      onEditMessage={(id) => open.thread.discard(id)}
+      {...(onConnectClaude ? { onConnectClaude } : {})}
+      renderBoard={(artboardId) => (
+        <BoardMiniature doc={doc} artboardId={artboardId} assetBase={assetBase} theme={theme} />
+      )}
+      onOpenComment={onOpenComment}
+      onOpenArtboards={onOpenArtboards}
+      onOpenPullRequest={onOpenPullRequest}
+      onOpenLink={(url) => host.openExternal(url)}
+    />
   );
 }
 
-function ThreadLine({ item }: { item: ThreadItem }) {
-  switch (item.kind) {
-    case "message":
-      return (
-        <p className="m-0 self-end rounded-12 bg-surface px-3 py-2 text-ink">{item.payload.text}</p>
-      );
-    case "comment":
-      return (
-        <p className="m-0 text-muted">
-          {item.payload.from.name} commented
-          {item.payload.artboardName ? ` on ${item.payload.artboardName}` : ""}: “
-          {item.payload.text}”
-        </p>
-      );
-    case "assistant":
-      return <p className="m-0 whitespace-pre-wrap text-ink">{item.payload.text}</p>;
-    case "tool":
-      return <p className="m-0 text-12 text-faint">{item.payload.label}</p>;
-    case "notice":
-      return <p className="m-0 text-12 text-faint">{noticeText(item.payload)}</p>;
-  }
-}
-
-function noticeText(notice: Extract<ThreadItem, { kind: "notice" }>["payload"]): string {
-  switch (notice.type) {
-    case "waking":
-      return "Waking up…";
-    case "resumed":
-    case "started":
-      return "Claude is here.";
-    case "question":
-      return `${notice.header}: ${notice.text}`;
-    case "error":
-      return notice.message;
-    case "stopped":
-      return notice.by ? `${notice.by.name} stopped Claude.` : "Claude stopped.";
-    case "pull_request":
-      return `Pull request #${notice.number}: ${notice.title}`;
-  }
+/** A message of the viewer's on its way, at the thread's foot until it arrives. */
+function pendingItem(message: PendingMessage, me: Person, index: number): ThreadItem {
+  return {
+    id: message.id,
+    // After everything the thread holds, in the order they were sent.
+    seq: Number.MAX_SAFE_INTEGER - 1000 + index,
+    at: message.at,
+    streaming: false,
+    kind: "message",
+    payload: {
+      text: message.text,
+      from: me,
+      attachments: message.attachments,
+      delivery: message.status,
+    },
+  };
 }

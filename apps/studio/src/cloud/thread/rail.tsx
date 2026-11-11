@@ -12,7 +12,7 @@ import type {
 import { NeedsYou } from "../needs-you/needs-you.tsx";
 import { safeHref } from "../ui/markdown.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
-import { readDraft, restoreDraft, useDraft } from "./composer-rules.ts";
+import { readDraft, restoreDraft, useDraft, writeDraft } from "./composer-rules.ts";
 import type { LineHandlers } from "./lines.tsx";
 import { ThreadSkeleton, ThreadView } from "./thread-view.tsx";
 
@@ -38,6 +38,8 @@ export interface ThreadRailProps extends LineHandlers {
   onStop: () => void;
   onAnswer: (askId: string, answer: AskAnswer) => void;
   onDismissAsk: (askId: string) => void;
+  /** The viewer started answering an ask. */
+  onTouchAsk?: (askId: string) => void;
   onConnectClaude?: () => void;
 }
 
@@ -63,6 +65,16 @@ export function ThreadRail(props: ThreadRailProps) {
       onOpenLink: (url) => {
         const href = safeHref(url);
         if (href) latest.current.onOpenLink(href);
+      },
+      onRetryMessage: (id) => latest.current.onRetryMessage?.(id),
+      // Its words go back in the field, ahead of anything typed since, and the bubble goes.
+      onEditMessage: (id) => {
+        const { items, meId, designId, onEditMessage } = latest.current;
+        const item = items?.find((candidate) => candidate.id === id);
+        if (item?.kind === "message") {
+          writeDraft(meId, designId, restoreDraft(item.payload.text, readDraft(meId, designId)));
+        }
+        onEditMessage?.(id);
       },
     }),
     [],
@@ -107,6 +119,7 @@ export function ThreadRail(props: ThreadRailProps) {
             onAnswer={props.onAnswer}
             onDismiss={props.onDismissAsk}
             onOpenLink={handlers.onOpenLink}
+            {...(props.onTouchAsk ? { onTouch: props.onTouchAsk } : {})}
           />
         ) : (
           <RailComposer

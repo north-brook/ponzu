@@ -113,9 +113,17 @@ export async function answerQuestion(
  */
 export async function answerSecretQuestion(
   db: Db,
-  input: { designId: string; id: string; name: string; encryptedValue: string; userId: string },
+  input: {
+    designId: string;
+    id: string;
+    name: string;
+    encryptedValue: string;
+    /** The plain value's length in UTF-8 bytes. */
+    valueBytes: number;
+    userId: string;
+  },
 ): Promise<Question | null> {
-  const { designId, id, name, encryptedValue, userId } = input;
+  const { designId, id, name, encryptedValue, valueBytes, userId } = input;
   const inRepo = db
     .select({ id: designs.id })
     .from(designs)
@@ -136,6 +144,7 @@ export async function answerSecretQuestion(
             repoId: sql<string>`${designs.repoId}`.as("repo_id"),
             name: sql<string>`${name}`.as("name"),
             encryptedValue: sql<string>`${encryptedValue}`.as("encrypted_value"),
+            valueBytes: sql<number>`${valueBytes}::integer`.as("value_bytes"),
             updatedByUserId: sql<string>`${userId}`.as("updated_by_user_id"),
             createdAt: sql<Date>`now()`.as("created_at"),
             updatedAt: sql<Date>`now()`.as("updated_at"),
@@ -147,6 +156,7 @@ export async function answerSecretQuestion(
         target: [repoSecrets.repoId, repoSecrets.name],
         set: {
           encryptedValue: sql`excluded.encrypted_value`,
+          valueBytes: sql`excluded.value_bytes`,
           updatedByUserId: sql`excluded.updated_by_user_id`,
           updatedAt: sql`now()`,
         },
