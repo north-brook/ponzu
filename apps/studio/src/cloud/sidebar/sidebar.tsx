@@ -65,8 +65,8 @@ export interface SidebarProps extends RowHandlers {
  */
 export function Sidebar(props: SidebarProps) {
   const { me, workspace, designs, filter, query, results } = props;
-  const searchButton = useRef<HTMLButtonElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useResultSelection(results);
 
   // Where focus was when search opened (⌘K from the composer, a click on Search that took no
@@ -86,12 +86,14 @@ export function Sidebar(props: SidebarProps) {
   useShortcut("n", props.onNewDesign);
   useShortcut(",", props.onSettings);
 
+  // Closing search gives focus back where search found it: the composer after ⌘K there, nowhere
+  // after a click on Search (which takes no focus), so no tip shows as if the person had gone to
+  // the button; and the button, drawn again with its ring and tip, only when the keyboard had
+  // reached it (Tab, then Return).
   const closeSearch = () => {
     props.onQueryChange(null);
     const was = openedFrom.current;
     openedFrom.current = null;
-    // Back where search found it, as the keyboard's if it was (Return on Search: the button,
-    // drawn again); found nowhere, nowhere, so the next key goes to the window as before.
     requestAnimationFrame(() => giveFocusBack(was, searchButton.current));
   };
 

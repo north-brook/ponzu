@@ -64,8 +64,10 @@ lockup in any state, the sidebar toggle is the first thing at the left (on a Mac
 traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
 centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
-on every tab. `visual.ts compare` masks the chrome's 44px for this reason, so the rest is still
-checked against the boards.
+on every tab. The chrome is 38px tall where the boards draw 44 (the founder's direction: more
+compact, its 28px controls and the traffic lights centred on it), so everything under it sits 6px
+higher than on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons,
+so the rest is still checked against the boards.
 
 The chrome reads, left to right (the founder's order), the right side the left's mirror:
 
@@ -115,7 +117,9 @@ click since. Focus a click gave, a shortcut acted through, or our own code hande
 taking the composer's place, a row back from renaming) is marked quiet for as long as it stays,
 whatever keys follow: ⌘, ⌥ held for a shortcut, Return, Space, a letter. It turns into the
 keyboard's only when a navigating key is pressed on it. `focus-ring` and the canvas package's
-controls skip quiet focus, and so do tips (`Tip`). Text fields keep their own focus treatment;
+controls skip quiet focus, and so do tips (`Tip`). Return or Space on a control that has the
+keyboard's focus hands it on: the popover or dialog it opens rings its first control (`presses`);
+on a control a click focused, the same press stays quiet. Text fields keep their own focus treatment;
 menus show their current item by its highlight, whichever way they were opened.
 
 Controls that act on the window, not on themselves, take no focus from a click at all, as a
@@ -123,38 +127,6 @@ Mac's toolbar buttons don't (`data-toolbar`: the chrome's toggles and page tabs,
 sidebar's Search and New design), so the next key goes where it went before the click. Search
 gives focus back where it found it when it closes (the composer after ⌘K, nowhere if it was
 nowhere), as the keyboard's if it was.
-
-The chrome reads, left to right (the founder's order):
-
-- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`
-  … `| [presence] [PR mark] [action] [thread toggle]`. The name is the row's type (13, medium),
-  cut with an ellipsis at 240, and not a control: a double-click there zooms the window, as on
-  any Mac title bar, so renaming stays on the row.
-- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +` …, the divider on the
-  sidebar's edge at x 300, where the canvas pane starts. The name's room closes to nothing.
-- the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
-  name, no divider.
-
-⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
-composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
-toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
-reach the studio as commands. Neither toggles while a menu or a modal is open over the window,
-or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
-
-Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
-everything that moves with them: the pane's width, the canvas pane's margin, the left block's
-width, the name's room, and the right block's reach (the room it keeps over the rail). The rail, like the sidebar, keeps its content still at the
-window's edge while its room opens or closes, and holds it until it has closed. The canvas
-keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
-moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
-the app's end-to-end test that the boards don't move.
-
-A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
-marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
-the ring comes back only from a key that works focus: Tab, an arrow inside a menu, tablist or
-radio group, or Return or Space pressing the focused control. A letter or Escape after a click
-is the canvas's, not the control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
-all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
@@ -313,12 +285,11 @@ repaint something or say what isn't so. The usual swaps:
   rise into that room when they come; if none do, nothing moves.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
-  no line under Scratch), a search only from seven repos (`SEARCH_FROM`), and Scratch's
-  temporary-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
-  Its composition masks the picker and says so in `compare`. In a 900pt window a picker without
-  search (Scratch and up to six repos) fits under the centred composer and never moves it; one
-  with search lifts the composer to the top while it is open, by design: its ten-row list needs
-  the room, and a shorter list would scroll sooner for everyone with many repos.
+  no line under Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's
+  dashed-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
+  Its composition masks the picker and says so in `compare`. The picker never moves the page:
+  its list shows five and a half rows and scrolls (a list that long has its search), and in a
+  window too short even for that the list gives up height and the picker stays under its chip.
 
 ### When you need
 

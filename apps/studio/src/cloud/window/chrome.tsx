@@ -18,7 +18,7 @@ export type Lights = "native" | "drawn" | "none";
  * running app so the toggle's icon sits 14px past the last light: the same 14px that separates
  * the icon from the divider after it when the sidebar is closed, so the chrome's left end keeps
  * one rhythm. An older macOS has the smaller lights and so a little more air. The window centres
- * them on the chrome's 44px (apps/desktop/src/traffic-lights.ts).
+ * them on the chrome's 38px (apps/desktop/src/traffic-lights.ts).
  */
 export function TrafficLights({ drawn }: { drawn: boolean }) {
   if (!drawn) return <div aria-hidden className="h-3 w-[58px] shrink-0" />;

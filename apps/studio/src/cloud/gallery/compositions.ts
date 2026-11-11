@@ -32,14 +32,16 @@ export interface Composition {
 }
 
 /**
- * The window's 44px chrome, across its width. Masked in every comparison with the design's
- * boards (visual.ts adds it): it departs from them on purpose, with no lockup and the toggles
- * at the window's edges (README, "The window chrome").
+ * The chrome as the design's boards draw it, 44px across the window's width. Masked in every
+ * comparison with the boards (visual.ts adds it): ours departs from them on purpose, with no
+ * lockup, the toggles at the window's edges, and 38px tall (README, "The window chrome"), which
+ * this covers too. Under it, everything of ours sits 6px higher than on a board.
  */
 export const CHROME_HEIGHT = 44;
 
-const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
-const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
+/** The panes under our 38px chrome. */
+const CANVAS: Rect = { x: 300, y: 38, width: 780, height: 856 };
+const RAIL: Rect = { x: 1080, y: 38, width: 360, height: 862 };
 const DESIGN = [CANVAS, RAIL];
 const WINDOW = { width: 1440, height: 900 };
 /** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
@@ -135,7 +137,7 @@ export const COMPOSITIONS: Composition[] = [
     // The board's picker and ours, wherever either lands.
     masks: [{ x: 530, y: 416, width: 424, height: 380 }],
     differs:
-      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows only from seven repos, and Scratch has the temporary-folder icon",
+      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows from five repos over a list of five and a half rows, and Scratch has the dashed-folder icon",
     reference: true,
   },
   {

@@ -562,7 +562,18 @@ function WorkspaceWindow({
                   onOpen={onOpen}
                   onAction={onAction}
                   onRename={onRename}
-                  onNewDesign={() => openDesign(null)}
+                  onNewDesign={() => {
+                    openDesign(null);
+                    // New design, by its button or ⌘N, is to start typing one: the caret goes
+                    // to the create page's composer, whether the page was already showing or not.
+                    requestAnimationFrame(() =>
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
+                          ?.focus({ preventScroll: true }),
+                      ),
+                    );
+                  }}
                   onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
