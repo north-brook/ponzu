@@ -82,14 +82,15 @@ async function scratch(): Promise<void> {
     report.wakes = wakes;
     for (let i = 0; i < Number(process.env.E2E_WARM ?? 2); i++)
       wakes.push(await wake(trial, "warm", 60_000));
-    for (let i = 0; i < Number(process.env.E2E_COLD ?? 2); i++)
-      wakes.push(await wake(trial, "cold", COLD_AFTER_MS));
 
-    // The real Claude credential was in this sandbox's environment for every turn and wake:
-    // none of it may be on disk.
+    // The real Claude credential was in this sandbox's environment for every turn and wake so
+    // far: none of it may be on disk. Before the cold wakes, which can fail on boat's disk.
     report.secretsAfterTurns = await runChecks(
       imageChecks(boat, trial.id, readPins()).filter((c) => c.name.startsWith("nothing secret")),
     );
+
+    for (let i = 0; i < Number(process.env.E2E_COLD ?? 2); i++)
+      wakes.push(await wake(trial, "cold", COLD_AFTER_MS));
   } catch (err) {
     // What the runner and the fake API said, before the sandbox goes.
     report.journal = await sh(
