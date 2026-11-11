@@ -28,8 +28,9 @@ describe.skipIf(!chromium)("theme lint in Chromium", () => {
       await renderer.render({ artboard: board(body), tokens: css, lint: true, colorScheme })
     ).issues.filter((i) => i.kind === "theme");
 
-  test("a design that uses its tokens throughout is clean in both themes", async () => {
-    const body = `<div data-id="n_card" data-name="Card" style="background:var(--card);padding:16px"><p data-id="n_p" style="color:var(--muted)">Quiet</p></div>`;
+  test("a design that uses its tokens throughout, and a dark card that stays dark, are clean in both themes", async () => {
+    const body = `<div data-id="n_card" data-name="Card" style="background:var(--card);padding:16px"><p data-id="n_p" style="color:var(--muted)">Quiet</p></div>
+<div data-id="n_term" style="background:#0e0e0e;color:#f2f2f2;padding:12px"><code data-id="n_c">ponzu</code></div>`;
     expect(await lint(body)).toEqual([]);
     expect(await lint(body, "dark")).toEqual([]);
   });
@@ -56,12 +57,6 @@ describe.skipIf(!chromium)("theme lint in Chromium", () => {
     expect(await lint(pinned, "dark")).toEqual([]);
     const fixed = `<div data-id="n_card" style="background:#fff"><p data-id="n_t" style="color:#111">Hi</p></div>`;
     expect(await lint(fixed, "dark", ":root { --bg: #f3f3f1; --ink: #111; }")).toEqual([]);
-  });
-
-  test("a dark card that stays dark reads fine in both and isn't flagged", async () => {
-    const body = `<div data-id="n_term" style="background:#0e0e0e;color:#f2f2f2;padding:12px"><code data-id="n_c">ponzu</code></div>`;
-    expect(await lint(body)).toEqual([]);
-    expect(await lint(body, "dark")).toEqual([]);
   });
 
   test("a design themed with prefers-color-scheme is checked in both themes too", async () => {

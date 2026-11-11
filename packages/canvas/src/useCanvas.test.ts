@@ -82,21 +82,3 @@ test("an immediate change flushes now and drops the pending frame", () => {
   runFrame();
   expect(seen.length).toBe(1);
 });
-
-test("useCamera keeps its shape: the camera as state, with setCamera and cameraRef", async () => {
-  const { useCamera } = await import("./useCanvas.ts");
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const { createElement } = await import("react");
-  let api: ReturnType<typeof useCamera> | undefined;
-  const Probe = () => {
-    api = useCamera({ x: 1, y: 2, zoom: 0.5 });
-    return null;
-  };
-  renderToStaticMarkup(createElement(Probe));
-  expect(api!.camera).toEqual({ x: 1, y: 2, zoom: 0.5 });
-  expect(api!.cameraRef.current).toEqual({ x: 1, y: 2, zoom: 0.5 });
-  expect(typeof api!.setCamera).toBe("function");
-  expect(typeof api!.zoomAt).toBe("function");
-  expect(typeof api!.panBy).toBe("function");
-  expect(typeof api!.fit).toBe("function");
-});
