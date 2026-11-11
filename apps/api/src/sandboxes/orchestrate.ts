@@ -150,12 +150,19 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
     }
     const woke = await bringUp(deps, context, job.id, began + WAKE_BUDGET_MS);
     if (woke) {
-      log.info("sandbox_awake", {
-        designId,
-        sandboxId: woke.sandbox.id,
-        start: woke.start,
-        ms: clock.now() - began,
-      });
+      const ms = clock.now() - began;
+      log.info("sandbox_awake", { designId, sandboxId: woke.sandbox.id, start: woke.start, ms });
+      // About the design's owner, whose Claude it runs on: whoever's message woke it, it runs
+      // for them.
+      const about = { distinctId: context.ownerId, workspaceId: context.workspaceId };
+      if (woke.replaced) deps.analytics.capture("sandbox lost", { design_id: designId }, about);
+      if (woke.start !== "none") {
+        deps.analytics.capture(
+          "sandbox woke",
+          { design_id: designId, start: WAKE_STARTS[woke.start], duration_ms: ms },
+          about,
+        );
+      }
     }
   } catch (error) {
     if (!(error instanceof SandboxError)) throw error;
@@ -200,7 +207,11 @@ async function afterStop(deps: JobDeps, designId: string): Promise<WakeContext> 
 }
 
 type Claude = NonNullable<WakeContext["claude"]>;
-type Woke = { sandbox: Sandbox; start: Start };
+/** A sandbox awake, how it came up, and whether it replaced one the provider had lost. */
+type Woke = { sandbox: Sandbox; start: Start; replaced?: boolean };
+
+/** How analytics names each way a sandbox comes up. */
+const WAKE_STARTS = { created: "new", cold: "cold", warm: "warm" } as const;
 
 /** The sandbox the design has now, awake. Null when another wake has it in hand. */
 async function bringUp(
@@ -461,7 +472,8 @@ async function replace(
     by,
     limits: config.sandbox.limits,
   });
-  return create(deps, claimed(next), claude, by);
+  const made = await create(deps, claimed(next), claude, by);
+  return made && { ...made, replaced: true };
 }
 
 /**

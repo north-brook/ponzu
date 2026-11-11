@@ -38,14 +38,23 @@ export const auth = new Hono<AppEnv>()
       ipAddress: clientIp(c.req.raw.headers),
       userAgent: c.req.header("user-agent"),
     });
+    const { user } = signedIn;
+    // Said of them by id from here on: the exchange is the one public route that learns who.
+    const { analytics } = c.var.deps;
+    analytics.identify({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      githubLogin: user.githubLogin,
+      signedUpAt: user.createdAt,
+    });
+    if (user.created) analytics.capture("user signed up", {}, { distinctId: user.id });
+    analytics.capture("user signed in", { new_user: user.created }, { distinctId: user.id });
     // What the person can reach on GitHub, brought up to date without making sign-in wait.
-    c.var.deps.background(
-      "github_sync",
-      syncGithub({ ...c.var.deps, log: c.var.log }, signedIn.user.id),
-    );
+    c.var.deps.background("github_sync", syncGithub({ ...c.var.deps, log: c.var.log }, user.id));
     return c.json(
       Session.parse({
-        user: toProfile(signedIn.user),
+        user: toProfile(user),
         access_token: signedIn.accessToken,
         refresh_token: signedIn.refreshToken,
       }),
@@ -63,6 +72,7 @@ export const auth = new Hono<AppEnv>()
     const { db, workos } = c.var.deps;
     const { sessionId } = c.var.actor;
     await endSession(db, sessionId);
+    c.var.deps.analytics.capture("user signed out", {});
     try {
       await workos.revokeSession(sessionId);
     } catch (error) {

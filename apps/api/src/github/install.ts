@@ -75,7 +75,7 @@ export type SetupPage = SetupOutcome | { kind: "failed" };
  * recorded it, or Ponzu when the state says nothing (`link-scheme.ts`).
  */
 export async function finishSetup(
-  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log">,
+  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics">,
   query: {
     state?: string;
     installationId?: number;
@@ -102,7 +102,7 @@ export async function finishSetup(
 }
 
 async function settle(
-  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log">,
+  deps: Pick<Deps, "db" | "clock" | "vault" | "github" | "log" | "analytics">,
   userId: string,
   query: { installationId?: number; setupAction?: "install" | "update" | "request" },
 ): Promise<SetupPage> {

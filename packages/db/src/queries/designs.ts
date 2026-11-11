@@ -45,8 +45,11 @@ export interface NewDesign {
   doc: Doc;
   /** The creator's key for this create: another create with it by the same owner is refused. */
   createKey?: string | null;
-  /** What its owner says first, as a message: its thread item and its event. */
-  firstMessage?: { item: Json; event: Json };
+  /**
+   * What its owner says first, as a message: its thread item and its event, and the PostHog
+   * session of the app that sent it, if it said.
+   */
+  firstMessage?: { item: Json; event: Json; posthogSessionId?: string | null };
 }
 
 /** The unique index a create with a key already used breaks. */
@@ -86,6 +89,7 @@ export async function createDesign(
             priority: "now",
             payload: firstMessage.event,
             userId: values.ownerId,
+            posthogSessionId: firstMessage.posthogSessionId ?? null,
           }),
         })
         .returning({ id: events.id }),

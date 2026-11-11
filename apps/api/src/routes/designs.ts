@@ -135,6 +135,11 @@ const CreateBody = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{8,64}$/)
     .optional(),
+  /**
+   * Where the first message came from, for analytics only: one of the composer's ideas, or
+   * the person's own words (the default).
+   */
+  source: z.enum(["idea", "prompt"]).optional(),
 });
 
 const PatchBody = z
@@ -242,6 +247,23 @@ export const designs = new Hono<AppEnv>()
       ...(body.effort ? { effort: body.effort } : {}),
       ...(createKey ? { createKey } : {}),
     });
+    if (created) {
+      deps.analytics.capture("design created", {
+        design_id: design.id,
+        source: repo ? (body.source ?? "prompt") : "scratch",
+        with_message: message !== undefined,
+        model: design.model,
+        effort: design.effort,
+      });
+      if (message) {
+        deps.analytics.capture("message sent", {
+          design_id: design.id,
+          first: true,
+          characters: message.text.length,
+          attachments: 0,
+        });
+      }
+    }
     return c.json(await viewOf(deps, { design, repo, access: "write" }), created ? 201 : 200);
   })
 
@@ -279,6 +301,11 @@ export const designs = new Hono<AppEnv>()
             now: new Date(deps.clock.now()),
           });
     if (!design) throw new ApiError(404, "not_found", "There is no such design.");
+    if (settled !== undefined && settled !== (grant.design.settledAt !== null)) {
+      deps.analytics.capture(settled ? "design settled" : "design reopened", {
+        design_id: design.id,
+      });
+    }
     if (settled) {
       // A settled design needs no sandbox; the minute's sweep does this too, for a merge.
       deps.background(
@@ -306,6 +333,10 @@ export const designs = new Hono<AppEnv>()
     const sandboxes = await retireSandboxes(deps, design.id);
     const forget = await forgetCheckpoints(deps, design.id);
     await deleteDesign(deps.db, design.id);
+    deps.analytics.capture("design deleted", {
+      design_id: design.id,
+      by_owner: design.ownerId === actor.user.id,
+    });
     deps.background("retire", destroySandboxes(deps, sandboxes));
     // Its transcripts and work in progress, which no row knows of any more.
     deps.background("checkpoints_deleted", forget());

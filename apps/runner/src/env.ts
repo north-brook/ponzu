@@ -38,6 +38,9 @@ export class EnvError extends Error {
  */
 const RUNNER_ONLY = ["PONZU_RUNNER_TOKEN"];
 
+/** The Claude credential, exactly one of which is set. */
+export const CLAUDE_CREDENTIALS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
+
 export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
   const need = (name: string) => {
     const value = env[name];
@@ -46,7 +49,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
   };
   // Claude Code takes the API key over the OAuth token when it has both, without a word, and
   // bills the key's account for a design whose owner meant their own plan.
-  const credentials = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"].filter((name) => env[name]);
+  const credentials = CLAUDE_CREDENTIALS.filter((name) => env[name]);
   if (credentials.length !== 1) {
     throw new EnvError(
       credentials.length
@@ -83,4 +86,16 @@ export function agentEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = { ...decodeRepoSecrets(env[REPO_SECRETS_VARIABLE]), ...env };
   for (const name of [...RUNNER_ONLY, REPO_SECRETS_VARIABLE]) delete out[name];
   return out;
+}
+
+/**
+ * The values no checkpoint keeps and no trace sends: the repo's secrets, the Claude credential
+ * and the runner's token. The agent's environment holds all but the last, so a command that
+ * prints it, or a file it read them into, would otherwise carry them out.
+ */
+export function secretValues(env: NodeJS.ProcessEnv): string[] {
+  return [
+    ...Object.values(decodeRepoSecrets(env[REPO_SECRETS_VARIABLE])),
+    ...[...CLAUDE_CREDENTIALS, ...RUNNER_ONLY].flatMap((name) => env[name] ?? []),
+  ];
 }

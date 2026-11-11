@@ -1,6 +1,8 @@
 import { createDb, type Db } from "@ponzu/db";
 import { BoatProvider, type Clock, type SandboxProvider, systemClock } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
+import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
+import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { DocCache } from "../designs/doc-cache.ts";
 import type { Env, SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
@@ -58,6 +60,8 @@ export interface Deps {
   docs: DocCache;
   /** The git tokens this instance hands runners, kept while they may be reused. */
   gitTokens: GitTokens;
+  /** PostHog: product events, error tracking and model-call traces. A no-op without a key. */
+  analytics: Analytics;
   config: Config;
 }
 
@@ -68,6 +72,8 @@ export interface Config {
   minimumClientVersions: MinimumVersions;
   /** Where design files are served from; a design's are under `<assetsUrl>/<asset key>/`. */
   assetsUrl: string;
+  /** What a design's runner reports its turns to PostHog with, or null when analytics is off. */
+  posthog: PosthogConfig | null;
   /**
    * The GitHub App's slug, where installs begin, the secret its webhooks are signed with, and
    * the user id of its bot, who commits are committed by.
@@ -104,12 +110,16 @@ export function createDeps(env: Env): Deps {
   const outbound: Fetch = (url, init) => fetch(url, init);
   const log = createLogger(consoleSink);
   const storage = createR2Storage({ ...env.r2, fetch: outbound, clock });
+  const analytics = createPosthogAnalytics(env.posthog, { keep: waitUntil, log }) ?? noAnalytics;
   return {
     db: createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) }),
     clock,
     ids: randomIds,
     log,
-    background: createBackground(log, waitUntil),
+    analytics,
+    background: createBackground(log, waitUntil, (name, error) =>
+      analytics.exception(error, { background: name }),
+    ),
     vault: createVault(env.vault),
     workos: createWorkos({ ...env.workos, fetch: outbound, clock }),
     github: createGithub({
@@ -131,13 +141,14 @@ export function createDeps(env: Env): Deps {
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),
     }),
-    model: createClaude({ apiKey: env.anthropicApiKey, fetch: outbound }),
+    model: createClaude({ apiKey: env.anthropicApiKey, fetch: outbound, tracing: analytics.ai }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
       assetsUrl: env.assetsUrl,
+      posthog: env.posthog,
       githubApp: {
         slug: env.githubApp.slug,
         webhookSecret: env.githubApp.webhookSecret,

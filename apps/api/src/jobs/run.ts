@@ -26,6 +26,7 @@ export type JobDeps = Pick<
   | "runnerPort"
   | "storage"
   | "config"
+  | "analytics"
 >;
 
 /** A job as its handler sees it: which attempt this is, out of how many. */
@@ -77,6 +78,11 @@ export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Pr
       log.info("job_waiting", { jobId: job.id, kind: job.kind, attempts: job.attempts, wait });
     } else {
       log.warn("job_failed", { jobId: job.id, kind: job.kind, attempts: job.attempts, error });
+      deps.analytics.exception(error, {
+        job_kind: job.kind,
+        job_id: job.id,
+        attempt: job.attempts,
+      });
     }
     return;
   }

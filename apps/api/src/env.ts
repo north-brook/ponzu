@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SandboxLimits } from "@ponzu/db";
 import { z } from "zod";
+import type { PosthogConfig } from "./analytics/posthog.ts";
 import type { R2Config } from "./deps/storage.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
 
@@ -66,6 +67,18 @@ const schema = z.object({
   PONZU_MIN_CLIENT_VERSIONS: z.string().optional(),
   /** Set by Vercel when a deployment is made from a git checkout. */
   VERCEL_GIT_COMMIT_SHA: z.string().optional(),
+  /**
+   * The PostHog project this environment reports to: its project token, which is public.
+   * Unset, the API captures nothing and loads nothing for it (docs/analytics.md).
+   */
+  PONZU_POSTHOG_KEY: z
+    .string()
+    .regex(/^phc_\w+$/)
+    .optional(),
+  /** Where PostHog takes events. */
+  PONZU_POSTHOG_HOST: z.url().default("https://us.i.posthog.com"),
+  /** "1": model calls and agent turns are traced with their prompts and answers. Off otherwise. */
+  PONZU_POSTHOG_AI_CONTENT: z.enum(["0", "1"]).default("0"),
 });
 
 /** How designs' sandboxes are made and kept. */
@@ -126,6 +139,8 @@ export interface Env {
   anthropicApiKey: string;
   minimumClientVersions: MinimumVersions;
   commit: string | null;
+  /** PostHog, or null when PONZU_POSTHOG_KEY is unset and analytics is off. */
+  posthog: PosthogConfig | null;
 }
 
 /**
@@ -190,5 +205,12 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     anthropicApiKey: env.PONZU_ANTHROPIC_API_KEY,
     minimumClientVersions,
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,
+    posthog: env.PONZU_POSTHOG_KEY
+      ? {
+          key: env.PONZU_POSTHOG_KEY,
+          host: env.PONZU_POSTHOG_HOST.replace(/\/+$/, ""),
+          aiContent: env.PONZU_POSTHOG_AI_CONTENT === "1",
+        }
+      : null,
   };
 }

@@ -31,7 +31,8 @@ import type { Logger } from "../http/log.ts";
 type SignInDeps = Pick<Deps, "db" | "clock" | "vault" | "workos" | "github">;
 
 export interface SignedIn {
-  user: User;
+  /** The person, and whether this sign-in made their row: their first. */
+  user: User & { created: boolean };
   accessToken: string;
   refreshToken: string;
 }
@@ -137,7 +138,7 @@ async function admit(
   log: Logger,
   session: WorkosSession,
   vouched: boolean,
-): Promise<User> {
+): Promise<User & { created: boolean }> {
   const { db, github } = deps;
   const tokens = session.githubTokens;
   if (!tokens) {
@@ -173,7 +174,7 @@ async function admit(
     }
   }
 
-  let user: User;
+  let user: User & { created: boolean };
   try {
     user = await upsertUser(db, {
       workosUserId: session.user.id,

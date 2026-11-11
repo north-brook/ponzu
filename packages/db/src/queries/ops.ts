@@ -206,9 +206,10 @@ export async function commit(
          where target.design_id = ${designId} and target.seq = a.reverses_seq
       ),
       logged as (
-        insert into events (id, design_id, kind, priority, payload, user_id)
+        insert into events (id, design_id, kind, priority, payload, user_id, posthog_session_id)
         select t.e->>'id', ${designId}, t.e->>'kind', t.e->>'priority',
-               jsonb_set((t.e->'payload')::jsonb, '{seq}', to_jsonb(a.seq)), t.e->>'userId'
+               jsonb_set((t.e->'payload')::jsonb, '{seq}', to_jsonb(a.seq)), t.e->>'userId',
+               t.e->>'posthogSessionId'
           from json_array_elements(${feed}::json) with ordinality as t(e, ord)
           join appended a on a.client_op_id = t.e->>'opId'
          order by t.ord
