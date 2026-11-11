@@ -151,6 +151,13 @@ export const PullRequestTabView = z.object({
     /** Its commits that the base lacks, and the base's that it lacks. */
     aheadBy: z.number(),
     behindBy: z.number(),
+    /**
+     * Commits the design's sandbox has on the branch that GitHub does not, as its runner last
+     * said: Ponzu pushes them at the end of each turn, and Create PR pushes them first.
+     */
+    unpushed: z.number(),
+    /** Why the last push of them failed, in words for a person; null when it did not. */
+    pushError: z.string().nullable(),
   }),
   /** The design's newest pull request; null before one is opened. */
   pullRequest: PullRequestView.nullable(),
@@ -196,6 +203,8 @@ export function toTab(
       exists: branch !== null,
       aheadBy: branch?.aheadBy ?? 0,
       behindBy: branch?.behindBy ?? 0,
+      unpushed: target.sandbox?.unpushed ?? 0,
+      pushError: target.sandbox?.pushError ?? null,
     },
     pullRequest: pullRequest && {
       ...pullRequest,
@@ -203,29 +212,30 @@ export function toTab(
     },
     mergeMethod: read.mergeMethods[0] ?? null,
     autoMergeAllowed: read.autoMergeAllowed,
-    nextAction: nextAction(read),
+    nextAction: nextAction(read, target.sandbox?.unpushed ?? 0),
   };
 }
 
 /**
- * What the action button offers (the spec's PR states): open one when the branch has changes and
- * no open pull request (or commits since its merged one); then ready a draft, resolve conflicts,
+ * What the action button offers (the spec's PR states): open one when the design has commits its
+ * base lacks and no open pull request (or commits since its merged one), on GitHub or still only
+ * in its sandbox (`unpushed`: Create PR pushes them first); then ready a draft, resolve conflicts,
  * fix failing checks, wait on running ones with auto-merge where the repo allows it (and offer
  * nothing while they run where it doesn't, or while GitHub hasn't worked out whether it can
  * merge), and update a branch the repo's rules hold back for being behind. What the rules still want (a review, a
  * required check) is waited for with auto-merge where the repo allows it, and is otherwise
  * `blocked`, never `merge`: Merge never asks GitHub to set the rules aside.
  */
-export function nextAction({
-  pullRequest,
-  branch,
-  autoMergeAllowed,
-}: GithubPullRequestRead): NextAction {
+export function nextAction(
+  { pullRequest, branch, autoMergeAllowed }: GithubPullRequestRead,
+  unpushed = 0,
+): NextAction {
   if (!pullRequest || pullRequest.state === "closed") {
-    return branch && branch.aheadBy > 0 ? "create_pr" : "none";
+    return (branch && branch.aheadBy > 0) || unpushed > 0 ? "create_pr" : "none";
   }
   if (pullRequest.state === "merged") {
-    const workedOnSince = branch && branch.sha !== pullRequest.head.sha && branch.aheadBy > 0;
+    const workedOnSince =
+      (branch && branch.sha !== pullRequest.head.sha && branch.aheadBy > 0) || unpushed > 0;
     return workedOnSince ? "create_pr" : "none";
   }
   if (pullRequest.state === "draft") return "ready";

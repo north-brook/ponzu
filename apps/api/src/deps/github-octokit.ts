@@ -321,7 +321,7 @@ export function createAppCredentials({
     { installationId, repositoryIds, permissions }: InstallationTokenScope,
     refresh: boolean,
   ): Promise<GithubInstallationToken> => {
-    const { token, expiresAt } = await send("app", () =>
+    const answer = await send("app", () =>
       auth({
         type: "installation",
         installationId,
@@ -331,7 +331,14 @@ export function createAppCredentials({
         refresh,
       }),
     );
-    return { token, expiresAt: new Date(expiresAt) };
+    const { token, expiresAt, permissions: allowed, repositoryIds: reached } = answer;
+    return {
+      token,
+      expiresAt: new Date(expiresAt),
+      // What GitHub granted, as it said: the caller checks it is what it asked for.
+      ...(allowed ? { permissions: { ...(allowed as Record<string, string>) } } : {}),
+      ...(reached ? { repositoryIds: reached.map(idOf) } : {}),
+    };
   };
 
   return {
