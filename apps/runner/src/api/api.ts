@@ -5,7 +5,9 @@ import type {
   GitCredentialRequest,
   GitCredentialResponse,
   QuestionRequest,
+  RestoredReport,
   RunnerSession,
+  SavedPoint,
   StateRequest,
   StateResponse,
   ThreadResponse,
@@ -70,11 +72,39 @@ export interface RunnerApi {
   /** Safe to repeat: turns are recorded by their ids. */
   recordUsage(turns: TurnUsage[]): Promise<void>;
   /**
+   * Uploads a checkpoint's archives and records it. Answers the checkpoint the API has now,
+   * which is this one or a newer one. Safe to repeat: an older or equal turn changes nothing.
+   */
+  saveCheckpoint(point: Checkpoint): Promise<SavedPoint>;
+  /** The design's last checkpoint and its archives, read back and checked. */
+  restore(): Promise<Restored>;
+  /** The disk was behind the last checkpoint and the runner restored from it. Safe to repeat. */
+  reportRestored(report: RestoredReport): Promise<void>;
+  /**
    * The agent's words on what its branch changes, for the pull request's description. Answers
    * the number of the open pull request they were written into, or null while none is open (the
    * API keeps them for the one that opens). Safe to repeat: the last one sent wins.
    */
   pullRequestSummary(summary: string): Promise<number | null>;
+}
+
+/** A checkpoint to save: its turn marker and what is kept with it. */
+export interface Checkpoint {
+  turn: number;
+  claudeSessionId: string | null;
+  wipCommit: string | null;
+  /** The transcript's archive, and a Scratch design's files' (gzipped tar). */
+  session: Uint8Array | null;
+  workspace: Uint8Array | null;
+  /** Keep what the last checkpoint stored in place of an archive this one does not carry. */
+  keep?: { session?: boolean; workspace?: boolean };
+}
+
+/** The last checkpoint, with its archives' bytes. */
+export interface Restored {
+  saved: SavedPoint | null;
+  session: Uint8Array | null;
+  workspace: Uint8Array | null;
 }
 
 /** Whether a failed call is worth making again: the API was out of reach, or said to wait. */
@@ -124,6 +154,9 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     gitCredential: watch(api.gitCredential.bind(api)),
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),
     recordUsage: watch(api.recordUsage.bind(api)),
+    saveCheckpoint: watch(api.saveCheckpoint.bind(api)),
+    restore: watch(api.restore.bind(api)),
+    reportRestored: watch(api.reportRestored.bind(api)),
     pullRequestSummary: watch(api.pullRequestSummary.bind(api)),
   };
 }

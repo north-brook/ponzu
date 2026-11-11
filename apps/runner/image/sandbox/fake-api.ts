@@ -6,13 +6,26 @@
  *
  * Under `/control/` (the same bearer) the driver on the other side of the sandbox's address
  * pushes events and reads back what the runner did. What a cold start must not lose (the
- * session's Claude session id, the document) is kept in a file; a git token is never written.
+ * session's Claude session id, the document, the last checkpoint and its archives) is kept in a
+ * file; a git token is never written.
+ *
+ * The real API is not on the sandbox's disk, so a disk that comes back older leaves it as it
+ * was. To act that out, the driver keeps the fake's memory on its own machine (`GET
+ * /control/memory`) and, with PONZU_FAKE_API_HOLD=1, the fake answers the runner 503 after every
+ * start until the driver hands it back (`PUT /control/memory`): the runner retries, as it does
+ * against an API it cannot reach.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { emptyDoc } from "@ponzu/core";
 import { FakeRunnerApi } from "../../src/api/fake.ts";
 import { fakeApiHandler } from "../../src/api/fake-http.ts";
-import type { EventBody, Priority, RunnerSession, StateRequest } from "../../src/api/protocol.ts";
+import type {
+  EventBody,
+  Priority,
+  RunnerSession,
+  SavedPoint,
+  StateRequest,
+} from "../../src/api/protocol.ts";
 import { writeDurably } from "../../src/durable.ts";
 
 const designId = need("PONZU_DESIGN_ID");
@@ -20,12 +33,18 @@ const token = need("PONZU_RUNNER_TOKEN");
 const port = Number(process.env.PONZU_FAKE_API_PORT ?? 8790);
 const runnerPort = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
 const stateFile = process.env.PONZU_FAKE_API_STATE ?? `${process.env.HOME}/.ponzu-fake-api.json`;
+/** Held until the driver hands back the memory it kept: what the real API would remember. */
+let held = process.env.PONZU_FAKE_API_HOLD === "1";
 
+/** What the fake keeps, on its disk and on the driver's machine. */
 interface Kept {
   session: FakeRunnerApi["sessionInfo"];
   doc: ReturnType<FakeRunnerApi["doc"]["snapshot"]>["doc"];
   /** The feed goes on from here: the transcript already holds the events before it. */
   feedSeq: number;
+  saved: SavedPoint | null;
+  /** The checkpoint's archives, in base64. */
+  archives: { session: string | null; workspace: string | null };
   /** How many times the state was written: the driver checks a cold start read the last. */
   writes: number;
 }
@@ -37,9 +56,20 @@ const fake = new FakeRunnerApi({
   session: kept?.session ?? { design: { id: designId, name: "Untitled" }, model: "haiku" },
   feedSeq: kept?.feedSeq ?? 0,
 });
+const unbase = (s: string | null | undefined) =>
+  s ? new Uint8Array(Buffer.from(s, "base64")) : null;
+const base = (b: Uint8Array | null) => (b ? Buffer.from(b).toString("base64") : null);
+function take(state: Partial<Kept>): void {
+  fake.saved = state.saved ?? null;
+  fake.archives = {
+    session: unbase(state.archives?.session),
+    workspace: unbase(state.archives?.workspace),
+  };
+}
+take(kept ?? {});
 let writes = kept?.writes ?? 0;
 /** What the state file said when this process started. */
-const restored = { writes, feedSeq: fake.feedSeq };
+const restored = { writes, feedSeq: fake.feedSeq, savedTurn: fake.saved?.turn ?? null };
 const started = Date.now();
 /** State reports and every call, with when they arrived. */
 const states: (StateRequest & { at: number })[] = [];
@@ -53,6 +83,11 @@ Bun.serve({
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
     if (!url.pathname.startsWith("/control/")) {
+      if (held)
+        return Response.json(
+          { error: { code: "upstream_unavailable", message: "held for the driver" } },
+          { status: 503 },
+        );
       calls.push({ at: Date.now(), route });
       if (route === "PUT /v1/runner/state" && authorized(request))
         states.push({ ...((await request.clone().json()) as StateRequest), at: Date.now() });
@@ -63,12 +98,24 @@ Bun.serve({
   },
 });
 
+function memory(): Kept {
+  return {
+    session: fake.sessionInfo,
+    doc: fake.doc.snapshot().doc,
+    feedSeq: fake.feedSeq,
+    saved: fake.saved,
+    archives: { session: base(fake.archives.session), workspace: base(fake.archives.workspace) },
+    writes,
+  };
+}
+
 async function control(route: string, url: URL, request: Request): Promise<Response> {
   switch (route) {
     case "GET /control/record":
       return Response.json({
         now: Date.now(),
         started,
+        held,
         items: fake.items(),
         states,
         usage: [...fake.usage.values()],
@@ -81,10 +128,40 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
         events: fake.events.map((e) => e.event.id),
         session: fake.sessionInfo,
         doc: fake.doc.snapshot(),
+        saved: fake.saved,
+        checkpoints: fake.checkpoints,
+        restored: fake.restored,
+        quiesced: fake.quiesced,
+        summaries: fake.summaries,
         calls: calls.length,
         lastCall: calls.at(-1) ?? null,
+        claims: calls
+          .filter((c) => c.route === "POST /v1/runner/events/claim")
+          .slice(-20)
+          .map((c) => c.at),
         kept: { writes, restored },
       });
+    case "GET /control/memory":
+      return Response.json(memory());
+    case "PUT /control/memory": {
+      const body = (await request.json()) as Kept;
+      Object.assign(fake.sessionInfo, body.session);
+      take(body);
+      held = false;
+      keep(true);
+      return new Response(null, { status: 204 });
+    }
+    case "POST /control/release":
+      held = false;
+      return new Response(null, { status: 204 });
+    case "PUT /control/sleep": {
+      // As the API's stop does: the row says stopping, and the runner is asked for a report. As
+      // its wake does: the row says awake, and the runner is only poked.
+      fake.sleep = ((await request.json()) as { sleep: string | null }).sleep;
+      const door = fake.sleep === null ? "poke" : "report";
+      await fetch(`http://127.0.0.1:${runnerPort}/${door}`, { method: "POST" }).catch(() => {});
+      return new Response(null, { status: 204 });
+    }
     case "POST /control/events": {
       const body = (await request.json()) as EventBody & { priority?: Priority };
       const event = fake.push(body, body.priority ? { priority: body.priority } : {});
@@ -109,10 +186,10 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
 
 /** Written as the runner writes what it keeps: whole, and on the disk before it is answered. */
 let last = "";
-function keep(): void {
-  const state = { session: fake.sessionInfo, doc: fake.doc.snapshot().doc, feedSeq: fake.feedSeq };
+function keep(force = false): void {
+  const { writes: _, ...state } = memory();
   const json = JSON.stringify(state);
-  if (json === last) return;
+  if (json === last && !force) return;
   last = json;
   writes += 1;
   writeDurably(stateFile, JSON.stringify({ ...state, writes } satisfies Kept));
@@ -129,4 +206,4 @@ function need(name: string): string {
   return value;
 }
 
-console.log(`fake API for ${designId} on ${port}`);
+console.log(`fake API for ${designId} on ${port}${held ? " (held)" : ""}`);

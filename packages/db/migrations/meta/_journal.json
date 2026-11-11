@@ -99,6 +99,13 @@
       "when": 1794383306901,
       "tag": "0013_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794387193599,
+      "tag": "0014_sandbox_durability",
+      "breakpoints": true
     }
   ]
 }

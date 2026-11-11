@@ -11,6 +11,7 @@ import type { ClaudeDeps } from "../claude/accounts.ts";
 import { disconnectClaude } from "../claude/accounts.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
+import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
 
 /*
@@ -33,7 +34,7 @@ import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
  * thread and pull request are work others share, in a repo others reach.
  */
 
-export type DeleteAccountDeps = ClaudeDeps & Pick<Deps, "workos">;
+export type DeleteAccountDeps = ClaudeDeps & Pick<Deps, "workos" | "archives">;
 
 export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promise<void> {
   const { db, log } = deps;
@@ -45,7 +46,11 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   for (const designId of [...plan.kept, ...plan.deleted]) {
     machines.push(...(await retireSandboxes(deps, designId)));
   }
-  for (const designId of plan.deleted) await deleteDesign(db, designId);
+  const forgotten: (() => Promise<void>)[] = [];
+  for (const designId of plan.deleted) {
+    forgotten.push(await forgetCheckpoints(deps, designId));
+    await deleteDesign(db, designId);
+  }
   await anonymiseUser(db, user.id);
   // Leaving mid-period does not take back the free credits they brought.
   for (const workspace of await listUserWorkspaces(db, user.id)) {
@@ -64,6 +69,8 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   });
 
   deps.background("account_deleted", destroySandboxes(deps, machines));
+  // The transcripts and work in progress of the designs that went with them.
+  for (const forget of forgotten) deps.background("account_deleted", forget());
   if (workosUserId) deps.background("account_deleted", deps.workos.deleteUser(workosUserId));
 }
 

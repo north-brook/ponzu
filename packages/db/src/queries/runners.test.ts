@@ -1,11 +1,20 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { seedDesign } from "../fixtures.ts";
 import { designRunners, designs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getDesignHead } from "./designs.ts";
 import { markEventsDelivered } from "./events.ts";
-import { reportRunnerState, takeRunnerLease } from "./runners.ts";
+import {
+  countSandboxRollback,
+  getQuiescedFor,
+  getSavedPoint,
+  recordCheckpoint,
+  reportRunnerState,
+  type SavedPoint,
+  takeRunnerLease,
+} from "./runners.ts";
+import { beginSandbox, moveSandbox } from "./sandboxes.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -31,6 +40,7 @@ test("each lease is a new runner id that replaces the last, and keeps the design
   expect(first).toEqual({
     runnerId: expect.stringMatching(/^rnr_[0-9a-z]{16}$/),
     claudeSessionId: null,
+    saved: null,
   });
   expect(second.runnerId).not.toBe(first.runnerId);
   expect(second.claudeSessionId).toBe("sess-1");
@@ -52,13 +62,13 @@ test("a state report shows on the design's head and answers its seq", async () =
   const { design } = await seedDesign(db);
   await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
 
-  const seq = await reportRunnerState(db, {
+  const answer = await reportRunnerState(db, {
     designId: design.id,
     now: new Date(2_000),
     ...working,
   });
 
-  expect(seq).toBe(0);
+  expect(answer).toEqual({ seq: 0, sleep: null });
   expect(await getDesignHead(db, design.id)).toMatchObject({
     agentState: "working",
     agentStatus: 'Drawing "Pricing"',
@@ -105,4 +115,85 @@ test("a design without a runner takes no report", async () => {
     await reportRunnerState(db, { designId: design.id, now: new Date(), ...working }),
   ).toBeNull();
   expect((await getDesignHead(db, design.id))!.agentState).toBe("idle");
+});
+
+describe("checkpoints", () => {
+  const point = (turn: number, over: Partial<SavedPoint> = {}) => ({
+    turn,
+    claudeSessionId: "sess-1",
+    wipCommit: null,
+    sessionUploadId: `up_${turn}`,
+    workspaceUploadId: null,
+    ...over,
+  });
+
+  test("a new design has none, and the lease answers the one recorded", async () => {
+    const { design } = await seedDesign(db);
+    const lease = await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
+    expect(lease.saved).toBeNull();
+    expect(await getSavedPoint(db, design.id)).toBeNull();
+
+    const recorded = await recordCheckpoint(db, {
+      designId: design.id,
+      runnerId: lease.runnerId,
+      now: new Date(2_000),
+      ...point(1, { wipCommit: "c1" }),
+    });
+    expect(recorded).toEqual({
+      saved: { ...point(1, { wipCommit: "c1" }), at: new Date(2_000) },
+      replaced: null,
+    });
+    const again = await takeRunnerLease(db, { designId: design.id, now: new Date(3_000) });
+    expect(again.saved).toEqual({ ...point(1, { wipCommit: "c1" }), at: new Date(2_000) });
+  });
+
+  test("a turn marker only goes up, and a superseded runner records nothing", async () => {
+    const { design } = await seedDesign(db);
+    const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
+    const at = (ms: number) => ({ designId: design.id, runnerId, now: new Date(ms) });
+    await recordCheckpoint(db, { ...at(2_000), ...point(3) });
+
+    const newer = await recordCheckpoint(db, { ...at(3_000), ...point(4) });
+    expect(newer!.saved!.turn).toBe(4);
+    expect(newer!.replaced!.sessionUploadId).toBe("up_3");
+
+    // Late, or sent again: the newer one stays.
+    const late = await recordCheckpoint(db, { ...at(4_000), ...point(2) });
+    expect(late).toEqual({ saved: { ...point(4), at: new Date(3_000) }, replaced: null });
+    const repeated = await recordCheckpoint(db, { ...at(5_000), ...point(4) });
+    expect(repeated!.replaced).toBeNull();
+
+    await takeRunnerLease(db, { designId: design.id, now: new Date(6_000) });
+    expect(await recordCheckpoint(db, { ...at(7_000), ...point(9) })).toBeNull();
+    expect((await getSavedPoint(db, design.id))!.turn).toBe(4);
+  });
+
+  test("a state report answers the stop under way and records the sleep the runner is ready for", async () => {
+    const { design } = await seedDesign(db);
+    await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
+    const begun = await beginSandbox(db, {
+      designId: design.id,
+      provider: "boat",
+      now: new Date(1_000),
+      by: "job",
+      limits: { perWorkspace: 100, perOwner: 100 },
+    });
+    if (!begun || "full" in begun) throw new Error("no sandbox was begun");
+    const { id } = begun.sandbox;
+    await moveSandbox(db, { id, from: ["waking"], to: "awake", now: new Date(2_000), by: "job" });
+    const idle = { state: "idle" as const, status: null, artboards: [], claudeSessionId: null };
+    const report = (ms: number, quiesced?: Date) =>
+      reportRunnerState(db, { designId: design.id, now: new Date(ms), ...idle, quiesced });
+    expect((await report(3_000))!.sleep).toBeNull();
+
+    await moveSandbox(db, { id, from: ["awake"], to: "stopping", now: new Date(4_000) });
+    expect((await report(5_000))!.sleep).toEqual(new Date(4_000));
+    expect(await getQuiescedFor(db, design.id)).toBeNull();
+
+    await report(6_000, new Date(4_000));
+    expect(await getQuiescedFor(db, design.id)).toEqual(new Date(4_000));
+
+    expect((await countSandboxRollback(db, design.id))!.rollbacks).toBe(1);
+    expect((await countSandboxRollback(db, design.id))!.rollbacks).toBe(2);
+  });
 });

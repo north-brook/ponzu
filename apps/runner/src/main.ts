@@ -3,17 +3,22 @@
  * service. README.md has its environment and how to run it elsewhere.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
+import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
 import { agentEnv, EnvError, readEnv } from "./env.ts";
 import { agentFiles } from "./files.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
+import { agentShell } from "./save/shell.ts";
+import { Transcripts } from "./save/transcripts.ts";
+import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
 import { serve, serveCredentials } from "./server.ts";
 import { VERSION } from "./version.ts";
 
@@ -22,10 +27,28 @@ import { VERSION } from "./version.ts";
  * lease): systemd is told not to try (RestartPreventExitStatus).
  */
 const EXIT_CONFIG = 78;
+/** Where the environment carries the owner's Claude credential. */
+const CLAUDE_CREDENTIALS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
 /** The Claude Code the sandbox image installs. */
 const IMAGE_CLAUDE = "/usr/local/bin/claude";
 
 const log = (message: string) => console.error(`[runner] ${message}`);
+
+/** Claude Code's config folder, where its transcripts are: the image sets it for both users. */
+function claudeConfigDir(env: NodeJS.ProcessEnv): string {
+  return env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? homedir(), ".claude");
+}
+
+/** This boot of the machine, and when it began: what tells boat which boot's writes came back. */
+function boot(): { id: string | null; at: string | null } {
+  try {
+    const id = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+    const btime = /^btime (\d+)$/m.exec(readFileSync("/proc/stat", "utf8"))?.[1];
+    return { id, at: btime ? new Date(Number(btime) * 1000).toISOString() : null };
+  } catch {
+    return { id: null, at: null };
+  }
+}
 
 let env: ReturnType<typeof readEnv>;
 try {
@@ -74,15 +97,60 @@ const runner = new Runner({
     }),
   stateDir: env.stateDir,
   // Every filesystem, so the agent's files are flushed with the runner's own.
-  flush: () => void spawn("sync", { stdio: "ignore" }).on("error", (err) => log(`sync: ${err}`)),
+  flush: () =>
+    new Promise<void>((resolve) => {
+      spawn("sync", { stdio: "ignore" })
+        .on("error", (err) => {
+          log(`sync: ${err}`);
+          resolve();
+        })
+        .on("close", () => resolve());
+    }),
+  // What a checkpoint keeps: Claude Code's transcripts, read and written back as the agent, and
+  // the work in progress (a repo's on its hidden ref, Scratch's as an archive).
+  saving: (session, cwd, checkedOut) => {
+    const asAgent = agentShell(env.asAgent, agentEnv(process.env));
+    const transcripts = new Transcripts({
+      configDir: claudeConfigDir(process.env),
+      shell: asAgent,
+    });
+    if (session.repo && !checkedOut) return { transcripts, work: null };
+    // What a checkpoint never carries: the repo's secrets and the Claude credential, which the
+    // next sandbox's environment brings back.
+    const secrets = [
+      ...Object.values(decodeRepoSecrets(process.env[REPO_SECRETS_VARIABLE])),
+      ...CLAUDE_CREDENTIALS.flatMap((name) => process.env[name] ?? []),
+    ];
+    const work =
+      session.repo && session.branch
+        ? new GitWork({
+            cwd,
+            designId: session.design.id,
+            branch: session.branch,
+            defaultBranch: session.repo.defaultBranch,
+            // The image's git already runs as the agent; elsewhere the agent is this user.
+            git: gitIn(agentShell(undefined, agentEnv(process.env)), env.git ?? "git", cwd),
+            secrets,
+            log,
+          })
+        : new ScratchWork({ cwd, shell: asAgent, secrets });
+    return { transcripts, work };
+  },
+  boot,
   log,
+  event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
   onFatal: () => {
     server.stop();
     process.exit(EXIT_CONFIG);
   },
 });
 
-const server = serve({ port: env.port, poke: () => runner.poke(), health: () => runner.health() });
+const server = serve({
+  port: env.port,
+  poke: () => runner.poke(),
+  report: () => runner.report(),
+  health: () => runner.health(),
+});
 log(`listening on ${server.port}`);
 mkdirSync(dirname(env.gitSocket), { recursive: true });
 const credentials = serveCredentials({

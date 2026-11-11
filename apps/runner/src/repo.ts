@@ -46,7 +46,12 @@ export async function checkout(session: RunnerSession, opts: CheckoutOptions): P
   const url = opts.remote?.(repo) ?? `https://github.com/${repo.owner}/${repo.name}.git`;
   try {
     if (existsSync(join(dir, ".git"))) {
-      await git(["fetch", "--quiet", "origin"], dir);
+      // Without an `origin` (a clone cut off early), the repair below adds it.
+      const hasOrigin = await git(["remote"], dir).then(
+        (out) => out.split("\n").includes("origin"),
+        () => false,
+      );
+      if (hasOrigin) await git(["fetch", "--quiet", "origin"], dir);
     } else {
       await mkdir(opts.root, { recursive: true });
       await git(["clone", "--quiet", url, dir]);
@@ -60,6 +65,18 @@ export async function checkout(session: RunnerSession, opts: CheckoutOptions): P
       () => true,
       () => false,
     );
+  // A clone cut off by a stop (the runner restarted under it) leaves a `.git` with no remote or
+  // none of its branches: make it whole again rather than fail at every start after.
+  if (!(await has(`refs/remotes/origin/${repo.defaultBranch}`))) {
+    try {
+      await git(["remote", "set-url", "origin", url], dir).catch(() =>
+        git(["remote", "add", "origin", url], dir),
+      );
+      await git(["fetch", "--quiet", "origin", "+refs/heads/*:refs/remotes/origin/*"], dir);
+    } catch (err) {
+      throw new CheckoutError(`Ponzu could not get ${repo.owner}/${repo.name}: ${said(err)}`);
+    }
+  }
   try {
     if ((await git(["branch", "--show-current"], dir)).trim() === branch) return dir;
     if (await has(`refs/heads/${branch}`)) await git(["switch", "--quiet", branch], dir);
