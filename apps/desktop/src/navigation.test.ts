@@ -88,7 +88,7 @@ test("a packaged build talks to Ponzu Cloud whatever its environment says", () =
   expect(configFor(false, env)).toMatchObject({
     apiUrl: "https://evil.example",
     studioDevUrl: "http://localhost:5173",
-    linkScheme: "ponzu-dev",
+    linkScheme: null,
   });
   // Plain http goes nowhere but this computer.
   expect(configFor(false, { PONZU_API_URL: "http://api.example" }).apiUrl).toBe(
@@ -106,32 +106,33 @@ test("a release ignores a developer's session and refuses remote debugging; a te
   expect(configFor(false, env).sessionFile).toBe("/tmp/planted.json");
 });
 
-test("a development build is an app of its own, beside an installed Ponzu", () => {
+test("a run from a checkout is Ponzu Local, beside an installed Ponzu and Ponzu Dev", () => {
   // Its name is its data folder, keychain item and single-instance lock.
   expect(configFor(true, {}, false).appName).toBe("Ponzu");
-  expect(configFor(false, {}).appName).not.toBe(configFor(true, {}, false).appName);
+  expect(configFor(false, {}).appName).toBe("Ponzu Local");
 });
 
-test("Ponzu Preview is the release under its own name and links, without 1.x's cleanup or updates", () => {
+test("Ponzu Dev is the release under its own name and links, without 1.x's cleanup or updates", () => {
   const env = { PONZU_API_URL: "https://evil.example", PONZU_SESSION_FILE: "/tmp/planted.json" };
   const release = configFor(true, env, false, "release");
-  const preview = configFor(true, env, false, "preview");
-  expect(preview).toMatchObject({
-    appName: "Ponzu Preview",
-    linkScheme: "ponzu-preview",
+  const dev = configFor(true, env, false, "dev");
+  expect(dev).toMatchObject({
+    appName: "Ponzu Dev",
+    linkScheme: "ponzu-dev",
     cleansUpLegacy: false,
     updates: false,
   });
   expect(release).toMatchObject({ cleansUpLegacy: true, updates: true });
   // Everything else is the release's: where it talks to, and no developer's doors.
-  const { appName: _a, linkScheme: _l, cleansUpLegacy: _c, updates: _u, ...same } = preview;
+  const { appName: _a, linkScheme: _l, cleansUpLegacy: _c, updates: _u, ...same } = dev;
   expect(release).toMatchObject(same);
-  expect(contentSecurityPolicy(preview)).toBe(contentSecurityPolicy(release));
-  expect(preview).toMatchObject({ sessionFile: null, remoteDebugging: false });
+  expect(contentSecurityPolicy(dev)).toBe(contentSecurityPolicy(release));
+  expect(dev).toMatchObject({ sessionFile: null, remoteDebugging: false });
 
-  // Three apps, three names and schemes: none shares another's folder, keychain item or links.
-  const apps = [release, preview, configFor(false, {})];
+  // Three apps, three names: none shares another's folder, keychain item or lock, and only the
+  // installed two take links, each its own.
+  const apps = [release, dev, configFor(false, {})];
   expect(new Set(apps.map((app) => app.appName)).size).toBe(3);
-  expect(new Set(apps.map((app) => app.linkScheme)).size).toBe(3);
+  expect(apps.map((app) => app.linkScheme)).toEqual(["ponzu", "ponzu-dev", null]);
   expect(apps.filter((app) => app.cleansUpLegacy)).toEqual([release]);
 });

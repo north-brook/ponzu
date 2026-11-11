@@ -10,23 +10,23 @@ const home = mkdtempSync(join(tmpdir(), "ponzu-home-"));
 const appData = join(home, "Library/Application Support");
 afterAll(() => rmSync(home, { recursive: true, force: true }));
 
-test("each app has its own folder, and Ponzu Preview's is never 1.x's", () => {
+test("each app has its own folder, and Ponzu Dev's is never 1.x's", () => {
   const folders = [
     configFor(true, {}, false, "release"),
-    configFor(true, {}, false, "preview"),
+    configFor(true, {}, false, "dev"),
     configFor(false, {}),
   ].map((config) => dataFolder(appData, config.appName, { smoke: false }));
   expect(folders).toEqual([
     join(appData, "Ponzu"),
-    join(appData, "Ponzu Preview"),
     join(appData, "Ponzu Dev"),
+    join(appData, "Ponzu Local"),
   ]);
 });
 
 test("the smoke check runs on a throwaway folder, for every app, outside the person's home", () => {
   const parent = mkdtempSync(join(tmpdir(), "ponzu-tmp-"));
   try {
-    for (const variant of ["release", "preview"] as const) {
+    for (const variant of ["release", "dev"] as const) {
       const { appName } = configFor(true, {}, false, variant);
       const folder = dataFolder(appData, appName, {
         smoke: true,

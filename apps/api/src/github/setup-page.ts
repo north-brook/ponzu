@@ -12,9 +12,9 @@ import { DEFAULT_LINK_SCHEME, type LinkScheme, linkSchemeOf } from "./link-schem
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
  *
  * The app answers any of them by fetching its accounts again (`POST /v1/github/sync`); on the
- * iPhone, opening it also closes the sheet the install page was shown in. Ponzu Preview and a
- * development build get the same links in their own schemes (`ponzu-preview://`, `ponzu-dev://`),
- * as the install's state recorded them (link-scheme.ts).
+ * iPhone, opening it also closes the sheet the install page was shown in. Ponzu Dev gets the
+ * same links in its own scheme (`ponzu-dev://`), and a Ponzu Preview still installed in its
+ * (`ponzu-preview://`), as the install's state recorded them (link-scheme.ts).
  */
 
 /** Everything the page may load or do: its own inline style, and nothing else. */

@@ -70,7 +70,8 @@ export interface PonzuDesktop {
   /**
    * Where the API is, what this app calls itself to it (`X-Ponzu-Client: macos/2.0.0`, the same
    * as the main process says), whether this is a development build, and the scheme of the links
-   * this app takes (`ponzu`, `ponzu-preview`, `ponzu-dev`), which the API's pages link back to.
+   * this app takes (`ponzu`, `ponzu-dev`; empty for Ponzu Local, which takes none), which the
+   * API's pages link back to.
    */
   config: { apiUrl: string; client: string; dev: boolean; linkScheme: string };
   session: {
