@@ -113,6 +113,8 @@ export class FakeGithub {
   duringRefresh: (() => Promise<void>) | null = null;
   /** Every installation token the App asked for. */
   readonly installationTokenRequests: { installationId: number; body: unknown }[] = [];
+  /** What the next installation tokens are granted in place of what was asked for, in order. */
+  readonly grantNext: Record<string, string>[] = [];
   /** Every question about a person's access to a repository, as `owner/name login`. */
   readonly permissionRequests: string[] = [];
   /** Every read of a repository's contents, as `owner/name what`: `readme`, `contents/<path>`. */
@@ -585,16 +587,39 @@ export class FakeGithub {
       );
     }
     this.installationTokenRequests.push({ installationId, body });
+    // A token GitHub grants less than was asked for, as a test says.
+    const granted = this.grantNext.shift() ?? permissions;
     // Shaped like GitHub's today, which are far longer than the 40 characters they once were.
     const token = `ghs_${this.#secret(380)}`;
     const expiresAt = this.#clock.now() + 3600_000;
     this.#installationTokens.set(token, {
       installationId,
       repositoryIds: repositoryIds ?? null,
-      permissions,
+      permissions: granted,
       expiresAt,
     });
-    return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
+    // As GitHub answers: what the token may do, and the repositories it was narrowed to.
+    const repositories = repositoryIds
+      ? installation.repositories.filter(({ id }) => repositoryIds.includes(id))
+      : null;
+    return Response.json(
+      {
+        token,
+        expires_at: new Date(expiresAt).toISOString(),
+        permissions: granted,
+        repository_selection: repositories ? "selected" : "all",
+        ...(repositories
+          ? {
+              repositories: repositories.map(({ id, fullName }) => ({
+                id,
+                name: fullName.split("/")[1],
+                full_name: fullName,
+              })),
+            }
+          : {}),
+      },
+      { status: 201 },
+    );
   }
 
   /**

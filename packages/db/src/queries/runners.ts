@@ -11,6 +11,7 @@ import {
   workspaces,
 } from "../schema/index.ts";
 import type { Design } from "./designs.ts";
+import { appendEvent } from "./events.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
@@ -285,6 +286,21 @@ export async function countSandboxRollback(
   return row ?? null;
 }
 
+/**
+ * Create PR asked the design's runner to push what only its sandbox holds: the `push` event that
+ * asks it, and the reason the last push failed forgotten, since this one is a new try. The
+ * runner says how it went with its next state report.
+ */
+export async function askRunnerToPush(
+  db: Db,
+  { designId, userId }: { designId: string; userId: string },
+): Promise<void> {
+  await appendEvent(db, { designId, kind: "push", priority: "now", payload: {}, userId });
+  await run(
+    db.update(designRunners).set({ pushError: null }).where(eq(designRunners.designId, designId)),
+  );
+}
+
 /** The sleep the design's runner last said it was ready for, or null. */
 export async function getQuiescedFor(db: Db, designId: string): Promise<Date | null> {
   const [row] = await run(
@@ -304,6 +320,11 @@ export interface RunnerState {
   claudeSessionId: string | null;
   /** The sleep the runner is ready for (a stop's `state_at`), when it says so. */
   quiesced?: Date | null;
+  /**
+   * The design's branch in the sandbox against GitHub: commits GitHub lacks, and why the last
+   * push of them failed. Undefined leaves what was said before; null clears it.
+   */
+  branch?: { unpushed: number; error: string | null } | null;
 }
 
 /** What a state report answers: the design's head, and the sleep its sandbox is going into. */
@@ -321,7 +342,7 @@ export interface StateAnswer {
  */
 export async function reportRunnerState(
   db: Db,
-  { designId, now, quiesced, ...report }: RunnerState & { designId: string; now: Date },
+  { designId, now, quiesced, branch, ...report }: RunnerState & { designId: string; now: Date },
 ): Promise<StateAnswer | null> {
   const heard = db.$with("heard").as(
     db
@@ -330,6 +351,9 @@ export async function reportRunnerState(
         heardAt: sql`${timeParam(now)}::timestamptz`,
         claudeSessionId: sql`coalesce(${report.claudeSessionId}::text, ${designRunners.claudeSessionId})`,
         ...(quiesced ? { quiescedFor: sql`${timeParam(quiesced)}::timestamptz` } : {}),
+        ...(branch !== undefined
+          ? { unpushed: branch?.unpushed ?? 0, pushError: branch?.error ?? null }
+          : {}),
       })
       .where(eq(designRunners.designId, designId))
       .returning({ designId: designRunners.designId }),

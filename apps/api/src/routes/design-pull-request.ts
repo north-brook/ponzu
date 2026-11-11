@@ -111,12 +111,14 @@ export const designPullRequest = new Hono<AppEnv>()
   /**
    * Opens a draft pull request from the design's branch into the repo's default branch, as the
    * person: 201 with the tab. When one is already open from the branch, or merged with nothing
-   * pushed since, 200 with it.
+   * pushed since, 200 with it. When the commits are only in the design's sandbox, 202 with the
+   * tab: its runner was asked to push them, and the client asks again once GitHub has them.
    */
   .post("/:id/pull-request", access.user, validate("param", Params), async (c) => {
     const context = await contextOf(c.var, c.req.valid("param").id, "write");
-    const { tab, opened } = await openPullRequest(c.var.deps, context, c.var.actor.user);
-    return c.json(PullRequestTabView.parse(tab), opened ? 201 : 200);
+    const { tab, opened, pushing } = await openPullRequest(c.var.deps, context, c.var.actor.user);
+    // 202: the sandbox is pushing the branch first; ask again once GitHub has it.
+    return c.json(PullRequestTabView.parse(tab), pushing ? 202 : opened ? 201 : 200);
   })
 
   .post("/:id/pull-request/ready", access.user, validate("param", Params), async (c) =>

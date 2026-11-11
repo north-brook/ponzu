@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
 import { ADA } from "./api/fake.ts";
 import type { EventBody, Person, RunnerEvent } from "./api/protocol.ts";
-import { eventText, noticeText } from "./prompt.ts";
+import { eventText, noticeText, turnContext } from "./prompt.ts";
 
-function event(body: EventBody, from: Person | null = ADA): Exclude<RunnerEvent, { kind: "stop" }> {
-  return { id: "evt_1", seq: 1, at: "", priority: "now", from, ...body } as Exclude<
-    RunnerEvent,
-    { kind: "stop" }
-  >;
+type Talk = Exclude<RunnerEvent, { kind: "stop" | "push" }>;
+
+function event(body: EventBody, from: Person | null = ADA): Talk {
+  return { id: "evt_1", seq: 1, at: "", priority: "now", from, ...body } as Talk;
 }
 
 const comment = {
@@ -174,5 +173,49 @@ test("an answer nobody waits for says again what it answers", () => {
 test("notices the agent missed come together, from Ponzu", () => {
   expect(noticeText(["Undone: an edit…", "Removed: a script."])).toBe(
     "From Ponzu, about your last turn:\n\nUndone: an edit…\n\nRemoved: a script.",
+  );
+});
+
+test("a turn starts with where the pull request stands, and who opens one", () => {
+  const branch = "pz/onboarding";
+  expect(turnContext({ branch, pullRequest: null, unpushed: 0, pushFailed: null })).toBe(
+    "(From Ponzu: no pull request is open for pz/onboarding. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.)",
+  );
+  expect(
+    turnContext({
+      branch,
+      pullRequest: { number: 12, state: "draft" },
+      unpushed: 0,
+      pushFailed: null,
+    }),
+  ).toBe(
+    "(From Ponzu: pull request #12 is open as a draft from pz/onboarding: pushing to the branch updates it, and describe_pull_request rewrites its description.)",
+  );
+  expect(
+    turnContext({
+      branch,
+      pullRequest: { number: 12, state: "merged" },
+      unpushed: 0,
+      pushFailed: null,
+    }),
+  ).toContain("was merged. Nothing is open now");
+  // A closed one is as good as none.
+  expect(
+    turnContext({
+      branch,
+      pullRequest: { number: 12, state: "closed" },
+      unpushed: 0,
+      pushFailed: null,
+    }),
+  ).toContain("no pull request is open");
+  expect(
+    turnContext({
+      branch,
+      pullRequest: null,
+      unpushed: 2,
+      pushFailed: "fatal: repository 'https://github.com/o/r.git/' not found",
+    }),
+  ).toContain(
+    "2 commits on pz/onboarding aren't on GitHub yet (the last push failed: fatal: repository 'https://github.com/o/r.git/' not found); Ponzu pushes the branch when your turn ends.",
   );
 });
