@@ -8,6 +8,8 @@
  *   boards the thread rail, which their compositions leave empty.
  * - `reference` draws it for the visual regression test, from references/.
  */
+import { SETUP_COMPOSITIONS } from "./setup-compositions.ts";
+
 export interface Rect {
   x: number;
   y: number;
@@ -152,4 +154,5 @@ export const COMPOSITIONS: Composition[] = [
   { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },
+  ...SETUP_COMPOSITIONS,
 ];

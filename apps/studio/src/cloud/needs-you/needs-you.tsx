@@ -155,7 +155,7 @@ export function NeedsYou({
           </Button>
         </Resolved>
       ) : (
-        <div className="flex items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-field">
+        <div className="flex items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field">
           {ask.kind === "secret" ? (
             <input
               ref={note}
@@ -296,7 +296,7 @@ function PageBody({
       return (
         <div className="flex min-h-0 flex-col gap-2">
           {ask.kind === "plan" ? (
-            <div className="max-h-[260px] overflow-y-auto rounded-10 bg-surface px-3 py-2.5 text-13 leading-[1.5] shadow-field [scrollbar-width:thin]">
+            <div className="max-h-[260px] overflow-y-auto rounded-10 bg-surface px-3 py-2.5 text-13 leading-[1.5] shadow-note-field [scrollbar-width:thin]">
               <Prose text={ask.plan} onOpenLink={onOpenLink} />
             </div>
           ) : (
@@ -497,7 +497,7 @@ function Resolved({
       ? `${who(by, meId)} answered.`
       : "Answered.";
   return (
-    <div className="flex items-center gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-field">
+    <div className="flex items-center gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field">
       <span role="status" className="min-w-0 flex-1 py-1 text-13 text-muted leading-5">
         {said}
       </span>

@@ -128,6 +128,12 @@ export const workspaces = pgTable(
     cardBrand: text("card_brand"),
     cardLast4: text("card_last4"),
     pastDueAt: instant("past_due_at"),
+    /**
+     * The workspace's allowance of repo idea generations (`ideas` on `repos`): how many were
+     * started in the window that began at `ideas_window_started_at`. Ponzu pays for them.
+     */
+    ideasWindowStartedAt: instant("ideas_window_started_at"),
+    ideasWindowCount: integer("ideas_window_count").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -193,9 +199,15 @@ export const repos = pgTable(
     baseBuiltAt: instant("base_built_at"),
     baseError: text("base_error"),
     stack: jsonb("stack").$type<StackItem[]>().notNull().default([]),
-    /** Prompts to start from, grounded in the repo. */
+    /** Prompts to start from, grounded in the repo: the API's `ideas/` writes them. */
     ideas: jsonb("ideas").$type<string[]>().notNull().default([]),
+    /** When `ideas` were last written, an empty list included. Null: never. */
     ideasGeneratedAt: instant("ideas_generated_at"),
+    /**
+     * When an instance last took on generating them. It holds the work for one instance at a
+     * time, and is not taken again for a while after, whether that generation ended or not.
+     */
+    ideasClaimedAt: instant("ideas_claimed_at"),
     /** Set when the App loses the repo. The row stays because designs point at it. */
     removedAt: instant("removed_at"),
     createdAt: createdAt(),

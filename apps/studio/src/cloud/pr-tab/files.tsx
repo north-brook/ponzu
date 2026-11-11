@@ -69,7 +69,7 @@ function FileCard({
 }) {
   const id = `file-${file.path}`;
   return (
-    <div className="overflow-hidden rounded-10 bg-surface shadow-card">
+    <div className="overflow-hidden rounded-10 bg-surface shadow-file-card">
       <button
         type="button"
         aria-expanded={open}

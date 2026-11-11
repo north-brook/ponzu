@@ -8,7 +8,7 @@ import { extendTailwindMerge } from "tailwind-merge";
 const merge = extendTailwindMerge({
   extend: {
     theme: {
-      text: ["9", "11", "12", "13", "14", "16", "26", "34"],
+      text: ["9", "10", "11", "12", "13", "14", "15", "16", "18", "26", "28", "34", "40"],
       radius: [
         "2",
         "3",
@@ -35,10 +35,18 @@ const merge = extendTailwindMerge({
         "dot",
         "tip",
         "focus",
+        "card",
+        "button",
+        "field",
+        "field-focus",
+        "field-error",
+        "field-error-focus",
+        "knob",
+        "github",
         "board",
         "chosen",
-        "field",
-        "card",
+        "note-field",
+        "file-card",
         "halo",
         "pin",
       ],

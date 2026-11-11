@@ -1,4 +1,5 @@
 import { createPrivateKey, type KeyObject } from "node:crypto";
+import { Octokit } from "@octokit/rest";
 import type { Clock } from "@ponzu/sandbox";
 import { SignJWT } from "jose";
 import { ApiError, UpstreamError } from "../http/errors.ts";
@@ -7,7 +8,8 @@ import type { Fetch } from "./fetch.ts";
 /*
  * GitHub, on plain fetch, in the two ways the API talks to it: as a person, with their user
  * token (`ghu_`), and as the Ponzu GitHub App, with a JWT signed by its private key. Callers
- * get the user token from `githubUserToken`, which keeps it fresh; they never store one.
+ * get the user token from `githubUserToken`, which keeps it fresh; they never store one. The
+ * repository contents reads (for `ideas/`) go through Octokit, on the same fetch.
  */
 
 export interface GithubUser {
@@ -130,6 +132,46 @@ export interface Github {
   ): Promise<Listed<GithubInstalledRepository>>;
   /** With an installation token: an account's display name, or null when it has none. */
   getAccountName(installationToken: string, login: string): Promise<string | null>;
+
+  /*
+   * Reading a repository's contents, a little at a time, never cloning: with an installation
+   * token narrowed to it (`contents: read`), or with none for a public one. These go through
+   * Octokit: GitHub bounds each answer (a tree at 7 MB, a file's content at 1 MB), and a file's
+   * text is then cut at `maxBytes`.
+   */
+  /** What a repository says of itself. */
+  getRepositoryAbout(token: string | null, fullName: string): Promise<GithubRepositoryAbout>;
+  /**
+   * Every path in the repository at `ref` (a branch or a commit), as far as GitHub lists it:
+   * it stops at 100,000 entries or 7 MB and says so.
+   */
+  getTree(token: string | null, input: { fullName: string; ref: string }): Promise<GithubTree>;
+  /** A file's text at `ref`, cut at `maxBytes`, or null when there is no such file. */
+  getFileText(
+    token: string | null,
+    input: { fullName: string; path: string; ref: string; maxBytes: number },
+  ): Promise<string | null>;
+  /** The README GitHub shows on the repository's page, cut at `maxBytes`, or null for none. */
+  getReadme(
+    token: string | null,
+    input: { fullName: string; ref: string; maxBytes: number },
+  ): Promise<string | null>;
+}
+
+export interface GithubRepositoryAbout {
+  description: string | null;
+  topics: string[];
+  homepage: string | null;
+  /** The language GitHub counts most of it in. */
+  language: string | null;
+  defaultBranch: string;
+  archived: boolean;
+}
+
+export interface GithubTree {
+  entries: { path: string; type: "blob" | "tree"; size: number | null }[];
+  /** False when GitHub cut the list short. */
+  complete: boolean;
 }
 
 /** GitHub's four answers: admin, write and read, or none for no access at all. */
@@ -175,6 +217,13 @@ export function createGithub({
   const asking = new Map<string, Promise<RepoPermission>>();
   /** The tokens it asks with, by installation and repository, oldest first. */
   const tokens = new Map<string, GithubInstallationToken>();
+  /** For the repository contents reads (`getTree`, `getFileText`, …): the token goes on each. */
+  const octokit = new Octokit({
+    userAgent: "ponzu-api",
+    request: { fetch: fetch as typeof globalThis.fetch },
+    // Its default log writes warnings (a deprecated endpoint) to the console.
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+  });
 
   /** One call to api.github.com. `as` says whose credential `bearer` is. */
   async function call(
@@ -457,7 +506,111 @@ export function createGithub({
       const account = await call("app", "GET", path, installationToken);
       return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
     },
+
+    async getRepositoryAbout(token, fullName) {
+      const { data: repository } = await reading("repos.get", () =>
+        octokit.rest.repos.get({ ...at(fullName), ...as(token) }),
+      );
+      return {
+        description: stringOrNull(repository.description),
+        topics: (repository.topics ?? []).filter((topic) => typeof topic === "string"),
+        homepage: stringOrNull(repository.homepage),
+        language: stringOrNull(repository.language),
+        defaultBranch: repository.default_branch,
+        archived: repository.archived === true,
+      };
+    },
+
+    async getTree(token, { fullName, ref }) {
+      const { data } = await reading("git.getTree", () =>
+        octokit.rest.git.getTree({ ...at(fullName), tree_sha: ref, recursive: "1", ...as(token) }),
+      );
+      return {
+        entries: data.tree.flatMap((entry) =>
+          typeof entry.path === "string" && (entry.type === "blob" || entry.type === "tree")
+            ? [{ path: entry.path, type: entry.type, size: entry.size ?? null }]
+            : [],
+        ),
+        complete: data.truncated !== true,
+      };
+    },
+
+    async getFileText(token, { fullName, path, ref, maxBytes }) {
+      return fileOrNull(maxBytes, () =>
+        reading("repos.getContent", () =>
+          octokit.rest.repos.getContent({ ...at(fullName), path, ref, ...as(token) }),
+        ),
+      );
+    },
+
+    async getReadme(token, { fullName, ref, maxBytes }) {
+      return fileOrNull(maxBytes, () =>
+        reading("repos.getReadme", () =>
+          octokit.rest.repos.getReadme({ ...at(fullName), ref, ...as(token) }),
+        ),
+      );
+    },
   };
+
+  /** The token on one call, or none for a public repository; and the call's time limit. */
+  function as(token: string | null) {
+    return {
+      headers: token === null ? {} : { authorization: `Bearer ${token}` },
+      request: { signal: clock.timeout(TIMEOUT_MS) },
+    };
+  }
+}
+
+const at = (fullName: string) => {
+  const [owner = "", repo = ""] = fullName.split("/");
+  return { owner, repo };
+};
+
+/** An Octokit call whose failure is an `UpstreamError` from `github`, with GitHub's status. */
+async function reading<T>(what: string, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (cause) {
+    // Octokit's `RequestError` is an `HttpError`; one with no response never heard GitHub.
+    const response = cause instanceof Error && cause.name === "HttpError" ? cause : null;
+    const status =
+      response && (response as { response?: unknown }).response
+        ? (response as { status?: number }).status
+        : undefined;
+    throw new UpstreamError(
+      "github",
+      status === undefined ? `${what} did not answer` : `${what} answered ${status}`,
+      { ...(status === undefined ? {} : { status }), cause },
+    );
+  }
+}
+
+const stringOrNull = (value: unknown) =>
+  typeof value === "string" && value.trim() !== "" ? value : null;
+
+/**
+ * A file's text from its contents JSON, cut at `maxBytes`, or null when GitHub has none there
+ * or it is not a file. The JSON form, not the raw one, is what keeps a read small: GitHub puts
+ * a file's content in it only up to 1 MB, and leaves it out (`encoding: "none"`) past that.
+ */
+async function fileOrNull(
+  maxBytes: number,
+  read: () => Promise<{ data: unknown }>,
+): Promise<string | null> {
+  let data: unknown;
+  try {
+    ({ data } = await read());
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404) return null;
+    throw error;
+  }
+  const file = data as { type?: unknown; encoding?: unknown; content?: unknown };
+  if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") {
+    return null;
+  }
+  const bytes = Buffer.from(file.content, "base64");
+  // A cut can fall inside a character: what is left of it decodes as U+FFFD.
+  return new TextDecoder().decode(bytes.subarray(0, maxBytes));
 }
 
 /**

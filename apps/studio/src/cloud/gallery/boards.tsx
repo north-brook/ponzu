@@ -5,6 +5,7 @@ import type { Contributor, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
+import { SETUP_BOARDS } from "./setup-boards.tsx";
 import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
 
@@ -124,4 +125,5 @@ export const BOARDS: Record<string, () => ReactNode> = {
     </Harness>
   ),
   ...THREAD_BOARDS,
+  ...SETUP_BOARDS,
 };

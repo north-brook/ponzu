@@ -88,7 +88,7 @@ export function PullRequestView({
           {[0, 1, 2].map((i) => (
             <span
               key={i}
-              className="breathe h-9 rounded-10 bg-surface shadow-card"
+              className="breathe h-9 rounded-10 bg-surface shadow-file-card"
               style={{ animationDelay: `${i * 120}ms` }}
             />
           ))}

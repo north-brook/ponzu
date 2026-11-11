@@ -36,6 +36,8 @@ const schema = z.object({
   R2_ACCESS_KEY_ID: z.string(),
   R2_SECRET_ACCESS_KEY: z.string(),
   R2_BUCKET: z.string(),
+  /** Ponzu's own Anthropic API key, for what the API asks a model itself (repo ideas). */
+  PONZU_ANTHROPIC_API_KEY: z.string().startsWith("sk-ant-"),
   /** Keys that were PONZU_VAULT_KEY before, comma-separated, so what they sealed still opens. */
   PONZU_VAULT_OLD_KEYS: z.string().optional(),
   /** The oldest client each platform may run, like `macos=2.1.0,ios=1.3.0`. Unset: no gate. */
@@ -69,6 +71,7 @@ export interface Env {
   realtime: { url: string; secret: string };
   assetsUrl: string;
   r2: R2Config;
+  anthropicApiKey: string;
   minimumClientVersions: MinimumVersions;
   commit: string | null;
 }
@@ -121,6 +124,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY,
       bucket: env.R2_BUCKET,
     },
+    anthropicApiKey: env.PONZU_ANTHROPIC_API_KEY,
     minimumClientVersions,
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,
   };

@@ -3,7 +3,7 @@
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign, seedUser, seedWorkspace } from "../fixtures.ts";
+import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
 import { designOps, events, jobs, memberships } from "../schema/index.ts";
@@ -15,6 +15,7 @@ import { claimJobs, enqueueJob } from "./jobs.ts";
 import { ensureWorkspaceAdmin, setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
+import { claimRepoIdeas, type IdeasPolicy } from "./repo-ideas.ts";
 import { takeRunnerLease } from "./runners.ts";
 import { commitReversal } from "./undo.ts";
 
@@ -286,4 +287,37 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     expect(raised.every((result) => result.status === "open")).toBe(true);
     expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
   }, 60_000);
+
+  test("claims of one repo's ideas at once: exactly one takes it", async () => {
+    const workspace = await seedWorkspace(db);
+    const repo = await seedRepo(db, workspace.id, `north-brook/ideas-${Date.now()}`);
+    const results = await Promise.all(
+      times(8, () => claimRepoIdeas(db, { repoId: repo.id, ...ideasPolicy(50) })),
+    );
+    expect(results.filter((result) => result === "claimed")).toHaveLength(1);
+  }, 60_000);
+
+  test("claims across one workspace's repos at once keep to its allowance", async () => {
+    const workspace = await seedWorkspace(db);
+    const repos = await Promise.all(
+      times(10, (i) => seedRepo(db, workspace.id, `north-brook/allowance-${i}-${Date.now()}`)),
+    );
+    const results = await Promise.all(
+      repos.map((repo) => claimRepoIdeas(db, { repoId: repo.id, ...ideasPolicy(4) })),
+    );
+    expect(results.filter((result) => result === "claimed")).toHaveLength(4);
+    expect(results.filter((result) => result === "rate_limited")).toHaveLength(6);
+  }, 60_000);
 });
+
+/** The API's ideas policy as of now, with an allowance of `windowLimit`. */
+function ideasPolicy(windowLimit: number): IdeasPolicy {
+  const now = Date.now();
+  return {
+    now: new Date(now),
+    retryBefore: new Date(now - 3600_000),
+    staleBefore: new Date(now - 30 * 24 * 3600_000),
+    windowStartedBefore: new Date(now - 3600_000),
+    windowLimit,
+  };
+}
