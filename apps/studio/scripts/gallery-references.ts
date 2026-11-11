@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's compositions against their references, in a real Chromium: the picture
- * for layout, the painted styles for color and type. They run in three files, one for each part
+ * for layout, the painted styles for color and type. They run in five files, one for each part
  * of the app (src/cloud/gallery/gallery.references.*.test.ts), so bun's workers draw them at
  * once; each composition is in exactly one. Skips where there is no Chrome or Chromium.
  */
@@ -31,17 +31,20 @@ import {
 const TOLERANCE = 0.002;
 
 /**
- * The part of the app a composition shows: the sidebar (with sharing and the thread rail beside
- * it), first run and settings (setup-compositions.ts), or the rest of the window.
+ * The part of the app a composition shows: first run's steps, creating a design, settings and
+ * the dialogs beside them (the rest of setup-compositions.ts), the sidebar, or the design's
+ * window around the canvas (sharing, the thread rail, the chrome, the smallest window).
  */
-export type Area = "sidebar" | "setup" | "window";
+export type Area = "setup" | "create" | "settings" | "sidebar" | "design";
 
 const SETUP = new Set(SETUP_COMPOSITIONS.map((c) => c.id));
 
 export function areaOf(c: Composition): Area {
-  if (SETUP.has(c.id)) return "setup";
-  if (/sidebar|^share|^thread-in-the-right-rail$/.test(c.id)) return "sidebar";
-  return "window";
+  if (c.id.startsWith("setup-")) return "setup";
+  if (/^create$|^pick-a-project|^fresh-start|^claude-sets-it-up$/.test(c.id)) return "create";
+  if (SETUP.has(c.id)) return "settings";
+  if (c.id.includes("sidebar")) return "sidebar";
+  return "design";
 }
 
 /** Registers, under "the cloud gallery", both comparisons for every composition in `area`. */
