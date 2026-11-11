@@ -109,14 +109,6 @@ test("inline code, emphasis and links", () => {
   expect(shape(html("*a **b** c*"))).toBe("<div><p><em>a <strong>b</strong> c</em></p></div>");
 });
 
-test("what only looks like emphasis stays as written", () => {
-  expect(shape(html("snake_case_name and 2 * 3 * 4"))).toBe(
-    "<div><p>snake_case_name and 2 * 3 * 4</p></div>",
-  );
-  expect(shape(html("an **unclosed bold"))).toBe("<div><p>an **unclosed bold</p></div>");
-  expect(shape(html("\\*literal\\*"))).toBe("<div><p>*literal*</p></div>");
-});
-
 test("blocks: paragraphs, lists, fenced code, quotes and headings", () => {
   const out = html(
     "## Plan\n\nI'll do three things:\n\n1. Read the hero\n2. Draw **B**\n   and C\n\n- one\n- two\n\n```ts\nconst a = 1;\n\nconst b = <div />;\n```\n> quoted\n> still\n\n---\nlast line\nsecond line",

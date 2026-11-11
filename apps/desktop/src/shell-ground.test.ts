@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SHELL, shellGround } from "./shell-ground.ts";
+import { MATERIAL, SHELL, shellGround } from "./shell-ground.ts";
 
 const tokens = await Bun.file(
   new URL("../../studio/src/cloud/styles/tokens.css", import.meta.url),
@@ -8,8 +8,7 @@ const tokens = await Bun.file(
 test("a Mac's window is the system's material, with no colour of its own over it", () => {
   const ground = shellGround("darwin", false);
   expect(ground.glass).toBe(true);
-  expect(ground.options.vibrancy).toBe("sidebar");
-  expect(ground.options.visualEffectState).toBe("followWindow");
+  expect(ground.options).toMatchObject(MATERIAL);
   // A backgroundColor would paint the page's ground over the material.
   expect(ground.options.backgroundColor).toBeUndefined();
   expect(ground.options.transparent).toBeUndefined();

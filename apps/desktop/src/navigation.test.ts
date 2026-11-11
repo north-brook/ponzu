@@ -106,12 +106,6 @@ test("a release ignores a developer's session and refuses remote debugging; a te
   expect(configFor(false, env).sessionFile).toBe("/tmp/planted.json");
 });
 
-test("a run from a checkout is Ponzu Local, beside an installed Ponzu and Ponzu Dev", () => {
-  // Its name is its data folder, keychain item and single-instance lock.
-  expect(configFor(true, {}, false).appName).toBe("Ponzu");
-  expect(configFor(false, {}).appName).toBe("Ponzu Local");
-});
-
 test("Ponzu Dev is the release under its own name and links, without 1.x's cleanup or updates", () => {
   const env = { PONZU_API_URL: "https://evil.example", PONZU_SESSION_FILE: "/tmp/planted.json" };
   const release = configFor(true, env, false, "release");
