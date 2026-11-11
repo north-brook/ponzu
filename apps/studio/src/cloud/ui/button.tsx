@@ -22,6 +22,15 @@ const buttonVariants = cva(
         /** A text control with no fill at rest: the repo chip, the model picker. */
         quiet:
           "h-7 rounded-8 font-medium text-12 text-muted hover:bg-hover active:bg-press [&[aria-haspopup][aria-expanded=true]]:bg-press",
+        /** A step's or a dialog's one dark button: Continue, Connect. Size it with a class. */
+        primary:
+          "justify-center gap-1.5 rounded-8 bg-action font-medium text-action-ink hover:bg-action-hover active:bg-action-press",
+        /** A white button lifted off its row: Set up, Sign out, Rebuild. Size it with a class. */
+        raised:
+          "justify-center gap-1.5 rounded-8 bg-raised font-medium text-12 text-ink shadow-button hover:bg-raised-hover active:bg-chip",
+        /** What can't be undone: Delete account, Disconnect. Size it with a class. */
+        danger:
+          "justify-center gap-1.5 rounded-8 bg-danger font-medium text-danger-ink hover:brightness-[1.06] active:brightness-95",
         /** An icon alone. Size it with a class; it is square unless told otherwise. */
         icon: "justify-center rounded-7 text-muted hover:bg-hover active:bg-press [&[aria-haspopup][aria-expanded=true]]:bg-hover",
       },
