@@ -10,8 +10,8 @@
  * `private`, besides: a design's boards are blocked wherever they are drawn (the canvas's live
  * boards and their pictures, the thread's miniatures and attachments, the sidebar's previews),
  * and the text of the canvas (board names, comments), the thread and its composer, the create
- * page's ideas, the pull request tab, the sidebar's design names and its search results is
- * masked. The chrome, the layout and every
+ * page's ideas, the pull request tab, the sidebar's design names and its search results, and
+ * the open design's name in the chrome is masked. The chrome, the layout and every
  * pointer and key stay watchable.
  */
 

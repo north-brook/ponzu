@@ -89,7 +89,7 @@ export interface UpdateState {
 }
 
 /** A menu item the studio carries out. */
-export type MenuCommand = "new-design" | "settings";
+export type MenuCommand = "new-design" | "settings" | "toggle-sidebar" | "toggle-thread";
 
 export interface PonzuDesktop {
   platform: string;

@@ -9,6 +9,7 @@ import { App } from "./app/app.tsx";
 import { CantStart } from "./app/cant-start.tsx";
 import { desktopHost } from "./app/desktop-host.ts";
 import type { Host } from "./app/host.ts";
+import { quietPointerFocus } from "./cloud/ui/quiet-focus.ts";
 
 declare global {
   interface Window {
@@ -38,6 +39,9 @@ async function host(): Promise<Host | null> {
 // On a Mac the window's ground is the system's material, and the shell is a tint over it
 // (tokens.css). Set before anything shows: the window stays hidden until the studio first paints.
 if (window.ponzuDesktop?.glass) document.documentElement.dataset.glass = "";
+
+// A ring shows for the keyboard only, never after a click (ui/quiet-focus.ts).
+quietPointerFocus();
 
 /** Whether, and where, this window reports usage: the shell says (docs/analytics.md). */
 function analyticsContext(): AnalyticsContext | null {

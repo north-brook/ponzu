@@ -136,7 +136,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await watchForAnEmptyDesign(page, IDEA);
     await page.keyboard.press("Enter");
     await rail().getByText(IDEA).waitFor();
-    await rail().getByText("Waking up…").first().waitFor();
+    await rail().getByText("Waking up", { exact: true }).first().waitFor();
     expect(await sawAnEmptyDesign(page)).toEqual([]);
     await fake(() => {
       window.ponzuFake!.backend.latencyMs = 0;
@@ -268,6 +268,10 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
       });
       backend.settings.use(personalId, me.id, 340);
     });
+    // Where the keyboard is when ⌘, opens Settings (a click on the chrome's tab took no focus).
+    await page.evaluate(() => {
+      (window as { focusBefore?: Element | null }).focusBefore = document.activeElement;
+    });
     await page.keyboard.press("Meta+,");
     await nav().waitFor();
     await page.getByText("Signed in with").waitFor();
@@ -350,9 +354,12 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await shoot("settings-plan-team");
     await page.keyboard.press("Escape");
     await nav().waitFor({ state: "detached" });
-    // The keyboard is back where ⌘, found it: the page's tab.
+    // The keyboard is back where ⌘, found it.
     await waitUntil(
-      async () => (await page.evaluate(() => document.activeElement?.textContent)) === "Page 1",
+      () =>
+        page.evaluate(
+          () => document.activeElement === (window as { focusBefore?: Element | null }).focusBefore,
+        ),
       2000,
     );
 

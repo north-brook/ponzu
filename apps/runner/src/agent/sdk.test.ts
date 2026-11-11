@@ -84,6 +84,43 @@ test("streamed text accumulates per reply and ends at the reply's stop", () => {
   ]);
 });
 
+test("a tool call being written says what it is on as soon as the keys that name it are in", () => {
+  const t = new Translator();
+  const stream = (event: Record<string, unknown>) => t.events(msg({ type: "stream_event", event }));
+  stream({ type: "message_start", message: { id: "msg_3" } });
+  expect(
+    stream({
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "tool_use", id: "toolu_9", name: "Write", input: {} },
+    }),
+  ).toEqual([{ type: "tool-start", id: "toolu_9", name: "Write" }]);
+  const delta = (partial_json: string) =>
+    stream({
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "input_json_delta", partial_json },
+    });
+  expect(delta('{"file_pa')).toEqual([]);
+  expect(delta('th": "/w/src/app/page.tsx"')).toEqual([
+    { type: "tool-input", id: "toolu_9", input: { file_path: "/w/src/app/page.tsx" } },
+  ]);
+  // The contents as they are written say nothing new until they end.
+  expect(delta(', "content": "export default function Page() {')).toEqual([]);
+  expect(delta(' return null }"')).toEqual([
+    {
+      type: "tool-input",
+      id: "toolu_9",
+      input: {
+        file_path: "/w/src/app/page.tsx",
+        content: "export default function Page() { return null }",
+      },
+    },
+  ]);
+  expect(stream({ type: "content_block_stop", index: 1 })).toEqual([]);
+  expect(delta('"x"')).toEqual([]);
+});
+
 test("tool calls and their results are the main thread's only", () => {
   const t = new Translator();
   const call = msg({

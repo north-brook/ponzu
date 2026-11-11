@@ -186,6 +186,31 @@ export function ThreadStates({
         <Rail designId="loading" thread={null} label="loading" />
         <Rail designId="kinds" thread={t.everyKind} agent={WORKING} label="every kind of line" />
       </Section>
+      <Section title="Thread rail · turns">
+        <Rail
+          designId="turn-drawing"
+          thread={t.runningTurn}
+          agent={{ state: "working", status: 'Drawing "5 · Schedule"' }}
+          label="running: drawing a board"
+        />
+        <Rail
+          designId="turn-thinking"
+          thread={t.runningTurn}
+          agent={{ state: "working", status: "Thinking" }}
+          label="running: thinking, after it spoke"
+        />
+        <Rail
+          designId="turn-reading"
+          thread={t.runningTurn}
+          agent={{ state: "working", status: "Reading src/app/page.tsx" }}
+          label="running: reading a file"
+        />
+        <Rail designId="turn-done" thread={t.completedTurn} label="completed: folded" />
+        <Rail designId="turn-stopped" thread={t.stoppedTurn} label="stopped mid-work" />
+        <Rail designId="turn-failed" thread={t.failedTurn} label="failed" />
+        <Rail designId="turn-asked" thread={t.askedTurn} label="ended on a question" />
+        <Rail designId="turn-old" thread={t.oldFormatThread} label="an older runner's thread" />
+      </Section>
       <Section title="Thread rail · comments from the canvas">
         <Rail designId="comment-picture" thread={commented} label="with the picture of where" />
         <Rail

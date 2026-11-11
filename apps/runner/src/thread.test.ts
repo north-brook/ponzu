@@ -22,6 +22,31 @@ test("a write the API refuses outright is dropped, not sent again and again", as
   thread.close();
 });
 
+test("one item the API refuses doesn't take the others in its write down with it", async () => {
+  const kept: string[] = [];
+  const errors: unknown[] = [];
+  const api = {
+    async writeThread(batch: { id: string; streaming: boolean }[]) {
+      if (batch.some((i) => i.id === "ti_bad")) throw new ApiError(400, "invalid_request", "No.");
+      kept.push(...batch.map((i) => i.id));
+      return { items: batch };
+    },
+  } as unknown as RunnerApi;
+  const thread = new ThreadWriter(api, { gapMs: 1, onError: (e) => errors.push(e) });
+  thread.write({ id: "ti_a", kind: "assistant", payload: { text: "Hi" }, streaming: false });
+  thread.write({
+    id: "ti_bad",
+    kind: "tool",
+    payload: { label: "x", steps: 1, artboards: [] },
+    streaming: true,
+  });
+  thread.write({ id: "ti_b", kind: "assistant", payload: { text: "There" }, streaming: false });
+  await thread.flush();
+  expect(kept).toEqual(["ti_a", "ti_b"]);
+  expect(errors).toHaveLength(1);
+  thread.close();
+});
+
 test("only the latest payload of each item is sent, items that changed together in one write", async () => {
   const api = new FakeRunnerApi();
   const thread = new ThreadWriter(await api.connect(), { gapMs: 50 });

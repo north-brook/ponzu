@@ -6,6 +6,7 @@
 import "../styles/cloud.css";
 import { createRoot } from "react-dom/client";
 import { NowContext } from "../time.ts";
+import { quietPointerFocus } from "../ui/quiet-focus.ts";
 import { BOARDS } from "./boards.tsx";
 import { COMPOSITIONS } from "./compositions.ts";
 import { NOW } from "./fixtures.ts";
@@ -14,6 +15,7 @@ import { States } from "./states.tsx";
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme");
 if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+quietPointerFocus();
 
 function Index() {
   const link = (query: string) => `?${query}${theme ? `&theme=${theme}` : ""}`;
