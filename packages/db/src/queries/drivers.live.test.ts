@@ -48,7 +48,7 @@ import { listPresence, touchPresence } from "./presence.ts";
 import {
   findDesignByBranch,
   getPullRequestContext,
-  listDesignsWithOpenPullRequests,
+  listPullRequestDesigns,
   recordPullRequestRead,
   setPullRequestSummary,
 } from "./pull-requests.ts";
@@ -560,7 +560,22 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
         readAt,
       }),
     ).toMatchObject({ prNumber: 2, prReadAt: readAt, prUpdatedAt: updatedAt });
-    expect(await listDesignsWithOpenPullRequests(db, repo.githubRepoId)).toEqual([onBranch.id]);
+    // Read again, finding the same: nothing is written.
+    expect(
+      await recordPullRequestRead(db, {
+        designId: onBranch.id,
+        number: 2,
+        state: "draft",
+        checks: "running",
+        mergeable: null,
+        autoMerge: false,
+        updatedAt,
+        readAt: new Date(readAt.getTime() + 1),
+      }),
+    ).toBeNull();
+    expect(
+      await listPullRequestDesigns(db, { githubRepoId: repo.githubRepoId, open: true }),
+    ).toEqual([onBranch.id]);
     const settled = await recordPullRequestRead(db, {
       designId: onBranch.id,
       number: 2,
@@ -569,7 +584,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       mergeable: true,
       autoMerge: false,
       updatedAt,
-      readAt: new Date(readAt.getTime() + 1),
+      readAt: new Date(readAt.getTime() + 2),
     });
     expect(settled).toMatchObject({ status: "settled", prMergeable: true });
     expect(await getPullRequestContext(db, onBranch.id)).toMatchObject({

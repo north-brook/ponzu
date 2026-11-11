@@ -180,7 +180,10 @@ A design's pull request is recorded from reads of GitHub by `recordPullRequestRe
 the read that began last (`designs.pr_read_at`, since a check finishing leaves GitHub's
 `updated_at` alone and reads finish out of order), and settles the design on a merge. A merge
 is the last word on its pull request: nothing about it is recorded after one, so a design
-reopened after its merge stays open.
+reopened after its merge stays open. A read that finds what the row already holds writes
+nothing, since each write reaches every watcher of the workspace's designs. For the same reason
+the pull request's thread notice goes in with `appendThreadItemOnce`, which never rewrites an
+item it already has.
 
 ## Deleting
 

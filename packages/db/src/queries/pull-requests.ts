@@ -1,4 +1,15 @@
-import { and, eq, getTableColumns, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "../client.ts";
 import {
   type DesignStatus,
@@ -57,16 +68,17 @@ export async function findDesignByBranch(
   return { ...design, repo: { id: repoId, githubRepoId, fullName } };
 }
 
-/** The most designs one push to a default branch makes the API read GitHub again for. */
-const OPEN_PULL_REQUESTS_READ = 50;
+/** The most designs one event about a repo makes the API read GitHub again for. */
+const PULL_REQUEST_DESIGNS_LISTED = 50;
 
 /**
- * The active designs of a repo whose pull request is open or a draft, at most 50: those a push
- * to the branch they merge into can give conflicts.
+ * The designs of a repo with a pull request, most recently updated on GitHub first, at most 50.
+ * With `open`, only active designs whose pull request is open or a draft: those a push to the
+ * branch they merge into can give conflicts.
  */
-export async function listDesignsWithOpenPullRequests(
+export async function listPullRequestDesigns(
   db: Db,
-  githubRepoId: number,
+  { githubRepoId, open }: { githubRepoId: number; open: boolean },
 ): Promise<string[]> {
   const rows = await run(
     db
@@ -76,11 +88,13 @@ export async function listDesignsWithOpenPullRequests(
       .where(
         and(
           eq(repos.githubRepoId, githubRepoId),
-          eq(designs.status, "active"),
-          inArray(designs.prState, ["draft", "open"]),
+          open
+            ? and(eq(designs.status, "active"), inArray(designs.prState, ["draft", "open"]))
+            : isNotNull(designs.prNumber),
         ),
       )
-      .limit(OPEN_PULL_REQUESTS_READ),
+      .orderBy(sql`${designs.prUpdatedAt} desc nulls last`)
+      .limit(PULL_REQUEST_DESIGNS_LISTED),
   );
   return rows.map((row) => row.id);
 }
@@ -151,16 +165,22 @@ export interface PullRequestRead {
 /**
  * Record what a read of GitHub found about a design's pull request, and settle the design when
  * the read found it merged. Answers the design as it now stands, or null when the read was not
- * applied: there is no such design, or what is recorded is newer.
+ * applied: there is no such design, what is recorded is newer, or it already says all this.
  *
  * Reads finish out of order, so this keeps only the newest: a read is applied over the one
  * recorded when its pull request's number is higher (a later pull request from the branch), or
  * when it is the same one and the read began no earlier. A merge is the last word on its pull
  * request, so nothing about it is applied after one, and a design reopened after its merge
  * stays open.
+ *
+ * A read that finds nothing new writes nothing, not even when it began: every write to the row
+ * reaches everyone watching the workspace's designs, and most reads (a webhook for each check)
+ * find what is already there.
  */
 export async function recordPullRequestRead(db: Db, read: PullRequestRead): Promise<Design | null> {
   const merged = read.state === "merged";
+  const recorded = sql`(${designs.prNumber}, ${designs.prState}, ${designs.prChecks}, ${designs.prMergeable}, ${designs.prAutoMerge}, ${designs.prUpdatedAt})`;
+  const found = sql`(${read.number}::integer, ${read.state}::text, ${read.checks}::text, ${read.mergeable}::boolean, ${read.autoMerge}::boolean, ${timeParam(read.updatedAt)}::timestamptz)`;
   const [row] = await run(
     db
       .update(designs)
@@ -182,6 +202,7 @@ export async function recordPullRequestRead(db: Db, read: PullRequestRead): Prom
       .where(
         and(
           eq(designs.id, read.designId),
+          sql`${recorded} is distinct from ${found}`,
           or(
             isNull(designs.prNumber),
             lt(designs.prNumber, read.number),

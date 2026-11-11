@@ -123,7 +123,7 @@ export {
   type BranchDesign,
   findDesignByBranch,
   getPullRequestContext,
-  listDesignsWithOpenPullRequests,
+  listPullRequestDesigns,
   type PullRequestContext,
   type PullRequestRead,
   recordPullRequestRead,
@@ -174,6 +174,7 @@ export {
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
+  appendThreadItemOnce,
   listThreadItems,
   type NewThreadItem,
   postMessage,

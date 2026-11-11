@@ -6,7 +6,7 @@ import { createDesign, getDesign, settleDesign } from "./designs.ts";
 import {
   findDesignByBranch,
   getPullRequestContext,
-  listDesignsWithOpenPullRequests,
+  listPullRequestDesigns,
   type PullRequestRead,
   recordPullRequestRead,
   setPullRequestSummary,
@@ -86,6 +86,18 @@ test("the read that began last wins, whatever order the reads finish in", async 
   });
 });
 
+test("a read that finds what is recorded writes nothing", async () => {
+  const { design } = await designOnBranch();
+  await recordPullRequestRead(db, read(design.id, 1, { checks: "passing" }));
+
+  expect(await recordPullRequestRead(db, read(design.id, 4, { checks: "passing" }))).toBeNull();
+  expect(await getDesign(db, design.id)).toMatchObject({ prChecks: "passing", prReadAt: at(1) });
+  // GitHub's updatedAt is part of what is recorded: a comment moves it.
+  expect(
+    await recordPullRequestRead(db, read(design.id, 5, { checks: "passing", updatedAt: at(5) })),
+  ).toMatchObject({ prUpdatedAt: at(5), prReadAt: at(5) });
+});
+
 test("a later pull request from the same branch replaces an earlier one", async () => {
   const { design } = await designOnBranch();
   await recordPullRequestRead(db, read(design.id, 9, { state: "closed" }));
@@ -114,7 +126,7 @@ test("a merge settles the design and is the last word on its pull request", asyn
   expect(await getDesign(db, design.id)).toMatchObject({ status: "active", prState: "merged" });
 });
 
-test("the open pull requests of a repo are those of its active designs", async () => {
+test("a repo's designs with a pull request, and those whose pull request is open", async () => {
   const { design, repo, user } = await designOnBranch("pz/a");
   const other = await createDesign(db, {
     workspaceId: repo.workspaceId,
@@ -134,13 +146,15 @@ test("the open pull requests of a repo are those of its active designs", async (
     branch: "pz/c",
     doc: emptyDoc("Closed"),
   });
-  await recordPullRequestRead(db, read(design.id, 1, { state: "draft" }));
-  await recordPullRequestRead(db, read(other.id, 1, { number: 8 }));
+  await recordPullRequestRead(db, read(design.id, 1, { state: "draft", updatedAt: at(1) }));
+  await recordPullRequestRead(db, read(other.id, 1, { number: 8, updatedAt: at(2) }));
   await recordPullRequestRead(db, read(closed.id, 1, { number: 9, state: "closed" }));
+  const list = (open: boolean) =>
+    listPullRequestDesigns(db, { githubRepoId: repo.githubRepoId, open });
 
-  expect((await listDesignsWithOpenPullRequests(db, repo.githubRepoId)).sort()).toEqual(
-    [design.id, other.id].sort(),
-  );
+  // The most recently updated on GitHub first.
+  expect(await list(true)).toEqual([other.id, design.id]);
+  expect(await list(false)).toEqual([other.id, design.id, closed.id]);
 });
 
 test("the context has the repo it opens in, and the summary waits in the row", async () => {
