@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { claimRepoIdeas, saveRepoIdeas, suspendWorkspace, upsertRepos } from "@ponzu/db";
+import {
+  claimRepoIdeas,
+  markDefaultBranchPushed,
+  saveRepoIdeas,
+  suspendWorkspace,
+  upsertRepos,
+} from "@ponzu/db";
 import { CLAUDE_HAIKU, CLAUDE_SONNET } from "../deps/model.ts";
 import { GATE_SYSTEM_PROMPT } from "../ideas/gate.ts";
 import { IDEAS_POLICY } from "../ideas/ideas.ts";
@@ -272,6 +278,63 @@ describe("GET /v1/repos/:id/ideas", () => {
     await t.backgroundDone();
     expect((await ideasOf("maya")).body.status).toBe("ready");
     expect(t.model.requests).toHaveLength(1);
+  });
+
+  test("ideas are made again when the default branch moves: the old ones show meanwhile", async () => {
+    await ideasOf("maya");
+    await t.backgroundDone();
+    t.model.otherwise = { output: { ideas: IDEAS.map((idea) => `${idea} again`) } };
+    const moved = () =>
+      markDefaultBranchPushed(t.db, {
+        githubRepoId: ws.repo.githubRepoId,
+        at: new Date(t.clock.now()),
+      });
+
+    // A day on with the branch where it was: a visit alone remakes nothing.
+    t.clock.advance(DAY);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(1);
+
+    // Someone merges: the next visit shows the ideas there were and starts new ones.
+    await moved();
+    const meanwhile = await ideasOf("maya");
+    expect(meanwhile.body).toEqual({ status: "ready", ideas: IDEAS.map((prompt) => ({ prompt })) });
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+    expect((await ideasOf("ines")).body.ideas[0].prompt).toBe(`${IDEAS[0]} again`);
+
+    // A busy branch remakes them an hour apart at most, and only when someone looks.
+    t.model.otherwise = { output: { ideas: IDEAS.map((idea) => `${idea} once more`) } };
+    t.clock.advance(10 * 60_000);
+    await moved();
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+    t.clock.advance(IDEAS_POLICY.retryMs);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(3);
+    expect((await ideasOf("maya")).body.ideas[0].prompt).toBe(`${IDEAS[0]} once more`);
+  });
+
+  test("a push that lands while ideas are being made leaves them due again", async () => {
+    // The claim is taken, then the repo read; the branch moves before the answer is kept.
+    const claimed = t.clock.now();
+    await ideasOf("maya");
+    t.clock.advance(1_000);
+    await markDefaultBranchPushed(t.db, {
+      githubRepoId: ws.repo.githubRepoId,
+      at: new Date(t.clock.now()),
+    });
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(1);
+    expect(t.clock.now()).toBeGreaterThan(claimed);
+
+    t.clock.advance(IDEAS_POLICY.retryMs);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
   });
 
   test("ideas are made again only when a month old and pushed to since, never by a visit", async () => {

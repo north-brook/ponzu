@@ -1,5 +1,5 @@
 {
-  "id": "0ead37c1-228c-4cc9-b59f-37e61f817a6c",
+  "id": "7e3c7bd5-f952-41bc-a4c2-3098fcf0fd10",
   "prevId": "927c97ad-2ece-4b9b-8eaf-a1f32c93898a",
   "version": "7",
   "dialect": "postgresql",
@@ -2443,17 +2443,17 @@
           "primaryKey": false,
           "notNull": true
         },
+        "client": {
+          "name": "client",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "heard_at": {
           "name": "heard_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "said_at": {
-          "name": "said_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "claude_session_id": {
           "name": "claude_session_id",
@@ -2494,6 +2494,12 @@
         "workspace_upload_id": {
           "name": "workspace_upload_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "saved_through": {
+          "name": "saved_through",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },
@@ -3045,12 +3051,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "lapsed_at": {
-          "name": "lapsed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -3072,27 +3072,6 @@
           ],
           "isUnique": false,
           "where": "\"events\".\"delivered_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "events_design_id_delivered_at_idx": {
-          "name": "events_design_id_delivered_at_idx",
-          "columns": [
-            {
-              "expression": "design_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "delivered_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3611,6 +3590,24 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "moving_since": {
+          "name": "moving_since",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_failed": {
+          "name": "image_failed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

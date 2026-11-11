@@ -91,19 +91,29 @@ export async function getRunnerContext(db: Db, designId: string): Promise<Runner
  */
 export async function takeRunnerLease(
   db: Db,
-  { designId, now }: { designId: string; now: Date },
+  {
+    designId,
+    now,
+    client = null,
+  }: {
+    designId: string;
+    now: Date;
+    /** What the runner said it is (`design_runners.client`). */
+    client?: string | null;
+  },
 ): Promise<{ runnerId: string; claudeSessionId: string | null; saved: SavedPoint | null }> {
   const at = sql`${timeParam(now)}::timestamptz`;
   const [lease] = await run(
     db
       .insert(designRunners)
-      .values({ designId, runnerId: newId("rnr"), startedAt: at, heardAt: at })
+      .values({ designId, runnerId: newId("rnr"), startedAt: at, heardAt: at, client })
       .onConflictDoUpdate({
         target: designRunners.designId,
         set: {
           runnerId: sql`excluded.runner_id`,
           startedAt: sql`excluded.started_at`,
           heardAt: sql`excluded.heard_at`,
+          client: sql`excluded.client`,
         },
       })
       .returning({
@@ -218,7 +228,12 @@ export async function recordCheckpoint(
                session_upload_id = case when ${keepSession}::boolean
                  then before.session_upload_id else ${point.sessionUploadId}::text end,
                workspace_upload_id = case when ${keepWorkspace}::boolean
-                 then before.workspace_upload_id else ${point.workspaceUploadId}::text end
+                 then before.workspace_upload_id else ${point.workspaceUploadId}::text end,
+               -- What it holds: the runner saves once a turn has settled, so every event that
+               -- had gone into the session by now.
+               saved_through = (select max(e.seq) from events e
+                                 where e.design_id = before.design_id
+                                   and e.delivered_at is not null)
           from before
          where design_runners.design_id = before.design_id
            and (before.turn is null or before.turn < ${point.turn})

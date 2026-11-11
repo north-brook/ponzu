@@ -8,14 +8,7 @@ import {
   writeDraft,
 } from "./composer-rules.ts";
 import { FOLLOWING, type Follow, follow } from "./follow.ts";
-import {
-  isFold,
-  type Row,
-  SENT_GRACE_MS,
-  type ThreadRow,
-  threadRows,
-  workingLine,
-} from "./thread.ts";
+import { SENT_GRACE_MS, type ThreadRow, threadRows, workingLine } from "./thread.ts";
 
 const person = (id: string): Person => ({ id, name: id, login: id, avatarUrl: null });
 const bryce = person("bryce");
@@ -65,10 +58,12 @@ const turnItem = (record: Partial<TurnRecord>, streaming: boolean, label = "Thin
     },
     streaming,
   );
-const lines = (rows: Row[]) =>
-  rows.map((r) => (isFold(r) ? `fold: ${r.fold.summary}` : `${r.item.kind}`));
+/** Each row as its kind, and an aside as "aside" (with "+" when it sits under another). */
+const lines = (rows: ThreadRow[]) =>
+  rows.map((r) => (r.aside ? (r.asideContinues ? "aside+" : "aside") : r.item.kind));
+const ids = (rows: ThreadRow[]) => rows.map((r) => r.item.id);
 
-test("the working line: the agent's state while it works, never blank, gone once the turn folds", () => {
+test("the working line: the agent's state while it works, never blank, gone once the turn ends", () => {
   const ask = message(bryce);
   const open = turnItem({}, true);
   const items = [ask, open, reply("On it.")];
@@ -113,91 +108,106 @@ test("between a send and the agent's first word, the line says it is thinking, f
   expect(workingLine([sent, resumed, lapsed], idle, now)).toBeNull();
 });
 
-test("a running turn shows its messages and none of its work; it folds once it ends", () => {
+test("a running turn shows what it says as asides, its newest words plain, and none of its work", () => {
   const ask = message(bryce, "Two boards and a file");
   const first = reply("Drawing them.");
   const second = reply("Now the file.");
-  const final = reply("Done: two boards and the token file.");
+  const third = reply("Done: two boards and the token file.");
   const log = [
     { after: null, text: "Read the canvas", count: 1 },
     { after: first.id, text: 'Drew "Hero"', count: 2 },
     { after: second.id, text: "Edited styles/tokens.css", count: 1 },
   ];
   const running = turnItem({ log }, true);
-  const live = [ask, running, first, second, final];
-  expect(lines(threadRows(live, working))).toEqual([
+  // Its newest words, with nothing after them yet, read as an answer.
+  expect(lines(threadRows([ask, running, first, second, third], working))).toEqual([
     "message",
-    "assistant",
-    "assistant",
+    "aside",
+    "aside+",
     "assistant",
   ]);
-  const done = turnItem(
-    { ended: "done", ms: 125_000, final: final.id, boards: 2, files: 1, log },
-    false,
-  );
-  const rows = threadRows([ask, { ...done, id: running.id }, first, second, final], working);
-  expect(lines(rows)).toEqual([
-    "message",
-    "fold: Worked for 2 min · 2 boards · 1 file",
-    "assistant",
-  ]);
-  const fold = rows.find(isFold)!.fold;
+  // Once it goes on working after them, they are an aside too.
+  const on = turnItem({ log: [...log, { after: third.id, text: "Committed", count: 1 }] }, true);
   expect(
-    fold.parts.map((p) =>
-      p.kind === "steps" ? p.steps.map((s) => `${s.text} ×${s.count}`).join(", ") : p.item.id,
-    ),
-  ).toEqual([
-    "Read the canvas ×1",
-    first.id,
-    'Drew "Hero" ×2',
-    second.id,
-    "Edited styles/tokens.css ×1",
-  ]);
-  // The answer stays in full: it is the line after the fold.
-  expect((rows.at(-1) as { item: ThreadItem }).item.id).toBe(final.id);
+    lines(threadRows([ask, { ...on, id: running.id }, first, second, third], working)),
+  ).toEqual(["message", "aside", "aside+", "aside+"]);
+  // Waiting on a question is still the turn running.
+  const asking = turnItem({ log: log.slice(0, 2) }, true);
+  expect(
+    lines(threadRows([ask, asking, first, second], { state: "needs_you", status: null })),
+  ).toEqual(["message", "aside", "assistant"]);
 });
 
-test("a single reply has no fold; a stopped or failed turn folds with its ending outside", () => {
+test("a finished turn keeps only its answer: the asides go, and the work never showed", () => {
+  const ask = message(bryce, "Two boards and a file");
+  const first = reply("Drawing them.");
+  const second = reply("Now the file.");
+  const final = reply("Done: two boards and the token file.");
+  const log = [{ after: first.id, text: 'Drew "Hero"', count: 2 }];
+  const done = turnItem({ ended: "done", ms: 125_000, final: final.id, log }, false);
+  const rows = threadRows([ask, done, first, second, final], working);
+  expect(ids(rows)).toEqual([ask.id, final.id]);
+  expect(rows.every((r) => !r.aside)).toBe(true);
+  // The same once the head says idle, and for a thread opened later.
+  expect(ids(threadRows([ask, done, first, second, final], idle))).toEqual([ask.id, final.id]);
+  expect(ids(threadRows([ask, done, first, second, final]))).toEqual([ask.id, final.id]);
+});
+
+test("a single reply is its own answer; a stopped or failed turn leaves how it ended", () => {
   const ask = message(bryce);
   const only = reply("Sure.");
   expect(
     lines(threadRows([ask, turnItem({ ended: "done", final: only.id }, false), only])),
   ).toEqual(["message", "assistant"]);
   const said = reply("Starting.");
+  const stop = item({ kind: "notice", payload: { type: "stopped", by: bryce } });
   const stopped = [
     ask,
     turnItem(
-      { ended: "stopped", ms: 40_000, log: [{ after: said.id, text: "Read comments", count: 3 }] },
+      { ended: "stopped", log: [{ after: said.id, text: "Read comments", count: 3 }] },
       false,
     ),
     said,
-    item({ kind: "notice", payload: { type: "stopped", by: bryce } }),
+    stop,
   ];
-  expect(lines(threadRows(stopped))).toEqual([
-    "message",
-    "fold: Worked for 40 s · 4 steps",
-    "notice",
-  ]);
+  expect(ids(threadRows(stopped))).toEqual([ask.id, stop.id]);
+  const error = item({
+    kind: "notice",
+    payload: { type: "error", code: "turn_failed", message: "Overloaded" },
+  });
   const failed = [
     ask,
-    turnItem(
-      {
-        ended: "failed",
-        ms: 3_000,
-        files: 1,
-        log: [{ after: null, text: "Edited a.ts", count: 1 }],
-      },
-      false,
-    ),
-    item({
-      kind: "notice",
-      payload: { type: "error", code: "turn_failed", message: "Overloaded" },
-    }),
+    turnItem({ ended: "failed", log: [{ after: said.id, text: "Edited a.ts", count: 1 }] }, false),
+    said,
+    error,
   ];
-  expect(lines(threadRows(failed))).toEqual(["message", "fold: Worked for 3 s · 1 file", "notice"]);
+  expect(ids(threadRows(failed))).toEqual([ask.id, error.id]);
 });
 
-test("a turn that ends on a question keeps it outside the fold; one asked on the way folds", () => {
+test("a turn that ended as it meant to, but with work after its last words, keeps those words", () => {
+  const ask = message(bryce);
+  const first = reply("Looking.");
+  const last = reply("Drawing it now.");
+  const done = turnItem(
+    { ended: "done", final: null, log: [{ after: last.id, text: "Drew x", count: 1 }] },
+    false,
+  );
+  expect(ids(threadRows([ask, done, first, last]))).toEqual([ask.id, last.id]);
+  // The head says idle a moment before the thread closes the turn: the same words stay, so
+  // nothing goes and comes back when the record arrives.
+  const open = turnItem({ log: [{ after: first.id, text: "Drew x", count: 1 }] }, true);
+  expect(ids(threadRows([ask, open, first, last], idle))).toEqual([ask.id, last.id]);
+  const closed = turnItem(
+    { ended: "done", final: last.id, log: [{ after: first.id, text: "Drew x", count: 1 }] },
+    false,
+  );
+  expect(ids(threadRows([ask, { ...closed, id: open.id }, first, last], idle))).toEqual([
+    ask.id,
+    last.id,
+  ]);
+});
+
+test("questions stay where they were asked; the one a turn ends on is its last line", () => {
   const ask = message(bryce);
   const first = reply("Looking.");
   const question = (text: string) =>
@@ -219,73 +229,42 @@ test("a turn that ends on a question keeps it outside the fold; one asked on the
     final,
     atEnd,
   ]);
-  expect(lines(rows)).toEqual([
-    "message",
-    "fold: Worked for a moment · 4 steps",
-    "assistant",
-    "notice",
-  ]);
-  expect(rows.find(isFold)!.fold.parts.map((p) => p.kind)).toEqual(["message", "steps", "asked"]);
+  expect(ids(rows)).toEqual([ask.id, onTheWay.id, final.id, atEnd.id]);
 });
 
-test("an older runner's thread folds the same way, its stretches counted, its stale labels dropped", () => {
-  const at = (s: number) =>
-    `2026-11-10T16:0${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}Z`;
-  const old = (content: Omit<ThreadItem, "id" | "seq" | "at" | "streaming">, s: number) =>
-    ({ ...item(content), at: at(s) }) as ThreadItem;
-  const stretch = (s: number, steps: number, artboards: string[]) =>
-    old({ kind: "tool", payload: { label: "Setting direction", steps, artboards } }, s);
-  const items = [
-    old({ kind: "message", payload: { text: "Build it", from: bryce, attachments: [] } }, 0),
-    stretch(1, 2, ["ab_1"]),
-    old({ kind: "assistant", payload: { text: "Copied the layout." } }, 20),
-    stretch(21, 3, ["ab_2"]),
-    stretch(40, 11, ["ab_2", "ab_3"]),
-    old({ kind: "assistant", payload: { text: "Done." } }, 130),
-  ];
-  // While it runs: no stretch lines, whatever their labels.
-  expect(lines(threadRows(items, working))).toEqual(["message", "assistant", "assistant"]);
-  const rows = threadRows(items, idle);
-  expect(lines(rows)).toEqual(["message", "fold: Worked for 2 min · 3 boards", "assistant"]);
-  const steps = rows.find(isFold)!.fold.parts.flatMap((p) => (p.kind === "steps" ? p.steps : []));
-  expect(steps.map((s) => s.text)).toEqual([
-    "2 steps on 1 board",
-    "3 steps on 1 board",
-    "11 steps on 2 boards",
-  ]);
-  // A stretch after the last message: the turn stopped mid-work, and nothing is its answer.
-  const cut = threadRows([...items.slice(0, 4)], idle);
-  expect(lines(cut)).toEqual(["message", "fold: Worked for 20 s · 2 boards"]);
+test("an older runner's thread: asides while it runs, its last words once it ends", () => {
+  const stretch = (steps: number) =>
+    item({ kind: "tool", payload: { label: "Setting direction", steps, artboards: ["ab_1"] } });
+  const ask = message(bryce, "Build it");
+  const copied = reply("Copied the layout.");
+  const done = reply("Done.");
+  const items = [ask, stretch(2), copied, stretch(3), stretch(11), done];
+  // While it runs: no stretch lines, whatever their labels; what it went on after is an aside.
+  expect(lines(threadRows(items, working))).toEqual(["message", "aside", "assistant"]);
+  expect(ids(threadRows(items, idle))).toEqual([ask.id, done.id]);
+  // It stopped mid-work: nothing is its answer, and the stop is its last line.
+  const stop = item({ kind: "notice", payload: { type: "stopped", by: bryce } });
+  expect(ids(threadRows([...items.slice(0, 4), stop], idle))).toEqual([ask.id, stop.id]);
+  // Work after its last words and nothing said of how it ended: those words stay.
+  expect(ids(threadRows(items.slice(0, 4), idle))).toEqual([ask.id, copied.id]);
 });
 
-test("an older runner's label is listed only where it tells its stretch apart", () => {
-  const stretch = (label: string, steps: number) =>
-    item({ kind: "tool", payload: { label, steps, artboards: [] } });
-  const fold = (...stretches: ThreadItem[]) => {
-    const rows = threadRows([message(bryce), ...stretches, reply("Done.")], idle);
-    return rows
-      .find(isFold)!
-      .fold.parts.flatMap((p) => (p.kind === "steps" ? p.steps.map((s) => s.text) : []));
-  };
-  // One stretch: its label is whatever the agent set, so only its count is said.
-  expect(fold(stretch("Setting direction", 3))).toEqual(["3 steps"]);
-  // The same label said twice says nothing; one said once among others does.
-  expect(
-    fold(
-      stretch("Setting direction", 2),
-      stretch("Setting direction", 4),
-      stretch("Committed the work", 1),
-    ),
-  ).toEqual(["2 steps", "4 steps", "Committed the work · 1 step"]);
-});
-
-test("earlier turns are folded while a later one runs; a person mid-turn stays in place", () => {
+test("earlier turns keep only their answers while a later one runs; a person mid-turn stays", () => {
+  const firstAnswer = reply("First.");
+  const before = reply("On the way.");
   const one = [
     message(bryce),
-    turnItem({ ended: "done", log: [{ after: null, text: "Drew x", count: 1 }] }, false),
+    turnItem(
+      {
+        ended: "done",
+        final: firstAnswer.id,
+        log: [{ after: before.id, text: "Drew x", count: 1 }],
+      },
+      false,
+    ),
+    before,
+    firstAnswer,
   ];
-  const firstAnswer = reply("First.");
-  (one[1]!.payload as { turn: TurnRecord }).turn.final = firstAnswer.id;
   const two = [
     message(bryce),
     turnItem({}, true),
@@ -293,12 +272,11 @@ test("earlier turns are folded while a later one runs; a person mid-turn stays i
     message(maya),
     reply("Taking that in."),
   ];
-  expect(lines(threadRows([...one, firstAnswer, ...two], working))).toEqual([
-    "message",
-    "fold: Worked for a moment · 4 steps",
-    "assistant",
+  expect(lines(threadRows([...one, ...two], working))).toEqual([
     "message",
     "assistant",
+    "message",
+    "aside",
     "message",
     "assistant",
   ]);

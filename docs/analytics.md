@@ -93,13 +93,14 @@ Every event about a workspace also carries `workspace_id`.
 | `comment posted` | `design_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
 | `turn stopped` | `design_id` | A person asked the agent to stop. |
 | `turn started` | `design_id`, `turn_id` | Timed when the turn began. Captured when the runner reports the turn. About the person whose message began it. |
-| `turn finished` | `design_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). |
+| `turn finished` | `design_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `runner`, `image` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). `runner` is what the runner said it is (`runner/0.1.0+<image>`), `image` the image it said it runs in, null for a runner too old to say. |
 | `turn lapsed` | `design_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the design's owner. |
 | `turn stalled` | `design_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the design's owner. |
 | `question asked` | `design_id`, `question_id`, `kind` | The agent asked; about no one. |
 | `question answered` | `design_id`, `question_id`, `kind` | |
 | `pull request created` / `merged` / `closed` | `design_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
-| `sandbox woke` | `design_id`, `start` (`new`, `cold`, `warm`), `duration_ms` | About the design's owner, whose Claude it runs on. |
+| `sandbox woke` | `design_id`, `start` (`new`, `cold`, `warm`, `moved`), `duration_ms`, `image` | About the design's owner, whose Claude it runs on. `moved`: made new from the current image in place of one from an older image (docs/cloud.md, "How images roll out"). `image` is the image it runs, null for one made before images were recorded. |
+| `sandbox moved` | `design_id`, `from_image`, `to_image`, `duration_ms` | The design moved onto a new sandbox from the current image, which restored its last checkpoint. As `sandbox woke`. A move that failed is an exception with the design and the image. |
 | `sandbox slept` | `design_id`, `quiesced` | `quiesced`: its runner said it was ready before the stop. |
 | `sandbox lost` | `design_id` | The provider lost the sandbox or its disk; the wake made a new one. |
 | `sandbox restored` | `design_id`, `kind` (`rollback`, `rebuilt`) | A runner found its disk behind the last checkpoint. About no one. |
@@ -152,7 +153,8 @@ straight to PostHog (`apps/runner/src/agent/trace.ts`, `apps/runner/src/telemetr
 | `$ai_generation` | Each model call, the main agent's (`agent`) and every subagent's (`subagent`): model, input and output tokens, cache reads and writes, latency, time to first token, stop reason. |
 | `$ai_span` | Each tool call: its name, how long it took, whether it failed. A subagent's calls hang under the tool call that started it. |
 
-Every event carries `design_id`, the `workspace` group, `$ai_session_id` (the design id, so a
+Every event carries `design_id`, the `workspace` group, `ponzu_runner` (the runner and the image
+it runs in, `runner/0.1.0+ponzu-runner-<hash>`), `$ai_session_id` (the design id, so a
 design's turns read as one conversation whatever Claude session each ran in), and `$session_id`
 of the app session that sent the message, when it said. The distinct id is the person whose
 message began the turn; a turn nobody's message began is about no one. With content on, the

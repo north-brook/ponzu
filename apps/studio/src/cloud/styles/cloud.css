@@ -6,6 +6,7 @@
  */
 @import "tailwindcss" source(none);
 @import "./tokens.css";
+@import "./fonts/fonts.css";
 @source "../";
 
 @theme {
@@ -342,6 +343,27 @@
   }
 }
 
+/*
+ * The sidebar's search field opening: it grows out of the search button's place at the right of
+ * the header row (the button is the third icon from the right edge) to the row's whole width.
+ */
+@keyframes search-open {
+  from {
+    clip-path: inset(4px 48px 4px calc(100% - 72px) round 7px);
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 round 9px);
+    opacity: 1;
+  }
+}
+@utility search-open {
+  animation: search-open var(--dur-pane) var(--ease-out) both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
 /* Something small arriving from below: the thread's "new" pill. */
 @keyframes rise {
   from {
@@ -355,56 +377,29 @@
 }
 
 /*
- * A fold opening on what it holds, and closing again: its height to Radix's measure of the
- * content, at the pane's pace. Closing is quicker than opening, like a menu leaving.
- */
-@keyframes fold-open {
-  from {
-    height: 0;
-    opacity: 0;
-  }
-  to {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-}
-
-@keyframes fold-close {
-  from {
-    height: var(--radix-collapsible-content-height);
-    opacity: 1;
-  }
-  to {
-    height: 0;
-    opacity: 0;
-  }
-}
-
-@utility fold {
-  overflow: hidden;
-  &[data-state="open"] {
-    animation: fold-open var(--dur-pane) var(--ease-out);
-  }
-  &[data-state="closed"] {
-    animation: fold-close var(--dur-pop) var(--ease-out);
-  }
-}
-
-/*
- * The room a line held, let go: the thread's foot settles into it rather than jumping. Height 0
- * once done, and at once under reduced motion.
+ * A line leaving the thread (a finished turn's asides, the working line): the room it held
+ * closes and it fades, so what stays settles into place rather than jumping. Fully faded a
+ * little before its room has closed, so nothing of it is seen squeezed. Gone at once under
+ * reduced motion.
  */
 @keyframes leave {
   from {
     height: var(--room);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0;
   }
   to {
     height: 0;
+    opacity: 0;
   }
 }
 
 @utility leave {
   height: 0;
+  opacity: 0;
+  overflow: hidden;
   animation: leave var(--dur-pane) var(--ease-out);
 }
 

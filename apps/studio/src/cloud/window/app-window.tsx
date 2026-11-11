@@ -1,4 +1,12 @@
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { enterThread } from "../thread/rail.tsx";
 import { cn } from "../ui/cn.ts";
 import { TipProvider } from "../ui/tooltip.tsx";
 import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
@@ -13,7 +21,7 @@ export interface SidebarSlot {
 }
 
 /**
- * The main window: a 44px chrome over three panes. The sidebar (300) and the thread rail (360)
+ * The main window: a 38px chrome over three panes. The sidebar (300) and the thread rail (360)
  * keep their widths; the pane between them, the canvas's, takes the rest.
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
@@ -56,6 +64,56 @@ function useHeldWhileClosing(
   return content ?? (closed ? null : last.current);
 }
 
+/**
+ * The keyboard and the thread pane. Once the pane has opened (its width's transition has ended,
+ * or at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
+ * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌘J, the
+ * View menu, or anything else that opens it while the design shows. Not when it came with a
+ * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
+ * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the
+ * window, so it never sits in a pane that has gone inert.
+ */
+function useThreadFocus(open: boolean, onDesign: boolean, box: RefObject<HTMLElement | null>) {
+  const was = useRef({ open, onDesign });
+  const before = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const prev = was.current;
+    was.current = { open, onDesign };
+    const pane = box.current;
+    if (!pane || prev.open === open) return;
+    if (!open) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && pane.contains(active)) {
+        const back = before.current;
+        if (back?.isConnected && !pane.contains(back)) back.focus({ preventScroll: true });
+        else active.blur();
+      }
+      before.current = null;
+      return;
+    }
+    if (!prev.onDesign || !onDesign) return;
+    let landed = false;
+    const land = () => {
+      if (landed) return;
+      landed = true;
+      const active = document.activeElement;
+      before.current = active instanceof HTMLElement && active !== document.body ? active : null;
+      enterThread(pane);
+    };
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === pane) land();
+    };
+    pane.addEventListener("transitionend", onEnd);
+    // Should the transition not end (cut short, or none ran), a moment after it would have.
+    const seconds = Number.parseFloat(getComputedStyle(pane).transitionDuration) || 0;
+    const timer = setTimeout(land, seconds * 1000 + 50);
+    return () => {
+      pane.removeEventListener("transitionend", onEnd);
+      clearTimeout(timer);
+    };
+  }, [open, onDesign, box]);
+}
+
 export function AppWindow({
   lights,
   sidebar,
@@ -75,6 +133,7 @@ export function AppWindow({
   const railOpen = rail !== null;
   const railBox = useRef<HTMLElement>(null);
   const railShown = useHeldWhileClosing(rail, railBox, chrome != null);
+  useThreadFocus(railOpen, chrome != null, railBox);
   return (
     <TipProvider>
       <div
@@ -86,7 +145,8 @@ export function AppWindow({
           // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
           data-toolbar
           className={cn(
-            "app-drag flex h-11 shrink-0 items-center gap-1",
+            // 38 tall: its 28px controls with 5 above and below (CHROME in the shell's traffic-lights.ts).
+            "app-drag flex h-[38px] shrink-0 items-center gap-1",
             // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
             lights === "none" ? "px-2.5" : "pr-2.5 pl-4",
           )}
