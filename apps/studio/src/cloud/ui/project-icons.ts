@@ -3,11 +3,17 @@
  * read the same in the picker, its chip, the sidebar's rows and Settings. Draw them through
  * `Icon` at the size and stroke where they sit.
  */
-import { FolderClockIcon, FolderGitIcon } from "@hugeicons/core-free-icons";
+import { Folder01Icon, FolderGitIcon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "./icon.tsx";
 
 /** A repo: the folder with git's mark. */
 export const REPO_ICON: IconSvgElement = FolderGitIcon;
 
-/** Scratch: the temporary folder (a folder with a clock), kept in Ponzu rather than a repo. */
-export const SCRATCH_ICON: IconSvgElement = FolderClockIcon;
+/**
+ * Scratch: the folder drawn dashed, as the design draws it: a place for a design that is in no
+ * repo (yet). Hugeicons has no dashed folder, so this is its plain one with the design's dashes.
+ */
+export const SCRATCH_ICON: IconSvgElement = Folder01Icon.map(([tag, attrs]) => [
+  tag,
+  { ...attrs, strokeDasharray: "3 2.6" },
+]);

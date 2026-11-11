@@ -7,6 +7,7 @@ import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
+import { CLAUDE_SONNET } from "../deps/model.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
@@ -24,7 +25,13 @@ import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { type CapturedEvent, MemoryAnalytics } from "./fake-analytics.ts";
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
-export { FakeModel, type FakeReply } from "./fake-model.ts";
+export {
+  FAKE_IDEAS,
+  FakeModel,
+  type FakeReply,
+  PASSING_VERDICT,
+  verdict,
+} from "./fake-model.ts";
 export {
   type FakePull,
   type FakeRepoAccess,
@@ -134,6 +141,7 @@ export async function createTestApp(
   const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
   const model = new FakeModel();
+  const reviewer = new FakeModel(CLAUDE_SONNET);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -168,6 +176,7 @@ export async function createTestApp(
     runnerPort: poke.port,
     realtime: options.live?.realtime ?? sealer,
     model,
+    reviewer,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     config: {
@@ -187,6 +196,7 @@ export async function createTestApp(
         idleSeconds: 300,
         // Higher than a deployment's, since a test file keeps many designs awake at once.
         limits: { perWorkspace: 100, perOwner: 100 },
+        maxMoves: 3,
         scope: TEST_SCOPE,
         ...options.sandbox,
       },
@@ -303,6 +313,7 @@ export async function createTestApp(
     poke,
     realtime: sealer,
     model,
+    reviewer,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

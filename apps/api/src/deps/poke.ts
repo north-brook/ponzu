@@ -25,12 +25,25 @@ type Address = Parameters<Poke>[0];
 /**
  * The runner's other two doors (docs/cloud.md, "The other way: poke and health"). `report` asks
  * it for a state report now: it carries nothing either, and only the API's answer to that report
- * can tell the runner to get ready for sleep. `healthy` is whether `/health` answers within
- * `timeoutMs`, which is how the API knows a warm resume brought the runner back.
+ * can tell the runner to get ready for sleep. `health` is whether `/health` answers within
+ * `timeoutMs`, and if not, what came back instead, which is how the API knows a warm resume
+ * brought the runner back, and what its log says when it did not seem to.
  */
 export interface RunnerPort {
   report(address: Address): Promise<void>;
-  healthy(address: Address, timeoutMs: number): Promise<boolean>;
+  health(address: Address, timeoutMs: number): Promise<HealthCheck>;
+}
+
+/**
+ * One look at a runner's `/health`. `status` is the HTTP status when anything answered (a
+ * redirect is boat's sign-in page: the address's token was not taken), `error` what the request
+ * failed with when nothing did (a timeout, a refused connection). Neither carries the token.
+ */
+export interface HealthCheck {
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  ms: number;
 }
 
 export function createRunnerPort({ fetch, clock }: { fetch: Fetch; clock: Clock }): RunnerPort {
@@ -40,14 +53,23 @@ export function createRunnerPort({ fetch, clock }: { fetch: Fetch; clock: Clock 
       await response.body?.cancel();
       if (!response.ok) throw new Error(`The runner answered a report with ${response.status}.`);
     },
-    async healthy(address, timeoutMs) {
+    async health(address, timeoutMs) {
+      const began = clock.now();
+      const ms = () => clock.now() - began;
       try {
         const response = await call(fetch, clock, address, "GET", "/health", timeoutMs);
         const body = response.ok ? ((await response.json()) as { ok?: unknown }) : null;
         if (!response.ok) await response.body?.cancel();
-        return body?.ok === true;
-      } catch {
-        return false;
+        const ok = body?.ok === true;
+        return {
+          ok,
+          status: response.status,
+          error: ok ? null : response.ok ? "unexpected body" : null,
+          ms: ms(),
+        };
+      } catch (error) {
+        const said = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        return { ok: false, status: null, error: said.slice(0, 200), ms: ms() };
       }
     },
   };

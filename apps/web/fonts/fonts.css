@@ -1,0 +1,38 @@
+/*
+ * The families fonts.ts declares, as the variables globals.css builds the type stacks from, each
+ * followed by its fallback: Arial, resized to the family's metrics so the page doesn't move when
+ * the font arrives. The values are the ones next/font/google computed for these families (from
+ * Google's metadata), kept as they were when the site moved to its own files.
+ */
+:root {
+  --font-inter: "Inter", "Inter Fallback";
+  --font-funnel-display: "Funnel Display", "Funnel Display Fallback";
+  --font-plex-mono: "IBM Plex Mono", "IBM Plex Mono Fallback";
+}
+
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
+@font-face {
+  font-family: "Funnel Display Fallback";
+  src: local("Arial");
+  ascent-override: 93.85%;
+  descent-override: 23.46%;
+  line-gap-override: 0%;
+  size-adjust: 106.55%;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono Fallback";
+  src: local("Arial");
+  ascent-override: 76.16%;
+  descent-override: 20.43%;
+  line-gap-override: 0%;
+  size-adjust: 134.59%;
+}

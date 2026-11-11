@@ -10,6 +10,7 @@ import {
   type Browser,
   buildGallery,
   chromiumPath,
+  fontsLoaded,
   launch,
   type Page,
   STUDIO,
@@ -82,6 +83,8 @@ describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
     await page.emulateMedia({ colorScheme: "light", reducedMotion });
     await page.goto(`${server.url}/gallery.html?board=sidebar-previews-updating&still&theme=light`);
     await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    // The app's fonts in first: a late one moves the row's text, which isn't the row's doing.
+    await fontsLoaded(page);
     // Every frame from here: the row's box, the tile's, and each picture in the tile.
     await page.evaluate((row) => {
       const frames: Frame[] = [];

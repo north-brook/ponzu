@@ -43,6 +43,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@ponzu/evals": "workspace:*",
     "@types/node": "^26.6.5",
     "fast-check": "4.3.0"
   }

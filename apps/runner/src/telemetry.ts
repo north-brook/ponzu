@@ -56,6 +56,11 @@ export function posthogTelemetry(
      * credential, which the agent's environment holds and a command may print.
      */
     secrets?: readonly string[];
+    /**
+     * What this runner is (`runner/<version>+<image>`), put on every event as `ponzu_runner`, so
+     * a trace says which image its turn ran on.
+     */
+    client?: string;
   } = {},
 ): Telemetry {
   const known = knownSecrets(options.secrets);
@@ -84,7 +89,10 @@ export function posthogTelemetry(
           event,
           // About no one person: kept off every profile, under the trace's own id.
           distinctId: distinctId ?? String(properties.$ai_trace_id),
-          properties: scrub(properties),
+          properties: {
+            ...scrub(properties),
+            ...(options.client ? { ponzu_runner: options.client } : {}),
+          },
           ...(groups ? { groups } : {}),
         });
       }

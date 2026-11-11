@@ -807,6 +807,31 @@ describe("pull requests, checks and reviews", () => {
     expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
   });
 
+  test("a push to the default branch is when the repo moved; a push to any other branch is not", async () => {
+    const { repository } = await designInRepo("movedco");
+    const movedAt = async () =>
+      (await t.db.select().from(repos)).find((r) => r.githubRepoId === repository.id)!
+        .defaultPushedAt;
+    expect(await movedAt()).toBeNull();
+
+    await deliver("push", {
+      ref: "refs/heads/pz/checkout",
+      repository: { id: repository.id, default_branch: "main" },
+    });
+    await deliver("push", {
+      ref: "refs/tags/v2",
+      repository: { id: repository.id, default_branch: "main" },
+    });
+    expect(await movedAt()).toBeNull();
+
+    t.clock.advance(60_000);
+    await deliver("push", {
+      ref: "refs/heads/main",
+      repository: { id: repository.id, default_branch: "main" },
+    });
+    expect(await movedAt()).toEqual(new Date(t.clock.now()));
+  });
+
   test("a push to the default branch reads each open pull request, and one that fails is tried again", async () => {
     await drainJobs();
     const person = await t.signInAs({ login: "manyprsco-person" });

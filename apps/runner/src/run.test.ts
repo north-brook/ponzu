@@ -918,6 +918,140 @@ test("a runner that dies after the session took an event: the next acknowledges 
   expect(run.inputs).toEqual([]);
 });
 
+/**
+ * 2026-11-11, from the runner's side: one runner took the message into the session and
+ * acknowledged it, and the machine was stopped under it before the model answered. The next
+ * runner on the same disk resumed the session, which ends on that message.
+ */
+async function brokenOff(opts: { pickups?: number } = {}) {
+  const stateDir = await temp();
+  const first = await setup({ stateDir });
+  first.run.ready("sess_1");
+  const message = first.api.push({ kind: "message", payload: { text: "use hugeicons" } });
+  first.runner.poke();
+  const input = await first.run.input();
+  first.run.take(input);
+  await until(() => first.api.delivered.includes(message.id));
+  if (opts.pickups) {
+    writeFileSync(
+      join(stateDir, "turn.json"),
+      JSON.stringify({ uuid: input.uuid, event: message.id, pickups: opts.pickups }),
+    );
+  }
+  // Cut off: no result ever comes.
+  await first.runner.stop();
+
+  const agent = new ScriptedAgent();
+  agent.sessions.set("sess_1", { messages: new Set([input.uuid]), toolResults: new Set() });
+  first.api.sessionInfo.claudeSessionId = "sess_1";
+  const second = await setup({ api: first.api, agent, stateDir });
+  return { api: first.api, message, second };
+}
+
+test("a turn cut off after the session took its message is picked up by the next runner, and said", async () => {
+  const { api, second } = await brokenOff();
+  const pickup = await second.run.input();
+  expect(pickup.text).toContain("your last turn was cut off");
+  expect(pickup.human).toBe(false);
+  // Working at once, so the person sees the turn going, and told why.
+  await until(() => api.lastState?.state === "working");
+  expect(notices(api, "error").at(-1)?.payload).toEqual({
+    type: "error",
+    code: "turn_failed",
+    message: "Claude was cut off before it finished this, and is picking it back up.",
+  });
+
+  // The turn runs to its end: nothing is left to pick up after it.
+  second.run.take(pickup);
+  second.run.say("m1", "Switching every icon to Hugeicons.");
+  second.run.end();
+  await until(() => api.lastState?.state === "idle");
+  expect(second.run.inputs).toHaveLength(1);
+});
+
+test("a turn picked up twice already asks the person to send it again", async () => {
+  const { api, second } = await brokenOff({ pickups: 2 });
+  await until(() => notices(api, "error").length > 0);
+  expect(notices(api, "error").at(-1)?.payload).toMatchObject({
+    code: "turn_failed",
+    message: "Claude was cut off again before it finished. Send your message again to retry.",
+  });
+  await until(() => api.lastState?.state === "idle");
+  expect(second.run.inputs).toEqual([]);
+});
+
+test("the API's copy of a turn being picked up is acknowledged and not put in twice", async () => {
+  const { api, message, second } = await brokenOff();
+  await second.run.input();
+  const copy = api.push({
+    kind: "message",
+    payload: { text: "use hugeicons", retryOf: message.id } as { text: string },
+  });
+  second.runner.poke();
+  await until(() => api.delivered.includes(copy.id));
+  expect(second.run.inputs).toHaveLength(1);
+});
+
+test("a copy the API sends again goes in as new, though the session holds what it repeats", async () => {
+  const api = new FakeRunnerApi({ session: { claudeSessionId: "sess_1" } });
+  const original = api.push({ kind: "message", payload: { text: "Draw it" } });
+  const copy = api.push({
+    kind: "message",
+    payload: { text: "Draw it", retryOf: original.id } as { text: string },
+  });
+  // The original went in under its own uuid, and so did a copy's own original in the past.
+  await (await api.connect()).claim({ claimId: randomId("clm") });
+  const agent = new ScriptedAgent();
+  agent.sessions.set("sess_1", {
+    messages: new Set([eventUuid(original.id)]),
+    toolResults: new Set(),
+  });
+  const { run } = await setup({ api, agent });
+  const input = await run.input();
+  expect(input.uuid).toBe(eventUuid(copy.id));
+  expect(input.text).toStartWith("(From Ponzu: this was sent before");
+  expect(input.text).toContain("Draw it");
+  await until(() => api.delivered.includes(original.id));
+});
+
+test("a turn in which Claude Code says nothing for too long is stopped and said, then restarted", async () => {
+  const s = await setup({ timing: { turnQuietMs: 150, watchEveryMs: 20 } });
+  s.run.ready("sess_1");
+  await turn(s, "Draw it");
+  await until(() => s.run.interrupts === 1 && notices(s.api, "error").length > 0);
+  expect(notices(s.api, "error").at(-1)?.payload).toMatchObject({
+    code: "turn_failed",
+    message: expect.stringContaining("went quiet"),
+  });
+  // Still nothing: Claude Code is closed, and started again on the session.
+  await until(() => s.agent.runs.length === 2);
+});
+
+test("a turn waiting on a person's answer is never taken for a stuck one", async () => {
+  const s = await setup({ timing: { turnQuietMs: 60, watchEveryMs: 10 } });
+  s.run.ready("sess_1");
+  await turn(s, "Pick a headline");
+  void s.run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
+  await until(() => s.api.lastState?.state === "needs_you");
+  await Bun.sleep(250);
+  expect(s.run.interrupts).toBe(0);
+  expect(notices(s.api, "error")).toEqual([]);
+});
+
+test("a turn that is busy but says nothing to the thread is left be, and its item kept fresh", async () => {
+  const s = await setup({ timing: { turnQuietMs: 200, watchEveryMs: 20, turnRefreshMs: 50 } });
+  s.run.ready("sess_1");
+  await turn(s, "Run the long tests");
+  s.run.emit({ type: "tool", id: "toolu_1", name: "Task", input: { description: "tests" } });
+  const before = s.api.threadWrites.length;
+  for (let i = 0; i < 20; i++) {
+    s.run.emit({ type: "alive" });
+    await Bun.sleep(20);
+  }
+  expect(s.run.interrupts).toBe(0);
+  expect(s.api.threadWrites.length).toBeGreaterThan(before);
+});
+
 test("an answer the session already holds as a tool result is not put in again", async () => {
   const api = new FakeRunnerApi({ session: { claudeSessionId: "sess_1" } });
   const questionId = derivedId("q", "toolu_ask");

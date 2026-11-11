@@ -3,6 +3,7 @@ import {
   getRepoInstallationId,
   getUserByGithubId,
   getWorkspaceByInstallation,
+  markDefaultBranchPushed,
   markRepoAccessStale,
 } from "@ponzu/db";
 import { z } from "zod";
@@ -285,12 +286,20 @@ export function planDelivery(event: string, payload: unknown): Plan {
       return plan(PushEvent, payload, (e) => {
         const branch = /^refs\/heads\/(.+)$/.exec(e.ref)?.[1];
         if (!branch) return null;
-        return (deps) =>
-          refreshAfterPush(deps, {
+        return async (deps) => {
+          // What the repo's ideas were made from has moved: they are due at the next ask.
+          if (branch === e.repository.default_branch) {
+            await markDefaultBranchPushed(deps.db, {
+              githubRepoId: e.repository.id,
+              at: new Date(deps.clock.now()),
+            });
+          }
+          await refreshAfterPush(deps, {
             githubRepoId: e.repository.id,
             branch,
             defaultBranch: e.repository.default_branch,
           });
+        };
       });
 
     case "check_run":

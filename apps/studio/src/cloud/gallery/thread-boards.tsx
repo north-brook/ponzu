@@ -37,7 +37,6 @@ export const TURN_BOARDS: Record<string, () => ReactNode> = {
     working("Running the dev server"),
   ),
   "turn-completed": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
-  "turn-completed-open": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
   "turn-stopped": turnBoard(t.stoppedTurn, IDLE),
   "turn-failed": turnBoard(t.failedTurn, IDLE),
   "turn-asked": turnBoard(t.askedTurn, IDLE),
@@ -48,6 +47,8 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
   ...TURN_BOARDS,
   // Not a composition: a turn the browser tests play through, frame by frame.
   "turn-live": () => <LiveTurnRail />,
+  // The same, under sixty earlier lines: for reading up while it ends.
+  "turn-live-long": () => <LiveTurnRail earlier />,
   "needs-you-a-question": () => (
     <DesignHarness
       designs={asking}
@@ -185,6 +186,49 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
         },
       }}
       tab="pull-request"
+    />
+  ),
+  "pull-request-rail-closed": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.pullRequest }}
+      tab="pull-request"
+      rail={false}
+    />
+  ),
+  "pull-request-min-window": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{
+        kind: "ready",
+        pr: {
+          ...t.busyPullRequest,
+          title:
+            "Quieter hero, editorial take: the paragraph goes, the photo carries it, and the headline moves to Instrument Serif",
+          head: "pz/quieter-hero-editorial-take-with-instrument-serif",
+        },
+      }}
+      tab="pull-request"
+    />
+  ),
+  "pull-request-wide": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={quieter(f.soloDesigns)}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.pullRequest }}
+      tab="pull-request"
+      sidebar="closed"
     />
   ),
   "pull-request-loading": () => (

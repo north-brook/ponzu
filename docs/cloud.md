@@ -76,7 +76,10 @@ GitHub token never reaches a device.
   Each press of Continue with GitHub is its own attempt (port, state, verifier) that can
   finish for ten minutes whatever the window does; the first back signs in and the rest
   close, as do the oldest past three and every one when Ponzu quits. The page the browser
-  lands on is written after the exchange has answered, so it says how it went.
+  lands on is written after the exchange has answered, so it says how it went. It is a
+  handoff (below) with nothing to open: Ponzu comes forward by itself once it has signed the
+  person in, and the page says "Ponzu has it" and closes as Ponzu takes the focus. One that
+  didn't finish stays, saying why.
 - The iPhone app redirects to `ponzu://auth/callback` inside an auth session.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
@@ -196,20 +199,66 @@ the installation back. A one-minute cron reads again any installation nobody has
 for six hours, which is how an uninstall whose webhook was lost is found.
 
 **Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
-`state` sealed by the API and recorded as a fifteen-minute, single-use auth state.
-GitHub sends the browser to the App's Setup URL, `GET /v1/github/setup`, which has no
-bearer token: the state says who started, the person's own token must reach the
-installation (its id in the query is never trusted), and the answer is a small HTML
-page with a way back to the app:
+`state` sealed by the API and recorded as a fifteen-minute, single-use auth state, and
+the app's own handle on it (`id`). GitHub sends the browser to the App's Setup URL,
+`GET /v1/github/setup`, which has no bearer token: the state says who started, the
+person's own token must reach the installation (its id in the query is never trusted),
+and the answer is a handoff page (below). Its link back to the app is
 
 ```
-ponzu://github/setup?result=installed&workspace=<workspace id>
-ponzu://github/setup?result=requested | pending | sign_in | failed
+<scheme>://github/setup?result=installed&workspace=<workspace id>
+<scheme>://github/setup?result=requested | pending | sign_in | failed
 ```
 
-The app answers any of them by syncing. `pending` covers no state, a used or expired
-one, and an installation the person cannot reach: whoever really installed the App is
-caught up by its webhook and their next sync.
+The app answers any of them by syncing and moving on (an installed workspace opens).
+`pending` covers no state, a used or expired one, and an installation the person cannot
+reach: whoever really installed the App is caught up by its webhook and their next sync.
+
+Which app the page hands back to is what the app said when it asked for the link
+(`scheme`), kept in the state's row, never in anything the browser brings:
+
+- `ponzu` (Ponzu), `ponzu-dev` (Ponzu Dev), or `ponzu-preview` (Ponzu Dev's earlier
+  name): the page opens that link by itself.
+- `none`: a build that takes no links, which is Ponzu Local (run from a checkout; on a
+  Mac it lives inside the generic Electron.app and can declare no scheme). The page opens
+  nothing and says "Ponzu has it. You can close this tab."
+- Nothing said, or no state at all (installed from github.com, or saved from the
+  installation's settings on GitHub, which sends no state): not known. The page opens
+  nothing and says to go back to Ponzu, which catches up as it comes to the front. A guess
+  could open an app the person doesn't have, or the release from an environment that
+  serves the development builds, so the API never guesses.
+
+The app never needs the link. While GitHub's page is open it asks
+`GET /v1/github/installs/:id` every two seconds (`waiting`, `settled` with the result and
+workspace, or `expired`); the setup page writes its outcome on the state's row as it is
+made. Once settled, Ponzu comes forward by itself and takes the outcome exactly as it
+would the link (`apps/studio/src/app/installs.ts`). A build that takes links usually
+hears both; whichever comes first is acted on and the other is dropped.
+
+This is why the founder's development build was offered `ponzu://` on 11 November 2026:
+Ponzu Local sent no scheme, and the API, taking silence for Ponzu, recorded `ponzu`.
+Ponzu Local now says `none`, and silence now means not known.
+
+**Handing back to the app.** Every page a browser is left on is a handoff, the pattern of
+the old product's `/local` page: the site's lockup in the corner (outlined, since the page
+loads no font), the Ponzu mark and one plain line, the app's link opened
+by the page itself, and a watch for the app taking over (launching an app takes the
+page's focus or hides it). When it does, the page says Ponzu has it and closes itself (or
+says the tab can be closed, where the browser won't let a tab it didn't open close).
+When nothing has taken the link after two seconds, the page offers it again as a button,
+in words that say what still happens without it; focus that leaves later, after the
+browser's prompt, still counts. Where there is no link (a build that takes none, or the
+shell's own sign-in page), the page says Ponzu has it and closes once Ponzu comes forward.
+
+The API's setup page and the shell's sign-in page are one document
+(`@ponzu/core/handoff`), self-contained: no request of its own, one fixed script and one
+fixed style sheet, allowed by their SHA-256 hashes under `default-src 'none'` (no
+`unsafe-inline`, no nonce). Everything that varies (words, the link) sits in the markup,
+escaped, and the link must be one of the apps' schemes. The site's design link page
+(`/designs/<id>`) is the same pattern drawn in React with the site's components; it shares
+the wait and the apps' names, and offers the Ponzu download only for a Ponzu link. The
+Claude sign-in ends on claude.ai's own page (its code is pasted into Ponzu), so it leaves
+no page of ours.
 
 **Webhooks** arrive at `POST /v1/github/webhook`, verified against the raw body
 before anything is read, deduplicated on `X-GitHub-Delivery`, and recorded with the
@@ -467,7 +516,7 @@ detection and no wake-on-request, so the API owns the lifecycle.
 | First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen, and at the end of each turn the runner pushes whatever the agent left unpushed ("Git"). After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
 | Sleep | Five minutes after the last activity the API stops the sandbox: it asks the runner to get ready (finish the turn, settle, checkpoint, `sync`), waits up to 30 seconds for it, runs `sync` itself, then stops. A stop keeps the disk; memory survives for about ten minutes. |
-| Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health` and starts the unit again if it is down. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session and takes its pending events. |
+| Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health`, and whether the runner has called in since the thaw, and starts the unit again only if neither says it is up. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session, picks up a turn the last process left unfinished, and takes its pending events. |
 | Settle | On merge the design settles and its sandbox is destroyed. |
 | Lost | A sandbox that cannot be resumed is recreated from the branch and the base, and its runner restores the last checkpoint: the conversation and the uncommitted work come back. |
 
@@ -503,9 +552,11 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   when the environment is made ("Repo environments"), so a secret changed later reaches a
   sandbox at its next cold start, not when it wakes from sleep.
 - **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
-  a wake fails saying so.
-- **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
-  keeps the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
+  a wake fails saying so. A sandbox made from another image is moved onto this one at its next
+  wake ("How images roll out").
+- **Sleep.** The runner's heartbeat while `working` (which it is from the moment it puts a message
+  in, "Waking up" included), a turn the design is owed ("A turn that never came"), and anything a
+  person does to the design keep the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
   an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
   safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
   a new environment, and after three restarts in a row with nothing heard it is `failed`.
@@ -533,12 +584,21 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   the poke rather than at the next heartbeat.
 - **A warm resume and a stopped runner.** A warm resume thaws the boot as it was, so a runner
   that had exited stays exited. After every warm resume the API asks `/health` through the
-  stored address (3 seconds); when it does not answer, it reads the design again and, unless it
-  was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner` through the
-  provider and looks again for 15 seconds. If that fails it runs `sync` (a health check can fail
-  for the address alone, with the runner writing), stops the sandbox and resumes it on a new
-  environment, which is always a cold start, and revokes the token it had. The same check runs
-  after a resume that found the machine already running. One attempt of a wake keeps to 260
+  stored address (3 seconds). A runner is up when it answers, or when it has called the API since
+  the resume began (a state report, a claim or an ack, `runnerHeardSince`): a health check can
+  fail for the address alone, with the runner working, and that is logged
+  (`runner_health_unreachable`, with the address's host and what each look got: a status, or
+  the error, and how long) and nothing more is done. When neither, it reads the design again
+  and, unless it was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner`
+  through the provider and looks again for 15 seconds, still counting a call from the runner as
+  up. If that fails (`runner_revive_failed`, with the looks) it runs `sync`, stops the sandbox
+  and resumes it on a new environment, which is always a cold start, and revokes the token it
+  had. The same check runs after a resume that found the machine already running. On
+  2026-11-11 the thawed runner claimed and acknowledged a message within three seconds while its
+  address answered no `/health` for eighteen; the wake, going by the health check alone, stopped
+  the machine under the turn that had just begun, and the cold start's runner, finding the
+  message in the session, had nothing to deliver. Why the address did not answer is not known:
+  the looks are logged now for the next time. One attempt of a wake keeps to 260
   of its function's 300 seconds (`quiesce.ts` adds the waits up): with too little left for the
   unit's start and a cold start after it, it goes cold at once; with too little for the cold
   start, the job tries again. A runner that
@@ -705,7 +765,106 @@ The snapshot is named for a hash of all of that, of the checks it passed and of 
 read before the recipe ran, so the same inputs make the same name, and the API creates
 sandboxes `from` the name in its `PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json`
 records the last bake and when it passed the checks from the snapshot, which is what says it
-may be used. About 490 MiB over boat's base.
+may be used. About 810 MiB over boat's base.
+
+### How images roll out
+
+The runner, the canvas tools and the agent's instructions ship in the image, and a design's
+sandbox, once made, sleeps and wakes on its own disk. Until this, a sandbox kept the image it was
+made from for as long as it lived, so a design made in the morning ran the morning's runner
+through every bake after it. Now a design moves onto the image the API has set the next time it
+wakes after that image is set (`sandboxes/orchestrate.ts`, `moveOnto`), with no one doing
+anything.
+
+**What is recorded.** `sandboxes.image` is the `PONZU_SANDBOX_SNAPSHOT` a sandbox was created
+from (null for one made before this was recorded, which counts as another image).
+`design_runners.client` is what the runner holding the lease said it is as it took it, with the
+image it reads from `/opt/ponzu/image.json`. The API logs `runner_started` with both, and
+`runner_image_mismatch` when a runner says another image than its sandbox was made from. `sandbox
+woke` carries the image, `turn finished` the runner and its image, and the runner puts
+`ponzu_runner` on each of its traces, so analytics can say which image a turn ran on.
+
+**A move is the restore of a lost sandbox, chosen on purpose.** The wake claims the sandbox as
+always (asleep or failed), then, when it was made from another image:
+
+1. takes one of the deployment's move slots (`PONZU_SANDBOX_MAX_MOVES`, 3);
+2. creates a sandbox of the next generation from the current image on a new environment and
+   waits, within 100 seconds, for it to be up and for its runner to answer `/health`;
+3. in one statement marks the old row `gone` ("Moved onto <image>.") and inserts the new one,
+   `waking` for the same wake, which the design now points at; destroys the old machine;
+4. finishes as any wake does: awake, every runner token but the new one revoked, and a poke,
+   since the new runner is already listening and a message sent during the move found no awake
+   sandbox to poke.
+
+The new runner finds no disk, restores the last checkpoint ("Saving the sandbox": the transcript,
+the work in progress and its unpushed commits) and resumes the same Claude session, and the
+message that woke it is waiting in the feed. The head says `waking` throughout, as for any start;
+the thread says `resumed` as after any wake. Nothing new is shown, because nothing new is
+happening to the person: the wake takes a little longer.
+
+**When it does not happen**, the wake resumes the old sandbox as it would have, logs
+`sandbox_move_held` with why, and the design moves at a later wake:
+
+| Why (`reason`) | What happens next |
+|---|---|
+| it is awake or getting there | nothing: an awake sandbox is never moved, so no turn is ever cut. It moves at the first wake after it next sleeps. |
+| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | the old one wakes, its runner saves after its next turn, and the wake after the next sleep moves it |
+| `no_checkpoint`: its runner never saved one (a runner from before checkpoints) | it stays: a move would lose its conversation and what is only on its disk. `scripts/images.ts` lists these; moving one anyway is destroying its sandbox at the provider, which the next wake replaces from the branch, losing exactly that |
+| `image_failed`: a move onto this image failed for this design | it stays until another image is set: one failed start per design per image, never a loop |
+| `moves_at_once`: the slots are taken | it moves at a later wake |
+| `no_time`: too little of the attempt is left for the move and a resume after it (a stop it waited out first) | it moves at a later wake |
+| `moving_off`: `PONZU_SANDBOX_MAX_MOVES=0` | it stays |
+
+**A move that fails is undone in the same attempt.** A create the provider refuses for want of
+starts, or because it is away, before anything was made, is not the image's fault: the job waits
+and tries again, as for any wake. Anything else (the snapshot missing, a machine that does not
+start, a runner that does not answer `/health`) destroys what the move made, revokes its token,
+records `sandboxes.image_failed`, logs `sandbox_move_failed`, and resumes the old sandbox: the
+person's message is answered by the old runner, a little later. The old machine is destroyed only
+after the new runner has answered. A move cut off by a crash leaves the old row `waking`, which the
+sweep sets back to what the provider says after six minutes; the machine the move made is no
+row's then, and the orphan sweep destroys it (while the move holds its slot, a machine of the
+design's labels is not an orphan).
+
+**When: at the wake, not ahead of it.** We decided against a sweep that moves sleeping sandboxes
+as soon as an image is set:
+
+- What a move costs the person, from the image's measurements (`apps/runner/image/README.md`): a
+  create answers `/health` in 7 to 31 s (median about 10), where a warm wake answers in 0.6 s and a
+  cold one in 5 to 16 s. Restoring the checkpoint takes 0.1 to 0.3 s more. A sandbox asleep for
+  over ten minutes would have woken cold anyway, so for most wakes a move costs a few seconds; only
+  a design woken within ten minutes of its sleep, just after a deploy, pays the full difference
+  (about 10 s), once.
+- What a sweep would cost: a start, a boot, a restore and a stop for every sleeping design at every
+  bake, including designs nobody opens again. There were five bakes in one day; boat rations
+  starts (12 a minute, a daily cap by plan), and an awake sandbox is billed. A sweep would also run
+  each design's runner with its owner's Claude credential while nobody asked for it.
+- What the person sees either way is the same waking state.
+
+If the cold start on the first message after a deploy ever matters, a sweep can move a design that
+was active in the last hour, inside the same slots; the move itself would be the same.
+
+**How long an old runner can be out there, and refusing one.** A runner of an older image talks
+to the API only while its sandbox is awake. With moves, that is until its sandbox next sleeps and
+wakes; longer only for a design held back (a checkpoint behind: one more wake; a runner without
+checkpoints: until it is destroyed; a failed image: until the next image). A sandbox that never
+wakes runs nothing, and boat deletes a stopped sandbox's disk after 14 days, after which the next
+wake makes one from the current image. So the rule stands, the deployed API must work with the
+runner of the previous image, and `scripts/images.ts` says when an older one is still out there.
+The API does not refuse a runner for being old: the runner's version stays `0.1.0` (it is not
+released), so `PONZU_MIN_CLIENT_VERSIONS` cannot tell one image from another; a refusal (426)
+would make the runner exit and leave its design unreachable, where the move already replaces it at
+the next wake; and the one thing a refusal could buy, a protocol change that drops an old field,
+can wait until the report shows no runner needs it.
+
+**Rolling out an image**: bake (`bun apps/runner/image/bake.ts`), set `PONZU_SANDBOX_SNAPSHOT` to
+the name it prints, deploy the API. Each design moves the next time it wakes. Where they stand:
+
+```sh
+PONZU_SANDBOX_SNAPSHOT=<the name> bun apps/api/scripts/images.ts   # DATABASE_URL, or NEON_* for dev
+```
+
+`packages/client/src/image-move.live.test.ts` checks a move end to end, by hand, across a deploy.
 
 **Two users.** The runner runs as `user`; Claude Code, its tools, the repo's hooks and the
 checkout's git run as `agent`, which has no sudo, no docker and no way into `/home/user`, the
@@ -829,6 +988,63 @@ There is no watch loop. The local app told agents to poll for comments; in the c
 that would be a model turn a minute and a sandbox that never sleeps. Events arrive
 as turns instead, and `wait_for_activity` is gone.
 
+### A turn that never came
+
+An event is acknowledged once the Claude session holds it, and from then on no claim hands it
+out again. That leaves one way to lose it: the session holds the message and the turn it began
+never finishes, because the process was killed under it (2026-11-11: a wake stopped a thawed
+sandbox whose runner had just taken a message, "A warm resume and a stopped runner"), or Claude
+Code died, or the turn hung. A resumed Claude Code whose transcript ends on a message it never
+answered waits for another; the next runner finds the message in the session and has nothing to
+deliver. The person was left looking at their own message, with no working line and no error,
+and the sweep put the sandbox to sleep on top of it. Two things now see to it, and either alone is
+enough.
+
+**The runner picks it up** (`apps/runner/src/inflight.ts`). When Claude Code takes a message in,
+the runner writes what it took (its uuid and event) to `~/.ponzu/turn.json`, flushed, and clears
+it at the turn's result, unless its own shutdown cut the turn off. A runner that starts (or starts
+Claude Code again after it died) and finds it, with the resumed session holding that message, says
+so in the thread (`turn_failed`, "Claude was cut off before it finished this, and is picking it
+back up"), puts in a word to the agent that its last turn was cut off and to carry on, and reports
+`working` at once. A turn is picked up twice at most; the third time the thread asks the person
+to send it again. A message the session does not hold was never delivered, and the claim brings it
+back; a session that is gone is the API's to send again. A turn the runner interrupts to sleep
+says so already and is not picked up. And a turn in which Claude Code says nothing at all for 20
+minutes (no stream, no tool's result, no subagent's step: past its own ten-minute limits on a
+request and on a command) is stuck: the runner interrupts it and says so, and if it is still
+stuck a turn later, starts Claude Code again. A long turn's item is written again every five
+minutes while Claude Code is busy, so the API sees it go on.
+
+**The API notices it, whatever the runner** (`apps/api/src/sandboxes/sweep.ts`). A runner thread
+write that says anything of a turn (the agent's text, a turn's work, a question, a stop, an error
+of a turn; not `waking`, `resumed` or `started`, nor `clone_failed` or `push_failed`) moves
+`design_runners.said_at` on, and so does a usage report of a finished turn (`POST
+/v1/runner/usage` with a `turn`), which every runner sends, so a turn that answered without
+writing anything is not taken for one that never came. An event that begins a turn (`message`,
+`answer`, `comment`, `check`, `review`, priority `now` or `next`) delivered after it is owed one,
+by the API's clock, which `delivered_at` and `claimed_at` are now kept by too, unless a person's
+stop came after it: a turn stopped while it was starting writes nothing, and is not sent again. While a design owes a turn its sandbox is not
+put to sleep. The owed events lapse when the runner says it is not working for two minutes, or
+says it is but has written nothing for fifteen, both counted from the newest delivery or from when
+the runner that holds the lease started, whichever is later, so a cold start or a long session's
+resume has its own time. Two minutes is many times what a runner takes to write a turn's first
+item once the model's first token is in, which comes before it would report idle; fifteen is
+past the slowest first output of a model on a long session. A lapse marks the events
+(`events.lapsed_at`), writes an error notice in the thread under the newest one's id
+(`ti_lapsed-<event>`: "Claude was cut off before it answered this, so Ponzu is sending it
+again."), and puts each in the feed again as a copy under a new id with `payload.retryOf`
+naming it, which the next claim hands out and every runner, old or new, puts into the session as
+a message it has not seen. A copy that lapses too is not copied again: the thread says to send it
+again. The sweep then pokes an idle runner, or, for one that said it was working all along,
+stops the sandbox and starts it cold, since a warm resume would thaw the same stuck process. A
+runner that says it is working and has written nothing of the turn for an hour is stuck the same
+way: the thread says so (`ti_stalled-<runner>`) and the sandbox starts cold. Each lapse is logged
+(`turn_lapsed`: the events, the copies, the agent's state, how long since the delivery, the
+runner's start, its last word and its last report) and captured (`turn lapsed`, `turn
+stalled`). A runner that is picking up a turn acknowledges the API's copy of it without putting
+it in. Everything delivered before this was deployed counts as answered (the migration sets
+`said_at`).
+
 ### Needs you
 
 When Claude asks a question, wants a secret, or hands off a link, the runner writes
@@ -896,7 +1112,9 @@ behind these routes, and is the reference for what each answers.
   the token's design answers 404 `not_found`. A token that is unknown, expired or revoked
   answers 401 `token_invalid` everywhere. The API revokes a design's runner tokens when the
   design is deleted or settled, so that is also how a runner hears its design is gone. The
-  runner names itself: `X-Ponzu-Client: runner/<version>`.
+  runner names itself: `X-Ponzu-Client: runner/<version>+<image>`, the image as semver build
+  metadata read from the image's record (`runner/0.1.0+ponzu-runner-2de5aff8d903`), or
+  `runner/<version>` outside an image and from runners older than that ("How images roll out").
 - **One runner at a time: the lease.** `POST /v1/runner/session` mints a runner id (`rnr_…`)
   and records it as the design's runner, replacing any before it. Every other call, the
   document routes and git's credential helper included, carries it as `X-Ponzu-Runner`, and
@@ -1050,7 +1268,10 @@ or its uuid came back on a reply), or, for an answer, the question's tool result
 Until Claude Code has said which session that is, those acks wait. Each event's message goes
 in under a uuid derived from the event's id, so the transcript says which events it holds: a
 runner that starts again reads it before it delivers anything, and acknowledges, without
-delivering again, whatever was taken before the last one died. Some are acknowledged without
+delivering again, whatever was taken before the last one died; a turn that died with it is picked
+up ("A turn that never came"). A copy the API sent again (`payload.retryOf`, any kind) is always
+put in, whatever the session holds of what it repeats, with a first line saying it was sent
+before; a runner already picking up the turn it repeats acknowledges it without putting it in. Some are acknowledged without
 going in, with `claudeSessionId` null when nothing else in the batch went in: a stop once its
 interrupt is sent; what a stop cancelled; a kind this runner does not know; and a message
 Claude Code turned away (a repo's `UserPromptSubmit` hook), which would only be turned away
@@ -1068,7 +1289,9 @@ assistant   { text }                    markdown, streams                 the ru
 tool        { label, steps, artboards, turn? }  one turn's work (below)   the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
             { type: "question", questionId, header, text }                the runner
-            { type: "error", code, message }                              the runner
+            { type: "error", code, message }                              the runner, and the
+                                                                          API for a turn that
+                                                                          never came
             { type: "stopped", by: Person | null }                        the API, from the runner's
                                                                           { type: "stopped", eventId }
             { type: "pull_request", number, url, title, state }           the API
@@ -1109,27 +1332,37 @@ rather than listed. At most 120 groups carry text (120 characters each); later s
 in a group with `text: null` after their message, and once the log holds 240 groups, in its last
 `text: null` group, so a turn of hundreds of tool calls, or one that talks for hours, is a few
 kilobytes. The API refuses a record past those bounds; a runner whose write is refused sends the
-write's other items again on their own, so one item never takes the agent's text down with it. Clients show a running turn's messages
-and nothing of its work but the working line; once it has ended they keep `final` in full and
-fold everything between the person's message and it into one line ("Worked for 4 min · 7 boards
-· 1 file") that opens on the turn's messages, each followed by its steps. A turn with nothing
-before its answer has no fold.
+write's other items again on their own, so one item never takes the agent's text down with it.
+
+The thread shows people's messages, the agent's messages and, while a turn runs, one working
+line; nothing of a turn's work, ever. While it runs, each message the agent has gone on working
+after (a later message, or a `log` group `after` it) is an aside, set quieter and in italics;
+its newest words read plain until it carries on. Once it has ended only its answer stays:
+`final`; with no `final`, its last message if it ended `done` (or its record isn't closed yet),
+and none if it was stopped or failed, when how it ended (the stop, the error) is its last line.
+A question answered on the way, a pull request and a person's message mid-turn stay where they
+are. The asides and the working line leave together, closing their room and fading at the pane's
+pace (at once with reduced motion), so the answer settles into place; a thread opened later is
+drawn already settled.
+
+So clients read `final`, `ended`, and `log[].after`, and nothing else of the record: `ms`,
+`boards`, `files`, `log[].text` and `log[].count`, and the item's `label`, `steps` and
+`artboards`, were the fold's ("Worked for 4 min · 7 boards · 1 file", opening on each message's
+steps), which is gone. The runner still writes them; the protocol is unchanged.
 
 A runner from before the record (whose items are in designs already) wrote one `tool` item per
-stretch of tool calls between two things the agent said, with no `turn`: while it streamed, the
-working line; once finished, named by its weightiest step or by what the agent last said with
-set_status. Clients fold those turns the same way, by position: a turn starts at the agent's
-first item after a person's, its answer is its last message unless a stretch came after it, and
-each stretch is listed as a count of its steps (with its label, unless every stretch of the turn
-says the same thing). A runner that writes the record therefore needs no change to clients that
-read only `label`: they show its streaming item as the working line and its finished one as one
-quiet line per turn.
+stretch of tool calls between two things the agent said, with no `turn`. Clients read those
+turns by position: a turn starts at the agent's first item after a person's, runs while the
+agent works, and a message with a stretch after it is an aside; once it has ended, its answer is
+its last message, unless the turn was stopped or failed after it. The stretches themselves
+never show, nor their labels (often whatever the agent last set with set_status).
 
 An `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
 `agent_exited`, `message_refused`, `question_failed`, `push_failed` (the runner gave up pushing
 the branch; its message says why and what to do, in Ponzu's words, once for a commit and a
-reason). The `waking` notice becomes `resumed` or
+reason). The API writes `turn_failed` itself, under `ti_lapsed-<event>` or `ti_stalled-<runner>`,
+for a turn that never came. The `waking` notice becomes `resumed` or
 `started` once Claude Code is up. A `pull_request` notice is written once for each pull request
 opening, merging and closing, under an id of its own (`ti_pr-<number>-opened`, `-merged`,
 `-closed`) that no runner can write, whichever of a route and a webhook sees it first.
@@ -1181,7 +1414,7 @@ by shape (git, package managers, tests, dev servers, builds, linters) and are ot
 contents, or text that looks like a secret, and never one of the sandbox's own secret values
 (the repo's secrets, the Claude credential, the runner token). Clients show it at the thread's
 foot with the turning slice from the moment a person sends until the turn's item finishes, and
-take it away in the frame the turn folds, whichever of the item and the idle report comes
+take it away in the frame the turn's asides go, whichever of the item and the idle report comes
 first.
 
 `branch` is sent once for each push the runner made or tried (at its start, at the end of each
@@ -1402,7 +1635,8 @@ report now, and only the API's answer to that report can say the sandbox is goin
 API asks for one when it starts a stop. While the runner holds a sleep, a poke makes it ask for a
 report too, which is how a warm wake (which only pokes) reaches it. `GET /health` answers
 `{ "ok": true, "state": "working" | "needs_you" | "idle" }`, and the API reads it after a warm
-resume.
+resume, with what each look got (a status, or the error) for its log; it is not the only sign
+of a runner that is up ("A warm resume and a stopped runner").
 
 ### Environment
 
@@ -1686,42 +1920,80 @@ Content-Security-Policy to an object; a response header rule on the assets zone 
 
 ## Ideas
 
-Under the create composer, four prompts for the chosen repo ("Make checkout one page, with the
-order summary on the right"). They are generated, never written by hand
+Under the create composer, up to four prompts for the chosen repo ("Make checkout one page, with
+the order summary on the right"). They are generated, never written by hand
 (`apps/api/src/ideas/`).
 
-- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own
+- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) writes them, and Claude Sonnet 5.5
+  (`claude-sonnet-5-5`) checks them (the gate, below), both on Ponzu's own
   `PONZU_ANTHROPIC_API_KEY`, not the person's Claude account: a subscription token cannot make
   direct API calls, and the ideas show before anyone has connected Claude. The name is not
-  `ANTHROPIC_API_KEY`, which is the person's own key in a runner. About $0.001 a repo. This is
-  the only model call the API makes; a design's agent still runs on the person's own plan in
-  its sandbox.
+  `ANTHROPIC_API_KEY`, which is the person's own key in a runner. About $0.001 for the writing
+  and $0.005 for the gate a repo, about $0.015 at worst (two of each). These are the only model
+  calls the API makes; a design's agent still runs on the person's own plan in its sandbox.
 - **Through the AI SDK** (`ai`, `generateText` with `Output.object` and the zod schema, a 30
   second timeout), reaching Anthropic with the `@ai-sdk/anthropic` provider and our own key
   rather than the Vercel AI Gateway: the key is already on every environment, local
   development and tests need no Vercel login, and no gateway has to be enabled or billed on the
   project. Going through the gateway is the model line in `createClaude` (`deps/model.ts` has
   it, with `createGateway` on the API's `fetch`), plus `AI_GATEWAY_API_KEY` read in `env.ts`.
+  The writer is `deps.model` and the gate `deps.reviewer`; both are traced (docs/analytics.md).
 - **Per repo**, on `repos.ideas`, shared by everyone who can read the repo. `GET
   /v1/repos/:id/ideas` answers `ready`, `generating` or `none` to anyone `requireRepo` lets
   read it, a 404 to anyone else.
 - **Lazily, in the background.** The first ask claims the generation in the row
   (`ideas_claimed_at`: one instance at a time) and answers `generating`; the client asks again
-  on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read and the call have 45
-  seconds. Each workspace may start 20 generations an hour, counted on its row, so a thousand
-  repos cannot run up a bill. Failures are quiet: the screen shows no ideas. No answer at all
-  (GitHub or the model down, the deadline) is tried again an hour after; answers turned away
-  twice count as a generation, keeping the ideas there were, and wait for a push.
+  on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read, two asks and two
+  gate checks have 60 seconds. Each workspace may start 20 generations an hour, counted on its
+  row, so a thousand repos cannot run up a bill. Failures are quiet: the screen shows no ideas.
+- **What reaches a person**, in order:
+  1. **Exact checks** (`checkIdeas`), on what code alone can decide: the answer parses as the
+     schema, it has exactly four ideas, each is non-empty and at most 90 characters (code
+     points), none holds a control, format (bidi override, zero-width), private-use or line
+     separator character, and no two are the same. Each is normalised: spaces collapsed, a final
+     period dropped, the first letter raised.
+  2. **The gate** (`gate.ts`): Claude Sonnet 5.5 at low effort reads the four ideas, with only
+     the product's name and description (fenced as data, never the README), and says of each,
+     with its reason, whether it is **safe** (asks the reader for nothing but a design: no
+     address, contact, command, install, sign-in, credential, setting, third-party code,
+     destructive step or payment, relays no message from the repo, nothing hateful or abusive)
+     and whether it is a **design** (something people see or do). It judges nothing else.
+  - An answer that fails either is asked for again once, with Ponzu's own fixed sentence for
+    what failed (`RETRY_REASONS`), never the answer's words or the gate's, which may quote the
+    repo. Then: every idea passes, and all four are kept; some fail only as designs, and those
+    that pass are kept (one to four; the grid shows fewer tiles fine); one is unsafe in the last
+    answer the gate read, and none of this generation's are kept (`ideas_withheld`: the repo is
+    steering the ideas); nothing passes, and none are kept (`ideas_rejected`). Those last two
+    count as a generation, keeping the ideas there were, and wait for a push, or a day when the
+    repo is left with none. A gate that gives no verdict (down, refused, out of shape) is a
+    failed generation, never a verdict: nothing is stored and it is tried again an hour later,
+    like GitHub or the writer failing or the deadline passing.
+  - **Why a gate.** A repo's text is untrusted, and an idea a person taps goes into their own
+    message to an agent that can write and push their repo, where it is no longer quoted text. A
+    README can ask for an idea that tells the reader to re-enter a token at an address spelled
+    out in words, run a script or add someone's snippet; no exact check tells those from a
+    brief, so a stronger model judges them against a written rubric, which is itself checked
+    against labelled examples (docs/evals.md). Whether an idea is specific, honest about a
+    product not built yet, in its own words or free of talk about how it was made is not gated:
+    a false "no" there costs a person their ideas, so those are measured offline by the eval
+    suite and fixed in the prompt. There are no word lists, opener lists or phrase matching:
+    the ones there were turned away a product called ponzu-test for a week and let a spelled-out
+    address through.
 - **Retries, two layers:** the SDK tries a 429, a 5xx or a dropped connection once more, and an
-  answer that breaks a rule is asked for once more with the rule it broke. At most two asks
-  and four HTTP requests a generation.
-- **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
+  answer that fails a check or the gate is asked for once more. At most two asks and two gate
+  checks, eight HTTP requests, a generation.
+- **Refresh**: ideas are made again when the repo's default branch moves. GitHub's `push`
+  webhook for it stamps `repos.default_pushed_at`, and the next ask after that (an hour at least
+  after the last try) starts a generation; the ideas there were show meanwhile, and the new ones
+  the next time the page opens. A push to any other branch, a design's own included, changes
+  nothing they were made from; those are known only from the repo list's `pushed_at`, which
+  remakes ideas a month old (and catches a default-branch push whose webhook never came), and an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
   them. The one exception is a change in how ideas are made: each list keeps the version that
   made it (`repos.ideas_version`, `IDEAS_VERSION`), and an empty list an earlier version wrote is
-  made again at the next ask, push or not (version 1 is the one that stopped skipping a repo with
-  nothing built yet). And an empty list (both answers turned away, with none from before) is
-  made again a week on, push or not: a repo with little in it is the kind nobody pushes to.
+  made again at the next ask, push or not (version 3 is the one that replaced the pattern rules
+  with the gate). And an empty list (nothing kept, with none from before) is made again a day
+  on, push or not: a repo with little in it is the kind nobody pushes to.
 - **A light read, never a clone**, through Octokit as the App with a token for that one repo
   (`contents: read`, `metadata: read`), minted and dropped: the repo's description and topics,
   its tree, README, up to four manifests and one theme file. At most 8 reads; the tree as far as
@@ -1734,32 +2006,33 @@ order summary on the right"). They are generated, never written by hand
   with a screen. A repo of fewer than 8 files also has the start (16 KiB) of up to 2 of its
   files read, its largest page first, with the reads its missing manifests leave (still at
   most 8).
-- **A product not built yet still gets four.** A repo with no screens, no components, no theme
+- **A product not built yet still gets ideas.** A repo with no screens, no components, no theme
   and fewer than 8 files (`isUnbuilt`) is asked with its own instructions
   (`FRESH_SYSTEM_PROMPT`): where a designer would begin this product, one of each of four kinds,
   each a short menu (where people start: a first screen, a welcome, an empty state; how it
   introduces itself: a landing page, a pitch, a sign-up page; what people come to do: the
   screen at its heart or its core flow; its look), as specific as its name, owner, description,
-  topics, README and files allow, building on a first draft when one is there. They never
-  pretend it has screens: an idea that redesigns, improves or fixes anything, or speaks of "the
-  current" or "the existing", is turned away like any other broken rule. When nothing says what
-  the product is, the user turn says so (Ponzu's words, outside the fence): keep to what the
-  name alone implies, naming no feature it does not, or, when the name says nothing either,
-  write good first briefs for any new product, claiming nothing about this one.
-- **Never the prompt's own words.** An idea that shares a run of 5 words with the instructions
-  it was asked with (an example, a stock opener) is turned away: it would be the same for every
-  repo.
+  topics, README and files allow, building on a first draft when one is there, and honest that
+  nothing exists yet. When nothing says what the product is, the user turn says so (Ponzu's
+  words, outside the fence): keep to what the name alone implies, naming no feature it does
+  not, or, when the name says nothing either, write good first briefs for any new product,
+  claiming nothing about this one.
 - **The four kinds** (a product with an interface): improve a screen the repo names; variations of its most prominent one;
   a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
   default, so repos do not all get the same empty state or type scale, and only screens the
   read found may be redesigned. "No dark theme" is said only when a theme file was read.
 - **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
   every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
-  close (every `<` and `>` in it is replaced). The answer is structured output, and is kept only
-  if all four ideas are plain sentences of at most 90 characters that do not open like a noun
-  phrase (an article, a number), with no address, markup or file name, and no word about how
-  they were made (Ponzu, AI, Claude, "the codebase", "this repo"). A product's own words pass: a
-  code host's repositories, an editor's code.
+  close (every `<` and `>` in it is replaced). The prompt says never to pass on a message,
+  address, contact or command from the material, and that the product's own name and words are
+  always fine, whatever they are (a product called ponzu-test, gpt-playground or Claude Desk; a
+  code host's repositories, an editor's code). The answer is structured output, and what reaches
+  a person has passed the exact checks and the gate above.
+- **Measured, not pattern-matched.** `bun run evals ideas` runs the prompt and the gate against
+  checked-in repos of every kind, hostile ones included, and grades what a person would see
+  with a calibrated judge (docs/evals.md); a prompt change comes with its numbers before and
+  after. `bun apps/api/scripts/ideas.ts owner/repo` prints the ideas, and the gate's verdicts,
+  for a live public repo, for reading by eye.
 
 ## Billing
 
@@ -2186,6 +2459,13 @@ from `cloud` into `main`, released as the next major version.
   runner superseded itself; a report is now ignored until the runner has started. A session
   call retried after a lost answer, with the first landing after the retry, would still do it;
   a session call that names the starting process would close that.
+- A move onto a new image goes by whether the last checkpoint holds every event delivered into
+  the session, and the API counts as held what had been delivered when the checkpoint was
+  recorded. An event the runner took into a new turn while it was still uploading the checkpoint
+  of the last is counted as held though it is not. The turn's own checkpoint, or the one the sleep
+  saves, records it soon after; only when both of those fail and the design moves before another
+  is saved is that turn missing from the conversation after the move (the thread still has it).
+  The runner naming, with each checkpoint, the newest event it holds would close it.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<design>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.

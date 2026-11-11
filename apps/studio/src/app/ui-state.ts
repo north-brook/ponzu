@@ -1,8 +1,10 @@
 import { type DesignFilter, NO_FILTER } from "../cloud/filter.ts";
+import { PANES, paneWidth } from "../cloud/window/panes.ts";
 
 /*
  * What the window remembers between launches, for one person on this computer: the workspace
- * they were in, the design open in each, the sidebar and rail, and each workspace's filter.
+ * they were in, the design open in each, the sidebar and rail (open or not, and how wide), and
+ * each workspace's filter.
  * Kept in localStorage, which can be full, cleared or unavailable: then it is simply forgotten,
  * never an error.
  */
@@ -13,6 +15,9 @@ export interface UiState {
   designs: Record<string, string>;
   sidebarOpen: boolean;
   railOpen: boolean;
+  /** Each pane's width as the person last dragged it, which it opens at again (panes.ts). */
+  sidebarWidth: number;
+  railWidth: number;
   filters: Record<string, DesignFilter>;
 }
 
@@ -21,6 +26,8 @@ export const DEFAULT_UI: UiState = {
   designs: {},
   sidebarOpen: true,
   railOpen: true,
+  sidebarWidth: PANES.sidebar.default,
+  railWidth: PANES.rail.default,
   filters: {},
 };
 
@@ -40,6 +47,8 @@ export function loadUi(personId: string, store: Store | null = safeLocalStorage(
     designs: stringRecord(s.designs),
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULT_UI.sidebarOpen,
     railOpen: typeof s.railOpen === "boolean" ? s.railOpen : DEFAULT_UI.railOpen,
+    sidebarWidth: paneWidth("sidebar", s.sidebarWidth),
+    railWidth: paneWidth("rail", s.railWidth),
     filters: filterRecord(s.filters),
   };
 }

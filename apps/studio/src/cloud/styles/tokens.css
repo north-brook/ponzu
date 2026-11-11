@@ -23,8 +23,8 @@
    * much of the material shows through.
    * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
    */
-  --c-chrome: light-dark(#eeede9, #121211);
-  --c-chrome-glass: light-dark(rgba(238, 237, 233, 0.8), rgba(12, 12, 11, 0.8));
+  --c-chrome: light-dark(#f4f3f0, #1a1a19);
+  --c-chrome-glass: light-dark(rgba(246, 245, 242, 0.62), rgba(30, 30, 28, 0.6));
   --c-canvas: light-dark(#ffffff, #000000);
   /* What the shell paints: the solid shell, or nothing where <html> carries the glass (below). */
   --c-shell: var(--c-chrome);
@@ -43,11 +43,12 @@
   --c-ink: light-dark(#111110, #f4f3ef);
   /* The design's #3f3d39 (--n-700) icons: New design, the active page tab. Dark: derived. */
   --c-icon-strong: light-dark(#3f3d39, #d3d0c8);
-  --c-muted: light-dark(#5e5b54, #a9a59b);
+  /* A step past the design's #5e5b54 (--n-600), and dark's a step up, so text holds AA on the glassy shell. */
+  --c-muted: light-dark(#56534d, #b7b3a9);
   /* The design's #807c73 (--n-500) icons: chevrons, the search field. Dark: derived. */
   --c-icon-soft: light-dark(#807c73, #8e8a82);
-  /* Dark: a step up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
-  --c-faint: light-dark(#a9a59b, #6e6b65);
+  /* Dark: steps up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
+  --c-faint: light-dark(#a9a59b, #767369);
   --c-dry: light-dark(#c9c5bc, #5e5b54);
 
   /* Lines and washes. */
@@ -61,7 +62,7 @@
    * Share is open. Light is the canvas (white), so the open row reads as part of the pane beside it.
    * Dark: derived, a step above hover; the black canvas would read as a hole in the shell.
    */
-  --c-selected: light-dark(#ffffff, #282826);
+  --c-selected: light-dark(#ffffff, #30302e);
   /* The ring of the presence "+" (--n-300). Dark: derived. */
   --c-outline: light-dark(#d3d0c8, #3f3d39);
   /* A step of the guided setup not reached yet (--n-300). Dark: derived. */
@@ -194,7 +195,7 @@
   --c-diff-del-bar: light-dark(rgba(180, 69, 58, 0.5), rgba(224, 103, 91, 0.6));
   --c-diff-del-word: light-dark(rgba(180, 69, 58, 0.14), rgba(224, 103, 91, 0.24));
 
-  /* Type. The families the app ships (vite.config.ts links them into every page). */
+  /* Type. The families the app ships (fonts/fonts.css, which cloud.css brings into every page). */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -206,6 +207,8 @@
   --dur-hover: 120ms;
   --dur-pop: 140ms;
   --dur-pane: 220ms;
+  /* How long the pointer rests on a pane's edge before its line shows: sweeping past shows nothing. */
+  --dur-linger: 300ms;
   --beat: 1.2s;
 }
 

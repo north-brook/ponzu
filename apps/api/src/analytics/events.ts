@@ -17,8 +17,11 @@ export type DesignSource = "idea" | "prompt" | "scratch";
 /** How a turn ended. */
 export type TurnOutcome = "completed" | "failed" | "stopped";
 
-/** How a sandbox came up: made new, resumed from a snapshot with nothing in memory, or thawed. */
-export type WakeStart = "new" | "cold" | "warm";
+/**
+ * How a sandbox came up: made new, resumed from a snapshot with nothing in memory, thawed, or
+ * made new from the current image in place of one from an older image (the design moved).
+ */
+export type WakeStart = "new" | "cold" | "warm" | "moved";
 
 /** One model's share of a turn, as the runner reported it. */
 export interface ModelTokens {
@@ -90,7 +93,23 @@ export interface ServerEvents {
     duration_ms: number | null;
     tool_calls: number | null;
     models: string[];
+    /** What the runner said it is (`runner/0.1.0+<image>`), and the image it ran in, if it said. */
+    runner: string | null;
+    image: string | null;
   } & ModelTokens;
+  /**
+   * The API gave up waiting for a turn it was owed (docs/cloud.md, "A turn that never came"): what
+   * was delivered got nothing written after it. `sent_again`: a copy went into the feed.
+   */
+  "turn lapsed": {
+    design_id: string;
+    kinds: string[];
+    sent_again: boolean;
+    agent_state: string;
+    waited_ms: number;
+  };
+  /** A runner said it was working and wrote nothing of the turn for an hour: started again. */
+  "turn stalled": { design_id: string };
   "question asked": { design_id: string; question_id: string; kind: string };
   "question answered": { design_id: string; question_id: string; kind: string };
 
@@ -100,7 +119,23 @@ export interface ServerEvents {
   "pull request closed": { design_id: string; number: number };
 
   // Sandboxes
-  "sandbox woke": { design_id: string; start: WakeStart; duration_ms: number };
+  /** `image`: the sandbox image it runs, null for one made before images were recorded. */
+  "sandbox woke": {
+    design_id: string;
+    start: WakeStart;
+    duration_ms: number;
+    image: string | null;
+  };
+  /**
+   * The design moved onto a new sandbox from the current image, which restored the last
+   * checkpoint. `from_image` is null for a sandbox made before images were recorded.
+   */
+  "sandbox moved": {
+    design_id: string;
+    from_image: string | null;
+    to_image: string;
+    duration_ms: number;
+  };
   /** The sandbox was stopped to save its time. `quiesced`: its runner said it was ready. */
   "sandbox slept": { design_id: string; quiesced: boolean };
   /** The provider lost the sandbox (or its disk), and the next wake starts over. */
@@ -118,10 +153,14 @@ export interface ServerEvents {
     output_tokens: number;
   };
   /**
-   * No ideas were made this time: the workspace asked for too many this hour, the model's
-   * answers broke the rules twice, or GitHub or the model failed.
+   * No ideas were made this time: the workspace asked for too many this hour, nothing in the
+   * model's answers passed the checks and the gate (`rejected`), the gate found an idea asking
+   * the reader for something other than a design (`unsafe`), or GitHub or a model failed.
    */
-  "ideas skipped": { repo_id: string; reason: "rejected" | "rate_limited" | "failed" };
+  "ideas skipped": {
+    repo_id: string;
+    reason: "rejected" | "unsafe" | "rate_limited" | "failed";
+  };
 
   // Files and money
   /** A person's file reached a design (an image they pasted or dropped into the thread). */

@@ -327,13 +327,22 @@ export const events = pgTable(
      * after its answer was lost hands out the same events.
      */
     claimId: text("claim_id"),
+    /** When the runner said the Claude session holds it, by the API's clock. */
     deliveredAt: instant("delivered_at"),
+    /**
+     * When the API stopped waiting for the turn it was owed (docs/cloud.md, "A turn that never
+     * came"): it was delivered and nothing the runner wrote followed, so the thread said so and,
+     * once, the event was put in the feed again as a copy (`payload.retryOf`).
+     */
+    lapsedAt: instant("lapsed_at"),
   },
   (t) => [
     // What a claim reads.
     index("events_design_id_seq_pending_idx")
       .on(t.designId, t.seq)
       .where(sql`${t.deliveredAt} is null`),
+    // What the sweep reads: what was delivered after the runner last wrote.
+    index("events_design_id_delivered_at_idx").on(t.designId, t.deliveredAt),
     // Deleting a design deletes its events, delivered ones included.
     index("events_design_id_idx").on(t.designId),
     check("events_kind_check", oneOf(t.kind, EVENT_KINDS)),
@@ -437,6 +446,22 @@ export const sandboxes = pgTable(
     restarts: integer("restarts").notNull().default(0),
     /** How often its runner found the disk behind the design's last checkpoint (a rollback). */
     rollbacks: integer("rollbacks").notNull().default(0),
+    /**
+     * The image it was created from (`PONZU_SANDBOX_SNAPSHOT` then). Null for one made before
+     * this was recorded. A wake that finds it is not the image set now moves the design onto a
+     * new sandbox from that one (docs/cloud.md, "How images roll out").
+     */
+    image: text("image"),
+    /**
+     * Set while a wake is moving it onto the current image, from when it took a slot: the moves
+     * under way at once are counted from these (`PONZU_SANDBOX_MAX_MOVES`).
+     */
+    movingSince: instant("moving_since"),
+    /**
+     * An image a move onto failed to start, so the design stays on this sandbox, and no move is
+     * tried again, until another image is set.
+     */
+    imageFailed: text("image_failed"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -493,8 +518,20 @@ export const designRunners = pgTable("design_runners", {
    */
   runnerId: text("runner_id").notNull(),
   startedAt: instant("started_at").notNull(),
+  /**
+   * What the runner holding the lease said it is as it took it (`X-Ponzu-Client`: its version,
+   * and the image it runs in, as in `runner/0.1.0+ponzu-runner-2de5aff8d903`). Null for a runner
+   * that did not say, or said only its version: one older than this.
+   */
+  client: text("client"),
   /** When the runner last took the lease or reported its state. */
   heardAt: instant("heard_at").notNull(),
+  /**
+   * When a runner last wrote something of a turn to the thread (the agent's text, a turn's work,
+   * a question, a stop, an error), by the API's clock. An event delivered after it has had no
+   * answer yet: the sweep keeps the sandbox awake for it, and lapses it when none comes.
+   */
+  saidAt: instant("said_at"),
   /** The Claude session the next runner resumes, as an ack or a state report last named it. */
   claudeSessionId: text("claude_session_id"),
   /**
@@ -510,6 +547,12 @@ export const designRunners = pgTable("design_runners", {
   savedWipCommit: text("saved_wip_commit"),
   sessionUploadId: text("session_upload_id"),
   workspaceUploadId: text("workspace_upload_id"),
+  /**
+   * The newest of the design's events that had gone into its session (`events.seq`, delivered)
+   * when the last checkpoint was recorded. An event delivered after it is work the checkpoint may
+   * not hold, so the design is not moved onto a new sandbox until a later checkpoint covers it.
+   */
+  savedThrough: bigint("saved_through", { mode: "number" }),
   /**
    * The sleep the runner last said it was ready for: the `state_at` of the stop it was asked to
    * get ready for. The idle stop waits a little for it to match before it stops the sandbox.

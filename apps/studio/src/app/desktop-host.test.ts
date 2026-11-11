@@ -2,11 +2,13 @@ import { expect, test } from "bun:test";
 import type { SessionState } from "@ponzu/client";
 import { linkSchemeOf, signedInCache } from "./desktop-host.ts";
 
-test("the API links back to Ponzu or Ponzu Dev; Ponzu Local, with no scheme, gets Ponzu's", () => {
+test("the API links back to Ponzu or Ponzu Dev; Ponzu Local, with no scheme, says it takes none", () => {
   expect(linkSchemeOf("ponzu")).toBe("ponzu");
   expect(linkSchemeOf("ponzu-dev")).toBe("ponzu-dev");
+  // Never Ponzu's for a build that isn't Ponzu: that was the setup page opening ponzu:// for a
+  // development build on a Mac.
   for (const scheme of ["", undefined, "ponzu-preview", "javascript"]) {
-    expect(linkSchemeOf(scheme)).toBeUndefined();
+    expect(linkSchemeOf(scheme)).toBe("none");
   }
 });
 

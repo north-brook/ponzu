@@ -42,6 +42,11 @@ const schema = z.object({
   /** How many sandboxes may be waking or awake at once in one workspace, and for one owner. */
   PONZU_SANDBOX_MAX_PER_WORKSPACE: z.coerce.number().int().min(1).default(5),
   PONZU_SANDBOX_MAX_PER_OWNER: z.coerce.number().int().min(1).default(3),
+  /**
+   * How many designs may be moving onto a new image at once, across the deployment: each move
+   * is a create, a start the provider rations. A wake past it wakes the old sandbox instead.
+   */
+  PONZU_SANDBOX_MAX_MOVES: z.coerce.number().int().min(0).default(3),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
   /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
@@ -91,6 +96,11 @@ export interface SandboxConfig {
   idleSeconds: number;
   /** How many may be up at once. Until billing exists, this is what bounds the provider's bill. */
   limits: SandboxLimits;
+  /**
+   * How many designs may be moving onto a new image at once (docs/cloud.md, "How images roll
+   * out"). 0 turns moving off: every design stays on the image its sandbox was made from.
+   */
+  maxMoves: number;
   /**
    * The label value that marks this database's sandboxes at the provider (`scope`). Every
    * deployment shares the provider account, and a sweep destroys only what its own database
@@ -187,6 +197,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
         perWorkspace: env.PONZU_SANDBOX_MAX_PER_WORKSPACE,
         perOwner: env.PONZU_SANDBOX_MAX_PER_OWNER,
       },
+      maxMoves: env.PONZU_SANDBOX_MAX_MOVES,
       scope: sandboxScope(env.DATABASE_URL),
     },
     vault: {

@@ -15,16 +15,16 @@ gate.ts           what keeps someone from steering a design (read access, the ow
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
-                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton, trace
-                  and collapsible, from its AI Elements…), the
+                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
                   product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
                   marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
 create/           the create page: composer, model picker, repo picker, ideas
-thread/           the thread rail: its lines, the working line, finished turns folded (thread.ts
-                  has the rules, fold.tsx the line), following the foot, the composer, drafts
+thread/           the thread rail: its lines, a running turn's asides and the working line, and
+                  what leaves when it ends (thread.ts has the rules, thread-view.tsx the motion),
+                  following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
 setup/            guided first run: the gates (setup.ts), sign in, where you design, Connect
@@ -39,8 +39,37 @@ gallery/          dev-only: every board composed from fixtures, every component'
 `AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
 create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
 is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
-request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
-the same way.
+request tab is open. Settings plugs in the same way.
+
+### Three zones
+
+The window is three zones, and the chrome's two dividers mark them: the sidebar is navigation,
+the thread rail is the conversation with the agent, and everything between the dividers belongs
+to the middle (the page tabs and the pull request tab on its left, presence, Share, the pull
+request mark and the next action on its right, and below them what the chosen tab shows).
+Choosing the pull request tab swaps what the middle shows and nothing else: the rail stays as it
+was (open at its width or closed, its scroll, its draft, its working state), so does the
+sidebar, both toggles and ⌘B, ⌘J keep working, the chrome reads as on any page, and no pane
+moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
+`inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
+`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
+page, position, zoom and selection. The tab fits whatever width the middle has: details over
+files in one column at a reading measure below 1080, the board's two columns from there
+(`Columns` in `pr-tab/pull-request-view.tsx`).
+
+The sidebar and the rail resize by dragging their edge with the canvas. The panes are shadcn's
+Resizable (`ui/resizable.tsx`, react-resizable-panels) in pixels, with their limits in
+`window/panes.ts`; `AppWindow` takes the widths to open them at and hands back a new one (the
+window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and canvas, so it never
+covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
+on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
+reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
+move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
+`pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
+Dragging one edge holds the other pane still (its panel disabled) and stops where the canvas
+reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
+each open pane takes its remembered width, or in a window too small for both a share of the
+shortfall (`fitPanes`); what's remembered changes only when the person moves an edge.
 
 ### The window chrome
 
@@ -54,8 +83,9 @@ action) sits just before the thread toggle, so it holds one place too, and the d
 before the cluster in every state: it separates the page tabs from the cluster rather than marking
 the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
 it off its partner.
-`visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
-against the boards.
+The chrome is 38px tall where the boards draw 44 (the founder's direction: more compact, its
+28px controls and the traffic lights centred on it), so everything under it sits 6px higher than
+on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons.
 
 The chrome reads, left to right (the founder's order):
 
@@ -108,7 +138,9 @@ Blocks are memoised in runs of 16, so a reply streaming in parses only its last 
 | --- | --- | --- |
 | ⌘N | New design (the create page) | sidebar, File menu |
 | ⌘K | Search (expands a collapsed sidebar first) | sidebar |
-| ⌘J | Show or hide the thread | thread toggle |
+| ⌘J | Show or hide the thread; opened, the caret is in its composer | thread toggle |
+| ⌘P | Show or hide the pull request | pull request mark |
+| ⌘⇧↵ | Press the action button (Create PR, Ready, Merge…) | action button |
 | ⌘, | Settings | sidebar, app menu |
 | ⌘1–⌘8, ⌘9 | Open the sidebar's first eight designs, and ⌘9 its last | sidebar |
 | ⌘0 | The create page | sidebar |
@@ -132,6 +164,22 @@ moved from ⌥ to ⌃, which types nothing (`ui/shortcut.ts`):
   (the composer, search, a rename) ⌘ and ⌃ numbers still jump, since they type nothing, but show
   no hints; off the Mac, Alt numbers neither jump nor show there.
 - **⌘0.** The desktop's View menu has no zoom roles, so ⌘0 is never Actual Size (`menu.ts`).
+
+The thread and the pull request's keys:
+
+- **Opening the thread** (its toggle, ⌘J, View › Toggle Thread, from the canvas or the pull
+  request tab) puts the caret in its composer once the pane has opened (it is `inert` until
+  then), without scrolling the thread or showing a ring; with a question in the
+  composer's place, on its first option. Not under a menu, popover or dialog, not from a field
+  elsewhere that has the caret (search, a rename), and not when the pane comes with a design
+  being opened. Closing it with the keyboard inside gives the keyboard back to where it was.
+  So a canvas key (C for a comment) right after opening the thread types in the composer.
+- **⌘P and ⌘⇧↵** do what a click on the pull request mark and the action button does, from
+  anywhere, the composer included (⌘↵ there is still Send, ⇧↵ a new line). Neither takes the key
+  under a menu, popover or dialog, nor is counted there; ⌘⇧↵ never while the button is faded
+  (blocked, Auto-merge on) or busy, and once a press however long the keys are held. Merging
+  past the repo's rules still asks first. The desktop's menu has neither accelerator, and no
+  Print.
 
 ## Tokens
 
@@ -231,27 +279,29 @@ repaint something or say what isn't so. The usual swaps:
   questionnaire and message-scroller parts are the path once they settle; they are too young to
   build on now.
 - `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
-- AI Elements (now shadcn/ui's own patterns, built on its Trace): a finished turn's fold is its
-  Chain of Thought pattern, on `ui/trace.tsx` (added from the registry's `radix-nova` style,
-  which is the one that carries it: `bun run shadcn add
-  https://ui.shadcn.com/r/styles/radix-nova/trace.json`). The rest stay ours: Chat and Message
-  Scroller (the follow-the-foot logic above; ours also windows a thousand lines and anchors by
-  hand), Message and its Bubble (the design's bubble, avatars and comment frames), the streaming
-  response (`Prose`, with its rules for untrusted Markdown), Tool and Reasoning (the thread never
-  shows a tool's input or output, and Claude Code's thinking isn't streamed to it), the shimmer
-  utility for the working line (the design draws the turning slice, not a sweep of light), and
-  Prompt Input (the composer, the product's own).
+- AI Elements (now shadcn/ui's own patterns): none are used. The thread has no fold since the
+  founder asked for a plain one, so Chain of Thought (and the Trace and Collapsible it was built
+  on) went with it. The rest stay ours: Chat and Message Scroller (the follow-the-foot logic
+  above; ours also windows a thousand lines and anchors by hand), Message and its Bubble (the
+  design's bubble, avatars and comment frames), the streaming response (`Prose`, with its rules
+  for untrusted Markdown), Tool and Reasoning (the thread never shows a tool's input or output,
+  and Claude Code's thinking isn't streamed to it), the shimmer utility for the working line (the
+  design draws the turning slice, not a sweep of light), and Prompt Input (the composer, the
+  product's own).
+- A finished turn's asides and the working line leaving: a CSS keyframe on the pane's clock
+  (`leave` in cloud.css), each line kept for its last frame at exactly the room it held, while
+  the rail's own scroll anchoring keeps the reader's place. Not a library's exit animation:
+  only the rail knows where a line sat and what the reader is anchored on.
 - The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
   first visit the column sits at the top from its first frame, where the ideas will go, and they
   rise into that room when they come; if none do, nothing moves.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
-  no line under Scratch), a search only from seven repos (`SEARCH_FROM`), and Scratch's
-  temporary-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
-  Its composition masks the picker and says so in `compare`. In a 900pt window a picker without
-  search (Scratch and up to six repos) fits under the centred composer and never moves it; one
-  with search lifts the composer to the top while it is open, by design: its ten-row list needs
-  the room, and a shorter list would scroll sooner for everyone with many repos.
+  no line under Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's
+  dashed-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
+  Its composition masks the picker and says so in `compare`. The picker never moves the page:
+  its list shows five and a half rows and scrolls (a list that long has its search), and in a
+  window too short even for that the list gives up height and the picker stays under its chip.
 
 ### When you need
 

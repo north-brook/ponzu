@@ -395,10 +395,8 @@ function WorkspaceWindow({
   );
 
   const addWorkspace = useCallback(() => {
-    host.api.github.installLink({ client: "mac" }).then(
-      ({ url }) => host.openExternal(url),
-      () => say("GitHub's install page couldn't be opened. Try again."),
-    );
+    // Once GitHub is done, Ponzu comes forward and its link listener above moves on to it.
+    host.installGithub({}).catch(() => say("GitHub's install page couldn't be opened. Try again."));
   }, [host, say]);
 
   const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
@@ -562,7 +560,18 @@ function WorkspaceWindow({
                   onOpen={onOpen}
                   onAction={onAction}
                   onRename={onRename}
-                  onNewDesign={() => openDesign(null)}
+                  onNewDesign={() => {
+                    openDesign(null);
+                    // New design, by its button or ⌘N, is to start typing one: the caret goes
+                    // to the create page's composer, whether the page was already showing or not.
+                    requestAnimationFrame(() =>
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
+                          ?.focus({ preventScroll: true }),
+                      ),
+                    );
+                  }}
                   onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
@@ -574,6 +583,12 @@ function WorkspaceWindow({
       }
       chrome={panes?.chrome}
       rail={panes?.rail ?? null}
+      panes={{
+        sidebar: ui.sidebarWidth,
+        rail: ui.railWidth,
+        onResize: (pane, width) =>
+          update((now) => ({ ...now, [pane === "sidebar" ? "sidebarWidth" : "railWidth"]: width })),
+      }}
     >
       {lost ? (
         <PaneMessage

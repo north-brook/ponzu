@@ -199,6 +199,11 @@ jobs:
           chrome=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
           [ -n "$chrome" ] || { echo "::error::No Chrome or Chromium on this runner; the render tests would skip."; exit 1; }
           echo "PONZU_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: The studio the Chromium tests serve, built once
+        # Not once in each test file; a stale or missing build fails them (apps/studio/scripts/prebuilt.ts).
+        run: |
+          bun apps/studio/scripts/prebuild-tests.ts "$RUNNER_TEMP/studio-tests"
+          echo "PONZU_PREBUILT_STUDIO=$RUNNER_TEMP/studio-tests" >> "$GITHUB_ENV"
       - name: Tests
         # Test files run in their own workers; the Chromium ones take most of the time. Every
         # worker that makes a test database migrates its first one (half a second alone), and

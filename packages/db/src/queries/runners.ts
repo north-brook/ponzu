@@ -91,19 +91,29 @@ export async function getRunnerContext(db: Db, designId: string): Promise<Runner
  */
 export async function takeRunnerLease(
   db: Db,
-  { designId, now }: { designId: string; now: Date },
+  {
+    designId,
+    now,
+    client = null,
+  }: {
+    designId: string;
+    now: Date;
+    /** What the runner said it is (`design_runners.client`). */
+    client?: string | null;
+  },
 ): Promise<{ runnerId: string; claudeSessionId: string | null; saved: SavedPoint | null }> {
   const at = sql`${timeParam(now)}::timestamptz`;
   const [lease] = await run(
     db
       .insert(designRunners)
-      .values({ designId, runnerId: newId("rnr"), startedAt: at, heardAt: at })
+      .values({ designId, runnerId: newId("rnr"), startedAt: at, heardAt: at, client })
       .onConflictDoUpdate({
         target: designRunners.designId,
         set: {
           runnerId: sql`excluded.runner_id`,
           startedAt: sql`excluded.started_at`,
           heardAt: sql`excluded.heard_at`,
+          client: sql`excluded.client`,
         },
       })
       .returning({
@@ -218,7 +228,12 @@ export async function recordCheckpoint(
                session_upload_id = case when ${keepSession}::boolean
                  then before.session_upload_id else ${point.sessionUploadId}::text end,
                workspace_upload_id = case when ${keepWorkspace}::boolean
-                 then before.workspace_upload_id else ${point.workspaceUploadId}::text end
+                 then before.workspace_upload_id else ${point.workspaceUploadId}::text end,
+               -- What it holds: the runner saves once a turn has settled, so every event that
+               -- had gone into the session by now.
+               saved_through = (select max(e.seq) from events e
+                                 where e.design_id = before.design_id
+                                   and e.delivered_at is not null)
           from before
          where design_runners.design_id = before.design_id
            and (before.turn is null or before.turn < ${point.turn})
@@ -299,6 +314,49 @@ export async function askRunnerToPush(
   await run(
     db.update(designRunners).set({ pushError: null }).where(eq(designRunners.designId, designId)),
   );
+}
+
+/**
+ * The design's runner wrote something of a turn to the thread as of `now`: everything delivered
+ * before it has had its answer begun (docs/cloud.md, "A turn that never came").
+ */
+export async function noteRunnerSaid(
+  db: Db,
+  { designId, now }: { designId: string; now: Date },
+): Promise<void> {
+  await run(
+    db
+      .update(designRunners)
+      .set({
+        saidAt: sql`greatest(${designRunners.saidAt}, ${timeParam(now)}::timestamptz)`,
+      })
+      .where(eq(designRunners.designId, designId)),
+  );
+}
+
+/**
+ * Whether the design's runner has shown it is alive since `since`: it reported its state or took
+ * the lease, or claimed or acknowledged an event, by the API's clock. What a wake asks when the
+ * runner's `/health` does not answer through its address: a runner that is calling the API is
+ * up, whatever its address does.
+ */
+export async function runnerHeardSince(
+  db: Db,
+  { designId, since }: { designId: string; since: Date },
+): Promise<boolean> {
+  const after = sql`${timeParam(since)}::timestamptz`;
+  const result = await queryJson<{ heard: boolean }>(
+    db,
+    sql`
+      select json_build_object('heard',
+        exists (select 1 from design_runners r where r.design_id = ${designId} and r.heard_at >= ${after})
+        or exists (select 1 from events e join design_runners r on r.design_id = e.design_id
+                    where e.design_id = ${designId} and e.claimed_by = r.runner_id
+                      and (e.claimed_at >= ${after} or e.delivered_at >= ${after}))
+      ) as result
+    `,
+  );
+  return result?.heard ?? false;
 }
 
 /** The sleep the design's runner last said it was ready for, or null. */

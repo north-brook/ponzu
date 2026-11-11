@@ -18,8 +18,9 @@ A development build is an app of its own, `Ponzu Local`: its own data folder
 (`~/Library/Application Support/Ponzu Local`), keychain item ("Ponzu Local Safe Storage") and
 single-instance lock, so it runs beside an installed Ponzu or Ponzu Dev and never touches their
 sessions. It takes no links (on a Mac it runs inside node_modules' generic Electron.app, which
-can't claim a scheme): use Ponzu Dev for those. GitHub's setup page then offers Ponzu's link
-back; come back to the window instead.
+can't claim a scheme): use Ponzu Dev for those. It says so when it asks for GitHub's install
+link (`scheme: "none"`), so the setup page opens nothing and says Ponzu has it; the studio asks
+the API how the install went and comes forward by itself once it has.
 
 ## Ponzu Dev
 
@@ -102,7 +103,8 @@ standard, secure scheme of our own, so its origin never changes (its storage sta
 API's CORS allows exactly it) and the app and its UI always match. Every file goes out with the
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
-hosts, in `config.ts`; a development build allows any of each), and Google Fonts. Images load
+hosts, in `config.ts`; a development build allows any of each), and Google Fonts, for the
+fonts a design names (the studio's own fonts ship inside it). Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
 A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a
@@ -153,8 +155,11 @@ running (`second-instance`), and wait until the studio listens, which it does wh
 is signed in. Any web page can open one, so a
 link only ever asks to show something: one that doesn't parse is dropped without a word. Ponzu
 Dev takes `ponzu-dev://` instead, and leaves an installed Ponzu's links alone; a development
-build takes none. The studio tells the API its scheme when it
-asks for GitHub's install link, so the setup page links back to the app that asked.
+build takes none. The studio tells the API its scheme (or `none`) when it asks for GitHub's
+install link, so the setup page links back to the app that asked, and it also asks the API how
+the install went, so it never needs the link: once GitHub is done, Ponzu comes forward
+(`comeForward` on the bridge) and moves on, as it does when a sign-in's tab finishes
+(docs/cloud.md, "Installing").
 
 ## Updates
 

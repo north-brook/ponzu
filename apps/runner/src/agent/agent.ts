@@ -99,7 +99,12 @@ export type AgentEvent =
       turn?: TurnSummary | null;
     }
   /** The session ended, on its own or by `close`. */
-  | { type: "exit"; error: string | null };
+  | { type: "exit"; error: string | null }
+  /**
+   * Claude Code said something, whatever it was (a subagent's step, a stream's delta): it is not
+   * stuck. At most about once a second.
+   */
+  | { type: "alive" };
 
 export interface TurnError {
   /** `interrupted` when someone stopped it. */

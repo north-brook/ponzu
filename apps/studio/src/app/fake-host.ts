@@ -3,6 +3,7 @@ import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/cli
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
 import type { DeepLink, MenuCommand } from "@ponzu/desktop/bridge";
 import type { Host } from "./host.ts";
+import { linksWithInstalls } from "./installs.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
@@ -52,6 +53,8 @@ export interface FakeWorld {
   signInsStarted: number;
   /** How many of them have ended, signed in or not: only the "browser" ends one. */
   signInsEnded: number;
+  /** The app's asks of the API: how many it has made, and how many it is still waiting on. */
+  answers: { asked: number; waiting: number };
 }
 
 declare global {
@@ -111,9 +114,25 @@ export function fakeHost(): Host {
       return askMe();
     };
   }
+  const answers = { asked: 0, waiting: 0 };
+  countAnswers(client.api, answers);
   const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
+  // Nothing it opens is a real page: GitHub's and claude.ai's are played by the backend.
+  const openExternal = (url: string) => {
+    opened.push(url);
+  };
+  // The fake's GitHub never comes back by itself: a test says how an install went with a link.
+  const shellLinks = linksWithInstalls({
+    api: client.api,
+    shellLinks: (listener) => {
+      links.add(listener);
+      return () => links.delete(listener);
+    },
+    openExternal,
+    comeForward: () => {},
+  });
 
   const drawBoard = (designId: string, name: string, color = "#ffc81e") => {
     const doc = backend.design(designId).sequencer.doc;
@@ -193,6 +212,7 @@ export function fakeHost(): Host {
     },
     signInsStarted: 0,
     signInsEnded: 0,
+    answers,
   };
   const world = window.ponzuFake;
 
@@ -215,21 +235,42 @@ export function fakeHost(): Host {
       }
     },
     persistence: async () => "keychain",
-    onLink(listener) {
-      links.add(listener);
-      return () => links.delete(listener);
-    },
+    onLink: shellLinks.onLink,
+    installGithub: shellLinks.installGithub,
     onCommand(listener) {
       commands.add(listener);
       return () => commands.delete(listener);
     },
     update: null,
-    // Nothing it opens is a real page: GitHub's and claude.ai's are played by the backend.
-    openExternal: (url) => {
-      opened.push(url);
-    },
+    openExternal,
     docStorage: null,
   };
+}
+
+/**
+ * Counts, in place, every ask of `api` (each method of it and of the groups in it): Realtime's
+ * reads too, which go through the same object. A test waits on `waiting` reaching none rather
+ * than for a guess at how long the slowest answer takes.
+ */
+function countAnswers(api: object, answers: FakeWorld["answers"]) {
+  const methods = api as Record<string, unknown>;
+  for (const [key, value] of Object.entries(methods)) {
+    if (typeof value === "function") {
+      methods[key] = (...args: unknown[]) => {
+        const result: unknown = value.apply(api, args);
+        if (!(result instanceof Promise)) return result;
+        answers.asked++;
+        answers.waiting++;
+        const done = () => {
+          answers.waiting--;
+        };
+        result.then(done, done);
+        return result;
+      };
+    } else if (value && typeof value === "object") {
+      countAnswers(value, answers);
+    }
+  }
 }
 
 /** One design the agent has worked on, so the sidebar and a canvas have something in them. */

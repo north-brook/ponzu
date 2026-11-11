@@ -13,6 +13,7 @@
       "!.context",
       "!apps/studio/src/cloud/gallery/assets",
       "!packages/db/migrations",
+      "!apps/*/evals/*/results",
       "!**/.next",
       "!**/next-env.d.ts",
       "!.release-please-manifest.json",

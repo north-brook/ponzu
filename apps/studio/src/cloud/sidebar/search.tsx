@@ -1,4 +1,4 @@
-import { DashboardSquare01Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, DashboardSquare01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useState } from "react";
 import {
   type BoardHit,
@@ -13,7 +13,6 @@ import { ago, useNow } from "../time.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { Kbd } from "../ui/kbd.tsx";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
 const LIST_ID = "search-results";
@@ -68,7 +67,8 @@ export function SearchField({
   };
 
   return (
-    <div className="flex h-[34px] shrink-0 items-center gap-2 rounded-9 bg-surface pr-2 pl-2.5 shadow-[0_0_0_1px_var(--c-rule)]">
+    // It opens out of the search button's place in the header row it replaces (search-open).
+    <div className="search-open flex h-[34px] shrink-0 items-center gap-2 rounded-9 bg-surface pr-1 pl-2.5 shadow-[0_0_0_1px_var(--c-rule)]">
       <Icon icon={Search01Icon} size={15} stroke={1.8} className="text-icon-soft" />
       <input
         type="search"
@@ -89,7 +89,18 @@ export function SearchField({
         }}
         className="min-w-0 flex-1 appearance-none bg-transparent text-13 text-ink outline-none [caret-color:var(--c-yuzu)] placeholder:text-faint [&::-webkit-search-cancel-button]:hidden"
       />
-      <Kbd>esc</Kbd>
+      {/* Closes it, as Escape does. Not a Tab stop: Escape is the keyboard's way out, and the
+          field keeps the keys. The press is taken before the field's blur can close it first. */}
+      <button
+        type="button"
+        aria-label="Close search"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onClose}
+        className="grid size-6 shrink-0 cursor-default place-items-center rounded-6 text-icon-soft outline-none transition-colors duration-(--dur-hover) hover:bg-hover hover:text-ink active:bg-press"
+      >
+        <Icon icon={Cancel01Icon} size={13} stroke={2} />
+      </button>
     </div>
   );
 }
