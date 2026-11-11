@@ -11,7 +11,13 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { type Browser, chromiumPath, launch, type Page } from "../../scripts/visual-lib.ts";
+import {
+  type Browser,
+  chromiumPath,
+  launch,
+  type Page,
+  sampleToggle,
+} from "../../scripts/visual-lib.ts";
 import { nameFor } from "./create.tsx";
 import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
 
@@ -333,6 +339,37 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
   });
 
+  test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
+    await page.mouse.move(700, 500);
+    for (const pane of ["sidebar", "thread", "thread", "sidebar"]) {
+      const frames = await sampleToggle(page, `button[aria-controls="${pane}"]`);
+      const edge = pane === "sidebar" ? "left" : "right";
+      const moving = frames.filter((f) => f[edge] !== frames[0]![edge]);
+      // It eased, rather than jumped…
+      expect(moving.length).toBeGreaterThan(5);
+      // …and the board stayed where it was on screen throughout: no swim, no refit.
+      for (const f of frames) {
+        expect(Math.abs(f.boardX - frames[0]!.boardX)).toBeLessThanOrEqual(1);
+        expect(f.boardY).toBe(frames[0]!.boardY);
+      }
+    }
+    if (!SHOTS) return;
+    // A frame sequence of each, slowed down to be seen.
+    mkdirSync(SHOTS, { recursive: true });
+    await page.evaluate(() => document.documentElement.style.setProperty("--dur-pane", "1600ms"));
+    for (const pane of ["sidebar", "sidebar", "thread", "thread"]) {
+      const was = await page.getAttribute(`button[aria-controls="${pane}"]`, "aria-expanded");
+      await page.click(`button[aria-controls="${pane}"]`);
+      await page.mouse.move(700, 500);
+      for (let i = 0; i < 6; i++) {
+        const name = `motion-${pane}-${was === "true" ? "closing" : "opening"}-${i}.png`;
+        await page.screenshot({ path: join(SHOTS, name) });
+        await page.waitForTimeout(280);
+      }
+    }
+    await page.evaluate(() => document.documentElement.style.removeProperty("--dur-pane"));
+  });
+
   test("a comment left on the canvas reaches the design, and a teammate's reply comes back", async () => {
     await page.keyboard.press("c");
     // Into the board, below its title.
@@ -456,7 +493,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The pull request tab takes the canvas's pane, with the file's diff on demand.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: NAME }).waitFor();
-    expect(await page.locator("#thread").count()).toBe(0);
+    // The rail folds away: out of reach at once, and empty once it has closed.
+    expect(await page.locator("#thread").getAttribute("inert")).not.toBeNull();
+    await page.locator("#thread:empty").waitFor({ state: "attached" });
     // Its one file starts open.
     const card = page.getByRole("button", { name: /src\/pricing\.tsx/ });
     expect(await card.getAttribute("aria-expanded")).toBe("true");

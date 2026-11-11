@@ -10,6 +10,7 @@ import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
+import { ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
@@ -307,11 +308,19 @@ function WorkspaceWindow({
     setPage(link?.page ?? null);
   }, [openId, link]);
 
+  // The panes' toggles, for the menu's commands: the latest, without listening again each render.
+  const toggles = useRef<{ sidebar: (() => void) | null; rail: (() => void) | null }>({
+    sidebar: null,
+    rail: null,
+  });
   useEffect(
     () =>
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
         if (command === "settings") openSettings();
+        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again.
+        if (command === "toggle-sidebar" && !ranJustNow("b")) toggles.current.sidebar?.();
+        if (command === "toggle-thread" && !ranJustNow("j")) toggles.current.rail?.();
       }),
     [host, openDesign, openSettings],
   );
@@ -399,6 +408,12 @@ function WorkspaceWindow({
     },
   });
 
+  const toggleSidebar = () => update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen }));
+  toggles.current = {
+    sidebar: firstDesign ? null : toggleSidebar,
+    rail: panes?.toggleRail ?? null,
+  };
+
   return (
     <AppWindow
       lights={host.lights}
@@ -408,7 +423,7 @@ function WorkspaceWindow({
           ? null
           : {
               open: sidebarOpen,
-              onToggle: () => update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen })),
+              onToggle: toggleSidebar,
               content: (
                 <Sidebar
                   me={me}

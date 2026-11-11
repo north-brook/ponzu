@@ -16,6 +16,8 @@ export interface DesignPanes {
   chrome: ReactNode;
   rail: ReactNode | null;
   pane: ReactNode;
+  /** What the rail toggle does (⌘J, View › Toggle Thread): from the pull request tab too. */
+  toggleRail: () => void;
 }
 
 export function useDesignPanes({
@@ -92,6 +94,7 @@ export function useDesignPanes({
   };
 
   return {
+    toggleRail,
     chrome: (
       <DesignChromeSlot
         open={open}

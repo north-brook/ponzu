@@ -53,6 +53,35 @@ edge stays there while the rail is open and comes in to just before the cluster 
 `visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
 against the boards.
 
+The chrome reads, left to right (the founder's order):
+
+- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`
+  … `| [presence] [PR mark] [action] [thread toggle]`. The name is the row's type (13, medium),
+  cut with an ellipsis at 240, and not a control: a double-click there zooms the window, as on
+  any Mac title bar, so renaming stays on the row.
+- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +` …, the divider on the
+  sidebar's edge at x 300, where the canvas pane starts. The name's room closes to nothing.
+- the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
+  name, no divider.
+
+⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
+composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
+toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
+reach the studio as commands.
+
+Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
+everything that moves with them: the pane's width, the canvas pane's margin, the left block's
+width, the name's room, the right block's width (eased with `calc-size`, so the rail's divider
+tracks the rail's edge all the way). The rail, like the sidebar, keeps its content still at the
+window's edge while its room opens or closes, and holds it until it has closed. The canvas
+keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
+moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
+the app's end-to-end test that the boards don't move.
+
+A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
+marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
+the ring comes back from the next key that works focus (not a modifier or a ⌘ shortcut).
+
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose

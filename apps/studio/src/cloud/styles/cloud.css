@@ -176,12 +176,22 @@
 }
 
 /* Keyboard focus, the same on every control. */
-/* `data-quiet-focus`: focus handed over without the person moving it (a question taking the
-   composer's place), which shows once they press a key. */
+/* `data-quiet-focus` (ui/quiet-focus.ts): focus a click gave, or handed over without the person
+   moving it (a question taking the composer's place), which shows once they press a key. */
 @utility focus-ring {
   &:focus-visible:not([data-quiet-focus]) {
     box-shadow: var(--c-focus);
   }
+}
+
+/* The panes' one clock: the sidebar and the rail opening and closing, and everything that moves
+   with them (the canvas pane's edges, the chrome's divider, name and right block). Name what
+   moves with a `transition-*` utility beside it. Reduced motion stills it like any other. */
+@utility pane-motion {
+  --tw-duration: var(--dur-pane);
+  --tw-ease: var(--ease-out);
+  transition-duration: var(--dur-pane);
+  transition-timing-function: var(--ease-out);
 }
 
 /* The slice turning a sixth per beat: the agent is working. */

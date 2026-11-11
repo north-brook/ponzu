@@ -1,5 +1,5 @@
 /* What each composition in compositions.ts draws. */
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { repoKey } from "../filter.ts";
 import type { Contributor, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
@@ -10,6 +10,8 @@ import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
 
 const ONBOARDING_PROMPT = "I'd like to iterate on the onboarding flow";
+/** A name past the chrome's 240: cut with an ellipsis there. */
+const LONG_NAME = "Quieter hero with the pricing table, the testimonials and a calmer footer";
 
 function quieter(designs: DesignSummary[]): DesignSummary {
   return designs.find((d) => d.id === "dsn_quieter")!;
@@ -21,7 +23,7 @@ function DesignWindow({
   contributors = f.contributors,
   query = null,
   sidebar = "open",
-  rail = true,
+  rail: initialRail = true,
 }: {
   designs?: DesignSummary[];
   contributors?: Contributor[];
@@ -29,6 +31,7 @@ function DesignWindow({
   sidebar?: "open" | "closed";
   rail?: boolean;
 }) {
+  const [rail, setRail] = useState(initialRail);
   return (
     <Harness
       designs={designs}
@@ -42,6 +45,7 @@ function DesignWindow({
           sidebarOpen={sidebarOpen}
           contributors={contributors}
           railOpen={rail}
+          onToggleRail={() => setRail((o) => !o)}
         />
       )}
     >
@@ -110,6 +114,14 @@ export const BOARDS: Record<string, () => ReactNode> = {
     </Harness>
   ),
   "sidebar-collapsed": () => <DesignWindow sidebar="closed" rail={false} />,
+  "sidebar-collapsed-long-name": () => (
+    <DesignWindow
+      designs={f.teamDesigns.map((d) => (d.id === "dsn_quieter" ? { ...d, name: LONG_NAME } : d))}
+      sidebar="closed"
+    />
+  ),
+  "min-window": () => <DesignWindow />,
+  "min-window-collapsed": () => <DesignWindow sidebar="closed" />,
   "settled-open": () => (
     <Harness designs={f.teamDesigns} openId="dsn_quieter" initialSettledOpen>
       {null}

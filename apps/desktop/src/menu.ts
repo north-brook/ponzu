@@ -71,6 +71,20 @@ export function buildMenu(actions: MenuActions): void {
     {
       label: "View",
       submenu: [
+        // The studio takes these keys itself, from anywhere in the window (text fields too), and
+        // the page has a key before the menu does; a click here reaches it as a command. It
+        // drops a command its own shortcut has just run, so one press never toggles twice.
+        {
+          label: "Toggle Sidebar",
+          accelerator: "CmdOrCtrl+B",
+          click: () => actions.command("toggle-sidebar"),
+        },
+        {
+          label: "Toggle Thread",
+          accelerator: "CmdOrCtrl+J",
+          click: () => actions.command("toggle-thread"),
+        },
+        { type: "separator" },
         { role: "reload" },
         ...(actions.devTools ? [{ role: "toggleDevTools" as const }] : []),
         { type: "separator" },

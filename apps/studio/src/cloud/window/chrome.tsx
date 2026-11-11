@@ -1,6 +1,7 @@
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons";
 import { IconButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { useShortcut } from "../ui/shortcut.ts";
 
 /**
  * What sits at the chrome's left before the sidebar toggle. `native`: the Mac's own traffic
@@ -28,15 +29,21 @@ export function TrafficLights({ drawn }: { drawn: boolean }) {
   );
 }
 
-/** The chrome's hairline: one at the sidebar's edge, one at the rail's. */
+/**
+ * The chrome's hairline: one before the page tabs (at the sidebar's edge while it is open, just
+ * past the design's name while it is closed), one at the rail's edge.
+ */
 export function ChromeDivider() {
-  return <span aria-hidden className="h-4 w-px shrink-0 bg-sep" />;
+  return <span aria-hidden data-chrome-divider className="h-4 w-px shrink-0 bg-sep" />;
 }
 
+/** Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌘J does the rail. */
 export function SidebarToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  useShortcut("b", onToggle);
   return (
     <IconButton
       label="Toggle sidebar"
+      keys={["⌘", "B"]}
       aria-expanded={open}
       aria-controls="sidebar"
       onClick={onToggle}

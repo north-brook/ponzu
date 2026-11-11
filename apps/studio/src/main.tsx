@@ -5,6 +5,7 @@ import { App } from "./app/app.tsx";
 import { CantStart } from "./app/cant-start.tsx";
 import { desktopHost } from "./app/desktop-host.ts";
 import type { Host } from "./app/host.ts";
+import { quietPointerFocus } from "./cloud/ui/quiet-focus.ts";
 
 /*
  * The studio's entry. Inside the Mac app the shell's bridge is there and the app runs on it. In
@@ -21,6 +22,9 @@ async function host(): Promise<Host | null> {
   }
   return null;
 }
+
+// A ring shows for the keyboard only, never after a click (ui/quiet-focus.ts).
+quietPointerFocus();
 
 void host().then((host) =>
   createRoot(document.getElementById("root")!).render(host ? <App host={host} /> : <CantStart />),

@@ -42,7 +42,8 @@ export interface DesignChromeProps {
 }
 
 /**
- * The chrome past the left block while a design is open: its pages, then at the window's right
+ * The chrome past the left block while a design is open: its name while the sidebar is
+ * collapsed, the divider, its pages, then at the window's right
  * edge who is in it, its pull request and next action, and the thread toggle last. The spacing
  * between the right-hand pieces is the design's, whichever of them a design has.
  */
@@ -108,25 +109,50 @@ export function DesignChrome({
   );
   return (
     <>
-      <ChromeDivider />
+      {/*
+       * The design's name, then the divider. Collapsed, the name sits just past the sidebar
+       * toggle (set as the row sets it, cut at 240) and the divider just past it; open, the row
+       * says the name, so its room closes to nothing and the divider lands on the sidebar's edge.
+       * The room opens and closes on the panes' clock, with the left block before it. A part of
+       * the title bar, not a control: a double-click zooms the window there, as on any Mac
+       * window, so renaming stays on the row.
+       */}
+      <span className="flex shrink-0 items-center">
+        <span
+          aria-hidden={sidebarOpen}
+          data-chrome-title
+          className={cn(
+            // Hidden once its room has closed (visibility waits out the transition).
+            "pane-motion flex overflow-hidden transition-[width,opacity,visibility]",
+            sidebarOpen ? "invisible w-0 opacity-0" : "w-auto",
+          )}
+        >
+          <span className="max-w-[240px] truncate pr-3 pl-1 font-medium text-13 text-ink">
+            {name}
+          </span>
+        </span>
+        <ChromeDivider />
+      </span>
       <span className="w-1 shrink-0" />
-      {sidebarOpen ? null : (
-        <span className="max-w-[240px] shrink-0 truncate pr-2 font-semibold text-13">{name}</span>
-      )}
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
       <span className="min-w-2 flex-1" />
       {/*
        * The right block, flush with the window's right edge in every state: the divider, then
        * the cluster just before the thread toggle, so neither moves between the canvas and the
-       * pull request tab or as the rail opens and closes. Open, the block starts at the rail's
-       * edge (the header's 10 of right padding and this 350 make the rail's 360), which keeps
-       * the divider there; closed, the divider comes in to just before the cluster.
+       * pull request tab or as the rail opens and closes. Open, the block is at least 350 wide,
+       * which with the header's 10 of right padding puts the divider on the rail's edge; closed,
+       * it is its content's width, the divider just before the cluster. Its width eases between
+       * the two on the panes' clock (calc-size, so even from a content width the divider tracks
+       * the rail's edge frame by frame instead of stopping where a min-width would let go).
        */}
       <div
-        className={cn(
-          "flex shrink-0 items-center transition-[min-width] duration-(--dur-pane) ease-out",
-          rail.open ? "min-w-[350px]" : "min-w-0",
-        )}
+        data-chrome-right
+        className="pane-motion flex shrink-0 items-center transition-[width]"
+        style={{
+          width: rail.open
+            ? "calc-size(max-content, max(350px, size))"
+            : "calc-size(max-content, size)",
+        }}
       >
         <ChromeDivider />
         <span className="min-w-[18px] flex-1" />

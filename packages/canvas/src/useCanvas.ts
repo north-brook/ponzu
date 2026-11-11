@@ -299,12 +299,25 @@ export function useCameraLayers(
       camera.set((c) => ({ ...c, x, y }));
     };
     // The window grows or shrinks: what's on screen changes with the camera still.
+    //
+    // A pane beside the canvas opens or closes, moving one of its edges: the boards hold still
+    // on screen, anchored to the edge that isn't moving, never refitted. On the right (and at
+    // the bottom) that is the camera standing still; on the left (and at the top) the camera
+    // moves back by as much as the edge moved, in the same frame: this runs after layout and
+    // before paint, and a pan is only a scroll. So a pane easing open slides over still boards
+    // on either side, with no frame where they swim.
     let size = `${s.clientWidth}x${s.clientHeight}`;
+    let at = s.getBoundingClientRect();
     const ro = new ResizeObserver(() => {
       const now = `${s.clientWidth}x${s.clientHeight}`;
       if (now === size) return;
       size = now;
-      camera.set((c) => ({ ...c }));
+      const was = at;
+      at = s.getBoundingClientRect();
+      const dx = at.left - was.left;
+      const dy = at.top - was.top;
+      if (dx || dy) camera.set((c) => ({ ...c, x: c.x - dx, y: c.y - dy }), true);
+      else camera.set((c) => ({ ...c }));
     });
     ro.observe(s);
     // Promote the boards' layer for the whole gesture, pan or zoom: without
