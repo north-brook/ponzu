@@ -83,7 +83,7 @@ export function FirstRun({
     // The iPhone step waits for the devices, so it never shows to someone who has one.
     (step === "iphone" && devices.isPending);
   useSetupSteps(
-    waiting || step === null || step === "sign_in" || step === "done" ? null : step,
+    waiting || step === null || step === "sign_in" ? null : step,
     step === "done",
     !me.data && me.isError,
   );

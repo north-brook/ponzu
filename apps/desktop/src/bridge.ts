@@ -57,7 +57,7 @@ export interface AnalyticsSetup {
   key: string;
   host: string;
   replay: "full" | "private";
-  /** `Ponzu`, `Ponzu Preview` or `Ponzu Dev`. */
+  /** `Ponzu`, `Ponzu Dev` or `Ponzu Local`. */
   channel: string;
   /** The operating system's version (the user agent's is frozen). */
   osVersion: string;

@@ -16,7 +16,7 @@ knows: what is on screen and what was pressed. A design created, a turn finished
 merged are the API's. The catalogue is `apps/studio/src/app/analytics/events.ts`, typed, so a
 name can't be misspelt at a call site.
 
-Every event carries `app_version`, `channel` (`Ponzu`, `Ponzu Preview` or `Ponzu Dev`),
+Every event carries `app_version`, `channel` (`Ponzu`, `Ponzu Dev` or `Ponzu Local`, a run from a checkout),
 `platform` and `os_version`, the `workspace` group in view, and `$current_url` as the view's
 synthetic URL (below). Nothing carries what someone typed, a design's or repo's name, or a path:
 a design is its `design_id`.
@@ -96,7 +96,7 @@ to the studio over the bridge, so the environment a build was made for decides t
   bundles PostHog whole (`posthog-js/full/no-external`) and never loads one.
 - `PONZU_POSTHOG_REPLAY`: `full` or `private` (anything else is `private`).
 
-A development build (`bun run start`) also reads them from its environment. A test build
+A run from a checkout (`bun run start`) also reads them from its environment. A test build
 (`PONZU_TEST_BUILD=1`) and the smoke check (`PONZU_SMOKE=1`) never report. The release workflow
 takes them from the repository variables `PONZU_APP_POSTHOG_KEY`, `PONZU_APP_POSTHOG_HOST` and
 `PONZU_APP_POSTHOG_REPLAY`, never the 1.x `PONZU_POSTHOG_KEY` variable.
@@ -105,8 +105,10 @@ For Ponzu Dev:
 
 ```sh
 cd apps/desktop
-PONZU_POSTHOG_KEY=phc_… PONZU_POSTHOG_REPLAY=full bun run start      # a development build
-PONZU_POSTHOG_KEY=phc_… PONZU_POSTHOG_REPLAY=full bun run package:preview
+# Ponzu Dev, packaged
+PONZU_POSTHOG_KEY=phc_… PONZU_POSTHOG_REPLAY=full bun run package:dev
+# Ponzu Local, from a checkout
+PONZU_POSTHOG_KEY=phc_… PONZU_POSTHOG_REPLAY=full bun run start
 ```
 
 **Source maps.** With `POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID` set (the release
