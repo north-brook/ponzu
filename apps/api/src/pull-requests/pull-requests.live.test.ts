@@ -27,7 +27,7 @@ import {
   repos,
 } from "@ponzu/db";
 import { systemClock } from "@ponzu/sandbox";
-import { createGithub } from "../deps/github.ts";
+import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import { createLogger } from "../http/log.ts";
 import { createVault } from "../vault/vault.ts";
@@ -47,18 +47,17 @@ const configured =
 
 describe.skipIf(!configured)("a design's pull request on GitHub, for real", () => {
   const fullName = env.GITHUB_TEST_REPO ?? "";
-  const db = configured ? createDb(env.DATABASE_URL ?? "") : (null as never);
-  const github = createGithub({
-    clientId: env.GITHUB_APP_CLIENT_ID ?? "",
-    clientSecret: env.GITHUB_APP_CLIENT_SECRET ?? "",
-    privateKey: configured ? readFileSync(env.GITHUB_APP_PRIVATE_KEY_PATH ?? "", "utf8") : "",
-    fetch: (url, init) => fetch(url, init),
-    clock: systemClock,
-  });
   const background: Promise<unknown>[] = [];
-  const deps = {
-    db,
-    github,
+  /** The real services, made only once the test runs: a skipped one reads no key. */
+  const liveDeps = () => ({
+    db: createDb(env.DATABASE_URL ?? ""),
+    github: createGithub({
+      clientId: env.GITHUB_APP_CLIENT_ID ?? "",
+      clientSecret: env.GITHUB_APP_CLIENT_SECRET ?? "",
+      privateKey: readFileSync(env.GITHUB_APP_PRIVATE_KEY_PATH ?? "", "utf8"),
+      fetch: (url, init) => fetch(url, init),
+      clock: systemClock,
+    }),
     clock: systemClock,
     vault: createVault({ key: env.PONZU_VAULT_KEY ?? "" }),
     log: createLogger(() => {}),
@@ -67,7 +66,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     },
     // Only where previews are served from is read, for the pull request's description.
     config: { assetsUrl: "https://assets.ponzu.cloud" } as Config,
-  };
+  });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;
   const branch = `pz/live-${tag}`;
@@ -78,7 +77,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
   });
 
   /** A REST call as the App with a token for the test repository's contents. */
-  async function asApp(installationId: number, repositoryId: number) {
+  async function asApp(github: Github, installationId: number, repositoryId: number) {
     const { token } = await github.createInstallationToken({
       installationId,
       repositoryIds: [repositoryId],
@@ -127,6 +126,8 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
   }
 
   test("pushed, opened as the App, read, merged as the person, and the design settled", async () => {
+    const deps = liveDeps();
+    const { db, github } = deps;
     const repo = (await db.select().from(repos)).find((row) => row.fullName === fullName);
     if (!repo) throw new Error(`${fullName} is not a repo of any workspace on this database.`);
     const session = JSON.parse(readFileSync(env.PONZU_SESSION_FILE ?? "", "utf8"));
@@ -146,7 +147,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     const stored = await getPullRequestContext(db, design.id);
     if (!stored?.installationId)
       throw new Error("The App is not installed on the repo's workspace.");
-    const { token, rest } = await asApp(stored.installationId, repo.githubRepoId);
+    const { token, rest } = await asApp(github, stored.installationId, repo.githubRepoId);
 
     // A base of the test's own, so the default branch is left alone.
     const main = await rest("GET", `/git/ref/heads/${repo.defaultBranch}`);
