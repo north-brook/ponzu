@@ -34,7 +34,7 @@ import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
-import { useAssetsUrls, useRowPresence } from "./sidebar-data.ts";
+import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
 import { useOnReturn } from "./use-answer.ts";
 
@@ -301,18 +301,21 @@ function WorkspaceWindow({
     analytics.workspace({ id, login: workspace.githubLogin, kind: workspace.kind });
   }, [analytics, id, workspace.githubLogin, workspace.kind]);
 
-  const summaries = useMemo(
-    () =>
-      live.rows?.map((row) => {
-        const assetsUrl = assetsUrls.get(row.id);
-        return toSummary(row, {
-          people,
-          open: row.id === openId,
-          hereNow: hereNow(presence.get(row.id) ?? [], me.id),
-          ...(assetsUrl ? { assetsUrl } : {}),
-        });
-      }) ?? null,
-    [live.rows, people, openId, presence, assetsUrls, me.id],
+  // Rows a live update didn't change, and unchanged previews, stay the same objects.
+  const summaries = useUnchanged(
+    useMemo(
+      () =>
+        live.rows?.map((row) => {
+          const assetsUrl = assetsUrls.get(row.id);
+          return toSummary(row, {
+            people,
+            open: row.id === openId,
+            hereNow: hereNow(presence.get(row.id) ?? [], me.id),
+            ...(assetsUrl ? { assetsUrl } : {}),
+          });
+        }) ?? null,
+      [live.rows, people, openId, presence, assetsUrls, me.id],
+    ),
   );
   const active = useMemo(
     () => summaries?.filter((d) => d.status === "active") ?? null,
