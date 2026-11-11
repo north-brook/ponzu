@@ -40,10 +40,10 @@ export function turnContext({
     pr === undefined
       ? `the person opens a pull request from ${branch} with Create PR once it has commits; Ponzu doesn't open one by itself. Check describe_pull_request's answer before saying whether one is open.`
       : pr && (pr.state === "open" || pr.state === "draft")
-      ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, and describe_pull_request rewrites its description.`
-      : pr?.state === "merged"
-        ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: for new commits the person opens another with Create PR.`
-        : `no pull request is open for ${branch}. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.`;
+        ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, and describe_pull_request rewrites its description.`
+        : pr?.state === "merged"
+          ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: for new commits the person opens another with Create PR.`
+          : `no pull request is open for ${branch}. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.`;
   const commits = unpushed === 1 ? "1 commit" : `${unpushed} commits`;
   const pending =
     unpushed > 0

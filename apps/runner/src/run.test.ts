@@ -595,7 +595,7 @@ test("the turn's checkpoint is saved before its push, which may take a while", a
   s.run.end();
   await until(() => notices(s.api, "error").length === 1, 5_000);
   // Saved before the push's first try, not after its last.
-  expect(triesAtSave).toBe(0);
+  expect(triesAtSave as number | null).toBe(0);
   expect(pushTries()).toBe(2);
 });
 

@@ -768,7 +768,13 @@ describe("git credentials", () => {
     expect(refused.status).toBe(204);
     await send(runner, "POST", "/git-report", {
       name: "git_push",
-      fields: { branch: "pz/hero", attempt: 0, ok: false, kind: "transient", said: "x".repeat(900) },
+      fields: {
+        branch: "pz/hero",
+        attempt: 0,
+        ok: false,
+        kind: "transient",
+        said: "x".repeat(900),
+      },
     });
     expect(t.logs.findLast((line) => line.event === "git_credential_refused")).toMatchObject({
       designId: design.id,
