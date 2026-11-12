@@ -303,6 +303,9 @@ function PickerRow({
   return (
     <CommandItem
       value={key}
+      // The title is three spans in a flex line, which the browser would name with spaces
+      // between them ("maya / kettle"): the row is named by the whole of it.
+      aria-label={name}
       data-choice={key}
       {...(workspaceId ? { "data-workspace": workspaceId } : {})}
       onSelect={() => onChoose(choice, workspaceId)}
@@ -362,8 +365,12 @@ const TIP_ROOM = 32;
  */
 const ON_THE_MARK = "pb-[5px]";
 
-/** Wide enough for most full names; one cut short shows whole in its tip. */
-const PICKER_WIDTH = 340;
+/**
+ * Wide enough for most full names (one cut short shows whole in its tip), and ending on the
+ * composer's right edge: the selector starts 8 past the hairline's centre, which is the column's
+ * (half of 660, less half the hairline's pixel), and the picker 6 before the selector.
+ */
+const PICKER_WIDTH = 330 - 0.5 - 8 + 6;
 
 /**
  * What the list shows before it scrolls: five 32px rows and half of the next, so a longer list

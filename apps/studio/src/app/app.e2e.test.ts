@@ -357,7 +357,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       });
     });
     await selector.click();
-    await page.locator('[role="option"]', { hasText: "maya/kettle" }).click();
+    await page.getByRole("option", { name: "maya/kettle" }).click();
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
     await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
     expect(await field.inputValue()).toBe("A kettle that whistles");

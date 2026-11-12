@@ -58,7 +58,8 @@ export function showsSearch(count: number): boolean {
 /**
  * Every repo the picker lists, in its order: the window's workspace's first (pushed-to lately
  * first, as given), then each other workspace's in the order the workspace switcher lists them.
- * A repo listed already (a workspace sharing one) is not listed twice.
+ * A repo listed already (a workspace sharing one) is not listed twice. While the window's own
+ * are loading, the others wait: listed then, they would be pushed down when the first arrive.
  */
 export function pickerRepos(
   repos: readonly Repo[] | null,
@@ -71,7 +72,8 @@ export function pickerRepos(
     seen.add(repo.id);
     rows.push({ repo, workspaceId });
   };
-  for (const repo of repos ?? []) add(repo, null);
+  if (repos === null) return rows;
+  for (const repo of repos) add(repo, null);
   for (const shelf of elsewhere) for (const repo of shelf.repos ?? []) add(repo, shelf.workspaceId);
   return rows;
 }

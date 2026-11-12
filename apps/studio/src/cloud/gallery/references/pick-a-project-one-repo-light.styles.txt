@@ -86,14 +86,14 @@ ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
 ground div[Choose a repo] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.1) 0px 8px 28px 0px
 text "Choose a repo" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[Scratch] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Scratch" rgb(17, 17, 16) 400 13px Inter
-ground div[Repositories] rgba(17, 17, 16, 0.05)
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+ground div[north-brook/ponzu-test] rgba(17, 17, 16, 0.05)
+icon svg[north-brook/ponzu-test] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "north-brook" rgb(169, 165, 155) 400 13px Inter
 text "/" rgb(169, 165, 155) 400 13px Inter
 text "ponzu-test" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 14×14 rgb(17, 17, 16) stroke 1.9px
+icon svg[north-brook/ponzu-test] 14×14 rgb(17, 17, 16) stroke 1.9px
 ground div[Choose a repo] rgb(232, 230, 224)
 icon svg[Choose a repo] 16×16 rgb(169, 165, 155) stroke 1px
 text "Allow more on GitHub" rgb(86, 83, 77) 400 13px Inter
