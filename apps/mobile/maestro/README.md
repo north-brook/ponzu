@@ -12,6 +12,14 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
 
+With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
+opens the Pricing page and waits for its boards, `run.sh` ends that
+simulator's WebContent process (found with `simctl spawn <udid> launchctl
+list`, so no other simulator's is touched), and `remount/check.yaml` checks a
+new web view draws the boards again under the same title with no placeholder.
+`run.sh` fails if the process it ended is still there. It is opt-in because it
+has not yet run on spare; once it passes there, make it the default.
+
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,

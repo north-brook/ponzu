@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DocCache, type KeyValueStorage } from "@ponzu/client";
+import { type Api, DocCache, type KeyValueStorage } from "@ponzu/client";
 import { CloudSource } from "@ponzu/client/canvas";
 import { createFakeBackend, FakeClock, type FakePerson } from "@ponzu/client/testing";
 import { type Actor, applyOp, type Doc, parseArtboardFile } from "@ponzu/core";
@@ -88,7 +88,7 @@ async function harness() {
   const settle = () => clock.advance(0);
 
   /** Someone's phone with the canvas open: its source, its bridge, and a ready page. */
-  const open = (person: FakePerson, opts: { cache?: DocCache } = {}) => {
+  const open = (person: FakePerson, opts: { cache?: DocCache; api?: Api } = {}) => {
     const client = person === maya ? mayaClient : backend.connect(person);
     const source = new CloudSource({
       api: client.api,
@@ -198,6 +198,34 @@ describe("the doc-or-op rule", () => {
     expect(maya.source.getState().doc).toEqual(server);
     expect(boards(server)[0]).toMatchObject({ x: 10, y: 7 });
     expect(maya.page.doc).toEqual(server);
+  });
+
+  test("the person's op from their Mac and the agent's, heard together: the page misses neither", async () => {
+    const h = await harness();
+    // The phone's reads of new ops wait until the test lets them go, so it hears both at once.
+    const api = h.backend.connect(h.maya).api;
+    let hold: Promise<void> | null = null;
+    let release = () => {};
+    const ops: Api["canvases"]["ops"] = async (...args) => {
+      await hold;
+      return api.canvases.ops(...args);
+    };
+    const phone = h.open(h.maya, { api: { ...api, canvases: { ...api.canvases, ops } } });
+    const mac = h.open(h.maya);
+    await h.settle();
+    phone.page.clear();
+    hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    // The same person, elsewhere: their op reaches the phone as theirs, the agent's after it.
+    mac.source.apply({ op: "artboard.update", id: "ab_home", x: 30 });
+    await mac.source.saved();
+    h.agent.commit([{ op: "artboard.update", id: "ab_home", y: 9 }]);
+    release();
+    await h.clock.advance(1_000);
+
+    expect(boards(phone.source.getState().doc)[0]).toMatchObject({ x: 30, y: 9 });
+    expect(phone.page.doc).toEqual(phone.source.getState().doc);
   });
 
   test("a page iOS ended and loaded again gets the whole doc, with what came while it was gone", async () => {

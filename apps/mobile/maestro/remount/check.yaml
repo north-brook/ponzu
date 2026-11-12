@@ -1,0 +1,19 @@
+appId: design.ponzu.app.dev
+name: remount, after
+---
+# The second half: with the page's process gone, the canvas mounts a new web
+# view, which says `ready` and is sent the whole doc again. The boards draw
+# again, the title stays, and the placeholder does not come back.
+- extendedWaitUntil:
+    visible:
+      id: canvas-web
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Plans"
+    timeout: 30000
+- assertVisible:
+    id: title
+- assertNotVisible:
+    id: canvas-placeholder
+- assertNotVisible:
+    id: canvas-gone
