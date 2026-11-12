@@ -31,6 +31,7 @@ export type ClaudeDeps = Pick<
   | "config"
   | "background"
   | "analytics"
+  | "features"
 >;
 
 /** What a new credential is. */

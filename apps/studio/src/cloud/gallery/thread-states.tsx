@@ -180,6 +180,11 @@ export function ThreadStates({
           label="waiting for a free machine"
         />
         <Rail
+          canvasId="paused"
+          agent={{ state: "idle", status: null, sandbox: "paused" }}
+          label="paused while Ponzu updates"
+        />
+        <Rail
           canvasId="failed"
           agent={{ state: "idle", status: null, sandbox: "failed" }}
           label="a machine couldn't start"

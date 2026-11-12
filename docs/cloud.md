@@ -595,15 +595,16 @@ name a window that is over well before then.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance` and `billing` let everything through until their
-  features fill them; `claudeLimit` is "Claude plan limits". The runner's claim hands out only
-  the kinds `claimableKinds` allows (every kind, except that only a stop, an edit and a push go
-  out while the plan the canvas runs on is at its limit; billing will narrow it too); the rest
-  stay in the feed,
+  nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
+  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
+  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
+  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
+  will narrow it too); the rest stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
-  be allowed and before anything is written; each lets everything through until its feature
-  fills it.
+  be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
+  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -3007,6 +3008,33 @@ ids the code names, both ways, and with their numbers. It fails open: a check th
 500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
 count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
 steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
+
+**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or on
+cutover day (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
+environment, so it holds from the next deploy.
+
+- `off`, the default: nothing is held back.
+- `wakes_paused`: no sandbox wakes. The wake gate `maintenance` sets the canvas's
+  `agent_blocker` to `paused` and tries the wake again every two minutes, so a message is kept
+  in the feed and goes in once the switch is off. A turn already running finishes, and a
+  sandbox already awake is not held: it takes up what is sent until it goes to sleep, so the
+  switch stops new spend only as awake sandboxes sleep. Every minute
+  the cron's `maintenance` step, once the switch is off, lifts `paused` everywhere and wakes the
+  canvases that owe a turn (`resumeBlocked`), which takes up a wake that ran out of tries during
+  a long pause. Everything else works.
+- `read_only`: wakes are paused as above, and every write by a person or a runner answers 503
+  `maintenance`, "Ponzu is updating. Try again in a few minutes.", before anything of its route
+  runs. Reads pass, and so do health, the cron, signing in and out, `POST /v1/live`, a
+  person's presence, GitHub's webhook, and a runner's start, heartbeat, checkpoints and their
+  uploads, restore and git credentials, so that an awake sandbox is neither taken for dead nor
+  loses its work. A runner sends the rest again for as long as it lives, as it does any 5xx.
+  The refusal is logged as a refusal, not sent to error tracking. Pause wakes first and let
+  running turns finish before going read-only.
+
+The Mac shows the notice "Ponzu is updating. Your canvases are safe; you can look around, and
+changes come back in a few minutes." when a write is refused this way, at most once a minute,
+and the thread's foot of a paused canvas says "The agent is paused while Ponzu updates. Your
+message is kept and goes through when it's back."
 
 ## Analytics
 

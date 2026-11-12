@@ -86,6 +86,7 @@ test("only the scheduler's secret runs it", async () => {
         repair: 0,
         reconciled: 0,
       },
+      maintenance: { lifted: 0, started: 0, queued: 0 },
       pull_requests: { swept: 0 },
       // The test clock starts on the hour, when the hourly retention sweep is due.
       retention: { auth_states: 0, jobs: 0, webhook_deliveries: 0 },

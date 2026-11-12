@@ -54,6 +54,7 @@ export type WebhookDeps = Pick<
   | "storage"
   | "config"
   | "analytics"
+  | "features"
 >;
 type Work = (deps: WebhookDeps) => Promise<void>;
 

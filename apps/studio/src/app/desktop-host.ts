@@ -10,6 +10,7 @@ import {
 import type { PonzuDesktop } from "@ponzu/desktop/bridge";
 import type { Host } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
+import { apiErrors } from "./maintenance.ts";
 
 /**
  * The studio inside the Mac app. The main process holds the session; this borrows an access
@@ -17,6 +18,7 @@ import { linksWithInstalls } from "./installs.ts";
  * origin, which the API allows.
  */
 export function desktopHost(desktop: PonzuDesktop): Host {
+  const errors = apiErrors();
   const session = borrowSession({
     apiUrl: desktop.config.apiUrl,
     client: { platform: desktop.config.client, version: desktop.version },
@@ -29,8 +31,11 @@ export function desktopHost(desktop: PonzuDesktop): Host {
         const { status, code, message, details } = lent.error;
         throw new ApiError(status, code as ApiError["code"], message, details);
       },
-      report: ({ status, code, message, details }) =>
-        desktop.session.report({ status, code, message, ...(details ? { details } : {}) }),
+      report: (error) => {
+        const { status, code, message, details } = error;
+        desktop.session.report({ status, code, message, ...(details ? { details } : {}) });
+        errors.heard(error);
+      },
       signOut: () => desktop.session.signOut(),
     },
   });
@@ -58,6 +63,7 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
     docStorage: signedInCache(session, window.localStorage),
+    onApiError: errors.listen,
     welcome1x: () => desktop.welcome1x(),
   };
 }
