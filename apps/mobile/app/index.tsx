@@ -7,6 +7,7 @@ import Animated, { Easing, FadeIn, FadeInDown, useReducedMotion } from "react-na
 import { startHandoff } from "../components/handoff";
 import { backend } from "../lib/cloud/backend";
 import { gateRoute } from "../lib/cloud/gate";
+import { useSetupStep } from "../lib/cloud/use-setup";
 import { LAUNCH } from "../lib/mark";
 import { BLOOM_IN_MS, Slice } from "../lib/slice";
 import { useHideSplash } from "../lib/splash";
@@ -20,7 +21,7 @@ const SLOW_LAUNCH_LINE = "Can't reach Ponzu. Trying again.";
  * Launch (onboarding 4.7): on the native splash's yuzu, the slice blooms in, then keeps blooming
  * while the app reads the session from the Keychain, with the wordmark rising in under it. Then
  * it goes on by itself, to the screen the session calls for (lib/cloud/gate.ts): sign in, the
- * update screen, or the canvases. It never leaves before the bloom-in has landed, so a fast
+ * update screen, setup's next step, or the canvases. It never leaves before the bloom-in has landed, so a fast
  * answer doesn't flash it; under Reduce Motion the slice is whole from the start.
  */
 export default function Launch() {
@@ -46,7 +47,12 @@ export default function Launch() {
     };
   }, []);
 
-  const target = prepared ? gateRoute(state) : null;
+  // Signed in, launch waits for where setup stands. With no `me` at all (offline on a first
+  // launch since the cache went), the canvases say what there is.
+  const setup = useSetupStep();
+  const target = prepared
+    ? gateRoute(state, setup.step ?? (setup.unreachable ? "done" : null))
+    : null;
   useEffect(() => {
     if (!target || gone.current) return;
     const landed = still ? 0 : mounted.current + BLOOM_IN_MS - Date.now();

@@ -1,7 +1,13 @@
 import * as Crypto from "expo-crypto";
 import { File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
-import { chunkedStorage, type InstallMarker, installId, wipeAfterReinstall } from "./storage";
+import {
+  chunkedStorage,
+  type InstallMarker,
+  installId,
+  onceUntilFailed,
+  wipeAfterReinstall,
+} from "./storage";
 
 /*
  * The Keychain as the app uses it: expo-secure-store under one service, readable after the
@@ -30,13 +36,14 @@ const marker: InstallMarker = {
   },
 };
 
-let ready: Promise<void> | null = null;
-
-/** Before the session first reads the Keychain: forget a session an earlier install left. */
-export function prepareKeychain(): Promise<void> {
-  ready ??= wipeAfterReinstall(keychain, marker).then(() => undefined);
-  return ready;
-}
+/**
+ * Before the session first reads the Keychain: forget a session an earlier install left. Done
+ * once for good; a wipe that failed (the Keychain locked, the marker unwritable) is tried again
+ * by the next call instead of failing every call after it.
+ */
+export const prepareKeychain: () => Promise<void> = onceUntilFailed(() =>
+  wipeAfterReinstall(keychain, marker).then(() => undefined),
+);
 
 /** This phone's install id (docs/mobile.md, "The Keychain"). */
 export function phoneInstallId(): Promise<string> {

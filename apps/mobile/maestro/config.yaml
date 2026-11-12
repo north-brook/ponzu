@@ -1,4 +1,4 @@
-# Flows run in this order: a fresh launch first, then signing in.
+# Flows run in this order: a fresh launch first, then signing in, then setup.
 flows:
   - "*.yaml"
 executionOrder:
@@ -6,3 +6,4 @@ executionOrder:
   flowsOrder:
     - launch
     - sign-in
+    - setup

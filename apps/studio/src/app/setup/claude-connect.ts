@@ -1,7 +1,12 @@
-import { ApiError } from "@ponzu/client";
+import {
+  afterInput,
+  afterRefusal,
+  afterStartFailed,
+  CHOOSING,
+  type ClaudeEntry,
+} from "@ponzu/client/model/claude-entry";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { enteredKey } from "../../cloud/claude.ts";
 import {
   type ClaudeCardProps,
   type ClaudeCardState,
@@ -16,46 +21,15 @@ import { usePonzu } from "../ponzu-query.tsx";
  * shows, within ten minutes and for one code) or an Anthropic API key.
  */
 
-type Entry = Exclude<ClaudeCardState, { mode: "choose" }>;
+type Entry = ClaudeEntry;
 
-export const CHOOSING: ClaudeCardState = { mode: "choose", starting: false, failed: false };
+// The card's states as they move are shared with the phone (@ponzu/client/model/claude-entry).
+export { afterInput, afterRefusal, afterStartFailed, CHOOSING };
 
 /** A sign-in started and not yet finished: what the code goes to, and until when. */
 interface PendingSignIn {
   id: string;
   expiresAt: string;
-}
-
-/** What the card says after the API turned an entry down, by the API's code. */
-export function afterRefusal(state: Entry, error: unknown): Entry {
-  const code = error instanceof ApiError ? error.code : null;
-  if (state.mode === "api_key") {
-    const rejected = code === "claude_key_invalid" || code === "invalid_request";
-    return { ...state, status: rejected ? "rejected" : "failed" };
-  }
-  if (code === "claude_code_invalid") {
-    // A code without its second half never reaches claude.ai: the sign-in can take it again.
-    const whole = state.code.includes("#");
-    return { ...state, status: whole ? "wrong" : "incomplete" };
-  }
-  if (code === "claude_sign_in_used" || code === "not_found") return { ...state, status: "used" };
-  if (code === "claude_sign_in_expired") return { ...state, code: "", status: "expired" };
-  return { ...state, status: "failed" };
-}
-
-/** What the card says when a sign-in couldn't be started, by where it was asked from. */
-export function afterStartFailed(from: ClaudeCardState, error: unknown): ClaudeCardState {
-  // Each sign-in is a machine Ponzu pays for, so the API starts only so many an hour.
-  const limited = error instanceof ApiError && error.code === "rate_limited";
-  if (from.mode === "choose") return { mode: "choose", starting: false, failed: !limited, limited };
-  return { mode: "subscription", code: "", status: limited ? "limited" : "failed" };
-}
-
-/** Typing clears a mistake that typing can fix; a spent sign-in stays spent until reopened. */
-export function afterInput(state: Entry, text: string): Entry {
-  if (state.mode === "api_key") return { ...state, key: enteredKey(text), status: "idle" };
-  const fixable = state.status === "incomplete" || state.status === "failed";
-  return { ...state, code: text, status: fixable ? "idle" : state.status };
 }
 
 /** The card's own props, and the way straight to the code field a Settings row takes. */

@@ -7,12 +7,17 @@
  *
  *   bun apps/mobile/maestro/authorize.ts <port>
  *
+ * It also stands in for GitHub's install page and the API's setup page after it: `GET /install`
+ * sends the browser back on `ponzu-dev://github/setup?result=installed`, as an install that
+ * finished does (the fake backend points its install links here when this page runs).
+ *
  * Only Ponzu Dev's scheme is redirected to; anything else is refused.
  */
 
 const port = Number(process.argv[2] ?? 0);
 
 export function redirectFor(url: URL): string | null {
+  if (url.pathname === "/install") return "ponzu-dev://github/setup?result=installed";
   if (url.pathname !== "/authorize") return null;
   const redirect = url.searchParams.get("redirect_uri");
   const state = url.searchParams.get("state");

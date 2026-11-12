@@ -58,7 +58,7 @@ whoever imports them; the component tests' resolver does the same.
 
 | File | What it does |
 | --- | --- |
-| `config.ts` | The API URL, the WorkOS client id, the variant and its scheme, the version: from `EXPO_PUBLIC_*` and the app config. |
+| `config.ts` | The API URL, the WorkOS client id, the variant and its scheme, the version: from `EXPO_PUBLIC_*` and the app config. Only Ponzu Dev has a default API (`https://api.ponzu.design`); a production build with no `EXPO_PUBLIC_PONZU_API_URL` refuses to start rather than talk to it. |
 | `backend.ts` | The real thing: one `createSession`, `createApi` and, per signed-in person, `createLive`. |
 | `backend.fake.ts` | The in-app fake (below), in `backend.ts`'s place when the bundle is built with `PONZU_BACKEND=fake`. |
 | `storage.ts`, `keychain.ts` | The session in the Keychain (below). |
@@ -66,7 +66,8 @@ whoever imports them; the component tests' resolver does the same.
 | `files.ts` | A `KeyValueStorage` over files, for what is large and not secret (the offline canvases' `DocCache`). |
 | `query.tsx` | `CloudProvider`: the signed-in person's QueryClient, its copy on disk, and their `Live`. |
 | `persist.ts` | What of the cache goes to disk: an allow-list. |
-| `gate.ts`, `use-gate.ts` | Where each session state sends the app. |
+| `gate.ts`, `use-gate.ts`, `use-setup.ts` | Where each session state, and each setup step, sends the app. |
+| `install.ts` | Installing the GitHub App: the install page in the auth session, and asking the API how it stands. |
 | `sign-in.ts`, `sign-out.ts` | Continue with GitHub; signing out in order. |
 | `workspace.ts`, `canvases.ts` | The workspace in view, and its canvases. |
 
@@ -76,12 +77,49 @@ The launch screen (`app/index.tsx`) blooms the slice on yuzu while the session
 reads the Keychain, never leaves before the bloom has landed, then goes where
 the session says (`gateRoute`): `signed_out` and `github_reauth` to sign-in
 (the second with "Sign in again so Ponzu can reach GitHub."), `too_old` (a
-426) to the update screen, `signed_in` to the canvases. After that,
-`use-gate.ts` moves the app whenever the session leaves the screen's gate:
-signed out here or elsewhere, a 426 anywhere, a sign-in. Still loading after
-8 seconds, launch says "Can't reach Ponzu. Trying again." Setup's gates
-(where you design, Claude) come between sign-in and the canvases with the
-setup slice.
+426) to the update screen, `signed_in` to setup's next step or the canvases. After
+that, `use-gate.ts` moves the app whenever the session or setup leaves the
+screen's gate: signed out here or elsewhere, a 426 anywhere, a sign-in, a
+setup step done here or on the Mac. Still loading after 8 seconds, launch says
+"Can't reach Ponzu. Trying again."
+
+Signed in, where setup stands comes from `GET /v1/me` (kept on disk, so an
+offline launch still knows), by the Mac's own gates
+(`phoneSetupStep` in `@ponzu/client/model/setup`) with the iPhone step taken
+as done: the phone is the iPhone. Until `me` answers, the screen on show stays
+(the sign-in button keeps turning). With no `me` at all and none on disk, the
+launch goes to the canvases.
+
+### Setup
+
+Two steps, each a screen with two progress bars, in the Mac's current words
+(`lib/copy.ts`; `lib/copy.test.ts` reads the studio's setup screens and fails
+when the two differ). The Claude card's states and failures are shared
+outright (`@ponzu/client/model/claude-entry`), as are the account rows' labels
+and the gates.
+
+- **Where do you build?** (`app/setup/where.tsx`): GitHub is synced as the
+  step opens, then the person's own account and each organization with Ponzu.
+  Set up opens GitHub's install page in the system's auth session
+  (`lib/cloud/install.ts`) on `<scheme>://github/setup`. While it is open the
+  app asks `GET /v1/github/installs/:id` every 2 seconds; whichever comes first,
+  the setup page's link or a settled answer (which closes the sheet), is the
+  outcome, and GitHub is synced again however it ended. "Don't see an
+  organization? Grant access on GitHub" opens GitHub's own install page the
+  same way, as the Mac does. Continue records the step. A quiet Sign out sits
+  under it.
+- **Connect Claude** (`app/setup/claude.tsx`): Sign in starts a claude.ai
+  sign-in, pushes the code screen and opens claude.ai in Safari. Add key turns
+  the card into a secure field. **Paste the code** (`app/setup/code.tsx`) has
+  iOS's paste control at the field's edge (no paste alert; nothing is read
+  without a tap), every failure in the Mac's words, Open sign-in again, and
+  Change, which lets the sign-in go, as leaving the screen does. Once Claude is
+  connected, here or on the Mac, the live `me` row moves the app to the
+  canvases.
+
+`app/github/setup.tsx` takes the setup page's link when it reaches the app
+outside the auth session, hands it to "Where do you build?" if that is on
+screen (or syncs itself), and goes back.
 
 ### Signing in
 
@@ -120,6 +158,10 @@ handled in the background can read it) and never restored to another device
 - **The install id.** 32 random hex characters (`Crypto.randomUUID()` without
   dashes) at `ponzu.installId`, made once and kept across reinstalls. It goes
   only to `POST /v1/me/devices`.
+
+Before the session first reads the Keychain, the reinstall wipe runs once.
+If it fails (the Keychain locked, the marker unwritable), the next call tries
+again: one failed write never fails every Keychain call after it.
 
 The unit tests prove these rules over a Map standing in for the Keychain.
 Nothing yet proves them on a real Keychain: the simulator runs use the fake
@@ -175,7 +217,7 @@ grammar is `@ponzu/core/links`, the one the Mac and the API share, and
 
 `lib/cloud/backend.fake.ts` is Ponzu Cloud in memory: the client's own
 `createFakeBackend`, with Maya in the acme workspace (three canvases) and Sam
-alone in an empty one. Metro puts it in `backend.ts`'s place when started with
+alone in an empty one, both through setup with Claude connected. Metro puts it in `backend.ts`'s place when started with
 `PONZU_BACKEND=fake` (`metro.config.js`), so a real build never carries it or
 its test code. The component tests always use it.
 
@@ -183,8 +225,11 @@ Signing in on the fake goes through the real auth session when
 `EXPO_PUBLIC_PONZU_FAKE_AUTHORIZE_URL` names a page that sends the browser
 back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
 skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
-state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`. Only a
-fake build takes that link.
+state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
+`setup-where` (Lee, whose own account has no Ponzu yet) and `setup-claude`
+(Ava, with no Claude). Only a fake build takes that link. With the authorize
+page running, the fake's install links open its `/install` page, which comes
+back as a finished install.
 
 ```sh
 cd apps/mobile

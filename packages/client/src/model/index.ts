@@ -5,6 +5,7 @@
 export * from "./answer.ts";
 export * from "./billing.ts";
 export * from "./claude.ts";
+export * from "./claude-entry.ts";
 export * from "./filter.ts";
 export * from "./gate.ts";
 export * from "./map.ts";

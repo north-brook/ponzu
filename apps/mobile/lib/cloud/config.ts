@@ -10,8 +10,11 @@ import type { LinkScheme } from "@ponzu/client";
 export type Variant = "production" | "dev";
 
 export interface CloudConfig {
-  /** `https://api.ponzu.design` for Ponzu Dev. */
-  apiUrl: string;
+  /**
+   * `https://api.ponzu.design` for Ponzu Dev. Null for a production build that names no API:
+   * it must never fall back to the development API, so it talks to none (`requireApiUrl`).
+   */
+  apiUrl: string | null;
   /** The WorkOS environment's client id; empty when the build has none (sign-in says so). */
   workosClientId: string;
   variant: Variant;
@@ -23,8 +26,14 @@ export interface CloudConfig {
   appName: string;
 }
 
-/** The API Ponzu Dev talks to when the build names none. Production's is named at cutover. */
+/**
+ * The API Ponzu Dev talks to when the build names none. Production's is always named by its
+ * build (EAS's production environment), at cutover.
+ */
 export const DEV_API_URL = "https://api.ponzu.design";
+
+export const NO_API_URL =
+  "This build of Ponzu names no API: set EXPO_PUBLIC_PONZU_API_URL for the production build.";
 
 export interface ConfigInput {
   env: {
@@ -39,14 +48,22 @@ export interface ConfigInput {
 
 export function readConfig({ env, variant, version }: ConfigInput): CloudConfig {
   const v: Variant = variant === "dev" ? "dev" : "production";
+  // Only Ponzu Dev has a default. A store build with none set is refused, never pointed at dev.
+  const named = env.EXPO_PUBLIC_PONZU_API_URL?.trim() || (v === "dev" ? DEV_API_URL : null);
   return {
-    apiUrl: (env.EXPO_PUBLIC_PONZU_API_URL || DEV_API_URL).replace(/\/+$/, ""),
+    apiUrl: named ? named.replace(/\/+$/, "") : null,
     workosClientId: env.EXPO_PUBLIC_WORKOS_CLIENT_ID ?? "",
     variant: v,
     scheme: v === "dev" ? "ponzu-dev" : "ponzu",
     version: version ?? "0.0.0",
     appName: v === "dev" ? "Ponzu Dev" : "Ponzu",
   };
+}
+
+/** The API this build talks to; throws for a production build that names none. */
+export function requireApiUrl(cfg: CloudConfig): string {
+  if (!cfg.apiUrl) throw new Error(NO_API_URL);
+  return cfg.apiUrl;
 }
 
 let cached: CloudConfig | null = null;

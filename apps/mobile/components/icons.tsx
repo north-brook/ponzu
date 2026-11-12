@@ -15,6 +15,7 @@ import {
   GitBranchIcon,
   GithubIcon,
   InboxIcon,
+  Key01Icon,
   KeyboardIcon,
   LaptopIcon,
   Mic01Icon,
@@ -67,6 +68,8 @@ export const ICONS = {
   mic: Mic01Icon,
   micOff: MicOff01Icon,
   keyboard: KeyboardIcon,
+  /** An Anthropic API key, in Connect Claude. */
+  key: Key01Icon,
   send: ArrowUp02Icon,
   file: File01Icon,
   comment: Comment01Icon,
@@ -107,6 +110,7 @@ export const Refresh = icon(ICONS.refresh, 20, 2);
 export const Mic = icon(ICONS.mic, 20, 1.8);
 export const MicOff = icon(ICONS.micOff, 20, 1.8);
 export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
+export const KeyIcon = icon(ICONS.key, 17, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
 export const CommentIcon = icon(ICONS.comment, 20, 1.8);

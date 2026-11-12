@@ -4,18 +4,33 @@ import { act, render, screen } from "@testing-library/react-native";
 import { router } from "expo-router";
 import Launch from "../app/index";
 import { backend } from "../lib/cloud/backend.fake";
+import { CloudProvider } from "../lib/cloud/query";
 
 const replace = router.replace as unknown as jest.Mock;
 /** The fake session's own setter, for a state no scenario names (still reading the Keychain). */
 const setState = (state: SessionState) =>
   (backend.session as unknown as { set(state: SessionState): void }).set(state);
 
+/**
+ * Move the clock on by `ms`, a tenth of a second at a time, so what each answer sets going
+ * (the fake's answers take a moment, as the API's do) runs on the same clock.
+ */
+async function advance(ms: number) {
+  for (let left = ms; left > 0; left -= 100) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(Math.min(100, left));
+    });
+  }
+}
+
 /** The launch screen, on a clock the test moves. */
 async function launch(ms: number) {
-  await render(<Launch />);
-  await act(async () => {
-    await jest.advanceTimersByTimeAsync(ms);
-  });
+  await render(
+    <CloudProvider>
+      <Launch />
+    </CloudProvider>,
+  );
+  await advance(ms);
 }
 
 beforeEach(() => {
@@ -32,11 +47,14 @@ describe("launch goes where the session says", () => {
     ["github-reauth", "/sign-in"],
     ["too-old", "/update"],
     ["signed-in", "/canvases"],
+    // Signed in, setup's next step comes first.
+    ["setup-where", "/setup/where"],
+    ["setup-claude", "/setup/claude"],
   ];
   for (const [scenario, route] of cases) {
     test(`${scenario} → ${route}`, async () => {
       backend.seed(scenario);
-      await launch(2_000);
+      await launch(3_000);
       expect(replace.mock.calls).toEqual([[route]]);
     });
   }
@@ -45,9 +63,7 @@ describe("launch goes where the session says", () => {
     backend.seed("signed-out");
     await launch(300);
     expect(replace).not.toHaveBeenCalled();
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(2_000);
-    });
+    await advance(2_000);
     expect(replace.mock.calls).toEqual([["/sign-in"]]);
   });
 
@@ -55,16 +71,14 @@ describe("launch goes where the session says", () => {
     setState({ status: "loading" });
     await launch(7_000);
     expect(screen.queryByText("Can't reach Ponzu. Trying again.")).toBeNull();
-    await act(async () => {
-      await jest.advanceTimersByTimeAsync(1_500);
-    });
+    await advance(1_500);
     expect(screen.getByText("Can't reach Ponzu. Trying again.")).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
     // Then the session answers, and the launch goes on.
     await act(async () => {
       backend.seed("signed-in");
-      await jest.advanceTimersByTimeAsync(1_000);
     });
+    await advance(3_000);
     expect(replace.mock.calls).toEqual([["/canvases"]]);
   });
 });

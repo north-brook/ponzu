@@ -8,6 +8,14 @@ import { pickWorkspace, workspaceKey } from "./workspace-rules";
  * for as long as they belong to it.
  */
 
+/**
+ * Show `workspaceId` next time the canvases open, as setting it up from "Where do you build?"
+ * does (the Mac opens Fresh start on it the same way). Best effort: the first is the fallback.
+ */
+export function rememberWorkspace(userId: string, workspaceId: string): Promise<void> {
+  return AsyncStorage.setItem(workspaceKey(userId), workspaceId).catch(() => {});
+}
+
 export function useWorkspaceInView(
   userId: string | null,
   workspaces: readonly { id: string }[] | undefined,
