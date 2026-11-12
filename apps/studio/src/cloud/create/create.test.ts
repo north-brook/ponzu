@@ -50,6 +50,13 @@ test("the window's workspace's repos come first, then each other's in the switch
   ]);
   // Still loading here: the others wait, so they are not pushed down when these arrive.
   expect(pickerRepos(null, [{ workspaceId: "ws_bryce", repos: mine }])).toEqual([]);
+  // One answering before the workspace ahead of it waits for it.
+  expect(
+    pickerRepos(repos, [
+      { workspaceId: "ws_lenny", repos: null },
+      { workspaceId: "ws_bryce", repos: mine },
+    ]).length,
+  ).toBe(3);
   // A repo two workspaces share is listed once, as the first's.
   expect(pickerRepos(repos, [{ workspaceId: "ws_x", repos: [repos[0]!] }]).length).toBe(3);
 });
