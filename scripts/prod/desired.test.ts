@@ -15,6 +15,7 @@ import {
   loadInfraFile,
   main,
   NeonSchema,
+  PosthogSchema,
   RULESET_REQUEST_FIELDS,
   RulesetSchema,
   releaseProblems,
@@ -343,6 +344,26 @@ describe("github/", () => {
       "Desktop package",
     ]);
     for (const context of contexts) expect(jobNames).toContain(context);
+  });
+
+  test("cloud takes changes only through a squash-merged pull request, with no bypass", () => {
+    const cloud = loadInfraFile("github/ruleset-cloud.json");
+    const main = loadInfraFile("github/ruleset-main.json");
+    expect(cloud.bypass_actors).toEqual([]);
+    const pr = (r: { rules: { type: string; parameters?: unknown }[] }) =>
+      r.rules.find((rule) => rule.type === "pull_request")?.parameters;
+    expect(pr(cloud)).toEqual(pr(main));
+    expect(pr(cloud)).toMatchObject({ allowed_merge_methods: ["squash"] });
+  });
+
+  test("posthog.json refuses an unknown or missing project setting", () => {
+    const posthog = loadInfraFile("posthog.json");
+    const typo = { ...posthog, project: { session_recording_opt_in_typo: true } };
+    expect(PosthogSchema.safeParse(typo).success).toBe(false);
+    const { heatmaps_opt_in: _, ...missing } = posthog.project;
+    expect(PosthogSchema.safeParse({ ...posthog, project: missing }).success).toBe(false);
+    const wrongType = { ...posthog, project: { ...posthog.project, heatmaps_opt_in: "yes" } };
+    expect(PosthogSchema.safeParse(wrongType).success).toBe(false);
   });
 
   test("the repository's merge settings are today's", () => {

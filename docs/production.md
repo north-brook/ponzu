@@ -211,9 +211,9 @@ A workspace "Ponzu production" with a monthly spend limit, and a key used only a
   and a test compares the two field by field against a read-only recording.
 - `cloud` gets a ruleset requiring "Conventional commit messages", "Check, typecheck, test",
   "Database on Postgres" and "Desktop package". A test checks each is a job name in `ci.yml`.
-  The ruleset has no bypass, so once it is applied nothing reaches `cloud` by a direct push,
-  a revert included: GitHub refuses a commit that has not passed those four checks. A revert
-  goes through a pull request like any other change.
+  It also requires a pull request, squash-merged, with no approval needed (as `main`'s does),
+  and it has no bypass. Once it is applied nothing reaches `cloud` by a direct push, a revert
+  included: a revert goes through a pull request like any other change.
 - The environment `production`: the founder is the required reviewer, only `main` may deploy,
   and it holds `VERCEL_TOKEN` (for ponzu-api-prod) and `NEON_API_KEY`.
 - The environment `release-signing`, as now.

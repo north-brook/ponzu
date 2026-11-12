@@ -372,7 +372,12 @@ export const AssetsHeadersSchema = z.strictObject({
 
 export const PosthogSchema = z.strictObject({
   /** Fields of PostHog's project (`/api/projects/:id`) both projects must have. */
-  project: z.record(z.string(), z.union([z.boolean(), z.string(), z.number()])),
+  project: z.strictObject({
+    session_recording_opt_in: z.boolean(),
+    autocapture_exceptions_opt_in: z.boolean(),
+    capture_console_log_opt_in: z.boolean(),
+    heatmaps_opt_in: z.boolean(),
+  }),
   /** Group types that must exist once the first event has come in. */
   groupTypes: z.array(z.string().min(1)),
 });
