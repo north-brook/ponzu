@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
 import { chromium as playwright } from "playwright-core";
+import { BrowserProcess } from "./browser.ts";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
 import { ARTBOARD_BASE_CSS } from "./document.ts";
 import {
@@ -210,8 +211,13 @@ ${Array.from({ length: 6 }, (_, i) => `<div data-id="n_t${i}" style="height:100p
 });
 
 describe.skipIf(!chromium)("video stills", () => {
-  const browser = playwright.launch({ executablePath: chromium ?? undefined, headless: true });
-  afterAll(() => browser.then((b) => b.close()), 30_000);
+  // The renderer's own browser keeper: started on first use, and closed as the renderer closes
+  // one, without waiting on a Chrome slow to answer (a busy Mac takes 10s and more to quit).
+  const browser = new BrowserProcess(
+    () => playwright.launch({ executablePath: chromium ?? undefined, headless: true }),
+    Number.POSITIVE_INFINITY,
+  );
+  afterAll(() => browser.close());
 
   /** Each node's tag, box and the styles that place a video's picture in it. */
   const LAYOUT = `Object.fromEntries([...document.querySelectorAll("[data-id]")].map((el) => {
@@ -227,7 +233,8 @@ describe.skipIf(!chromium)("video stills", () => {
 
   /** A page with the artboard on it and its first frame decoded, laid out as it is before any seek. */
   async function page(artboard: string) {
-    const p = await (await browser).newPage();
+    const lease = await browser.open(1);
+    const p = lease.page;
     const url = "http://stills.test/";
     await p.route(url, (r) =>
       r.fulfill({
@@ -241,7 +248,7 @@ describe.skipIf(!chromium)("video stills", () => {
       window.__video = v;
       return v.readyState >= 2 || new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
     })()`);
-    return { p, before: await p.evaluate<Record<string, any>>(LAYOUT) };
+    return { p, close: lease.close, before: await p.evaluate<Record<string, any>>(LAYOUT) };
   }
 
   const board = (css: string) =>
@@ -253,7 +260,7 @@ describe.skipIf(!chromium)("video stills", () => {
 
   test("a seeked video is captured from a still of its frame, laid out and styled as the video is", async () => {
     // A rule for video, which a canvas wouldn't match, still styles the still.
-    const { p, before } = await page(board("video { border-radius: 9px }"));
+    const { p, close, before } = await page(board("video { border-radius: 9px }"));
     try {
       await p.evaluate(prepareScript({ at: 1000 }));
       const held = await p.evaluate<Record<string, any>>(LAYOUT);
@@ -272,22 +279,22 @@ describe.skipIf(!chromium)("video stills", () => {
       );
       expect(await p.evaluate(LAYOUT)).toEqual(before);
     } finally {
-      await p.close();
+      await close();
     }
   });
 
   test("a video stays itself where a selector would read its still differently", async () => {
-    const { p } = await page(board("video + div { outline: 1px solid red }"));
+    const { p, close } = await page(board("video + div { outline: 1px solid red }"));
     try {
       await p.evaluate(prepareScript({ at: 1000 }));
       expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
     } finally {
-      await p.close();
+      await close();
     }
   });
 
   test("a video showing captions stays itself, since a still would leave them out", async () => {
-    const { p } = await page(board(""));
+    const { p, close } = await page(board(""));
     try {
       await p.evaluate(`(() => {
         const t = document.querySelector("video").addTextTrack("subtitles", "en");
@@ -297,7 +304,7 @@ describe.skipIf(!chromium)("video stills", () => {
       await p.evaluate(prepareScript({ at: 1000 }));
       expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
     } finally {
-      await p.close();
+      await close();
     }
   });
 });
