@@ -518,8 +518,9 @@ function motionRuntime() {
    * in for the videos. A still is a canvas where a video was, with the
    * video's attributes but its size: a selector that names video or canvas
    * anywhere but at the start of what it styles (video + p, :has(video)),
-   * counts by type (:nth-of-type) or reads width or height attributes could
-   * style something else differently once it's in.
+   * counts by type (:nth-of-type), reads width or height attributes, or
+   * looks at a video's children (:empty, source, track) could style something
+   * else differently once it's in. Sheets a sheet @imports are read too.
    */
   function stillsAllowed(): boolean {
     if (stillsMatch !== null) return stillsMatch;
@@ -528,17 +529,20 @@ function motionRuntime() {
       for (const rule of [...rules]) {
         if (!ok) return;
         if (rule instanceof CSSStyleRule && !stillSafe(rule.selectorText)) ok = false;
-        if ("cssRules" in rule && (rule as CSSGroupingRule).cssRules)
+        if (rule instanceof CSSImportRule) sheet(rule.styleSheet);
+        else if ("cssRules" in rule && (rule as CSSGroupingRule).cssRules)
           walk((rule as CSSGroupingRule).cssRules);
       }
     };
-    for (const sheet of [...document.styleSheets]) {
+    const sheet = (s: CSSStyleSheet | null) => {
+      if (!s) return;
       try {
-        walk(sheet.cssRules);
+        walk(s.cssRules);
       } catch {
         // Cross-origin sheets (Google Fonts) can't be read, and style no videos.
       }
-    }
+    };
+    for (const s of [...document.styleSheets]) sheet(s);
     stillsMatch = ok;
     return ok;
   }
@@ -546,6 +550,9 @@ function motionRuntime() {
   /** A selector, as the page serializes it, that reads a still as it reads its video. */
   function stillSafe(sel: string): boolean {
     if (/-of-type|\[\s*(width|height)\b/i.test(sel)) return false;
+    // A still has none of its video's children (<source>, <track>): it's :empty where the video
+    // may not be, and a selector that finds them finds nothing while it's in.
+    if (/:empty|(^|[\s>+~,(])(source|track)(?![\w-])/i.test(sel)) return false;
     let depth = 0;
     // A video or canvas type that starts the compound being styled, so far.
     let subject = false;

@@ -283,15 +283,26 @@ describe.skipIf(!chromium)("video stills", () => {
     }
   });
 
-  test("a video stays itself where a selector would read its still differently", async () => {
-    const { p, close } = await page(board("video + div { outline: 1px solid red }"));
-    try {
-      await p.evaluate(prepareScript({ at: 1000 }));
-      expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
-    } finally {
-      await close();
-    }
-  });
+  test.each([
+    ["a sibling of a video", "video + div { outline: 1px solid red }"],
+    [
+      "one in a sheet the page @imports",
+      `@import url("data:text/css,video%2Bdiv{outline:1px solid red}");`,
+    ],
+    ["an empty element", ":empty { outline: 1px solid red }"],
+    ["a video's source", ".x:has(source) { outline: 1px solid red }"],
+  ])(
+    "a video stays itself where a selector would read its still differently: %s",
+    async (_, css) => {
+      const { p, close } = await page(board(css));
+      try {
+        await p.evaluate(prepareScript({ at: 1000 }));
+        expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
+      } finally {
+        await close();
+      }
+    },
+  );
 
   test("a video showing captions stays itself, since a still would leave them out", async () => {
     const { p, close } = await page(board(""));
