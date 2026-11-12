@@ -170,8 +170,9 @@ async function vcrImages(): Promise<VcrImage[]> {
 /** Makes the repository on its first push. */
 function ensureRepository(): void {
   if (vercel(["inspect", REPOSITORY]).ok) return;
-  const r = vercel(["add", REPOSITORY]);
-  if (!r.ok) throw new Error(`vercel vcr add ${REPOSITORY}: ${JSON.stringify(r.json)} ${r.stderr}`);
+  const r = vercel(["create", REPOSITORY]);
+  if (!r.ok)
+    throw new Error(`vercel vcr create ${REPOSITORY}: ${JSON.stringify(r.json)} ${r.stderr}`);
   console.log(`made the VCR repository ${REPOSITORY} in ${creds.projectId}`);
 }
 
