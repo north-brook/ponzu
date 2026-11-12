@@ -14,14 +14,23 @@ const MAX_TEXT = 200;
 
 const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"];
 
-/** What `supportedModels()` answered, as the runner reports it. */
+/** Whether `id` can be sent as a model: a clipped id would name a model that does not exist. */
+const sendable = (id: unknown): id is string =>
+  typeof id === "string" && id.length > 0 && id.length <= MAX_TEXT;
+
+/**
+ * What `supportedModels()` answered, as the runner reports it. An entry whose id is too long to
+ * send is left out, never clipped; the API refuses one the same way.
+ */
 export function reportedModels(models: readonly ModelInfo[]): ReportedModel[] {
   return models
-    .filter((model) => typeof model.value === "string" && model.value.length > 0)
+    .filter(
+      (model) => sendable(model.value) && (!model.resolvedModel || sendable(model.resolvedModel)),
+    )
     .slice(0, MAX_REPORTED_MODELS)
     .map((model) => ({
-      value: model.value.slice(0, MAX_TEXT),
-      resolvedModel: model.resolvedModel ? model.resolvedModel.slice(0, MAX_TEXT) : null,
+      value: model.value,
+      resolvedModel: model.resolvedModel || null,
       displayName: (model.displayName ?? "").slice(0, MAX_TEXT),
       description: (model.description ?? "").slice(0, MAX_TEXT * 2),
       efforts:

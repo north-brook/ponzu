@@ -94,6 +94,7 @@ export class FakeClaude {
       connectedAt: now,
       expiresAt: kind === "api_key" ? null : (expiresAt ?? now + YEAR_MS),
     });
+    this.offered.delete(userId);
   }
 
   /**
@@ -160,6 +161,8 @@ export class FakeClaude {
         connectedAt: now,
         expiresAt: kind === "subscription" ? now + YEAR_MS : null,
       });
+      // As the API clears a report when the credential changes.
+      this.offered.delete(userId);
       changed();
       return answer();
     };
@@ -232,6 +235,7 @@ export class FakeClaude {
       },
       disconnect: async () => {
         this.accounts.delete(userId);
+        this.offered.delete(userId);
         changed();
       },
       defaults: async () => this.defaultsOf(userId),

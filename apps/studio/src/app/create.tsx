@@ -231,7 +231,10 @@ export function CreateView({
       setError(
         failure instanceof ApiError && failure.code === "network"
           ? "Ponzu can't be reached. Check your connection and send it again."
-          : "That design couldn't be made. Try again.",
+          : failure instanceof ApiError && failure.code === "model_not_offered"
+            ? // The defaults are read again (mutations.ts), so the picker shows what is offered.
+              "Your Claude account doesn't offer that model any more. Check the model and send it again."
+            : "That design couldn't be made. Try again.",
       );
     } finally {
       going.current = false;

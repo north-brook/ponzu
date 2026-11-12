@@ -8,6 +8,7 @@ import recorded from "./agent/fixtures/supported-models.api-key.json";
 import { reportedModels, sameModels } from "./agent/models.ts";
 import { ScriptedAgent } from "./agent/scripted.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
+import { ApiError } from "./api/request.ts";
 import { Runner, type Timing } from "./run.ts";
 
 /*
@@ -101,6 +102,17 @@ test("an entry that takes no effort says so, and one that does not say is left u
   expect(unsaid?.resolvedModel).toBeNull();
 });
 
+test("an entry whose id is too long to send is left out, not clipped into another id", () => {
+  const long = `claude-${"x".repeat(200)}`;
+  const reported = reportedModels([
+    { value: long, displayName: "Long", description: "" },
+    { value: "opus", resolvedModel: long, displayName: "Opus", description: "" },
+    { value: "", displayName: "Empty", description: "" },
+    { value: "haiku", resolvedModel: "claude-haiku-5-5", displayName: "Haiku", description: "" },
+  ]);
+  expect(reported.map((m) => m.value)).toEqual(["haiku"]);
+});
+
 test("a runner reports what Claude Code offers once, and a later start that hears the same does not", async () => {
   const api = new FakeRunnerApi();
   const agent = new ScriptedAgent();
@@ -180,6 +192,48 @@ test("a report the API did not keep is sent again at the next start of Claude Co
   agent.last.crash();
   await agent.run(2);
   await until(() => api.modelReports.length === 2);
+});
+
+test("a report that hangs or is refused holds up no turn, and the runner carries on", async () => {
+  const api = new FakeRunnerApi();
+  const agent = new ScriptedAgent();
+  agent.offers = OFFERED;
+  // The first report never answers until the end of the test; the next one is refused.
+  let answer: (() => void) | undefined;
+  const reportModels = api.reportModels.bind(api);
+  api.reportModels = (runner, report) =>
+    new Promise<void>((resolve) => {
+      answer = resolve;
+    }).then(() => reportModels(runner, report));
+  const s = await start(api, agent);
+  await until(() => answer);
+
+  const say = async (text: string) => {
+    api.push({ kind: "message", payload: { text } });
+    s.runner.poke();
+    const run = agent.last;
+    run.take(await run.input());
+    run.say(`m_${text}`, text);
+    run.end();
+    await until(() => api.items().some((i) => i.kind === "assistant" && i.payload.text === text));
+  };
+  agent.last.ready("sess_1");
+  await say("Drawn while the report hangs.");
+  expect(api.modelReports).toEqual([]);
+
+  api.reportModels = reportModels;
+  api.failing.set("reportModels", new ApiError(400, "invalid_request", "No."));
+  agent.last.crash();
+  await agent.run(2);
+  await until(() => api.calls.filter((c) => c === "reportModels").length === 1);
+  agent.last.ready("sess_1");
+  await say("Drawn after the report was refused.");
+  expect(s.said()).toEqual([]);
+  // The hung one answers at last, and is kept.
+  api.failing.delete("reportModels");
+  answer!();
+  await until(() => s.said().length === 1);
+  expect(s.said()).toEqual(["models_reported"]);
 });
 
 test("Claude Code that says nothing of its models sends nothing", async () => {

@@ -1174,7 +1174,8 @@ report into the picker's rows:
   not offered twice; a `default` whose model no other entry offers is offered under its id;
 - a model the hand-kept list knows takes its name and its place in that list; any other comes
   after, in Claude Code's order, named by the start of its description when that is its
-  `displayName` and a version (`Opus 6`), otherwise by its `displayName`;
+  `displayName` and a version (`Opus 6`), otherwise by its `displayName`, put on one line and
+  cut to 40 characters (the apps render it as text, never as markup);
 - each row carries the efforts it takes (`supportedEffortLevels`; none when `supportsEffort` is
   false; all five when Claude Code says nothing).
 
@@ -1186,7 +1187,12 @@ and `POST /v1/designs` take only a model the account offers and an effort that m
 `model_not_offered`). A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a design made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
-never handed a model it would refuse.
+never handed a model it would refuse once a runner has reported. Nothing in the design's thread
+says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+live query does not carry the report): a create or a defaults change refused with
+`model_not_offered` reads them again, as does connecting another credential, so the picker
+then shows what the account offers. Before the first report the hand-kept list is offered as
+it is, so a model in it that the account does not have is still handed to Claude Code once.
 
 **When Anthropic ships a model, or Claude Code updates.** The list comes from the Claude Code in
 the sandbox image, and the runner bundle's Agent SDK must match it (`bundle-fits`). So a new

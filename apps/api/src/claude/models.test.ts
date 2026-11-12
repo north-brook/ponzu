@@ -129,6 +129,33 @@ test("efforts: the chosen one while the model takes it, else medium, else its fi
   expect(offeredEfforts(offer)).toEqual(["low", "medium", "high", "max"]);
 });
 
+test("a name Claude Code gives is shown on one line and short; markup stays text", () => {
+  const offer = offeredModels([
+    entry({ value: "claude-x", displayName: "  Line one\nline\ttwo\u0007  " }),
+    entry({ value: "claude-y", displayName: "Y".repeat(200) }),
+    entry({ value: "claude-z", displayName: "<img src=x onerror=alert(1)>" }),
+    entry({ value: "claude-blank", displayName: " \n " }),
+  ]);
+  expect(offer.models.map((m) => m.label)).toEqual([
+    "Line one line two",
+    `${"Y".repeat(39)}…`,
+    // React renders it as text; the API does not rewrite it.
+    "<img src=x onerror=alert(1)>",
+    "claude-blank",
+  ]);
+});
+
+test("as many entries as a report may carry, each a new model, are all offered once", () => {
+  const many = Array.from({ length: 50 }, (_, i) =>
+    entry({ value: `alias-${i}`, resolvedModel: `claude-new-${i % 25}`, displayName: `New ${i}` }),
+  );
+  const offer = offeredModels(many);
+  expect(offer.models.map((m) => m.id)).toEqual(
+    Array.from({ length: 25 }, (_, i) => `claude-new-${i}`),
+  );
+  expect(offer.defaultModel).toBe("claude-new-0");
+});
+
 test("a choice the account does not offer is refused", () => {
   const offer = offeredModels(REPORTED.filter((m) => m.value !== "fable"));
   expect(() => checkOffered(offer, "claude-opus-5-5", "max")).not.toThrow();

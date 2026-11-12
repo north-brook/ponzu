@@ -150,9 +150,23 @@ export function offeredEfforts(offer: ModelOffer): Effort[] {
  * `Opus 6` rather than `Opus`.
  */
 function labelOf(entry: ClaudeModelReport): string {
-  const name = entry.displayName.trim() || entry.resolvedModel || entry.value;
-  const lead = entry.description.split(" · ")[0]?.trim() ?? "";
-  return lead.startsWith(`${name} `) && /^[\d.]+$/.test(lead.slice(name.length + 1)) ? lead : name;
+  const name = oneLine(entry.displayName) || entry.resolvedModel || entry.value;
+  const lead = oneLine(entry.description.split(" · ")[0] ?? "");
+  const label =
+    lead.startsWith(`${name} `) && /^[\d.]+$/.test(lead.slice(name.length + 1)) ? lead : name;
+  // A menu row, not a paragraph: whatever Claude Code says, the apps show a short name.
+  return label.length > MAX_LABEL ? `${label.slice(0, MAX_LABEL - 1)}…` : label;
+}
+
+/** The longest name a row is shown under. */
+const MAX_LABEL = 40;
+
+/** `text` on one line: no control characters, and each run of white space one space. */
+function oneLine(text: string): string {
+  return text
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function effortsOf(efforts: ClaudeModelReport["efforts"]): Effort[] {
