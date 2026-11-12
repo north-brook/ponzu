@@ -13,6 +13,7 @@ import { type OpenCanvas, useAccess, useSourceState } from "./canvas.tsx";
 import { CommentScene } from "./comment-picture.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
+import { takeOverRefusal } from "./take-over.ts";
 import {
   agentActivity,
   answerLine,
@@ -79,6 +80,7 @@ export function CanvasRail({
   const canvasId = open.id;
   const { queries, mutations } = usePonzu();
   const stop = useMutation(mutations.stopAgent());
+  const takeOver = useMutation(mutations.takeOver());
   const state = useSourceState(open.source);
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
@@ -215,6 +217,10 @@ export function CanvasRail({
         {...(onConnectClaude
           ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
           : {})}
+        onTakeOver={() =>
+          takeOver.mutate(canvasId, { onError: (error) => say(takeOverRefusal(error)) })
+        }
+        takingOver={takeOver.isPending}
         renderDrawing={(messageId) => {
           const local = pictures.get(messageId);
           return local?.state === "drawing" ? (

@@ -905,6 +905,27 @@ export class FakeBackend {
             this.canvases.delete(id);
             this.changed();
           }),
+        // As the API's take-over: only a canvas whose owner is gone from its workspace, by
+        // someone who can change it with their own Claude connected.
+        takeOver: (id) =>
+          call(() => {
+            const canvas = writable(id);
+            const members = this.workspaces.get(canvas.workspaceId)?.members;
+            if (members?.has(canvas.ownerId)) {
+              throw new ApiError(409, "not_ownerless", "Its owner is in the workspace.");
+            }
+            if (this.claude.view(person.id)?.status !== "connected") {
+              throw new ApiError(409, "claude_not_connected", "Connect your Claude first.");
+            }
+            canvas.ownerId = person.id;
+            if (canvas.blocker?.startsWith("claude_")) canvas.blocker = null;
+            this.append(canvas, {
+              kind: "notice",
+              payload: { type: "owner_changed", by: personOf(person) },
+            });
+            this.touch(canvas);
+            return this.view(canvas, person.id);
+          }),
         doc: (id) => call(() => readable(id).sequencer.snapshot()),
         ops: (id, after) =>
           call(() => {
