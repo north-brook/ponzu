@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import { watchHealth } from "@/components/health";
+import { isDownloadHref } from "@/components/platforms";
 
 // Set on Vercel for ponzu.design; local and fork builds send nothing.
 const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -22,11 +23,12 @@ if (key) {
     capture_performance: { web_vitals: true, network_timing: false },
   });
 
-  // Every way to get the app: Download buttons (the install steps) and direct DMG links.
+  // Every way to get the app: Download buttons (the install steps), /iphone and the installers
+  // themselves (isDownloadHref in components/platforms.ts).
   document.addEventListener("click", (e) => {
     const link = (e.target as Element | null)?.closest?.("a[href]");
     const href = link?.getAttribute("href");
-    if (href && (href.startsWith("/download") || href.endsWith(".dmg")))
+    if (href && isDownloadHref(href))
       posthog.capture("download clicked", { href, page: location.pathname });
   });
 
