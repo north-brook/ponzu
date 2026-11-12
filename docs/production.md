@@ -327,7 +327,7 @@ read-only and never asks a vendor to decrypt a value.
 
 | Secret | How |
 |---|---|
-| `PONZU_VAULT_KEY` | Set the new key and move the old one to `PONZU_VAULT_OLD_KEYS`; deploy; run `bun apps/api/scripts/reseal.ts` *(not built yet)* until the selfcheck's `vault_old_keys` reads 0; then drop the old key. Until the reseal script exists, keep old keys in `PONZU_VAULT_OLD_KEYS`: GitHub tokens are resealed at each refresh, other sealed values are not. |
+| `PONZU_VAULT_KEY` | Set the new key and move the old one to `PONZU_VAULT_OLD_KEYS`; deploy; once that deployment serves every request, run `bun apps/api/scripts/reseal.ts` with its `DATABASE_URL`, `PONZU_VAULT_KEY` and `PONZU_VAULT_OLD_KEYS` until it reports nothing left behind (the selfcheck's `vault_old_keys` reads 0 once that check exists); then drop the old key and deploy. |
 | `GITHUB_APP_PRIVATE_KEY` | Add a second key on GitHub, set it, deploy, delete the old one on GitHub. |
 | `GITHUB_WEBHOOK_SECRET` | Set the new value, then `bun scripts/github-webhook.ts configure`, then `redeliver` once the deploy is live (apps/api/README.md, "Deploying"). |
 | `CRON_SECRET` | Set and deploy; Vercel sends the new one at once. |
