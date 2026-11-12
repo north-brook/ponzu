@@ -1,0 +1,6 @@
+{
+  "_recorded": "Recorded read-only and anonymously on 2026-11-12 (GET https://api.github.com/users/ponzu-dev%5Bbot%5D), trimmed to the fields github-app.ts reads. A bot user's id is public: GitHub shows it to anyone, and every commit the App makes carries it.",
+  "login": "ponzu-dev[bot]",
+  "id": 354938669,
+  "type": "Bot"
+}

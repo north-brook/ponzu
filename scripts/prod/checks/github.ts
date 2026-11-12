@@ -3,9 +3,9 @@
  *
  * - The environment's GitHub App, from GitHub's public `GET /apps/{slug}`: it exists and is the
  *   repository owner's, and its permissions, events and homepage are the manifest's exactly. A
- *   permission the manifest does not grant fails (security review item 10). Production's App is
- *   "the same permissions and events as ponzu-dev", so both are judged against
- *   `infra/github-app/ponzu-dev.json`.
+ *   permission the manifest does not grant fails (security review item 10). Each App is judged
+ *   against its own manifest, `infra/github-app/<slug>.json` (ponzu-dev's when infra has none);
+ *   a test holds `ponzu.json` to ponzu-dev's permissions and events.
  * - The repository, with a token: the merge settings in `github/repo.json`, each ruleset in
  *   `github/ruleset-*.json`, each environment (the branches that may deploy, a required reviewer,
  *   its secrets' names), and the names of the repository's variables and secrets.
@@ -21,7 +21,7 @@
  */
 import { Octokit } from "@octokit/core";
 import { z } from "zod";
-import type { EnvironmentName, GithubAppManifest, Infra, Ruleset } from "../desired.ts";
+import type { EnvironmentName, GithubAppManifest, Infra, InfraFile, Ruleset } from "../desired.ts";
 import {
   type CheckContext,
   describeError,
@@ -55,6 +55,8 @@ export interface GithubDesired {
   env: EnvironmentName;
   /** infra/environments.json's githubAppSlug; `null`: not chosen yet. */
   appSlug: string | null;
+  /** `github-app/<slug>.json` when infra has one, else ponzu-dev's (the same permissions). */
+  manifestFile: InfraFile;
   manifest: GithubAppManifest;
   /** `north-brook/ponzu`. */
   repository: string;
@@ -65,12 +67,25 @@ export interface GithubDesired {
   secrets: string[];
 }
 
+/** The manifest file infra keeps for an App: `github-app/<slug>.json`, else ponzu-dev's. */
+export function manifestFile(infra: Infra, slug: string | null): InfraFile {
+  const file = `github-app/${slug}.json`;
+  return file in infra ? (file as InfraFile) : "github-app/ponzu-dev.json";
+}
+
+/** The App manifest infra keeps for a slug (see `manifestFile`). */
+export function appManifest(infra: Infra, slug: string | null): GithubAppManifest {
+  return infra[manifestFile(infra, slug)] as GithubAppManifest;
+}
+
 export function githubDesired(ctx: Pick<CheckContext, "env" | "infra">): GithubDesired {
   const repo = ctx.infra["github/repo.json"];
+  const appSlug = ctx.infra["environments.json"].environments[ctx.env].githubAppSlug;
   return {
     env: ctx.env,
-    appSlug: ctx.infra["environments.json"].environments[ctx.env].githubAppSlug,
-    manifest: ctx.infra["github-app/ponzu-dev.json"],
+    appSlug,
+    manifestFile: manifestFile(ctx.infra, appSlug),
+    manifest: appManifest(ctx.infra, appSlug),
     repository: repo.repository,
     merge: repo.merge,
     rulesets: RULESET_FILES.map(({ file, id, pending }) => ({
@@ -478,7 +493,7 @@ export function evaluateGithub(desired: GithubDesired, observed: GithubObserved)
 }
 
 function evaluateApp(desired: GithubDesired, app: GithubApp | null): Finding[] {
-  const { env, appSlug, manifest } = desired;
+  const { env, appSlug, manifest, manifestFile: file } = desired;
   if (!appSlug) {
     return [f.pending("app", `infra/environments.json names no GitHub App for ${env} yet`)];
   }
@@ -494,7 +509,7 @@ function evaluateApp(desired: GithubDesired, app: GithubApp | null): Finding[] {
     ];
   }
   const owner = desired.repository.split("/")[0] as string;
-  const where = `GitHub › ${owner} › Developer settings › GitHub Apps › ${appSlug} › Permissions & events, as infra/github-app/ponzu-dev.json says`;
+  const where = `GitHub › ${owner} › Developer settings › GitHub Apps › ${appSlug} › Permissions & events, as infra/${file} says`;
   const out: Finding[] = [];
   out.push(
     app.owner?.login === owner

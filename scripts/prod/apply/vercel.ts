@@ -47,7 +47,7 @@ function teamQuery(ctx: Pick<ApplyContext, "credentials">): string {
 }
 
 /** Runs one SDK write. A refused answer schema is a success; an error says only its status. */
-async function write(what: string, call: () => Promise<unknown>): Promise<void> {
+export async function write(what: string, call: () => Promise<unknown>): Promise<void> {
   try {
     await call();
   } catch (error) {

@@ -462,7 +462,8 @@ export const RepoSchema = z.strictObject({
  * A GitHub App manifest (docs.github.com, "Registering a GitHub App from a manifest"), less the
  * two fields the manifest flow fills when it runs: `redirect_url` (its loopback page) and
  * `callback_urls` (WorkOS's GitHub callback, passed as `--workos-callback`). The check compares
- * the live App's public permissions, events and homepage with it.
+ * the live App's public permissions, events and homepage with it; `scripts/prod/github-app.ts`
+ * creates the App from it. One file per App, named by its slug.
  */
 export const GithubAppManifestSchema = z.strictObject({
   name: z.string().min(1).max(34),
@@ -495,6 +496,7 @@ export const INFRA_FILES = {
   "github/ruleset-cloud.json": RulesetSchema,
   "github/repo.json": RepoSchema,
   "github-app/ponzu-dev.json": GithubAppManifestSchema,
+  "github-app/ponzu.json": GithubAppManifestSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type InfraFile = keyof typeof INFRA_FILES;

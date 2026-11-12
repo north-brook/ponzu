@@ -77,6 +77,48 @@ describe("the recorded ponzu-dev App and its manifest", () => {
   });
 });
 
+describe("production's App and its manifest", () => {
+  test("ponzu.json is ponzu-dev.json but for its name: the same permissions, events and URLs", () => {
+    const { name, ...prod } = infra["github-app/ponzu.json"];
+    const { name: devName, ...dev } = infra["github-app/ponzu-dev.json"];
+    expect(name).toBe("Ponzu");
+    expect(devName).toBe("Ponzu Dev");
+    expect(prod).toEqual(dev);
+  });
+
+  test("its webhook and setup URLs are on production's API", () => {
+    const manifest = infra["github-app/ponzu.json"];
+    const api = infra["environments.json"].environments.production.apiUrl;
+    expect(manifest.hook_attributes.url).toBe(`${api}/v1/github/webhook`);
+    expect(manifest.setup_url).toBe(`${api}/v1/github/setup`);
+    expect(manifest.public).toBe(true);
+  });
+
+  test("each environment's App is judged against its own file", () => {
+    expect(desired("dev").manifestFile).toBe("github-app/ponzu-dev.json");
+    expect(desired("production").manifestFile).toBe("github-app/ponzu.json");
+    expect(desired("production").manifest).toEqual(infra["github-app/ponzu.json"]);
+    // A slug infra has no file for falls back to ponzu-dev's permissions and events.
+    const other = githubDesired({
+      env: "production",
+      infra: {
+        ...infra,
+        "environments.json": {
+          ...infra["environments.json"],
+          environments: {
+            ...infra["environments.json"].environments,
+            production: {
+              ...infra["environments.json"].environments.production,
+              githubAppSlug: "ponzu-cloud",
+            },
+          },
+        },
+      },
+    });
+    expect(other.manifestFile).toBe("github-app/ponzu-dev.json");
+  });
+});
+
 describe("evaluate on dev's recorded answers", () => {
   test("every line, exactly", () => {
     expect(evaluateGithub(desired("dev"), observed(recorded()))).toEqual([

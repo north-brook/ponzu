@@ -1,0 +1,31 @@
+{
+  "name": "Ponzu",
+  "url": "https://ponzu.design",
+  "description": "",
+  "public": true,
+  "hook_attributes": { "url": "https://api.ponzu.design/v1/github/webhook", "active": true },
+  "setup_url": "https://api.ponzu.design/v1/github/setup",
+  "setup_on_update": true,
+  "request_oauth_on_install": false,
+  "default_permissions": {
+    "checks": "read",
+    "contents": "write",
+    "emails": "read",
+    "members": "read",
+    "metadata": "read",
+    "pull_requests": "write",
+    "statuses": "read"
+  },
+  "default_events": [
+    "check_run",
+    "check_suite",
+    "member",
+    "membership",
+    "organization",
+    "pull_request",
+    "pull_request_review",
+    "push",
+    "repository",
+    "team"
+  ]
+}

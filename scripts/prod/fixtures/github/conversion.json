@@ -1,0 +1,35 @@
+{
+  "_recorded": "Not recorded: answering POST /app-manifests/{code}/conversions creates a GitHub App, which no agent may do. Written from GitHub's documented answer (docs.github.com, REST › Apps › Create a GitHub App from a manifest) and its type in @octokit/openapi-types 29.0.1 (the integration schema plus client_id, client_secret, webhook_secret and pem). Ids are made up. The three secrets are left out on purpose: each test makes its own, so no key-shaped text is committed.",
+  "id": 1000001,
+  "slug": "ponzu",
+  "node_id": "MDM6QXBwMTAwMDAwMQ==",
+  "owner": { "login": "north-brook", "id": 2000002, "type": "Organization" },
+  "name": "Ponzu",
+  "description": "",
+  "external_url": "https://ponzu.design",
+  "html_url": "https://github.com/apps/ponzu",
+  "created_at": "2026-11-20T10:00:00Z",
+  "updated_at": "2026-11-20T10:00:00Z",
+  "client_id": "Iv23liTestClientId0001",
+  "permissions": {
+    "checks": "read",
+    "contents": "write",
+    "emails": "read",
+    "members": "read",
+    "metadata": "read",
+    "pull_requests": "write",
+    "statuses": "read"
+  },
+  "events": [
+    "check_run",
+    "check_suite",
+    "member",
+    "membership",
+    "organization",
+    "pull_request",
+    "pull_request_review",
+    "push",
+    "repository",
+    "team"
+  ]
+}
