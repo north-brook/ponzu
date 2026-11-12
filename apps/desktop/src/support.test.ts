@@ -1,13 +1,6 @@
 import { expect, test } from "bun:test";
 import { scrubSecretsText } from "@ponzu/client";
-import {
-  bakedEnvironment,
-  HELP_LINKS,
-  requestIdOf,
-  SUPPORT_EMAIL,
-  supportBody,
-  supportMailto,
-} from "./support.ts";
+import { HELP_LINKS, requestIdOf, SUPPORT_EMAIL, supportBody, supportMailto } from "./support.ts";
 
 const facts = {
   version: "2.0.0",
@@ -84,9 +77,4 @@ test("the Help menu's pages are ponzu.design's, exactly", () => {
     privacy: "https://ponzu.design/privacy",
     terms: "https://ponzu.design/terms",
   });
-});
-
-test("until a build is stamped, a packaged app says dev and a checkout says local", () => {
-  expect(bakedEnvironment(true)).toBe("dev");
-  expect(bakedEnvironment(false)).toBe("local");
 });

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { configFor } from "./config.ts";
 import { mainSession } from "./session.ts";
+import { built } from "./testing.ts";
 import { memoryStorage } from "./token-store.ts";
 
 const user = { id: "usr_1", githubLogin: "maya", name: "Maya", email: null, avatarUrl: null };
@@ -32,7 +33,7 @@ function harness(
   const storage = memoryStorage();
   let focused = 0;
   const main = mainSession({
-    config: configFor(false, { PONZU_API_URL: "https://api.test" }),
+    config: configFor(false, { PONZU_API_URL: "https://api.test" }, built()),
     version: "2.0.0",
     storage,
     persistence: () => "memory",
