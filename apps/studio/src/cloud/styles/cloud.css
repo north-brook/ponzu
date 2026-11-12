@@ -191,10 +191,11 @@
 
 /*
  * While the create page's composer travels to the thread (create/flight.ts), the thread's own
- * composer waits unseen in the place it travels to, and shows the moment it lands.
+ * composer waits unseen in the place it travels to, and shows the moment it lands. Unseen, not
+ * hidden: it has the caret from the moment of the send, so keys pressed on the way land in it.
  */
 [data-composer-flight] #thread [data-composer-card] {
-  visibility: hidden;
+  opacity: 0;
 }
 
 /*

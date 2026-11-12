@@ -603,10 +603,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForFunction(() => !document.querySelector("[data-flight]"));
     const home = await page.$eval("#thread [data-composer-card]", (el) => {
       const { x, y, width, height } = el.getBoundingClientRect();
-      return { x, y, width, height, seen: getComputedStyle(el).visibility };
+      const style = getComputedStyle(el);
+      return { x, y, width, height, seen: `${style.visibility} ${style.opacity}` };
     });
     expect(near(last.surface, home)).toBe(true);
-    expect(home.seen).toBe("visible");
+    expect(home.seen).toBe("visible 1");
     // The words are the thread's first line; the composer is empty and has the caret.
     const first = await page.$eval("#thread [data-thread-line], #thread li, #thread p", (el) =>
       el.textContent?.trim(),
@@ -714,6 +715,21 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await gallery<number>("flights")).toBe(1);
   });
 
+  test("keys pressed while the composer travels land in the thread's composer, and keep the pane open", async () => {
+    await page.mouse.move(700, 300);
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.3);
+    await focusOn("Message");
+    await page.keyboard.type("and the");
+    await releaseSend(page);
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    expect(await page.inputValue("#thread textarea")).toBe("and the");
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
   test("with reduced motion nothing travels, and it ends the same: the words in the thread, the caret there, the pane closing after the beat", async () => {
     await openSend("&beat=300", "reduce");
     await page.keyboard.press("Enter");
@@ -743,7 +759,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       return (
         Math.round(r.right) === 1300 - 10 &&
         Math.round(r.bottom) === 820 - 10 &&
-        getComputedStyle(el).visibility === "visible"
+        getComputedStyle(el).visibility === "visible" &&
+        getComputedStyle(el).opacity === "1"
       );
     });
   });
@@ -761,8 +778,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     );
     await releaseSend(page);
     expect(
-      await page.$eval("#thread [data-composer-card]", (el) => getComputedStyle(el).visibility),
-    ).toBe("visible");
+      await page.$eval("#thread [data-composer-card]", (el) => getComputedStyle(el).opacity),
+    ).toBe("1");
   });
 
   test("the picker lists every workspace's repos by full name, the window's first, and searches them all", async () => {

@@ -77,17 +77,22 @@ export function useLanding(
     ];
     for (const [type, fn] of listening) document.addEventListener(type, fn, true);
 
+    // Empty and ready: the caret in it, as it was in the composer that sent. Given at take-off,
+    // not on landing, so keys pressed while it travels land there and not on the page's body.
+    const caret = () => {
+      const field = threadComposer()?.querySelector<HTMLTextAreaElement>("textarea:enabled");
+      if (!field || document.activeElement === field) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      ours = true;
+      quietFocus(field);
+      ours = false;
+    };
     const landed = () => {
       if (over) return;
-      // Empty and ready: the caret in it, as it was in the composer that sent.
-      const field = threadComposer()?.querySelector<HTMLTextAreaElement>("textarea:enabled");
-      if (field && !document.querySelector('[role="dialog"], [role="menu"]')) {
-        ours = true;
-        quietFocus(field);
-        ours = false;
-      }
+      caret();
       timer = setTimeout(() => end(false), beatMs);
     };
+    caret();
     const target = threadComposer();
     if (origin.current && target) {
       flight = fly(origin.current, target);
