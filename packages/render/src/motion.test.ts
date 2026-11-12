@@ -285,6 +285,21 @@ describe.skipIf(!chromium)("video stills", () => {
       await p.close();
     }
   });
+
+  test("a video showing captions stays itself, since a still would leave them out", async () => {
+    const { p } = await page(board(""));
+    try {
+      await p.evaluate(`(() => {
+        const t = document.querySelector("video").addTextTrack("subtitles", "en");
+        t.mode = "showing";
+        t.addCue(new VTTCue(0, 2, "Hello"));
+      })()`);
+      await p.evaluate(prepareScript({ at: 1000 }));
+      expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
+    } finally {
+      await p.close();
+    }
+  });
 });
 
 /** Two seconds of 64×64 red, VP8. */

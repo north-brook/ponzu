@@ -433,18 +433,19 @@ function motionRuntime() {
    * reading it back is refused, and nothing does.
    *
    * A video is left as it is, its seek waited on as before, where a still
-   * couldn't show what it shows: no frame yet, its poster up, its controls,
-   * or nothing on screen. So is one with CSS animations or transitions of
+   * couldn't show what it shows: no frame yet, its poster up, its controls
+   * or captions, or nothing on screen. So is one with CSS animations or transitions of
    * its own, which end when it leaves the page and start over when it's
    * back; and every video, when a selector would match the canvas or the
    * page around it differently than it does the video (stillsAllowed).
    */
   function still() {
     live();
-    if (!root || !stillsAllowed()) return;
+    const vs = root ? root.querySelectorAll("video") : [];
+    if (!vs.length || !stillsAllowed()) return;
     // All drawn and styled before any goes in, so none is read with another already out.
     const ready: [HTMLVideoElement, HTMLCanvasElement][] = [];
-    for (const v of root.querySelectorAll("video")) {
+    for (const v of vs) {
       const c = drawStill(v);
       if (c) ready.push([v, c]);
     }
@@ -469,6 +470,8 @@ function motionRuntime() {
 
   function drawStill(v: HTMLVideoElement): HTMLCanvasElement | null {
     if (v.readyState < 2 || !v.videoWidth || !v.videoHeight || v.controls) return null;
+    // Captions are drawn over the frame by the video, and drawImage leaves them out.
+    if ([...v.textTracks].some((t) => t.mode === "showing")) return null;
     // Neither seeked nor played: the poster is what shows.
     if (v.poster && !movedVideos.has(v) && !v.played.length) return null;
     const cs = getComputedStyle(v);
