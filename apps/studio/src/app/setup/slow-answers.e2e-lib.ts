@@ -52,7 +52,7 @@ function record() {
     const title = h1?.textContent?.trim() ?? "";
     if (document.querySelector('[data-screen="sign-in"]')) screen = "sign-in";
     else if (STEPS[title]) screen = STEPS[title]!;
-    else if (document.body?.textContent?.includes("What do you want to design?")) screen = "create";
+    else if (document.body?.textContent?.includes("Make something")) screen = "create";
     else if (document.querySelector("#sidebar")) screen = "app";
     else if (title) screen = `other: ${title}`;
     if (w.screens.at(-1) !== screen) w.screens.push(screen);
@@ -247,7 +247,7 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         requestAnimationFrame(look);
       });
       await page.getByRole("button", { name: "Start designing" }).click();
-      await page.getByText("What do you want to design?").waitFor();
+      await page.getByText("Make something").waitFor();
       // The ideas, taking turns as the composer's placeholder.
       await page.locator("[data-suggestion]").waitFor();
       await settle();
@@ -257,7 +257,7 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         ...new Set((window as unknown as { composer: number[] }).composer),
       ]);
       expect(tops).toHaveLength(1);
-      const field = page.getByPlaceholder(/Describe a screen/);
+      const field = page.getByPlaceholder(/Describe what you want to make/);
       await field.press("Tab");
       expect(KETTLE_IDEAS).toContain(await field.inputValue());
 

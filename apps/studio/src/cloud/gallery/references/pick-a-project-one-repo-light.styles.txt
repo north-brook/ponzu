@@ -67,13 +67,13 @@ text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
-icon svg 173×47.2 rgb(17, 17, 16) stroke 3.4px
-text "What do you want to design?" rgb(17, 17, 16) 400 13px Inter
-ground div rgb(232, 230, 224)
+icon svg 56×56 rgb(17, 17, 16) stroke 3.4px
+text "Make something in" rgb(17, 17, 16) 600 28px Funnel Display
+text "north-brook/ponzu-test" rgb(17, 17, 16) 600 28px Funnel Display
 ground button[Project: north-brook/ponzu-test] rgba(17, 17, 16, 0.08)
-text "north-brook" rgb(169, 165, 155) 600 22px Funnel Display
-text "/" rgb(169, 165, 155) 600 22px Funnel Display
-text "ponzu-test" rgb(17, 17, 16) 600 22px Funnel Display
+text "north-brook" rgb(169, 165, 155) 600 28px Funnel Display
+text "/" rgb(169, 165, 155) 600 28px Funnel Display
+text "ponzu-test" rgb(17, 17, 16) 600 28px Funnel Display
 icon svg[Project: north-brook/ponzu-test] 16×16 rgb(128, 124, 115) stroke 1.7px
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(17, 17, 16) 400 16px Inter

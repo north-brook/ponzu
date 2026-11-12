@@ -200,7 +200,29 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
     reference: true,
     differs:
-      "the logo stands where the board's question is, the ideas take turns as the composer's placeholder instead of tiles under it, and the page has the canvas's dots",
+      "the mark over a statement ending in the project selector stands where the board's question is, centred in the room above a composer docked at the pane's foot; the ideas take turns as the composer's placeholder instead of tiles under it, and the page has the canvas's dots",
+  },
+  {
+    // The create page in a short window and a tall one: the hero centred in the room above the
+    // composer at each, the composer on the pane's foot.
+    id: "fresh-start-short",
+    title: "Fresh start · a short window",
+    width: 1440,
+    height: 700,
+    reference: true,
+  },
+  {
+    id: "fresh-start-tall",
+    title: "Fresh start · a tall window",
+    width: 1440,
+    height: 1200,
+    reference: true,
+  },
+  {
+    // Sent: the composer travels to the thread, which closes after a beat (gallery.create.test.ts).
+    id: "create-send",
+    title: "Create · sending: the composer goes to the thread",
+    ...WINDOW,
   },
   { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
   { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },
