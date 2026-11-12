@@ -15,6 +15,8 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   type GitReport,
+  type ModelsReport,
+  type ModelsResponse,
   type PullRequestStanding,
   type PullRequestSummaryRequest,
   type PullRequestSummaryResponse,
@@ -127,6 +129,10 @@ export class HttpRunnerApi implements RunnerApi {
 
   async recordUsage(turns: TurnUsage[]): Promise<void> {
     await this.call("POST", "/v1/runner/usage", { turns });
+  }
+
+  reportModels(report: ModelsReport): Promise<ModelsResponse> {
+    return this.call<ModelsResponse>("POST", "/v1/runner/models", report);
   }
 
   async saveCheckpoint(point: Checkpoint): Promise<SavedPoint> {

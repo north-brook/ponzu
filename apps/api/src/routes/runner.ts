@@ -15,6 +15,7 @@ import type {
   ClaimResponse,
   CompleteResponse,
   GitCredentialResponse,
+  ModelsResponse,
   PullRequestSummaryResponse,
   QuestionResponse,
   RestoreResponse,
@@ -42,6 +43,7 @@ import { validate } from "../http/validate.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
 import { credentialOf, describeToken, gitTarget } from "../runner/git-credential.ts";
+import { recordReportedModels } from "../runner/models.ts";
 import {
   Ack,
   Checkpoint,
@@ -49,6 +51,7 @@ import {
   Complete,
   GitCredential,
   GitReport,
+  Models,
   PullRequestSummary,
   Question,
   Restored,
@@ -98,6 +101,21 @@ const SessionView: z.ZodType<RunnerSession> = z.object({
   saved: SavedView.nullable(),
   workspaceId: z.string(),
   analytics: z.object({ key: z.string(), host: z.string(), content: z.boolean() }).nullable(),
+  models: z
+    .object({
+      claudeCode: z.string(),
+      at: z.string(),
+      models: z.array(
+        z.object({
+          value: z.string(),
+          resolvedModel: z.string().nullable(),
+          displayName: z.string(),
+          description: z.string(),
+          efforts: z.array(z.enum(["low", "medium", "high", "xhigh", "max"])).nullable(),
+        }),
+      ),
+    })
+    .nullable(),
 });
 const Archive = z.object({ url: z.string(), size: z.number(), sha256: z.string() });
 const RestoreView: z.ZodType<RestoreResponse> = z.object({
@@ -411,6 +429,11 @@ export const runner = new Hono<AppEnv>()
    * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
    * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
    */
+  .post("/models", access.runner, validate("json", Models), async (c) => {
+    const kept = await recordReportedModels(c.var.deps, c.var.actor.designId, c.req.valid("json"));
+    return c.json({ kept } satisfies ModelsResponse);
+  })
+
   .post("/usage", access.runner, validate("json", Usage), async (c) => {
     const { turns } = c.req.valid("json");
     const recorded = await recordTurnUsage(c.var.deps.db, {

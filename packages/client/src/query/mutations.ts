@@ -9,6 +9,7 @@ import type {
   SendMessageBody,
   UploadFile,
 } from "../api.ts";
+import { ApiError } from "../errors.ts";
 import { queryKeys } from "./keys.ts";
 
 type Me = Awaited<ReturnType<Api["me"]>>;
@@ -36,15 +37,30 @@ export type PullRequestAction =
  *   const connect = useMutation(mutations.connectApiKey());
  */
 export function ponzuMutations(api: Api, queryClient: QueryClient) {
-  /** The person's Claude changed: the account, and `me`, which carries it. */
+  /**
+   * The person's Claude changed: the account, `me`, which carries it, and the defaults, since
+   * what an account is offered is what Claude Code reported for its credential (docs/cloud.md,
+   * "Models") and a new credential starts again from the hand-kept list.
+   */
   const claudeChanged = (answer: ClaudeAnswer | null) => {
     const account = answer?.account ?? null;
     queryClient.setQueryData(queryKeys.claudeAccount(), account);
     queryClient.setQueryData<Me>(queryKeys.me(), (me) =>
       me ? { ...me, claudeAccount: account } : me,
     );
-    return queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.me() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.claudeDefaults() }),
+    ]);
   };
+  /**
+   * A model or effort the account no longer offers was sent: what it offers changed since the
+   * defaults were read (a runner reported), so read them again and the picker shows what it does.
+   */
+  const unlessOffered = (error: unknown) =>
+    error instanceof ApiError && error.code === "model_not_offered"
+      ? queryClient.invalidateQueries({ queryKey: queryKeys.claudeDefaults() })
+      : undefined;
 
   return {
     /**
@@ -102,6 +118,7 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
       mutationOptions({
         mutationFn: (body: AgentDefaultsBody) => api.claude.setDefaults(body),
         onSuccess: (defaults) => queryClient.setQueryData(queryKeys.claudeDefaults(), defaults),
+        onError: unlessOffered,
       }),
     /** Admins only; 409 `owner_is_admin` or `last_admin` when it can't be done. */
     setRole: () =>
@@ -111,9 +128,15 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
         onSettled: (_answer, _error, vars) =>
           queryClient.invalidateQueries({ queryKey: queryKeys.workspace(vars.workspaceId) }),
       }),
-    /** Makes a design; the same `createKey` sent again answers the one it made. */
+    /**
+     * Makes a design; the same `createKey` sent again answers the one it made. 400
+     * `model_not_offered` reads the defaults again, for the picker to show what is offered now.
+     */
     createDesign: () =>
-      mutationOptions({ mutationFn: (body: CreateDesignBody) => api.designs.create(body) }),
+      mutationOptions({
+        mutationFn: (body: CreateDesignBody) => api.designs.create(body),
+        onError: unlessOffered,
+      }),
 
     /*
      * An open design. Its thread and what its agent waits on are live queries; these are what a

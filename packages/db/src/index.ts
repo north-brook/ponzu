@@ -63,6 +63,8 @@ export {
   claudeAccountIdFor,
   connectClaudeAccount,
   disconnectClaudeAccount,
+  getClaudeAccountById,
+  recordClaudeModels,
   setAgentDefaults,
   setClaudeBlocker,
 } from "./queries/claude.ts";

@@ -924,9 +924,10 @@ Two pins move together: the Agent SDK in `apps/runner/package.json` (exact, with
 Claude Code in `pins.json` (version, the linux-x64 binary's URL and its SHA-256). The SDK names
 the one Claude Code it is released with (`claudeCodeVersion` in its package, the same patch
 number), and the runner refuses an image whose Claude Code is not that one. Models are not
-pinned in the image: a design names one (`CLAUDE_MODELS` in `apps/api/src/claude/models.ts`)
-and the image's Claude Code takes it, so a new model is usable once the image's Claude Code
-knows it and that list offers it.
+pinned in the image: an account is offered what the image's Claude Code reports for it
+("Models"), so a new model is usable once the image's Claude Code knows it and a runner on that
+image has reported. `CLAUDE_MODELS` in `apps/api/src/claude/models.ts` is only the fallback
+offered before a report, and the names and order of the models it knows.
 
 **The bump pull request.** `.github/workflows/claude-code.yml` looks for an Agent SDK newer than
 the pin (`apps/runner/image/bump.ts`), daily once `cloud` is the default branch and until then
@@ -1224,6 +1225,69 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
 - **Repo secrets** are stored encrypted per repo and passed in the runner's start command
   at every start of the sandbox ("Repo environments").
 
+### Models
+
+What a design may run on is what Claude Code offers the person's Claude account, not a list
+Ponzu keeps. Each time the runner starts Claude Code it reads the Agent SDK's
+`supportedModels()` (`initializationResult()`, which Claude Code answers when the session
+starts, so nothing is sent to Claude and no turn waits on it), and posts it to
+`POST /v1/runner/models` with the Claude Code version that said it, beside the first turn rather
+than ahead of it. It posts only when the answer differs from what the session said the API
+holds, came from another Claude Code, or is more than a day old, so a plan that gains or loses a
+model shows up within a day. The API keeps it on the account (`claude_accounts.models`, with
+`models_reported_at` and `models_claude_code`), only while the sandbox that reported it runs on
+the credential the account holds now; connecting another key or subscription clears it.
+
+`supportedModels()` answers aliases, not model ids. For the development API key on Claude Code
+2.1.322 it was `default`, `opus`, `fable`, `sonnet` and `haiku`, each with `resolvedModel` (the
+full id it runs as now, `claude-opus-5-5`), a short `displayName` (`Opus`), a `description` that
+begins with the version (`Opus 5.5 · Best for everyday, complex tasks · $4/$20 per Mtok`), and
+`supportedEffortLevels` (all five, for each). That answer is recorded in
+`apps/runner/src/agent/fixtures/supported-models.api-key.json` by
+`apps/runner/scripts/supported-models.ts`, which the tests use. What a subscription is answered
+has not been observed; the API takes whatever arrives. `apps/api/src/claude/models.ts` turns a
+report into the picker's rows:
+
+- each entry runs on its `resolvedModel`, or on its `value` when Claude Code gives none, so a
+  saved choice keeps naming one model whatever the alias later points at;
+- `default` (whatever Claude Code runs by default) is never a row, and an id already offered is
+  not offered twice; a `default` whose model no other entry offers is offered under its id;
+- a model the hand-kept list knows takes its name and its place in that list; any other comes
+  after, in Claude Code's order, named by the start of its description when that is its
+  `displayName` and a version (`Opus 6`), otherwise by its `displayName`, put on one line and
+  cut to 40 characters (the apps render it as text, never as markup);
+- each row carries the efforts it takes (`supportedEffortLevels`; none when `supportsEffort` is
+  false; all five when Claude Code says nothing).
+
+`GET /v1/claude/defaults`, the query the model picker and Settings read, answers those rows. An
+account nobody has reported for (just connected, never run) is offered the hand-kept list, so the
+picker is never empty. The default is Opus 5.5 on medium when the account offers it; otherwise
+the model Claude Code calls its default, otherwise the first offered. `PATCH /v1/claude/defaults`
+and `POST /v1/designs` take only a model the account offers and an effort that model takes (400
+`model_not_offered`). For a model that takes no effort the defaults show medium, so an effort
+sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
+answer what will run in its place, which the picker shows, and a design made on it runs on that
+at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
+never handed a model it would refuse once a runner has reported. Nothing in the design's thread
+says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+live query does not carry the report): a create or a defaults change refused with
+`model_not_offered` reads them again, as does connecting another credential, so the picker
+then shows what the account offers. Before the first report the hand-kept list is offered as
+it is, so a model in it that the account does not have is still handed to Claude Code once.
+
+**When Anthropic ships a model, or Claude Code updates.** The list comes from the Claude Code in
+the sandbox image, and the runner bundle's Agent SDK must match it (`bundle-fits`). So a new
+model appears once a Claude Code that knows it is pinned (`apps/runner/image/pins.json` and the
+runner's `@anthropic-ai/claude-agent-sdk`), the image is rebuilt (`image.yml`) and the API that
+carries the matching runner is deployed. No Mac or iPhone release is needed and no list in Ponzu
+is edited: the first runner on the new image reports it, and every app's picker offers it under
+Claude Code's own name. A model Anthropic retires goes the same way: once Claude Code stops
+offering it, it is not offered, and designs made on it run on the default. The pin bump itself
+is the other track's scheduled job, not part of this; until it lands, a bump is a pull request
+by hand. Not proven: whether Claude Code ever learns of a model without a new binary (for
+example from its own server for a subscription); if it does, that model is offered as soon as a
+runner reports it.
+
 ## The runner protocol
 
 What the runner and the API say to each other. The runner's whole view of the API is
@@ -1292,6 +1356,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |
@@ -1331,9 +1396,16 @@ RunnerSession = {
   seq,                                           // the design's head
   saved: SavedPoint | null,                      // the last checkpoint ("Checkpoints")
   workspaceId,                                   // the design's workspace
-  analytics: { key, host, content } | null       // where turns are traced (docs/analytics.md)
+  analytics: { key, host, content } | null,      // where turns are traced (docs/analytics.md)
+  models: { claudeCode, at, models: ReportedModel[] } | null  // what the API holds ("Models")
 }
+
+ReportedModel = { value, resolvedModel: string | null, displayName, description,
+                  efforts: ("low" | "medium" | "high" | "xhigh" | "max")[] | null }
 ```
+
+`model` and `effort` are what the design was made with while its account offers them, or what
+runs in their place ("Models"); null is Claude Code's own default.
 
 Each call mints a new `runnerId` and makes it the design's; the runner keeps the last one it
 was answered with, so a retry after a lost answer is safe. `openQuestions` stay open: their

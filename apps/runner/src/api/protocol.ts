@@ -117,6 +117,46 @@ export interface RunnerSession {
    * from an older API) when analytics is off (docs/analytics.md).
    */
   analytics?: RunnerAnalytics | null;
+  /**
+   * What the API holds of the models Claude Code offers the Claude account the design runs on,
+   * as a runner on its credential last reported them: the runner reports again only when what
+   * its Claude Code says differs, or this is stale. Null when nothing is held; absent from an
+   * older API.
+   */
+  models?: ModelsHeld | null;
+}
+
+/** One model Claude Code offers, as `supportedModels()` said it (docs/cloud.md, "Models"). */
+export interface ReportedModel {
+  /** What Claude Code takes as a model: an alias (`opus`, `default`) or a full id. */
+  value: string;
+  /** The full id `value` runs as now, when Claude Code says. */
+  resolvedModel: string | null;
+  displayName: string;
+  description: string;
+  /** The effort levels it takes; empty when it takes none, null when Claude Code did not say. */
+  efforts: Effort[] | null;
+}
+
+/**
+ * `POST /v1/runner/models`: what Claude Code offers the account this runner runs as, and which
+ * Claude Code said so. Answered 200 with whether the API kept it (`ModelsResponse`). Safe to
+ * repeat: the last one sent wins.
+ */
+export interface ModelsReport {
+  claudeCode: string;
+  models: ReportedModel[];
+}
+
+export interface ModelsResponse {
+  /** False when the account the design runs on is no longer the credential this runner holds. */
+  kept: boolean;
+}
+
+/** What the API holds of a report. */
+export interface ModelsHeld extends ModelsReport {
+  /** When it was reported. ISO 8601. */
+  at: string;
 }
 
 /** PostHog, as the API hands it to a runner. Every value is public. */

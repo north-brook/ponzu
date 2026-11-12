@@ -83,6 +83,8 @@ describe("the session and the lease", () => {
       workspaceId: ws.id,
       // The test app has no PostHog key: the runner traces nothing.
       analytics: null,
+      // Its design records no Claude account: nothing reported for one.
+      models: null,
     });
   });
 

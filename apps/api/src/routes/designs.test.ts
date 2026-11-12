@@ -161,7 +161,7 @@ describe("POST /v1/designs", () => {
       model: "claude-opus-5-5",
       effort: "medium",
     });
-    expect(bad.status).toBe(400);
+    expect([bad.status, bad.body.error.code]).toEqual([400, "model_not_offered"]);
   });
 
   test("a runner cannot start one", async () => {

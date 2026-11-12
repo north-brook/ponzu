@@ -169,6 +169,13 @@
       "when": 1794438544518,
       "tag": "0023_vercel_sandboxes",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794449137081,
+      "tag": "0024_claude_models",
+      "breakpoints": true
     }
   ]
 }

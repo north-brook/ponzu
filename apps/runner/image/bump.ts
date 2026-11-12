@@ -348,7 +348,7 @@ export function pullRequest(r: RunResults) {
   ];
   if (r.applied.modelsNotOffered.length)
     lines.push(
-      `These notes name models Ponzu does not offer yet: ${r.applied.modelsNotOffered.map((m) => `\`${m}\``).join(", ")}. To offer one, add it to \`CLAUDE_MODELS\` in apps/api/src/claude/models.ts, in this pull request or after it.`,
+      `These notes name models Ponzu's hand-kept list does not have: ${r.applied.modelsNotOffered.map((m) => `\`${m}\``).join(", ")}. An account is offered one once a runner on this image reports it. To give one a name and a place in the picker, and to offer it before a report, add it to \`CLAUDE_MODELS\` in apps/api/src/claude/models.ts, in this pull request or after it.`,
       "",
     );
   lines.push(

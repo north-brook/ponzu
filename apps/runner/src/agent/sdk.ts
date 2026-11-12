@@ -23,11 +23,13 @@ import type {
   AgentRun,
   AgentTool,
   Ask,
+  OfferedModels,
   Reply,
   SessionHistory,
   TurnError,
 } from "./agent.ts";
 import { Channel } from "./channel.ts";
+import { reportedModels } from "./models.ts";
 import { PartialInput } from "./partial.ts";
 import { type TurnSummary, TurnTrace } from "./trace.ts";
 
@@ -206,6 +208,11 @@ class ClaudeRun implements AgentRun {
     this.inbox.close();
     this.q.close();
     await this.done;
+  }
+
+  async offered(): Promise<OfferedModels | null> {
+    const init = await this.q.initializationResult();
+    return { claudeCode: init.claude_code_version ?? null, models: reportedModels(init.models) };
   }
 
   private take(askId: string): Pending | undefined {

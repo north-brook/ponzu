@@ -101,6 +101,8 @@ export function fakeApiHandler(
         case "POST /v1/runner/usage":
           await fake.recordUsage(runner, body.turns);
           return Response.json({ recorded: body.turns.length });
+        case "POST /v1/runner/models":
+          return Response.json(await fake.reportModels(runner, body));
         case "POST /v1/runner/checkpoint": {
           const take = (id: string | null) => {
             if (id === null) return null;

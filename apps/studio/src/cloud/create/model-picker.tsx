@@ -1,5 +1,5 @@
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
-import type { Effort, ModelOption } from "../model.ts";
+import { type Effort, effortFor, effortsOf, type ModelOption } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
@@ -22,8 +22,10 @@ export const EFFORT_LABELS: Record<Effort, string> = {
 };
 
 export interface ModelChoice {
-  models: ModelOption[];
-  efforts: Effort[];
+  /** What the person's Claude account offers, in order. */
+  models: readonly ModelOption[];
+  /** The efforts to list for a model that does not say which it takes. */
+  efforts: readonly Effort[];
   model: string;
   effort: Effort;
   onChange: (model: string, effort: Effort) => void;
@@ -32,6 +34,7 @@ export interface ModelChoice {
 /** The model and effort a new design runs with: Claude's mark, the model, the effort, quietly. */
 export function ModelPicker({ models, efforts, model, effort, onChange }: ModelChoice) {
   const label = models.find((m) => m.id === model)?.label ?? model;
+  const takes = effortsOf(models, efforts, model);
   return (
     <Menu>
       <MenuTrigger asChild>
@@ -48,7 +51,10 @@ export function ModelPicker({ models, efforts, model, effort, onChange }: ModelC
       </MenuTrigger>
       <MenuContent width={220} side="bottom" align="end" sideOffset={6}>
         <MenuLabel>Model</MenuLabel>
-        <MenuRadioGroup value={model} onValueChange={(id) => onChange(id, effort)}>
+        <MenuRadioGroup
+          value={model}
+          onValueChange={(id) => onChange(id, effortFor(models, efforts, id, effort))}
+        >
           {models.map((m) => (
             <MenuRadioItem key={m.id} value={m.id}>
               {m.label}
@@ -58,7 +64,7 @@ export function ModelPicker({ models, efforts, model, effort, onChange }: ModelC
         <MenuSeparator />
         <MenuLabel>Effort</MenuLabel>
         <MenuRadioGroup value={effort} onValueChange={(e) => onChange(model, e as Effort)}>
-          {efforts.map((e) => (
+          {takes.map((e) => (
             <MenuRadioItem key={e} value={e}>
               {EFFORT_LABELS[e]}
             </MenuRadioItem>

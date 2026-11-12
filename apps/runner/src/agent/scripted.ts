@@ -7,6 +7,7 @@ import type {
   AgentOptions,
   AgentRun,
   Ask,
+  OfferedModels,
   Reply,
   SessionHistory,
   TurnError,
@@ -25,10 +26,12 @@ export class ScriptedAgent implements Agent {
   readonly sessions = new Map<string, SessionHistory>();
   /** While set, reading a transcript fails with it, as with a disk that refuses. */
   historyError: Error | null = null;
+  /** What each run started from now says Claude Code offers. Nothing, unless a test says. */
+  offers: OfferedModels | null = null;
   private started: ((run: ScriptedRun) => void)[] = [];
 
   start(opts: AgentOptions): AgentRun {
-    const run = new ScriptedRun(opts);
+    const run = new ScriptedRun(opts, this.offers);
     this.runs.push(run);
     for (const wake of this.started.splice(0)) wake(run);
     return run;
@@ -64,7 +67,14 @@ export class ScriptedRun implements AgentRun {
   private calls = 0;
   private seen = 0;
 
-  constructor(readonly opts: AgentOptions) {}
+  constructor(
+    readonly opts: AgentOptions,
+    private readonly offers: OfferedModels | null = null,
+  ) {}
+
+  async offered(): Promise<OfferedModels | null> {
+    return this.offers;
+  }
 
   [Symbol.asyncIterator](): AsyncIterator<AgentEvent> {
     return this.out[Symbol.asyncIterator]();

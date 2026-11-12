@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectChoice, RepoShelf } from "../cloud/create/create.ts";
 import { CreatePage } from "../cloud/create/create-page.tsx";
 import { ClaudeSignedOutDialog } from "../cloud/dialogs/account-dialogs.tsx";
-import type { Effort, PendingAttachment, Repo } from "../cloud/model.ts";
+import { type Effort, effortsOf, type PendingAttachment, type Repo } from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import type { FreshDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
@@ -152,7 +152,7 @@ export function CreateView({
   const remembered =
     model &&
     defaults.data?.models.some((m) => m.id === model.model) &&
-    defaults.data.efforts.includes(model.effort)
+    effortsOf(defaults.data.models, defaults.data.efforts, model.model).includes(model.effort)
       ? model
       : null;
   const choice =
@@ -231,7 +231,10 @@ export function CreateView({
       setError(
         failure instanceof ApiError && failure.code === "network"
           ? "Ponzu can't be reached. Check your connection and send it again."
-          : "That design couldn't be made. Try again.",
+          : failure instanceof ApiError && failure.code === "model_not_offered"
+            ? // The defaults are read again (mutations.ts), so the picker shows what is offered.
+              "Your Claude account doesn't offer that model any more. Check the model and send it again."
+            : "That design couldn't be made. Try again.",
       );
     } finally {
       going.current = false;

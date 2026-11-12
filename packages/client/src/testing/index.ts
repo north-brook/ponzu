@@ -8,6 +8,6 @@ export {
   type FakePerson,
   fakeSession,
 } from "./backend.ts";
-export { FakeClaude } from "./claude.ts";
+export { FakeClaude, KNOWN_MODELS } from "./claude.ts";
 export { FakeClock, settle } from "./clock.ts";
 export { type FakeQuery, FakeRealtime, FakeSubscription, fakeSeal } from "./realtime.ts";

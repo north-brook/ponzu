@@ -8,6 +8,8 @@ import type {
   GitCredentialRequest,
   GitCredentialResponse,
   GitReport,
+  ModelsReport,
+  ModelsResponse,
   PullRequestStanding,
   PullRequestSummaryResponse,
   QuestionRequest,
@@ -79,6 +81,11 @@ export interface RunnerApi {
   reportGit(report: GitReport): Promise<void>;
   /** Safe to repeat: turns are recorded by their ids. */
   recordUsage(turns: TurnUsage[]): Promise<void>;
+  /**
+   * What Claude Code offers the account this runner runs as. Answers whether the API kept it.
+   * Safe to repeat: the last one sent wins.
+   */
+  reportModels(report: ModelsReport): Promise<ModelsResponse>;
   /**
    * Uploads a checkpoint's archives and records it. Answers the checkpoint the API has now,
    * which is this one or a newer one. Safe to repeat: an older or equal turn changes nothing.
@@ -178,6 +185,7 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),
     reportGit: watch(api.reportGit.bind(api)),
     recordUsage: watch(api.recordUsage.bind(api)),
+    reportModels: watch(api.reportModels.bind(api)),
     saveCheckpoint: watch(api.saveCheckpoint.bind(api)),
     restore: watch(api.restore.bind(api)),
     reportRestored: watch(api.reportRestored.bind(api)),

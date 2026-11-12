@@ -8,6 +8,8 @@
     "./protocol": "./src/api/protocol.ts",
     "./turn": "./src/turn.ts",
     "./bundle": "./src/bundle.ts",
+    "./models": "./src/agent/models.ts",
+    "./fixtures/supported-models.api-key.json": "./src/agent/fixtures/supported-models.api-key.json",
     "./image/current.json": "./image/current.json"
   },
   "scripts": {

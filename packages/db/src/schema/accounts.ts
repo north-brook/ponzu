@@ -43,6 +43,22 @@ export interface ClaudeLimit {
   resetsAt: string;
 }
 
+/**
+ * One model Claude Code offers an account, as its runner last reported it: an entry of the Agent
+ * SDK's `supportedModels()`, kept as the SDK said it (docs/cloud.md, "Models"). The API turns
+ * these into what the apps offer, so a change to how it does needs no new report.
+ */
+export interface ClaudeModelReport {
+  /** What Claude Code takes as a model: an alias (`opus`, `default`) or a full id. */
+  value: string;
+  /** The full id `value` runs as now (`claude-opus-5-5`), when Claude Code says. */
+  resolvedModel: string | null;
+  displayName: string;
+  description: string;
+  /** The effort levels it takes; empty when it takes none, null when Claude Code did not say. */
+  efforts: ("low" | "medium" | "high" | "xhigh" | "max")[] | null;
+}
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   workosUserId: text("workos_user_id").notNull().unique(),
@@ -383,6 +399,13 @@ export const claudeAccounts = pgTable(
     limitsObservedAt: instant("limits_observed_at"),
     /** Set while the plan is at a limit; designs on this account wait until then. */
     limitedUntil: instant("limited_until"),
+    /**
+     * The models Claude Code offered this credential, as a runner on it last reported; when, and
+     * which Claude Code said so. Null until a runner has; cleared when the credential changes.
+     */
+    models: jsonb("models").$type<ClaudeModelReport[]>(),
+    modelsReportedAt: instant("models_reported_at"),
+    modelsClaudeCode: text("models_claude_code"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

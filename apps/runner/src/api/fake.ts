@@ -21,6 +21,8 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   type GitReport,
+  type ModelsReport,
+  type ModelsResponse,
   type Notice,
   type Person,
   type Priority,
@@ -192,6 +194,7 @@ export class FakeRunnerApi {
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
       reportGit: as((r, report: GitReport) => this.reportGit(r, report)),
       recordUsage: as((r, turns: TurnUsage[]) => this.recordUsage(r, turns)),
+      reportModels: as((r, report: ModelsReport) => this.reportModels(r, report)),
       saveCheckpoint: as((r, point: Checkpoint) => this.saveCheckpoint(r, point)),
       restore: as((r) => this.restore(r)),
       reportRestored: as((r, report: RestoredReport) => this.reportRestored(r, report)),
@@ -444,6 +447,20 @@ export class FakeRunnerApi {
   async recordUsage(runner: string, turns: TurnUsage[]): Promise<void> {
     await this.enter("recordUsage", runner);
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
+  }
+
+  /** Every report of what Claude Code offers, in the order they came. */
+  readonly modelReports: ModelsReport[] = [];
+  /** While false, a report is not kept: the account has another credential now. */
+  keepModels = true;
+
+  /** As the API does: kept, the next session says it holds it, as reported now. */
+  async reportModels(runner: string, report: ModelsReport): Promise<ModelsResponse> {
+    await this.enter("reportModels", runner);
+    this.modelReports.push(structuredClone(report));
+    if (!this.keepModels) return { kept: false };
+    this.sessionInfo.models = { ...structuredClone(report), at: new Date().toISOString() };
+    return { kept: true };
   }
 
   /** The agent's pull request summaries, in the order they came. */

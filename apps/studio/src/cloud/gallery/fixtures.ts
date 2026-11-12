@@ -358,6 +358,17 @@ export const models: ModelOption[] = [
   { id: "claude-sonnet-5", label: "Sonnet 5" },
 ];
 
+/**
+ * What an account offers once Claude Code knows a model Ponzu has never heard of, as the API
+ * answers it: the new one under Claude Code's own name, after the ones Ponzu knows, and no Fable
+ * (this account isn't offered it). Haiku takes only two efforts here.
+ */
+export const reportedModels: ModelOption[] = [
+  { id: "claude-opus-5-5", label: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"] },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", efforts: ["low", "medium"] },
+  { id: "claude-opus-6", label: "Opus 6", efforts: ["low", "medium", "high", "xhigh", "max"] },
+];
+
 const threeTakes = settled[1]!;
 export const heroResults: SearchResults = {
   query: "hero",

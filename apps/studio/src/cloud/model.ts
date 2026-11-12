@@ -121,14 +121,42 @@ export interface Idea {
   prompt: string;
 }
 
+/** A model the person's Claude account offers, as `/v1/claude/defaults` lists it. */
 export interface ModelOption {
   id: string;
-  /** "Opus 5.5" */
+  /** "Opus 5.5", or the name Claude Code gives a model Ponzu has never heard of. */
   label: string;
+  /** The effort levels it takes, when it says; otherwise every level the list offers. */
+  efforts?: readonly Effort[];
 }
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
+
+/** The efforts `model` takes: its own, or `efforts` when it says nothing of them. */
+export function effortsOf(
+  models: readonly ModelOption[],
+  efforts: readonly Effort[],
+  model: string,
+): readonly Effort[] {
+  return models.find((m) => m.id === model)?.efforts ?? efforts;
+}
+
+/**
+ * The effort to keep when the model changes to `model`: the one chosen while it takes it, else
+ * medium (the default) while it takes that, else the first it takes.
+ */
+export function effortFor(
+  models: readonly ModelOption[],
+  efforts: readonly Effort[],
+  model: string,
+  effort: Effort,
+): Effort {
+  const takes = effortsOf(models, efforts, model);
+  if (takes.includes(effort)) return effort;
+  if (takes.includes("medium")) return "medium";
+  return takes[0] ?? effort;
+}
 
 /** A start of a match in a search result's text, and its end (exclusive). */
 export type Match = readonly [start: number, end: number];

@@ -804,6 +804,13 @@ export class FakeBackend {
             if (repo && !canWrite(repoPermission(repo, person.id))) {
               throw new ApiError(403, "forbidden", "Designs need a repo you can push to.");
             }
+            if (body.model !== undefined || body.effort !== undefined) {
+              this.claude.checkOffered(
+                person.id,
+                body.model ?? this.claude.defaultsOf(person.id).model,
+                body.effort,
+              );
+            }
             const name = body.name ?? "Untitled";
             const doc: Doc = {
               ...emptyDoc(name),

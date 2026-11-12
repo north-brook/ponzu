@@ -3,7 +3,7 @@ import { GitMergeIcon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useState } from "react";
 import { NewDesignComposer } from "../create/composer.tsx";
 import { type DesignFilter, NO_FILTER, projectCounts, repoKey } from "../filter.ts";
-import type { DesignSummary, PullRequestSummary } from "../model.ts";
+import type { DesignSummary, Effort, PullRequestSummary } from "../model.ts";
 import { type NextAction, nextAction } from "../pull-request.ts";
 import { DesignList, DesignListSkeleton } from "../sidebar/design-list.tsx";
 import { FilterMenu } from "../sidebar/filter-menu.tsx";
@@ -156,6 +156,34 @@ function ComposerDemo({ initial, sending }: { initial: string; sending?: boolean
           model: f.models[0]!.id,
           effort: "high",
           onChange: ignore,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The picker on what an account's Claude Code reported: a model Ponzu has never heard of under
+ * Claude Code's own name, and one that takes fewer efforts. Pick it to see its efforts.
+ */
+function ReportedModelsDemo() {
+  const [prompt, setPrompt] = useState("");
+  const [choice, setChoice] = useState<{ model: string; effort: Effort }>({
+    model: "claude-opus-6",
+    effort: "medium",
+  });
+  return (
+    <div className="w-[520px]">
+      <NewDesignComposer
+        prompt={prompt}
+        onPromptChange={setPrompt}
+        onSend={ignore}
+        onAttach={ignore}
+        model={{
+          models: f.reportedModels,
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+          ...choice,
+          onChange: (model, effort) => setChoice({ model, effort }),
         }}
       />
     </div>
@@ -367,6 +395,7 @@ export function States() {
           <ComposerDemo initial="" />
           <ComposerDemo initial="Three takes on the hero" />
           <ComposerDemo initial="Three takes on the hero" sending />
+          <ReportedModelsDemo />
         </Section>
 
         <Section title="Create page in a pane">

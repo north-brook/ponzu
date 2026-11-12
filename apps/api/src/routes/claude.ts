@@ -9,11 +9,14 @@ import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { connectClaude, disconnectClaude } from "../claude/accounts.ts";
 import {
-  CLAUDE_MODELS,
+  checkOffered,
+  DEFAULT_EFFORT,
   EFFORTS,
   effortOrDefault,
-  MODEL_IDS,
+  type ModelOffer,
   modelOrDefault,
+  offeredEfforts,
+  offerFor,
 } from "../claude/models.ts";
 import { abandonSignIn, finishSignIn, startSignIn } from "../claude/sign-in.ts";
 import type { AppEnv } from "../http/context.ts";
@@ -81,24 +84,39 @@ const CodeBody = z.object({ code: z.string().trim().min(1).max(2_000) });
 const SignInView = z.object({ id: z.string(), authorizeUrl: z.string(), expiresAt: z.date() });
 
 const DefaultsBody = z
-  .object({ model: z.enum(MODEL_IDS), effort: z.enum(EFFORTS) })
+  .object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS) })
   .partial()
   .refine((body) => Object.keys(body).length > 0, "Say what to change.");
 const DefaultsView = z.object({
+  /** What a new design runs on: the saved choice while the account offers it, or the default. */
   model: z.string(),
   effort: z.enum(EFFORTS),
-  /** What the runtime offers, in the order the picker lists them. */
-  models: z.array(z.object({ id: z.string(), label: z.string() })),
+  /**
+   * What the person's Claude account offers, in the order the picker lists them: what Claude
+   * Code reported for it, or the hand-kept list until a runner has (docs/cloud.md, "Models").
+   */
+  models: z.array(
+    z.object({ id: z.string(), label: z.string(), efforts: z.array(z.enum(EFFORTS)) }),
+  ),
+  /** Every effort an offered model takes; each model's own are on it. */
   efforts: z.array(z.enum(EFFORTS)),
 });
 
-const defaults = (model: string | null, effort: string | null) =>
-  DefaultsView.parse({
-    model: modelOrDefault(model),
-    effort: effortOrDefault(effort),
-    models: CLAUDE_MODELS,
-    efforts: EFFORTS,
+const defaults = (offer: ModelOffer, model: string | null, effort: string | null) => {
+  const runs = modelOrDefault(offer, model);
+  return DefaultsView.parse({
+    model: runs,
+    // A model that takes no effort shows the default, which it is never sent.
+    effort: effortOrDefault(offer, runs, effort) ?? DEFAULT_EFFORT,
+    models: offer.models,
+    efforts: offeredEfforts(offer),
   });
+};
+
+/** What the person's own Claude account offers. */
+async function offerOf(deps: AppEnv["Variables"]["deps"], userId: string): Promise<ModelOffer> {
+  return offerFor(await getClaudeAccount(deps.db, userId));
+}
 
 export const claude = new Hono<AppEnv>()
   .use(access.user)
@@ -172,15 +190,18 @@ export const claude = new Hono<AppEnv>()
   })
 
   /** The model and effort the person's new designs start on, and what there is to choose. */
-  .get("/defaults", (c) => {
+  .get("/defaults", async (c) => {
     const { user } = c.var.actor;
-    return c.json(defaults(user.defaultModel, user.defaultEffort));
+    const offer = await offerOf(c.var.deps, user.id);
+    return c.json(defaults(offer, user.defaultModel, user.defaultEffort));
   })
 
+  /** Only what the person's account offers can be chosen. */
   .patch("/defaults", validate("json", DefaultsBody), async (c) => {
-    const saved = await setAgentDefaults(c.var.deps.db, {
-      userId: c.var.actor.user.id,
-      ...c.req.valid("json"),
-    });
-    return c.json(defaults(saved.model, saved.effort));
+    const { user } = c.var.actor;
+    const body = c.req.valid("json");
+    const offer = await offerOf(c.var.deps, user.id);
+    checkOffered(offer, body.model ?? modelOrDefault(offer, user.defaultModel), body.effort);
+    const saved = await setAgentDefaults(c.var.deps.db, { userId: user.id, ...body });
+    return c.json(defaults(offer, saved.model, saved.effort));
   });
