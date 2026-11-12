@@ -2520,8 +2520,12 @@ The job runs once every upload address signed for the old key has run out (ten m
 five over): while the canvas is still under the new key it copies once more what came late, then
 deletes everything under the old key, a page at a time as the files delete does. Neither that
 copy nor the second pass writes over a file that was written under the new key after the one
-under the old key, so a file the runner replaced since the swap keeps its newer version. A canvas
-deleted after the swap has its files job take the new key at once; the retire job then deletes
+under the old key, so a file the runner replaced since the swap keeps its newer version: each
+copy reads the new key's file again just before it copies. That narrows the race to one round
+trip to storage and does not close it, since storage is not asked for a conditional copy. A
+canvas reset again within the fifteen minutes gets what came late to the old key under its
+current key instead, and only what changed there since the swap, so a file deleted under the
+middle key stays deleted. A canvas deleted after the swap has its files job take the new key at once; the retire job then deletes
 whatever the second pass still copied into the new key after that. An upload
 completed after the swap is moved under the new key as it completes. Two resets at once make
 one: the second finds the key changed, answers the canvas as the first left it, and its copies

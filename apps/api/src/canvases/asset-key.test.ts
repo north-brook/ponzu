@@ -107,7 +107,7 @@ describe("copyUnder", () => {
       if (prefix === `${from}/`) storage.objects.delete(`${from}/previews/1-light.png`);
       return page;
     };
-    expect(await copyUnder(storage, from, to)).toBe(2);
+    expect(await copyUnder(storage, from, to)).toBe(1);
     expect(paths(storage, to)).toEqual(["/previews/2-light.png"]);
 
     storage.copy = async () => {
@@ -138,7 +138,7 @@ describe("the retire job", () => {
   afterAll(() => t.close());
   const depsWith = (storage: MemoryStorage) => ({ db: t.db, storage, log: t.deps.log });
 
-  test("reset again or deleted meanwhile: nothing is copied, the old key still goes", async () => {
+  test("deleted meanwhile: nothing is copied, the old key still goes", async () => {
     const storage = new MemoryStorage(new FakeClock(0));
     const from = newAssetKey();
     const to = newAssetKey();

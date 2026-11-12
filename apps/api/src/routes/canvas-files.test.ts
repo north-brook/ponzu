@@ -589,6 +589,76 @@ describe("POST /v1/canvases/:id/asset-key/rotate", () => {
     expect(t.storage.objects.get(`${to}/assets/late.png`)?.body).toEqual(body(3));
   });
 
+  test("reset twice within the quarter hour: a late file under the first key reaches the third", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Twice"));
+    const first = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, first, 2);
+    // Written well before the reset, past the slack allowed for storage's clock.
+    t.clock.advance(120_000);
+    expect((await rotate("maya", canvas.id)).status).toBe(200);
+    await t.backgroundDone();
+    const second = (await getCanvasAssetKey(t.db, canvas.id))!;
+    // A file deleted under the second key on purpose stays deleted.
+    const [kept, dropped] = paths(second);
+    t.storage.objects.delete(`${second}${dropped}`);
+    t.clock.advance(60_000);
+    expect((await rotate("ada", canvas.id)).status).toBe(200);
+    await t.backgroundDone();
+    const third = (await getCanvasAssetKey(t.db, canvas.id))!;
+    expect(new Set([first, second, third]).size).toBe(3);
+
+    // An upload signed for the first key lands there after both resets.
+    t.clock.advance(60_000);
+    t.storage.objects.set(`${first}/assets/late.png`, {
+      body: new Uint8Array([7]),
+      headers: { "content-type": "image/png" },
+      sha256: null,
+      modifiedAt: t.clock.now(),
+    });
+
+    await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    expect(paths(first)).toEqual([]);
+    expect(t.storage.objects.get(`${third}/assets/late.png`)?.body).toEqual(new Uint8Array([7]));
+    expect(paths(third)).toContain(kept!);
+    expect(paths(third)).not.toContain(dropped!);
+  });
+
+  test("a file written under the new key after a pass listed it is not copied over", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Mid-pass"));
+    const from = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, from, 1);
+    expect((await rotate("maya", canvas.id)).status).toBe(200);
+    await t.backgroundDone();
+    const to = (await getCanvasAssetKey(t.db, canvas.id))!;
+    const write = (key: string, byte: number) =>
+      t.storage.objects.set(key, {
+        body: new Uint8Array([byte]),
+        headers: { "content-type": "image/png" },
+        sha256: null,
+        modifiedAt: t.clock.now(),
+      });
+    t.clock.advance(1000);
+    write(`${from}/assets/logo.png`, 1);
+
+    // The retire job lists the new key, and only then the runner writes logo.png there.
+    const list = t.storage.list.bind(t.storage);
+    t.storage.list = async (prefix, options) => {
+      const page = await list(prefix, options);
+      if (prefix === `${to}/`) {
+        t.clock.advance(1000);
+        write(`${to}/assets/logo.png`, 2);
+      }
+      return page;
+    };
+    try {
+      await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    } finally {
+      t.storage.list = list;
+    }
+    expect(paths(from)).toEqual([]);
+    expect(t.storage.objects.get(`${to}/assets/logo.png`)?.body).toEqual(new Uint8Array([2]));
+  });
+
   test("a canvas deleted while it is reset: refused as gone, and its copies deleted", async () => {
     const canvas = await canvasIn(t, ws, "maya", emptyDoc("Vanishing"));
     const from = (await getCanvasAssetKey(t.db, canvas.id))!;

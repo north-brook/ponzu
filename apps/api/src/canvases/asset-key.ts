@@ -66,7 +66,7 @@ export async function copyUnder(
   storage: ObjectStorage,
   from: string,
   to: string,
-  { changedSince }: { changedSince?: number } = {},
+  { changedSince, onlyChanged = false }: { changedSince?: number; onlyChanged?: boolean } = {},
 ): Promise<number> {
   if (!isAssetKey(from) || !isAssetKey(to) || from === to) {
     throw new Error("copyUnder takes two different asset keys.");
@@ -77,37 +77,56 @@ export async function copyUnder(
     have.set(object.key.slice(to.length), object.modifiedAt?.getTime() ?? null);
   }
   let copied = 0;
-  let batch: Promise<void>[] = [];
+  let batch: Promise<boolean>[] = [];
+  const settle = async () => {
+    for (const done of await Promise.all(batch)) if (done) copied++;
+    batch = [];
+  };
   for await (const object of listAll(storage, `${from}/`)) {
     const path = object.key.slice(from.length);
     const at = object.modifiedAt?.getTime() ?? null;
-    if (have.has(path)) {
-      const changed = changedSince !== undefined && (at === null || at >= changedSince);
+    const changed = changedSince !== undefined && (at === null || at >= changedSince);
+    if (have.has(path) || onlyChanged) {
       if (!changed) continue;
       // Written at `to/` after this was written at `from/`: the copy there is as new, or newer.
       const there = have.get(path) ?? null;
       if (there !== null && at !== null && there > at) continue;
     }
-    batch.push(copyIfThere(storage, object.key, `${to}${path}`));
-    copied++;
-    if (batch.length >= COPY_CONCURRENCY) {
-      await Promise.all(batch);
-      batch = [];
-    }
+    const target = `${to}${path}`;
+    batch.push(
+      (async () => {
+        // After the swap the new key is written to (uploads, a runner), so `have` may be stale by
+        // now: what is there is read again just before the copy, and a newer one is kept.
+        if (changedSince !== undefined && at !== null) {
+          const there = await writtenAt(storage, target);
+          if (there !== null && there > at) return false;
+        }
+        return copyIfThere(storage, object.key, target);
+      })(),
+    );
+    if (batch.length >= COPY_CONCURRENCY) await settle();
   }
-  await Promise.all(batch);
+  await settle();
   return copied;
+}
+
+/** When storage last wrote `key`, or null when nothing is there or it does not say. */
+async function writtenAt(storage: ObjectStorage, key: string): Promise<number | null> {
+  const page = await storage.list(key);
+  const found = page.objects.find((object) => object.key === key);
+  return found?.modifiedAt?.getTime() ?? null;
 }
 
 /**
  * Copy `from` to `to`, unless `from` went after it was listed (a preview replaced by a later one):
  * there is nothing of it to keep.
  */
-async function copyIfThere(storage: ObjectStorage, from: string, to: string): Promise<void> {
+async function copyIfThere(storage: ObjectStorage, from: string, to: string): Promise<boolean> {
   try {
     await storage.copy(from, to);
+    return true;
   } catch (error) {
-    if (error instanceof UpstreamError && error.status === 404) return;
+    if (error instanceof UpstreamError && error.status === 404) return false;
     throw error;
   }
 }
@@ -184,8 +203,8 @@ export async function rotateAssetKey(
 /**
  * The retire job's handler: while the canvas's files are still under `to`, copy what `from`
  * gained or changed since the swap; then delete a page of `from`'s files, and come back while
- * more remain, as the files delete does. A canvas reset again needs no copy: `to` has its own
- * retire job. A canvas deleted meanwhile needs none either, and what is under `to` is deleted
+ * more remain, as the files delete does. A canvas reset again gets what changed at `from` since
+ * the swap under its current key. A canvas deleted meanwhile needs no copy, and what is under `to` is deleted
  * here as well as by its files job, which may have run while the reset still copied into it.
  */
 export async function runAssetKeyRetireJob(
@@ -197,6 +216,14 @@ export async function runAssetKeyRetireJob(
   const now = await getCanvasAssetKey(deps.db, canvasId);
   if (now === to) {
     await copyUnder(deps.storage, from, to, { changedSince: swappedAt - CLOCK_SLACK_MS });
+  } else if (now !== null && isAssetKey(now) && now !== from) {
+    // Reset again since: what came late to `from` never reached `to`, so `to`'s own job cannot
+    // carry it on. It goes straight to the canvas's key now, but only what changed since this
+    // swap: a file missing there for another reason (deleted under `to`) is not brought back.
+    await copyUnder(deps.storage, from, now, {
+      changedSince: swappedAt - CLOCK_SLACK_MS,
+      onlyChanged: true,
+    });
   }
   let { deleted, done } = await deleteUnder(deps.storage, `${from}/`);
   if (now === null && isAssetKey(to)) {
