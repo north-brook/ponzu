@@ -692,7 +692,8 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   (`~/.claude/projects/<cwd>/<session id>.jsonl`), which a stop keeps, and in each checkpoint,
   which brings it back to a disk that lost it ("Saving the sandbox"). A session whose transcript
   is gone from both starts over. The SDK is pinned to the version
-  released with the image's Claude Code (0.3.322 with 2.1.322), and runs the image's
+  released with the image's Claude Code (the same patch number; "Keeping Claude Code current"
+  moves both), and runs the image's
   `/opt/ponzu/claude/<version>/claude` (checked against the SDK manifest's hash), never a copy
   of its own.
 - **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
@@ -817,7 +818,8 @@ the registry to say it is ready, runs `checks.ts` in a `pz-test-image-*` sandbox
 and records it in `current.json`. The inputs are the Dockerfile, `provision.sh`, `pins.json` (the
 one source of every pin), the font manifest and `libexec/`; a tag the registry has is not built
 again. `.github/workflows/image.yml` does the same for pushes that touch them and opens a pull
-request with `current.json`. A registry repository belongs to one project, so the short
+request with `current.json`; Claude Code and the Agent SDK are moved by their own workflow
+("Keeping Claude Code current"). A registry repository belongs to one project, so the short
 `ponzu-runner@sha256:…` resolves for the API's OIDC token and for scripts using the ponzu-api
 triple. `image.test.ts` fails when `current.json` is stale for the inputs, when its pins are not
 `pins.json`'s, or when the runner bundle needs another Claude Code or playwright-core than the
@@ -915,6 +917,72 @@ bun apps/api/scripts/images.ts   # where each design stands against current.json
 
 `packages/client/src/image-move.live.test.ts` checks a recreate end to end, by hand, across a
 deploy.
+
+### Keeping Claude Code current
+
+Two pins move together: the Agent SDK in `apps/runner/package.json` (exact, with `bun.lock`) and
+Claude Code in `pins.json` (version, the linux-x64 binary's URL and its SHA-256). The SDK names
+the one Claude Code it is released with (`claudeCodeVersion` in its package, the same patch
+number), and the runner refuses an image whose Claude Code is not that one. Models are not
+pinned in the image: a design names one (`CLAUDE_MODELS` in `apps/api/src/claude/models.ts`)
+and the image's Claude Code takes it, so a new model is usable once the image's Claude Code
+knows it and that list offers it.
+
+**The bump pull request.** `.github/workflows/claude-code.yml` looks for an Agent SDK newer than
+the pin (`apps/runner/image/bump.ts`), daily once `cloud` is the default branch and until then
+on every push to `cloud`. When there is one, and the open pull request does not already propose
+it, it:
+
+1. takes the Claude Code that SDK names, and stops, saying so, if their patch numbers differ;
+2. checks the release's `manifest.json` against its signature by Anthropic's release key (by
+   fingerprint, as code.claude.com/docs/en/setup publishes it), downloads the binary and checks
+   its SHA-256 and size against that manifest and the SDK package's own copy of it, and writes
+   `pins.json`; `bun add --exact --ignore-scripts` moves the SDK;
+3. typechecks and runs the runner's agent tests with the new SDK;
+4. builds, pushes and checks the image through `image.yml` (its checks include a Haiku turn) and
+   records `current.json`;
+5. runs a real turn on that image (`e2e.ts scratch`: Haiku at low effort on the development key,
+   a create and two sleeps and wakes);
+6. opens or updates one pull request, branch `claude-code/bump`, with a table of what passed,
+   the release notes of both since the pinned versions, and any model they name that Ponzu does
+   not offer, then dispatches CI on it. Anything that did not pass makes it a draft whose first
+   line says what; a run whose setup is missing says which steps could not run and why. Nothing
+   merges it.
+
+What it proves: the pair is the one Anthropic released together, the binary is the signed one,
+the runner still compiles against the new SDK, the image builds and passes its checks, and a
+real turn works end to end on it. What it does not: behaviour that only a person's designs,
+repos or other models exercise, which the release notes are for.
+
+**Reviewing it.** Read the notes for anything that touches how the runner drives Claude Code
+(permissions, hooks, sessions, the SDK's options and messages in `apps/runner/src/agent/sdk.ts`).
+A failed typecheck means the SDK's API changed: fix the runner on the branch. A failed check or
+turn with a passing typecheck means Claude Code behaves differently: the log in the body says
+where. To offer a model the notes name, add it to `CLAUDE_MODELS`. Merging ships the image with
+the next API deploy, and each design moves to it at its next wake ("How images roll out").
+
+#### Setting up the image workflows
+
+`image.yml` and `claude-code.yml` need these, once, from a person. Until then they pass with a
+warning that names what is missing, and the bump pull request opens as a draft saying which
+steps did not run. The team and project ids are the repository variables `VERCEL_TEAM_ID` and
+`VERCEL_API_PROJECT_ID`, which exist.
+
+1. The repository secret `VERCEL_TOKEN`: a Vercel token for the team, able to use ponzu-api
+   (`deploy-api.yml` reads the same secret). It reads the registry, and makes and removes the
+   `pz-test-*` sandboxes of the checks and the turn.
+2. A Container Registry OIDC policy on ponzu-api giving `north-brook/ponzu` read-write, so
+   `vercel/vcr-action/login` can push (Vercel's docs: container-registry/github-actions).
+3. The repository secret `ANTHROPIC_API_KEY`: the development key. Without it the checks only
+   claim a message and the bump's real turn does not run.
+4. Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
+   on. It is off, so neither workflow can open its pull request yet (each still pushes its
+   branch and says so). Their pull requests then get CI by a dispatch of `ci.yml` on the
+   branch, with no token of a person's.
+
+Then dispatch the Claude Code workflow once on `cloud` with `pretend` set to the SDK version
+before the pinned one (`gh workflow run claude-code.yml --ref cloud -f pretend=0.3.<n-1>`): it
+runs every step and writes the body it would open into the run's summary.
 
 ### Saving the sandbox
 
@@ -2630,10 +2698,9 @@ After a deploy that changes the sandbox lifecycle, the image or the runner, on t
    `packages/client/src/lifecycle.live.test.ts` (it prints `wake to answer`, the time from a
    message to the runner's first answer, the number the speed claim rests on) and
    `packages/client/src/image-move.live.test.ts`.
-9. Dispatch the Image workflow (`image.yml`) once: it builds, pushes to the registry through
-   the OIDC policy, checks the image in a sandbox and opens a pull request with
-   `current.json`. That pull request is opened with `GITHUB_TOKEN`, so no CI runs on it until a
-   person closes and reopens it.
+9. With the setup in "Setting up the image workflows" done, dispatch the Image workflow
+   (`image.yml`) once: it builds, pushes to the registry through the OIDC policy, checks the
+   image in a sandbox, opens a pull request with `current.json` and dispatches CI on it.
 
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of

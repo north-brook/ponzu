@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, cloud]
   pull_request:
+  # The pull requests image.yml and claude-code.yml open with GITHUB_TOKEN start no workflows;
+  # they dispatch this on the branch instead, and it reports on the head commit as a push
+  # would (every suite runs; nothing is cached).
+  workflow_dispatch:
 
 permissions:
   contents: read
