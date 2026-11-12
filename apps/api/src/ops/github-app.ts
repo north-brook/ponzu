@@ -18,8 +18,11 @@ export const APP_PERMISSIONS: Readonly<Record<string, "read" | "write">> = {
   statuses: "read",
   /** An organization's members and their roles (`github/people.ts`). */
   members: "read",
-  /** A person's verified addresses at sign-in (`deps/github.ts` `listEmails`). */
-  email_addresses: "read",
+  /**
+   * A person's verified addresses at sign-in (`deps/github.ts` `listEmails`). GitHub's settings
+   * page calls it "Email addresses"; `GET /app` names it `emails`.
+   */
+  emails: "read",
 };
 
 /**
