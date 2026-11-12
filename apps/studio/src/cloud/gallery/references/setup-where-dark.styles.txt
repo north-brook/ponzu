@@ -9,6 +9,7 @@ ground span[Setup] rgb(58, 57, 54)
 text "Where do you design?" rgb(244, 243, 239) 600 28px Funnel Display
 text "Design on your real product, with your …" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
+image img bryce.svg
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
 text "Personal" rgb(244, 243, 239) 500 14px Inter
 text "brycedbjork" rgb(118, 115, 105) 400 12px Inter
@@ -21,6 +22,7 @@ text "Fablefuel" rgb(244, 243, 239) 500 14px Inter
 text "fablefuel · 12 people" rgb(118, 115, 105) 400 12px Inter
 text "Ready" rgb(183, 179, 169) 500 12px Inter
 icon svg 14×14 rgb(244, 243, 239) stroke 1.9px
+image img image/png 54474398
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
 text "Northbrook" rgb(244, 243, 239) 500 14px Inter
 text "north-brook · 5 people" rgb(118, 115, 105) 400 12px Inter

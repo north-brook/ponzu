@@ -150,14 +150,25 @@ async function settle(page: Page) {
 
 /**
  * What the page paints, as lines a person can read in a diff: every piece of text with its color,
- * weight, size and family; every icon with its color and stroke; every ground and shadow. Computed
- * styles don't depend on the machine's fonts or GPU, so these catch on any machine what a
- * picture with its text hidden can't: a changed text or icon color, a wrong weight or size.
+ * weight, size and family; every icon with its color and stroke; every picture and which file it
+ * shows (so a theme's own picture, like a comment's dark one, is checked exactly); every ground
+ * and shadow. Computed styles don't depend on the machine's fonts or GPU, so these catch on any
+ * machine what a picture with its text hidden can't: a changed text or icon color, a wrong weight
+ * or size, the other theme's picture.
  */
 export async function paintedStyles(page: Page): Promise<string> {
   return page.evaluate(() => {
     const lines: string[] = [];
     const clip = (s: string) => (s.length > 40 ? `${s.slice(0, 39)}…` : s);
+    // A built file without the hash the build adds; an inlined one by its type and a hash of it.
+    const source = (src: string) => {
+      if (!src.startsWith("data:")) {
+        return (src.split(/[?#]/)[0]!.split("/").pop() ?? "").replace(/-[\w-]{8}(\.\w+)$/, "$1");
+      }
+      let h = 0x811c9dc5;
+      for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 0x01000193);
+      return `${src.slice(5, src.search(/[;,]/))} ${(h >>> 0).toString(16).padStart(8, "0")}`;
+    };
     const name = (el: Element) => {
       const label = el.closest("[aria-label]")?.getAttribute("aria-label");
       return `${el.tagName.toLowerCase()}${label ? `[${clip(label)}]` : ""}`;
@@ -174,6 +185,9 @@ export async function paintedStyles(page: Page): Promise<string> {
         const size = `${el.getAttribute("width")}×${el.getAttribute("height")}`;
         lines.push(`icon ${name(el)} ${size} ${css.color}${stroke}${opacity}`);
         continue;
+      }
+      if (el instanceof HTMLImageElement) {
+        lines.push(`image ${name(el)} ${source(el.currentSrc || el.src)}${opacity}`);
       }
       const own = [...el.childNodes]
         .filter((n) => n.nodeType === Node.TEXT_NODE)

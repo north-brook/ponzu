@@ -12,9 +12,13 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
+image img[Bryce (you)] bryce.svg
 ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Sam] sam.svg
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Maya] maya.svg
 ground img[Maya] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Jordan · last here 2 days ago] jordan.svg
 ground img[Jordan · last here 2 days ago] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground button[Share] rgb(26, 26, 25) shadow rgb(63, 61, 57) 0px 0px 0px 1px inset, rgb(26, 26, 25) 0px 0px 0px 1.5px
 icon svg[Share] 11×11 rgb(183, 179, 169) stroke 2.2px
@@ -32,6 +36,7 @@ icon svg[Close search] 14×14 rgb(142, 138, 130) stroke 1.9px
 text "Designs" rgb(118, 115, 105) 600 11px Inter
 ground div[Search results] rgb(48, 48, 46)
 ground span[Search results] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Search results] hero.png
 text "Quieter shop" rgb(244, 243, 239) 500 13px Inter
 text "hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)
@@ -55,6 +60,7 @@ text "Hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)
 text "in Brand kit for the relaunch" rgb(118, 115, 105) 400 11px Inter
 text "Comments" rgb(118, 115, 105) 600 11px Inter
+image img[Search results] maya.svg
 text "“Can C try the serif at a smaller size …" rgb(244, 243, 239) 500 13px Inter
 text "hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)

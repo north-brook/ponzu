@@ -6,7 +6,9 @@
  * - `open` is a control pressed before the picture: a menu or a popover's trigger.
  * - `masks` cover what the gallery doesn't draw: the canvas's boards, and on the sidebar's
  *   boards the thread rail, which their compositions leave empty.
- * - `reference` draws it for the visual regression test, from references/.
+ * - `reference` draws it for the visual regression test, from references/: its painted styles in
+ *   both themes, and its picture in light. `"styles"` keeps only the styles, for a composition
+ *   whose layout another's picture already holds.
  * - `differs` says where the app departs from the board on purpose; `compare` prints it, and a
  *   mask over that part keeps the share outside the masks about the rest.
  */
@@ -27,7 +29,7 @@ export interface Composition {
   height: number;
   open?: string;
   masks?: Rect[];
-  reference?: boolean;
+  reference?: boolean | "styles";
   differs?: string;
 }
 
@@ -104,13 +106,14 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
-    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter.
+    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter. The
+    // rows are share's; the styles hold who is listed and how quiet they are.
     id: "share-not-joined",
     title: "Share · some haven't opened Ponzu",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
     masks: DESIGN,
-    reference: true,
+    reference: "styles",
   },
   {
     id: "thread-in-the-right-rail",

@@ -111,10 +111,12 @@ export function WorkspaceMenu({
     <Menu>
       <MenuTrigger
         aria-label={`Workspace: ${workspaceName(current)}`}
-        className="app-no-drag -ml-1.5 flex h-7 shrink-0 cursor-default select-none items-center gap-2 rounded-7 px-1.5 outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover active:bg-press aria-expanded:bg-hover"
+        // It gives way before the header's buttons do: a long name in a narrow sidebar is cut
+        // short with an ellipsis (its whole name is the trigger's label, and in the menu).
+        className="app-no-drag -ml-1.5 flex h-7 min-w-0 cursor-default select-none items-center gap-2 rounded-7 px-1.5 outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover active:bg-press aria-expanded:bg-hover"
       >
         <WorkspaceMark workspace={current} />
-        <span className="font-semibold text-13">{workspaceName(current)}</span>
+        <span className="min-w-0 truncate font-semibold text-13">{workspaceName(current)}</span>
         <Icon icon={ArrowDown01Icon} step="meta" className="text-icon-soft" />
       </MenuTrigger>
       <MenuContent width={260} side="bottom" align="start" sideOffset={7} alignOffset={-2}>
