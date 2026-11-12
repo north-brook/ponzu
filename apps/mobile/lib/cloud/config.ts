@@ -10,7 +10,10 @@ import type { LinkScheme } from "@ponzu/client";
 export type Variant = "production" | "dev";
 
 export interface CloudConfig {
-  /** `https://api.ponzu.design` for Ponzu Dev. */
+  /**
+   * `https://api-dev.ponzu.design` for Ponzu Dev when the build names none; empty for a production
+   * build that names none (`apiUrlOf` refuses it).
+   */
   apiUrl: string;
   /** The WorkOS environment's client id; empty when the build has none (sign-in says so). */
   workosClientId: string;
@@ -23,8 +26,23 @@ export interface CloudConfig {
   appName: string;
 }
 
-/** The API Ponzu Dev talks to when the build names none. Production's is named at cutover. */
-export const DEV_API_URL = "https://api.ponzu.design";
+/**
+ * The API Ponzu Dev talks to when the build names none. Production has no default: its apiUrl is
+ * empty until EXPO_PUBLIC_PONZU_API_URL names one, and `apiUrlOf` refuses that, so a TestFlight
+ * build can never talk to dev by omission.
+ */
+export const DEV_API_URL = "https://api-dev.ponzu.design";
+
+/** The API this build talks to; an error when a production build names none. */
+export function apiUrlOf(cfg: Pick<CloudConfig, "apiUrl" | "variant">): string {
+  if (!cfg.apiUrl) {
+    throw new Error(
+      `EXPO_PUBLIC_PONZU_API_URL is empty: a ${cfg.variant} build must name its API. ` +
+        "For Ponzu Dev, build or serve with APP_VARIANT=dev.",
+    );
+  }
+  return cfg.apiUrl;
+}
 
 export interface ConfigInput {
   env: {
@@ -39,8 +57,9 @@ export interface ConfigInput {
 
 export function readConfig({ env, variant, version }: ConfigInput): CloudConfig {
   const v: Variant = variant === "dev" ? "dev" : "production";
+  const named = env.EXPO_PUBLIC_PONZU_API_URL?.trim() || (v === "dev" ? DEV_API_URL : "");
   return {
-    apiUrl: (env.EXPO_PUBLIC_PONZU_API_URL || DEV_API_URL).replace(/\/+$/, ""),
+    apiUrl: named.replace(/\/+$/, ""),
     workosClientId: env.EXPO_PUBLIC_WORKOS_CLIENT_ID ?? "",
     variant: v,
     scheme: v === "dev" ? "ponzu-dev" : "ponzu",

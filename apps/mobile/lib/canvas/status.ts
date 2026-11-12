@@ -15,7 +15,8 @@ import type { CanvasState } from "@ponzu/core";
  * - Loading: nothing yet from either; the title's slice turns.
  * - Waking: the sandbox starting for a turn: the title shimmers and says so under it.
  * - Working: the agent at work: its boards ringed, the title shimmering. No line: the rings say it.
- * - Needs you: the agent waiting on a person: the Chat button's badge says it.
+ * - Needs you: the agent waiting on a person. The Mac says it; the iPhone shows no count
+ *   until Chat comes to the phone (components/canvas-stack.tsx).
  * - Asleep: nothing running (idle, or Claude's limit): the canvas as the API holds it, quiet.
  * - Offline: the last copy, read only, and one line.
  * - Gone: deleted, or no longer the person's to see.

@@ -1,5 +1,5 @@
 import { createApi, createLive, createSession, type KeyValueStorage } from "@ponzu/client";
-import { config } from "./config";
+import { apiUrlOf, config } from "./config";
 import { expoCrypto } from "./crypto";
 import { keychain, phoneInstallId, prepareKeychain } from "./keychain";
 import type { Backend } from "./types";
@@ -19,7 +19,8 @@ const storage: KeyValueStorage = {
 };
 
 const session = createSession({
-  apiUrl: cfg.apiUrl,
+  // A production build that names no API fails here, at launch, rather than reaching dev.
+  apiUrl: apiUrlOf(cfg),
   workosClientId: cfg.workosClientId,
   storage,
   client: { platform: "ios", version: cfg.version },

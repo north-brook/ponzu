@@ -1,5 +1,6 @@
-import { describe, expect, test } from "@jest/globals";
-import { render, screen } from "@testing-library/react-native";
+import { describe, expect, jest, test } from "@jest/globals";
+import { fireEvent, render, screen } from "@testing-library/react-native";
+import { Alert } from "react-native";
 import { CanvasStack } from "../components/canvas-stack";
 import { canvasStatus } from "../lib/canvas/status";
 
@@ -37,20 +38,13 @@ describe("the canvas's floating stack", () => {
     },
   );
 
-  test("needs you: the count on Chat's edge outranks working", async () => {
+  test("needs you: no count is shown, since the phone can't answer a question yet", async () => {
     await render(Stack(head({ agentState: "needs_you", needsYouCount: 2 })));
-    // Seen, not read twice: VoiceOver hears the count in Chat's own label.
     const hidden = { includeHiddenElements: true };
-    expect(screen.getByTestId("stack-chat-badge", hidden)).toBeTruthy();
-    expect(screen.getByText("2", hidden)).toBeTruthy();
-    expect(screen.queryByText("2")).toBeNull();
-    expect(screen.getByLabelText("Chat, Ponzu has 2 questions")).toBeTruthy();
+    expect(screen.queryByTestId("stack-chat-badge", hidden)).toBeNull();
+    expect(screen.queryByText("2", hidden)).toBeNull();
+    expect(screen.getByLabelText("Chat")).toBeTruthy();
     expect(screen.queryByTestId("stack-chat-working")).toBeNull();
-  });
-
-  test("one question is said as one", async () => {
-    await render(Stack(head({ agentState: "needs_you", needsYouCount: 1 })));
-    expect(screen.getByLabelText("Chat, Ponzu has a question")).toBeTruthy();
   });
 
   test("the pull request's button shows once there is one", async () => {
@@ -58,10 +52,28 @@ describe("the canvas's floating stack", () => {
     expect(screen.getByLabelText("Pull request #412")).toBeTruthy();
   });
 
-  test("until their sheets arrive, the buttons are there and said to be unavailable", async () => {
+  test("Chat and the pull request say they come in the next update; nothing is dead", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
     await render(Stack(head(), 412));
-    for (const id of ["stack-pr", "stack-comment", "stack-chat"]) {
-      expect(screen.getByTestId(id).props.accessibilityState).toMatchObject({ disabled: true });
+    for (const id of ["stack-pr", "stack-chat"]) {
+      expect(screen.getByTestId(id).props.accessibilityState).not.toMatchObject({ disabled: true });
     }
+    await fireEvent.press(screen.getByTestId("stack-chat"));
+    expect(alert).toHaveBeenLastCalledWith(
+      "Chat isn't on the iPhone yet. It comes in the next update.",
+    );
+    await fireEvent.press(screen.getByTestId("stack-pr"));
+    expect(alert).toHaveBeenLastCalledWith(
+      "Pull requests aren't on the iPhone yet. They come in the next update.",
+    );
+    expect(alert).toHaveBeenCalledTimes(2);
+    alert.mockRestore();
+  });
+
+  test("Comment without a handler (a canvas they may only look at) is said to be unavailable", async () => {
+    await render(Stack(head()));
+    expect(screen.getByTestId("stack-comment").props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
   });
 });

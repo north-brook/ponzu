@@ -7,7 +7,7 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * Two apps build from this one project (docs/mobile.md, "Variants"):
  * - `production` (the default): "Ponzu", design.ponzu.app, `ponzu://`. The App Store and
  *   TestFlight app. Nothing from the `cloud` branch is built as it until cutover.
- * - `dev`: "Ponzu Dev", design.ponzu.app.dev, `ponzu-dev://`, against api.ponzu.design and
+ * - `dev`: "Ponzu Dev", design.ponzu.app.dev, `ponzu-dev://`, against api-dev.ponzu.design and
  *   WorkOS staging. The development client and the preview builds (eas.json) are this one, so
  *   a cloud build can never reach a phone that runs the 1.x app, or TestFlight's groups.
  */
@@ -69,9 +69,9 @@ export function configFor(
     ios: {
       ...config.ios,
       bundleIdentifier: info.bundleIdentifier,
-      // Universal links on ponzu.design, for when a custom scheme isn't enough (WorkOS
-      // production may refuse one). The site serves the association file at cutover.
-      associatedDomains: ["applinks:ponzu.design"],
+      // No associatedDomains yet: ponzu.design serves no apple-app-site-association file, and
+      // the provisioning profile may lack the capability. Universal links return with the file
+      // (docs/mobile.md, "Variants").
     },
     plugins: [...plugins, ...sourcemaps],
     extra: { ...config.extra, variant },

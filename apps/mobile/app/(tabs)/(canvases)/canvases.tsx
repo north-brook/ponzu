@@ -8,6 +8,9 @@ import { select } from "../../../lib/haptics";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 
+/** What the list says when the workspace has no canvases: where they come from. */
+export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";
+
 /**
  * Canvases, the first tab: the workspace in view's canvases, newest activity first, under the
  * lockup in the system's see-through header. Tapping the lockup opens settings (account, sign
@@ -69,7 +72,7 @@ export default function Canvases() {
               color: color.muted,
             }}
           >
-            No canvases yet.
+            {EMPTY_CANVASES}
           </Text>
         )}
       </ScrollView>
