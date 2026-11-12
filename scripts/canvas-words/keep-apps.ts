@@ -55,12 +55,12 @@ export const KEEP_APPS: Keep[] = [
     why: "the address parser reads the old path too (plan 6.5)",
   },
   {
-    path: "apps/studio/src/app/pull-request*.ts",
+    path: "packages/client/src/model/pull-request*.ts",
     has: "Designed in Ponzu: ",
     why: "the footer on pull requests opened before the rename, still stripped from the tab (plan 6.2)",
   },
   {
-    path: "apps/studio/src/app/pull-request-map.ts",
+    path: "packages/client/src/model/pull-request-map.ts",
     has: "(?:Made|Designed) in Ponzu: ",
     why: "the footer regex reads the new footer and the old one (plan 6.2)",
   },
