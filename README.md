@@ -18,6 +18,8 @@ Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HT
 
 ## Quick start
 
+This branch builds Ponzu Cloud ([docs/cloud.md](docs/cloud.md)). The `ponzu` command, its local server, its MCP package and the agent plugin described below are Ponzu 1.x, which is built and released from `main`; their source is no longer on this branch.
+
 ```sh
 bunx ponzu serve
 ```
@@ -60,7 +62,7 @@ claude plugin marketplace add north-brook/ponzu && claude plugin install ponzu@p
 codex plugin marketplace add north-brook/ponzu && codex plugin add ponzu@ponzu
 ```
 
-With the app's own setup there too, each agent keeps one Ponzu server, not two. The plugin lives in [`plugin/`](plugin).
+With the app's own setup there too, each agent keeps one Ponzu server, not two. The plugin lives in `plugin/` on `main`.
 
 Then ask for something:
 
@@ -152,10 +154,10 @@ Ponzu is a set of packages you can build into your own product:
 | `@ponzu/core` | HTML ↔ node tree, ops with inverses (undo, change feed), sanitizer |
 | `@ponzu/store` | Opens a `.design` from any storage; diffs outside edits into ops |
 | `@ponzu/tools` | The agent tools as transport-agnostic `{ name, schema, handler }` |
-| `@ponzu/mcp` | Those tools over MCP (stdio and streamable HTTP) |
 | `@ponzu/render` | Screenshots, frame-by-frame animation recordings, motion loops and a lint pass. Uses Chromium, an Electron window, or your own renderer |
 | `@ponzu/canvas` | `<Canvas>`. Renders artboards with the host page's own engine, in shadow roots |
-| `@ponzu/server` | The local host behind `ponzu serve` |
+
+The MCP package and the local host behind `ponzu serve` are 1.x packages, on `main`.
 
 On a big page the canvas draws each board as cheaply as it can be seen: boards drawn small show as pictures (their looping motion as short videos over them), images load as copies sized to how they're drawn, and boards off screen skip rendering. A source that serves pictures provides `snapshotUrl` (and `loopsUrl`); without it every board is live DOM. `ponzu serve` makes pictures, loops and image copies in the background and keeps them in `~/.ponzu/cache` (`PONZU_HOME` moves it), trimmed to a few GB, least recently used first.
 
@@ -190,7 +192,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 
 Guides cover the basics, layout, type, motion, product shots, scenes and a kit of windows and phones at real geometry, among others.
 
-Skills for agents that support them ship in [the plugin](#the-plugin), in [`plugin/skills/`](plugin/skills).
+Skills for agents that support them ship in [the plugin](#the-plugin), in `plugin/skills/` on `main`.
 
 ## Telemetry
 
@@ -205,15 +207,12 @@ Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO
 ```sh
 bun install
 bun test
-bun run --filter @ponzu/studio build
-bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design examples/weft.design
+bun run dev
 ```
 
+`bun run dev` is the cloud studio with hot reload, on Ponzu Cloud in memory.
+
 [`examples/`](examples) holds three made-up companies to try Ponzu on: Halon (incident response for engineering teams), Kettle (an iPhone app for people who live together) and Weft (a sync platform for developers). Each has a brand, architecture diagrams, a website and an app, with its brief in `notes/brief.md`.
-
-For studio work, run `bun run dev`: the cloud studio with hot reload, on Ponzu Cloud in memory.
-
-Run from a checkout, `serve` stays out of the installed app's way: it listens on a port in 7800–7999 derived from the checkout's path (the same every run, different per worktree, the next free one if it's taken), and not on the tailnet, so your iPhone and other Macs keep finding the app, not a dev server. `--port` picks a port; `--tailnet` answers the phone and other Macs too, for testing against them (the app's tailnet port must be free). The studio's dev server proxies to the checkout's port; `PONZU_SERVER=<url>` points it elsewhere.
 
 Desktop: `cd apps/desktop && bun run start`. iPhone: `cd apps/mobile && bunx expo run:ios` ([docs/mobile.md](docs/mobile.md)).
 

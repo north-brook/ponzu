@@ -6,7 +6,7 @@ $classes = 'HKCU:\Software\Classes'
 Remove-Item -LiteralPath "$classes\Ponzu.Design" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-ItemProperty -LiteralPath "$classes\.json\OpenWithProgids" -Name 'Ponzu.Design' -ErrorAction SilentlyContinue
 
-# The ponzu command's folder on their PATH (apps/cli/src/command.ts), read and written as the
+# The ponzu command's folder on their PATH (1.x's CLI, its command.ts), read and written as the
 # registry holds it, so entries like %USERPROFILE%\bin stay unexpanded.
 $ponzuHome = if ($env:PONZU_HOME) { $env:PONZU_HOME } else { Join-Path $env:USERPROFILE '.ponzu' }
 $bin = Join-Path $ponzuHome 'bin'
