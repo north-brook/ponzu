@@ -8,8 +8,9 @@ runbook behind its "Environments" section.
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
 reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
 scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck`, the
-`PONZU_ENVIRONMENT` variable and the production deploy job are later pieces of work. Each is
+`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck` and the
+production deploy job are later pieces of work. (The API's `PONZU_ENVIRONMENT` variable and
+the environment, image, bundle and migration counts in `/v1/health` are built.) Each is
 marked *(not built yet)* where it first appears, and nothing in production exists until the
 founder's steps below create it.
 
@@ -150,18 +151,56 @@ only thing that sets the guard that lets it through.
 | `/v1/cron/` with no `Authorization` header | deny |
 | `POST /v1/auth/exchange` | 20 a minute per IP |
 | `/v1/github/setup` | 30 a minute per IP |
-| `/v1/claude/sign-ins` | 20 an hour per IP |
-| everything under `/v1/` except `/v1/runner/`, `/v1/github/webhook` and `/v1/cron/` | 1,200 a minute per IP, token bucket |
+| `/v1/claude/sign-ins` | 20 every ten minutes per IP |
+| everything under `/v1/` except `/v1/runner/`, `/v1/github/webhook` and `/v1/cron/` | 1,200 a minute per IP |
 
 The OWASP core ruleset runs in log mode for every category, because canvas HTML in ops matches
 its XSS rules; the schema refuses `deny` on xss and sqli. Bot protection logs. Nothing on the API
 host ever challenges, because the apps cannot solve a challenge, and Attack Challenge Mode is
-never turned on for it. The per-caller limits in code (`@vercel/firewall`) are added to the same
-file by the rate-limit work; they stay off until the founder applies the rules, and fail open.
+never turned on for it.
 
-The rule JSON follows Vercel's documented REST shape. The exact shape of a rate-limit action is
-confirmed against a dashboard-made rule (`vercel firewall rules inspect --json`) when the apply
-and check scripts are built; until then it is not proven.
+Every rate-limit rule counts in a fixed window of at most ten minutes, because that is all Vercel
+Pro offers (D1); a token bucket and an hour's window are Enterprise's, and a rule asking for
+either would be refused when applied. So the planned hourly limits (the sign-ins per IP, and
+canvas creates, uploads, GitHub sync and a runner's git credentials per caller) keep their
+numbers in ten-minute windows: up to six times looser over an hour, never tighter, and a person
+held back waits at most ten minutes. The general per-IP limit is a fixed window of 1,200 a minute
+rather than the planned token bucket. `desired.test.ts` refuses any rule Pro cannot take. On
+Enterprise the windows could go back to an hour, in the file and in `rate-limits.ts` together.
+
+The same file holds one rule for each per-caller limit the API checks in code through
+`@vercel/firewall`. Each rule's only condition is its rate-limit id (`rate_limit_api_id`); the API
+says which id a request counts against and passes the person's or the canvas's id as the key, so
+the rule counts per caller, not per address.
+
+| Rate-limit id | Limit | Counted per |
+|---|---|---|
+| `user-writes` | 300 a minute | person (every other POST, PATCH or DELETE) |
+| `canvas-creates` | 30 every ten minutes | person |
+| `messages` | 60 a minute | person |
+| `uploads` | 120 every ten minutes | person |
+| `live` | 120 a minute | person |
+| `github-sync` | 30 every ten minutes | person |
+| `runner` | 3,000 a minute | canvas (every other runner call) |
+| `runner-git` | 240 every ten minutes | canvas |
+
+`apps/api/src/http/rate-limits.ts` names the ids and the routes; the numbers live in the rules.
+`rate-limits.firewall.test.ts` fails when the code names an id the file has no rule for, when the
+file has a rule for an id the code never names, or when a rule's numbers differ from the code's
+table (which the test fake counts to). `/v1/runner/models` has no rule: the runner protocol
+throttles it. These limits stay off (`PONZU_RATE_LIMITS=off`) until the rules are applied, and
+they fail open: a check that takes over 500 ms, fails or finds no rule lets the request through.
+
+The rule JSON follows Vercel's documented REST shape and `@vercel/sdk`'s firewall config types.
+Two things are not proven until a person compares them with a rule made in the dashboard
+(`vercel firewall rules inspect --json`), which the apply and check scripts need anyway: the exact
+condition of a `@vercel/firewall` rule (pinned in
+`apps/api/src/deps/fixtures/firewall-rate-limit-rule.json`), and what its `keys` must be when the key comes from code (the
+file says `ip`, the dashboard's default; the SDK's own key replaces it). Nor is the SDK proven
+inside the bundled API on Vercel: after the rules are applied on dev, one id with a 2-a-minute
+rule is hit three times and the third must answer 429. Vercel counts per region, so a caller
+whose requests reach two regions could make up to twice a limit; the API runs in one region
+(`iad1`), so this is not expected to matter.
 
 ### DNS
 

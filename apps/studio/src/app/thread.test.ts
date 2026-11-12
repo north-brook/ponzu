@@ -435,6 +435,42 @@ test("a plan and a permission are answered yes or no, with a note", async () => 
   store.close();
 });
 
+test("a secret goes by its own route and never into the question; a link is done or not now", async () => {
+  const w = await world();
+  const store = w.asks();
+  const secret = w.agent.ask(
+    { kind: "secret", payload: { name: "STRIPE_TEST_KEY", description: "For test mode." } },
+    "Secret",
+  );
+  const link = w.agent.ask(
+    {
+      kind: "handoff",
+      payload: { title: "Sign in to Linear", url: "https://linear.app/x", description: null },
+    },
+    "Over to you",
+  );
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([
+    { id: secret, kind: "secret", name: "STRIPE_TEST_KEY", description: "For test mode." },
+    { id: link, kind: "link", title: "Sign in to Linear", url: "https://linear.app/x" },
+  ]);
+
+  store.answer(secret, { secret: "sk_test_value_123" });
+  store.answer(link, { approved: false });
+  await settle();
+
+  expect(w.backend.secretsGiven).toEqual([
+    { canvasId: w.canvas.id, name: "STRIPE_TEST_KEY", value: "sk_test_value_123" },
+  ]);
+  const answers = w.backend.canvas(w.canvas.id).questions.map((q) => q.answer?.body);
+  expect(answers).toEqual([{}, { approved: false }]);
+  expect(JSON.stringify(w.backend.canvas(w.canvas.id).questions)).not.toContain(
+    "sk_test_value_123",
+  );
+  expect(store.getSnapshot()).toEqual([]);
+  store.close();
+});
+
 test("when a teammate answered first, the viewer's answer is turned away calmly", async () => {
   const w = await world();
   const store = w.asks();
@@ -625,6 +661,24 @@ test("each blocker is what keeps the canvas from running, in the composer or the
   expect(
     steerGate({ access: "write", repo, head: head(null), owner: maya, me, now: 20_000 }),
   ).toBeNull();
+
+  // The owner's plan at its limit, from the head: every viewer reads it, not only the owner,
+  // and it lasts until the head says.
+  const until = new Date(30_000).toISOString();
+  const limited = { ...head("claude_limited"), agentBlockedUntil: until };
+  const teammate = { id: "usr_someone_else", claudeAccount: null } as unknown as MeRow;
+  for (const viewer of [teammate, undefined]) {
+    expect(
+      steerGate({ access: "write", repo, head: limited, owner: maya, me: viewer, now: 5_000 }),
+    ).toEqual({ kind: "claude_limit", owner: maya, until });
+  }
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: maya, me: teammate, now: 40_000 }),
+  ).toBeNull();
+  // An owner the workspace no longer has can't be named here either.
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: null, me: teammate, now: 5_000 }),
+  ).toEqual(left);
 
   // The live head carries the blocker the API sets.
   w.agent.block("sandbox_busy");

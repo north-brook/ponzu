@@ -13,6 +13,7 @@ import {
   createQuestion,
   getQuestion,
   listOpenQuestions,
+  takeSecretAnswer,
 } from "./questions.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -328,6 +329,129 @@ test("only an open secret question of a canvas in a repo takes a secret", async 
   expect(await secretsOf(repo.id)).toEqual([]);
   expect(await needsYou(canvas.id)).toBe(2);
   expect(await needsYou(scratch.canvas.id)).toBe(1);
+});
+
+test("a secret's answer tells the agent by an answer event that names the secret and nothing else", async () => {
+  const { user, canvas, question } = await canvasAskingForSecret();
+
+  await answerSecretQuestion(db, {
+    canvasId: canvas.id,
+    id: question.id,
+    name: "STRIPE_SECRET_KEY",
+    encryptedValue: "v1.sealed-value",
+    valueBytes: 24,
+    userId: user.id,
+    posthogSessionId: "ph_1",
+  });
+
+  const told = await db.select().from(events).where(eq(events.canvasId, canvas.id));
+  expect(told).toHaveLength(1);
+  expect(told[0]).toMatchObject({
+    kind: "answer",
+    priority: "now",
+    userId: user.id,
+    posthogSessionId: "ph_1",
+    payload: {
+      questionId: question.id,
+      question: { kind: "secret", payload: { name: "STRIPE_SECRET_KEY" } },
+      secret: { name: "STRIPE_SECRET_KEY" },
+    },
+  });
+  // Neither the sealed value nor anything but the name rides on the event.
+  expect(JSON.stringify(told[0]!.payload)).not.toContain("v1.sealed-value");
+  expect(Object.keys(told[0]!.payload as object).sort()).toEqual([
+    "question",
+    "questionId",
+    "secret",
+  ]);
+});
+
+test("a secret the repo has no room for is refused, and a replacement counts as one", async () => {
+  const { user, repo, canvas, question } = await canvasAskingForSecret();
+  await db.insert(repoSecrets).values({
+    repoId: repo.id,
+    name: "STRIPE_SECRET_KEY",
+    encryptedValue: "v1.old",
+    valueBytes: 10,
+    updatedByUserId: user.id,
+  });
+  const give = (id: string, valueBytes: number, count: number) =>
+    answerSecretQuestion(db, {
+      canvasId: canvas.id,
+      id,
+      name: "STRIPE_SECRET_KEY",
+      encryptedValue: "v1.new",
+      valueBytes,
+      userId: user.id,
+      limits: { count, totalBytes: 40 },
+    });
+
+  // 17 bytes of name and 30 of value is past 40: nothing written, the question still open.
+  expect(await give(question.id, 30, 50)).toBe("full");
+  expect(await listOpenQuestions(db, canvas.id)).toHaveLength(1);
+  expect(await secretsOf(repo.id)).toMatchObject([{ encryptedValue: "v1.old" }]);
+  expect(await db.select().from(events).where(eq(events.canvasId, canvas.id))).toEqual([]);
+
+  // A repo at its count still takes a new value for a name it has.
+  expect(await give(question.id, 20, 1)).toMatchObject({ status: "answered" });
+  expect(await secretsOf(repo.id)).toMatchObject([{ encryptedValue: "v1.new" }]);
+});
+
+test("a secret's value goes to the runner once, and only soon after the answer", async () => {
+  const { user, repo, canvas, question } = await canvasAskingForSecret();
+  const take = (id = question.id, canvasId = canvas.id) =>
+    takeSecretAnswer(db, { canvasId, id, withinMs: 15 * 60_000 });
+
+  // Not answered yet: nothing to take.
+  expect(await take()).toBeNull();
+  await answerSecretQuestion(db, {
+    canvasId: canvas.id,
+    id: question.id,
+    name: "STRIPE_SECRET_KEY",
+    encryptedValue: "v1.sealed",
+    valueBytes: 24,
+    userId: user.id,
+  });
+
+  // Not another canvas's runner.
+  const other = await seedCanvas(db);
+  expect(await take(question.id, other.canvas.id)).toBeNull();
+
+  expect(await take()).toEqual({
+    repoId: repo.id,
+    name: "STRIPE_SECRET_KEY",
+    encryptedValue: "v1.sealed",
+  });
+  // Once.
+  expect(await take()).toBeNull();
+  const [row] = await db.select().from(questions).where(eq(questions.id, question.id));
+  expect(row!.deliveredAt).toBeInstanceOf(Date);
+
+  // Answered sixteen minutes ago: too late for the turn that asked.
+  const late = await createQuestion(db, { canvasId: canvas.id, kind: "secret", payload: {} });
+  await answerSecretQuestion(db, {
+    canvasId: canvas.id,
+    id: late.id,
+    name: "STRIPE_SECRET_KEY",
+    encryptedValue: "v1.late",
+    valueBytes: 24,
+    userId: user.id,
+  });
+  await db
+    .update(questions)
+    .set({ answeredAt: new Date(Date.now() - 16 * 60_000) })
+    .where(eq(questions.id, late.id));
+  expect(await take(late.id)).toBeNull();
+
+  // Not an ordinary question, whatever its answer says.
+  const ordinary = await ask(canvas.id, "Layout");
+  await answerQuestion(db, {
+    canvasId: canvas.id,
+    id: ordinary.id,
+    answer: { name: "STRIPE_SECRET_KEY" },
+    userId: user.id,
+  });
+  expect(await take(ordinary.id)).toBeNull();
 });
 
 test("cancelling closes a canvas's open questions and takes them off the count", async () => {

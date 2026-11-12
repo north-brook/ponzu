@@ -29,7 +29,7 @@ const create = (login: string, name: string) =>
   });
 
 describe("canvas creates", () => {
-  test("the 31st in an hour is a 429 rate_limited with Retry-After, and the next hour opens again", async () => {
+  test("the 31st in a window is a 429 rate_limited with Retry-After, and the next window opens again", async () => {
     t.rateLimit.limit("canvas-creates", 30);
     for (let i = 1; i <= 30; i++) expect((await create("maya", `Canvas ${i}`)).status).toBe(201);
 
@@ -50,7 +50,7 @@ describe("canvas creates", () => {
     });
 
     t.clock.advance(RATE_LIMITS["canvas-creates"].windowSeconds * 1000);
-    // An hour on, the access tokens have run out too: sign in again, as the app would refresh.
+    // A window on, sign in again, as the app would refresh its access token.
     for (const login of ["ada", "maya"]) ws.people[login] = await t.signInAs({ login });
     expect((await create("maya", "Canvas 32")).status).toBe(201);
   });

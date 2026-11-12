@@ -1,0 +1,20 @@
+{
+  "name": "example-id per caller",
+  "description": "@vercel/firewall rate-limit id example-id: 2 a minute per key.",
+  "active": true,
+  "conditionGroup": [
+    { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "example-id" }] }
+  ],
+  "action": {
+    "mitigate": {
+      "action": "rate_limit",
+      "rateLimit": {
+        "algo": "fixed_window",
+        "window": 60,
+        "limit": 2,
+        "keys": ["ip"],
+        "action": "rate_limit"
+      }
+    }
+  }
+}

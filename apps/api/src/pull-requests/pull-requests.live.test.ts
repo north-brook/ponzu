@@ -75,6 +75,8 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     },
     // Only where previews are served from is read, for the pull request's description.
     config: { assetsUrl: "https://assets.ponzu.cloud" } as Config,
+    // Every switch off, as the dev deployment has them: a merge-queue repo is refused, not queued.
+    features: FEATURES_OFF,
     // A canvas with no previews yet copies none into its pull request.
     storage: new Proxy({} as ObjectStorage, {
       get: () => () => Promise.reject(new Error("The live test uses no storage.")),

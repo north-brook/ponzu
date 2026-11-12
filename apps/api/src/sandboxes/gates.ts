@@ -1,4 +1,4 @@
-import type { AgentBlocker, EventKind, WakeContext } from "@ponzu/db";
+import { type AgentBlocker, claudeLimitedUntil, type EventKind, type WakeContext } from "@ponzu/db";
 import { wakesPaused } from "../http/maintenance.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { claudeProblem } from "./environment.ts";
@@ -67,6 +67,22 @@ export const maintenanceGate: WakeGate = (_ctx, now, { deps }) =>
     ? { blocker: "paused", retryAt: new Date(now.getTime() + MAINTENANCE_RETRY_MS) }
     : null;
 
+/** How long past a plan's reset its canvases wait before they wake: a little slack for clocks. */
+export const LIMIT_GRACE_MS = 30_000;
+
+/**
+ * The Claude plan it runs on is at its limit (docs/cloud.md, "Claude plan limits"): it waits
+ * for everyone until the plan resets, and its wake is tried again `LIMIT_GRACE_MS` after that.
+ * The head says it waits until then too, which the apps show to the minute. A turn already
+ * running is never cut: only a wake is held. The account's `limited_until` is written only from
+ * what a runner on its current credential reported, and cleared when a person connects again.
+ */
+export const claudeLimitGate: WakeGate = (ctx, now) => {
+  const until = ctx.claude?.limitedUntil;
+  if (!until || until.getTime() <= now.getTime()) return null;
+  return { blocker: "claude_limited", retryAt: new Date(until.getTime() + LIMIT_GRACE_MS) };
+};
+
 export interface NamedWakeGate {
   name: string;
   gate: WakeGate;
@@ -77,7 +93,7 @@ export const WAKE_GATES: readonly NamedWakeGate[] = [
   { name: "claude", gate: claudeGate },
   { name: "maintenance", gate: maintenanceGate },
   { name: "billing", gate: () => null },
-  { name: "claudeLimit", gate: () => null },
+  { name: "claudeLimit", gate: claudeLimitGate },
 ];
 
 /**
@@ -123,8 +139,18 @@ export interface ClaimContext {
  * in the claim's own statement; it is asked once per claim.
  */
 export async function claimableKinds(
-  _deps: Pick<JobDeps, "db" | "clock">,
-  _ctx: ClaimContext,
+  deps: Pick<JobDeps, "db" | "clock">,
+  ctx: ClaimContext,
 ): Promise<readonly EventKind[] | "all"> {
+  const now = new Date(deps.clock.now());
+  if (await claudeLimitedUntil(deps.db, { canvasId: ctx.canvasId, now })) return AT_A_CLAUDE_LIMIT;
   return "all";
 }
+
+/**
+ * What a runner still awake may take up while the Claude plan it runs on is at its limit:
+ * nothing that would begin a turn, which could only fail again. A stop, a person's edit (read
+ * with the next turn) and a push (which needs no Claude) go out; the rest waits in the feed and
+ * goes in once the plan resets, as the people who sent it were told.
+ */
+export const AT_A_CLAUDE_LIMIT: readonly EventKind[] = ["stop", "edit", "push"];

@@ -20,8 +20,11 @@ export interface ClaudeConnection {
   expiresAt: string | null;
 }
 
-/** The windows a Claude plan limits: the five-hour session, the week, and the week on Opus. */
-export type LimitWindow = "session" | "week" | "week_opus";
+/**
+ * The windows a Claude plan limits that Settings shows: the five-hour session, the week, and the
+ * week on Opus or on Sonnet, for the plans that have those.
+ */
+export type LimitWindow = "session" | "week" | "week_opus" | "week_sonnet";
 
 export interface ClaudeLimit {
   window: LimitWindow;
@@ -34,7 +37,53 @@ export const LIMIT_TITLES: Record<LimitWindow, string> = {
   session: "Current session",
   week: "This week",
   week_opus: "This week, Opus",
+  week_sonnet: "This week, Sonnet",
 };
+
+/** The Agent SDK's names for the windows (its `rateLimitType`), as Settings names them. */
+const SDK_WINDOWS: Record<string, LimitWindow> = {
+  five_hour: "session",
+  seven_day: "week",
+  seven_day_opus: "week_opus",
+  seven_day_sonnet: "week_sonnet",
+};
+const ORDER: readonly LimitWindow[] = ["session", "week", "week_opus", "week_sonnet"];
+
+/** A plan's window as the API answers it: the SDK's name, and dates as ISO 8601 text. */
+export interface ApiClaudeLimit {
+  window: string;
+  utilization: number | null;
+  resetsAt: string | null;
+}
+
+/**
+ * The API's `limits` as Settings › Agents shows them: the windows it knows, in its order, and
+ * any other window left out. Before any canvas has run on the plan nothing is known, and the two
+ * windows every plan has show as not yet seen. Null (an API key, which has no plan) hides the
+ * section.
+ */
+export function toLimits(
+  limits: readonly ApiClaudeLimit[] | null | undefined,
+): ClaudeLimit[] | null {
+  if (!limits) return null;
+  const known = new Map<LimitWindow, ClaudeLimit>();
+  for (const limit of limits) {
+    const window = SDK_WINDOWS[limit.window];
+    if (window)
+      known.set(window, { window, utilization: limit.utilization, resetsAt: limit.resetsAt });
+  }
+  if (!known.size) {
+    return (["session", "week"] as const).map((window) => ({
+      window,
+      utilization: null,
+      resetsAt: null,
+    }));
+  }
+  return ORDER.flatMap((window) => {
+    const limit = known.get(window);
+    return limit ? [limit] : [];
+  });
+}
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

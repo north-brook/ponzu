@@ -249,11 +249,30 @@ describe("vercel-firewall.json", () => {
     expect(FirewallSchema.safeParse(bare).success).toBe(false);
   });
 
+  test("every rate limit fits Vercel Pro: a fixed window of 10 s to 10 minutes", () => {
+    // Pro (docs/production.md, D1) counts only in fixed windows of at most ten minutes; a token
+    // bucket and an hour's window are Enterprise's, and a rule asking for either is refused when
+    // applied. This holds the file to what the plan can take.
+    for (const rule of loadInfraFile("vercel-firewall.json").rules) {
+      const rl = rule.action.mitigate.rateLimit;
+      if (!rl) continue;
+      expect([rule.name, rl.algo]).toEqual([rule.name, "fixed_window"]);
+      expect(rl.window).toBeGreaterThanOrEqual(10);
+      expect(rl.window).toBeLessThanOrEqual(600);
+    }
+  });
+
   test("the per-IP limits are the spec's numbers", () => {
     const fw = loadInfraFile("vercel-firewall.json");
     const limits = Object.fromEntries(
       fw.rules
-        .filter((r) => r.action.mitigate.rateLimit)
+        // The per-caller rules (a `@vercel/firewall` id) are paired with the code's table by
+        // apps/api/src/http/rate-limits.firewall.test.ts.
+        .filter(
+          (r) =>
+            r.action.mitigate.rateLimit &&
+            !r.conditionGroup.some((g) => g.conditions.some((c) => c.type === "rate_limit_api_id")),
+        )
         .map((r) => {
           const rl = r.action.mitigate.rateLimit as { window: number; limit: number; algo: string };
           return [r.name, `${rl.limit}/${rl.window}s ${rl.algo}`];
@@ -262,8 +281,8 @@ describe("vercel-firewall.json", () => {
     expect(limits).toEqual({
       "sign-in exchange per ip": "20/60s fixed_window",
       "github setup per ip": "30/60s fixed_window",
-      "claude sign-ins per ip": "20/3600s fixed_window",
-      "api per ip": "1200/60s token_bucket",
+      "claude sign-ins per ip": "20/600s fixed_window",
+      "api per ip": "1200/60s fixed_window",
     });
     expect(fw.rules[0]?.action.mitigate.action).toBe("deny");
     expect(fw.managedRules.bot_protection.action).toBe("log");
