@@ -3,9 +3,12 @@ import { join } from "node:path";
 import {
   type CanUseTool,
   createSdkMcpServer,
+  type ElicitationRequest,
+  type ElicitationResult,
   getSessionInfo,
   getSessionMessages,
   type McpServerConfig,
+  type OnElicitation,
   type PermissionResult,
   query,
   type SDKMessage,
@@ -101,10 +104,9 @@ export function sessionHistory(
   return { messages, toolResults };
 }
 
+/** Something the agent waits on a person for: settled with their reply, or with none and why. */
 interface Pending {
-  name: string;
-  input: Record<string, unknown>;
-  resolve(result: PermissionResult): void;
+  settle(reply: Reply | null, reason: string): void;
 }
 
 class ClaudeRun implements AgentRun {
@@ -140,6 +142,7 @@ class ClaudeRun implements AgentRun {
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         canUseTool: this.ask,
+        onElicitation: this.elicit,
         includePartialMessages: true,
         env: {
           ...(agent.env ?? process.env),
@@ -181,23 +184,11 @@ class ClaudeRun implements AgentRun {
   }
 
   reply(askId: string, reply: Reply): void {
-    const pending = this.take(askId);
-    if (!pending) return;
-    if (pending.name === "AskUserQuestion") {
-      pending.resolve({
-        behavior: "allow",
-        updatedInput: { ...pending.input, answers: reply.answers ?? {} },
-      });
-    } else if (reply.approved) {
-      pending.resolve({ behavior: "allow", updatedInput: pending.input });
-    } else {
-      const said = reply.note ? ` They said: ${reply.note}` : "";
-      pending.resolve({ behavior: "deny", message: `The person said no.${said}` });
-    }
+    this.take(askId)?.settle(reply, "");
   }
 
   withdraw(askId: string, reason: string): void {
-    this.take(askId)?.resolve({ behavior: "deny", message: reason });
+    this.take(askId)?.settle(null, reason);
   }
 
   async interrupt(): Promise<void> {
@@ -235,10 +226,36 @@ class ClaudeRun implements AgentRun {
   private ask: CanUseTool = (name, input, options) =>
     new Promise<PermissionResult>((resolve) => {
       const id = options.toolUseID;
-      this.pending.set(id, { name, input, resolve });
+      this.pending.set(id, {
+        settle: (reply, reason) => resolve(permissionOf(name, input, reply, reason)),
+      });
       options.signal.addEventListener("abort", () => this.withdraw(id, "The turn was stopped."));
       this.out.push({ type: "ask", id, ask: askOf(name, input, options) });
     });
+
+  /**
+   * An MCP server asks for the person. A web address to visit (a sign-in) is a hand-off: the
+   * person opens it, then says done (accept) or not now (decline); a turn that moved on cancels.
+   * A form of fields Ponzu can't show yet is declined at once, and the thread says so. Anything
+   * else (an address that is not http or https) is declined without a word to anyone.
+   */
+  private elicit: OnElicitation = (request, options) => {
+    const plan = elicitationPlan(request);
+    if (plan.kind === "form") {
+      this.out.push({ type: "declined", server: request.serverName });
+      return Promise.resolve({ action: "decline" });
+    }
+    if (plan.kind === "refuse") return Promise.resolve({ action: "decline" });
+    return new Promise<ElicitationResult>((resolve) => {
+      const id = `elicit:${request.elicitationId ?? options.requestId}`;
+      this.pending.set(id, {
+        settle: (reply) =>
+          resolve(reply ? { action: reply.approved ? "accept" : "decline" } : { action: "cancel" }),
+      });
+      options.signal.addEventListener("abort", () => this.withdraw(id, "The turn was stopped."));
+      this.out.push({ type: "ask", id, ask: plan.ask });
+    });
+  };
 
   private async pump(): Promise<void> {
     let error: string | null = null;
@@ -281,13 +298,63 @@ function askOf(
   };
 }
 
+/** What `canUseTool` answers once the person replied, or nobody will. */
+export function permissionOf(
+  name: string,
+  input: Record<string, unknown>,
+  reply: Reply | null,
+  reason: string,
+): PermissionResult {
+  if (!reply) return { behavior: "deny", message: reason };
+  if (name === "AskUserQuestion") {
+    return { behavior: "allow", updatedInput: { ...input, answers: reply.answers ?? {} } };
+  }
+  if (reply.approved) return { behavior: "allow", updatedInput: input };
+  const said = reply.note ? ` They said: ${reply.note}` : "";
+  return { behavior: "deny", message: `The person said no.${said}` };
+}
+
+/** What becomes of an MCP server's elicitation: a hand-off, a form declined, or refused. */
+export function elicitationPlan(
+  request: ElicitationRequest,
+): { kind: "ask"; ask: Ask } | { kind: "form" } | { kind: "refuse" } {
+  if (request.mode !== "url") return { kind: "form" };
+  if (!isWebAddress(request.url)) return { kind: "refuse" };
+  return {
+    kind: "ask",
+    ask: {
+      kind: "handoff",
+      title: (request.title || request.displayName || request.serverName).slice(0, 200),
+      url: request.url!,
+      description: request.message ? request.message.slice(0, 2_000) : null,
+    },
+  };
+}
+
+function isWebAddress(value: string | undefined): boolean {
+  if (!value || value.length > 4_000) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/** The tool call's id, as Claude Code puts it on the MCP request (`_meta`), when it does. */
+export function toolUseIdOf(extra: unknown): string | undefined {
+  const meta = (extra as { _meta?: Record<string, unknown> } | undefined)?._meta;
+  const id = meta?.["claudecode/toolUseId"];
+  return typeof id === "string" && id ? id : undefined;
+}
+
 /** A canvas tool in the SDK's form. The SDK takes zod shapes, as the tools are written. */
 function sdkTool(def: AgentTool) {
   return tool(
     def.name,
     def.description,
     def.input,
-    async (args) => callResult(await def.run(args)),
+    async (args, extra) => callResult(await def.run(args, { id: toolUseIdOf(extra) })),
     {
       annotations: { readOnlyHint: !!def.readOnly, destructiveHint: !!def.destructive },
     },

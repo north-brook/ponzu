@@ -199,7 +199,9 @@ merged are the API's. The catalogue is `apps/studio/src/app/analytics/events.ts`
 name can't be misspelt at a call site.
 
 Every event carries `app_version`, `channel` (`Ponzu`, `Ponzu Dev` or `Ponzu Local`, a run from a checkout),
-`platform` and `os_version`, the `workspace` group in view, and `$current_url` as the view's
+`platform` and `os_version`, `environment` (`dev` or `production`, the environment the build
+was made for; `custom` for Ponzu Local pointed at an API of a developer's own) and `app_commit`
+(the commit it was built from), the `workspace` group in view, and `$current_url` as the view's
 synthetic URL (below). Nothing carries what someone typed, a canvas's or repo's name, or a path:
 a canvas is its `canvas_id`.
 

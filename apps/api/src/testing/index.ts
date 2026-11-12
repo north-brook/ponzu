@@ -15,7 +15,7 @@ import type { RateLimit } from "../deps/rate-limit.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
-import type { SandboxConfig } from "../env.ts";
+import type { Environment, SandboxConfig } from "../env.ts";
 import { FEATURES_OFF, type Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
@@ -120,6 +120,8 @@ export async function createTestApp(
   options: {
     minimumClientVersions?: MinimumVersions;
     commit?: string | null;
+    /** Which environment the app says it is (`/v1/health`); `local` when unset. */
+    environment?: Environment;
     /**
      * A real database and Realtime, for an opt-in test against the Neon `dev` branch. Without
      * them everything stays in this process.
@@ -218,7 +220,11 @@ export async function createTestApp(
     rateLimit: options.rateLimit ?? rateLimit,
     features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
     config: {
-      build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
+      build: {
+        version: "0.0.0-test",
+        commit: options.commit ?? "testcommit",
+        environment: options.environment ?? "local",
+      },
       minimumClientVersions: options.minimumClientVersions ?? {},
       assetsUrl: options.assetsUrl ?? TEST_ASSETS_URL,
       posthog: options.posthog ?? null,

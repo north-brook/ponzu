@@ -8,6 +8,7 @@ import { PonzuQueryProvider } from "./ponzu-query.tsx";
 import { FirstRun } from "./setup/first-run.tsx";
 import { SignInScreen } from "./sign-in.tsx";
 import { UpdateMark, UpdateRequired } from "./update.tsx";
+import { Welcome1x } from "./welcome-1x.tsx";
 
 /*
  * The app's gates, in order (onboarding 3.2): no session, the sign-in screen; a build the API
@@ -16,6 +17,17 @@ import { UpdateMark, UpdateRequired } from "./update.tsx";
  * query and every cached answer it held.
  */
 export function App({ host }: { host: Host }) {
+  // The welcome from Ponzu 1.x sits beside every gate, so it stays up while the session changes
+  // under it (over the sign-in screen, as it opens, and past a sign-in).
+  return (
+    <>
+      <Gates host={host} />
+      <Welcome1x host={host} />
+    </>
+  );
+}
+
+function Gates({ host }: { host: Host }) {
   const state = useSessionState(host.session);
   const badge = <UpdateMark updater={host.update} />;
   // Whether this window has shown the sign-in screen: then signing in waits on it, rather

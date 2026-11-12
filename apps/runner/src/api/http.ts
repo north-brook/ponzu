@@ -27,6 +27,8 @@ import {
   type SavedArchive,
   type SavedPoint,
   SESSION_ARCHIVE,
+  type SecretRequest,
+  type SecretResponse,
   type StateRequest,
   type StateResponse,
   type ThreadResponse,
@@ -79,6 +81,10 @@ export class HttpRunnerApi implements RunnerApi {
 
   async withdraw(ids: string[]): Promise<void> {
     await this.call("POST", "/v1/runner/questions/withdraw", { ids });
+  }
+
+  secret(questionId: string): Promise<SecretResponse> {
+    return this.call("POST", "/v1/runner/secret", { questionId } satisfies SecretRequest);
   }
 
   async upload(files: UploadFile[], opts: { seq?: number } = {}): Promise<Uploaded[]> {

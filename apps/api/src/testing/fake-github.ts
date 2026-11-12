@@ -2,6 +2,7 @@ import { createHmac, generateKeyPairSync, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { jwtVerify } from "jose";
 import type { Fetch } from "../deps/fetch.ts";
+import { APP_EVENTS, APP_PERMISSIONS } from "../ops/github-app.ts";
 import { FakePullRequests, type FakeRepoAccess } from "./fake-pull-requests.ts";
 
 /*
@@ -136,6 +137,21 @@ export class FakeGithub {
    * small to have a list run past the pages the API reads.
    */
   peoplePageSize = 100;
+
+  /**
+   * The App as `GET /app` and `GET /app/hook/config` answer: by default exactly what the API
+   * needs, at the test app's slug and address. A test changes it to act out an App set up wrong.
+   */
+  readonly app = {
+    slug: "ponzu-test",
+    permissions: { ...APP_PERMISSIONS } as Record<string, string>,
+    events: [...APP_EVENTS],
+    hook: {
+      url: "https://api.test/v1/github/webhook" as string | null,
+      content_type: "json" as string | null,
+      insecure_ssl: "0" as string | null,
+    },
+  };
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
@@ -307,6 +323,21 @@ export class FakeGithub {
       // A token for everything the installation has is asked for with no body at all.
       const body = JSON.parse(typeof init.body === "string" ? init.body : "{}");
       return this.#installationToken(bearer, Number(appToken[1]), body);
+    }
+    if (method === "GET" && pathname === "/app") {
+      if (!(await this.#isAppJwt(bearer))) return badJwt();
+      const { slug, permissions, events } = this.app;
+      return Response.json({
+        id: 1,
+        slug,
+        client_id: this.credentials.clientId,
+        permissions,
+        events,
+      });
+    }
+    if (method === "GET" && pathname === "/app/hook/config") {
+      if (!(await this.#isAppJwt(bearer))) return badJwt();
+      return Response.json(this.app.hook);
     }
     const appInstallation = /^\/app\/installations\/(\d+)$/.exec(pathname);
     if (method === "GET" && appInstallation) {
