@@ -20,8 +20,8 @@ export interface RecordedJob {
   maxAttempts: number;
 }
 
-/** The job that deletes a canvas's files, as the API names it. Its key is the asset key. */
-export interface FilesJob {
+/** A job a statement records along with the change it is for, as the API names it. */
+export interface HeldJob {
   kind: string;
   maxAttempts: number;
   runAt: Date;
@@ -29,9 +29,18 @@ export interface FilesJob {
   lockedBy?: string;
 }
 
+/** The job that deletes a canvas's files. Its key is the asset key. */
+export interface FilesJob extends HeldJob {
+  /**
+   * When the job makes its last pass, once every upload address signed before the delete has
+   * run out: carried in its payload as `until`, in milliseconds.
+   */
+  until?: Date;
+}
+
 /**
  * Delete a canvas and everything that is only its own, and record `job`, keyed by the asset
- * key the row had as it went, with `{ assetKey }` as its payload: in one statement, so the row
+ * key the row had as it went, with `{ assetKey, until? }` as its payload: in one statement, so the row
  * is never gone without the job that deletes its files. `deleted` is false when there was no
  * such canvas (deleted twice), and then nothing is recorded. `job` is null when nothing was
  * recorded, which is also so when a job for that key was already waiting: that one does the work.
@@ -54,7 +63,11 @@ export async function deleteCanvasWithFiles(
         insert into ${jobs} (id, kind, key, payload, run_at, max_attempts, locked_by, locked_at,
                              attempts)
         select ${newId("job")}, ${job.kind}, gone.asset_key,
-               jsonb_build_object('assetKey', gone.asset_key),
+               jsonb_build_object('assetKey', gone.asset_key) || ${
+                 job.until
+                   ? sql`jsonb_build_object('until', ${job.until.getTime()}::bigint)`
+                   : sql`'{}'::jsonb`
+               },
                ${timeParam(job.runAt)}::timestamptz, ${job.maxAttempts}::int,
                ${job.lockedBy ?? null}::text,
                ${locked ? sql`now()` : sql`null::timestamptz`},

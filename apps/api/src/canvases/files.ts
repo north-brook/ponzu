@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { RetryLater } from "../jobs/retry.ts";
 import { type JobDeps, type RunNowDeps, type RunningJob, runJob } from "../jobs/run.ts";
+import { UPLOADS_SETTLED_MS } from "../uploads/uploads.ts";
 
 /*
  * A canvas's files, deleted with it (docs/cloud.md, "Assets and previews"). Everything a canvas
@@ -18,7 +19,9 @@ import { type JobDeps, type RunNowDeps, type RunningJob, runJob } from "../jobs/
  * Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canvases that go
  * with it) both go through `deleteCanvasAndFiles`, which deletes the row and records this job in
  * one statement, keyed by the asset key the row had as it went, and runs it at once. A function
- * that dies before the job is done leaves it to the minute's cron.
+ * that dies before the job is done leaves it to the minute's cron. An upload address signed
+ * before the delete can still put bytes under the key until it runs out, so the job comes back
+ * once more at `until` (`UPLOADS_SETTLED_MS` after the delete) and deletes what landed late.
  */
 
 /** The job that deletes a deleted canvas's files. Its key is the canvas's asset key. */
@@ -30,7 +33,8 @@ export const FILES_PER_ATTEMPT = 2000;
 /** The wait before the next attempt, when more remain. */
 export const FILES_RETRY_MS = 10_000;
 
-const Payload = z.object({ assetKey: z.string() });
+/** `until`: when the last pass runs. A job recorded without it (before it existed) makes none. */
+const Payload = z.object({ assetKey: z.string(), until: z.number().optional() });
 
 /** Whether `prefix` is exactly an asset key and its slash: the only prefix `deleteUnder` takes. */
 export function isAssetPrefix(prefix: string): boolean {
@@ -85,16 +89,24 @@ export function canvasFilesDeleteJob(assetKey: string): NewJob {
  * holds the key, so the job ends as `job_failed` (logged and reported) rather than quietly.
  */
 export async function runCanvasFilesDeleteJob(
-  deps: Pick<JobDeps, "storage" | "log">,
+  deps: Pick<JobDeps, "storage" | "log" | "clock">,
   payload: unknown,
   job?: Pick<RunningJob, "attempts" | "maxAttempts">,
 ): Promise<void> {
-  const { assetKey } = Payload.parse(payload);
+  const { assetKey, until } = Payload.parse(payload);
   const { deleted, done } = await deleteUnder(deps.storage, `${assetKey}/`);
   // Ids only: the asset key is the capability to the files, so it is never logged.
   deps.log.info("canvas_files_deleted", { deleted, done });
-  if (done) return;
-  if (job && job.attempts >= job.maxAttempts) {
+  const last = job !== undefined && job.attempts >= job.maxAttempts;
+  if (done) {
+    const now = deps.clock.now();
+    // Empty for now, but an address signed before the delete may still land bytes here.
+    if (until !== undefined && now < until && !last) {
+      throw new RetryLater(until - now, "A last pass once every upload address has run out.");
+    }
+    return;
+  }
+  if (last) {
     throw new Error(`Deleted ${deleted} files on the last attempt; more remain.`);
   }
   throw new RetryLater(FILES_RETRY_MS, `Deleted ${deleted} files; more remain.`);
@@ -116,6 +128,7 @@ export async function deleteCanvasAndFiles(deps: RunNowDeps, canvasId: string): 
       maxAttempts: CANVAS_FILES_DELETE_ATTEMPTS,
       runAt: new Date(deps.clock.now()),
       lockedBy: worker,
+      until: new Date(deps.clock.now() + UPLOADS_SETTLED_MS),
     },
   });
   // Null with the row deleted: a job for that key was already waiting, and does the work.

@@ -2,7 +2,7 @@ import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import { jobs } from "../schema/index.ts";
-import type { FilesJob, RecordedJob } from "./canvas-files.ts";
+import type { HeldJob, RecordedJob } from "./canvas-files.ts";
 import { queryJson, timeParam } from "./json.ts";
 
 /*
@@ -136,7 +136,7 @@ export type DeleteUserResult =
  * so the row is never gone without the job that still knows it. Nothing is recorded when
  * nothing is deleted.
  */
-export async function deleteUser(db: Db, userId: string, job: FilesJob): Promise<DeleteUserResult> {
+export async function deleteUser(db: Db, userId: string, job: HeldJob): Promise<DeleteUserResult> {
   const locked = job.lockedBy !== undefined;
   const result = await queryJson<{
     workosUserId: string | null;

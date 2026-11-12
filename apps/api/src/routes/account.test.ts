@@ -376,7 +376,7 @@ describe("deleting Rae", () => {
         `select payload from jobs
           where kind = '${CANVAS_FILES_DELETE_JOB}' and key = '${assetKeys[canvasId]}'`,
       );
-      expect(job?.payload).toEqual({ assetKey: assetKeys[canvasId] });
+      expect(job?.payload).toMatchObject({ assetKey: assetKeys[canvasId] });
     }
     expect(filesOf(ownCanvas)).toEqual([]);
     // The first attempt takes 2,000; the cron takes the rest ten seconds on.

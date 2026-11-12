@@ -6,7 +6,7 @@ import { UpstreamError } from "../http/errors.ts";
 import { RetryLater } from "../jobs/retry.ts";
 import type { JobDeps, RunNowDeps, RunningJob } from "../jobs/run.ts";
 import { runNow } from "../jobs/run.ts";
-import { UPLOAD_SECONDS } from "../uploads/uploads.ts";
+import { UPLOADS_SETTLED_MS } from "../uploads/uploads.ts";
 import { canvasFilesDeleteJob, deleteUnder, FILES_RETRY_MS } from "./files.ts";
 
 /*
@@ -37,7 +37,7 @@ export const ASSET_KEY_RETIRE_ATTEMPTS = 10;
  * How long the old key's files stay after the swap: past every upload address signed for it
  * (`UPLOAD_SECONDS`), with five minutes over for the upload's completion.
  */
-export const ASSET_KEY_RETIRE_DELAY_MS = UPLOAD_SECONDS * 1000 + 5 * 60_000;
+export const ASSET_KEY_RETIRE_DELAY_MS = UPLOADS_SETTLED_MS;
 /** How many copies run at once. */
 const COPY_CONCURRENCY = 16;
 /**
