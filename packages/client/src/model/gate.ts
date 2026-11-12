@@ -26,7 +26,7 @@ export function gateMessage(gate: SteerGate, meId: string): string {
 }
 
 /**
- * A canvas whose owner left the workspace (or deleted their account), word for word from the
+ * A canvas whose owner left the workspace (or deleted their account), word for word from
  * the sweep plan, §8: to someone who can take it over, what pressing "Take over" does; to anyone
  * else, who can.
  */

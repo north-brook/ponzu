@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { getCanvas, takeOverCanvas } from "@ponzu/db";
+import { getCanvas, getSandbox, takeOverCanvas } from "@ponzu/db";
 import { canvasSandboxName } from "@ponzu/sandbox";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_SCOPE, type TestApp } from "../testing/index.ts";
@@ -41,6 +41,7 @@ const idOf = (login: string) => ws.people[login]!.userId;
 const takeOver = async (canvasId: string, login: string) =>
   call(t, await as(login), "POST", `/v1/canvases/${canvasId}/take-over`);
 const head = async (canvasId: string) => (await getCanvas(t.db, canvasId))!;
+const sandbox = (canvasId: string) => getSandbox(t.db, canvasId);
 const starts = (canvasId: string) =>
   t.sandboxes.commands(canvasSandboxName(TEST_SCOPE, canvasId)).filter((c) => c.kind === "start");
 
@@ -184,6 +185,44 @@ describe("POST /v1/canvases/:id/take-over", () => {
     );
     expect(stranger.status).toBe(404);
     expect((await head(canvas.id)).ownerId).toBe(idOf("bryce"));
+  });
+
+  test("a sandbox still awake on the last owner's Claude is put to sleep, even with nothing owed", async () => {
+    const canvas = await bryces();
+    // Awake on Bryce's key, and its runner took what was said: nothing is owed.
+    await say(canvas.id, "maya");
+    expect(starts(canvas.id).map((s) => s.command.env!.ANTHROPIC_API_KEY)).toEqual([KEYS.bryce]);
+    expect((await sandbox(canvas.id))?.state).toBe("awake");
+    await sql(`update events set delivered_at = now() where canvas_id = '${canvas.id}'`);
+    // He leaves, and Maya takes it over before the minute's sweep has looked.
+    await bryceLeaves();
+    const taken = await takeOver(canvas.id, "maya");
+    await t.backgroundDone();
+
+    expect(taken.status).toBe(200);
+    // Its runner held Bryce's credential, which is nobody's to run on now: the sweep would not
+    // stop it any more, since the canvas has a member's Claude, so the take-over does.
+    expect((await sandbox(canvas.id))?.state).toBe("asleep");
+    expect(starts(canvas.id)).toHaveLength(1);
+
+    // What Maya says next starts it on her Claude.
+    await say(canvas.id, "maya");
+    expect(starts(canvas.id).map((s) => s.command.env!.ANTHROPIC_API_KEY)).toEqual([
+      KEYS.bryce,
+      KEYS.maya,
+    ]);
+  });
+
+  test("the last owner's create key does not follow the canvas, so it cannot meet one of the taker's", async () => {
+    const canvas = await bryces();
+    const own = await canvasIn(t, ws, "ines", sampleDoc());
+    await sql(
+      `update canvases set create_key = 'same-key-0001' where id in ('${canvas.id}', '${own.id}')`,
+    );
+    await bryceLeaves();
+    const taken = await takeOver(canvas.id, "ines");
+    expect(taken.status).toBe(200);
+    expect((await head(canvas.id)).ownerId).toBe(idOf("ines"));
   });
 
   test("a wait on anything but Claude stays: taking over is not a way past billing", async () => {

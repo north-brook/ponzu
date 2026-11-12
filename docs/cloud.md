@@ -2670,7 +2670,9 @@ the thread gets an API-written notice `{ type: "owner_changed", by }` under `ti_
 The statement holds on the owner still being gone and the canvas still having the owner it was
 read with, so of teammates pressing at once one takes it, and a take-over racing the owner's
 return happens whole or not at all. Then, as when Claude is connected, it wakes if its feed
-holds work no runner took. Its next runner starts with the new owner's credential and resumes
+holds work no runner took. A sandbox still awake, whose runner was started on the last owner's
+credential, is put to sleep first (the sweep would no longer stop it, since the canvas now runs
+on a member's Claude), and the same rule wakes it after. Its next runner starts with the new owner's credential and resumes
 the same Claude session from the disk or the checkpoint; the runner does not change. Refusals:
 409 `not_ownerless` while its owner is a member (they came back, or a teammate took it first;
 a head that still said `claude_owner_left` for an owner who came back is lifted, and woken if

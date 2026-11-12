@@ -75,6 +75,9 @@ export async function takeOverCanvas(
         update canvases d
            set owner_id = ${userId},
                claude_account_id = (select id from account),
+               -- The last owner's retry key for its create, unique per owner: kept, it could
+               -- meet one of the taker's own and fail the statement.
+               create_key = null,
                -- What waited on the last owner's Claude; a wait on anything else stays.
                agent_blocker = case when left(d.agent_blocker, 7) = 'claude_' then null
                                     else d.agent_blocker end,

@@ -275,7 +275,7 @@ export function who(person: Person, meId: string): string {
 }
 
 /**
- * The thread's line once someone took over a canvas whose owner left, word for word from the
+ * The thread's line once someone took over a canvas whose owner left, word for word from
  * the sweep plan, §8, and said to the taker as "you".
  */
 export function ownerChangedLine(by: Person, meId: string): string {

@@ -6,7 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { seedCanvas, seedUser } from "../fixtures.ts";
 import { newId, randomString } from "../ids.ts";
 import { describeLive } from "../live.ts";
-import { threadItems } from "../schema/index.ts";
+import { memberships, threadItems } from "../schema/index.ts";
 import { upsertMembership } from "./accounts.ts";
 import { getCanvas } from "./canvases.ts";
 import { connectClaudeAccount } from "./claude.ts";
@@ -34,6 +34,24 @@ describeLive("taking over a canvas on a real Postgres", ({ db, close }) => {
     return user;
   }
 
+  /**
+   * A fresh canvas whose owner is not a member of its workspace. The fixtures' people and
+   * workspace are found again by their GitHub ids on a database an earlier run filled, so the
+   * owner may be a member from that run: they are made to have left here, not assumed to.
+   */
+  async function ownerless() {
+    const seeded = await seedCanvas(db);
+    await db
+      .delete(memberships)
+      .where(
+        and(
+          eq(memberships.userId, seeded.user.id),
+          eq(memberships.workspaceId, seeded.workspace.id),
+        ),
+      );
+    return seeded;
+  }
+
   const notices = async (canvasId: string) =>
     db
       .select()
@@ -56,8 +74,7 @@ describeLive("taking over a canvas on a real Postgres", ({ db, close }) => {
 
   test("teammates taking over at once: exactly one owns it, and the thread says so once", async () => {
     for (let round = 0; round < 5; round++) {
-      // The owner seeded here was never a member of the workspace: as if they had left.
-      const { canvas, workspace } = await seedCanvas(db);
+      const { canvas, workspace } = await ownerless();
       const people = await Promise.all(times(6, (i) => teammate(workspace.id, `t${round}-${i}`)));
 
       const results = await Promise.all(people.map((person) => takeOver(canvas.id, person.id)));
@@ -74,7 +91,7 @@ describeLive("taking over a canvas on a real Postgres", ({ db, close }) => {
 
   test("a take-over racing the owner's return either happens whole or not at all", async () => {
     for (let round = 0; round < 10; round++) {
-      const { canvas, workspace, user: owner } = await seedCanvas(db);
+      const { canvas, workspace, user: owner } = await ownerless();
       const maya = await teammate(workspace.id, `m${round}`);
 
       const [result] = await Promise.all([
