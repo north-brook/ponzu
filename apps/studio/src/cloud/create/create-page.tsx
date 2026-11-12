@@ -11,6 +11,7 @@ import {
   type ProjectChoice,
   projectLabel,
   type RepoShelf,
+  STATEMENT_ROOM,
 } from "./create.ts";
 import { type Suggestion, useSuggestion } from "./ideas.tsx";
 import type { ModelChoice } from "./model-picker.tsx";
@@ -59,7 +60,7 @@ export interface CreatePageProps {
 /**
  * Starting a design, in the canvas pane, on the canvas's own dotted ground, since this is where a
  * canvas starts. The hero (Ponzu's mark over one statement that ends in the project selector)
- * stands in the room above the composer, centred a little high; the composer is docked at the
+ * is centred in the pane, a little high (`HERO_RISE`); the composer is docked at the
  * pane's foot, where the thread's composer sits in its rail, and grows upward with what is typed
  * or attached. On a workspace's first visits the ideas for the chosen repo take turns as the
  * composer's placeholder (composer.tsx), so nothing on the page moves when they arrive or don't,
@@ -158,11 +159,19 @@ export function CreatePage({
           >
             <Slice size={MARK} className="text-ink" />
           </span>
-          {/* One statement: what this page is for, ending in where. Its last words are the
-              project selector, so the two sit on one baseline and centre as one line. */}
+          {/* One statement: what this page is for, then where. A repo takes the second line
+              (as does the selector's skeleton while the project is being found); Scratch ends
+              the first ("from scratch"). The room is two lines either way, and the first line
+              is at its top in both, so nothing above it moves when the project changes. */}
           <div
             data-create-statement
-            className="flex max-w-full items-baseline justify-center font-display font-semibold text-28 text-ink"
+            className={cn(
+              "flex max-w-full font-display font-semibold text-28 text-ink",
+              project?.kind === "scratch"
+                ? "items-baseline justify-center"
+                : "flex-col items-center justify-start",
+            )}
+            style={{ minHeight: STATEMENT_ROOM }}
           >
             <h1 className="m-0 shrink-0 whitespace-nowrap font-[inherit] text-[length:inherit]">
               {project?.kind === "scratch" ? "Make something from" : "Make something in"}
@@ -181,6 +190,7 @@ export function CreatePage({
               onAllowMore={onAllowMore}
               open={pickerOpen}
               onOpenChange={setPickerOpen}
+              after={() => field.current?.focus({ preventScroll: true })}
             />
           </div>
         </div>

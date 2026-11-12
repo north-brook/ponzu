@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { RepoShelf } from "../cloud/create/create.ts";
+import { focusCreateComposer } from "../cloud/create/focus.ts";
 import { type Sent, useLanding } from "../cloud/create/landing.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person, ThreadItem } from "../cloud/model.ts";
@@ -47,6 +48,7 @@ import {
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
+import { ASKED_AHEAD_MS } from "./pull-request-store.ts";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
@@ -195,6 +197,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
         const { [next.workspaceId]: _shown, ...designs } = now.designs;
         return { ...now, workspaceId: next.workspaceId, designs };
       });
+      focusCreateComposer();
     },
     [update],
   );
@@ -300,7 +303,7 @@ function WorkspaceWindow({
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
-  const { queries } = usePonzu();
+  const { queries, queryClient } = usePonzu();
   // Asked again with `me` after each sync with GitHub, as the window comes back to the front.
   const detail = useQuery(queries.workspace(id));
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
@@ -458,6 +461,20 @@ function WorkspaceWindow({
   }, [host, say]);
 
   const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
+  // About to open a design on a repo (the pointer or the keyboard resting on its row):
+  // its pull request is asked for ahead, into the cache its chrome reads from the first frame,
+  // so its action is there as it opens. Asked at most once in ASKED_AHEAD_MS, which the read on
+  // opening then stands on.
+  const onIntent = useCallback(
+    (design: DesignSummary) => {
+      if (design.project.kind !== "repo") return;
+      void queryClient.prefetchQuery({
+        ...queries.pullRequest(design.id),
+        staleTime: ASKED_AHEAD_MS,
+      });
+    },
+    [queryClient, queries],
+  );
   const onAction = useCallback(
     (design: DesignSummary, action: Exclude<RowAction, "rename">) => {
       const failed = () => say(`“${design.name}” couldn't be changed. Try again.`);
@@ -706,21 +723,20 @@ function WorkspaceWindow({
                     setQuery(null);
                   }}
                   onOpen={onOpen}
+                  onIntent={onIntent}
                   onAction={onAction}
                   onRename={onRename}
                   onNewDesign={() => {
                     openDesign(null);
                     // New design, by its button or ⌘N, is to start typing one: the caret goes
                     // to the create page's composer, whether the page was already showing or not.
-                    requestAnimationFrame(() =>
-                      requestAnimationFrame(() =>
-                        document
-                          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
-                          ?.focus({ preventScroll: true }),
-                      ),
-                    );
+                    focusCreateComposer();
                   }}
-                  onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
+                  onSwitchWorkspace={(next) => {
+                    update((now) => ({ ...now, workspaceId: next.id }));
+                    // A workspace that opens on its create page is for typing into at once.
+                    focusCreateComposer();
+                  }}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
                   onPlan={openPlan}

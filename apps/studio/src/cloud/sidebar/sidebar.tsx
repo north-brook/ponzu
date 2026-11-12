@@ -133,6 +133,7 @@ export function Sidebar(props: SidebarProps) {
     onOpen: props.onOpen,
     onAction: props.onAction,
     onRename: props.onRename,
+    ...(props.onIntent ? { onIntent: props.onIntent } : {}),
   };
 
   return (
