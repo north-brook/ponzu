@@ -681,7 +681,7 @@ test("a push with a workflow file is refused in its own words: leave the file ou
   s.run.end();
 
   await until(() => notices(s.api, "error").length === 1, 5_000);
-  const message = String(notices(s.api, "error")[0]!.payload.message);
+  const message = String((notices(s.api, "error")[0]!.payload as { message?: string }).message);
   expect(message).toBe(
     "GitHub won't let Ponzu push changes to files under .github/workflows/ to north/fern: Ponzu's GitHub App isn't allowed to change workflows. 1 commit on pz/hero is safe in this canvas's sandbox. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.",
   );

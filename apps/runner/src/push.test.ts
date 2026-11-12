@@ -231,9 +231,9 @@ test("what git says decides whether to try again", () => {
     ).kind,
   ).toBe("workflow_permission");
   // A hook that declines for its own reasons is still `refused`.
-  expect(
-    fail("", "! [remote rejected] pz/hero -> pz/hero (pre-receive hook declined)").kind,
-  ).toBe("refused");
+  expect(fail("", "! [remote rejected] pz/hero -> pz/hero (pre-receive hook declined)").kind).toBe(
+    "refused",
+  );
   expect(
     fail("", "fatal: unable to access 'https://github.com/': Could not resolve host").kind,
   ).toBe("transient");

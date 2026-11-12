@@ -1,6 +1,7 @@
 import type { PullRequestContext, User } from "@ponzu/db";
 import type {
   GithubCheck,
+  GithubMergeQueue,
   GithubPullRequest,
   MergeRefusal,
   PersonResult,
@@ -45,7 +46,13 @@ export type PullRequestAction =
   | { kind: "close" }
   | { kind: "update_branch"; headSha: string };
 
-type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config">;
+type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config" | "features">;
+
+/** What an action did: `did` when this call did it, `queued` when a merge went into a queue. */
+interface Done {
+  did: boolean;
+  queued: boolean;
+}
 
 /** The waits for GitHub to work out whether a pull request can merge, before giving up. */
 const MERGEABLE_WAITS_MS = [1_000, 2_000];
@@ -68,19 +75,24 @@ export async function actOnPullRequest(
 /**
  * `actOnPullRequest`, saying too whether this call is what did it (`did`): false when there was
  * nothing to do (already ready, already merged, auto-merge already on), as when someone else did
- * it a moment before. The agent's routes say so in its thread only when it did.
+ * it a moment before. The agent's routes say so in its thread only when it did. `queued` says a
+ * merge this call asked for went into the repo's merge queue rather than merging now.
  */
 export async function actAndSay(
   deps: ActDeps,
   context: PullRequestContext,
   user: User,
   action: PullRequestAction,
-): Promise<{ tab: PullRequestTab; did: boolean }> {
+): Promise<{ tab: PullRequestTab; did: boolean; queued: boolean }> {
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
-  const done = { did: false };
+  const done: Done = { did: false, queued: false };
   const read = await act(deps, target, user, action, done);
-  return { tab: toTab(target, read.read, deps.config.githubApp.slug), did: done.did };
+  return {
+    tab: toTab(target, read.read, deps.config.githubApp.slug),
+    did: done.did,
+    queued: done.queued,
+  };
 }
 
 async function act(
@@ -88,7 +100,7 @@ async function act(
   target: PullRequestTarget,
   user: User,
   action: PullRequestAction,
-  done: { did: boolean },
+  done: Done,
 ): Promise<Read> {
   const { github } = deps;
   let current = await readAndRecord(deps, target);
@@ -111,6 +123,24 @@ async function act(
       if (pr.state === "merged") return current;
       if (pr.state === "closed") throw closed(pr);
       if (pr.state === "draft") throw draft();
+      // A repo that merges through a merge queue (docs/cloud.md, "Pull requests"): merging is
+      // adding it to the queue, behind PONZU_MERGE_QUEUE until that is proven against GitHub,
+      // and never past the queue, whatever `bypass` says.
+      const queue = pr.mergeQueue;
+      if (queue.entry) {
+        if (queue.entry.state === "unmergeable") throw queueUnmergeable(pr);
+        // In the queue already, by someone else or a moment ago: nothing to do.
+        return current;
+      }
+      if (queue.enabled) {
+        if (!deps.features.mergeQueue) throw mergeQueue();
+        if (action.headSha !== pr.head.sha || lagsBranch(current.read)) throw headMoved();
+        if (pr.mergeable === false) throw conflicts(pr);
+        expectDone(await github.enqueuePullRequest(await personToken(), pr.id, pr.head.sha), pr);
+        done.did = true;
+        done.queued = true;
+        break;
+      }
       current = await untilMergeable(deps, target, current);
       const ready = current.read.pullRequest!;
       if (action.headSha !== ready.head.sha || lagsBranch(current.read)) throw headMoved();
@@ -290,6 +320,8 @@ function expectDone(result: PersonResult, pr: GithubPullRequest): void {
         "forbidden",
         `GitHub does not let you do this to #${pr.number} in its repo.`,
       );
+    case "workflow_permission":
+      throw workflowPermission();
     case "refused":
       throw refused();
   }
@@ -298,14 +330,35 @@ function expectDone(result: PersonResult, pr: GithubPullRequest): void {
 /**
  * What holds an open pull request back from merging now, in the words and code Merge would
  * refuse with; null when Merge would ask GitHub (clean, unstable or with hooks). A draft is held
- * back by being one.
+ * back by being one. On a repo with a merge queue, Merge adds to the queue only while `mergeQueue`
+ * (the switch) is on, and one already in the queue waits there.
  */
-export function mergeHold(pr: Holdable): { code: string; message: string } | null {
+export function mergeHold(
+  pr: Holdable,
+  { mergeQueue: queueOn = false }: { mergeQueue?: boolean } = {},
+): { code: string; message: string } | null {
   if (pr.state === "draft") {
     const error = draft();
     return { code: error.code, message: error.message };
   }
   if (pr.state !== "open") return null;
+  const entry = pr.mergeQueue?.entry;
+  if (entry) {
+    if (entry.state === "unmergeable") {
+      const error = queueUnmergeable(pr);
+      return { code: error.code, message: error.message };
+    }
+    const at = entry.position === null ? "" : `, ${ordinal(entry.position)} in line`;
+    return {
+      code: "merge_queued",
+      message: `#${pr.number} is in the merge queue on GitHub${at}. GitHub merges it when the queue's checks pass.`,
+    };
+  }
+  if (pr.mergeQueue?.enabled) {
+    if (queueOn) return null;
+    const error = mergeQueue();
+    return { code: error.code, message: error.message };
+  }
   if (pr.mergeable !== false && MERGEABLE_NOW.includes(pr.mergeState)) return null;
   const error = pr.mergeable === null ? mergeabilityUnknown() : blockedBy(pr);
   return { code: error.code, message: error.message };
@@ -319,7 +372,16 @@ type Holdable = Pick<
   head: { ref: string };
   base: { ref: string };
   checks: { items: Pick<GithubCheck, "required" | "state">[] };
+  mergeQueue?: GithubMergeQueue;
 };
+
+/** 1st, 2nd, 3rd, 4th… 11th, 12th, 13th, 21st. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix =
+    tens >= 11 && tens <= 13 ? "th" : (({ 1: "st", 2: "nd", 3: "rd" } as const)[n % 10] ?? "th");
+  return `${n}${suffix}`;
+}
 
 /** Why the repo's rules do not let it merge now, as far as the pull request says. */
 function blockedBy(pr: Holdable): ApiError {
@@ -402,4 +464,26 @@ const refused = () =>
     422,
     "github_refused",
     "GitHub would not do this. The pull request on GitHub says why.",
+  );
+
+/** The App has no `workflows` permission: no one in Ponzu can do this, so it says where to. */
+const workflowPermission = () =>
+  new ApiError(
+    422,
+    "workflow_permission",
+    "GitHub won't let Ponzu change files under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows. Do this on GitHub instead.",
+  );
+
+const mergeQueue = () =>
+  new ApiError(
+    409,
+    "merge_queue",
+    "This repository merges through a merge queue. Add it to the queue on GitHub.",
+  );
+
+const queueUnmergeable = (pr: Pick<GithubPullRequest, "number">) =>
+  new ApiError(
+    409,
+    "merge_queue_unmergeable",
+    `GitHub's merge queue can't merge #${pr.number}. The pull request on GitHub says why.`,
   );

@@ -924,6 +924,14 @@ export interface PullRequestStanding {
     unresolved: { author: string | null; path: string; line: number | null; body: string }[];
     /** Why Merge would not ask GitHub now, as the API would refuse it; null when it would. */
     mergeHold: { code: string; message: string } | null;
+    /**
+     * Whether its base merges through a merge queue, and its entry while it is in one (its
+     * place, from 1). Absent from an API older than merge queues.
+     */
+    mergeQueue?: {
+      enabled: boolean;
+      entry: { state: string; position: number | null } | null;
+    };
   } | null;
   mergeMethod: "squash" | "merge" | "rebase" | null;
   autoMergeAllowed: boolean;
@@ -942,6 +950,11 @@ export interface AgentPullRequestAnswer extends PullRequestStanding {
   did: boolean;
   /** `open` only: GitHub has nothing to open it from yet, and the runner was asked to push. */
   pushing: boolean;
+  /**
+   * `merge` only: the repository merges through a merge queue, and this added it to the queue
+   * rather than merging it. GitHub merges it once the queue's checks pass. Absent otherwise.
+   */
+  queued?: boolean;
 }
 
 /* ------------------------------------------------------------------ */

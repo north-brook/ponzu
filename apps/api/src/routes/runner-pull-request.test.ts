@@ -439,6 +439,47 @@ describe("guardrails", () => {
     });
   });
 
+  test("on a merge-queue repo the agent is told why it can't merge, and queues only with the switch on", async () => {
+    const s = await setup();
+    const asked = await turn(s, "message", "maya", { text: "Ship it" });
+    await openedByAgent(s, asked);
+    const pull = t.github.pulls.latest(s.repo)!;
+    pull.draft = false;
+    t.github.pulls.settings(s.repo, { mergeQueue: true });
+
+    expect((await read(s.runner, asked)).body.pullRequest).toMatchObject({
+      mergeQueue: { enabled: true, entry: null },
+      mergeHold: {
+        code: "merge_queue",
+        message: "This repository merges through a merge queue. Add it to the queue on GitHub.",
+      },
+    });
+    const refused = await act(s.runner, "merge", { turn: asked, headSha: head(s.repo) });
+    expect([refused.status, refused.body.error.code]).toEqual([409, "merge_queue"]);
+    expect(pull.queue).toBeNull();
+
+    t.deps.features.mergeQueue = true;
+    try {
+      expect((await read(s.runner, asked)).body.pullRequest.mergeHold).toBeNull();
+      const queued = await act(s.runner, "merge", { turn: asked, headSha: head(s.repo) });
+      expect(queued.status).toBe(200);
+      expect(queued.body).toMatchObject({
+        did: true,
+        queued: true,
+        pullRequest: { state: "open", mergeQueue: { entry: { position: 1 } } },
+      });
+      expect(queued.body.pullRequest.mergeHold).toEqual({
+        code: "merge_queued",
+        message: `#${pull.number} is in the merge queue on GitHub, 1st in line. GitHub merges it when the queue's checks pass.`,
+      });
+      expect(t.github.pulls.actions.at(-1)).toMatchObject({ kind: "enqueue", by: "maya" });
+      // Not said in the thread as merged: GitHub's own line says that when the queue merges it.
+      expect((await agentNotices(s.canvas.id)).map((n: any) => n.action)).toEqual(["opened"]);
+    } finally {
+      t.deps.features.mergeQueue = false;
+    }
+  });
+
   test("a few of each an hour, counted from the agent's own lines in the thread", async () => {
     const s = await setup();
     const asked = await turn(s, "message", "maya");

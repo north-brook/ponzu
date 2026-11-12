@@ -171,7 +171,12 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
   if (setup.repo) {
     api.remoteHead = () => {
       try {
-        return run("git", ["--git-dir", bare, "rev-parse", `refs/heads/${BRANCH}`], root, env).trim();
+        return run(
+          "git",
+          ["--git-dir", bare, "rev-parse", `refs/heads/${BRANCH}`],
+          root,
+          env,
+        ).trim();
       } catch {
         return null;
       }

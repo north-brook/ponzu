@@ -138,6 +138,18 @@ export type ErrorCode =
   /** GitHub refused, for a reason Ponzu cannot name. */
   | "github_refused"
   /**
+   * It would change a file under `.github/workflows/`, and Ponzu's GitHub App has no `workflows`
+   * permission: it is done on GitHub instead.
+   */
+  | "workflow_permission"
+  /**
+   * The repo merges through a merge queue, and Ponzu does not add to one yet (PONZU_MERGE_QUEUE
+   * is off): it is added to the queue on GitHub.
+   */
+  | "merge_queue"
+  /** GitHub's merge queue turned the pull request down. */
+  | "merge_queue_unmergeable"
+  /**
    * The agent asked to merge, mark ready or turn on auto-merge in a turn no person in Ponzu began,
    * or after words from GitHub (a check, a review) went into its session: only a person's turn may.
    */
