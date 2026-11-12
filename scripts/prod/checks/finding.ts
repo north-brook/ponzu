@@ -43,7 +43,11 @@ export const CREDENTIAL_NAMES = [
   "GH_TOKEN",
   "GITHUB_TOKEN",
   "NEON_API_KEY",
+  /** Not a secret, but not published either: kept out of every printed line all the same. */
+  "NEON_PROJECT_ID",
   "CLOUDFLARE_API_TOKEN",
+  /** The Cloudflare account that owns the buckets and the zone (R2's account id). */
+  "CLOUDFLARE_ACCOUNT_ID",
   "POSTHOG_PERSONAL_API_KEY",
 ] as const;
 export type CredentialName = (typeof CREDENTIAL_NAMES)[number];

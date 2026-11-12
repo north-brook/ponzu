@@ -104,7 +104,6 @@ export const PENDING_BECAUSE: Record<string, string> = {
   "production.workosClientId": "founder step D7",
   "production.realtimeUrl": "founder step D3",
   "production.posthog.projectId": "founder step D8",
-  "dev.r2.assets": "read from Cloudflare by production slice 9",
 };
 
 export interface FieldLine {
@@ -350,6 +349,8 @@ export const CorsSchema = z.strictObject({
           methods: z.array(z.enum(["GET", "PUT", "HEAD", "POST", "DELETE"])).min(1),
           headers: z.array(z.string().min(1)),
         }),
+        /** Response headers a page may read, such as an upload's ETag. */
+        exposeHeaders: z.array(z.string().min(1)).optional(),
         maxAgeSeconds: z.number().int().nonnegative(),
       }),
     )

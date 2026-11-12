@@ -140,10 +140,14 @@ only thing that sets the guard that lets it through.
   tell a recorded checkpoint from an unrecorded one, so the API's own sweep deletes unrecorded
   archives instead. The schema refuses any rule whose prefix is inside `private/`, and any
   delete rule whose prefix contains it (an empty prefix, `p`, `priv`).
-- CORS (`infra/r2/cors.json`): `PUT`, `GET` and `HEAD` from `ponzu-studio://app` and
-  `https://ponzu.design`, with the four headers an upload is signed with. This is the minimum the
-  API's presigned uploads need; it is reconciled with dev's live rules when the Cloudflare check
-  is built.
+- CORS (`infra/r2/cors.json`) is dev's, copied: `GET`, `HEAD` and `PUT` from any origin, any
+  request header, `ETag` exposed, cached a day. It was read from `assets-dev.ponzu.cloud`'s own
+  answers to a preflight and a GET, since no Cloudflare token was at hand. Any origin is safe
+  here: an upload is a presigned PUT whose signature is its authority, no request carries a
+  cookie, and every object is public anyway. It is wider than the minimum (`ponzu-studio://app`
+  and `https://ponzu.design` with the four headers an upload is signed with) because canvas pages
+  rendered elsewhere, such as in a sandbox's browser, ask for fonts and media with CORS from
+  origins of their own. The check fails if the file ever stops allowing that minimum.
 - The API's R2 token is scoped to exactly those two buckets, Object Read and Write.
 - A Response Header Transform Rule on `assets.ponzu.cloud` sets
   `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and
@@ -293,7 +297,8 @@ Then production, when the program reports it is ready:
    URL; it is public and goes in `environments.json`.
 4. **D4. Cloudflare.** Create buckets `ponzu-assets` and `ponzu-private` (ENAM). Attach
    `assets.ponzu.cloud` to ponzu-assets and turn r2.dev off. Create an R2 token scoped to those
-   two buckets (Object Read and Write), and a read-only Cloudflare token for the check. Run
+   two buckets (Object Read and Write) as an Account API token, so the check can see its scope,
+   and a read-only Cloudflare token for the check (permissions under "Checking production"). Run
    `bun scripts/prod/apply.ts r2 --env production --yes` and
    `bun scripts/prod/apply.ts cloudflare-headers --env production --yes`.
 5. **D5. WorkOS production.** Activate it, and copy the GitHub OAuth callback URL from
@@ -350,7 +355,7 @@ the cutover PR flips `release` to `"production"`, and `assert-release production
 exit 0. Cutover day itself, and how to go back, are in docs/cutover.md, written with the cutover
 work.
 
-Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production` *(not built yet)*.
+Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production`.
 
 ## Checking production
 
@@ -359,9 +364,13 @@ a vendor to decrypt a value.
 
 - It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN` (and
   `VERCEL_TEAM_ID`, optional for the read-only lines; without it the team is named by its public
-  slug), `NEON_API_KEY`, `CLOUDFLARE_API_TOKEN` (read only), `POSTHOG_PERSONAL_API_KEY` (read
-  only), `GH_TOKEN` or `gh` auth, and `CRON_SECRET` for the selfcheck. A missing credential
-  makes its section `skipped`, never a pass.
+  slug), `NEON_API_KEY` with `NEON_PROJECT_ID`, `CLOUDFLARE_API_TOKEN` (read only) with
+  `CLOUDFLARE_ACCOUNT_ID` (R2's account id), `POSTHOG_PERSONAL_API_KEY` (read only), `GH_TOKEN`
+  or `gh` auth, and `CRON_SECRET` for the selfcheck. A missing credential makes its section
+  `skipped`, never a pass.
+- The read-only Cloudflare token needs, on the account, Workers R2 Storage Read and Account API
+  Tokens Read, and on the zone `ponzu.cloud`, Zone Read and Transform Rules Read. Without the
+  token listing, the R2 token line fails and names the permission.
 - Each line is `ok`, `fail`, `pending`, `manual` or `skipped`, with the runbook step or the
   `apply.ts` command that fixes it. It exits 0 only when every line is `ok` or `manual`; a
   `pending` or `skipped` line exits 1 like a `fail`.
@@ -371,12 +380,14 @@ a vendor to decrypt a value.
   needs `VERCEL_TEAM_ID` as well. On production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
 
-What each section checks today (Neon, R2 and Cloudflare, GitHub, WorkOS and PostHog come with
-the next pieces of this work):
+What each section checks today (GitHub, WorkOS and PostHog come with the next pieces of this
+work):
 
 | Section | Lines |
 |---|---|
 | `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, the Preview and Development targets are empty and every secret is stored as sensitive; the environment's API domains are verified on the project (on production, `pending` while dev still lists the domain, before D11); the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready and carries `vercel.json`'s cron. |
+| `neon` | The environment's branch exists (dev's is not the default branch); Realtime is on at `environments.json`'s `realtimeUrl` (on production, `pending` until D3 sends it). Where `infra/neon.json` asks (production): the read-write compute never sleeps (`-1`) and scales 0.5 to 2 CU; point-in-time history keeps at least 7 days; the backup schedule is daily at 07:00 UTC kept 35 days, and the latest snapshot is under 26 hours old (no schedule is `pending`, never a pass); the branch is protected. |
+| `cloudflare` | The assets bucket exists (production's in ENAM), is served at the environment's assets host with an active certificate and at no other custom domain, has r2.dev off, has `infra/r2/cors.json`'s CORS exactly, and has `infra/r2/lifecycle.json`'s rules (none of them live is `pending`). A live lifecycle rule that would delete under `private/` fails, whatever the file says. Production's private bucket exists in ENAM with no domain, r2.dev off and no delete rule. An account API token reaches exactly the environment's buckets and no other (on dev, a token the account listing cannot show is `manual`). The transform rule on the assets host sets the headers `infra/cloudflare/assets-headers.json` names (dev may go without). |
 | `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. While `api.ponzu.design` is in both environments' `apiDomains` (before D11), production's line is `pending`. |
 | `dns` | Each of the environment's API domains, the assets host and `ponzu.design`: resolves over DNS-over-HTTPS, presents a valid certificate with at least 14 days left, and answers as it should (the API and the site from Vercel; the assets host with the header rule, which dev may go without). A production name not set up yet is `pending` with its founder step. |
 | `spend` | The five spend alerts, each `manual`. |
@@ -408,10 +419,17 @@ answer went through it once when it was recorded.
   before every production migration, kept 14 days.
 - R2 has no versioning. Its objects are re-creatable previews or checkpoints; the database is the
   system of record.
-- `bun scripts/prod/restore-drill.ts --env dev|production` *(not built yet)* is non-destructive:
-  it branches from the environment's branch at an hour ago, compares every table's row count
-  with the live branch, prints the result and deletes the branch. The founder runs it monthly on
-  production.
+- `bun scripts/prod/restore-drill.ts --env dev|production [--hours-ago <n>]` leaves the live
+  database alone. With `NEON_API_KEY` and `NEON_PROJECT_ID`, it branches
+  `restore-drill-<env>-<time>` from the environment's branch as it was an hour ago (the branch
+  expires by itself after a day, in case the run is killed), counts the rows of every table on
+  both branches (counts only, never a row), deletes the drill branch and lists the branches
+  again. A table passes when its two counts are within the larger of 100 rows and a quarter of
+  its live rows; a table only one side has passes only when the migrations table shows a
+  migration in between. It exits 0 only when every table passes and the branch list is as it
+  was. The orchestrator runs it on dev; the founder runs it monthly on production. It has not
+  yet run against Neon: its tests use a fake Neon, and its row counter was run once on a local
+  Postgres.
 - A real restore, only for a data catastrophe and only after checking with the founder: restore
   from the pre-migration snapshot with `finalize_restore: false` first, look, then finalize.
 - Migrations are expand-only (no drop, rename, type change or new NOT NULL on existing data), so

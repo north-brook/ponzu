@@ -15,17 +15,19 @@
  * line is `ok` or `manual`: a skipped or pending line is never a pass.
  *
  * Credentials come from the environment of whoever runs it (checks/finding.ts names them):
- * VERCEL_TOKEN and optionally VERCEL_TEAM_ID for Vercel, CRON_SECRET for the API's selfcheck,
- * GH_TOKEN or GITHUB_TOKEN for GitHub. Every line printed goes through `@ponzu/core/redact`
- * with every credential present as a known secret, so even a vendor's error message that quoted
- * one would not print it.
+ * VERCEL_TOKEN and optionally VERCEL_TEAM_ID for Vercel, NEON_API_KEY and NEON_PROJECT_ID for
+ * Neon, CLOUDFLARE_API_TOKEN (read-only) and CLOUDFLARE_ACCOUNT_ID for R2 and the zone,
+ * CRON_SECRET for the API's selfcheck, GH_TOKEN or GITHUB_TOKEN for GitHub. Every line printed
+ * goes through `@ponzu/core/redact` with every credential present as a known secret, so even a
+ * vendor's error message that quoted one would not print it.
  *
  * Each vendor is one section in checks/: `fetchObserved` reads it, `evaluate` (pure) judges what
  * was read, and tests run `evaluate` on answers recorded from dev (fixtures/<vendor>/). Later
- * slices add Neon, Cloudflare, GitHub, WorkOS and PostHog to SECTIONS.
+ * slices add GitHub, WorkOS and PostHog to SECTIONS.
  */
 import { redactText } from "../../packages/core/src/redact.ts";
 import { apiSection } from "./checks/api.ts";
+import { cloudflareSection } from "./checks/cloudflare.ts";
 import { deepSection } from "./checks/deep.ts";
 import { dnsSection } from "./checks/dns.ts";
 import {
@@ -39,6 +41,7 @@ import {
   STATUSES,
   type Status,
 } from "./checks/finding.ts";
+import { neonSection } from "./checks/neon.ts";
 import { spendSection } from "./checks/spend.ts";
 import { vercelSection } from "./checks/vercel.ts";
 import { EnvironmentName, loadInfra } from "./desired.ts";
@@ -46,6 +49,8 @@ import { EnvironmentName, loadInfra } from "./desired.ts";
 /** Every section, in the order its lines print. */
 export const SECTIONS: readonly AnySection[] = [
   vercelSection,
+  neonSection,
+  cloudflareSection,
   apiSection,
   dnsSection,
   spendSection,

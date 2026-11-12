@@ -164,10 +164,11 @@ describe("status", () => {
     const lines = fieldLines(loadEnvironments(), "dev");
     expect(lines.find((l) => l.path === "dev.r2.private")?.state).toBe("none");
     expect(lines.find((l) => l.path === "dev.minClientVersions")?.state).toBe("none");
+    // Dev's bucket, as the API's R2_BUCKET names it (recorded by production slice 9).
     expect(lines.find((l) => l.path === "dev.r2.assets")).toEqual({
       path: "dev.r2.assets",
-      state: "pending",
-      says: "read from Cloudflare by production slice 9",
+      state: "ok",
+      says: '"ponzu-dev"',
     });
     const prod = fieldLines(loadEnvironments(), "production");
     expect(prod.find((l) => l.path === "production.posthog.aiContent")).toEqual({

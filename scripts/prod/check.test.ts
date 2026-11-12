@@ -222,8 +222,24 @@ describe("pieces", () => {
   });
 
   test("the sections, in the order they print", () => {
-    expect(SECTIONS.map((s) => s.area)).toEqual(["vercel", "api", "dns", "spend", "deep"]);
+    expect(SECTIONS.map((s) => s.area)).toEqual([
+      "vercel",
+      "neon",
+      "cloudflare",
+      "api",
+      "dns",
+      "spend",
+      "deep",
+    ]);
     expect(SECTIONS.find((s) => s.area === "vercel")?.needs).toEqual(["VERCEL_TOKEN"]);
+    expect(SECTIONS.find((s) => s.area === "neon")?.needs).toEqual([
+      "NEON_API_KEY",
+      "NEON_PROJECT_ID",
+    ]);
+    expect(SECTIONS.find((s) => s.area === "cloudflare")?.needs).toEqual([
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+    ]);
     expect(SECTIONS.find((s) => s.area === "deep")?.deepOnly).toBe(true);
   });
 });
