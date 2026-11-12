@@ -9,7 +9,7 @@ import {
 
 const SCOPE = "0123456789ab";
 
-test("design and sign-in names carry the scope and parse back", () => {
+test("canvas and sign-in names carry the scope and parse back", () => {
   expect(scopePrefix(SCOPE)).toBe("pz-0123456789ab-");
   const canvas = canvasSandboxName(SCOPE, "d_7Hq2");
   expect(canvas).toBe("pz-0123456789ab-d_7Hq2");
@@ -26,7 +26,7 @@ test("test names match no scope", () => {
   expect(testSandboxName("live")).not.toBe(name);
 });
 
-test("refuses what Vercel would refuse, and a design id that reads as a sign-in", () => {
+test("refuses what Vercel would refuse, and a canvas id that reads as a sign-in", () => {
   expect(() => scopePrefix("nothex")).toThrow();
   expect(() => canvasSandboxName(SCOPE, "a/b")).toThrow();
   expect(() => canvasSandboxName(SCOPE, "x".repeat(120))).toThrow();

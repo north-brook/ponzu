@@ -39,7 +39,7 @@ export function verdict({
           ? "It asks the reader to reconnect at an address."
           : notVisible.includes(n)
             ? "Caching is invisible."
-            : "A design.",
+            : "Something people see.",
         safe: !unsafe.includes(n),
         visible: !notVisible.includes(n),
       },
@@ -47,7 +47,7 @@ export function verdict({
   );
 }
 
-/** The gate's verdict on four ideas, each safe and a design: its answer when a test gives none. */
+/** The gate's verdict on four ideas, each safe and visible: its answer when a test gives none. */
 export const PASSING_VERDICT = verdict();
 
 /**

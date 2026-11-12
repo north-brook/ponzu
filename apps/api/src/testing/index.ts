@@ -60,7 +60,7 @@ export const TEST_SCOPE = "7e57000000a0";
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
 /** What the test app's cron route takes as its bearer token. */
 export const TEST_CRON_SECRET = "test_cron_secret_".padEnd(40, "x");
-/** Where the test app says design files are served from. */
+/** Where the test app says canvases' files are served from. */
 export const TEST_ASSETS_URL = "https://assets.test";
 /** The test App's bot, who commits are committed by. */
 export const TEST_BOT_USER_ID = 9_000_001;

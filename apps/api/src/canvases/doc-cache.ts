@@ -10,7 +10,7 @@ export interface CachedDoc {
 }
 
 /**
- * The documents one function instance has built lately, by design, as of a seq. Instances
+ * The documents one function instance has built lately, by canvas, as of a seq. Instances
  * share nothing, so an entry is only ever a starting point: whoever reads it catches up from
  * the log before trusting it (`readCurrentDoc`), and a commit made against it is gated on its
  * seq in the database. It holds the most recently used `capacity` canvases.

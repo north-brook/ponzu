@@ -23,7 +23,7 @@ import { syncGithub } from "./sync.ts";
 
 /*
  * Who can reach a workspace, as GitHub says, whether or not they have opened Ponzu: what the
- * "Where do you design?" count, Settings › Members and Share are made from.
+ * "Where do you build?" count, Settings › Members and Share are made from.
  */
 
 let t: TestApp;

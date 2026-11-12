@@ -64,7 +64,7 @@ function read(
       modelCredits: 0,
     })),
     people: ids.map((id, i) => person(id, i === 0 ? "admin" : "member")),
-    canvases: ids.map((id) => ({ id: `cnv_${id}`, name: `${id}'s design`, readable: true })),
+    canvases: ids.map((id) => ({ id: `cnv_${id}`, name: `${id}'s canvas`, readable: true })),
     granted: { userIds: [], departed: 0 },
     ...extra,
   };
@@ -346,7 +346,7 @@ describe("a breakdown adds up to the headline", () => {
     );
   });
 
-  test("by design and by person, for any usage, sum exactly to what was used", () => {
+  test("by canvas and by person, for any usage, sum exactly to what was used", () => {
     const people = ["ada", "bryce", "maya"];
     const canvases = ["cnv_a", "cnv_b", "cnv_c", "cnv_d"];
     const second: RateCardNumbers = { ...CARD, version: 2, sandboxCreditsPerAwakeHour: 2.5 };

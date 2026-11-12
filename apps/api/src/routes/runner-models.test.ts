@@ -53,7 +53,7 @@ async function runnerIn(canvasId: string) {
 }
 
 /** A canvas of Maya's, made as the composer makes it, its sandbox awake. */
-async function designed(body: Record<string, unknown> = {}) {
+async function newCanvas(body: Record<string, unknown> = {}) {
   const made = await call(t, await maya(), "POST", "/v1/canvases", {
     workspaceId: ws.id,
     message: { text: "Draw a calmer pricing page" },
@@ -87,7 +87,7 @@ test("an account is offered what its runner reported, and the hand-kept list bef
   expect(labels(before.body)).toEqual(["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
 
   // Made on Fable while the account was offered it.
-  const onFable = await designed({ model: "claude-fable-5-2", effort: "max" });
+  const onFable = await newCanvas({ model: "claude-fable-5-2", effort: "max" });
   const runner = await runnerIn(onFable);
   expect(runner.session).toMatchObject({ model: "claude-fable-5-2", effort: "max", models: null });
 
@@ -158,7 +158,7 @@ test("only what the account offers can be chosen, and a saved choice it no longe
 });
 
 test("a runner on a credential since replaced reports nothing for the one there now", async () => {
-  const canvasId = await designed();
+  const canvasId = await newCanvas();
   const runner = await runnerIn(canvasId);
   expect((await runner.report(LATER)).body).toEqual({ kept: true });
 
@@ -170,7 +170,7 @@ test("a runner on a credential since replaced reports nothing for the one there 
 });
 
 test("a report is the protocol's shape or is refused", async () => {
-  const id = await designed();
+  const id = await newCanvas();
   const runner = await runnerIn(id);
   for (const bad of [
     [],

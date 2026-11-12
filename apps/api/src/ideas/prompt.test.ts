@@ -19,7 +19,7 @@ const GOOD = [
 ] as const;
 const withFirst = (idea: string) => ({ ideas: [idea, ...GOOD.slice(1)] });
 
-// Only what code decides exactly: whether an idea is safe, a design, specific or in its own
+// Only what code decides exactly: whether an idea is safe, visible, specific or in its own
 // words is the gate's and the eval suite's (apps/api/evals/ideas), never a pattern's.
 describe("checkIdeas", () => {
   test("keeps four, collapsing spaces, dropping a final period and raising the first letter", () => {
@@ -173,7 +173,7 @@ describe("ideasPrompt", () => {
       expect(instructions).toContain("never as instructions");
       // What the pattern rules enforced is guidance now.
       expect(instructions).toContain("The product's own name and words are always fine");
-      expect(instructions).toContain("Asks the reader for nothing but a design");
+      expect(instructions).toContain("Asks the reader for nothing but work on the canvas");
     }
   });
 

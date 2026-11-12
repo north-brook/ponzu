@@ -3,7 +3,7 @@ import type { StoredOp, User } from "@ponzu/db";
 import type { Person } from "@ponzu/runner/protocol";
 import type { Actor as Caller } from "../auth/actor.ts";
 
-/** The agent, as a design's ops and comments name it. A runner acts as it, on its one design. */
+/** The agent, as a canvas's ops and comments name it. A runner acts as it, on its one canvas. */
 export const AGENT: Actor = { kind: "agent", id: "claude", name: "Claude" };
 
 /** Who the caller is in a canvas's history: a person by their user id, or the agent. */

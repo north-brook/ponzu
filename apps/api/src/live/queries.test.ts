@@ -36,7 +36,7 @@ const ARGS: Record<LiveQueryName, (ids: { workspaceId: string; canvasId: string 
   "canvas.presence": ({ canvasId }) => ({ canvasId }),
 };
 const NAMES = Object.keys(ARGS) as LiveQueryName[];
-/** Every query, for the workspace and design above unless told otherwise. */
+/** Every query, for the workspace and canvas above unless told otherwise. */
 const every = (ids = { workspaceId: ws.id, canvasId }) =>
   NAMES.map((name) => ({ name, args: ARGS[name](ids) }));
 
@@ -245,7 +245,7 @@ describe("the SQL that is sealed", () => {
     // Re-sent whole on every change, or refused.
     expect(sql).not.toMatch(/\b(order by|limit|offset|distinct|group by|exists|with)\b|now\(\)/i);
     expect(sql).not.toMatch(/\bin\s*\(\s*select/i);
-    // Secrets, and design content, never travel through Realtime.
+    // Secrets, and canvas content, never travel through Realtime.
     expect(sql).not.toMatch(
       /encrypted_|asset_key|token|canvas_ops|canvas_checkpoints|\bselect \*/i,
     );

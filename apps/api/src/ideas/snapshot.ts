@@ -97,7 +97,7 @@ export function pickManifests(tree: GithubTree): string[] {
   );
 }
 
-/** Where design decisions are written down, most telling first. */
+/** Where a product's look is written down (its tokens and theme), most telling first. */
 const THEME: RegExp[] = [
   /(^|\/)(design-)?tokens?(\.[a-z]+)?\.(json|css|scss|ts|js|ya?ml)$|(^|\/)tokens\/[^/]+\.(json|css|ts|js)$|(^|\/)[\w-]*design[-_]?system[\w-]*\.(s?css|json|ts)$/i,
   /(^|\/)tailwind\.config\.(js|ts|cjs|mjs)$/,
@@ -465,7 +465,7 @@ export const isSmall = (files: number) => files < FEW_FILES;
 /**
  * Whether the product is not built yet: no screens (a page of its own counts, `interfaceOf`),
  * no components, no theme and only a few files (a README, a first file or two). Its ideas are
- * then where to start designing it, not changes to screens it does not have
+ * then where to start building it, not changes to screens it does not have
  * (`FRESH_SYSTEM_PROMPT` in prompt.ts; docs/cloud.md, "Ideas"). Known from the tree alone,
  * before any file is read.
  */

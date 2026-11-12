@@ -12,8 +12,8 @@ const FILLER = new Set(
     "a an the and or but of to for in on at by with from into onto as is are be been being it its " +
     "this that these those there here my our your their his her me we you i us them " +
     "please can could would should will let lets make made create design add build do try give " +
-    "new some more less very really just like want need get put use show draw redo update change " +
-    "up out about over so too also then than what how which who"
+    "canvas new some more less very really just like want need get put use show draw redo update " +
+    "change up out about over so too also then than what how which who"
   ).split(" "),
 );
 const MAX_WORDS = 3;

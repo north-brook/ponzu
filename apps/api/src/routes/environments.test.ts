@@ -57,7 +57,7 @@ describe("the list", () => {
     expect(got.body).toEqual({ repos: [], canManageSecrets: true });
   });
 
-  test("lists a repo once someone has designed in it, before its base is built", async () => {
+  test("lists a repo once someone has made a canvas in it, before its base is built", async () => {
     const other = await workspaceWithRepo(t, { kim: "admin" });
     const list = async () =>
       (await call(t, await as("kim"), "GET", `/v1/workspaces/${other.id}/environments`)).body;

@@ -26,11 +26,11 @@ export interface CallOptions {
 export interface SandboxSpec {
   /** Project-VCR reference by digest, "ponzu-runner@sha256:…" (current.json `image`). A different digest recreates. */
   image: string;
-  /** true for designs; false for the Claude sign-in and checks. */
+  /** true for canvases; false for the Claude sign-in and checks. */
   persistent: boolean;
-  /** Session timeout (backstop). Designs: SESSION_TIMEOUT_MS. */
+  /** Session timeout (backstop). Canvases: SESSION_TIMEOUT_MS. */
   timeoutMs: number;
-  /** Public ports. Designs: [4600]. Sign-in: []. */
+  /** Public ports. Canvases: [4600]. Sign-in: []. */
   ports: number[];
   /** Default 2 (2048 MB per vCPU). */
   vcpus?: 2 | 4 | 8;

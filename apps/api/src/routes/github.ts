@@ -92,7 +92,7 @@ const DeliveryHeaders = z.object({
 });
 
 export const github = new Hono<AppEnv>()
-  /** What the "Where do you design?" step lists, as of the last sync. */
+  /** What the "Where do you build?" step lists, as of the last sync. */
   .get("/accounts", access.user, async (c) => {
     const accounts = await listGithubAccounts(c.var.deps, c.var.actor.user);
     return c.json(Accounts.parse({ accounts }));

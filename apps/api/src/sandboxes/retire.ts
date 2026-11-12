@@ -17,7 +17,7 @@ import { sandboxName } from "./orchestrate.ts";
  * at Vercel; and only then deletes the row. A canvas reopened meanwhile finds its row `stopping`
  * and its wake waits or retries, so a late delete can never hit its new sandbox. A settled
  * canvas's retire holds the row only while the canvas is still settled, so a retire that comes
- * late (a sweep that listed it before a reopen) leaves the reopened design be. A retire that
+ * late (a sweep that listed it before a reopen) leaves the reopened canvas be. A retire that
  * dies leaves the row held: the sweep's retire step runs it again.
  */
 
