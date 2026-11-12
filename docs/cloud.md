@@ -1254,7 +1254,8 @@ secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
   sandbox whose runner was started with it to sleep at once ("The sandbox"): the credential
   lived only in that runner's memory, so an asleep sandbox holds nothing of it. A canvas whose
   owner leaves the workspace stops running on their Claude the same way: it does not wake
-  (`claude_owner_left`), and the sweep puts an awake one to sleep.
+  (`claude_owner_left`), and the sweep puts an awake one to sleep, until a teammate takes it
+  over onto their own Claude ("Deleting an account").
 - **Repo secrets** are stored encrypted per repo and passed in the runner's start command
   at every start of the sandbox ("Repo environments").
 
@@ -1904,6 +1905,7 @@ but the thread's history, which takes read:
 | POST | `/v1/canvases/:id/messages` | `{ text, attachments?: string[] }` | 201, the `message` `ThreadItem` |
 | POST | `/v1/canvases/:id/questions/:questionId/answer` | `{ answers? }` or `{ approved, note? }` | `{ id, status }` |
 | POST | `/v1/canvases/:id/stop` | none | 204 |
+| POST | `/v1/canvases/:id/take-over` | none | the canvas, now the caller's; 409 `not_ownerless` or `claude_not_connected` ("Deleting an account") |
 | GET | `/v1/canvases/:id/thread?before=&limit=` | none | `{ items: ThreadItem[] }`, oldest first, at most 50 |
 | POST | `/v1/canvases/:id/uploads` | `{ files: [{ name, contentType, size, sha256 }] }` | as `/v1/runner/uploads` |
 | POST | `/v1/canvases/:id/uploads/complete` | `{ ids }` | as `/v1/runner/uploads/complete` |
@@ -2016,7 +2018,7 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | POST | `/v1/canvases/:id/pull-request/ready` | none | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/canvases/:id/pull-request/auto-merge` | none | `PullRequestTab` |
-| POST | `/v1/canvases/:id/pull-request/close` | none | `PullRequestTab` |
+| POST | `/v1/canvases/:id/pull-request/close?number=` | none (`number` optional) | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the canvas; the rest takes write access. `PullRequestTab` is the
@@ -2026,7 +2028,10 @@ last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
 hundred comments and reviews) with line comments, each saying whether its thread is resolved, the first hundred changed files with their
-counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+counts, the last hundred commits), `summary` (the agent's kept words on what the branch changes,
+"Pull request summary", while no pull request is open: none yet, or the newest closed or merged;
+null while one is open, since its description says them, or when the agent kept none), the merge
+method Merge would use, whether the repo allows
 auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the canvas
 has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
 commits since its pull request merged), `ready` (a
@@ -2038,7 +2043,19 @@ running in a repo without auto-merge, or GitHub still working out whether it can
 a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/canvases/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
-the person (which failing checks, or which base to merge in), once for a commit. A file's diff
+the person (which failing checks, or which base to merge in), once for a commit. Beside the
+button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
+canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
+is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
+branch and its commits stay. Create PR opens a new one later.") and sent with the number it
+named, so a newer pull request opened meanwhile is never closed in its place (409
+`pull_request_changed`). One that auto-merge merged meanwhile, before the API's read or between
+that read and GitHub's close, is answered `pull_request_closed` ("#N is merged."), never
+reopened. A closed pull request shows its closed
+mark in muted and offers Create PR once the branch has commits its base lacks, and the tab shows
+`summary` under "The description it opens with" whenever Create PR is offered. The tab is
+reached from the chrome's pull request mark, so before the first pull request there is no tab to
+show it on. A file's diff
 is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
 are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,
@@ -2181,6 +2198,7 @@ canvas settles whether or not the merge's webhook arrives.
 |---|---|
 | `no_pull_request` | nothing is open to act on |
 | `pull_request_closed`, `pull_request_draft` | merged or closed; a draft, for a merge or auto-merge |
+| `pull_request_changed` | a close named a pull request that is no longer the canvas's newest |
 | `head_moved` | the branch has commits since `headSha`, or moved under the request |
 | `mergeability_unknown` | GitHub is still working out whether it can merge |
 | `merge_conflicts` | the branch conflicts with its base |
@@ -2722,10 +2740,36 @@ their own account's when collaborators on their repos are in it. Their boards, t
 request are work shared with people in a repo they reach, who have commented on it and may be
 about to merge it; deleting them would take that from people who did not ask, and
 GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
-Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
-one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
+Claude now, so they do not wake (`claude_owner_left`) until a teammate takes one over (below);
+until then they can be read, commented on, merged and deleted by an admin. The delete dialog
 says so: "Your canvases, threads and settings are deleted. Canvases in a team stay with the team.
 Your repos and pull requests on GitHub are not touched."
+
+**Taking over a canvas whose owner left.** A canvas runs on its owner's Claude alone, and never
+switches accounts while its owner is in its workspace. Once its owner has left the workspace, or
+deleted their account (`owner_id` null), anyone with write access whose own Claude is connected
+may take it over: `POST /v1/canvases/:id/take-over`. No other canvas qualifies, and an admin is
+asked the same as anyone. In one statement the canvas's `owner_id` and `claude_account_id`
+become the caller's and their connected account's, a wait on the last owner's Claude
+(`agent_blocker` starting `claude_`) is lifted while any other wait (billing, paused) stays, and
+the thread gets an API-written notice `{ type: "owner_changed", by }` under `ti_owner-<random>`.
+The statement holds on the owner still being gone and the canvas still having the owner it was
+read with, so of teammates pressing at once one takes it, and a take-over racing the owner's
+return happens whole or not at all. Then, as when Claude is connected, it wakes if its feed
+holds work no runner took. A sandbox still awake, whose runner was started on the last owner's
+credential, is put to sleep first (the sweep would no longer stop it, since the canvas now runs
+on a member's Claude), and the same rule wakes it after. Its next runner starts with the new owner's credential and resumes
+the same Claude session from the disk or the checkpoint; the runner does not change. Refusals:
+409 `not_ownerless` while its owner is a member (they came back, or a teammate took it first;
+a head that still said `claude_owner_left` for an owner who came back is lifted, and woken if
+work waits), and 409 `claude_not_connected` when the caller has no Claude that could run it
+(none connected, revoked, or past its sign-in). Analytics: `canvas taken over`. The Mac's
+composer says "Its owner left the workspace. Take it over to run it on your Claude." with a
+"Take over" button to someone who can, and otherwise "Its owner left the workspace, so nobody's
+Claude runs it. Someone who can change {owner/name} can take it over."; the thread line reads
+"{Name} took this canvas over. It runs on their Claude from now on.", and Share shows the new
+Owner. Whether an admin alone should take over is the founder's to confirm; it is one check in
+the route.
 
 What is not rewritten: the name a canvas's document carries for a comment's author (inside the
 op and the checkpoints, whose history is not rewritten), and their words in workspaces they had

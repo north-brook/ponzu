@@ -43,6 +43,9 @@ export interface ThreadRailProps extends LineHandlers {
   /** The viewer started answering an ask. */
   onTouchAsk?: (askId: string) => void;
   onConnectClaude?: () => void;
+  /** Takes over a canvas whose owner left, onto the viewer's Claude, when the gate offers it. */
+  onTakeOver?: () => void;
+  takingOver?: boolean;
 }
 
 /**
@@ -140,6 +143,8 @@ export function ThreadRail(props: ThreadRailProps) {
             onSend={send}
             onStop={props.onStop}
             onConnectClaude={props.onConnectClaude}
+            onTakeOver={props.onTakeOver}
+            takingOver={props.takingOver}
           />
         )}
       </Slot>

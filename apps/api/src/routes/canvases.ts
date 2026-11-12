@@ -19,6 +19,7 @@ import {
   getCanvas,
   getCanvasAssetKey,
   getMemberWorkspace,
+  getSandbox,
   getWorkspaceRepo,
   listPresence,
   listRepoPeople,
@@ -26,12 +27,14 @@ import {
   markCanvasSeen,
   PR_CHECKS,
   PR_STATES,
+  randomString,
   readOps,
   removePresence,
   settleCanvas,
+  takeOverCanvas,
   touchPresence,
 } from "@ponzu/db";
-import { MAX_TEXT } from "@ponzu/runner/protocol";
+import { MAX_TEXT, type Notice } from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -51,6 +54,8 @@ import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
+import { putToSleep } from "../sandboxes/stop.ts";
+import { startWake } from "../sandboxes/wake.ts";
 import { toPersonView, WorkspacePersonView } from "./workspaces.ts";
 
 /*
@@ -402,6 +407,81 @@ export const canvases = new Hono<AppEnv>()
     // Its transcripts and work in progress, which no row knows of any more.
     deps.background("checkpoints_deleted", forget());
     return c.body(null, 204);
+  })
+
+  /**
+   * Takes over a canvas whose owner left the workspace or deleted their account, so that it runs
+   * on the caller's Claude from now on (docs/cloud.md, "Deleting an account"). Anyone who can
+   * change it and has Claude connected may; no other canvas is anyone else's to take, since a
+   * canvas never switches accounts while its owner is there. The canvas becomes theirs, a wait
+   * on the last owner's Claude is lifted and the thread says who took it, in one statement; then
+   * it wakes if its feed holds work no runner took. A runner started afterwards carries the new
+   * owner's credential and resumes the same Claude session.
+   *
+   * 409 `not_ownerless` when its owner is a member of its workspace (they came back, or a
+   * teammate took it first); 409 `claude_not_connected` when the caller has no Claude that
+   * could run it.
+   */
+  .post("/:id/take-over", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const { user } = actor;
+    const grant = await requireCanvas(c, c.req.valid("param").id, "write");
+    const { canvas } = grant;
+    const notice: Notice = {
+      type: "owner_changed",
+      by: { id: user.id, name: user.name ?? user.githubLogin, login: user.githubLogin },
+    };
+    const result = await takeOverCanvas(deps.db, {
+      canvasId: canvas.id,
+      userId: user.id,
+      // Not a runner's shape (`ti_` and sixteen letters and digits): no sandbox can write it.
+      noticeId: `ti_owner-${randomString(16)}`,
+      notice: { ...notice },
+      now: new Date(deps.clock.now()),
+    });
+    if (!result) throw new ApiError(404, "not_found", "There is no such canvas.");
+    if (result.outcome === "not_ownerless") {
+      // Its owner came back while its head still said they had left: it runs on their Claude
+      // again, so what waited for it goes in now.
+      if (result.lifted && result.pending) {
+        deps.background("wake", startWake(deps, canvas.id, "owner_back"));
+      }
+      throw new ApiError(
+        409,
+        "not_ownerless",
+        "Its owner is in the workspace, so it runs on their Claude. Only a canvas whose owner left can be taken over.",
+      );
+    }
+    if (result.outcome === "claude_not_connected") {
+      throw new ApiError(
+        409,
+        "claude_not_connected",
+        "Connect your Claude to take it over: a canvas runs on its owner's Claude.",
+      );
+    }
+    deps.log.info("canvas_taken_over", {
+      canvasId: canvas.id,
+      by: user.id,
+      from: canvas.ownerId,
+      woke: result.pending,
+    });
+    deps.analytics.capture("canvas taken over", { canvas_id: canvas.id, woke: result.pending });
+    // A sandbox still awake was started on the last owner's credential, and the sweep would no
+    // longer stop it: the canvas now runs on a member's Claude, so it looks well. It is put to
+    // sleep here, and the pending rule then wakes it on the taker's. Asleep, it wakes when work
+    // is owed, as when Claude is connected.
+    const sandbox = await getSandbox(deps.db, canvas.id);
+    if (sandbox?.state === "awake") {
+      deps.background(
+        "take_over",
+        putToSleep(deps, sandbox, "owner_left").then(() => {}),
+      );
+    } else if (result.pending) {
+      deps.background("wake", startWake(deps, canvas.id, "take_over"));
+    }
+    const taken = await getCanvas(deps.db, canvas.id);
+    if (!taken) throw new ApiError(404, "not_found", "There is no such canvas.");
+    return c.json(await viewOf(deps, { ...grant, canvas: taken }));
   })
 
   /** The whole document, as of `seq`. */

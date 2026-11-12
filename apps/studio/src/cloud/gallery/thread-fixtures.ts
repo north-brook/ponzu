@@ -150,6 +150,17 @@ export const setUpThread: ThreadItem[] = [
 ];
 export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding Welcome · Picks" };
 
+/**
+ * A canvas whose owner left: what was said before, then Maya taking it over (the sweep plan, §8),
+ * and the run going on on her Claude.
+ */
+export const takenOverThread: ThreadItem[] = [
+  said(ada, "I'd like to iterate on the onboarding flow"),
+  reply("Rebuilding onboarding from the app's code. Light and Water are in."),
+  notice({ type: "owner_changed", by: maya }),
+  said(maya, "Carry on with the picks screen, please."),
+];
+
 /** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(ada, ASK),
@@ -668,4 +679,26 @@ export const busyPullRequest: PullRequestDetail = {
     },
   ],
   filesTotal: 7,
+};
+
+/** Board 3's pull request, closed without merging two minutes ago. */
+export const closedPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  state: "closed",
+  endedAt: at(2),
+};
+
+/** The agent's kept words on the branch, which the next pull request opens with. */
+export const keptSummary = `Drops the paragraph from the hero and lets the photo carry it.
+
+- Headline set in Instrument Serif at 38px.
+- Tokens get a \`--hero-measure\`, so the measure holds on every page that uses the hero.
+- The CTA moves under the photo on small screens.`;
+
+/** Board 3's pull request with its end-to-end check still running, as auto-merge waits on it. */
+export const runningPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  checks: pullRequest.checks.map((c) =>
+    c.name === "ci / e2e" ? { ...c, state: "running" as const, completedAt: null } : c,
+  ),
 };

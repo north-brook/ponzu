@@ -52,6 +52,7 @@ function Rail({
           onAnswer={ignore}
           onDismissAsk={ignore}
           onConnectClaude={ignore}
+          onTakeOver={ignore}
           // The scene the picture is made from, which the canvas draws: its ground here.
           renderDrawing={() => <span className="block size-full bg-canvas" />}
           onOpenComment={ignore}
@@ -164,9 +165,15 @@ export function ThreadStates({
         />
         <Rail
           canvasId="owner-left"
-          gate={{ kind: "claude_owner_left" }}
-          label="its owner left the workspace"
+          gate={{ kind: "claude_owner_left", canTakeOver: true, repo: f.fernwood }}
+          label="its owner left the workspace: Take over"
         />
+        <Rail
+          canvasId="owner-left-no-claude"
+          gate={{ kind: "claude_owner_left", canTakeOver: false, repo: f.fernwood }}
+          label="its owner left, and your Claude isn't connected"
+        />
+        <Rail canvasId="owner-left-taken" thread={t.takenOverThread} label="Maya took it over" />
         <Rail
           canvasId="busy"
           agent={{ state: "waking", status: null, sandbox: "busy" }}

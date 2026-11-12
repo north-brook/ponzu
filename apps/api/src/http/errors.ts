@@ -109,6 +109,8 @@ export type ErrorCode =
   | "no_pull_request"
   /** The canvas's pull request is merged or closed. */
   | "pull_request_closed"
+  /** A close named a pull request that is no longer the canvas's newest. Look again first. */
+  | "pull_request_changed"
   /** The pull request is a draft: mark it ready first. */
   | "pull_request_draft"
   /** The branch conflicts with the branch it merges into. */
@@ -164,6 +166,13 @@ export type ErrorCode =
   | "sole_admin"
   /** The confirmation typed to delete the account is not the person's GitHub login. */
   | "confirmation_mismatch"
+  /**
+   * A take-over of a canvas whose owner is in its workspace: only one whose owner left, or
+   * deleted their account, can be taken over. The owner came back, or a teammate took it first.
+   */
+  | "not_ownerless"
+  /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
+  | "claude_not_connected"
   | "internal";
 
 /**
