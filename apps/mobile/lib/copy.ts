@@ -2,7 +2,8 @@
  * The words people read in the phone's setup. They are the Mac's current words for the same
  * steps (apps/studio/src/cloud/setup/{where,claude-step,claude-card}.tsx), so both apps say the
  * same thing; copy.test.ts fails if one of them changes on the Mac and not here. The Claude
- * card's failures are shared outright (@ponzu/client/model/claude-entry).
+ * card's failures are shared outright (@ponzu/client/model/claude-entry). The canvas screen's
+ * and the comment flow's words are the phone's own, at the foot.
  */
 
 export const WHERE = {
@@ -111,4 +112,26 @@ export const SETUP = {
   continueFailed: "Couldn't reach Ponzu. Try again.",
   /** For VoiceOver, on the two bars over each step. */
   progress: (step: number, of: number) => `Step ${step} of ${of}`,
+} as const;
+
+/** Words the canvas screen says (lib/canvas/status.ts). */
+export const CANVAS_WORDS = {
+  offline: "You're offline. This is the last copy Ponzu had.",
+  unreachable: "Can't reach Ponzu. Trying again.",
+  gone: "That canvas isn't available to you.",
+  waking: "Waking up",
+  readOnly: (repo: string) =>
+    `You can look at this canvas. Steering it takes push access to ${repo}.`,
+} as const;
+
+/** Words the comment flow says (lib/canvas/comments.ts). */
+export const COMMENT_WORDS = {
+  /** A comment made while the phone can't reach Ponzu: in the canvas here, sent later. */
+  queued: "Saved here. Ponzu sends it when you're back online.",
+  /** The Comment button was pressed: the next tap on the canvas drops the pin. */
+  place: "Tap where your comment goes",
+  /** A refusal the API gave no words for. */
+  refused: "Ponzu couldn't keep that comment. Try again.",
+  /** A canvas with no repo (Scratch) the person can only look at. */
+  readOnlyScratch: "You can look at this canvas.",
 } as const;

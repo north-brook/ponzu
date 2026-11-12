@@ -25,9 +25,10 @@ export function useProjects(): {
       enabled: userId !== null,
     })),
   });
-  const key = JSON.stringify(
-    answers.map((a) => [a.data ? a.data.repos.map((r) => [r.id, r.pushedAt]) : null, a.isError]),
-  );
+  // The shelves change only when what they show does: keyed by the pushable repos themselves,
+  // so a repo that gains or loses push access moves on or off its shelf.
+  const repos = answers.map((a) => (a.data ? pushableRepos(a.data.repos) : a.isError ? [] : null));
+  const key = JSON.stringify(repos);
   const shelves = useMemo(
     () =>
       workspaces?.map(
@@ -35,11 +36,7 @@ export function useProjects(): {
           workspaceId: w.id,
           kind: w.kind,
           name: w.name,
-          repos: answers[i]?.data
-            ? pushableRepos(answers[i].data.repos)
-            : answers[i]?.isError
-              ? []
-              : null,
+          repos: repos[i] ?? null,
         }),
       ),
     [workspaces, key],

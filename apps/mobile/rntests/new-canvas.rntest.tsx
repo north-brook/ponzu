@@ -10,7 +10,7 @@ import PickProject from "../app/pick-project";
 import { backend, NORTH, stockCanvases } from "../lib/cloud/backend.fake";
 import { useCanvasList } from "../lib/cloud/canvases";
 import { MODEL_CHOICE_KEY } from "../lib/cloud/create";
-import { forgetNewCanvas } from "../lib/cloud/new-canvas";
+import { currentDraft, forgetNewCanvas } from "../lib/cloud/new-canvas";
 import { CloudProvider } from "../lib/cloud/query";
 import { forgetFirstCanvas, useFirstCanvas } from "../lib/cloud/use-first-canvas";
 import { forgetWorkspaces } from "../lib/cloud/workspace";
@@ -137,6 +137,67 @@ describe("new canvas", () => {
     await waitFor(() => expect(replace).toHaveBeenCalled());
     expect(canvasesIn(acme.id)).toHaveLength(before + 1);
     expect(replace).toHaveBeenCalledTimes(1);
+  });
+
+  test("while a send is on its way, the project can't change", async () => {
+    backend.seed("signed-in");
+    await show();
+    await type("A launch poster");
+    const canvases = backend.api.canvases;
+    const create = canvases.create;
+    let answer: () => void = () => {};
+    const held = jest
+      .spyOn(canvases, "create")
+      .mockImplementationOnce(async (body: Parameters<typeof create>[0]) => {
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return create(body);
+      });
+    try {
+      await send();
+      await waitFor(() => expect(held).toHaveBeenCalled());
+      const project = screen.getByTestId("new-canvas-project");
+      expect(project).toBeDisabled();
+      await fireEvent.press(project);
+      expect(push).not.toHaveBeenCalled();
+      await act(async () => answer());
+      await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+    } finally {
+      held.mockRestore();
+    }
+  });
+
+  test("a send that finishes after the screen has gone moves nothing", async () => {
+    backend.seed("signed-in");
+    const { acme } = backend.world;
+    const before = canvasesIn(acme.id).length;
+    await show();
+    await type("A launch poster");
+    const canvases = backend.api.canvases;
+    const create = canvases.create;
+    let answer: () => void = () => {};
+    const held = jest
+      .spyOn(canvases, "create")
+      .mockImplementationOnce(async (body: Parameters<typeof create>[0]) => {
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return create(body);
+      });
+    try {
+      await send();
+      await waitFor(() => expect(held).toHaveBeenCalled());
+      await act(async () => screen.unmount());
+      await act(async () => answer());
+      // The canvas is made and its prompt spent (the send's last step before it would move
+      // the screen), but nothing replaces whatever screen is there now.
+      await waitFor(() => expect(canvasesIn(acme.id)).toHaveLength(before + 1));
+      await waitFor(() => expect(currentDraft()).toBe(""));
+      expect(replace).not.toHaveBeenCalled();
+    } finally {
+      held.mockRestore();
+    }
   });
 
   test("the model and effort picked go with the canvas, and are kept for the next", async () => {

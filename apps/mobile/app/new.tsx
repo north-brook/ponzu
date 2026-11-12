@@ -91,6 +91,14 @@ export default function NewCanvas() {
    */
   const bareKey = useRef<string | null>(null);
   const going = useRef(false);
+  /** False once the screen has gone: a send that finishes later moves nothing then. */
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
 
   // The last model and effort picked on this phone.
   useEffect(() => {
@@ -149,15 +157,18 @@ export default function NewCanvas() {
     setSending(true);
     setError(null);
     const images = picked;
+    // This send's key, held for its whole life: whatever the screen's key becomes meanwhile,
+    // the canvas this send makes is remembered under the key that made it.
+    const key = createKey.current;
     try {
       // A send whose images or message didn't go made its canvas all the same: sent again, it
       // goes to that canvas, rather than ask the API for one its key already answers.
       const kept = made.current;
-      const already = kept && kept.key === createKey.current ? kept.id : null;
+      const already = kept && kept.key === key ? kept.id : null;
       // With images, the message waits until they are files of the canvas; and so it does for
       // a key once sent that way, whose answer may be a canvas made before with nothing said.
-      const bare = images.length > 0 || bareKey.current === createKey.current;
-      if (bare) bareKey.current = createKey.current;
+      const bare = images.length > 0 || bareKey.current === key;
+      if (bare) bareKey.current = key;
       const id =
         already ??
         (
@@ -167,23 +178,27 @@ export default function NewCanvas() {
             name: nameFor(text),
             // Without an answer about the defaults, the API starts the canvas on them itself.
             ...(choice ? { model: choice.model, effort: choice.effort } : {}),
-            createKey: createKey.current,
+            createKey: key,
             ...(bare ? {} : { message: { text } }),
           })
         ).id;
-      made.current = { key: createKey.current, id };
+      made.current = { key, id };
       if (images.length) await sayWithImages(backend.api, id, text, images);
       else if (bare) await backend.api.canvases.sendMessage(id, { text, attachments: [] });
       made.current = null;
-      createKey.current = newCreateKey();
-      keepDraft("");
+      if (createKey.current === key) createKey.current = newCreateKey();
+      // The prompt it said is spent; a newer one written since (on a New canvas opened after
+      // this one was left) is not.
+      if (currentDraft().trim() === text) keepDraft("");
+      if (!live.current) return;
       setPrompt("");
       setPicked([]);
       success();
       router.replace(canvasPath(id));
     } catch (failure) {
+      if (!live.current) return;
       fail();
-      setError(sendFailure(failure, made.current?.key === createKey.current));
+      setError(sendFailure(failure, made.current?.key === key));
     } finally {
       going.current = false;
       setSending(false);
@@ -277,8 +292,11 @@ export default function NewCanvas() {
             accessibilityRole="button"
             accessibilityLabel={projectName(project, workspace?.name ?? null)}
             accessibilityHint={CREATE.chooseRepo}
-            accessibilityState={{ busy: project === null }}
+            accessibilityState={{ busy: project === null, disabled: sending }}
+            // A send on its way is for this project: another waits until it has gone.
+            disabled={sending}
             onPress={() => {
+              if (going.current) return;
               select();
               router.push("/pick-project");
             }}

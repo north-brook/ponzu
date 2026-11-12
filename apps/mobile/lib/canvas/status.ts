@@ -7,6 +7,7 @@ import {
   sandboxLine,
 } from "@ponzu/client/model";
 import type { CanvasState } from "@ponzu/core";
+import { CANVAS_WORDS } from "../copy";
 
 /*
  * What the canvas screen shows of where the canvas is (iPhone design §7 and §16): from the
@@ -20,16 +21,6 @@ import type { CanvasState } from "@ponzu/core";
  * - Offline: the last copy, read only, and one line.
  * - Gone: deleted, or no longer the person's to see.
  */
-
-/** Words the canvas screen says. The lander moves these into lib/copy.ts once it exists. */
-export const CANVAS_WORDS = {
-  offline: "You're offline. This is the last copy Ponzu had.",
-  unreachable: "Can't reach Ponzu. Trying again.",
-  gone: "That canvas isn't available to you.",
-  waking: "Waking up",
-  readOnly: (repo: string) =>
-    `You can look at this canvas. Steering it takes push access to ${repo}.`,
-} as const;
 
 export type CanvasMood =
   | "loading"
