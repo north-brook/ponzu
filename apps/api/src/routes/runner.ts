@@ -8,6 +8,7 @@ import {
   type RunnerContext,
   recordTurnUsage,
   reportRunnerState,
+  takeSecretAnswer,
 } from "@ponzu/db";
 import type {
   AckResponse,
@@ -28,6 +29,12 @@ import type {
   UsageResponse,
   WithdrawResponse,
 } from "@ponzu/runner/protocol";
+import {
+  checkSecretName,
+  reservedSecretReason,
+  SECRET_DELIVERY_MS,
+  type SecretResponse,
+} from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -36,6 +43,7 @@ import { captureForCanvas } from "../analytics/canvas.ts";
 import { access } from "../auth/access.ts";
 import type { LeasedRunner } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
+import { secretBinding } from "../environments/secrets.ts";
 import { CLIENT_HEADER } from "../http/client-version.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
@@ -45,6 +53,7 @@ import { notify } from "../notifications/notify.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
 import { credentialOf, describeToken, gitTarget } from "../runner/git-credential.ts";
+import { recordReportedLimit } from "../runner/limits.ts";
 import { recordReportedModels } from "../runner/models.ts";
 import {
   Ack,
@@ -57,6 +66,7 @@ import {
   PullRequestSummary,
   Question,
   Restored,
+  SecretAsk,
   State,
   Thread,
   Upload,
@@ -281,12 +291,15 @@ export const runner = new Hono<AppEnv>()
    */
   .put("/state", access.runner, validate("json", State), async (c) => {
     const { deps, actor } = c.var;
+    const { claudeLimit, ...state } = c.req.valid("json");
     const answer = await reportRunnerState(deps.db, {
       canvasId: actor.canvasId,
       now: new Date(deps.clock.now()),
-      ...c.req.valid("json"),
+      ...state,
     });
     if (answer === null) throw new ApiError(404, "not_found", "There is no such canvas.");
+    // News, said once: kept on the Claude account only from a runner on its current credential.
+    if (claudeLimit) await recordReportedLimit(deps, actor.canvasId, claudeLimit);
     return c.json({ seq: answer.seq } satisfies StateResponse);
   })
 
@@ -323,9 +336,25 @@ export const runner = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  /** Raises a question under the id the runner chose. Safe to repeat. */
+  /**
+   * Raises a question under the id the runner chose. Safe to repeat. A `secret` is asked only
+   * for a canvas with a repository (409 `no_repository`), and only under a name a secret may
+   * have (400 `secret_name_reserved`).
+   */
   .post("/questions", access.runner, validate("json", Question), async (c) => {
     const { id, kind, payload } = c.req.valid("json");
+    if (kind === "secret") {
+      if (checkSecretName(payload.name) === "reserved") {
+        throw new ApiError(400, "secret_name_reserved", reservedSecretReason(payload.name));
+      }
+      if (!(await contextOf(c)).canvas.repoId) {
+        throw new ApiError(
+          409,
+          "no_repository",
+          "A Scratch canvas has no repository to keep a secret.",
+        );
+      }
+    }
     const question = await createQuestion(c.var.deps.db, {
       canvasId: c.var.actor.canvasId,
       id,
@@ -350,6 +379,33 @@ export const runner = new Hono<AppEnv>()
       });
     }
     return c.json({ id: question.id, status: question.status } satisfies QuestionResponse);
+  })
+
+  /**
+   * The value a person gave for a `secret` question this canvas's runner raised, for the turn
+   * that asked: once, within `SECRET_DELIVERY_MS` of the answer, and only to the runner holding
+   * the lease (`access.runner`). 404 `not_found` for anything else, alike, so a caller learns
+   * nothing of a question it may not have. The same privilege a start's environment gives
+   * (`PONZU_REPO_SECRETS`), for one value. Never logged, never in analytics. Not safe to repeat:
+   * a second call answers 404, and the next start's environment carries the secret.
+   */
+  .post("/secret", access.runner, validate("json", SecretAsk), async (c) => {
+    const { deps, actor } = c.var;
+    const { questionId } = c.req.valid("json");
+    const taken = await takeSecretAnswer(deps.db, {
+      canvasId: actor.canvasId,
+      id: questionId,
+      withinMs: SECRET_DELIVERY_MS,
+    });
+    if (!taken) throw new ApiError(404, "not_found", "There is no secret to hand over.");
+    const value = await deps.vault.open(
+      taken.encryptedValue,
+      secretBinding(taken.repoId, taken.name),
+    );
+    // Which secret went, never what it is.
+    deps.log.info("runner_secret_delivered", { canvasId: actor.canvasId, questionId });
+    c.header("cache-control", "no-store");
+    return c.json({ name: taken.name, value } satisfies SecretResponse);
   })
 
   /** The run moved on: closes those of these that are still open. Safe to repeat. */
@@ -441,14 +497,24 @@ export const runner = new Hono<AppEnv>()
   })
 
   /**
-   * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
-   * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
+   * What Claude Code offers the account the canvas runs on ("Models"). Kept from a runner on the
+   * credential the account holds now, at most once in ten minutes after a runner's first; past
+   * that it is answered 200 with `kept: false`, never 429, so the runner does not try again.
    */
   .post("/models", access.runner, validate("json", Models), async (c) => {
-    const kept = await recordReportedModels(c.var.deps, c.var.actor.canvasId, c.req.valid("json"));
+    const { canvasId, runnerId } = c.var.actor;
+    const kept = await recordReportedModels(
+      c.var.deps,
+      { canvasId, runnerId },
+      c.req.valid("json"),
+    );
     return c.json({ kept } satisfies ModelsResponse);
   })
 
+  /**
+   * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
+   * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
+   */
   .post("/usage", access.runner, validate("json", Usage), async (c) => {
     const { turns } = c.req.valid("json");
     const recorded = await recordTurnUsage(c.var.deps.db, {

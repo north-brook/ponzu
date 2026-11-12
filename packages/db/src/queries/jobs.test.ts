@@ -8,6 +8,7 @@ import {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  hasWaitingJob,
   recordOnce,
 } from "./jobs.ts";
 
@@ -203,4 +204,25 @@ test("something recorded once is refused after, at once or later, and is never c
   expect(await claimJobs(db, { worker: "cron" })).toEqual([]);
   expect(await failAbandonedJobs(db)).toEqual([]);
   expect(await enqueueJob(db, slot)).not.toBeNull();
+});
+
+test("a job waits, by its payload, until it is finished", async () => {
+  const forget = { kind: "account.forget", payload: { workosUserId: "user_w1" } };
+  expect(await hasWaitingJob(db, forget)).toBe(false);
+
+  const job = await enqueueJob(db, {
+    kind: "account.forget",
+    key: "usr_1",
+    payload: { userId: "usr_1", workosUserId: "user_w1" },
+  });
+  expect(await hasWaitingJob(db, forget)).toBe(true);
+  // Another WorkOS user, or another kind with the same payload, is not it.
+  expect(await hasWaitingJob(db, { ...forget, payload: { workosUserId: "user_w2" } })).toBe(false);
+  expect(await hasWaitingJob(db, { ...forget, kind: "account.other" })).toBe(false);
+
+  // Being run still counts; finished does not.
+  await claimJobs(db, { worker: "w1" });
+  expect(await hasWaitingJob(db, forget)).toBe(true);
+  await completeJob(db, { id: job!.id, worker: "w1" });
+  expect(await hasWaitingJob(db, forget)).toBe(false);
 });

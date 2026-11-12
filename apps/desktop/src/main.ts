@@ -36,12 +36,19 @@ import {
   signedInOnce,
   skipWindowState,
 } from "./carry-over.ts";
-import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts";
+import {
+  APP_NAMES,
+  aboutVersion,
+  bundleMismatch,
+  claimsScheme,
+  configFor,
+  testBuild,
+} from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
 import { launchOnce, recordLaunch } from "./launches.ts";
-import { removeLegacyFor, runProgram } from "./legacy.ts";
+import { removeLegacyFor, runProgram, takeWelcome1x } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
 import { startMainTelemetry } from "./main-telemetry.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
@@ -57,6 +64,7 @@ import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
+import { requestIdOf, type SupportFacts } from "./support.ts";
 import { telemetryOffBecause } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
@@ -67,7 +75,20 @@ import { createMainWindow } from "./window.ts";
  * local server: the studio talks to Ponzu Cloud itself, with an access token it borrows from here.
  */
 
-const config = configFor(app.isPackaged, process.env);
+/*
+ * Where this build talks to was baked in by scripts/build.ts. A test build given an override it
+ * can't use (PONZU_ENVIRONMENT_OVERRIDE) stops here rather than talk to the baked one instead.
+ */
+const config = (() => {
+  try {
+    return configFor(app.isPackaged, process.env);
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    console.error(why);
+    if (!smoke) dialog.showErrorBox("Ponzu can't start", why);
+    process.exit(1);
+  }
+})();
 
 /*
  * Ponzu Dev and Ponzu Local (a run from a checkout) are apps of their own: their own data folder,
@@ -200,6 +221,8 @@ const buildProperties = {
   channel: config.appName,
   platform: process.platform,
   os_version: process.getSystemVersion(),
+  environment: config.environment,
+  app_commit: config.commit,
 };
 /** What a new window is told about analytics; the launch's facts go to the first one only. */
 const analyticsFor = (): AnalyticsSetup | null =>
@@ -210,6 +233,8 @@ const analyticsFor = (): AnalyticsSetup | null =>
         replay: posthog.replay,
         channel: config.appName,
         osVersion: buildProperties.os_version,
+        environment: config.environment,
+        commit: config.commit,
         launch: takeLaunch(),
       }
     : null;
@@ -456,6 +481,7 @@ function registerIpc(session: MainSession, updater: Updates) {
   });
   listen(CHANNELS.notifyRemove, (ids) => notifications().remove(ids));
   listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
+  handle(CHANNELS.welcome1x, () => welcome1x());
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -549,6 +575,59 @@ function removeLegacySoon() {
   }, 3000);
 }
 
+/**
+ * Whether the studio shows the welcome from 1.x: once, on a computer 1.x was on, in a release
+ * someone is using (never the smoke check or a test build), recorded in welcome-1x.json.
+ */
+function welcome1x(): boolean {
+  try {
+    return takeWelcome1x({
+      build: config,
+      driven: smoke || testBuild,
+      host: { home: homedir(), env: process.env, exists: existsSync },
+      legacyRecord: join(app.getPath("userData"), "legacy-cleanup.json"),
+      welcomeRecord: join(app.getPath("userData"), "welcome-1x.json"),
+      version: app.getVersion(),
+    });
+  } catch (error) {
+    console.error(`Couldn't tell whether Ponzu 1.x was here: ${error}`);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Support                                                             */
+/* ------------------------------------------------------------------ */
+
+/** The id of the API's last answer to the studio, for Help › Contact Support. Only the id. */
+let lastRequestId: string | null = null;
+
+/** Hear each answer the API gives the window, for its request id; nothing else of it is kept. */
+function watchRequestIds() {
+  // Every http(s) answer, then only the API's: a pattern with a port in it (Ponzu Local's
+  // localhost API) isn't one webRequest takes.
+  const api = new URL(config.apiUrl).origin;
+  sessions.defaultSession.webRequest.onCompleted(
+    { urls: ["https://*/*", "http://*/*"] },
+    (details) => {
+      if (!URL.canParse(details.url) || new URL(details.url).origin !== api) return;
+      // The latest answer's id, or none: an answer without one (a gateway's error) must not
+      // leave an older request's id to be reported as the one that went wrong.
+      lastRequestId = requestIdOf(details.responseHeaders);
+    },
+  );
+}
+
+function supportFacts(): SupportFacts {
+  return {
+    version: app.getVersion(),
+    // The same facts About and analytics carry: what scripts/build.ts baked, as config.ts read it.
+    commit: config.commit,
+    environment: config.environment,
+    lastRequestId,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -581,6 +660,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     await waitForPonzuPreview();
     if (smoke) blockNetwork();
+    else watchRequestIds();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
     const { storage, persistence } = sessionStorage();
@@ -639,6 +719,8 @@ if (!app.requestSingleInstanceLock()) {
       signOut: () => void session.signOut(),
       // Developer tools are a developer's: a release has no way to open them on someone's session.
       devTools: config.remoteDebugging,
+      about: aboutVersion(config),
+      supportFacts,
     });
     setSignedIn(session.getState().status === "signed_in");
 

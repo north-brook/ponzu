@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { $ } from "bun";
 import {
+  type Changelog,
+  changelog,
   compareVersions,
   extractNotes,
   phoneOnly,
@@ -216,6 +218,105 @@ test("each phone release carries its notes merged since the phone's tag before i
     ]);
     // The phone's tags never become the desktop's releases.
     expect(await releases(dir)).toEqual([{ version: "1.0.0", notes: ["Pages show their icons."] }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const SCRIPT = join(import.meta.dir, "release-notes.ts");
+
+/** A repository whose commits carry fixed dates, so each tag's date is known. */
+async function datedRepo(dir: string) {
+  let date = "";
+  const git = (...args: string[]) =>
+    $`git -c user.name=t -c user.email=t@example.com -c tag.gpgsign=false -c commit.gpgsign=false ${args}`
+      .cwd(dir)
+      .env({ ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date })
+      .quiet();
+  const commit = async (when: string, subject: string, note: string, file: string) => {
+    date = when;
+    await mkdir(dirname(join(dir, file)), { recursive: true });
+    await writeFile(join(dir, file), subject);
+    await git("add", file);
+    await git("commit", "-q", "-m", `${subject}\n\n## Release note\n\n${note}`);
+  };
+  await git("init", "-q", "-b", "main");
+  await commit(
+    "2026-11-02T09:00:00-08:00",
+    "feat: a canvas",
+    "- Open a canvas.",
+    "apps/studio/a.ts",
+  );
+  await git("tag", "v2.0.0");
+  await commit(
+    "2026-11-03T10:30:00+00:00",
+    "feat(mobile): comments",
+    "- Comment from your phone.",
+    "apps/mobile/app/comments.tsx",
+  );
+  await git("tag", "mobile-v1.0.0");
+  await commit(
+    "2026-11-20T18:15:00-05:00",
+    "fix: pins stay put",
+    "- Mac: Pins stay put.\n- iPhone: Pins stay put on the phone too.",
+    "packages/core/doc.ts",
+  );
+  await git("tag", "v2.1.0");
+  await commit(
+    "2026-11-21T08:00:00+00:00",
+    "feat: not shipped",
+    "- Unreleased.",
+    "apps/studio/b.ts",
+  );
+}
+
+test("the changelog dates each app's releases by its tag's commit, newest first", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    await datedRepo(dir);
+    expect(await changelog(dir)).toEqual({
+      mac: [
+        { version: "2.1.0", date: "2026-11-20T18:15:00-05:00", notes: ["Pins stay put."] },
+        { version: "2.0.0", date: "2026-11-02T09:00:00-08:00", notes: ["Open a canvas."] },
+      ],
+      iphone: [
+        {
+          version: "1.0.0",
+          // Git writes a UTC date with Z, as GitHub's release commits have it.
+          date: "2026-11-03T10:30:00Z",
+          notes: ["Comment from your phone."],
+        },
+      ],
+    } satisfies Changelog);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("--changelog writes the file a release publishes, and marks a shallow clone's incomplete", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    const repo = join(dir, "repo");
+    await mkdir(repo);
+    await datedRepo(repo);
+    const out = join(dir, "out", "changelog.json");
+    await $`bun ${SCRIPT} --changelog ${out}`.cwd(repo).quiet();
+    const text = await Bun.file(out).text();
+    expect(JSON.parse(text)).toEqual(await changelog(repo));
+    expect(text.endsWith("}\n")).toBe(true);
+
+    // CI's checkout without history: empty lists, said to be incomplete, and no failure.
+    const shallow = join(dir, "shallow");
+    await $`git clone -q --depth 1 ${`file://${repo}`} ${shallow}`.quiet();
+    await $`bun ${SCRIPT} --changelog ${out}`.cwd(shallow).quiet();
+    expect(JSON.parse(await Bun.file(out).text())).toEqual({
+      mac: [],
+      iphone: [],
+      incomplete: true,
+    });
+
+    const usage = await $`bun ${SCRIPT} --changelog`.cwd(repo).nothrow().quiet();
+    expect(usage.exitCode).toBe(1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

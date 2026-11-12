@@ -160,6 +160,7 @@ export function PillButton({
       disabled={disabled}
       testID={testID}
       accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => ({
         height: 54,
         borderRadius: 999,
@@ -196,6 +197,7 @@ export function TextButton({
       disabled={!onPress}
       testID={testID}
       accessibilityRole={onPress ? "button" : "text"}
+      accessibilityLabel={label}
       style={({ pressed }) => ({
         height: 44,
         alignItems: "center",

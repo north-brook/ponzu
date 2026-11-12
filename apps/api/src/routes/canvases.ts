@@ -14,12 +14,12 @@ import {
   AGENT_STATES,
   CANVAS_STATUSES,
   type Canvas,
-  deleteCanvas,
   findCanvasByCreateKey,
   focusedPresence,
   getCanvas,
   getCanvasAssetKey,
   getMemberWorkspace,
+  getSandbox,
   getWorkspaceRepo,
   listPresence,
   listRepoPeople,
@@ -28,22 +28,27 @@ import {
   markNotificationsRead,
   PR_CHECKS,
   PR_STATES,
+  randomString,
   readOps,
   removePresence,
   settleCanvas,
+  takeOverCanvas,
   touchPresence,
 } from "@ponzu/db";
-import { MAX_TEXT } from "@ponzu/runner/protocol";
-import { Hono } from "hono";
+import { MAX_TEXT, type Notice } from "@ponzu/runner/protocol";
+import { Hono, type TypedResponse } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { stream } from "hono/streaming";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type CanvasGrant, requireCanvas, requireWorkspace } from "../auth/authorize.ts";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import { toCommittedOp } from "../canvases/actor.ts";
+import { rotateAssetKey } from "../canvases/asset-key.ts";
 import { commitPost } from "../canvases/commit.ts";
 import { startCanvas } from "../canvases/create.ts";
 import { readCurrentDoc } from "../canvases/document.ts";
+import { deleteCanvasAndFiles } from "../canvases/files.ts";
 import { reverse } from "../canvases/undo.ts";
 import { EFFORTS } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
@@ -54,6 +59,8 @@ import { validate } from "../http/validate.ts";
 import { isLooking } from "../notifications/plan.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
+import { putToSleep } from "../sandboxes/stop.ts";
+import { startWake } from "../sandboxes/wake.ts";
 import { toPersonView, WorkspacePersonView } from "./workspaces.ts";
 
 /*
@@ -98,6 +105,8 @@ const CanvasView = z.object({
   access: z.enum(["read", "write"]),
   /** The canvas's files are under here. Knowing it is the permission to read them. */
   assetsUrl: z.string(),
+  /** When its file links were last reset; null while they never were. */
+  assetKeyRotatedAt: z.date().nullable(),
 });
 
 function toView(
@@ -122,6 +131,23 @@ async function viewOf(
   const assetKey = await getCanvasAssetKey(deps.db, grant.canvas.id);
   if (!assetKey) throw new ApiError(404, "not_found", "There is no such canvas.");
   return CanvasView.parse(toView(deps, grant.canvas, grant.repo, grant.access, assetKey));
+}
+
+/**
+ * What only a canvas's owner or an admin of its workspace may do: delete it, reset its file
+ * links. 403 `forbidden` for anyone else, saying `what` they may not do.
+ */
+async function requireOwnerOrAdmin(
+  deps: Pick<Deps, "db">,
+  canvas: Pick<Canvas, "ownerId" | "workspaceId">,
+  userId: string,
+  what: string,
+): Promise<void> {
+  if (canvas.ownerId === userId) return;
+  const member = await getMemberWorkspace(deps.db, { userId, workspaceId: canvas.workspaceId });
+  if (member?.role !== "admin") {
+    throw new ApiError(403, "forbidden", `Only its owner or a workspace admin can ${what}.`);
+  }
 }
 
 const CreateBody = z.object({
@@ -188,7 +214,15 @@ const MAX_COMMIT_BODY_BYTES = MAX_COMMIT_BYTES + 4096;
  */
 const OPS_PAGE_BYTES = MAX_COMMIT_BYTES;
 
-const DocView = z.object({ doc: z.custom<Doc>(), seq: z.number() });
+/**
+ * What `GET /doc` answers. It is not parsed on the way out: the document is the API's own,
+ * built by applyOp from checkpoints and ops it wrote, and parsing a canvas of many MB on every
+ * read buys nothing. The route test parses the answer instead.
+ */
+type DocView = { doc: Doc; seq: number };
+
+/** How much of `GET /doc`'s JSON text each write of its stream carries. */
+export const DOC_SLICE_BYTES = 256 * 1024;
 const OpsView = z.object({ ops: z.array(z.custom<CommittedOp>()), seq: z.number() });
 const CommitView = z.object({
   committed: z.array(z.custom<CommittedOp>()),
@@ -388,23 +422,19 @@ export const canvases = new Hono<AppEnv>()
   .delete("/:id", access.user, validate("param", Params), async (c) => {
     const { deps, actor } = c.var;
     const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
-    if (canvas.ownerId !== actor.user.id) {
-      const member = await getMemberWorkspace(deps.db, {
-        userId: actor.user.id,
-        workspaceId: canvas.workspaceId,
-      });
-      if (member?.role !== "admin") {
-        throw new ApiError(403, "forbidden", "Only its owner or a workspace admin can delete it.");
-      }
-    }
+    await requireOwnerOrAdmin(deps, canvas, actor.user.id, "delete it");
     // Its sandbox's row first, while the canvas is there to put its awake time down to.
     const retiring = await holdForRetire(deps, canvas.id);
     const forget = await forgetCheckpoints(deps, canvas.id);
-    await deleteCanvas(deps.db, canvas.id);
-    deps.analytics.capture("canvas deleted", {
-      canvas_id: canvas.id,
-      by_owner: canvas.ownerId === actor.user.id,
-    });
+    // The row and its files: the job that deletes them is recorded as the row goes, and runs now.
+    // A delete that lost a race with another finds no row, records nothing and counts nothing:
+    // the canvas is gone, as asked.
+    if (await deleteCanvasAndFiles(deps, canvas.id)) {
+      deps.analytics.capture("canvas deleted", {
+        canvas_id: canvas.id,
+        by_owner: canvas.ownerId === actor.user.id,
+      });
+    }
     // The row went with the canvas; its id never comes back, so the delete at Vercel follows.
     deps.background("retire", finishRetire(deps, canvas.id, retiring));
     // Its transcripts and work in progress, which no row knows of any more.
@@ -412,12 +442,128 @@ export const canvases = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  /** The whole document, as of `seq`. */
+  /**
+   * Resets the canvas's file links (docs/cloud.md, "Assets and previews"): its files move under a
+   * new asset key, and links to the old one stop working once the old key's files are deleted, a
+   * quarter of an hour later. Its owner or a workspace admin may, as for a delete. Answers the
+   * canvas as `GET` does, with its new `assetsUrl`; everyone else's app sees the head's
+   * `assetKeyRotatedAt` move and asks for it. Two resets at once make one: the second answers
+   * the canvas as the first left it.
+   */
+  .post("/:id/asset-key/rotate", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const grant = await requireCanvas(c, c.req.valid("param").id, "write");
+    await requireOwnerOrAdmin(deps, grant.canvas, actor.user.id, "reset its file links");
+    const rotation = await rotateAssetKey(deps, grant.canvas.id);
+    const canvas = rotation === "missing" ? null : await getCanvas(deps.db, grant.canvas.id);
+    if (!canvas) throw new ApiError(404, "not_found", "There is no such canvas.");
+    if (rotation === "rotated") {
+      deps.analytics.capture("canvas file links reset", {
+        canvas_id: canvas.id,
+        by_owner: canvas.ownerId === actor.user.id,
+      });
+    }
+    return c.json(await viewOf(deps, { ...grant, canvas }));
+  })
+
+  /**
+   * Takes over a canvas whose owner left the workspace or deleted their account, so that it runs
+   * on the caller's Claude from now on (docs/cloud.md, "Deleting an account"). Anyone who can
+   * change it and has Claude connected may; no other canvas is anyone else's to take, since a
+   * canvas never switches accounts while its owner is there. The canvas becomes theirs, a wait
+   * on the last owner's Claude is lifted and the thread says who took it, in one statement; then
+   * it wakes if its feed holds work no runner took. A runner started afterwards carries the new
+   * owner's credential and resumes the same Claude session.
+   *
+   * 409 `not_ownerless` when its owner is a member of its workspace (they came back, or a
+   * teammate took it first); 409 `claude_not_connected` when the caller has no Claude that
+   * could run it.
+   */
+  .post("/:id/take-over", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const { user } = actor;
+    const grant = await requireCanvas(c, c.req.valid("param").id, "write");
+    const { canvas } = grant;
+    const notice: Notice = {
+      type: "owner_changed",
+      by: { id: user.id, name: user.name ?? user.githubLogin, login: user.githubLogin },
+    };
+    const result = await takeOverCanvas(deps.db, {
+      canvasId: canvas.id,
+      userId: user.id,
+      // Not a runner's shape (`ti_` and sixteen letters and digits): no sandbox can write it.
+      noticeId: `ti_owner-${randomString(16)}`,
+      notice: { ...notice },
+      now: new Date(deps.clock.now()),
+    });
+    if (!result) throw new ApiError(404, "not_found", "There is no such canvas.");
+    if (result.outcome === "not_ownerless") {
+      // Its owner came back while its head still said they had left: it runs on their Claude
+      // again, so what waited for it goes in now.
+      if (result.lifted && result.pending) {
+        deps.background("wake", startWake(deps, canvas.id, "owner_back"));
+      }
+      throw new ApiError(
+        409,
+        "not_ownerless",
+        "Its owner is in the workspace, so it runs on their Claude. Only a canvas whose owner left can be taken over.",
+      );
+    }
+    if (result.outcome === "claude_not_connected") {
+      throw new ApiError(
+        409,
+        "claude_not_connected",
+        "Connect your Claude to take it over: a canvas runs on its owner's Claude.",
+      );
+    }
+    deps.log.info("canvas_taken_over", {
+      canvasId: canvas.id,
+      by: user.id,
+      from: canvas.ownerId,
+      woke: result.pending,
+    });
+    deps.analytics.capture("canvas taken over", { canvas_id: canvas.id, woke: result.pending });
+    // A sandbox still awake was started on the last owner's credential, and the sweep would no
+    // longer stop it: the canvas now runs on a member's Claude, so it looks well. It is put to
+    // sleep here, and the pending rule then wakes it on the taker's. Asleep, it wakes when work
+    // is owed, as when Claude is connected.
+    const sandbox = await getSandbox(deps.db, canvas.id);
+    if (sandbox?.state === "awake") {
+      deps.background(
+        "take_over",
+        putToSleep(deps, sandbox, "owner_left").then(() => {}),
+      );
+    } else if (result.pending) {
+      deps.background("wake", startWake(deps, canvas.id, "take_over"));
+    }
+    const taken = await getCanvas(deps.db, canvas.id);
+    if (!taken) throw new ApiError(404, "not_found", "There is no such canvas.");
+    return c.json(await viewOf(deps, { ...grant, canvas: taken }));
+  })
+
+  /**
+   * The whole document, as of `seq`, streamed: the JSON text of `{ doc, seq }` in slices of
+   * `DOC_SLICE_BYTES`. A Vercel function may send at most 4.5 MB in one answer, but the limit
+   * does not apply to a streamed one, so a canvas past that is still read whole. The function
+   * holds the document and its JSON text in memory, so memory is what bounds it now. A client
+   * reads it with `response.json()` as before. Whatever can refuse (access, a missing canvas) is
+   * decided before the first byte, so a refusal is still the one error body.
+   */
   .get("/:id/doc", access.userOrRunner, validate("param", Params), async (c) => {
     const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
     const current = await readCurrentDoc(c.var.deps, canvas.id);
     if (!current) throw new ApiError(404, "not_found", "There is no such canvas.");
-    return c.json(DocView.parse({ doc: current.doc, seq: current.seq }));
+    const view: DocView = { doc: current.doc, seq: current.seq };
+    const body = new TextEncoder().encode(JSON.stringify(view));
+    c.header("content-type", "application/json; charset=UTF-8");
+    const streamed = stream(c, async (out) => {
+      for (let at = 0; at < body.byteLength && !out.aborted; at += DOC_SLICE_BYTES) {
+        await out.write(body.subarray(at, at + DOC_SLICE_BYTES));
+      }
+    });
+    // A stream is untyped to Hono's client; this one is the JSON of a DocView, so say so, and
+    // `api.canvases.doc` keeps its type.
+    return streamed as typeof streamed & TypedResponse<DocView, 200, "json">;
   })
 
   /**

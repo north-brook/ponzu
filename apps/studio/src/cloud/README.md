@@ -36,7 +36,9 @@ thread/           the thread rail: its lines, a running turn's asides and the wo
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
                   (answer.ts, shared)
-pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
+pr-tab/           the pull request tab: details, checks, conversation, files and their diffs; the
+                  menu by the title (Turn off auto-merge, Close pull request) and the description
+                  the next one opens with
 setup/            guided first run: the gates (setup.ts, shared), sign in, where you build, Connect
                   Claude and its card, the iPhone step
 settings/         the Settings modal and its sections, with their rules (billing, shared; members,
@@ -569,7 +571,7 @@ repaint something or say what isn't so. The usual swaps:
   or repo switches the window to that workspace with its create page open and that project
   chosen, handing the words, images and picked idea over (`CreateHandoff` in `app/create.tsx`)
   in the same render. The selector then reads Scratch (the sidebar says whose) and its label
-  says it, `Project: Scratch in Lenny Learning`. Allow more on GitHub acts for the window's
+  says it, `Project: Scratch in Bramble School`. Allow more on GitHub acts for the window's
   workspace. Its composition masks the picker and says so in `compare`. The picker never moves
   the page: its list shows five and a half rows and scrolls, and in a window too short even for
   that the list gives up height and the picker stays under its selector. A name cut short shows
@@ -615,6 +617,14 @@ compositions against, two ways:
   file it shows, every ground and shadow. It catches what is too small for the picture's
   tolerance: a changed text or icon token, a wrong `text-*` class or weight, the wrong theme's
   picture. A failure prints the lines that changed.
+
+`shots` draws the site's product shots (`SITE_SHOTS` in scripts/visual-lib.ts) into
+apps/web/public/product, with their text, in both themes at twice the size. Those whose main pane
+is the open canvas (`SITE_BOARDS`) are drawn with `&boards`, which puts the canvas's boards
+(gallery/canvas-fixtures.ts, drawn by the canvas package from memory) in the main pane; the
+references leave it out, so they never depend on how the canvas package draws a board. Every
+name in the gallery is invented (Ada Park, Thistlewick, Bramble School, Quillmoor; the plant
+shop Fernwood), so the public pictures show no real person, company or repo.
 
 Redraw them when a change is meant to move pixels or styles, and read the diff before
 committing. The test needs Chrome or Chromium (`PONZU_CHROMIUM`) and skips without one; without

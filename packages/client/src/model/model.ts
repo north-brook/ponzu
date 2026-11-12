@@ -263,6 +263,21 @@ export type ThreadNotice =
       url: string;
       title: string;
       as: Person | null;
+    }
+  /** Someone took the canvas over once its owner had left: it runs on their Claude now. */
+  | { type: "owner_changed"; by: Person }
+  /**
+   * The model the canvas was made with is no longer one its Claude account offers, so it runs
+   * on `to` in its place. The names are the ones Ponzu knew then; `account` is whose Claude it
+   * is, null when that is not known.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
     };
 
 /** What the agent did to its pull request, as its thread line says. */
@@ -322,9 +337,10 @@ export interface AgentActivity {
   status: string | null;
   /**
    * Why its sandbox isn't running: every machine it may start is taken, so it waits its turn;
-   * or starting one failed. Messages are kept either way, and go in once it runs.
+   * Ponzu has paused wakes while it updates (`paused`); or starting one failed. Messages are
+   * kept either way, and go in once it runs.
    */
-  sandbox?: "busy" | "failed" | null;
+  sandbox?: "busy" | "paused" | "failed" | null;
 }
 
 /** Older items of the thread: more to fetch, fetching, or none. */
@@ -349,8 +365,12 @@ export type SteerGate =
   | { kind: "claude_disconnected"; owner: Person }
   /** The owner's subscription sign-in ran out: they connect it again. */
   | { kind: "claude_expired"; owner: Person }
-  /** Whoever it runs on left the workspace: nobody else's Claude stands in. */
-  | { kind: "claude_owner_left" };
+  /**
+   * Whoever it runs on left the workspace, or deleted their account: nobody's Claude runs it
+   * until someone who can change it takes it over, on their own Claude. `canTakeOver`: the
+   * viewer can, having write access and Claude connected. `repo`: who may, in other words.
+   */
+  | { kind: "claude_owner_left"; canTakeOver: boolean; repo: Repo | null };
 
 /*
  * Needs you: what the agent waits on a person for, in the composer's slot. `question`, `plan`

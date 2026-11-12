@@ -68,6 +68,12 @@ export interface AnalyticsSetup {
   /** The operating system's version (the user agent's is frozen). */
   osVersion: string;
   /**
+   * Where this build talks to (`dev`, `production`, or `custom` for Ponzu Local pointed
+   * elsewhere) and the commit it was built from: every event's `environment` and `app_commit`.
+   */
+  environment: string;
+  commit: string;
+  /**
    * What this launch follows, for `app opened` and `update installed`; only in the launch's
    * first window. A window opened again later (the Mac's dock icon after its window closed) has
    * null: the launch was reported already.
@@ -193,6 +199,11 @@ export interface PonzuDesktop {
     /** A banner the system wouldn't show (an unsigned build's are refused), by its id. */
     onFailed(listener: (id: string) => void): () => void;
   };
+  /**
+   * Whether to show the welcome from Ponzu 1.x now (legacy.ts's `takeWelcome1x`): true once, on
+   * a computer that had 1.x, and false from then on, this launch and every later one.
+   */
+  welcome1x(): Promise<boolean>;
 }
 
 /** The IPC channels, by what they carry. `invoke` ones answer; `send` ones don't. */
@@ -218,4 +229,5 @@ export const CHANNELS = {
   notifyRemove: "ponzu:notify:remove",
   notifyBadge: "ponzu:notify:badge",
   notifyFailed: "ponzu:notify:failed",
+  welcome1x: "ponzu:welcome-1x",
 } as const;

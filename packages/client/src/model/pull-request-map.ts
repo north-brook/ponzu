@@ -211,6 +211,7 @@ export function rulesWant(pr: Pull): string {
 const SAID_BY_THE_API = new Set([
   "no_pull_request",
   "pull_request_closed",
+  "pull_request_changed",
   "pull_request_draft",
   "head_moved",
   "mergeability_unknown",
@@ -228,6 +229,9 @@ const SAID_BY_THE_API = new Set([
   "branch_not_pushed",
   "no_repository",
   "forbidden",
+  "workflow_permission",
+  "merge_queue",
+  "merge_queue_unmergeable",
 ]);
 
 /** Why an action on the pull request didn't happen, in a sentence a person can act on. */

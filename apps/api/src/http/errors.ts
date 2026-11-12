@@ -47,6 +47,8 @@ export type ErrorCode =
   | "github_token_missing"
   /** Sign-in: this WorkOS user already belongs to a different GitHub account. */
   | "identity_conflict"
+  /** Sign-in: an account on this WorkOS user was just deleted and is still being forgotten. */
+  | "account_being_deleted"
   /** GitHub no longer accepts what Ponzu holds for this person. Sign in again. */
   | "github_reauth_required"
   /** A canvas's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
@@ -109,6 +111,8 @@ export type ErrorCode =
   | "no_pull_request"
   /** The canvas's pull request is merged or closed. */
   | "pull_request_closed"
+  /** A close named a pull request that is no longer the canvas's newest. Look again first. */
+  | "pull_request_changed"
   /** The pull request is a draft: mark it ready first. */
   | "pull_request_draft"
   /** The branch conflicts with the branch it merges into. */
@@ -138,6 +142,18 @@ export type ErrorCode =
   /** GitHub refused, for a reason Ponzu cannot name. */
   | "github_refused"
   /**
+   * It would change a file under `.github/workflows/`, and Ponzu's GitHub App has no `workflows`
+   * permission: it is done on GitHub instead.
+   */
+  | "workflow_permission"
+  /**
+   * The repo merges through a merge queue, and Ponzu does not add to one yet (PONZU_MERGE_QUEUE
+   * is off): it is added to the queue on GitHub.
+   */
+  | "merge_queue"
+  /** GitHub's merge queue turned the pull request down. */
+  | "merge_queue_unmergeable"
+  /**
    * The agent asked to merge, mark ready or turn on auto-merge in a turn no person in Ponzu began,
    * or after words from GitHub (a check, a review) went into its session: only a person's turn may.
    */
@@ -164,6 +180,18 @@ export type ErrorCode =
   | "sole_admin"
   /** The confirmation typed to delete the account is not the person's GitHub login. */
   | "confirmation_mismatch"
+  /**
+   * A take-over of a canvas whose owner is in its workspace: only one whose owner left, or
+   * deleted their account, can be taken over. The owner came back, or a teammate took it first.
+   */
+  | "not_ownerless"
+  /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
+  | "claude_not_connected"
+  /**
+   * Ponzu is read-only while it updates (`PONZU_MAINTENANCE=read_only`): nothing was written.
+   * Reads still work; send it again in a few minutes.
+   */
+  | "maintenance"
   | "internal";
 
 /**

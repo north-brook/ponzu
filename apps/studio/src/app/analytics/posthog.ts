@@ -121,6 +121,8 @@ export function startPosthog(
     channel: setup.channel,
     platform: context.platform,
     os_version: setup.osVersion,
+    environment: setup.environment,
+    app_commit: setup.commit,
   });
 
   return {

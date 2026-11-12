@@ -2,7 +2,7 @@ node_modules/
 .expo/
 dist/
 expo-env.d.ts
-# Local overrides, such as EXPO_PUBLIC_PONZU_DEV_HOST.
+# Local overrides, such as EXPO_PUBLIC_WORKOS_CLIENT_ID.
 .env*.local
 *.jks
 *.p8

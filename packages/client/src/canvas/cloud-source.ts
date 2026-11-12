@@ -63,7 +63,11 @@ type OpListener = (op: Op, origin: Origin, doc: Doc) => void;
 export class CloudSource implements CanvasSource {
   /** There is no image-resizing service: every image loads at its own size. */
   readonly renditions = false;
-  /** Where the canvas's `assets/` are: known once the API has answered. */
+  /**
+   * Where the canvas's `assets/` are: known once the API has answered. It changes in place when
+   * someone resets the canvas's file links (the head's `assetKeyRotatedAt` moves), and `state`
+   * is set anew then, so whatever draws from it draws again.
+   */
   assetBase?: string;
   /** False for a canvas the person may only look at, and until the API has answered. */
   writable = false;
@@ -89,6 +93,10 @@ export class CloudSource implements CanvasSource {
   /** A copy made for the op listeners, for `state` to take up. */
   private fresh: Doc | null = null;
   private head: CanvasHeadRow | null = null;
+  /** When the file links were last reset, as of the address in `assetBase`. */
+  private rotatedAt: string | null = null;
+  /** Asking for the address after a reset, so a burst of head changes asks once. */
+  private refreshing = false;
   /** Who made the last change, for the canvas's activity indicator. */
   private lastOrigin: Origin | undefined;
   /** Why the canvas can no longer be shown: deleted, or the person lost access to it. */
@@ -263,6 +271,7 @@ export class CloudSource implements CanvasSource {
     if (this.closed || this.replica || this.failure) return;
 
     this.assetBase = view.assetsUrl;
+    this.rotatedAt = view.assetKeyRotatedAt;
     this.writable = view.access === "write";
     const replica = new Replica({
       transport: this.transport(),
@@ -290,7 +299,10 @@ export class CloudSource implements CanvasSource {
       replica.onDrop(({ op, reason }) => this.unsaved({ op, reason })),
       replica.subscribe(() => this.synced()),
     );
-    if (this.head) replica.notify(this.head.seq);
+    if (this.head) {
+      replica.notify(this.head.seq);
+      this.followReset(this.head);
+    }
     this.set({
       path: view.name,
       canUndo: this.writable,
@@ -363,12 +375,41 @@ export class CloudSource implements CanvasSource {
         if (!head) return;
         this.head = head;
         this.replica?.notify(head.seq);
+        if (this.replica) this.followReset(head);
         this.set({ path: head.name, presence: this.presence() });
       }),
       this.opts.live.subscribe("canvas.presence", args, ({ rows }) => {
         this.people = rows ?? [];
         this.set({ presence: this.presence() });
       }),
+    );
+  }
+
+  /**
+   * The canvas's file links were reset since `assetBase` was read: ask for the new address. One
+   * that fails is asked for again at the head's next change.
+   */
+  private followReset(head: CanvasHeadRow): void {
+    if (head.assetKeyRotatedAt === this.rotatedAt || this.refreshing) return;
+    this.refreshing = true;
+    this.api.canvases.get(this.opts.canvasId).then(
+      (view) => {
+        this.refreshing = false;
+        if (this.closed || this.failure) return;
+        const asked = this.rotatedAt;
+        this.rotatedAt = view.assetKeyRotatedAt;
+        if (view.assetsUrl !== this.assetBase) {
+          this.assetBase = view.assetsUrl;
+          this.set({});
+          this.cacheSoon();
+        }
+        // Reset again while this was asked, and its head came meanwhile: ask once more. Only
+        // when the answer moved on, so a head and an answer that never agree can't loop.
+        if (this.head && asked !== this.rotatedAt) this.followReset(this.head);
+      },
+      () => {
+        this.refreshing = false;
+      },
     );
   }
 

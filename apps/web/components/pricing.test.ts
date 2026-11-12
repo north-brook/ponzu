@@ -97,9 +97,9 @@ function walk(dir: string): string[] {
 }
 
 test("no page types a dollar amount: every price comes from the rate card", () => {
-  const sources = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))]
-    .filter((p) => /\.(tsx?|mdx)$/.test(p) && !/\.test\.tsx?$/.test(p))
-    .filter((p) => !relative(ROOT, p).startsWith("components/demo/"));
+  const sources = [...walk(join(ROOT, "app")), ...walk(join(ROOT, "components"))].filter(
+    (p) => /\.(tsx?|mdx)$/.test(p) && !/\.test\.tsx?$/.test(p),
+  );
   const typed = sources.flatMap((p) =>
     readFileSync(p, "utf8")
       .split("\n")

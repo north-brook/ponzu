@@ -12,8 +12,8 @@
  *   bun scripts/prod/desired.ts assert-release <dev|production> [--file <environments.json>]
  *       exit 0 only when the release build is set to that environment, every one of its fields
  *       is set, and none of the fields that say where to connect is the other environment's;
- *       otherwise print why, one line each, and exit 1. release.yml will run it with
- *       `production` so no release can ship pointing at dev.
+ *       otherwise print why, one line each, and exit 1. release.yml runs it with
+ *       `production` before it publishes, so no release can ship pointing at dev.
  *
  * In environments.json, `null` always means "not created yet", and is never read as a pass.
  * A field that is absent on purpose says so with `false` (dev has no private bucket and no

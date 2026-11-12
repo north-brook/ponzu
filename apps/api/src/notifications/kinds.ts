@@ -106,6 +106,7 @@ const RUN_ERROR_CODES = [
   "message_refused",
   "question_failed",
   "push_failed",
+  "elicitation_unsupported",
 ] as const satisfies RunErrorCode[];
 // And every code the protocol has is listed: a new one fails the typecheck here rather than
 // making `notify` refuse a turn that failed with it.

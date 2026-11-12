@@ -1,42 +1,36 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect } from "react";
 import { View } from "react-native";
-import { devForget, devSeed, macs } from "../lib/macs";
+import { backend } from "../lib/cloud/backend";
 import { LAUNCH } from "../lib/mark";
-import { reach } from "../lib/reach";
 import { Slice } from "../lib/slice";
+import { brand } from "../lib/tokens";
 
 /**
- * Development only: put the app in a state to look at it, then start again
- * from the launch screen. `ponzu://dev?forget=all` is a first launch;
- * `forget=dev` drops the branch server, leaving the tailnet Macs it named;
- * `forget=<id>,<id>` drops those; `seed=asleep|waking` adds Macs that
- * don't answer (see devSeed). Release builds go straight to launch.
- *
- * It doesn't wait for a pass over the Macs that's already running (a wake
- * knock alone takes 12s): forgotten Macs stay forgotten whatever that pass
- * hears. For the moment it's up, it looks like the launch screen.
+ * The fake backend only (PONZU_BACKEND=fake): `ponzu-dev://dev?seed=<scenario>` puts the app in
+ * a state to look at or test (lib/cloud/backend.fake.ts names them: signed-out, signed-in,
+ * empty, github-reauth, too-old), then starts again from the launch screen. A real build has no
+ * way in: lib/links.ts sends its dev links to the launch screen, and this does nothing there.
  */
 export default function Dev() {
-  const { forget, seed } = useLocalSearchParams<{ forget?: string; seed?: string }>();
+  const { seed } = useLocalSearchParams<{ seed?: string }>();
   useEffect(() => {
-    (async () => {
-      if (__DEV__) {
-        if (forget) await devForget(forget);
-        if (seed) await devSeed(seed);
-        // Forgotten Macs leave with their reach; the launch screen asks the rest again.
-        const kept = new Set(macs.get().map((m) => m.id));
-        reach.set((all) => Object.fromEntries(Object.entries(all).filter(([id]) => kept.has(id))));
-      }
-      if (router.canDismiss()) router.dismissAll();
-      router.replace("/");
-    })();
-  }, [forget, seed]);
+    if (backend.kind === "fake" && seed) backend.seed?.(seed);
+    if (router.canDismiss()) router.dismissAll();
+    router.replace("/");
+  }, [seed]);
   return (
     <View
       testID="dev"
-      className="flex-1 items-center justify-center bg-yuzu"
-      style={{ paddingTop: LAUNCH.top, paddingBottom: LAUNCH.bottom, gap: LAUNCH.gap }}
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: brand.yuzu,
+        paddingTop: LAUNCH.top,
+        paddingBottom: LAUNCH.bottom,
+        gap: LAUNCH.gap,
+      }}
     >
       <Slice size={LAUNCH.mark} bloom="loop" />
     </View>

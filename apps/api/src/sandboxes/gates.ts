@@ -1,4 +1,5 @@
-import type { AgentBlocker, EventKind, WakeContext } from "@ponzu/db";
+import { type AgentBlocker, claudeLimitedUntil, type EventKind, type WakeContext } from "@ponzu/db";
+import { wakesPaused } from "../http/maintenance.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { claudeProblem } from "./environment.ts";
 
@@ -9,7 +10,7 @@ import { claudeProblem } from "./environment.ts";
  *
  *   owner         its owner, whose Claude it runs on, left the workspace
  *   claude        its Claude is not connected, or has expired
- *   maintenance   Ponzu has paused wakes while it updates           (filled by W10 P4)
+ *   maintenance   Ponzu has paused wakes while it updates
  *   billing       the workspace is at a billing limit                (filled by W6 B2)
  *   claudeLimit   its owner's Claude plan is at a limit until a time (filled by W8 sweep 6)
  *
@@ -51,6 +52,41 @@ export const claudeGate: WakeGate = (ctx, now) => {
   return blocker ? { blocker } : null;
 };
 
+/** How long a wake that maintenance holds waits before it is tried again. */
+export const MAINTENANCE_RETRY_MS = 2 * 60_000;
+
+/**
+ * Ponzu has paused wakes while it updates (`PONZU_MAINTENANCE` is `wakes_paused` or
+ * `read_only`, http/maintenance.ts): the canvas waits on `paused`, and the wake is tried again
+ * in two minutes, as a busy sandbox's is, so what was sent goes in once the switch is off. A
+ * wake that runs out of tries is picked up by the cron's `maintenance` step, which lifts
+ * `paused` once the switch is off.
+ *
+ * A sandbox already awake has nothing to wake: its runner takes up what was sent by itself (a
+ * message's wake only pokes it), so the gate lets it through rather than have the head say the
+ * agent is paused while it answers.
+ */
+export const maintenanceGate: WakeGate = (ctx, now, { deps }) => {
+  if (!wakesPaused(deps.features) || ctx.sandbox?.state === "awake") return null;
+  return { blocker: "paused", retryAt: new Date(now.getTime() + MAINTENANCE_RETRY_MS) };
+};
+
+/** How long past a plan's reset its canvases wait before they wake: a little slack for clocks. */
+export const LIMIT_GRACE_MS = 30_000;
+
+/**
+ * The Claude plan it runs on is at its limit (docs/cloud.md, "Claude plan limits"): it waits
+ * for everyone until the plan resets, and its wake is tried again `LIMIT_GRACE_MS` after that.
+ * The head says it waits until then too, which the apps show to the minute. A turn already
+ * running is never cut: only a wake is held. The account's `limited_until` is written only from
+ * what a runner on its current credential reported, and cleared when a person connects again.
+ */
+export const claudeLimitGate: WakeGate = (ctx, now) => {
+  const until = ctx.claude?.limitedUntil;
+  if (!until || until.getTime() <= now.getTime()) return null;
+  return { blocker: "claude_limited", retryAt: new Date(until.getTime() + LIMIT_GRACE_MS) };
+};
+
 export interface NamedWakeGate {
   name: string;
   gate: WakeGate;
@@ -59,9 +95,9 @@ export interface NamedWakeGate {
 export const WAKE_GATES: readonly NamedWakeGate[] = [
   { name: "owner", gate: ownerGate },
   { name: "claude", gate: claudeGate },
-  { name: "maintenance", gate: () => null },
+  { name: "maintenance", gate: maintenanceGate },
   { name: "billing", gate: () => null },
-  { name: "claudeLimit", gate: () => null },
+  { name: "claudeLimit", gate: claudeLimitGate },
 ];
 
 /**
@@ -107,8 +143,18 @@ export interface ClaimContext {
  * in the claim's own statement; it is asked once per claim.
  */
 export async function claimableKinds(
-  _deps: Pick<JobDeps, "db" | "clock">,
-  _ctx: ClaimContext,
+  deps: Pick<JobDeps, "db" | "clock">,
+  ctx: ClaimContext,
 ): Promise<readonly EventKind[] | "all"> {
+  const now = new Date(deps.clock.now());
+  if (await claudeLimitedUntil(deps.db, { canvasId: ctx.canvasId, now })) return AT_A_CLAUDE_LIMIT;
   return "all";
 }
+
+/**
+ * What a runner still awake may take up while the Claude plan it runs on is at its limit:
+ * nothing that would begin a turn, which could only fail again. A stop, a person's edit (read
+ * with the next turn) and a push (which needs no Claude) go out; the rest waits in the feed and
+ * goes in once the plan resets, as the people who sent it were told.
+ */
+export const AT_A_CLAUDE_LIMIT: readonly EventKind[] = ["stop", "edit", "push"];

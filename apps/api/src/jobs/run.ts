@@ -34,6 +34,9 @@ export type JobDeps = Pick<
   | "analytics"
   | "push"
   | "mail"
+  | "workos"
+  | "posthogAdmin"
+  | "features"
 >;
 
 /** A job as its handler sees it: which attempt this is, out of how many. */

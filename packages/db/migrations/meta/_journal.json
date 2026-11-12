@@ -194,8 +194,22 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1794482753400,
-      "tag": "0027_notifications",
+      "when": 1794486398505,
+      "tag": "0027_secret_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794495855646,
+      "tag": "0028_asset_key_rotation",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794497863507,
+      "tag": "0029_notifications",
       "breakpoints": true
     }
   ]

@@ -4,7 +4,12 @@ import { runTool, type ToolDef } from "@ponzu/tools";
 import { ApiError } from "./api/api.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
 import type { PullRequestState } from "./api/protocol.ts";
-import { PULL_REQUEST_TOOLS, pullRequestTools } from "./pull-request-tools.ts";
+import {
+  actionText,
+  PULL_REQUEST_TOOLS,
+  pullRequestTools,
+  standingText,
+} from "./pull-request-tools.ts";
 
 /*
  * The agent's pull request tools against the API in memory: what each asks for (with the turn's
@@ -190,6 +195,79 @@ test("a refusal is the API's own words, and what the agent can do about it", asy
   };
   const auto = await s.call(PULL_REQUEST_TOOLS.autoMerge);
   expect(auto.text).toContain("Nothing is known to have changed");
+});
+
+test("a merge queue: refused plainly, queued as GitHub said, and never called merged", async () => {
+  const s = await tools();
+  s.api.pullRequest = { number: 12, state: "open" };
+  s.api.prDetail = { mergeQueue: { enabled: true, entry: null } };
+  s.api.refusePullRequest = () =>
+    new ApiError(
+      409,
+      "merge_queue",
+      "This repository merges through a merge queue. Add it to the queue on GitHub.",
+    );
+  const refused = await s.call(PULL_REQUEST_TOOLS.merge);
+  expect(refused.isError).toBe(true);
+  expect(refused.text).toBe(
+    "This repository merges through a merge queue. Add it to the queue on GitHub. Ponzu doesn't add pull requests to a merge queue yet. Don't try again: tell the person it's ready for them to add to the queue on GitHub.",
+  );
+
+  // With the switch on, the API answers that it went into the queue.
+  const queued = {
+    did: true,
+    pushing: false,
+    queued: true,
+    branch: { name: "pz/hero", base: "main", exists: true, aheadBy: 1, behindBy: 0 },
+    pullRequest: {
+      number: 12,
+      url: "https://github.com/north/fern/pull/12",
+      title: "Hero",
+      state: "open" as const,
+      headSha: SHA,
+      author: "maya",
+      mergedBy: null,
+      mergeable: true,
+      mergeState: "clean",
+      reviewDecision: null,
+      autoMerge: null,
+      checks: { state: "running" as const, complete: true, items: [] },
+      reviews: [],
+      unresolved: [],
+      mergeHold: { code: "merge_queued", message: "#12 is in the merge queue on GitHub." },
+      mergeQueue: { enabled: true, entry: { state: "awaiting_checks", position: 3 } },
+    },
+    mergeMethod: "squash" as const,
+    autoMergeAllowed: false,
+    nextAction: "none",
+    actingAs: { name: "Maya", login: "maya" },
+    personTurn: true,
+    notPersonTurn: null,
+  };
+  expect(actionText("merge", queued)).toBe(
+    "Added #12 to the merge queue on GitHub, as Maya (@maya). GitHub merges it when its checks pass; it has not merged yet.",
+  );
+  expect(standingText(queued)).toContain(
+    "It is in the merge queue on GitHub, number 3 in line: GitHub merges it when the queue's checks pass.",
+  );
+  expect(actionText("merge", { ...queued, did: false, queued: undefined })).toBe(
+    "Pull request #12 was already in the merge queue on GitHub; nothing changed.",
+  );
+});
+
+test("a workflow file the App can't write is no one's to fix in the canvas", async () => {
+  const s = await tools();
+  s.api.pullRequest = { number: 4, state: "open" };
+  s.api.refusePullRequest = () =>
+    new ApiError(
+      422,
+      "workflow_permission",
+      "GitHub won't let Ponzu change files under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows. Do this on GitHub instead.",
+    );
+  const updated = await s.call(PULL_REQUEST_TOOLS.updateBranch);
+  expect(updated.isError).toBe(true);
+  expect(updated.text).toContain("trying again won't");
+  expect(updated.text).toContain("leave workflow files out of the branch's commits");
 });
 
 test("read says where it stands: checks, reviews, unresolved comments quoted, what holds it back", async () => {

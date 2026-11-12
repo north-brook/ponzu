@@ -94,6 +94,7 @@ const desktop: PonzuDesktop = {
     setBadge: (count) => ipcRenderer.send(CHANNELS.notifyBadge, count),
     onFailed: (listener) => on<string>(CHANNELS.notifyFailed, listener),
   },
+  welcome1x: () => ipcRenderer.invoke(CHANNELS.welcome1x) as Promise<boolean>,
 };
 
 /** The computer's name the main process passed, URI-encoded; null when it passed none. */

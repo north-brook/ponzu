@@ -6,6 +6,7 @@ import {
   type ClaudeAccountKind,
   type ClaudeModelReport,
   canvases,
+  canvasRunners,
   claudeAccounts,
   users,
 } from "../schema/index.ts";
@@ -98,6 +99,10 @@ export async function getClaudeAccountById(db: Db, id: string): Promise<ClaudeAc
  * only while the credential is still the one connected at `connectedAt`: a report from a runner
  * on a credential since replaced or destroyed says nothing about the one there now. Answers
  * whether it was kept.
+ *
+ * With `throttle`, a report is also not kept when the account's last one was kept after `since`
+ * and after the reporting runner took its lease: each runner's first report goes through, and
+ * then at most one in each window, in one statement, so reports racing each other keep one.
  */
 export async function recordClaudeModels(
   db: Db,
@@ -107,8 +112,19 @@ export async function recordClaudeModels(
     claudeCode: string;
     models: ClaudeModelReport[];
     now: Date;
+    throttle?: { canvasId: string; runnerId: string; since: Date };
   },
 ): Promise<boolean> {
+  const { throttle } = report;
+  const due = throttle
+    ? sql`(${claudeAccounts.modelsReportedAt} is null
+        or ${claudeAccounts.modelsReportedAt} <= ${timeParam(throttle.since)}::timestamptz
+        or ${claudeAccounts.modelsReportedAt} < (
+          select ${canvasRunners.startedAt} from ${canvasRunners}
+          where ${canvasRunners.canvasId} = ${throttle.canvasId}
+            and ${canvasRunners.runnerId} = ${throttle.runnerId}
+        ))`
+    : undefined;
   const rows = await run(
     db
       .update(claudeAccounts)
@@ -122,11 +138,101 @@ export async function recordClaudeModels(
           eq(claudeAccounts.id, report.claudeAccountId),
           sql`${claudeAccounts.connectedAt} = ${timeParam(report.connectedAt)}::timestamptz`,
           ne(claudeAccounts.status, "revoked"),
+          due,
         ),
       )
       .returning({ id: claudeAccounts.id }),
   );
   return rows.length > 0;
+}
+
+/** What a runner said of one of a Claude plan's limits (the runner protocol's `claudeLimit`). */
+export interface ClaudeLimitSeen {
+  status: "allowed" | "allowed_warning" | "rejected";
+  window: string | null;
+  resetsAt: Date | null;
+  utilization: number | null;
+}
+
+/**
+ * Keep what a runner on a subscription's credential said of the plan's limits at `now`: the
+ * window's share and reset, replacing what was kept of that window, and until when the plan
+ * holds canvases back. A `rejected` window holds them until its reset (one with no reset leaves
+ * `limited_until` as it was, since nobody can say when to try again); any other status says
+ * requests go through, so nothing holds them. Kept only while the credential is still the one
+ * connected at `connectedAt`, and never for an API key, which has no plan. Answers whether it
+ * was kept, and the account's `limited_until` after it.
+ */
+export async function recordClaudeLimit(
+  db: Db,
+  report: { claudeAccountId: string; connectedAt: Date; seen: ClaudeLimitSeen; now: Date },
+): Promise<{ kept: boolean; limitedUntil: Date | null }> {
+  const { seen, now } = report;
+  const entry = seen.window && {
+    window: seen.window,
+    utilization: seen.utilization,
+    resetsAt: seen.resetsAt?.toISOString() ?? null,
+    at: now.toISOString(),
+  };
+  const limits = entry
+    ? sql`(select coalesce(jsonb_agg(e), '[]'::jsonb)
+             from jsonb_array_elements(coalesce(${claudeAccounts.limits}, '[]'::jsonb)) e
+            where e->>'window' is distinct from ${entry.window})
+          || jsonb_build_array(${JSON.stringify(entry)}::jsonb)`
+    : sql`${claudeAccounts.limits}`;
+  const limitedUntil =
+    seen.status !== "rejected"
+      ? null
+      : seen.resetsAt
+        ? sql`${timeParam(seen.resetsAt)}::timestamptz`
+        : sql`${claudeAccounts.limitedUntil}`;
+  const [row] = await run(
+    db
+      .update(claudeAccounts)
+      .set({
+        limits: limits as never,
+        limitsObservedAt: sql`${timeParam(now)}::timestamptz`,
+        limitedUntil: limitedUntil as never,
+      })
+      .where(
+        and(
+          eq(claudeAccounts.id, report.claudeAccountId),
+          sql`${claudeAccounts.connectedAt} = ${timeParam(report.connectedAt)}::timestamptz`,
+          ne(claudeAccounts.status, "revoked"),
+          eq(claudeAccounts.kind, "subscription"),
+        ),
+      )
+      .returning({ limitedUntil: claudeAccounts.limitedUntil }),
+  );
+  return row ? { kept: true, limitedUntil: row.limitedUntil } : { kept: false, limitedUntil: null };
+}
+
+/**
+ * Until when the Claude plan the canvas runs on is at its limit, if it is at `now`: the account
+ * it was started on, else its owner's. Null when it is not, or there is no such canvas.
+ */
+export async function claudeLimitedUntil(
+  db: Db,
+  { canvasId, now }: { canvasId: string; now: Date },
+): Promise<Date | null> {
+  const [row] = await run(
+    db
+      .select({ until: claudeAccounts.limitedUntil })
+      .from(canvases)
+      .innerJoin(
+        claudeAccounts,
+        sql`(${claudeAccounts.id} = ${canvases.claudeAccountId}
+             or (${canvases.claudeAccountId} is null and ${claudeAccounts.userId} = ${canvases.ownerId}))`,
+      )
+      .where(
+        and(
+          eq(canvases.id, canvasId),
+          sql`${claudeAccounts.limitedUntil} > ${timeParam(now)}::timestamptz`,
+        ),
+      )
+      .limit(1),
+  );
+  return row?.until ?? null;
 }
 
 /** Destroy a person's credential. Answers their account's id, or null if they had none connected. */

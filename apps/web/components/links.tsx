@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { btn } from "./button";
 import { GitHub } from "./icons";
 import { IPHONE_PATH } from "./platforms";
+import { CONTACT } from "./site";
 
 export { TESTFLIGHT } from "./site";
 
@@ -12,7 +13,13 @@ export const DOWNLOAD = "/download";
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
+export const TERMS = "/terms";
+export const SUBPROCESSORS_PAGE = "/subprocessors";
+export const SECURITY = "/security";
+export const CONTACT_MAIL = `mailto:${CONTACT.hello}`;
 export const PRICING = "/pricing";
+/** Every release's notes since Ponzu Cloud's first, both apps (app/changelog). */
+export const CHANGELOG = "/changelog";
 /** Ponzu for iPhone: /iphone, which forwards to the beta or the App Store (next.config.ts). */
 export const IPHONE = IPHONE_PATH;
 
@@ -31,6 +38,7 @@ export interface SiteLink {
 /** The header's links, after the lockup and before the Download button. GitHub gets its mark. */
 export const NAV: readonly SiteLink[] = [
   { label: "Pricing", href: PRICING },
+  { label: "Changelog", href: CHANGELOG },
   { label: "GitHub", href: REPO },
 ];
 
@@ -42,12 +50,18 @@ export const FOOTER: readonly { title: string; links: readonly SiteLink[] }[] = 
       { label: "Download", href: DOWNLOAD },
       { label: "Ponzu for iPhone", href: IPHONE },
       { label: "Pricing", href: PRICING },
-      { label: "Releases", href: RELEASES },
+      { label: "Changelog", href: CHANGELOG },
     ],
   },
   {
     title: "Company",
-    links: [{ label: "Privacy", href: PRIVACY }],
+    links: [
+      { label: "Privacy", href: PRIVACY },
+      { label: "Terms", href: TERMS },
+      { label: "Subprocessors", href: SUBPROCESSORS_PAGE },
+      { label: "Security", href: SECURITY },
+      { label: "Contact", href: CONTACT_MAIL },
+    ],
   },
   {
     title: "Open source",

@@ -1,9 +1,11 @@
+import { blockerWords } from "./gate.ts";
 import {
   type AgentActivity,
   firstName,
   type Person,
   type RunErrorCode,
   type ThreadItem,
+  type ThreadNotice,
   type TurnRecord,
 } from "./model.ts";
 
@@ -22,6 +24,9 @@ const starting = (item: ThreadItem): boolean =>
   (item.payload.type === "waking" ||
     item.payload.type === "resumed" ||
     item.payload.type === "started");
+/** What the run says as it starts, or of how it starts: a line, but no answer to anyone. */
+const noAnswer = (item: ThreadItem): boolean =>
+  starting(item) || (item.kind === "notice" && item.payload.type === "model_changed");
 
 /** One line of the thread as the rail draws it. */
 export interface ThreadRow {
@@ -215,9 +220,10 @@ export function workingLine(
     return agent.status?.trim() || "Thinking";
   }
   // Idle as far as the head knows, but a person has just sent something it hasn't taken yet. A
-  // runner's own word that it started (`waking`, `resumed`, `started`) is no answer to it.
+  // runner's own word that it started (`waking`, `resumed`, `started`), or the API's that it
+  // runs on another model, is no answer to it.
   const lastAgent = items.findLast(
-    (i) => i.kind === "assistant" || i.kind === "tool" || (i.kind === "notice" && !starting(i)),
+    (i) => i.kind === "assistant" || i.kind === "tool" || (i.kind === "notice" && !noAnswer(i)),
   );
   const lastSaid = items.findLast(said);
   if (!lastSaid || (lastAgent && lastAgent.seq > lastSaid.seq)) return null;
@@ -229,7 +235,9 @@ export function workingLine(
 
 /**
  * What the thread's foot says while the canvas's sandbox can't run, in place of the working
- * line: a quiet wait for a machine, or a start that failed. Messages are kept either way.
+ * line: a quiet wait for a machine, a pause while Ponzu updates, or a start that failed.
+ * Messages are kept either way. A turn that was running when wakes were paused finishes, and
+ * its working line shows until it does.
  */
 export function sandboxLine(agent: AgentActivity): { text: string; failed: boolean } | null {
   if (agent.sandbox === "busy") {
@@ -237,6 +245,10 @@ export function sandboxLine(agent: AgentActivity): { text: string; failed: boole
       text: "Waiting for a free machine. Your messages go in as soon as one starts.",
       failed: false,
     };
+  }
+  if (agent.sandbox === "paused") {
+    if (agent.state === "working") return null;
+    return { text: blockerWords({ blocker: "paused" }).line, failed: false };
   }
   if (agent.sandbox === "failed") {
     return {
@@ -272,4 +284,30 @@ export const ERROR_DETAIL: ReadonlySet<RunErrorCode> = new Set([
 /** "You", or the person's first name. */
 export function who(person: Person, meId: string): string {
   return person.id === meId ? "You" : firstName(person);
+}
+
+/**
+ * The thread's line once someone took over a canvas whose owner left, word for word from
+ * the sweep plan, §8, and said to the taker as "you".
+ */
+export function ownerChangedLine(by: Person, meId: string): string {
+  return by.id === meId
+    ? "You took this canvas over. It runs on your Claude from now on."
+    : `${who(by, meId)} took this canvas over. It runs on their Claude from now on.`;
+}
+
+/**
+ * The thread's line when a canvas's model gave way (docs/cloud.md, "Models"): "Maya's Claude
+ * doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5."
+ */
+export function modelChangedLine(
+  notice: Extract<ThreadNotice, { type: "model_changed" }>,
+  meId: string,
+): string {
+  const whose = notice.account
+    ? notice.account.id === meId
+      ? "Your Claude"
+      : `${firstName(notice.account)}'s Claude`
+    : "The Claude this canvas runs on";
+  return `${whose} doesn't offer ${notice.fromName} any more, so this canvas now runs on ${notice.toName}.`;
 }

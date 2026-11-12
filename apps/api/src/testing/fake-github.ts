@@ -2,6 +2,7 @@ import { createHmac, generateKeyPairSync, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { jwtVerify } from "jose";
 import type { Fetch } from "../deps/fetch.ts";
+import { APP_EVENTS, APP_PERMISSIONS } from "../ops/github-app.ts";
 import { FakePullRequests, type FakeRepoAccess } from "./fake-pull-requests.ts";
 
 /*
@@ -111,6 +112,13 @@ export class FakeGithub {
    * a test holds one caller in flight, or acts out something happening meanwhile.
    */
   duringRefresh: (() => Promise<void>) | null = null;
+  /**
+   * Every request to revoke a person's grant (`DELETE /applications/{client_id}/grant`), as it
+   * arrived: the client id in its path, its authorization header and its body.
+   */
+  readonly grantRevocations: { clientId: string; authorization: string; body: unknown }[] = [];
+  /** Runs inside each grant revoke, before GitHub answers: where a test looks at what is stored then. */
+  duringGrantRevoke: (() => Promise<void>) | null = null;
   /** Every installation token the App asked for. */
   readonly installationTokenRequests: { installationId: number; body: unknown }[] = [];
   /** What the next installation tokens are granted in place of what was asked for, in order. */
@@ -129,6 +137,21 @@ export class FakeGithub {
    * small to have a list run past the pages the API reads.
    */
   peoplePageSize = 100;
+
+  /**
+   * The App as `GET /app` and `GET /app/hook/config` answer: by default exactly what the API
+   * needs, at the test app's slug and address. A test changes it to act out an App set up wrong.
+   */
+  readonly app = {
+    slug: "ponzu-test",
+    permissions: { ...APP_PERMISSIONS } as Record<string, string>,
+    events: [...APP_EVENTS],
+    hook: {
+      url: "https://api.test/v1/github/webhook" as string | null,
+      content_type: "json" as string | null,
+      insecure_ssl: "0" as string | null,
+    },
+  };
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
@@ -288,6 +311,11 @@ export class FakeGithub {
     }
     if (hostname !== "api.github.com") return notFound(method, url);
 
+    const grant = /^\/applications\/([^/]+)\/grant$/.exec(pathname);
+    if (method === "DELETE" && grant) {
+      return this.#deleteGrant(decodeURIComponent(grant[1]!), init);
+    }
+
     // GitHub reads the scheme in any case.
     const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /i, "") ?? "";
     const appToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(pathname);
@@ -295,6 +323,21 @@ export class FakeGithub {
       // A token for everything the installation has is asked for with no body at all.
       const body = JSON.parse(typeof init.body === "string" ? init.body : "{}");
       return this.#installationToken(bearer, Number(appToken[1]), body);
+    }
+    if (method === "GET" && pathname === "/app") {
+      if (!(await this.#isAppJwt(bearer))) return badJwt();
+      const { slug, permissions, events } = this.app;
+      return Response.json({
+        id: 1,
+        slug,
+        client_id: this.credentials.clientId,
+        permissions,
+        events,
+      });
+    }
+    if (method === "GET" && pathname === "/app/hook/config") {
+      if (!(await this.#isAppJwt(bearer))) return badJwt();
+      return Response.json(this.app.hook);
     }
     const appInstallation = /^\/app\/installations\/(\d+)$/.exec(pathname);
     if (method === "GET" && appInstallation) {
@@ -563,6 +606,28 @@ export class FakeGithub {
       token_type: "bearer",
       scope: "",
     });
+  }
+
+  /**
+   * `DELETE /applications/{client_id}/grant`, as GitHub documents it: the App's client id and
+   * secret as Basic auth, the person's token in the body, 204 and every token of theirs dead.
+   * A token GitHub does not know is 404; client credentials it does not take are 404 too (its
+   * answer for a wrong id), or 401 for a right id with a wrong secret.
+   */
+  async #deleteGrant(clientId: string, init: RequestInit): Promise<Response> {
+    const authorization = new Headers(init.headers).get("authorization") ?? "";
+    const body = typeof init.body === "string" ? JSON.parse(init.body) : null;
+    this.grantRevocations.push({ clientId, authorization, body });
+    await this.duringGrantRevoke?.();
+    const { clientId: id, clientSecret: secret } = this.credentials;
+    if (clientId !== id) return Response.json({ message: "Not Found" }, { status: 404 });
+    if (!/^basic /i.test(authorization) || atob(authorization.slice(6)) !== `${id}:${secret}`) {
+      return Response.json({ message: "Bad credentials" }, { status: 401 });
+    }
+    const held = this.#accessTokens.get(String(body?.access_token));
+    if (!held) return Response.json({ message: "Not Found" }, { status: 404 });
+    this.revokeTokens(held.userId);
+    return new Response(null, { status: 204 });
   }
 
   async #installationToken(jwt: string, installationId: number, body: unknown): Promise<Response> {

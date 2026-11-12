@@ -1,0 +1,48 @@
+name: Preview
+
+# Ponzu Dev (APP_VARIANT=dev: design.ponzu.app.dev, ponzu-dev://) for the
+# phones registered for internal distribution, from the `cloud` branch,
+# against api.ponzu.design. Run by hand only, with `eas workflow:run
+# preview.yml`: agents never deploy, so nothing here runs on a push. A new
+# native fingerprint builds a binary (installed from the link EAS gives);
+# anything else ships over the air on the `preview` channel to the builds
+# already installed. Nothing here reaches TestFlight or the `production`
+# channel, and the 1.x app (design.ponzu.app) never hears of it.
+on:
+  workflow_dispatch: {}
+
+# The Bun package.json pins (`packageManager`); see production.yml.
+defaults:
+  tools:
+    bun: 1.4.2
+
+jobs:
+  fingerprint:
+    type: fingerprint
+    environment: preview
+    env:
+      APP_VARIANT: dev
+  ios_build_exists:
+    needs: [fingerprint]
+    type: get-build
+    params:
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      profile: preview
+  build_ios:
+    needs: [ios_build_exists]
+    if: ${{ !needs.ios_build_exists.outputs.build_id }}
+    type: build
+    params:
+      platform: ios
+      profile: preview
+  update_ios:
+    needs: [ios_build_exists]
+    if: ${{ needs.ios_build_exists.outputs.build_id }}
+    type: update
+    environment: preview
+    env:
+      APP_VARIANT: dev
+    params:
+      # The channel the preview builds listen on (eas.json).
+      channel: preview
+      platform: ios

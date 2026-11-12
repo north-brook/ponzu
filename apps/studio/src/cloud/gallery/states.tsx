@@ -325,7 +325,7 @@ export function States() {
 
         <Section title="Menus">
           <WorkspaceMenu
-            current={f.northbrook}
+            current={f.thistlewick}
             workspaces={f.workspaces}
             onSwitch={ignore}
             onAddWorkspace={ignore}

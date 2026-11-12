@@ -59,6 +59,13 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  type AssetKeySwap,
+  deleteCanvasWithFiles,
+  type FilesJob,
+  type RecordedJob,
+  swapCanvasAssetKey,
+} from "./queries/canvas-files.ts";
+export {
   BRANCH_TAKEN,
   type Canvas,
   type CanvasAccess,
@@ -87,11 +94,14 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ClaudeLimitSeen,
   type ConnectedClaude,
   claudeAccountIdFor,
+  claudeLimitedUntil,
   connectClaudeAccount,
   disconnectClaudeAccount,
   getClaudeAccountById,
+  recordClaudeLimit,
   recordClaudeModels,
   setAgentDefaults,
   setClaudeBlocker,
@@ -142,9 +152,11 @@ export {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  hasWaitingJob,
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  onceId,
   recordOnce,
 } from "./queries/jobs.ts";
 export {
@@ -157,6 +169,7 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export { countAppliedMigrations, EXPECTED_MIGRATIONS } from "./queries/migrations.ts";
 export {
   badgeCount,
   type Collapsed,
@@ -259,9 +272,11 @@ export {
   findCanvasByBranch,
   getPullRequestContext,
   listPullRequestCanvases,
+  listStalePullRequests,
   type PullRequestContext,
   type PullRequestRead,
   recordPullRequestRead,
+  type StalePullRequest,
   setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {
@@ -273,6 +288,7 @@ export {
   getQuestion,
   listOpenQuestions,
   type Question,
+  takeSecretAnswer,
 } from "./queries/questions.ts";
 export {
   getRepoAccess,
@@ -297,6 +313,14 @@ export {
   releaseRepoIdeas,
   saveRepoIdeas,
 } from "./queries/repo-ideas.ts";
+export {
+  AUTH_STATE_RETENTION_MS,
+  JOB_RETENTION_DAYS,
+  RETENTION_BATCH,
+  type SweptRows,
+  sweepOldRows,
+  WEBHOOK_RETENTION_DAYS,
+} from "./queries/retention.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
@@ -351,11 +375,21 @@ export {
   type WakeContext,
 } from "./queries/sandboxes.ts";
 export {
+  countSealedValues,
+  listSealedNotUnder,
+  replaceSealedValue,
+  SEALED_COLUMNS,
+  type SealedColumn,
+  type SealedCount,
+  type SealedValue,
+} from "./queries/sealed.ts";
+export {
   admitSession,
   endSession,
   endUserSessions,
   getSessionUser,
 } from "./queries/sessions.ts";
+export { type TakeOver, takeOverCanvas } from "./queries/take-over.ts";
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
@@ -387,6 +421,7 @@ export {
   listAssets,
   listUploadKeys,
   type NewUpload,
+  recordedArchiveKeys,
   type Upload,
 } from "./queries/uploads.ts";
 export {

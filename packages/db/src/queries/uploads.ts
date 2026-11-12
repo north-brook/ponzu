@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { assets, canvases, uploads } from "../schema/index.ts";
+import { assets, canvases, canvasRunners, uploads } from "../schema/index.ts";
 import { run } from "./run.ts";
 
 /*
@@ -52,6 +52,33 @@ export async function listUploadKeys(
       .where(and(eq(uploads.canvasId, canvasId), inArray(uploads.purpose, purposes))),
   );
   return rows.map((row) => row.key);
+}
+
+/**
+ * Which of `keys` hold an archive that a canvas's checkpoint records now: the transcript or the
+ * work in progress its runner row names (docs/cloud.md, "Saving the sandbox"). Every other
+ * archive is one a later checkpoint replaced, one whose checkpoint call never came, or one of a
+ * deleted canvas, and the orphan archive sweep deletes it once it is a day old.
+ */
+export async function recordedArchiveKeys(db: Db, keys: readonly string[]): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const rows = await run(
+    db
+      .select({ key: uploads.objectKey })
+      .from(canvasRunners)
+      .innerJoin(
+        uploads,
+        and(
+          eq(uploads.canvasId, canvasRunners.canvasId),
+          or(
+            eq(uploads.id, canvasRunners.sessionUploadId),
+            eq(uploads.id, canvasRunners.workspaceUploadId),
+          ),
+        ),
+      )
+      .where(inArray(uploads.objectKey, [...keys])),
+  );
+  return new Set(rows.map((row) => row.key));
 }
 
 /**

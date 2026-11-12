@@ -31,11 +31,12 @@ src/
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
-                    delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
-    sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
+                    delete, list, delete many), signed with SigV4 by aws4fetch; `archives` is
+                    the same, on R2_PRIVATE_BUCKET when it is set
     poke.ts         real: `POST /poke` to an awake runner on its sandbox's public port, with
                     the port's bearer token; a 502 or 503 just after a start is tried again
-    anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
+    anthropic.ts    real: whether Anthropic takes an API key, a person's or Ponzu's own (the
+                    free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku (ideas) and Sonnet (their gate) via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
@@ -75,6 +76,9 @@ src/
   account/        deleting a person's account, step by step
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
+  ops/            selfcheck.ts: the deployment's checks of its own dependencies and settings
+                  (`/v1/cron/selfcheck`, and hourly from the cron); github-app.ts: the
+                  permissions and events the API needs of its GitHub App
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
                   its checks (prompt.ts), when they are made and kept (ideas.ts)
   routes/         one file per area, mounted under /v1 in routes/index.ts
@@ -304,10 +308,21 @@ never a cookie, so this is about where Ponzu's UI runs, not about protecting dat
 
 `deps.vault.seal(value, { column, row })` before writing an `encrypted_…` column,
 `deps.vault.open(…)` with the same binding after reading one. The binding is authenticated, so
-a value copied to another row or column does not open. To rotate the key: set
-`PONZU_VAULT_KEY` to a new one and move the old one into `PONZU_VAULT_OLD_KEYS`; drop it from
-there once everything it sealed has been sealed again (GitHub tokens are, at each refresh or
-sign-in).
+a value copied to another row or column does not open. A new sealed column goes into
+`SEALED_COLUMNS` in `packages/db/src/queries/sealed.ts` with its binding; a test fails while an
+`encrypted_` column is missing from it.
+
+To rotate the key: set `PONZU_VAULT_KEY` to a new one and move the old one into
+`PONZU_VAULT_OLD_KEYS`, and deploy. Once that deployment serves every request, run
+`bun scripts/reseal.ts` here with the deployment's `DATABASE_URL`, `PONZU_VAULT_KEY` and
+`PONZU_VAULT_OLD_KEYS` (`--dry-run` first writes nothing). It opens every value an old key
+sealed and seals it again under the new one, one row at a time and only if the row still holds
+what it read, so it can be stopped and run again. A GitHub token whose refresh is in flight is
+left for the next run, because the refresh stores its new pair only over the sealed text it
+read. It prints counts per column and key id, the rows it could not seal again (ids and secret
+names, never a value), and how many values are still under another key, and exits 1 while that
+is more than 0 or any value would not open. When it reports nothing left, drop the old key and deploy. Running it before the
+deployment with the new key is live would seal values the API cannot open yet.
 
 For a person's GitHub token call `githubUserToken(deps, userId)` each time one is needed. It
 refreshes when the token is within five minutes of running out, one refresh at a time per
@@ -343,8 +358,20 @@ To see a branch built and running on Vercel, deploy a preview, at the repository
 (`VERCEL_ORG_ID` is the team id, `VERCEL_PROJECT_ID` the `ponzu-api` project's):
 
 ```sh
-bunx vercel@latest deploy --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)"
+bunx vercel@latest deploy --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)" \
+  --env PONZU_ENVIRONMENT=preview --env PONZU_API_URL=https://api.ponzu.design
 ```
+
+On Vercel, `PONZU_ENVIRONMENT` and `PONZU_API_URL` are required: a deployment without either
+stops at boot naming it (`EnvError`), rather than letting its runners call production's
+address. The project's Production target sets them (`dev` and its own address); a preview
+takes them from the Preview target, or from the command above. A preview shares dev's database,
+so its runners call dev's address: `https://api.ponzu.design` today, and
+`https://api-dev.ponzu.design` once production takes that domain, when the command above
+changes with it. `/v1/health` answers which
+environment a deployment is, its commit, the runner image and bundle it ships, and whether the
+database's applied migrations equal the journal it was built with (`degraded` at 200 when they
+do not).
 
 A preview runs against the same `dev` database with the same secrets, so it does not get a
 migration its branch adds; for that, `bun test` and CI's Postgres job are the check.
@@ -394,3 +421,17 @@ by then, and the cron retries its work.
 `CRON_SECRET` is what Vercel sends as the bearer of each cron request (`crons` in
 [vercel.json](vercel.json)); Vercel reads that exact name from the project. Crons run on
 production only, so a preview never runs its jobs again by itself.
+
+**After a deploy, ask the selfcheck.** `GET /v1/cron/selfcheck` takes the same bearer and
+answers every check of the deployment's dependencies and settings, each `ok` or not with a
+fixed word saying why ([src/ops/selfcheck.ts](src/ops/selfcheck.ts)). Read the secret into
+the shell without printing it, then:
+
+```sh
+curl -s -H "authorization: Bearer $CRON_SECRET" https://api.ponzu.design/v1/cron/selfcheck
+```
+
+The minute's cron runs the same checks at minute 7 of every hour and raises each failure to
+PostHog error tracking as `selfcheck_failed`. A `github_app` failure names, in `missing`, the
+permissions or events from [src/ops/github-app.ts](src/ops/github-app.ts) the App lacks;
+`vault_old_keys` counts values still sealed under a key in `PONZU_VAULT_OLD_KEYS`.

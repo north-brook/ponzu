@@ -19,7 +19,14 @@ import { useColorScheme } from "../ui/color-scheme.ts";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
-import { ERROR_COPY, ERROR_DETAIL, type ThreadRow, who } from "./thread.ts";
+import {
+  ERROR_COPY,
+  ERROR_DETAIL,
+  modelChangedLine,
+  ownerChangedLine,
+  type ThreadRow,
+  who,
+} from "./thread.ts";
 
 /** What a line can lead to: the canvas, the pull request tab, the browser. */
 export interface LineHandlers {
@@ -480,6 +487,24 @@ function NoticeLine({
         </button>
       );
     }
+    case "owner_changed":
+      return (
+        <div className={quiet}>
+          <span aria-hidden className="size-[7px] shrink-0 rounded-pill bg-dry" />
+          <span className="min-w-0">{ownerChangedLine(notice.by, meId)}</span>
+        </div>
+      );
+    case "model_changed":
+      // A sentence, not a label: it wraps, its mark beside its first line.
+      return (
+        <div
+          role="note"
+          className="flex min-w-0 items-start gap-2 px-[2px] text-12 text-faint leading-[1.4]"
+        >
+          <span aria-hidden className="mt-[5px] size-[7px] shrink-0 rounded-pill bg-dry" />
+          <span className="min-w-0">{modelChangedLine(notice, meId)}</span>
+        </div>
+      );
     default:
       return null;
   }

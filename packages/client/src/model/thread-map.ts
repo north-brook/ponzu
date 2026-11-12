@@ -109,6 +109,10 @@ function noticeOf(
       return { type: "error", code: notice.code as RunErrorCode, message: notice.message };
     case "pull_request_agent":
       return { ...notice, as: notice.as ? personOf(notice.as, people) : null };
+    case "owner_changed":
+      return { type: "owner_changed", by: personOf(notice.by, people) };
+    case "model_changed":
+      return { ...notice, account: notice.account ? personOf(notice.account, people) : null };
     default:
       return notice;
   }
@@ -241,10 +245,26 @@ export function toAsk(row: QuestionRow): Ask {
         title: row.payload.title,
         description: row.payload.description || null,
       };
+    case "secret":
+      return {
+        ...open,
+        kind: "secret",
+        name: row.payload.name,
+        description: row.payload.description || null,
+      };
+    case "handoff":
+      return {
+        ...open,
+        kind: "link",
+        title: row.payload.title,
+        url: row.payload.url,
+        description: row.payload.description || null,
+      };
   }
 }
 
-type Head = Pick<CanvasHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
+type Head = Pick<CanvasHeadRow, "agentState" | "agentStatus" | "agentBlocker"> &
+  Partial<Pick<CanvasHeadRow, "agentBlockedUntil">>;
 
 /** What the agent is doing, from the canvas's head; idle before the head arrives. */
 export function agentActivity(head: Head | undefined): AgentActivity {
@@ -252,17 +272,21 @@ export function agentActivity(head: Head | undefined): AgentActivity {
   const sandbox =
     head.agentBlocker === "sandbox_busy"
       ? "busy"
-      : head.agentBlocker === "sandbox_failed"
-        ? "failed"
-        : null;
+      : head.agentBlocker === "paused"
+        ? "paused"
+        : head.agentBlocker === "sandbox_failed"
+          ? "failed"
+          : null;
   return { state: head.agentState, status: head.agentStatus, sandbox };
 }
 
 /**
  * What keeps the viewer from steering the canvas, if anything: read access only, or the owner's
  * Claude, which the canvas runs on for everyone. The head's blocker says when the owner's Claude
- * isn't connected, ran out or left with them; a plan at its limit is known only for the viewer's
- * own account, from their `me` row.
+ * isn't connected, ran out or left with them, or when its plan is at a limit and until when:
+ * every viewer reads that alike, since the canvas waits for everyone (docs/cloud.md, "Claude plan
+ * limits"). Before a wake has said so on the head, the owner also learns of their own plan's
+ * limit from their `me` row.
  */
 export function steerGate({
   access,
@@ -283,12 +307,28 @@ export function steerGate({
   if (access === "read") return { kind: "read_only", repo };
   const blocker = head?.agentBlocker ?? null;
   const claude = blocker?.startsWith("claude_") ?? false;
-  if (blocker === "claude_owner_left" || (claude && !owner)) return { kind: "claude_owner_left" };
+  if (blocker === "claude_owner_left" || (claude && !owner)) {
+    return { kind: "claude_owner_left", canTakeOver: claudeRuns(me, now), repo };
+  }
   if (owner && blocker === "claude_not_connected") return { kind: "claude_disconnected", owner };
   if (owner && blocker === "claude_expired") return { kind: "claude_expired", owner };
+  const blockedUntil = head?.agentBlockedUntil;
+  if (owner && blocker === "claude_limited" && blockedUntil && Date.parse(blockedUntil) > now) {
+    return { kind: "claude_limit", owner, until: blockedUntil };
+  }
   const until = me?.claudeAccount?.limitedUntil;
   if (owner && me && owner.id === me.id && until && Date.parse(until) > now) {
     return { kind: "claude_limit", owner, until };
   }
   return null;
+}
+
+/**
+ * Whether the viewer's own Claude could run a canvas now: connected, and not past its sign-in.
+ * What taking over a canvas whose owner left asks of them (the API's `claude_not_connected`).
+ */
+function claudeRuns(me: MeRow | undefined, now: number): boolean {
+  const account = me?.claudeAccount;
+  if (account?.status !== "connected") return false;
+  return account.expiresAt === null || Date.parse(account.expiresAt) > now;
 }

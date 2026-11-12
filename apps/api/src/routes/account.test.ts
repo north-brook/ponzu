@@ -4,6 +4,7 @@ import {
   createCanvas,
   deleteUser,
   getCanvas,
+  getCanvasAssetKey,
   getSandbox,
   recordUsage,
   upsertMembership,
@@ -11,6 +12,10 @@ import {
   upsertWorkspace,
 } from "@ponzu/db";
 import { canvasSandboxName } from "@ponzu/sandbox";
+import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
+import { CANVAS_FILES_DELETE_JOB, FILES_RETRY_MS } from "../canvases/files.ts";
+import { githubUserToken } from "../github/user-token.ts";
+import { runDueJobs } from "../jobs/run.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type SignedInPerson, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
@@ -24,7 +29,8 @@ let ws: Workspace;
 const KEY = "sk-ant-api03-rae-deletes-her-account-0000";
 
 beforeAll(async () => {
-  t = await createTestApp();
+  // With PostHog's personal key, as production will have it once the founder sets it.
+  t = await createTestApp({ posthogAdmin: true });
   ws = await workspaceWithRepo(t, { rae: "admin", sol: "admin", tom: "write" });
 });
 afterAll(() => t.close());
@@ -165,10 +171,18 @@ describe("a personal account others are in", () => {
 
 describe("deleting Rae", () => {
   let rae: SignedInPerson;
+  let raesGithubToken: string;
+  /** Whether her GitHub token's row was still stored while GitHub was asked to revoke it. */
+  let tokenStoredDuringRevoke: boolean | null = null;
   let teamCanvas: string;
   let scratchCanvas: string;
   let ownCanvas: string;
   let solsCanvas: string;
+  /** Each canvas's asset key, read before she went. */
+  const assetKeys: Record<string, string> = {};
+  const PULL_REQUEST_PICTURE = `pull-requests/${"p".repeat(32)}/light.png`;
+  const filesOf = (canvasId: string) =>
+    [...t.storage.objects.keys()].filter((key) => key.startsWith(`${assetKeys[canvasId]}/`));
 
   beforeAll(async () => {
     rae = await t.signInAs({ login: "rae" });
@@ -239,9 +253,89 @@ describe("deleting Rae", () => {
       periodStart: new Date(t.clock.now()),
     });
 
+    // Her canvases' files: 2,500 under her Scratch canvas, a few under the others, and the
+    // pictures of a pull request, which stay.
+    for (const [canvasId, count] of [
+      [scratchCanvas, 2500],
+      [ownCanvas, 3],
+      [teamCanvas, 4],
+      [solsCanvas, 2],
+    ] as const) {
+      const key = (await getCanvasAssetKey(t.db, canvasId))!;
+      assetKeys[canvasId] = key;
+      for (let i = 0; i < count; i++) {
+        t.storage.objects.set(`${key}/assets/${String(i).padStart(5, "0")}.png`, {
+          body: new Uint8Array([i & 255]),
+          headers: {},
+          sha256: null,
+        });
+      }
+    }
+    t.storage.objects.set(`${PULL_REQUEST_PICTURE}`, {
+      body: new Uint8Array([1]),
+      headers: {},
+      sha256: null,
+    });
+
+    raesGithubToken = await githubUserToken(t.deps, rae.userId);
+    t.github.duringGrantRevoke = async () => {
+      tokenStoredDuringRevoke =
+        (await rows(`select 1 from github_user_tokens where user_id = '${rae.userId}'`)).length ===
+        1;
+    };
     const deleted = await call(t, rae.headers, "DELETE", "/v1/me", { confirm: "RAE" });
+    t.github.duringGrantRevoke = null;
     expect(deleted.status).toBe(204);
     await t.backgroundDone();
+  });
+
+  test("revokes her grant of the GitHub App, as the App, while her token is still stored", async () => {
+    const { clientId, clientSecret } = t.github.credentials;
+    // Others deleted before her in this file revoked theirs: hers is the one with her token.
+    const hers = t.github.grantRevocations.filter(
+      (request) => (request.body as { access_token?: string }).access_token === raesGithubToken,
+    );
+    expect(hers).toEqual([
+      {
+        clientId,
+        authorization: `basic ${btoa(`${clientId}:${clientSecret}`)}`,
+        body: { access_token: raesGithubToken },
+      },
+    ]);
+    expect(tokenStoredDuringRevoke).toBe(true);
+    // GitHub ended every token of hers.
+    expect(t.github.accepts(raesGithubToken)).toBe(false);
+    expect(t.logs.some((line) => line.event === "github_grant_revoked")).toBe(true);
+  });
+
+  test("forgets her at WorkOS and PostHog in one job, which completed", async () => {
+    const [job] = await rows(
+      `select payload, completed_at from jobs
+        where kind = '${ACCOUNT_FORGET_JOB}' and key = '${rae.userId}'`,
+    );
+    expect(job?.payload).toEqual({ userId: rae.userId, workosUserId: rae.workos.id });
+    expect(job?.completed_at).not.toBeNull();
+    expect(t.posthogAdmin.requests.map((request) => request.body)).toContainEqual({
+      distinct_ids: [rae.userId],
+      delete_events: true,
+      delete_recordings: true,
+    });
+  });
+
+  test("says the account was deleted about no one, so PostHog does not make her again", () => {
+    const said = t.analytics.of("account deleted");
+    expect(said.length).toBeGreaterThan(0);
+    for (const event of said) {
+      expect(event.distinctId).not.toBe(rae.userId);
+      expect(event.properties.$process_person_profile).toBe(false);
+    }
+  });
+
+  test("logs nothing of her token, her email or the App's secret", () => {
+    const logged = JSON.stringify(t.logs);
+    for (const secret of [raesGithubToken, "rae@example.com", t.github.credentials.clientSecret]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 
   test("ends her sessions at once, and WorkOS forgets her", async () => {
@@ -267,6 +361,31 @@ describe("deleting Rae", () => {
   test("deletes her Scratch canvases and those in her own account", async () => {
     expect(await getCanvas(t.db, scratchCanvas)).toBeNull();
     expect(await getCanvas(t.db, ownCanvas)).toBeNull();
+  });
+
+  test("deletes those canvases' files through the same purge as one canvas, and keeps the rest", async () => {
+    // Recorded as each row went, keyed by its asset key, and run at once.
+    for (const canvasId of [scratchCanvas, ownCanvas]) {
+      const [job] = await rows(
+        `select payload from jobs
+          where kind = '${CANVAS_FILES_DELETE_JOB}' and key = '${assetKeys[canvasId]}'`,
+      );
+      expect(job?.payload).toEqual({ assetKey: assetKeys[canvasId] });
+    }
+    expect(filesOf(ownCanvas)).toEqual([]);
+    // The first attempt takes 2,000; the cron takes the rest ten seconds on.
+    expect(filesOf(scratchCanvas)).toHaveLength(500);
+    t.clock.advance(FILES_RETRY_MS);
+    await runDueJobs(t.deps, "account-test");
+    expect(filesOf(scratchCanvas)).toEqual([]);
+
+    // What stays with the team keeps its files, and a pull request's pictures stay.
+    expect(filesOf(teamCanvas)).toHaveLength(4);
+    expect(filesOf(solsCanvas)).toHaveLength(2);
+    expect(t.storage.objects.has(PULL_REQUEST_PICTURE)).toBe(true);
+    for (const canvasId of [teamCanvas, solsCanvas]) {
+      expect(await rows(`select 1 from jobs where key = '${assetKeys[canvasId]}'`)).toEqual([]);
+    }
   });
 
   test("keeps the team's canvas, owned by nobody, its sandbox retired", async () => {
@@ -307,5 +426,54 @@ describe("deleting Rae", () => {
     expect(sol.body.members.map((m: { githubLogin: string }) => m.githubLogin)).not.toContain(
       "rae",
     );
+  });
+});
+
+describe("GitHub not revoking the grant", () => {
+  const grantPath = () => `/applications/${t.github.credentials.clientId}/grant`;
+  const failed = () => t.logs.filter((line) => line.event === "github_grant_revoke_failed");
+
+  test("a GitHub error is logged with its status, and the deletion goes on", async () => {
+    const cat = await t.signInAs({ login: "cat" });
+    const token = await githubUserToken(t.deps, cat.userId);
+    t.github.failNext(grantPath(), 500);
+    const before = failed().length;
+    expect((await call(t, cat.headers, "DELETE", "/v1/me", { confirm: "cat" })).status).toBe(204);
+    await t.backgroundDone();
+    expect(failed().slice(before)).toEqual([
+      expect.objectContaining({ userId: cat.userId, status: 500 }),
+    ]);
+    expect(await rows(`select 1 from users where id = '${cat.userId}'`)).toEqual([]);
+    expect(t.workos.hasUser(cat.workos.id)).toBe(false);
+    expect(JSON.stringify(t.logs)).not.toContain(token);
+  });
+
+  test("a grant GitHub no longer has is done", async () => {
+    const dot = await t.signInAs({ login: "dot" });
+    // She revoked Ponzu on GitHub herself, and the webhook has not come yet.
+    const token = await githubUserToken(t.deps, dot.userId);
+    t.github.revokeTokens(dot.github.id);
+    const before = failed().length;
+    expect((await call(t, dot.headers, "DELETE", "/v1/me", { confirm: "dot" })).status).toBe(204);
+    // GitHub answers 404 for a token it no longer has, which is what was wanted.
+    expect(t.github.grantRevocations.at(-1)?.body).toEqual({ access_token: token });
+    expect(failed().length).toBe(before);
+    expect(await rows(`select 1 from users where id = '${dot.userId}'`)).toEqual([]);
+  });
+
+  test("GitHub slower than ten seconds is given up on, and the deletion goes on", async () => {
+    const eve = await t.signInAs({ login: "eve" });
+    const held = t.github.holdNext(grantPath());
+    const before = failed().length;
+    const deleting = call(t, eve.headers, "DELETE", "/v1/me", { confirm: "eve" });
+    await held.reached;
+    t.clock.advance(10_000);
+    expect((await deleting).status).toBe(204);
+    held.release();
+    await t.backgroundDone();
+    expect(failed().slice(before)).toEqual([
+      expect.objectContaining({ userId: eve.userId, reason: "timeout" }),
+    ]);
+    expect(await rows(`select 1 from users where id = '${eve.userId}'`)).toEqual([]);
   });
 });

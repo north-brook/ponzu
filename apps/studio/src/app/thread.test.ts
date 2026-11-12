@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import { ApiError, type CanvasHeadRow, type MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
+import { gateMessage } from "../cloud/gate.ts";
 import type { Person } from "../cloud/model.ts";
+import { ownerChangedLine, sandboxLine } from "../cloud/thread/thread.ts";
 import { AskStore } from "./ask-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
+import { takeOverRefusal } from "./take-over.ts";
 import { agentActivity, branchMoment, shownItems, steerGate, toThreadItem } from "./thread-map.ts";
 import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
@@ -432,6 +435,42 @@ test("a plan and a permission are answered yes or no, with a note", async () => 
   store.close();
 });
 
+test("a secret goes by its own route and never into the question; a link is done or not now", async () => {
+  const w = await world();
+  const store = w.asks();
+  const secret = w.agent.ask(
+    { kind: "secret", payload: { name: "STRIPE_TEST_KEY", description: "For test mode." } },
+    "Secret",
+  );
+  const link = w.agent.ask(
+    {
+      kind: "handoff",
+      payload: { title: "Sign in to Linear", url: "https://linear.app/x", description: null },
+    },
+    "Over to you",
+  );
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([
+    { id: secret, kind: "secret", name: "STRIPE_TEST_KEY", description: "For test mode." },
+    { id: link, kind: "link", title: "Sign in to Linear", url: "https://linear.app/x" },
+  ]);
+
+  store.answer(secret, { secret: "sk_test_value_123" });
+  store.answer(link, { approved: false });
+  await settle();
+
+  expect(w.backend.secretsGiven).toEqual([
+    { canvasId: w.canvas.id, name: "STRIPE_TEST_KEY", value: "sk_test_value_123" },
+  ]);
+  const answers = w.backend.canvas(w.canvas.id).questions.map((q) => q.answer?.body);
+  expect(answers).toEqual([{}, { approved: false }]);
+  expect(JSON.stringify(w.backend.canvas(w.canvas.id).questions)).not.toContain(
+    "sk_test_value_123",
+  );
+  expect(store.getSnapshot()).toEqual([]);
+  store.close();
+});
+
 test("when a teammate answered first, the viewer's answer is turned away calmly", async () => {
   const w = await world();
   const store = w.asks();
@@ -593,13 +632,25 @@ test("each blocker is what keeps the canvas from running, in the composer or the
   expect(gate(null)).toBeNull();
   expect(gate("claude_not_connected")).toEqual({ kind: "claude_disconnected", owner: maya });
   expect(gate("claude_expired")).toEqual({ kind: "claude_expired", owner: maya });
-  expect(gate("claude_owner_left")).toEqual({ kind: "claude_owner_left" });
+  // Whoever may take it over is someone who can change it, with Claude of their own: not this
+  // viewer, whose `me` row hasn't come.
+  const left = { kind: "claude_owner_left" as const, canTakeOver: false, repo };
+  expect(gate("claude_owner_left")).toEqual(left);
   // An owner the workspace no longer has can't be named.
-  expect(gate("claude_not_connected", null)).toEqual({ kind: "claude_owner_left" });
+  expect(gate("claude_not_connected", null)).toEqual(left);
   // A machine to run on is the sandbox's, not anyone's Claude: messages are still taken.
   expect(gate("sandbox_busy")).toBeNull();
   expect(agentActivity(head("sandbox_busy")).sandbox).toBe("busy");
   expect(agentActivity(head("sandbox_failed")).sandbox).toBe("failed");
+  // Wakes paused while Ponzu updates: messages are still taken, and the foot says so.
+  expect(gate("paused")).toBeNull();
+  expect(agentActivity(head("paused")).sandbox).toBe("paused");
+  expect(sandboxLine(agentActivity(head("paused")))).toEqual({
+    text: "The agent is paused while Ponzu updates. Your message is kept and goes through when it's back.",
+    failed: false,
+  });
+  // A turn already running when wakes were paused finishes, its working line in place.
+  expect(sandboxLine({ ...agentActivity(head("paused")), state: "working" })).toBeNull();
 
   // The viewer's own plan at its limit, from their `me` row.
   const limitedUntil = new Date(10_000).toISOString();
@@ -611,10 +662,99 @@ test("each blocker is what keeps the canvas from running, in the composer or the
     steerGate({ access: "write", repo, head: head(null), owner: maya, me, now: 20_000 }),
   ).toBeNull();
 
+  // The owner's plan at its limit, from the head: every viewer reads it, not only the owner,
+  // and it lasts until the head says.
+  const until = new Date(30_000).toISOString();
+  const limited = { ...head("claude_limited"), agentBlockedUntil: until };
+  const teammate = { id: "usr_someone_else", claudeAccount: null } as unknown as MeRow;
+  for (const viewer of [teammate, undefined]) {
+    expect(
+      steerGate({ access: "write", repo, head: limited, owner: maya, me: viewer, now: 5_000 }),
+    ).toEqual({ kind: "claude_limit", owner: maya, until });
+  }
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: maya, me: teammate, now: 40_000 }),
+  ).toBeNull();
+  // An owner the workspace no longer has can't be named here either.
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: null, me: teammate, now: 5_000 }),
+  ).toEqual(left);
+
   // The live head carries the blocker the API sets.
   w.agent.block("sandbox_busy");
   const view = await w.client.api.canvases.get(w.canvas.id);
   expect(view.agentBlocker).toBe("sandbox_busy");
+});
+
+test("a canvas whose owner left: a teammate with Claude takes it over, and the thread says so", async () => {
+  const w = await world();
+  const repo = { id: w.ws.repos[0]!.id, owner: "north-brook", name: "site" };
+  // Its owner is someone the workspace no longer has, and the wake said so.
+  const gone = w.backend.addPerson({ login: "bryce", name: "Bryce" });
+  w.backend.canvas(w.canvas.id).ownerId = gone.id;
+  w.agent.block("claude_owner_left");
+  const head = {
+    agentState: "idle" as const,
+    agentStatus: null,
+    agentBlocker: "claude_owner_left",
+  };
+  const viewer = (status: string | null, expiresAt: string | null = null) =>
+    ({
+      id: w.sam.id,
+      claudeAccount: status === null ? null : { status, expiresAt, limitedUntil: null },
+    }) as MeRow;
+  const gateFor = (me: MeRow) =>
+    steerGate({ access: "write", repo, head: head as never, owner: null, me, now: 1_000 });
+
+  // Sam can take it over once his own Claude could run it; until then, he is told who can.
+  const can = gateFor(viewer("connected"));
+  expect(can).toEqual({ kind: "claude_owner_left", canTakeOver: true, repo });
+  expect(gateMessage(can!, w.sam.id)).toBe(
+    "Its owner left the workspace. Take it over to run it on your Claude.",
+  );
+  for (const me of [
+    viewer(null),
+    viewer("expired"),
+    viewer("connected", new Date(0).toISOString()),
+  ]) {
+    const cannot = gateFor(me);
+    expect(cannot).toEqual({ kind: "claude_owner_left", canTakeOver: false, repo });
+    expect(gateMessage(cannot!, w.sam.id)).toBe(
+      "Its owner left the workspace, so nobody's Claude runs it. Someone who can change north-brook/site can take it over.",
+    );
+  }
+
+  const sam = w.backend.connect(w.sam);
+  const without = await sam.api.canvases.takeOver(w.canvas.id).catch((e: unknown) => e);
+  expect(without).toBeInstanceOf(ApiError);
+  expect((without as ApiError).code).toBe("claude_not_connected");
+  expect(takeOverRefusal(without)).toBe("Connect your Claude first, then take it over.");
+
+  w.backend.claude.connect(w.sam.id);
+  const store = w.thread(sam, w.sam.id);
+  const taken = await sam.api.canvases.takeOver(w.canvas.id);
+  expect(taken.ownerId).toBe(w.sam.id);
+  expect(taken.agentBlocker).toBeNull();
+  await settle();
+  const line = store.getSnapshot().items!.at(-1)!;
+  const shown = toThreadItem(line, ctx(w.people));
+  expect(shown).toMatchObject({
+    kind: "notice",
+    payload: { type: "owner_changed", by: w.people.get(w.sam.id) },
+  });
+  expect(ownerChangedLine(w.people.get(w.sam.id)!, w.sam.id)).toBe(
+    "You took this canvas over. It runs on your Claude from now on.",
+  );
+  expect(ownerChangedLine(w.people.get(w.sam.id)!, w.maya.id)).toBe(
+    "Sam took this canvas over. It runs on their Claude from now on.",
+  );
+
+  // Once it is his, it is not anyone else's to take.
+  const again = await w.client.api.canvases.takeOver(w.canvas.id).catch((e: unknown) => e);
+  expect((again as ApiError).code).toBe("not_ownerless");
+  expect(takeOverRefusal(again)).toBe(
+    "It has an owner in the workspace again, so it runs on their Claude.",
+  );
 });
 
 test("someone who may only read sees the thread and is told so, and can't send or answer", async () => {

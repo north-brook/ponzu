@@ -6,7 +6,7 @@ import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { BoardsView, CanvasChromeSlot, type OpenCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
-import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
+import { PullRequestConfirmations, PullRequestPane } from "./pull-request-pane.tsx";
 import { CanvasRail, type CommentLink } from "./thread-rail.tsx";
 
 type BoardsJump = NonNullable<CanvasProps["link"]>;
@@ -47,9 +47,12 @@ export function useCanvasPanes({
   say,
   onClose,
   onConnectClaude,
+  viewerIsAdmin = false,
 }: {
   host: Host;
   me: Person;
+  /** Whether the viewer is an admin of the canvas's workspace: they may reset its file links. */
+  viewerIsAdmin?: boolean;
   open: OpenCanvas | null;
   /** Its row in the sidebar, once the list has it. */
   summary: CanvasSummary | null;
@@ -183,6 +186,13 @@ export function useCanvasPanes({
         prTab={{ open: prTab, onToggle: togglePrTab }}
         seenThreadSeq={seenThreadSeq}
         onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
+        // Its owner and the workspace's admins, as the API allows.
+        resetLinks={
+          owner?.id === me.id || viewerIsAdmin
+            ? () => host.api.canvases.rotateAssetKey(open.id)
+            : null
+        }
+        say={say}
       />
     ),
     rail: rail.open ? (
@@ -222,7 +232,7 @@ export function useCanvasPanes({
             <PullRequestPane host={host} open={open} viewerLogin={me.login} />
           </div>
         ) : null}
-        <BypassConfirmation open={open} />
+        <PullRequestConfirmations open={open} />
       </>
     ),
   };

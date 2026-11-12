@@ -33,6 +33,9 @@ export type ClaudeDeps = Pick<
   | "analytics"
   | "push"
   | "mail"
+  | "workos"
+  | "posthogAdmin"
+  | "features"
 >;
 
 /** What a new credential is. */

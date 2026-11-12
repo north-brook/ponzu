@@ -1,4 +1,5 @@
 import type { AnswerEvent, Person, PullRequestState, RunnerEvent } from "./api/protocol.ts";
+import { secretLateText } from "./secret-tool.ts";
 
 /*
  * What the model reads for each event. Every one starts with a line that says what it is and
@@ -141,6 +142,15 @@ function answerText(who: string, a: AnswerEvent): string {
   if (asked.kind === "question") {
     const said = Object.entries(a.answers ?? {}).map(([q, answer]) => `${quote(q)}: ${answer}`);
     return [`${who} answered the question you asked earlier:`, ...said].join("\n");
+  }
+  if (asked.kind === "secret") {
+    // Never the value: the answer carries the name alone.
+    return `${who} gave the secret you asked for earlier. ${secretLateText(a.secret?.name ?? asked.payload.name, false)}`;
+  }
+  if (asked.kind === "handoff") {
+    return a.approved
+      ? `${who} says they're done with what you handed them earlier: ${asked.payload.title} (${asked.payload.url}).`
+      : `${who} said not now to what you handed them earlier: ${asked.payload.title} (${asked.payload.url}).`;
   }
   const verdict = a.approved ? "said yes to" : "said no to";
   const what =

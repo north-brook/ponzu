@@ -410,8 +410,13 @@ checkpoint after every 64 ops or 256 KB of op payload.
 
 A page of ops holds at most 500 ops and 3 MB of them (always at least one), so the
 answer fits in what a Vercel function may send; when the last op is below `seq`, ask
-again from there. `GET /doc` has no such bound yet: before canvases grow past a few
-MB it must stream, or hand out a checkpoint served from R2.
+again from there. `GET /doc` streams instead: it writes the JSON text of `{ doc, seq }`
+in 256 KB slices, and Vercel's 4.5 MB limit does not apply to a streamed answer, so a
+canvas larger than that is still read in one request. A client reads it with `response.json()`
+like any other answer. A refusal (no access, no such canvas) is decided before the first
+byte and is the usual error body. The function still builds the whole document in memory
+first, so its memory, not the answer's size, is what bounds a canvas; handing out a
+checkpoint served from R2 is the way past that if canvases ever grow that large.
 
 ### The replica
 
@@ -552,10 +557,20 @@ Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), on
 area. Other work that must outlive its request and start at once records its job held and runs
 it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
 (`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
-sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+sweep and any other step (the pull request sweep, and once a day the orphan archive sweep), at
+once. A step that throws is logged as `cron_step_failed` and the
 others still run. A step runs every minute, once in every few minutes, or once an hour at a
 given minute. One on a slot runs once in it however many runs overlap, and catches up within
-five minutes when the run it was due in never came.
+five minutes when the run it was due in never came. A step that runs once a day takes an hourly
+slot and does its work only in its hour.
+
+On the hour, the retention step (`cron/steps/retention.ts`) deletes the rows that only keep
+the service running: `auth_states` a day after they expire, finished `jobs` (completed or
+failed for good) and `webhook_deliveries` 30 days after they finished or arrived, at most 5,000
+of each a run, logging counts only. The periods are constants in
+`packages/db/src/queries/retention.ts`, and the privacy policy states them. A step's slot
+mark (`recordOnce`) is a finished job too, so it goes after 30 days: a `recordOnce` key must
+name a window that is over well before then.
 
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
@@ -589,13 +604,16 @@ five minutes when the run it was due in never came.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
-  until their features fill them. The runner's claim hands out only the kinds
-  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
+  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
+  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
+  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
+  will narrow it too); the rest stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
-  be allowed and before anything is written; each lets everything through until its feature
-  fills it.
+  be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
+  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -733,7 +751,11 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   of its own.
 - **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
   AskUserQuestion, plan approval and any other prompt still reach `canUseTool`, and become
-  questions ("Needs you"). The result message is the only success signal: an API failure
+  questions ("Needs you"). That AskUserQuestion does so under `bypassPermissions` is what the
+  SDK documents and the runner's tests assume; the live proof is the "Needs you" case in
+  `apps/runner/src/live.test.ts`, which has not been run yet. If it fails, AskUserQuestion is
+  taken out of the bypass for that tool alone. An MCP server's elicitation reaches
+  `onElicitation` ("Needs you"). The result message is the only success signal: an API failure
   arrives as `subtype: "success"` with `is_error: true`.
 - **The repo's own Claude Code.** `settingSources: ["project"]` loads the repo's CLAUDE.md,
   `.claude/settings.json` (hooks, permission rules), skills, commands and agents; the sandbox
@@ -1121,10 +1143,25 @@ account of the person whose canvas it is alone), recorded or not. They go to the
 `deps.archives`: **set `R2_PRIVATE_BUCKET` before production**, a bucket on the same account
 with no public domain, and they go there; unset (as on dev), they go in the assets bucket, where
 the random key is all that stands between a transcript and the world, since the assets domain
-serves any key it is asked for. Either bucket wants a lifecycle rule that deletes objects under
-`private/` a day old that no checkpoint recorded (an upload whose checkpoint call never came);
-recorded ones are deleted by the API. A settled canvas keeps its last checkpoint, so that
-reopening it resumes the conversation.
+serves any key it is asked for. A settled canvas keeps its last checkpoint, so that reopening it
+resumes the conversation.
+
+**Archives nobody records.** No bucket lifecycle rule may touch `private/`: a rule goes by age
+alone, cannot tell a recorded checkpoint from an unrecorded one, and would delete the last
+checkpoint of every canvas settled for a day. Only `staging/` and incomplete multipart uploads
+take a bucket rule. The API deletes the rest itself: the archives a later checkpoint replaces,
+those of a deleted canvas, and, once a day, the ones nobody records. That last is the cron step
+`archives` (`apps/api/src/cron/steps/archives.ts`), at 09:41 UTC. It lists `private/` in
+`deps.archives` (ListObjectsV2, which gives each object's time) and deletes the objects over a
+day old that no `canvas_runners` row names as its transcript or work in progress, asking the
+database after the listing: an upload whose checkpoint call never came, and one whose delete
+failed. It deletes at most 2,000 a run and reads at most 50 pages of a thousand keys, starting at
+a random key and going round, so a bucket larger than one run reads is still swept whole over
+the days. It keeps an object storage gives no time for, deletes nothing when the database does
+not answer, and logs `archives_swept` with counts only (listed, recorded, young, undated,
+deleted), never a key. So that it can never race a checkpoint, `POST /v1/runner/checkpoint`
+refuses an archive whose upload address ran out more than twelve hours before (404), and the
+runner saves anew.
 
 ### Events
 
@@ -1222,6 +1259,38 @@ The answer to a request for a secret is therefore not the secret: the API encryp
 the value into the repo's secrets, and the question and the event carry only the
 secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
 
+**A secret the agent asks for.** On a repo canvas whose checkout is there, the runner hosts
+`request_secret({ name, description })` beside the pull request tools. The name is checked by
+the same rule as Settings (`checkSecretName` in the runner protocol, which the API and
+`newEnvironment` use too) before anyone is asked. The runner raises a `secret` question under
+the tool call's id (`q_` from it, so raising it again is safe) and waits on it as on
+AskUserQuestion; the thread's step says "Asking for NAME", then "Asked for NAME". Anyone who
+may steer the canvas answers it with `POST /v1/canvases/:id/questions/:questionId/secret
+{ value }` (1 byte to 16 KiB, no NUL): 409 `question_closed` once answered or for another kind,
+409 `no_repository` on Scratch, 400 `secret_name_reserved`, and 409 `secrets_full` past the
+repo's 50 secrets or 44 KiB (a replacement counted as one). One statement seals the value into
+`repo_secrets`, closes the question with `{ name }` and writes the `answer` event
+`{ questionId, question, secret: { name } }`; the route captures `question answered` (kind
+`secret`) and `repo secret changed`. The runner of the turn that asked then fetches the value
+with `POST /v1/runner/secret { questionId }`, which answers `{ name, value }` once
+(`questions.delivered_at`), within 15 minutes of the answer, to the runner holding the lease,
+and 404 otherwise. That is the privilege the start's `PONZU_REPO_SECRETS` already gives, for one
+value. The runner writes it as the agent to `~/.ponzu/secrets/NAME` (0600, outside the checkout
+and the transcript, so no checkpoint holds it), adds it to what the log, the thread, the state,
+traces and checkpoints scrub, and the tool says: "NAME is saved to this repository's secrets in
+Ponzu. It's in the file ~/.ponzu/secrets/NAME now, and in the environment of every command from
+the sandbox's next start. Never print it." Each start empties that folder: its environment has
+the repo's secrets as they are then. An answer that comes after the turn ended goes in as a
+message that names the secret and says it is there from the next start.
+
+**A link handed off.** An MCP server's URL elicitation (`onElicitation`, `mode: "url"`) with an
+http or https address becomes a `handoff` question `{ title, url, description }`, which the
+apps show as "Open …" and "Not now". The ordinary answer route takes `{ approved }`: true is
+"accept" to the server, false "decline", and a turn that moves on cancels it. Any other address
+is declined without asking anyone. A form elicitation is declined in v1, and the thread says
+once, as an `error` notice `elicitation_unsupported`: "SERVER asked for details Ponzu can't
+show yet, so Claude went on without them."
+
 ### Credentials
 
 - **Git.** The sandbox has a credential helper that asks the API for a one-hour
@@ -1259,7 +1328,8 @@ secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
   sandbox whose runner was started with it to sleep at once ("The sandbox"): the credential
   lived only in that runner's memory, so an asleep sandbox holds nothing of it. A canvas whose
   owner leaves the workspace stops running on their Claude the same way: it does not wake
-  (`claude_owner_left`), and the sweep puts an awake one to sleep.
+  (`claude_owner_left`), and the sweep puts an awake one to sleep, until a teammate takes it
+  over onto their own Claude ("Deleting an account").
 - **Repo secrets** are stored encrypted per repo and passed in the runner's start command
   at every start of the sandbox ("Repo environments").
 
@@ -1275,6 +1345,13 @@ holds, came from another Claude Code, or is more than a day old, so a plan that 
 model shows up within a day. The API keeps it on the account (`claude_accounts.models`, with
 `models_reported_at` and `models_claude_code`), only while the sandbox that reported it runs on
 the credential the account holds now; connecting another key or subscription clears it.
+A runner's first report is kept, and after it at most one in ten minutes: the window is held on
+the account (`models_reported_at`), so a report is refused while the account's last was kept in
+the past ten minutes and after this runner took its lease. Runners on one account share the
+window, which only matters when two images report different answers within ten minutes: the
+second is said again at its runner's next start. A refused report is answered 200 with
+`kept: false`, never 429, so the runner does not try again, and logged as
+`claude_models_reported` with `refused: "too_soon"` (or `"old_credential"`).
 
 `supportedModels()` answers aliases, not model ids. For the development API key on Claude Code
 2.1.322 it was `default`, `opus`, `fable`, `sonnet` and `haiku`, each with `resolvedModel` (the
@@ -1306,8 +1383,20 @@ and `POST /v1/canvases` take only a model the account offers and an effort that 
 sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a canvas made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
-never handed a model it would refuse once a runner has reported. Nothing in the canvas's thread
-says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+never handed a model it would refuse once a runner has reported. The canvas's thread says so:
+as that runner's session starts, the API (never the runner, which is refused with 400 if it
+tries) writes a notice `{ type: "model_changed", from, to, fromName, toName, account }` under
+the id `ti_model-` and the first 12 hex digits of the SHA-256 of `from→to`, so each change is
+said once however often the canvas starts (a canvas that goes back to its model and then loses
+it again to the same one is not told twice). It is written only once a runner has reported what
+the account offers: before that (a credential just connected again, or one revoked) the canvas
+still runs on the default in its place, but nobody knows its model is gone, so the thread says
+nothing and only the log does (`reported: false`). The names are the ones the API knows then (what the
+account is offered, else the hand-kept list, else the id), since the model gone is no longer in
+what the account offers; `account` is whose Claude it is, the canvas's owner when they hold the
+account, else null. The apps say it as "Maya's Claude doesn't offer Fable 5.2 any more, so this
+canvas now runs on Opus 5.5." ("Your Claude" to the person whose it is), and it is not an answer
+to anyone's message. The apps hear of a new report only when they read the defaults again (the `me`
 live query does not carry the report): a create or a defaults change refused with
 `model_not_offered` reads them again, as does connecting another credential, so the picker
 then shows what the account offers. Before the first report the hand-kept list is offered as
@@ -1325,6 +1414,47 @@ is the other track's scheduled job, not part of this; until it lands, a bump is 
 by hand. Not proven: whether Claude Code ever learns of a model without a new binary (for
 example from its own server for a subscription); if it does, that model is offered as soon as a
 runner reports it.
+
+### Claude plan limits
+
+A Claude subscription's plan has limits (a five-hour session, the week, and on some plans a
+week on Opus or on Sonnet), and a canvas runs on its owner's plan alone, so a plan at its limit
+waits for everyone, not only its owner, until it resets.
+
+- **What Claude Code says.** On a subscription Claude Code emits the Agent SDK's
+  `rate_limit_event` whenever a window's status, reset or rounded share moves: `status`
+  (`allowed`, `allowed_warning` or `rejected`), `rateLimitType` (the window), `resetsAt`
+  (seconds since the epoch) and `utilization` (a fraction, which can run a little past 1). The
+  runner passes each on with its state as `claudeLimit` ("State"), once each, the latest for
+  each window; on an API key it passes on nothing (`planLimits` in the runner's options, set
+  from `CLAUDE_CODE_OAUTH_TOKEN`). A `rejected` window that the plan's extra usage still
+  carries (`overageStatus` allowed or allowed_warning) is passed on as `allowed_warning`, since
+  requests still go through. A turn that fails at the limit still says so in the thread
+  (`claude_limit`, with Claude Code's own words). Not observed live: the fields come from the
+  SDK's types and its binary's own description of them, and a test feeds a scripted event.
+- **What the API keeps.** `claude_accounts.limits` holds each window as last reported (`window`
+  in the SDK's name, `utilization`, `resetsAt`, `at`), and `limited_until` is set to the reset
+  of a `rejected` window and cleared by any other status, which says requests go through. Both
+  are written only when the reporting sandbox runs on the account's current credential (the
+  rule models follow) and only for a subscription; connecting again clears them. A reset more
+  than eight days off (`MAX_RESET_AHEAD_MS`) is taken as no reset, so a mistaken or forged
+  report cannot hold the account's canvases for longer than any window lasts. A report that
+  requests go through again lifts `claude_limited` from the canvases on the account at once
+  (`resumeBlocked`), rather than leaving them to the reset they were told.
+- **The wake gate** (`claudeLimit`). A canvas whose account has `limited_until` in the future
+  does not wake: its head says `claude_limited` until `limited_until` plus 30 seconds
+  (`LIMIT_GRACE_MS`), and the same wake job is tried again then. A turn already running is never
+  cut. A runner still awake on such a canvas is handed only a stop, a person's edit and a push
+  (`claimableKinds`), none of which begins a turn; a message, answer, comment, check or review
+  waits in the feed and goes in at the reset.
+- **The apps.** Every viewer of the canvas reads the head's `claude_limited` and
+  `agent_blocked_until` alike: "Maya's plan is at its limit until 4:00 PM. This canvas waits."
+  ("Your plan …" to the owner), and under it "Your message goes in when it resets." The composer
+  still sends. Before a wake has put it on the head, the owner also learns of their own plan's
+  limit from `limitedUntil` on their account. `GET /v1/claude` (and `me`) carries `limits`,
+  `[{ window, utilization, resetsAt }]`, empty before any canvas has run and null for an API
+  key; Settings › Agents shows the windows it knows ("Current session", "This week", "This
+  week, Opus", "This week, Sonnet"), in that order, and hides any other.
 
 ## The runner protocol
 
@@ -1394,7 +1524,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }`; at most one kept in ten minutes after a runner's first, never 429 |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |
@@ -1636,8 +1766,16 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
   artboards: string[],         // what the agent is on, from the canvas tools
   claudeSessionId: string | null,
   branch?: { unpushed: number,   // commits on the canvas's branch that GitHub lacks
-             error: string | null } | null }  // why the last push of them failed, for a person
+             error: string | null } | null,  // why the last push of them failed, for a person
+  claudeLimit?: { status: "allowed" | "allowed_warning" | "rejected",
+                  window: string | null,      // the SDK's rateLimitType, five_hour, seven_day, …
+                  resetsAt: string | null,    // ISO 8601
+                  utilization: number | null } | null }  // what Claude Code said of the plan
 ```
+
+`claudeLimit` is news, like `branch`: sent once for each `rate_limit_event` that changes a
+window, one window per report, and absent on heartbeats and from a runner on an API key. The
+API keeps it on the Claude account ("Claude plan limits"); an older API ignores it.
 
 **The working state** (`status` while `working`) is said from the tool call running now, never
 from a status the agent set long before: most specific first,
@@ -1841,6 +1979,7 @@ but the thread's history, which takes read:
 | POST | `/v1/canvases/:id/messages` | `{ text, attachments?: string[] }` | 201, the `message` `ThreadItem` |
 | POST | `/v1/canvases/:id/questions/:questionId/answer` | `{ answers? }` or `{ approved, note? }` | `{ id, status }` |
 | POST | `/v1/canvases/:id/stop` | none | 204 |
+| POST | `/v1/canvases/:id/take-over` | none | the canvas, now the caller's; 409 `not_ownerless` or `claude_not_connected` ("Deleting an account") |
 | GET | `/v1/canvases/:id/thread?before=&limit=` | none | `{ items: ThreadItem[] }`, oldest first, at most 50 |
 | POST | `/v1/canvases/:id/uploads` | `{ files: [{ name, contentType, size, sha256 }] }` | as `/v1/runner/uploads` |
 | POST | `/v1/canvases/:id/uploads/complete` | `{ ids }` | as `/v1/runner/uploads/complete` |
@@ -1953,7 +2092,7 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | POST | `/v1/canvases/:id/pull-request/ready` | none | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/canvases/:id/pull-request/auto-merge` | none | `PullRequestTab` |
-| POST | `/v1/canvases/:id/pull-request/close` | none | `PullRequestTab` |
+| POST | `/v1/canvases/:id/pull-request/close?number=` | none (`number` optional) | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the canvas; the rest takes write access. `PullRequestTab` is the
@@ -1963,7 +2102,10 @@ last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
 hundred comments and reviews) with line comments, each saying whether its thread is resolved, the first hundred changed files with their
-counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+counts, the last hundred commits), `summary` (the agent's kept words on what the branch changes,
+"Pull request summary", while no pull request is open: none yet, or the newest closed or merged;
+null while one is open, since its description says them, or when the agent kept none), the merge
+method Merge would use, whether the repo allows
 auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the canvas
 has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
 commits since its pull request merged), `ready` (a
@@ -1975,7 +2117,19 @@ running in a repo without auto-merge, or GitHub still working out whether it can
 a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/canvases/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
-the person (which failing checks, or which base to merge in), once for a commit. A file's diff
+the person (which failing checks, or which base to merge in), once for a commit. Beside the
+button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
+canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
+is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
+branch and its commits stay. Create PR opens a new one later.") and sent with the number it
+named, so a newer pull request opened meanwhile is never closed in its place (409
+`pull_request_changed`). One that auto-merge merged meanwhile, before the API's read or between
+that read and GitHub's close, is answered `pull_request_closed` ("#N is merged."), never
+reopened. A closed pull request shows its closed
+mark in muted and offers Create PR once the branch has commits its base lacks, and the tab shows
+`summary` under "The description it opens with" whenever Create PR is offered. The tab is
+reached from the chrome's pull request mark, so before the first pull request there is no tab to
+show it on. A file's diff
 is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
 are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,
@@ -2118,24 +2272,65 @@ canvas settles whether or not the merge's webhook arrives.
 |---|---|
 | `no_pull_request` | nothing is open to act on |
 | `pull_request_closed`, `pull_request_draft` | merged or closed; a draft, for a merge or auto-merge |
+| `pull_request_changed` | a close named a pull request that is no longer the canvas's newest |
 | `head_moved` | the branch has commits since `headSha`, or moved under the request |
 | `mergeability_unknown` | GitHub is still working out whether it can merge |
 | `merge_conflicts` | the branch conflicts with its base |
 | `review_required`, `changes_requested` | the repo's rules want an approval; a reviewer asked for changes |
 | `checks_failing`, `checks_pending` | a check the rules require failed, or has not finished (other checks may fail) |
 | `branch_behind` | the rules want the branch up to date: update it |
-| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits, a merge queue…) |
+| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits…) |
 | `branch_up_to_date` | updating a branch that has everything its base has |
 | `auto_merge_not_allowed`, `already_mergeable` | the repo has auto-merge off; nothing is left to wait for |
 | `forbidden` | GitHub does not let this person do it (403) |
+| `workflow_permission` | it would change a file under `.github/workflows/`, which the App may not (422) |
+| `merge_queue` | Merge on a repo with a merge queue while Ponzu does not add to one (409) |
+| `merge_queue_unmergeable` | the merge queue turned the pull request down (409) |
 | `github_refused` | anything else GitHub refused (422) |
 | `turn_not_from_person` | the agent's merge, ready or auto-merge in a turn no person in Ponzu began (403) |
 | `agent_limit` | the agent did this as often as an hour allows (409) |
 
-Not handled yet: a repo that merges through a merge queue (GitHub refuses a direct merge there:
-`branch_protected`); the App has no `workflows` permission, so a branch update or a push that
-would change `.github/workflows/` is refused by GitHub; and there is no sweep that reads open
-pull requests whose webhooks were all lost (a merge from Ponzu is covered by its own job).
+**Merge queues.** The tab's query reads whether the pull request's base merges through a merge
+queue (`isMergeQueueEnabled`) and its entry while it is in one (`mergeQueueEntry`: its state and
+place), and the tab carries both as `pullRequest.mergeQueue`. On such a repo GitHub refuses a
+direct merge, so Merge never asks for one, and never past the queue whatever `bypass` says.
+While `PONZU_MERGE_QUEUE` is off (every deployment until enqueueing is proven against a real
+queue) Merge answers `merge_queue`: "This repository merges through a merge queue. Add it to the
+queue on GitHub." With it on, Merge adds the pull request to the queue as the person
+(`enqueuePullRequest` with `expectedHeadOid`, the commit they looked at), answers it queued, and
+GitHub merges it once the queue's checks pass; the merge then reaches Ponzu as any other does. A
+pull request in the queue offers no action (`nextAction` is `none`; taking it out of the queue is
+GitHub's), Merge pressed again changes nothing, and one the queue turned down is
+`merge_queue_unmergeable`. The agent hears the same: what holds its merge back
+(`merge_queue`, `merge_queued` with its place, or `merge_queue_unmergeable`), and, with the switch
+on, that it added the pull request to the queue, never that it merged it. GitHub may refuse the
+two queue fields alone to an App without its "Merge queues" permission, which Ponzu's tokens do
+not ask for; the tab then reads as if there were no queue rather than failing, and a Merge goes to
+GitHub, whose queue refuses it. Whether GitHub does refuse them to Ponzu's tokens is not proven.
+
+**Workflow files.** The App has no `workflows` permission, so GitHub refuses any push, branch
+update or merge from Ponzu that would change a file under `.github/workflows/`, in its own words
+("refusing to allow a GitHub App to create or update workflow … without `workflows`
+permission"). The runner tells that refusal apart from the others (`workflow_permission`, never
+tried again) and the thread says: "GitHub won't let Ponzu push changes to files under
+.github/workflows/ to {repo}: Ponzu's GitHub App isn't allowed to change workflows. {commits} on
+{branch} are safe in this canvas's sandbox. Ask Claude to leave workflow files out of this
+canvas's commits, or change them on GitHub yourself." The agent is told up front to leave
+workflow files out of its commits, and its pull request tools stop before asking GitHub when its
+push was refused this way. Update branch and Merge answer `workflow_permission` when GitHub's
+refusal names workflows. What status GitHub answers a branch update with in that case is not
+proven against GitHub: the code goes by its words, whatever the status. Granting the App
+`workflows: write` would lift all of it, and is the founder's choice.
+
+**Lost webhooks.** A sweep in the minute's cron (`cron/steps/pull-request-sweep.ts`,
+`pull-requests/sweep.ts`) reads again the open pull requests (and drafts) nobody has read from
+GitHub for fifteen minutes, oldest read first, at most 20 a minute, by recording the same
+`pull_request.refresh` job a webhook would (keyed `sweep:<canvas>:<window>`), which the next
+minute's jobs make. It leaves out a canvas with a read already waiting, one already swept in the
+current fifteen-minute window (a quiet pull request's read changes nothing, so it stays among the
+oldest), and one whose workspace has no working installation. That is at most 20 GraphQL points
+a minute across every installation; a merge on GitHub whose webhooks were all lost settles its
+canvas within about sixteen minutes. Each run that records reads logs `pr_swept` with the count.
 
 **Two at once.** A person pressing Merge while the agent merges (or two people, or auto-merge
 landing first) go to GitHub with the same commit, and GitHub merges once. The other's merge is
@@ -2303,11 +2498,61 @@ lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand key
 most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
 any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
-bucket. Nothing records the job yet; deleting a canvas or an account will.
+bucket.
 
-Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
-(`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
-ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
+Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canvases that go with
+it, "Deleting an account") go through the same purge, `deleteCanvasAndFiles`: one statement
+deletes the canvas's row and records that job, keyed by the asset key the row had as it went, so
+the row is never gone without the job that deletes its files. The request then runs the job at
+once, past its answer; a function that dies first leaves it to the minute's cron. A canvas
+deleted twice finds no row the second time and records nothing. A pull request's pictures are
+not under the asset key and stay: its description on GitHub still shows them.
+
+**Resetting a canvas's file links.** A link to a canvas's file works for whoever holds it, and a
+link can get out (pasted in a chat, kept by someone who has since lost access). The canvas's
+owner or an admin of its workspace can reset its file links, from the foot of Share ("Reset file
+links", with a confirmation: "Reset this canvas's file links? Links to its images and exports
+stop working, including any you've copied or pasted elsewhere. Everyone who can open the canvas
+gets the new ones."). `POST /v1/canvases/:id/asset-key/rotate` (403 `forbidden` for anyone else)
+makes a new asset key and:
+
+1. copies every object under the old key to the new one;
+2. swaps the canvas's `asset_key`, only if it is still the old one, and moves
+   `canvases.asset_key_rotated_at` (in the head), recording in the same statement the job
+   `canvas.asset_key_retire`, keyed by the old key, due fifteen minutes later;
+3. copies again whatever the old key gained or changed during the first pass;
+4. answers the canvas as `GET` does, with its new `assetsUrl`.
+
+The job runs once every upload address signed for the old key has run out (ten minutes, with
+five over): while the canvas is still under the new key it copies once more what came late, then
+deletes everything under the old key, a page at a time as the files delete does. Neither that
+copy nor the second pass writes over a file that was written under the new key after the one
+under the old key, so a file the runner replaced since the swap keeps its newer version: each
+copy reads the new key's file again just before it copies. That narrows the race to one round
+trip to storage and does not close it, since storage is not asked for a conditional copy. A
+canvas reset again within the fifteen minutes gets what came late to the old key under its
+current key instead, and only what changed there since the swap, so a file deleted under the
+middle key stays deleted. A canvas deleted after the swap has its files job take the new key at once; the retire job then deletes
+whatever the second pass still copied into the new key after that. An upload
+completed after the swap is moved under the new key as it completes. Two resets at once make
+one: the second finds the key changed, answers the canvas as the first left it, and its copies
+are deleted by a `canvas.files_delete` job. A failure before the swap changes nothing anyone can
+see. Clients watch the head's `assetKeyRotatedAt`: when it moves, the open canvas asks
+`GET /v1/canvases/:id` for the new address and draws from it, and the sidebar asks again for the
+row's previews. A runner already awake keeps the old address until it next starts, so for up to
+fifteen minutes after a reset it reads files through a key about to go, and past that it cannot
+read them until its next start. Resets are on demand only; nothing resets a canvas's links when
+someone loses access.
+
+Neither a delete nor a reset clears a cached copy. Previews, exports and comment pictures are
+served `immutable` for a year and assets for five minutes, so Cloudflare's edge, and a browser
+that already opened a file, can keep answering with a copy after the object is gone from R2,
+for as long as they keep it. Nothing asks Cloudflare to purge its cache yet: that needs a
+Cloudflare API token with cache purge rights and a seam for it, and is not built.
+
+Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
+exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
+and disposition, for ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
 assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
 PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
 
@@ -2761,9 +3006,11 @@ installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `US
 the repo has is 409 `secret_exists`; replacing or removing one it lacks is 404. The value is
 sealed in the vault bound to `repo_secrets.encrypted_value` and `<repo id>/<name>`, and is
 never returned, logged or put in an event or a question. A secret the agent asks for in the
-thread goes to the same row (`answerSecretQuestion`, which no route calls yet) and the question
-keeps only its name; that name comes from the sandbox, so the route that wires it must check it
-as these routes do, and the sandbox's environment checks it again either way.
+thread goes to the same row (`answerSecretQuestion`, from `POST
+/v1/canvases/:id/questions/:questionId/secret`; "Needs you") and the question keeps only its
+name. That name comes from the sandbox, so the runner's question route and the answer route
+both check it with these routes' rule, and the sandbox's environment checks it again either way.
+Unlike these routes, it takes write access to the canvas rather than a workspace admin.
 
 **Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the canvas's repo's
 secrets, read in one statement, and packs them into one variable of the start command's `env`,
@@ -2803,29 +3050,82 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    revoked: its row is held, the sandbox is deleted at Vercel in the background, and the sweep's
    reconcile removes what that misses.
 3. Their canvases that are theirs alone are deleted with everything under them: their Scratch
-   canvases, and their canvases in a workspace nobody else is in.
+   canvases, and their canvases in a workspace nobody else is in. Each goes through the same
+   purge as deleting one canvas ("Assets and previews"): its row and the `canvas.files_delete`
+   job for its asset key in one statement, the job run at once, so its stored files (assets,
+   previews, exports, comment pictures) are deleted too. A pull request's pictures stay with
+   the pull request on GitHub. The canvases that stay with a workspace keep their files.
 4. Their name is taken out of what stays: in every canvas of a workspace they are in, or that
    they own, a thread item they wrote or stopped a run in names them as
    `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under
    their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
 5. This period's free allowance is granted to them in every workspace they are in, so their
    leaving does not take it back ("Billing").
-6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+6. Their grant of the GitHub App is revoked at GitHub, so Ponzu leaves their GitHub
+   authorizations and every token of theirs ends: `DELETE /applications/{client_id}/grant` with
+   the App's client id and secret as Basic auth and their token (refreshed first if it has run
+   out) in the body, while the token is still stored. It is best effort and inline: a person
+   with no token has nothing to revoke, a grant GitHub no longer has (404) is done, and any
+   other answer, no answer, or more than 10 seconds is logged as `github_grant_revoke_failed`
+   (their id and GitHub's status, never the token) and the deletion goes on. The
+   `github_app_authorization` webhook that follows finds nobody and does nothing, or, if it
+   comes before their row is gone, forgets the token and ends the sessions that step 7 ends
+   anyway. If step 7 then refuses (another admin's deletion left them the only one), the grant
+   is already revoked: they keep their account and sign in again.
+7. Their row is deleted, and with it everything that hangs off it: their sessions (so every
    token of theirs stops working at once), GitHub token, memberships, repo access answers,
    Claude account, devices and open sign-ins. What other people's work points at forgets them:
    a canvas's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
-7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
+   them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
+   their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
+   and one that a new account signed in with before the job was recorded is kept). While the
+   job waits, sign-in refuses that WorkOS user as `account_being_deleted` (409), so no account
+   is made on it between the job's check and its delete. It then asks PostHog to delete their person with its events and recordings:
+   `POST {PONZU_POSTHOG_API_HOST}/api/projects/{PONZU_POSTHOG_PROJECT_ID}/persons/bulk_delete/`
+   with the personal key as the bearer and `{ distinct_ids: [userId], delete_events: true,
+   delete_recordings: true }`. PostHog takes it at once and deletes in batches later, usually
+   within about a week. A failure at either is tried again; the WorkOS delete is safe to repeat.
+   Without `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` the PostHog step is
+   skipped, logged as `analytics_forget_skipped`, and the job completes. The `account deleted`
+   event is captured about no one, so it does not make their PostHog person again.
 
 **Canvases they own in a workspace others are in stay with it**, owned by nobody: a team's, or
 their own account's when collaborators on their repos are in it. Their boards, thread and pull
 request are work shared with people in a repo they reach, who have commented on it and may be
 about to merge it; deleting them would take that from people who did not ask, and
 GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
-Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
-one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
+Claude now, so they do not wake (`claude_owner_left`) until a teammate takes one over (below);
+until then they can be read, commented on, merged and deleted by an admin. The delete dialog
 says so: "Your canvases, threads and settings are deleted. Canvases in a team stay with the team.
 Your repos and pull requests on GitHub are not touched."
+
+**Taking over a canvas whose owner left.** A canvas runs on its owner's Claude alone, and never
+switches accounts while its owner is in its workspace. Once its owner has left the workspace, or
+deleted their account (`owner_id` null), anyone with write access whose own Claude is connected
+may take it over: `POST /v1/canvases/:id/take-over`. No other canvas qualifies, and an admin is
+asked the same as anyone. In one statement the canvas's `owner_id` and `claude_account_id`
+become the caller's and their connected account's, a wait on the last owner's Claude
+(`agent_blocker` starting `claude_`) is lifted while any other wait (billing, paused) stays, and
+the thread gets an API-written notice `{ type: "owner_changed", by }` under `ti_owner-<random>`.
+The statement holds on the owner still being gone and the canvas still having the owner it was
+read with, so of teammates pressing at once one takes it, and a take-over racing the owner's
+return happens whole or not at all. Then, as when Claude is connected, it wakes if its feed
+holds work no runner took. A sandbox still awake, whose runner was started on the last owner's
+credential, is put to sleep first (the sweep would no longer stop it, since the canvas now runs
+on a member's Claude), and the same rule wakes it after. Its next runner starts with the new owner's credential and resumes
+the same Claude session from the disk or the checkpoint; the runner does not change. Refusals:
+409 `not_ownerless` while its owner is a member (they came back, or a teammate took it first;
+a head that still said `claude_owner_left` for an owner who came back is lifted, and woken if
+work waits), and 409 `claude_not_connected` when the caller has no Claude that could run it
+(none connected, revoked, or past its sign-in). Analytics: `canvas taken over`. The Mac's
+composer says "Its owner left the workspace. Take it over to run it on your Claude." with a
+"Take over" button to someone who can, and otherwise "Its owner left the workspace, so nobody's
+Claude runs it. Someone who can change {owner/name} can take it over."; the thread line reads
+"{Name} took this canvas over. It runs on their Claude from now on.", and Share shows the new
+Owner. Whether an admin alone should take over is the founder's to confirm; it is one check in
+the route.
 
 What is not rewritten: the name a canvas's document carries for a comment's author (inside the
 op and the checkpoints, whose history is not rewritten), and their words in workspaces they had
@@ -2955,6 +3255,48 @@ said on that route and nowhere else. Errors leave the API as
 `{ error: { code, message, details? } }` with a stable code and nothing of the
 failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
+**Rate limits per caller.** Each declaration that authenticates also counts the request against
+one rate limit, keyed by the person or by the runner's canvas (`apps/api/src/http/rate-limits.ts`):
+creating a canvas, sending messages and answers, upload addresses, `POST /v1/live`, GitHub sync,
+and a runner's git credentials each have their own, and every other write by a person, and every
+other call by a runner, counts against a catch-all. A read by a person is not counted; the
+firewall's per-address rules cover reads and the public routes. Over the limit is 429
+`rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
+behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
+everywhere today, until its rules are applied. Each id's window and limit are a rule in
+`infra/vercel-firewall.json` (docs/production.md, "The WAF"), and a test pairs the rules with the
+ids the code names, both ways, and with their numbers. It fails open: a check that takes more than
+500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
+count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
+steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
+
+**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or on
+cutover day (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
+environment, so it holds from the next deploy.
+
+- `off`, the default: nothing is held back.
+- `wakes_paused`: no sandbox wakes. The wake gate `maintenance` sets the canvas's
+  `agent_blocker` to `paused` and tries the wake again every two minutes, so a message is kept
+  in the feed and goes in once the switch is off. A turn already running finishes, and a
+  sandbox already awake is not held: it takes up what is sent until it goes to sleep, so the
+  switch stops new spend only as awake sandboxes sleep. Every minute
+  the cron's `maintenance` step, once the switch is off, lifts `paused` everywhere and wakes the
+  canvases that owe a turn (`resumeBlocked`), which takes up a wake that ran out of tries during
+  a long pause. Everything else works.
+- `read_only`: wakes are paused as above, and every write by a person or a runner answers 503
+  `maintenance`, "Ponzu is updating. Try again in a few minutes.", before anything of its route
+  runs. Reads pass, and so do health, the cron, signing in and out, `POST /v1/live`, a
+  person's presence, GitHub's webhook, and a runner's start, heartbeat, checkpoints and their
+  uploads, restore and git credentials, so that an awake sandbox is neither taken for dead nor
+  loses its work. A runner sends the rest again for as long as it lives, as it does any 5xx.
+  The refusal is logged as a refusal, not sent to error tracking. Pause wakes first and let
+  running turns finish before going read-only.
+
+The Mac shows the notice "Ponzu is updating. Your canvases are safe; you can look around, and
+changes come back in a few minutes." when a write is refused this way, at most once a minute,
+and the thread's foot of a paused canvas says "The agent is paused while Ponzu updates. Your
+message is kept and goes through when it's back."
+
 ## Analytics
 
 PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
@@ -2978,8 +3320,12 @@ projects also keep the environments apart by more than a name: each has its own 
 env, image registry, spend and firewall. The production project's Preview target holds no
 secrets and runs nothing. The values each environment uses (its addresses, client ids,
 buckets and analytics project) are public and live in
-[`infra/environments.json`](../infra/environments.json); the resources, the founder's steps
-that create production, rotation, backups and spend are in [production.md](production.md).
+[`infra/environments.json`](../infra/environments.json). The desktop app bakes one of them in
+when it is built: a release the one the file's `release` names, which stays dev until the
+cutover, and Ponzu Dev always dev's. A field the app reads that is still `null` fails the
+build, and the release workflow refuses to publish unless `release` is production with every
+field set. The resources, the founder's steps that create production, rotation, backups and
+spend are in [production.md](production.md).
 The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
 redirects never have to move at cutover.
 
@@ -2994,9 +3340,21 @@ The sandbox image is built once, into dev's registry, and the production deploy 
 digest, so production runs exactly the bytes dev checked. Within a project, sandboxes sit
 beside the API's functions and the image's registry, kept apart by their names' scope ("The
 sandbox"): a deployment lists, stops and removes only the names its own database's scope
-begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
-deployment's runners call back; unset, it is production's address, so a dev deployment or a
-preview whose sandboxes must reach it sets it.
+begins. The scope is a second wall behind the project.
+
+Every deployment says which environment it is and where its runners call back:
+`PONZU_ENVIRONMENT` (`production`, `dev`, `preview` or `local`) and `PONZU_API_URL`. On Vercel
+both are required, and a deployment missing either stops at boot with an error that names it,
+so no deployment falls back to production's address; one that says `local` stops too. Off Vercel they default to `local` and
+`https://api.ponzu.design`. `GET /v1/health`, public and given three seconds, reports what is
+deployed and where: `status`, `version`, `commit`, `environment`, `image` (the runner image,
+`ponzu-runner@sha256:…`), `runnerBundle` (the first 12 hex of the runner bundle's SHA-256),
+`migrations: { applied, expected }` and `database`. `expected` is the journal's entry count,
+built in; `applied` is the count of drizzle's record of applied migrations, the number the
+migrator compares. The answer is `degraded` at 200 when the two differ, and 503 only when the
+database cannot be reached. `apps/api/src/env.ts` exports the names a deployment must set
+(`REQUIRED_ENV`), may set (`OPTIONAL_ENV`) and must never set (`FORBIDDEN_ENV`), which the
+production check compares with each project.
 
 A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
 the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
@@ -3004,6 +3362,21 @@ the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING`
 is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
 and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
 push and email, so an app shows only what can work.
+
+Each deployment checks its own dependencies and settings: `GET /v1/cron/selfcheck`, behind
+`CRON_SECRET` like the minute's cron, and a cron step at minute 7 of every hour
+(`apps/api/src/ops/selfcheck.ts`). It answers `{ checks: [{ id, ok, detail }] }` for the
+database, the migrations applied against the ones the build has, Realtime sealing, both buckets
+(a HEAD of a key that is never stored), WorkOS's key, the GitHub App (its slug, and the
+permissions and events the API uses), the App's webhook (its URL is `PONZU_API_URL` plus
+`/v1/github/webhook`, json, TLS checked), Ponzu's Anthropic key, the sandbox list, values still
+sealed under an old vault key, and whether PostHog is set. Each check has five seconds, and
+all run at once. `detail` is a word from a fixed list and never quotes what a service said or
+a value from the environment. Two checks add a field: `github_app` names in `missing` the
+permissions or events from the API's own list that the App lacks, and `vault_old_keys` gives
+its `count`. The hourly step raises each failed check to PostHog as an
+exception (`selfcheck_failed`, with `check`), which is the alarm; the old-keys count and
+PostHog are informational and only logged.
 
 ### Checking a deploy's sandboxes
 

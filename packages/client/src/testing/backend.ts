@@ -120,6 +120,9 @@ export interface FakeCanvas {
   blocker: AgentBlocker | null;
   /** The canvas's seq its previews show, once the runner has drawn them. */
   previewSeq: number | null;
+  /** How many times its file links were reset, and when last: its files' address has it. */
+  assetKeyResets: number;
+  assetKeyRotatedAt: string | null;
   /** `pz/<topic>`, from the first message; null for Scratch and before it. */
   branch: string | null;
   /** Its branch and pull request on GitHub; null for Scratch. */
@@ -201,6 +204,8 @@ export class FakeBackend {
   readonly people = new Map<string, FakePerson>();
   readonly workspaces = new Map<string, FakeWorkspace>();
   readonly canvases = new Map<string, FakeCanvas>();
+  /** Secrets people gave for `secret` questions, as the API keeps them: apart from the question. */
+  readonly secretsGiven: { canvasId: string; name: string; value: string }[] = [];
   /**
    * What `GET /v1/repos/:id/ideas` answers for each repo, in turn: each ask takes the next
    * answer and the last one stays. A repo with none set has `none`.
@@ -851,6 +856,8 @@ export class FakeBackend {
               effort: body.effort ?? null,
               blocker: null,
               previewSeq: null,
+              assetKeyResets: 0,
+              assetKeyRotatedAt: null,
               branch,
               github: null,
               assets: new Map(),
@@ -911,6 +918,44 @@ export class FakeBackend {
             }
             this.canvases.delete(id);
             this.changed();
+          }),
+        // As the API's reset: the owner or an admin moves its files under a new address.
+        rotateAssetKey: (id) =>
+          call(() => {
+            const canvas = writable(id);
+            const { role } = member(canvas.workspaceId);
+            if (canvas.ownerId !== person.id && role !== "admin") {
+              throw new ApiError(
+                403,
+                "forbidden",
+                "Only its owner or a workspace admin can reset its file links.",
+              );
+            }
+            canvas.assetKeyResets += 1;
+            canvas.assetKeyRotatedAt = this.now();
+            this.changed();
+            return this.view(canvas, person.id);
+          }),
+        // As the API's take-over: only a canvas whose owner is gone from its workspace, by
+        // someone who can change it with their own Claude connected.
+        takeOver: (id) =>
+          call(() => {
+            const canvas = writable(id);
+            const members = this.workspaces.get(canvas.workspaceId)?.members;
+            if (members?.has(canvas.ownerId)) {
+              throw new ApiError(409, "not_ownerless", "Its owner is in the workspace.");
+            }
+            if (this.claude.view(person.id)?.status !== "connected") {
+              throw new ApiError(409, "claude_not_connected", "Connect your Claude first.");
+            }
+            canvas.ownerId = person.id;
+            if (canvas.blocker?.startsWith("claude_")) canvas.blocker = null;
+            this.append(canvas, {
+              kind: "notice",
+              payload: { type: "owner_changed", by: personOf(person) },
+            });
+            this.touch(canvas);
+            return this.view(canvas, person.id);
           }),
         doc: (id) => call(() => readable(id).sequencer.snapshot()),
         ops: (id, after) =>
@@ -1065,6 +1110,34 @@ export class FakeBackend {
             this.touch(canvas);
             return { id: question.id, status: question.status };
           }),
+        answerSecret: (id, questionId, value) =>
+          call(() => {
+            const canvas = writable(id);
+            const question = canvas.questions.find((q) => q.id === questionId);
+            if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+            if (question.status !== "open" || question.body.kind !== "secret") {
+              const by = question.answer ? this.people.get(question.answer.userId) : undefined;
+              throw new ApiError(
+                409,
+                "question_closed",
+                "This question is no longer open.",
+                by ? { answeredBy: personOf(by) } : undefined,
+              );
+            }
+            if (!canvas.repoId) {
+              throw new ApiError(409, "no_repository", "A Scratch canvas has no repository.");
+            }
+            if (!value || value.includes("\u0000")) {
+              throw new ApiError(400, "invalid_request", "A secret needs a value.");
+            }
+            // As the API: the value is kept apart, never on the question.
+            this.secretsGiven.push({ canvasId: id, name: question.body.payload.name, value });
+            question.status = "answered";
+            question.answer = { userId: person.id, body: {} };
+            if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
+            this.touch(canvas);
+            return { id: question.id, status: question.status };
+          }),
         question: (id, questionId) =>
           call(() => {
             const question = readable(id).questions.find((q) => q.id === questionId);
@@ -1176,7 +1249,7 @@ export class FakeBackend {
           merge: (id, body) =>
             call(() => github(writable(id)).merge(person.githubLogin, body.headSha, !!body.bypass)),
           autoMerge: (id, on) => call(() => github(writable(id)).autoMerge(on)),
-          close: (id) => call(() => github(writable(id)).close()),
+          close: (id, number) => call(() => github(writable(id)).close(number)),
           updateBranch: (id, body) => call(() => github(writable(id)).updateBranch(body.headSha)),
         },
       },
@@ -1379,6 +1452,7 @@ export class FakeBackend {
             pr_checks: head.prChecks,
             last_activity_at: visible.lastActivityAt,
             created_at: visible.createdAt,
+            asset_key_rotated_at: visible.assetKeyRotatedAt,
             seen_seq: read ? String(read.seq) : null,
             seen_thread_seq: read?.threadSeq === null || !read ? null : String(read.threadSeq),
           };
@@ -1404,6 +1478,7 @@ export class FakeBackend {
           pr_mergeable: head.prMergeable,
           pr_auto_merge: head.prAutoMerge,
           last_activity_at: head.lastActivityAt,
+          asset_key_rotated_at: canvas!.assetKeyRotatedAt,
           agent_blocker: head.agentBlocker,
           agent_blocked_until: null,
           sandbox_state: null,
@@ -1468,6 +1543,7 @@ export class FakeBackend {
       createdAt: canvas.createdAt,
       access: canWrite(this.permission(userId, canvas)) ? "write" : "read",
       assetsUrl: assetsUrl(canvas),
+      assetKeyRotatedAt: canvas.assetKeyRotatedAt,
     };
   }
 
@@ -1679,7 +1755,8 @@ type CommentPayload = Extract<ThreadItem, { kind: "comment" }>["payload"];
 
 /** Where the canvas's files are served, as `GET /v1/canvases/:id` answers it. */
 function assetsUrl(canvas: FakeCanvas): string {
-  return `https://assets.test/${canvas.id}/`;
+  const reset = canvas.assetKeyResets > 0 ? `-${canvas.assetKeyResets}` : "";
+  return `https://assets.test/${canvas.id}${reset}/`;
 }
 
 /** A branch's topic from the canvas's first words, as the API names `pz/<topic>`. */

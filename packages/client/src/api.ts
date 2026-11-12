@@ -157,6 +157,20 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       delete: async (id: string): Promise<void> => {
         await v1.canvases[":id"].$delete(canvas(id));
       },
+      /**
+       * Takes over a canvas whose owner left the workspace or deleted their account: it runs on
+       * the caller's Claude from now on. 409 `not_ownerless` while its owner is there, and
+       * `claude_not_connected` when the caller has no Claude that could run it.
+       */
+      takeOver: async (id: string) =>
+        (await v1.canvases[":id"]["take-over"].$post(canvas(id))).json(),
+      /**
+       * Resets the canvas's file links: its files move under a new address, and links to the
+       * old one stop working. Its owner or a workspace admin may (403 `forbidden` otherwise).
+       * Answers the canvas with its new `assetsUrl`.
+       */
+      rotateAssetKey: async (id: string) =>
+        (await v1.canvases[":id"]["asset-key"].rotate.$post(canvas(id))).json(),
 
       doc: async (id: string) => (await v1.canvases[":id"].doc.$get(canvas(id))).json(),
       /** 410 `ops_pruned` when the log no longer keeps the ops after `after`. */
@@ -211,6 +225,19 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
           await v1.canvases[":id"].questions[":questionId"].answer.$post({
             param: { id, questionId },
             json: body,
+          })
+        ).json(),
+      /**
+       * Gives the secret a `secret` question asks for. The API keeps the value sealed with the
+       * repo's secrets and never sends it back; the question and the thread carry only its name.
+       * 409 `question_closed` once answered, `no_repository` on Scratch, `secrets_full` when the
+       * repo has no room; 400 `secret_name_reserved`.
+       */
+      answerSecret: async (id: string, questionId: string, value: string) =>
+        (
+          await v1.canvases[":id"].questions[":questionId"].secret.$post({
+            param: { id, questionId },
+            json: { value },
           })
         ).json(),
       /**
@@ -326,7 +353,17 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
           const route = pullRequest["auto-merge"];
           return (await (on ? route.$post(canvas(id)) : route.$delete(canvas(id)))).json();
         },
-        close: async (id: string) => (await pullRequest.close.$post(canvas(id))).json(),
+        /**
+         * Closes it without merging. `number` is the one the person said to close: 409
+         * `pull_request_changed` if the canvas's newest is another by now.
+         */
+        close: async (id: string, number?: number) =>
+          (
+            await pullRequest.close.$post({
+              ...canvas(id),
+              query: number === undefined ? {} : { number: String(number) },
+            })
+          ).json(),
         updateBranch: async (id: string, body: { headSha: string }) =>
           (await pullRequest["update-branch"].$post({ ...canvas(id), json: body })).json(),
       },

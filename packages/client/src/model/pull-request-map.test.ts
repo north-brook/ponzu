@@ -268,6 +268,7 @@ test("the chrome's mark comes from the canvas's head, and its button from the AP
       pushError: null,
     },
     pullRequest: pull,
+    summary: null,
     mergeMethod: "squash" as const,
     autoMergeAllowed: true,
     nextAction,
@@ -298,6 +299,7 @@ test("an answer kept from before is offered only while the row and the head stil
       pushError: null,
     },
     pullRequest: API_PULL,
+    summary: null,
     mergeMethod: "squash" as const,
     autoMergeAllowed: true,
     nextAction: "merge" as const,
@@ -339,6 +341,20 @@ test("each refusal says why in a sentence: the API's own where it writes one", (
     "That didn't work. Try again.",
   );
   expect(prActionError(new Error("boom"))).toBe("That didn't work. Try again.");
+  // A merge queue and a workflow file are the API's words: where to do it instead.
+  for (const [code, words] of [
+    ["merge_queue", "This repository merges through a merge queue. Add it to the queue on GitHub."],
+    [
+      "merge_queue_unmergeable",
+      "GitHub's merge queue can't merge #4. The pull request on GitHub says why.",
+    ],
+    [
+      "workflow_permission",
+      "GitHub won't let Ponzu change files under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows. Do this on GitHub instead.",
+    ],
+  ] as const) {
+    expect(prActionError(new ApiError(409, code, words))).toBe(words);
+  }
 });
 
 test("the tab shows a description without what Ponzu wrote for GitHub's own page", () => {

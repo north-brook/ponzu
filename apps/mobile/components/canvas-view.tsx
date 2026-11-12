@@ -1,3 +1,4 @@
+import type { Doc, Op, Origin, Presence } from "@ponzu/core";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
@@ -11,9 +12,26 @@ import {
   toCanvasScript,
 } from "../canvas/protocol";
 import { measured, PROBE_RATE } from "../lib/canvas-perf";
-import type { DesignSession } from "../lib/design";
+import { config } from "../lib/cloud/config";
 import { displayRadius } from "../lib/screen";
-import { VERSION } from "../lib/ua";
+
+/**
+ * What the canvas draws from: the doc as the app has it, who is here, and each change as it
+ * comes. The 1.x app fed this from a paired Mac's socket; the cloud canvas feeds it from
+ * CloudSource on the React Native side (lib/canvas/bridge.ts, with the canvas's own slice).
+ */
+export interface CanvasFeed {
+  getState(): { doc: Doc | null; presence: Presence[] };
+  /** Where the canvas's files are served from. */
+  readonly assetBase: string;
+  /** The canvas's name for the page, as the page's protocol carries it. */
+  readonly file: string;
+  /** A whole new doc (a first load, a reset). */
+  onDoc(listener: (doc: Doc) => void): () => void;
+  onOp(listener: (op: Op, origin: Origin) => void): () => void;
+  /** Hear each change of `getState()`. */
+  subscribe(listener: () => void): () => void;
+}
 
 /**
  * The canvas page (`canvas/dist/bundle.ts`, built by `canvas/build.ts`).
@@ -47,9 +65,9 @@ export interface CanvasHandle {
 export const CanvasView = forwardRef<
   CanvasHandle,
   {
-    /** `http://<mac>:7777`: the page's origin, so its asset loads are the Mac's own. */
+    /** The page's origin, so its asset loads are same-origin. */
     base: string;
-    session: DesignSession;
+    session: CanvasFeed;
     theme: Theme;
     insets: Insets;
     /** How far a sheet over the canvas rises, px from the bottom. */
@@ -198,7 +216,7 @@ export const CanvasView = forwardRef<
       ref={web as never}
       testID="canvas-web"
       source={{ html: canvasHtml, baseUrl: origin }}
-      applicationNameForUserAgent={`Ponzu-iOS/${VERSION}`}
+      applicationNameForUserAgent={`Ponzu-iOS/${config().version}`}
       originWhitelist={["*"]}
       // The page is the app's; it never navigates anywhere.
       onShouldStartLoadWithRequest={(r: { url: string }) =>

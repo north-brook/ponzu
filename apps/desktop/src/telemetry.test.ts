@@ -6,31 +6,28 @@ import { contentSecurityPolicy } from "./csp.ts";
 import { launchOnce, recordLaunch } from "./launches.ts";
 import { scrubPaths, startMainTelemetry } from "./main-telemetry.ts";
 import { telemetryOffBecause } from "./telemetry-consent.ts";
+import { built } from "./testing.ts";
 
 const KEY = "phc_test_project";
 const baked = { key: KEY, host: "", replay: "" };
 
 test("a build reports to the project it was built for, and nothing without a key", () => {
-  expect(configFor(true, {}, false, "release", baked).posthog).toEqual({
+  expect(configFor(true, {}, built({ posthog: baked })).posthog).toEqual({
     key: KEY,
     host: "https://us.i.posthog.com",
     replay: "private",
   });
-  expect(
-    configFor(true, {}, false, "release", { key: "", host: "", replay: "" }).posthog,
-  ).toBeNull();
+  expect(configFor(true, {}, built()).posthog).toBeNull();
   // A test build, which spare and CI drive, reports nothing whatever it was given.
-  expect(configFor(true, {}, true, "release", baked).posthog).toBeNull();
+  expect(configFor(true, {}, built({ test: true, posthog: baked })).posthog).toBeNull();
   // A packaged build ignores the environment; a development build takes it.
   const env = { PONZU_POSTHOG_KEY: "phc_other", PONZU_POSTHOG_REPLAY: "full" };
-  expect(configFor(true, env, false, "release", baked).posthog?.key).toBe(KEY);
-  expect(configFor(false, env, false, "release", baked).posthog).toMatchObject({
+  expect(configFor(true, env, built({ posthog: baked })).posthog?.key).toBe(KEY);
+  expect(configFor(false, env, built({ posthog: baked })).posthog).toMatchObject({
     key: "phc_other",
     replay: "full",
   });
-  expect(
-    configFor(false, {}, false, "release", { key: "", host: "", replay: "" }).posthog,
-  ).toBeNull();
+  expect(configFor(false, {}, built()).posthog).toBeNull();
 });
 
 test("a key or host that doesn't parse switches nothing on", () => {
@@ -45,7 +42,7 @@ test("a key or host that doesn't parse switches nothing on", () => {
 });
 
 function connectSrc(posthog: { host: string } | null): string[] {
-  const policy = contentSecurityPolicy({ ...configFor(true, {}, false), posthog });
+  const policy = contentSecurityPolicy({ ...configFor(true, {}, built()), posthog });
   const directive = policy.split("; ").find((d) => d.startsWith("connect-src "))!;
   return directive.split(" ").slice(1);
 }
@@ -57,7 +54,7 @@ test("the policy reaches PostHog only when the window reports, and runs none of 
   expect(on).toContain("https://us-assets.i.posthog.com");
   expect(on.join(" ")).not.toContain("*");
   const policy = contentSecurityPolicy({
-    ...configFor(true, {}, false),
+    ...configFor(true, {}, built()),
     posthog: { host: "https://us.i.posthog.com" },
   });
   expect(policy).toContain("script-src 'self';");

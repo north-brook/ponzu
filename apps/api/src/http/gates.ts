@@ -1,5 +1,6 @@
 import type { UserActor } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
+import { maintenanceRefusal } from "./maintenance.ts";
 
 /*
  * What may refuse a person steering a canvas's agent, before anything they sent is written
@@ -13,12 +14,21 @@ import type { Deps } from "../deps/index.ts";
  * workspace) and before it writes. The gates run in this order, and the first that refuses
  * answers the request with its own error; the rest are not asked:
  *
- *   rateLimit     too many in a window: 429 rate_limited        (filled by W1 G7)
- *   maintenance   Ponzu is read-only while it updates: 503      (filled by W10 P4)
+ *   rateLimit     always a pass-through (see below)
+ *   maintenance   Ponzu is read-only while it updates: 503 `maintenance`
  *   billing       the workspace is at a billing limit: 402      (filled by W6 B2)
  *
  * A gate refuses by throwing an `ApiError`, and writes nothing. Each lets everything through
  * until its feature fills it.
+ *
+ * While Ponzu is read-only, `readOnlyGate` (http/maintenance.ts) has already refused these
+ * three before their routes ran; `maintenance` here says the same again, so a steer is still
+ * refused if that gate's list of what passes ever came to name one.
+ *
+ * The rate limit (W1 G7) is not asked here: every authenticated request, these three included,
+ * is counted once as its caller is authenticated (`auth/access.ts`, `http/rate-limits.ts`),
+ * because production's table limits far more routes than these. Its gate stays a pass-through
+ * so the order holds; filling it would count each steer twice.
  *
  * `steer` is called from the handler, not mounted as a middleware: a middleware runs before
  * the handler has checked that the caller may touch the canvas, and a refusal such as
@@ -55,9 +65,14 @@ export interface NamedRequestGate {
 
 const passThrough: RequestGate = async () => {};
 
+/** Nothing new for the agent while Ponzu is read-only (`PONZU_MAINTENANCE=read_only`). */
+export const maintenanceSteerGate: RequestGate = async (deps) => {
+  if (deps.features.maintenance === "read_only") throw maintenanceRefusal();
+};
+
 export const STEER_GATES: readonly NamedRequestGate[] = [
   { name: "rateLimit", gate: passThrough },
-  { name: "maintenance", gate: passThrough },
+  { name: "maintenance", gate: maintenanceSteerGate },
   { name: "billing", gate: passThrough },
 ];
 

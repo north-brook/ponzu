@@ -1,6 +1,6 @@
 import { Cancel01Icon, PlusSignIcon, RefreshIcon } from "@hugeicons/core-free-icons";
 import { type ClipboardEvent, type DragEvent, type KeyboardEvent, useRef, useState } from "react";
-import { gateMessage } from "../gate.ts";
+import { blockerWords, gateMessage } from "../gate.ts";
 import type { PendingAttachment, SteerGate } from "../model.ts";
 import { Button, IconButton, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -8,7 +8,7 @@ import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
 import { FIELD, PRESS_OWN, pressToFocus } from "../ui/press-to-focus.ts";
 import { Tip } from "../ui/tooltip.tsx";
-import { composerButton } from "./composer-rules.ts";
+import { composerButton, composerHolds } from "./composer-rules.ts";
 
 const images = (files: FileList | null | undefined) =>
   [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
@@ -18,8 +18,10 @@ const images = (files: FileList | null | undefined) =>
  * works with nothing typed, and Send otherwise (composerButton). Return sends and Shift-Return
  * breaks the line; the field grows to six lines, then scrolls. Images come in by the "+", a
  * paste or a drop. While the run waits on its owner's Claude a strip above the field says so
- * and nothing sends; typing still keeps a draft. Once its owner has left the workspace nothing
- * will run it again, so the strip is all there is: no field to write in for nobody.
+ * and nothing sends; typing still keeps a draft. A plan at its limit is the one wait that still
+ * takes a message: the strip says it goes in when the plan resets. Once its owner has left the
+ * workspace nothing runs it until a teammate takes it over, so the strip is all there is, with
+ * "Take over" for someone who can: no field to write in for nobody.
  */
 export function RailComposer({
   text,
@@ -34,6 +36,8 @@ export function RailComposer({
   onSend,
   onStop,
   onConnectClaude,
+  onTakeOver,
+  takingOver = false,
 }: {
   text: string;
   onTextChange: (text: string) => void;
@@ -49,9 +53,22 @@ export function RailComposer({
   onStop: () => void;
   /** Offered when the wait is the viewer's own Claude, disconnected or run out. */
   onConnectClaude?: () => void;
+  /**
+   * Takes over a canvas whose owner left, onto the viewer's Claude: offered when they can
+   * (`canTakeOver`). Once it is theirs the gate goes, and the field with it comes back.
+   */
+  onTakeOver?: () => void;
+  /** A take-over is on its way: the button waits for it. */
+  takingOver?: boolean;
 }) {
   const button = composerButton({ working, text, attachments, gate });
   const ended = gate?.kind === "claude_owner_left";
+  const holds = composerHolds(gate);
+  const queued =
+    gate?.kind === "claude_limit"
+      ? blockerWords({ blocker: "claude_limited", owner: gate.owner, meId, until: gate.until })
+          .queued
+      : null;
   const picker = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
 
@@ -62,19 +79,19 @@ export function RailComposer({
   };
   const onPaste = (e: ClipboardEvent) => {
     const files = images(e.clipboardData.files);
-    if (!files.length || gate) return;
+    if (!files.length || holds) return;
     e.preventDefault();
     onAttach(files);
   };
   const onDragOver = (e: DragEvent) => {
-    if (gate || ![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return;
+    if (holds || ![...e.dataTransfer.items].some((i) => i.type.startsWith("image/"))) return;
     e.preventDefault();
     setDropping(true);
   };
   const onDrop = (e: DragEvent) => {
     setDropping(false);
     const files = images(e.dataTransfer.files);
-    if (!files.length || gate) return;
+    if (!files.length || holds) return;
     e.preventDefault();
     onAttach(files);
   };
@@ -108,12 +125,23 @@ export function RailComposer({
           </span>
           <span role="status" className="min-w-0 flex-1">
             {gateMessage(gate, meId)}
+            {queued ? <span className="block text-muted">{queued}</span> : null}
           </span>
           {(gate.kind === "claude_disconnected" || gate.kind === "claude_expired") &&
           gate.owner.id === meId &&
           onConnectClaude ? (
             <Button variant="quiet" onClick={onConnectClaude} className="-my-1 px-2 text-ink">
               Connect
+            </Button>
+          ) : null}
+          {gate.kind === "claude_owner_left" && gate.canTakeOver && onTakeOver ? (
+            <Button
+              variant="quiet"
+              onClick={onTakeOver}
+              disabled={takingOver}
+              className="-my-1 px-2 text-ink"
+            >
+              Take over
             </Button>
           ) : null}
         </div>
@@ -135,7 +163,7 @@ export function RailComposer({
           label="Attach an image"
           tipSide="top"
           data-composer-attach
-          disabled={gate !== null}
+          disabled={holds}
           onClick={() => picker.current?.click()}
           className="size-7 rounded-pill"
         >

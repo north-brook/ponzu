@@ -129,6 +129,24 @@ export const COMPOSITIONS: Composition[] = [
     reference: "styles",
   },
   {
+    // Not drawn: what its owner and the workspace's admins see, Share's rows with a quiet
+    // "Reset file links" at the foot (docs/cloud.md, "Assets and previews").
+    id: "share-reset-links",
+    title: "Share · its owner or an admin, with Reset file links",
+    ...WINDOW,
+    open: 'button[aria-label="Share"]',
+    masks: CANVAS,
+    reference: true,
+  },
+  {
+    // Not drawn: the foot's confirmation, in the spec's words.
+    id: "share-reset-links-confirm",
+    title: "Reset this canvas's file links?",
+    ...WINDOW,
+    masks: CANVAS,
+    reference: true,
+  },
+  {
     id: "thread-in-the-right-rail",
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",
@@ -192,7 +210,7 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
-    // Lenny Learning's heading and Scratch are there at once; its repos haven't arrived. Its
+    // Bramble School's heading and Scratch are there at once; its repos haven't arrived. Its
     // group is under the fold, so the picture would be pick-a-project-workspaces': the styles
     // hold its heading, its Scratch and the place kept for its repos.
     id: "pick-a-project-workspaces-loading",
@@ -322,6 +340,30 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  // A teammate's canvas whose owner's plan is at its limit: the line is for everyone, and the
+  // composer still takes a message, which goes in at the reset.
+  {
+    id: "limit-teammate",
+    title: "Thread · the owner's plan at its limit, as a teammate",
+    ...WINDOW,
+  },
+  {
+    id: "owner-left-take-over",
+    title: "Thread · its owner left: Take over",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "owner-left-taken-over",
+    title: "Thread · a teammate took it over",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "thread-model-changed",
+    title: "Thread · the canvas's model is no longer offered",
+    ...WINDOW,
+  },
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
   { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
   { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },
@@ -354,6 +396,20 @@ export const COMPOSITIONS: Composition[] = [
     title: "Pull request · a wide screen, the sidebar closed",
     width: 2240,
     height: 1100,
+  },
+  { id: "pull-request-closed", title: "Pull request · closed, Create PR offered", ...WINDOW },
+  {
+    id: "pull-request-summary",
+    title: "Pull request · closed, with the description the next one opens with",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "pull-request-menu",
+    title: "Pull request · the details' menu, auto-merge on",
+    ...WINDOW,
+    open: 'button[aria-label="More actions"]',
+    reference: true,
   },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },

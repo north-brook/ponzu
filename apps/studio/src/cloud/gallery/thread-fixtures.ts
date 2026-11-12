@@ -150,6 +150,17 @@ export const setUpThread: ThreadItem[] = [
 ];
 export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding Welcome · Picks" };
 
+/**
+ * A canvas whose owner left: what was said before, then Maya taking it over (the sweep plan, §8),
+ * and the run going on on her Claude.
+ */
+export const takenOverThread: ThreadItem[] = [
+  said(ada, "I'd like to iterate on the onboarding flow"),
+  reply("Rebuilding onboarding from the app's code. Light and Water are in."),
+  notice({ type: "owner_changed", by: maya }),
+  said(maya, "Carry on with the picks screen, please."),
+];
+
 /** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(ada, ASK),
@@ -258,6 +269,38 @@ export const failedTurn: ThreadItem[] = (() => {
       code: "turn_failed",
       message: "Claude's API answered 529: overloaded.",
     }),
+  ];
+})();
+
+/**
+ * A canvas of Maya's made on Fable, which her Claude no longer offers: the thread says so as
+ * the next turn starts, and that turn runs on Opus 5.5.
+ */
+export const modelChangedTurn: ThreadItem[] = (() => {
+  const start = turn(false);
+  const final = reply("Done: the cards are one size now, and Pro keeps its accent border.");
+  return [
+    said(maya, "Three pricing cards, Pro in the middle."),
+    reply("Drew the three cards on **Pricing**, Pro in the middle."),
+    said(ada, "Make the cards the same height."),
+    notice({
+      type: "model_changed",
+      from: "claude-fable-5-2",
+      to: "claude-opus-5-5",
+      fromName: "Fable 5.2",
+      toName: "Opus 5.5",
+      account: maya,
+    }),
+    ended(start, {
+      final: final.id,
+      ms: 41_000,
+      boards: 1,
+      steps: [
+        [null, "Read the canvas", 1],
+        [null, 'Restyled "Pricing"', 2],
+      ],
+    }),
+    final,
   ];
 })();
 
@@ -406,14 +449,14 @@ export const everyKind: ThreadItem[] = [
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "open",
   }),
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "merged",
   }),
@@ -480,7 +523,7 @@ const check = (
   startedAt: seconds === null ? null : at(20),
   completedAt: seconds === null ? null : new Date(NOW - 20 * 60_000 + seconds * 1000).toISOString(),
   description,
-  url: `https://github.com/north-brook/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
+  url: `https://github.com/thistlewick/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
 });
 
 const theo = { login: "theob", name: "Theo Barrett", avatarUrl: null, agent: false };
@@ -497,7 +540,7 @@ const HERO_PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
 /** Board 3's pull request. */
 export const pullRequest: PullRequestDetail = {
   number: 412,
-  url: "https://github.com/north-brook/fernwood/pull/412",
+  url: "https://github.com/thistlewick/fernwood/pull/412",
   title: "Quieter hero, editorial take",
   body: "Drops the paragraph from the hero and lets the photo carry it. Headline set in Instrument Serif at 38px; tokens get a `--hero-measure`.",
   head: "pz/hero-refresh",
@@ -526,7 +569,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(14),
       path: "src/components/hero.tsx",
       line: 15,
-      url: "https://github.com/north-brook/fernwood/pull/412#discussion_r1",
+      url: "https://github.com/thistlewick/fernwood/pull/412#discussion_r1",
     },
     {
       id: "c2",
@@ -535,7 +578,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(12),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-2",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-2",
     },
     {
       id: "c3",
@@ -544,7 +587,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(3),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-3",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-3",
     },
   ],
   reviews: [{ id: "r1", author: theo, state: "approved", at: at(12) }],
@@ -636,4 +679,26 @@ export const busyPullRequest: PullRequestDetail = {
     },
   ],
   filesTotal: 7,
+};
+
+/** Board 3's pull request, closed without merging two minutes ago. */
+export const closedPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  state: "closed",
+  endedAt: at(2),
+};
+
+/** The agent's kept words on the branch, which the next pull request opens with. */
+export const keptSummary = `Drops the paragraph from the hero and lets the photo carry it.
+
+- Headline set in Instrument Serif at 38px.
+- Tokens get a \`--hero-measure\`, so the measure holds on every page that uses the hero.
+- The CTA moves under the photo on small screens.`;
+
+/** Board 3's pull request with its end-to-end check still running, as auto-merge waits on it. */
+export const runningPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  checks: pullRequest.checks.map((c) =>
+    c.name === "ci / e2e" ? { ...c, state: "running" as const, completedAt: null } : c,
+  ),
 };

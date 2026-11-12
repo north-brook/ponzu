@@ -19,8 +19,8 @@ const STATES: [string, SettingsSection, SettingsData][] = [
     "account",
     team({
       teams: [
-        { workspace: f.northbrook, role: "admin" },
-        { workspace: f.fablefuel, role: "member" },
+        { workspace: f.thistlewick, role: "admin" },
+        { workspace: f.quillmoor, role: "member" },
       ],
     }),
   ],

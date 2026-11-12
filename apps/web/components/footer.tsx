@@ -15,7 +15,7 @@ export function Footer() {
         <div className="flex flex-col gap-4 max-md:col-span-2">
           <Lockup size={22} />
           <p className="m-0 max-w-[300px] text-[15px]/[25px] text-pretty text-muted">
-            The open source canvas for your agent.
+            Claude Code on a canvas, for all kinds of work. Make it here; ship it to your repo.
           </p>
         </div>
         {FOOTER.map(({ title, links }) => (

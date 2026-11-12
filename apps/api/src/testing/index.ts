@@ -4,16 +4,18 @@ import type { RunnerBundle } from "@ponzu/runner/bundle";
 import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
 import { createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
+import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { CLAUDE_SONNET } from "../deps/model.ts";
+import type { RateLimit } from "../deps/rate-limit.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
-import type { SandboxConfig } from "../env.ts";
+import type { Environment, SandboxConfig } from "../env.ts";
 import { FEATURES_OFF, type Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
@@ -23,7 +25,9 @@ import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeMail } from "./fake-mail.ts";
 import { FakeModel } from "./fake-model.ts";
+import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 import { FakePush } from "./fake-push.ts";
+import { FakeRateLimit } from "./fake-rate-limit.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -37,12 +41,14 @@ export {
   PASSING_VERDICT,
   verdict,
 } from "./fake-model.ts";
+export { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 export {
   type FakePull,
   type FakeRepoAccess,
   MERGEABLE_AFTER_MS,
 } from "./fake-pull-requests.ts";
 export { FakePush } from "./fake-push.ts";
+export { FakeRateLimit } from "./fake-rate-limit.ts";
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -116,6 +122,8 @@ export async function createTestApp(
   options: {
     minimumClientVersions?: MinimumVersions;
     commit?: string | null;
+    /** Which environment the app says it is (`/v1/health`); `local` when unset. */
+    environment?: Environment;
     /**
      * A real database and Realtime, for an opt-in test against the Neon `dev` branch. Without
      * them everything stays in this process.
@@ -133,8 +141,15 @@ export async function createTestApp(
     shared?: { sandboxes: FakeSandboxes; clock: FakeClock };
     /** What the runner is told to report its turns to PostHog with; none by default. */
     posthog?: PosthogConfig;
+    /**
+     * True to give the app PostHog's private API (the fake's), as a deployment with
+     * PONZU_POSTHOG_PERSONAL_API_KEY does. Off by default: deleting an account skips PostHog.
+     */
+    posthogAdmin?: boolean;
     /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
     push?: boolean;
+    /** Rate limits other than the fake's, such as the real seam on a scripted SDK call. */
+    rateLimit?: RateLimit;
     /**
      * True to run with email on, as a deployment with RESEND_API_KEY does. Off by default, so
      * every test that does not ask runs as a deployment without the key.
@@ -167,6 +182,8 @@ export async function createTestApp(
   const reviewer = new FakeModel(CLAUDE_SONNET);
   const push = new FakePush({ enabled: options.push ?? true });
   const mail = new FakeMail({ enabled: options.mail ?? false });
+  const posthogAdmin = new FakePosthogAdmin();
+  const rateLimit = new FakeRateLimit(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -204,8 +221,12 @@ export async function createTestApp(
     reviewer,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    posthogAdmin: options.posthogAdmin
+      ? createPosthogAdmin({ config: posthogAdmin.config, fetch: posthogAdmin.fetch, clock })
+      : null,
     push,
     mail,
+    rateLimit: options.rateLimit ?? rateLimit,
     features: {
       ...FEATURES_OFF,
       push: options.push ?? true,
@@ -213,7 +234,11 @@ export async function createTestApp(
       ...options.features,
     },
     config: {
-      build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
+      build: {
+        version: "0.0.0-test",
+        commit: options.commit ?? "testcommit",
+        environment: options.environment ?? "local",
+      },
       minimumClientVersions: options.minimumClientVersions ?? {},
       assetsUrl: options.assetsUrl ?? TEST_ASSETS_URL,
       posthog: options.posthog ?? null,
@@ -347,10 +372,14 @@ export async function createTestApp(
     realtime: sealer,
     model,
     reviewer,
+    /** PostHog's private API: what it was asked to forget (with `posthogAdmin: true`). */
+    posthogAdmin,
     /** Every ping the app sent to a phone, and how Expo answers the next ones. */
     push,
     /** Every email the app sent, and how Resend answers the next ones. */
     mail,
+    /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */
+    rateLimit,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

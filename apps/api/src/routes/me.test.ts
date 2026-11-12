@@ -90,6 +90,8 @@ test("someone set up: their workspaces with roles, and their Claude account with
     // Ten days left: time to sign in again.
     expiresSoon: true,
     limitedUntil: null,
+    // No canvas has run on it yet, so nothing is known of its plan's limits.
+    limits: [],
   });
   expect(text).not.toContain("sealed");
   expect(

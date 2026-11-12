@@ -21,6 +21,11 @@ export interface MemoryObject {
   /** The headers it was stored with, which it is served with. */
   headers: Record<string, string>;
   sha256: string | null;
+  /**
+   * When it was written, by the test's clock: set by a PUT and a copy. One a test puts in
+   * `objects` itself has none unless it gives one, and a list answers it as not said.
+   */
+  modifiedAt?: number;
 }
 
 /**
@@ -81,11 +86,29 @@ export class MemoryStorage implements ObjectStorage {
     if (body.byteLength !== signed.object.size) return refuse(403, "SignatureDoesNotMatch");
     const sha256 = createHash("sha256").update(body).digest("hex");
     if (sha256 !== signed.object.sha256) return refuse(400, "BadDigest");
-    this.objects.set(signed.key, { body, headers: expected, sha256 });
+    this.objects.set(signed.key, {
+      body,
+      headers: expected,
+      sha256,
+      modifiedAt: this.#clock.now(),
+    });
     return new Response(null, { status: 200 });
   };
 
+  /**
+   * The status every `head` fails with, as R2 answers a bad token (403) or a fault (500), or
+   * null to answer from the map. With no status at all (0), it acts out R2 not answering.
+   */
+  headFails: number | null = null;
+
   async head(key: string): Promise<StoredHead | null> {
+    if (this.headFails !== null) {
+      throw new UpstreamError(
+        "storage",
+        "HEAD an object failed",
+        this.headFails === 0 ? {} : { status: this.headFails },
+      );
+    }
     const found = this.objects.get(key);
     if (!found) return null;
     return {
@@ -97,9 +120,10 @@ export class MemoryStorage implements ObjectStorage {
 
   async copy(from: string, to: string) {
     const found = this.objects.get(from);
-    if (!found) throw new Error(`Nothing at ${from} to copy.`);
+    // As R2 answers a copy whose source is not there: 404, naming no key.
+    if (!found) throw new UpstreamError("storage", "COPY an object answered 404", { status: 404 });
     // R2 keeps the headers and not the checksum.
-    this.objects.set(to, { ...found, sha256: null });
+    this.objects.set(to, { ...found, sha256: null, modifiedAt: this.#clock.now() });
   }
 
   async delete(key: string) {
@@ -121,7 +145,12 @@ export class MemoryStorage implements ObjectStorage {
     const all = [...this.objects.keys()]
       .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
       .sort();
-    return { keys: all.slice(0, MAX_LIST_KEYS), truncated: all.length > MAX_LIST_KEYS };
+    const keys = all.slice(0, MAX_LIST_KEYS);
+    const objects = keys.map((key) => {
+      const at = this.objects.get(key)!.modifiedAt;
+      return { key, modifiedAt: at === undefined ? null : new Date(at) };
+    });
+    return { keys, objects, truncated: all.length > MAX_LIST_KEYS };
   }
 
   async deleteMany(keys: readonly string[]): Promise<void> {
@@ -149,11 +178,18 @@ export class FakeAnthropic implements Anthropic {
   /** Every key asked about, oldest first. */
   readonly asked: string[] = [];
   failing = false;
+  /** Whether Anthropic takes Ponzu's own key. Set false to act out a revoked one. */
+  ownKeyAccepted = true;
 
   async acceptsApiKey(key: string): Promise<boolean> {
     this.asked.push(key);
     if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
     return this.keys.has(key);
+  }
+
+  async acceptsOwnKey(): Promise<boolean> {
+    if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
+    return this.ownKeyAccepted;
   }
 }
 
@@ -185,7 +221,11 @@ export class FakeSealer implements RealtimeSealer {
     this.#clock = clock;
   }
 
+  /** Set to act out a sealer that cannot seal, as with a malformed Realtime secret. */
+  failing = false;
+
   async seal(query: LiveQuery): Promise<SealedQuery> {
+    if (this.failing) throw new Error("The fake sealer was told to fail.");
     this.sealed.push(query);
     const text = JSON.stringify(query);
     return {

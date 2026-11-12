@@ -141,7 +141,8 @@ export interface ReportedModel {
 /**
  * `POST /v1/runner/models`: what Claude Code offers the account this runner runs as, and which
  * Claude Code said so. Answered 200 with whether the API kept it (`ModelsResponse`). Safe to
- * repeat: the last one sent wins.
+ * repeat: the last one kept wins. A runner's first report is kept, then at most one in ten
+ * minutes; one sent sooner is answered `kept: false`, never 429.
  */
 export interface ModelsReport {
   claudeCode: string;
@@ -149,7 +150,10 @@ export interface ModelsReport {
 }
 
 export interface ModelsResponse {
-  /** False when the account the canvas runs on is no longer the credential this runner holds. */
+  /**
+   * False when the account the canvas runs on is no longer the credential this runner holds, or
+   * the report came within ten minutes of the account's last one kept since this runner started.
+   */
   kept: boolean;
 }
 
@@ -315,10 +319,15 @@ export interface AnswerEvent {
    * several), the person's own words, or both. A client folds a note into the answer it goes with.
    */
   answers?: Record<string, string>;
-  /** For a `plan` or a `permission`: whether the person said yes. */
+  /** For a `plan`, a `permission` or a `handoff`: whether the person said yes (done, for a hand-off). */
   approved?: boolean;
   /** For a `plan` or a `permission`: what the person wrote beside their answer. */
   note?: string;
+  /**
+   * For a `secret`: which secret was given, and never its value, which the runner fetches once
+   * with `POST /v1/runner/secret`.
+   */
+  secret?: { name: string };
 }
 
 /** A comment on the canvas: a new thread, or a reply in one. */
@@ -584,6 +593,26 @@ export type Notice =
       url: string;
       title: string;
       as: Person | null;
+    }
+  /**
+   * Written by the API: `by` took the canvas over once its owner had left the workspace or
+   * deleted their account. It runs on their Claude from then on.
+   */
+  | { type: "owner_changed"; by: Person }
+  /**
+   * Written by the API, once per change, as a runner session starts: the model the canvas was
+   * made with is no longer one the Claude account offers, so it runs on `to` in its place
+   * ("Models"). Both are model ids, each with the name Ponzu knew it by then (the id itself when
+   * it knew none). `account` is whose Claude it is, as they were then; null when the canvas's
+   * owner is gone or is not the account's holder.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
     };
 
 /** What the agent did to its pull request, as its thread's line says. */
@@ -627,7 +656,9 @@ export type RunErrorCode =
   /** The API would not take a question, so nobody could answer it and the agent went on. */
   | "question_failed"
   /** Commits on the canvas's branch could not be pushed to GitHub; the message says why. */
-  | "push_failed";
+  | "push_failed"
+  /** An MCP server asked for details in a form Ponzu can't show, so Claude went on without them. */
+  | "elicitation_unsupported";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
 export const MAX_TEXT = 32_000;
@@ -686,6 +717,29 @@ export interface StateRequest {
    * that failed.
    */
   branch?: BranchReport | null;
+  /**
+   * What Claude Code last said of the Claude plan's limits, once it changes: news, sent once,
+   * like `branch`, and absent on heartbeats. Absent too from a runner on an API key, which has
+   * no plan, and from an older runner. The API keeps it on the Claude account only while the
+   * sandbox runs on the account's current credential (docs/cloud.md, "Claude plan limits").
+   */
+  claudeLimit?: ClaudeLimitReport | null;
+}
+
+/**
+ * One of the Agent SDK's `rate_limit_event`s, as the runner passes it on: whether requests go
+ * through, which of the plan's windows it is about, when that window resets, and how much of it
+ * is used.
+ */
+export interface ClaudeLimitReport {
+  /** `rejected`: the plan is at its limit, and turns fail until `resetsAt`. */
+  status: "allowed" | "allowed_warning" | "rejected";
+  /** The SDK's `rateLimitType`: `five_hour`, `seven_day`, `seven_day_opus`, …; null if unsaid. */
+  window: string | null;
+  /** ISO 8601; null if unsaid. */
+  resetsAt: string | null;
+  /** The share of the window used, from 0 (it can run a little past 1); null if unsaid. */
+  utilization: number | null;
 }
 
 /** The canvas's branch in the sandbox against GitHub. */
@@ -710,7 +764,7 @@ export const RUNNER_TIMEOUT_MS = 90_000;
 /* Questions                                                           */
 /* ------------------------------------------------------------------ */
 
-export type QuestionKind = "question" | "plan" | "permission";
+export type QuestionKind = "question" | "plan" | "permission" | "secret" | "handoff";
 
 export interface AskedQuestion {
   header: string;
@@ -725,7 +779,18 @@ export type QuestionBody =
   /** Claude wants a plan approved before it goes on (ExitPlanMode). */
   | { kind: "plan"; payload: { plan: string } }
   /** Claude wants to do something only a person can allow. */
-  | { kind: "permission"; payload: { tool: string; title: string; description: string | null } };
+  | { kind: "permission"; payload: { tool: string; title: string; description: string | null } }
+  /**
+   * The agent asked for one of the repo's secrets by name (`request_secret`). Answered with
+   * `POST /v1/canvases/:id/questions/:questionId/secret`: the value goes to the repo's secrets,
+   * never into this row or the answer event. Raised only for a canvas with a repository.
+   */
+  | { kind: "secret"; payload: { name: string; description: string | null } }
+  /**
+   * Something only a person can do at a web address (an MCP server's sign-in): opened in their
+   * browser, then answered `approved: true` once done there, or false for not now.
+   */
+  | { kind: "handoff"; payload: { title: string; url: string; description: string | null } };
 
 /**
  * `POST /v1/runner/questions`. The runner chooses the id (`q_` and 16 characters), so raising
@@ -924,6 +989,14 @@ export interface PullRequestStanding {
     unresolved: { author: string | null; path: string; line: number | null; body: string }[];
     /** Why Merge would not ask GitHub now, as the API would refuse it; null when it would. */
     mergeHold: { code: string; message: string } | null;
+    /**
+     * Whether its base merges through a merge queue, and its entry while it is in one (its
+     * place, from 1). Absent from an API older than merge queues.
+     */
+    mergeQueue?: {
+      enabled: boolean;
+      entry: { state: string; position: number | null } | null;
+    };
   } | null;
   mergeMethod: "squash" | "merge" | "rebase" | null;
   autoMergeAllowed: boolean;
@@ -942,6 +1015,11 @@ export interface AgentPullRequestAnswer extends PullRequestStanding {
   did: boolean;
   /** `open` only: GitHub has nothing to open it from yet, and the runner was asked to push. */
   pushing: boolean;
+  /**
+   * `merge` only: the repository merges through a merge queue, and this added it to the queue
+   * rather than merging it. GitHub merges it once the queue's checks pass. Absent otherwise.
+   */
+  queued?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1044,6 +1122,116 @@ export function decodeRepoSecrets(encoded: string | undefined): Record<string, s
   }
   return secrets;
 }
+
+/** Capitals, digits and underscores, starting with a letter, as Settings writes them. */
+export const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+export const MAX_SECRET_NAME = 64;
+
+/**
+ * Prefixes a secret's name may not start with: Ponzu's own (`PONZU_RUNNER_TOKEN`, …), Claude
+ * Code's and Anthropic's (a second credential, or one that points Claude elsewhere: Claude Code
+ * would use `ANTHROPIC_API_KEY` over the owner's plan, or send their token to
+ * `ANTHROPIC_BASE_URL`), an old sandbox provider's, git's (its credential helper is Ponzu's), and
+ * those that load code into a program as it starts: the dynamic loader's, Bun's (`BUN_OPTIONS`
+ * is extra flags, `--preload` among them), Node's and npm's, and bash's.
+ */
+const RESERVED_SECRET_PREFIXES = [
+  "PONZU_",
+  "CLAUDE_",
+  "ANTHROPIC_",
+  "ASCII_",
+  "GIT_",
+  "LD_",
+  "DYLD_",
+  "BUN_",
+  "NODE_",
+  "NPM_CONFIG_",
+  "BASH_",
+];
+
+/** Names under a reserved prefix that only say how a repo's own code runs or installs. */
+const ALLOWED_SECRET_NAMES = new Set(["NODE_ENV", "NODE_AUTH_TOKEN"]);
+
+/**
+ * Names a secret may not have: what the runner's process depends on; what a shell runs or
+ * reads as it starts; where git and other tools find their configuration; and what would send
+ * traffic, the Claude credential with it, through someone else's proxy or certificate.
+ */
+const RESERVED_SECRET_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "PWD",
+  "TMPDIR",
+  "ENV",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "PS4",
+  "IFS",
+  "PROMPT_COMMAND",
+  "PYTHONSTARTUP",
+  "XDG_CONFIG_HOME",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "CURL_CA_BUNDLE",
+  "REQUESTS_CA_BUNDLE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+]);
+
+/**
+ * Why a name can't be a secret's, or null when it can: one rule for Settings, a secret the
+ * agent asks for (on the runner's side before it asks, and the API's when it is answered), and
+ * the sandbox's environment as it is made.
+ */
+export function checkSecretName(name: string): "invalid" | "reserved" | null {
+  if (name.length > MAX_SECRET_NAME || !SECRET_NAME.test(name)) return "invalid";
+  if (ALLOWED_SECRET_NAMES.has(name)) return null;
+  if (
+    RESERVED_SECRET_NAMES.has(name) ||
+    RESERVED_SECRET_PREFIXES.some((prefix) => name.startsWith(prefix))
+  ) {
+    return "reserved";
+  }
+  return null;
+}
+
+/**
+ * Why a reserved name is, in words for whoever chose it: the prefix it starts with, or that the
+ * sandbox itself depends on the name.
+ */
+export function reservedSecretReason(name: string): string {
+  const prefix = RESERVED_SECRET_PREFIXES.find((p) => name.startsWith(p));
+  return prefix
+    ? `Names starting with ${prefix} are kept for Ponzu, Claude and the sandbox's own tools. Use another name.`
+    : `${name} is a name the sandbox itself depends on. Use another name.`;
+}
+
+/**
+ * `POST /v1/runner/secret`: the value a person gave for a `secret` question this runner raised,
+ * for the turn that asked for it. Answered once, within `SECRET_DELIVERY_MS` of the answer, and
+ * only to the runner holding the lease: 404 `not_found` otherwise. The value goes into the file
+ * `~/.ponzu/secrets/<NAME>` as the agent and nowhere else: never an event, a log line, the
+ * thread, the state or analytics.
+ */
+export interface SecretRequest {
+  questionId: string;
+}
+
+export interface SecretResponse {
+  name: string;
+  value: string;
+}
+
+/** How long after a person gives a secret the runner may fetch it for the running turn. */
+export const SECRET_DELIVERY_MS = 15 * 60_000;
+
+/** Where in the agent's home a secret given mid-turn is put, one file per name. */
+export const SECRETS_FOLDER = ".ponzu/secrets";
 
 function toBase64(value: string): string {
   let binary = "";

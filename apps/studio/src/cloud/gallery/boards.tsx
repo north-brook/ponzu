@@ -1,7 +1,11 @@
 /* What each composition in compositions.ts draws. */
+import type { Doc } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
+import { ResetFileLinksDialog } from "../dialogs/reset-file-links.tsx";
 import { type CanvasFilter, repoKey } from "../filter.ts";
 import type { CanvasMember, CanvasSummary, Contributor } from "../model.ts";
+import { BoardsPane, SHOW_BOARDS } from "./boards-pane.tsx";
+import { heroBoards, teamHeroBoards } from "./canvas-fixtures.ts";
 import { CanvasHarness } from "./canvas-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CanvasChromeHarness, CreateHarness, Harness } from "./harness.tsx";
@@ -20,7 +24,7 @@ function quieter(canvases: CanvasSummary[]): CanvasSummary {
   return canvases.find((d) => d.id === "cnv_quieter")!;
 }
 
-/** A canvas open in Northbrook with teammates around: the team boards' window. */
+/** A canvas open in Thistlewick with teammates around: the team boards' window. */
 function CanvasWindow({
   canvases = f.teamCanvases,
   contributors = f.contributors,
@@ -28,6 +32,8 @@ function CanvasWindow({
   sidebar = "open",
   rail: initialRail = true,
   members = f.members,
+  boards,
+  resetLinks,
 }: {
   canvases?: CanvasSummary[];
   contributors?: Contributor[];
@@ -36,8 +42,62 @@ function CanvasWindow({
   rail?: boolean;
   /** Who Share lists. */
   members?: CanvasMember[];
+  /** The canvas's boards, drawn with `&boards` (boards-pane.tsx). */
+  boards?: Doc;
+  /**
+   * The viewer is its owner or an admin, so Share's foot offers "Reset file links":
+   * `"asking"` opens the window with its confirmation already up.
+   */
+  resetLinks?: "offered" | "asking";
 }) {
   const [rail, setRail] = useState(initialRail);
+  const [asking, setAsking] = useState(resetLinks === "asking");
+  return (
+    <>
+      <CanvasWindowFrame
+        canvases={canvases}
+        contributors={contributors}
+        query={query}
+        sidebar={sidebar}
+        rail={rail}
+        setRail={setRail}
+        members={members}
+        boards={boards}
+        onResetLinks={resetLinks ? () => setAsking(true) : null}
+      />
+      {resetLinks ? (
+        <ResetFileLinksDialog
+          open={asking}
+          busy={false}
+          onCancel={() => setAsking(false)}
+          onConfirm={() => setAsking(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function CanvasWindowFrame({
+  canvases,
+  contributors,
+  query,
+  sidebar,
+  rail,
+  setRail,
+  members,
+  boards,
+  onResetLinks,
+}: {
+  canvases: CanvasSummary[];
+  contributors: Contributor[];
+  query: string | null;
+  sidebar: "open" | "closed";
+  rail: boolean;
+  setRail: (change: (open: boolean) => boolean) => void;
+  members: CanvasMember[];
+  boards: Doc | undefined;
+  onResetLinks: (() => void) | null;
+}) {
   return (
     <Harness
       canvases={canvases}
@@ -53,10 +113,11 @@ function CanvasWindow({
           railOpen={rail}
           onToggleRail={() => setRail((o) => !o)}
           members={members}
+          onResetLinks={onResetLinks}
         />
       )}
     >
-      {null}
+      {boards && SHOW_BOARDS ? <BoardsPane doc={boards} /> : null}
     </Harness>
   );
 }
@@ -122,13 +183,15 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "shortcuts-filtered": () => (
     <ShortcutsWindow filter={{ person: null, projects: [repoKey(f.fernwood)] }} />
   ),
-  "team-sidebar": () => <CanvasWindow />,
+  "team-sidebar": () => <CanvasWindow boards={teamHeroBoards} />,
   "sidebar-team-menu": () => <CanvasWindow />,
   "sidebar-filter": () => <CanvasWindow />,
   "sidebar-search": () => <CanvasWindow query="" />,
   "sidebar-search-results": () => <CanvasWindow query="hero" />,
   share: () => <CanvasWindow />,
   "share-not-joined": () => <CanvasWindow members={f.membersMixed} />,
+  "share-reset-links": () => <CanvasWindow resetLinks="offered" />,
+  "share-reset-links-confirm": () => <CanvasWindow resetLinks="asking" />,
   "sidebar-previews-updating": () => <LivePreviews />,
   "canvas-opening": () => <OpeningWindow known="row" />,
   "canvas-opening-launch": () => <OpeningWindow known="nothing" sidebar="closed" />,
@@ -141,6 +204,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
       agent={t.heroAgent}
       // As the boards go on: board 2's questions follow your next message.
       then={t.boardAsks}
+      boards={heroBoards}
     />
   ),
   "claude-sets-it-up": () => (
@@ -189,12 +253,12 @@ export const BOARDS: Record<string, () => ReactNode> = {
     </Harness>
   ),
   "pick-a-project-workspaces": () => (
-    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.thistlewick, f.brambleSchool]}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} />
     </Harness>
   ),
   "pick-a-project-workspaces-loading": () => (
-    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.thistlewick, f.brambleSchool]}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} later />
     </Harness>
   ),
@@ -202,7 +266,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
     <Harness
       canvases={f.soloCanvases}
       openId={null}
-      workspaces={[f.northbrook, f.lennyLearning, f.personal]}
+      workspaces={[f.thistlewick, f.brambleSchool, f.personal]}
     >
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.threeShelves} />
     </Harness>
@@ -264,7 +328,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
     <Harness
       canvases={f.teamCanvases}
       openId={null}
-      initialFilter={{ person: f.alex.id, projects: [repoKey(f.lenny)] }}
+      initialFilter={{ person: f.alex.id, projects: [repoKey(f.almanac)] }}
     >
       {null}
     </Harness>
