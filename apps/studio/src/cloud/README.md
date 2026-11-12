@@ -50,7 +50,7 @@ to the middle (the page tabs and the pull request tab on its left, presence, Sha
 request mark and the next action on its right, and below them what the chosen tab shows).
 Choosing the pull request tab swaps what the middle shows and nothing else: the rail stays as it
 was (open at its width or closed, its scroll, its draft, its working state), so does the
-sidebar, both toggles and ⌘B, ⌘J keep working, the chrome reads as on any page, and no pane
+sidebar, both toggles and ⌘B, ⌥⌘B keep working, the chrome reads as on any page, and no pane
 moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
 `inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
 `design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
@@ -108,7 +108,7 @@ block in the chrome (`[data-chrome-rail]`) read them, so one number moves pane a
 window is too narrow for all of it (the smallest window, five people and Update branch) the page
 tabs give way, scrolling under their fade; the cluster never wraps or clips.
 
-⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
+⌘B toggles the sidebar and ⌥⌘B the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
 toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
 reach the studio as commands. Neither toggles while a menu or a modal is open over the window,
@@ -162,7 +162,7 @@ Blocks are memoised in runs of 16, so a reply streaming in parses only its last 
 | --- | --- | --- |
 | ⌘N | New design (the create page) | sidebar, File menu |
 | ⌘K | Search (expands a collapsed sidebar first) | sidebar |
-| ⌘J | Show or hide the thread; opened, the caret is in its composer | thread toggle |
+| ⌥⌘B | Show or hide the thread; opened, the caret is in its composer | thread toggle |
 | ⌘P | Show or hide the pull request | pull request mark |
 | ⌘⇧↵ | Press the action button (Create PR, Ready, Merge…) | action button |
 | ⌘, | Settings | sidebar, app menu |
@@ -183,7 +183,7 @@ moved from ⌥ to ⌃, which types nothing (`ui/shortcut.ts`):
   icon's place, or on a tab without one in place of its name, which fades beneath it.
   Nothing moves to make room. They arrive one after another on the pop's timing and leave all at
   once, quicker, as the key comes up, the window loses focus, or any other key, click or scroll
-  comes; so ⌘B, ⌘J or ⌘K never flash them. A number pressed while they show keeps them up.
+  comes; so ⌘B, ⌥⌘B or ⌘K never flash them. A number pressed while they show keeps them up.
 - **When not.** Nothing jumps or shows while a menu, popover or dialog is open. In a text field
   (the composer, search, a rename) ⌘ and ⌃ numbers still jump, since they type nothing, but show
   no hints; off the Mac, Alt numbers neither jump nor show there.
@@ -191,7 +191,7 @@ moved from ⌥ to ⌃, which types nothing (`ui/shortcut.ts`):
 
 The thread and the pull request's keys:
 
-- **Opening the thread** (its toggle, ⌘J, View › Toggle Thread, from the canvas or the pull
+- **Opening the thread** (its toggle, ⌥⌘B, View › Toggle Thread, from the canvas or the pull
   request tab) puts the caret in its composer once the pane has opened (it is `inert` until
   then), without scrolling the thread or showing a ring; with a question in the
   composer's place, on its first option. Not under a menu, popover or dialog, not from a field
@@ -424,7 +424,7 @@ repaint something or say what isn't so. The usual swaps:
   launch's place under it (anything typed meanwhile, and the caret, carried over). After
   `LANDING_BEAT_MS` (1400) the thread's pane closes on its usual easing and that is remembered as
   the toggle would; it stays open, remembered so, if since the send the person moved the pointer
-  into it, pressed, focused, typed or scrolled there, and the toggle or ⌘J pressed then is the
+  into it, pressed, focused, typed or scrolled there, and the toggle or ⌥⌘B pressed then is the
   person's say. Only a send from the create page has a beat; another design opened, or the
   create page again, before it ends leaves the pane closed. A send that fails comes back to the
   page as it was (words, images, project, the caret in the field), the error said, and nothing

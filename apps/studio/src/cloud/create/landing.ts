@@ -7,7 +7,7 @@ import { type Flight, type FlightOrigin, fly, threadComposer } from "./flight.ts
  * empty and ready (the caret in it), and after a beat the thread's pane closes, having shown
  * where the conversation lives. It stays open, and is kept open, if the person has gone to it
  * since the send: moved the pointer into it, pressed or focused something in it, typed or
- * scrolled there. Its toggle (and ⌘J) is the window's to watch: a press on it ends the beat too.
+ * scrolled there. Its toggle (and ⌥⌘B) is the window's to watch: a press on it ends the beat too.
  */
 
 /** How long the thread's pane stays open once the composer has landed, before it closes. */

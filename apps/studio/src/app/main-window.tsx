@@ -442,11 +442,11 @@ function WorkspaceWindow({
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
         if (command === "settings") openSettings();
-        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again,
+        // The window's own ⌘B and ⌥⌘B take the keys first; a press they just ran isn't run again,
         // and neither toggles under a menu or a modal (paneHeld).
         if (command === "toggle-sidebar" && !ranJustNow("b") && !paneHeld("sidebar"))
           toggles.current.sidebar?.();
-        if (command === "toggle-thread" && !ranJustNow("j") && !paneHeld("thread"))
+        if (command === "toggle-thread" && !ranJustNow("alt+b") && !paneHeld("thread"))
           toggles.current.rail?.();
       }),
     [host, openDesign, openSettings],

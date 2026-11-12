@@ -1156,7 +1156,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await focused()).toBeNull();
     await page.keyboard.press("Escape");
   });
-  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and the page numbers work there", async () => {
+  test("the pull request tab swaps the middle only: the thread stays, and ⌥⌘B and the page numbers work there", async () => {
     await open("pull-request-tab");
     const heading = 'h1:text-is("Quieter hero, editorial take")';
     // The rail's width as the design gives it: its panel and the 10 of gutter (its edge) before it.
@@ -1167,12 +1167,12 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.$(heading)).not.toBeNull();
     expect(await expanded()).toBe("true");
     expect(await thread()).toBe(360);
-    // ⌘J closes and opens the thread on this tab as anywhere, and the tab stays.
+    // ⌥⌘B closes and opens the thread on this tab as anywhere, and the tab stays.
     await page.click(heading);
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("false");
     expect(await page.$(heading)).not.toBeNull();
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("true");
     // What is typed in the thread outlives leaving the tab (board 3 asks a question: its note
     // field is in the composer's place). ⌃1 (Alt off the Mac) opens the first page; the thread
