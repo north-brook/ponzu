@@ -1,6 +1,7 @@
 /*
  * What a design is made in, as an icon: the one place these are chosen, so a repo and Scratch
- * read the same in the picker, its chip, the sidebar's rows and Settings. Draw them through
+ * read the same in the picker, the sidebar's rows and Settings (the create page's selector, in
+ * its header beside the logo, draws none). Draw them through
  * `Icon` at the size and stroke where they sit.
  */
 import { Folder01Icon, FolderGitIcon } from "@hugeicons/core-free-icons";

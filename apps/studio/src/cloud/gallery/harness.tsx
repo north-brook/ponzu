@@ -270,12 +270,11 @@ export function CreateHarness({
     (window as { galleryArrive?: () => void }).galleryArrive = () => setArrived(true);
   }, []);
   const repos = shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
-  const elsewhere: RepoShelf[] =
-    shelves && arrived
-      ? window_.workspaces
-          .filter((w) => w.id !== window_.workspace.id && shelves[w.id])
-          .map((w) => ({ workspaceId: w.id, repos: shelves[w.id]! }))
-      : [];
+  const elsewhere: RepoShelf[] = shelves
+    ? window_.workspaces
+        .filter((w) => w.id !== window_.workspace.id && shelves[w.id])
+        .map((w) => ({ workspaceId: w.id, repos: arrived ? shelves[w.id]! : null }))
+    : [];
   return (
     <CreatePage
       prompt={prompt}

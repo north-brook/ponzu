@@ -3,6 +3,7 @@ import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RepoShelf } from "../cloud/create/create.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
@@ -301,12 +302,14 @@ function WorkspaceWindow({
   const elsewhere = useQueries({
     queries: others.map((w) => queries.workspace(w.id)),
     combine: useCallback(
-      (results: { data?: { repos: Parameters<typeof pushableRepos>[0] } }[]) =>
-        results.flatMap((result, i) =>
-          result.data
-            ? [{ workspaceId: others[i]!.id, repos: pushableRepos(result.data.repos) }]
-            : [],
-        ),
+      (
+        results: { data?: { repos: Parameters<typeof pushableRepos>[0] }; isPending: boolean }[],
+      ): RepoShelf[] =>
+        results.flatMap((result, i): RepoShelf[] => {
+          const workspaceId = others[i]!.id;
+          if (result.data) return [{ workspaceId, repos: pushableRepos(result.data.repos) }];
+          return result.isPending ? [{ workspaceId, repos: null }] : [];
+        }),
       [others],
     ),
   });

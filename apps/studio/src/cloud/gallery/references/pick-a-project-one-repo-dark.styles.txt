@@ -67,8 +67,14 @@ text "Settled" rgb(183, 179, 169) 400 12px Inter
 text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg 198.95×54.28 rgb(244, 243, 239) stroke 3.4px
+icon svg 173×47.2 rgb(244, 243, 239) stroke 3.4px
 text "What do you want to design?" rgb(244, 243, 239) 400 13px Inter
+ground div rgb(38, 37, 35)
+ground button[Project: north-brook/ponzu-test] rgba(255, 255, 255, 0.1)
+text "north-brook" rgb(118, 115, 105) 600 22px Funnel Display
+text "/" rgb(118, 115, 105) 600 22px Funnel Display
+text "ponzu-test" rgb(244, 243, 239) 600 22px Funnel Display
+icon svg[Project: north-brook/ponzu-test] 16×16 rgb(142, 138, 130) stroke 1.7px
 ground div rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(244, 243, 239) 400 16px Inter
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
@@ -78,16 +84,14 @@ text "High" rgb(118, 115, 105) 400 12px Inter
 icon svg[Model: Opus 5.5, effort High] 11×11 rgb(183, 179, 169) stroke 2.2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
-text "ponzu-test" rgb(183, 179, 169) 500 12px Inter
-ground button[Project: ponzu-test] rgba(255, 255, 255, 0.1)
-icon svg[Project: ponzu-test] 12×12 rgb(183, 179, 169) stroke 2px
-icon svg[Project: ponzu-test] 11×11 rgb(183, 179, 169) stroke 2.2px
 ground div[Choose a repo] rgb(27, 27, 26) shadow rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.5) 0px 10px 30px 0px
 text "Choose a repo" rgb(244, 243, 239) 400 13px Inter
 icon svg[Repositories] 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Scratch" rgb(244, 243, 239) 400 13px Inter
 ground div[Repositories] rgba(255, 255, 255, 0.06)
 icon svg[Repositories] 16×16 rgb(183, 179, 169) stroke 1.7px
+text "north-brook" rgb(118, 115, 105) 400 13px Inter
+text "/" rgb(118, 115, 105) 400 13px Inter
 text "ponzu-test" rgb(244, 243, 239) 400 13px Inter
 icon svg[Repositories] 14×14 rgb(244, 243, 239) stroke 1.9px
 ground div[Choose a repo] rgb(38, 37, 35)

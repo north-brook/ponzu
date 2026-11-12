@@ -137,10 +137,10 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/5-pick-a-project.html",
     ...WINDOW,
     open: 'button[aria-label^="Project"]',
-    // The board's picker and ours, wherever either lands.
-    masks: [{ x: 530, y: 416, width: 424, height: 380 }],
+    // The board's picker (under the composer) and ours (under the header's selector).
+    masks: [{ x: 530, y: 380, width: 700, height: 420 }],
     differs:
-      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows from five repos over a list of five and a half rows, and Scratch has the dashed-folder icon",
+      "the project selector is in the header beside the logo, not a chip under the composer; the picker's rows are one line titled owner/name (no note under them, no owner heading) across every workspace, the search shows from five repos over a list of five and a half rows, and Scratch has the dashed-folder icon",
     reference: true,
   },
   {

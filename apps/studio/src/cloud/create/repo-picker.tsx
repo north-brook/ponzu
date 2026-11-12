@@ -25,7 +25,7 @@ import {
   projectLabel,
   type RepoRow,
   type RepoShelf,
-  showsSearch,
+  searchAtOpening,
 } from "./create.ts";
 
 const SCRATCH = "scratch";
@@ -158,17 +158,10 @@ function PickerBody({
   // The highlighted row: the chosen one as it opens, then wherever the keys or pointer move it.
   const [active, setActive] = useState(value ? keyOf(value) : SCRATCH);
   const all = pickerRepos(repos, elsewhere);
-  // Whether there is a search is settled once the window's repos are known, and holds while the
-  // picker is open: rows arriving from other workspaces join at the foot, never moving the rows
-  // above by bringing a field in over them. The next opening counts them.
-  const [search, setSearch] = useState<boolean | null>(
-    repos === null ? null : showsSearch(all.length),
-  );
-  const known = repos !== null;
-  const count = all.length;
-  useEffect(() => {
-    if (search === null && known) setSearch(showsSearch(count));
-  }, [search, known, count]);
+  // Whether there is a search is settled as the picker opens and holds while it is open: rows
+  // arriving join at the foot, and a field brought in over them would move them. With repos still
+  // to come (the window's, or another workspace's) it has one, as the list may come to scroll.
+  const [search] = useState(() => repos === null || searchAtOpening(all.length, elsewhere));
   const rows = pickerRows(all, search ? query : "");
   const list = useRef<HTMLDivElement>(null);
   // With no field to type in, the list takes focus as it opens: the keys still move the
@@ -277,15 +270,21 @@ function PickerRow({
 }) {
   const key = keyOf(choice);
   const name = projectLabel(choice);
-  // How far right of the name the tip sits: past the picker's edge, by a tip's usual gap.
-  const [tip, setTip] = useState<number | null>(null);
+  // Which side of the name the tip sits, and how far from it: past the picker's edge by a tip's
+  // usual gap, on the right where the window has room for it, else on the left.
+  const [tip, setTip] = useState<{ side: "right" | "left"; offset: number } | null>(null);
   const label = useRef<HTMLSpanElement>(null);
   const place = (open: boolean) => {
     const el = label.current;
     const picker = el?.closest('[data-slot="popover-content"]');
     if (!open || !el || !picker || !cutShort(el)) return setTip(null);
-    const gap = picker.getBoundingClientRect().right - el.getBoundingClientRect().right;
-    setTip(Math.round(gap) + TIP_GAP);
+    const p = picker.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    if (window.innerWidth - p.right - TIP_GAP - TIP_ROOM >= wholeWidth(el)) {
+      setTip({ side: "right", offset: Math.round(p.right - r.right) + TIP_GAP });
+    } else {
+      setTip({ side: "left", offset: Math.round(r.left - p.left) + TIP_GAP });
+    }
   };
   // The highlight, wherever the keys or the pointer move it, opens and closes the tip too.
   const was = useRef(highlighted);
@@ -324,7 +323,13 @@ function PickerRow({
             )}
           </span>
         </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={tip ?? TIP_GAP}>
+        <TooltipContent
+          side={tip?.side ?? "right"}
+          sideOffset={tip?.offset ?? TIP_GAP}
+          // The side is chosen above, knowing where the picker's edges are; Radix's own flip
+          // would keep the offset meant for the other side.
+          avoidCollisions={false}
+        >
           {name}
         </TooltipContent>
       </Tooltip>
@@ -338,6 +343,17 @@ function cutShort(el: Element): boolean {
   const parts = el.querySelectorAll<HTMLElement>("span");
   return [el as HTMLElement, ...parts].some((part) => part.scrollWidth > part.clientWidth);
 }
+
+/** A title's width uncut: each of its parts' whole width. */
+function wholeWidth(el: Element): number {
+  const parts = [...el.querySelectorAll<HTMLElement>("span")].filter(
+    (s) => !s.querySelector("span"),
+  );
+  return parts.reduce((sum, part) => sum + part.scrollWidth, 0);
+}
+
+/** A tip's own padding and the least margin it keeps from the window's edge, past its words. */
+const TIP_ROOM = 32;
 
 /**
  * The selector's words sit on the row's line (the logo's mark's centre) by the centre of their

@@ -7,6 +7,7 @@ import {
   pickerRows,
   projectLabel,
   SEARCH_FROM,
+  searchAtOpening,
   showsSearch,
 } from "./create.ts";
 
@@ -74,4 +75,15 @@ test("the search shows only once there are enough repos to need it", () => {
   expect(showsSearch(0)).toBe(false);
   expect(showsSearch(SEARCH_FROM - 1)).toBe(false);
   expect(showsSearch(SEARCH_FROM)).toBe(true);
+  // Opening with another workspace's repos still to come: they may make it scroll.
+  expect(searchAtOpening(3, [])).toBe(false);
+  expect(searchAtOpening(3, [{ workspaceId: "ws_lenny", repos: lenny }])).toBe(false);
+  expect(searchAtOpening(3, [{ workspaceId: "ws_lenny", repos: null }])).toBe(true);
+  expect(searchAtOpening(SEARCH_FROM, [])).toBe(true);
+});
+
+test("a workspace still loading lists nothing yet", () => {
+  expect(pickerRepos(repos, [{ workspaceId: "ws_lenny", repos: null }])).toEqual(
+    pickerRepos(repos),
+  );
 });

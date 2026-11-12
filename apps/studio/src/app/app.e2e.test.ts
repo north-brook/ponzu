@@ -211,7 +211,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // A brand-new personal workspace hides the sidebar only when it is all the person has:
     // with the team Ready, the switcher is how they reach it.
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
-    expect(await page.getByRole("button", { name: "Project: kettle" }).count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Project: maya/kettle" }).count()).toBe(1);
     // Its ideas take turns as the composer's placeholder: Tab takes the one showing.
     await page.locator("[data-suggestion]").waitFor();
     await shoot("5-fresh-start");
@@ -323,6 +323,53 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
     // The create page fills the canvas pane until a design is opened.
     await page.getByText("What do you want to design?").waitFor();
+  });
+
+  test("the create page's picker lists both workspaces' repos; one of the other's switches the window there in one step", async () => {
+    const selector = page.locator("[data-project-selector]");
+    await selector.click();
+    const options = page.getByRole("option");
+    // Northbrook's first, then Personal's, each by its full name.
+    await waitUntil(async () => (await options.count()) === 4);
+    expect(await options.allTextContents()).toEqual([
+      "Scratch",
+      "north-brook/ponzu",
+      "north-brook/site",
+      "maya/kettle",
+    ]);
+    await page.keyboard.press("Escape");
+    const field = page.getByPlaceholder(/Describe a screen/);
+    await field.fill("A kettle that whistles");
+    // Every name the selector shows from here on: no other repo, nor Scratch, on the way.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as { selectorSaid?: string[] }).selectorSaid = seen;
+      const note = () => {
+        const label = document.querySelector("[data-project-selector]")?.getAttribute("aria-label");
+        if (label && seen.at(-1) !== label) seen.push(label);
+      };
+      note();
+      new MutationObserver(note).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["aria-label"],
+      });
+    });
+    await selector.click();
+    await page.locator('[role="option"]', { hasText: "maya/kettle" }).click();
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
+    await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
+    expect(await field.inputValue()).toBe("A kettle that whistles");
+    // The create page, not the design last open there.
+    await page.getByText("What do you want to design?").waitFor();
+    const said = await page.evaluate(() => (window as { selectorSaid?: string[] }).selectorSaid);
+    expect(said?.slice(1)).toEqual(["Project: maya/kettle"]);
+
+    // Back to the team for what follows.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page.getByRole("button", { name: "Project: north-brook/ponzu" }).waitFor();
   });
 
   test("a design made on the create page opens, and the canvas draws what its agent commits", async () => {

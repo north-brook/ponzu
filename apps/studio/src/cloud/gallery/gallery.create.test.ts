@@ -100,7 +100,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     ).toBe(true);
     expect(await page.$("[data-suggestion]")).toBeNull();
     expect(await disabled()).toBe(false);
-    // With words in the field, Tab is the keyboard's again.
+    // With words in the field, Tab is the keyboard's again: past the frame the idea's caret is
+    // placed in, so that doesn't take focus back after the Tab (a loaded machine runs it late).
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
   });
@@ -108,7 +112,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   /** Where the create page's question sits, in px from the window's top. */
   const questionTop = () =>
     page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
-  test("the repo picker opens under its chip and the page stays where it is", async () => {
+  test("the repo picker opens under its selector and the page stays where it is", async () => {
     const picker = '[data-slot="popover-content"]';
     const box = (selector: string) =>
       page.$eval(selector, (el) => {
@@ -130,10 +134,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         picker,
       );
       expect(await questionTop()).toBe(resting);
-      // Under the chip, and whole inside the window.
-      const chip = await box('button[aria-label^="Project"]');
+      // Under the selector, and whole inside the window.
+      const selector = await box('button[aria-label^="Project"]');
       const open_ = await box(picker);
-      expect(open_.top).toBeGreaterThanOrEqual(chip.bottom);
+      expect(open_.top).toBeGreaterThanOrEqual(selector.bottom);
       expect(open_.bottom).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight));
     }
     // Fifteen repos and Scratch: the list shows five rows and half of the sixth, and has its search.
@@ -150,9 +154,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
     expect(await questionTop()).toBe(resting);
   });
-  test("in a window too short for it, the picker's list gives up height and stays under the chip", async () => {
+  test("in a window too short for it, the picker's list gives up height and stays under the selector", async () => {
     await open("pick-a-project-many-repos");
-    await page.setViewportSize({ width: 1440, height: 560 });
+    // The picker hangs from the header, so it takes a window this short to run out of room.
+    await page.setViewportSize({ width: 1440, height: 440 });
     try {
       // The column re-centres for the shorter pane in the frame after the resize (a
       // ResizeObserver): past two frames it is where it rests.
@@ -175,7 +180,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         ];
       });
       expect(top).toBeGreaterThanOrEqual(chipBottom!);
-      expect(bottom).toBeLessThanOrEqual(560);
+      expect(bottom).toBeLessThanOrEqual(440);
       expect(listHeight).toBeLessThan(176);
       expect(listHeight).toBeGreaterThan(0);
       expect(await questionTop()).toBe(resting);
@@ -293,8 +298,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(options).toEqual(["repo_lenny"]);
     await page.keyboard.press("Enter");
     await page.waitForSelector('input[aria-label="Search repositories"]', { state: "detached" });
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("lenny");
-    await focusOn("Project: lenny");
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("north-brook/lenny");
+    await focusOn("Project: north-brook/lenny");
   });
   /**
    * Checks the arrows, Home and End move the highlight while `focused` (the field, or the list)
@@ -321,7 +326,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.$eval(focused, (el) => el === document.activeElement)).toBe(true);
     await page.keyboard.press("Escape");
     await page.waitForSelector(focused, { state: "detached" });
-    await focusOn("Project: fernwood");
+    await focusOn("Project: north-brook/fernwood");
   };
   test("the repo picker on create: one line a row, by name, no search; the list takes the keys, Escape changes nothing, Return chooses", async () => {
     const list = '[role="listbox"][aria-label="Repositories"]';
@@ -330,13 +335,13 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector(list);
     // A few repos: no search; the list itself has the keys.
     expect(await page.$('input[aria-label="Search repositories"]')).toBeNull();
-    // Each row says only its name: no owner, no second line, no heading over them.
+    // Each row says its full name on one line: no second line, no heading over them.
     expect(await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent))).toEqual([
       "Scratch",
-      "fernwood",
-      "lenny",
-      "ponzu",
-      "fablefuel",
+      "north-brook/fernwood",
+      "north-brook/lenny",
+      "north-brook/ponzu",
+      "north-brook/fablefuel",
     ]);
     expect(await page.$("[cmdk-group-heading]")).toBeNull();
     const heights = await page.$$eval('[role="option"]', (els) =>
@@ -388,14 +393,175 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.hover(`${row} span`);
     await page.waitForSelector(tip);
     expect(await page.textContent(tip)).toContain(name);
-    // It sits past the picker's edge, not over the rows.
-    const [tipLeft, pickerRight] = await page.evaluate((tip) => {
+    // It sits past the picker's edge, not over the rows: the right edge where the window has
+    // room, else the left (the picker hangs from the header's selector, right of centre).
+    const clear = await page.evaluate((tip) => {
       const t = document.querySelector(tip)!.getBoundingClientRect();
       const p = document.querySelector('[data-slot="popover-content"]')!.getBoundingClientRect();
-      return [t.left, p.right];
+      return {
+        past: t.left >= p.right || t.right <= p.left,
+        inside: t.left >= 0 && t.right <= window.innerWidth,
+      };
     }, tip);
-    expect(tipLeft).toBeGreaterThanOrEqual(pickerRight);
+    expect(clear).toEqual({ past: true, inside: true });
   });
+  /**
+   * The create page's header, measured: the logo's mark, the hairline, the selector and its
+   * words (their box, and the centre of their x-height, the line the logo's word sits on), the
+   * composer's card, all in px.
+   */
+  const header = () =>
+    page.evaluate(() => {
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          mid: r.top + r.height / 2,
+        };
+      };
+      const label = document.querySelector("[data-project-label]")!;
+      const name = (label.lastElementChild ?? label) as HTMLElement;
+      const style = getComputedStyle(name);
+      const ctx = document.createElement("canvas").getContext("2d")!;
+      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const m = ctx.measureText("nwoo");
+      const n = name.getBoundingClientRect();
+      // Where the line box puts the baseline: half the leading over the font's own box.
+      const baseline =
+        n.top +
+        (n.height - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 +
+        m.fontBoundingBoxAscent;
+      return {
+        mark: box(document.querySelector("h1 svg")!),
+        divider: box(document.querySelector("[data-create-divider]")!),
+        selector: box(document.querySelector("[data-project-selector]")!),
+        label: box(label),
+        // A line is the face's line box, a little over its size: two would be over twice it.
+        labelLines: Math.floor(n.height / Number.parseFloat(style.fontSize)),
+        nameShown: name.clientWidth,
+        xHeight: baseline - m.actualBoundingBoxAscent / 2,
+        composer: box(document.querySelector("textarea")!.closest(".cursor-text")!),
+      };
+    });
+
+  test("the header is one line on the mark: the hairline, and the selector's words, centred on it", async () => {
+    await open("create");
+    const h = await header();
+    // The mark is the lockup's height; its centre is the row's line.
+    expect(Math.abs(h.divider.mid - h.mark.mid)).toBeLessThanOrEqual(1);
+    expect(Math.abs(h.label.mid - h.mark.mid)).toBeLessThanOrEqual(1);
+    expect(Math.abs(h.selector.mid - h.mark.mid)).toBeLessThanOrEqual(1);
+    // The words sit on it by their x-height, as the logo's word does.
+    expect(Math.abs(h.xHeight - h.mark.mid)).toBeLessThanOrEqual(1);
+    // The hairline stands on the composer's centre line; the logo ends 16 before it.
+    const centre = (h.composer.left + h.composer.right) / 2;
+    expect(Math.abs((h.divider.left + h.divider.right) / 2 - centre)).toBeLessThanOrEqual(0.5);
+    expect(Math.round(h.divider.left - h.mark.right)).toBe(16);
+    // Nothing is under the composer: the selector came up into the header.
+    expect(h.selector.bottom).toBeLessThan(h.composer.top);
+  });
+
+  test("a long owner and name stay on the header's line, inside the composer's width, the logo where it was", async () => {
+    await open("create");
+    const short = await header();
+    await open("fresh-start-long-name");
+    const long = await header();
+    expect(long.selector.right).toBeLessThanOrEqual(long.composer.right);
+    expect(long.labelLines).toBe(1);
+    expect(long.selector.mid).toBe(short.selector.mid);
+    // The logo and the hairline didn't move or shrink for it.
+    expect(long.mark).toEqual(short.mark);
+    expect(long.divider).toEqual(short.divider);
+    // The owner gave way first: most of what shows is the name.
+    expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.75);
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: the-extraordinarily-long-organization-name/customer-onboarding-experiments-and-landing-page-variants",
+    );
+  });
+
+  test("the picker lists every workspace's repos by full name, the window's first, and searches them all", async () => {
+    await open("pick-a-project-workspaces");
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    const options = () => page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
+    expect(await options()).toEqual([
+      "Scratch",
+      "north-brook/fernwood",
+      "north-brook/lenny",
+      "north-brook/ponzu",
+      "north-brook/fablefuel",
+      "lennylearning/app",
+      "lennylearning/site",
+      "lennylearning/curriculum",
+    ]);
+    // Owners read quieter than names.
+    const [owner, name] = await page.$eval('[data-choice="repo_lennylearning_app"]', (row) =>
+      [...row.querySelectorAll("span span")].map((s) => getComputedStyle(s).color),
+    );
+    expect(owner).not.toBe(name);
+    // A search matches anywhere in owner/name: an organization finds its repos, a name both's.
+    await page.keyboard.type("lenny");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 4);
+    expect(await options()).toEqual([
+      "north-brook/lenny",
+      "lennylearning/app",
+      "lennylearning/site",
+      "lennylearning/curriculum",
+    ]);
+    await page.fill('input[aria-label="Search repositories"]', "/site");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
+    expect(await options()).toEqual(["lennylearning/site"]);
+  });
+
+  test("choosing another workspace's repo switches the sidebar's workspace and keeps the choice and the words", async () => {
+    await open("pick-a-project-workspaces");
+    await page.fill("textarea", "Three takes on the lesson page");
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    await page.click('[data-choice="repo_lennylearning_app"]');
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    await page.waitForSelector('button[aria-label="Workspace: Lenny Learning"]');
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: lennylearning/app",
+    );
+    expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
+    // There, its own repos come first and Northbrook's after.
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    const names = await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
+    expect(names.slice(0, 3)).toEqual(["Scratch", "lennylearning/app", "lennylearning/site"]);
+    expect(names.at(-1)).toBe("north-brook/fablefuel");
+    await page.keyboard.press("Escape");
+  });
+
+  test("nothing moves when the other workspaces' repos arrive, the open list included", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?board=pick-a-project-workspaces&theme=light&later`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    const before = await header();
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    const rows = () =>
+      page.$$eval('[role="option"]', (els) =>
+        els.map((e) => [e.getAttribute("data-choice"), Math.round(e.getBoundingClientRect().top)]),
+      );
+    const open_ = await rows();
+    expect(open_.length).toBe(5);
+    // Five rows fit, but more are coming: the search is there from the start, not brought in
+    // over the rows when they arrive.
+    expect(await page.$('input[aria-label="Search repositories"]')).not.toBeNull();
+    await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 8);
+    // They join at the foot: the rows there were stay put, and so does the page.
+    expect((await rows()).slice(0, 5)).toEqual(open_);
+    expect(await header()).toEqual(before);
+    await page.keyboard.press("Escape");
+  });
+
   test("page tabs: the arrows move between them without opening one; Return opens it", async () => {
     await open("thread-in-the-right-rail");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';

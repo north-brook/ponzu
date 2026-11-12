@@ -3,10 +3,22 @@ import type { Repo } from "../model.ts";
 /** What a new design is made in: a repo, or Scratch. */
 export type ProjectChoice = { kind: "repo"; repo: Repo } | { kind: "scratch" };
 
-/** Another workspace's repos the person can push to, as the picker lists them. */
+/**
+ * Another workspace's repos the person can push to, as the picker lists them; `repos` is null
+ * while they load. A workspace whose repos couldn't be had has no shelf.
+ */
 export interface RepoShelf {
   workspaceId: string;
-  repos: Repo[];
+  repos: Repo[] | null;
+}
+
+/**
+ * Whether the picker offers a search, decided as it opens: once there are enough repos to need
+ * one, or while other workspaces' repos are still to come (they join at the list's foot and
+ * would make it scroll, and a field arriving over the rows then would move them).
+ */
+export function searchAtOpening(count: number, elsewhere: readonly RepoShelf[]): boolean {
+  return showsSearch(count) || elsewhere.some((shelf) => shelf.repos === null);
 }
 
 /** One of the picker's repo rows: the repo, and the workspace it is in (none: the window's). */
@@ -60,7 +72,7 @@ export function pickerRepos(
     rows.push({ repo, workspaceId });
   };
   for (const repo of repos ?? []) add(repo, null);
-  for (const shelf of elsewhere) for (const repo of shelf.repos) add(repo, shelf.workspaceId);
+  for (const shelf of elsewhere) for (const repo of shelf.repos ?? []) add(repo, shelf.workspaceId);
   return rows;
 }
 
