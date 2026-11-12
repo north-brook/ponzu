@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { seedCanvas } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { createTestDb } from "../testing.ts";
-import { getCanvasHead } from "./canvases.ts";
+import { deleteCanvas, getCanvasHead } from "./canvases.ts";
+import { recordCheckpoint, takeRunnerLease } from "./runners.ts";
 import {
   advancePreviewSeq,
   completeUpload,
@@ -10,6 +11,7 @@ import {
   getUploads,
   listAssets,
   type NewUpload,
+  recordedArchiveKeys,
 } from "./uploads.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -88,4 +90,56 @@ test("previews only move forward, and say which ones they replaced", async () =>
   expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 9 })).toBeUndefined();
   expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 7 })).toBeUndefined();
   expect((await getCanvasHead(db, canvas.id))!.previewSeq).toBe(9);
+});
+
+test("an archive is recorded only while its canvas's checkpoint names it", async () => {
+  const { canvas } = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  const archive = (canvasId: string, purpose: "session" | "workspace", name: string) =>
+    upload(canvasId, {
+      purpose,
+      name: `${purpose}.tar.gz`,
+      objectKey: `private/${name}/${purpose}.tar.gz`,
+      contentType: "application/gzip",
+    });
+  const [session1, workspace1, session2, never] = await createUploads(db, [
+    archive(canvas.id, "session", "s1"),
+    archive(canvas.id, "workspace", "w1"),
+    archive(canvas.id, "session", "s2"),
+    archive(canvas.id, "session", "never"),
+  ]);
+  // Another canvas's upload with the same id is not this canvas's archive.
+  await createUploads(db, [{ ...archive(other.canvas.id, "session", "theirs"), id: session1!.id }]);
+  const keys = [session1, workspace1, session2, never].map((row) => row!.objectKey);
+  const theirs = "private/theirs/session.tar.gz";
+  const all = [...keys, theirs, "private/nothing/at.tar.gz"];
+
+  // No checkpoint yet: nothing is recorded.
+  expect(await recordedArchiveKeys(db, all)).toEqual(new Set());
+  expect(await recordedArchiveKeys(db, [])).toEqual(new Set());
+
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date(1_000) });
+  const save = (turn: number, sessionUploadId: string | null, workspaceUploadId: string | null) =>
+    recordCheckpoint(db, {
+      canvasId: canvas.id,
+      runnerId,
+      now: new Date(1_000 + turn),
+      turn,
+      claudeSessionId: "sess-1",
+      wipCommit: null,
+      sessionUploadId,
+      workspaceUploadId,
+    });
+  await save(1, session1!.id, workspace1!.id);
+  expect(await recordedArchiveKeys(db, all)).toEqual(new Set([keys[0]!, keys[1]!]));
+
+  // A later checkpoint replaces the transcript and keeps the work in progress.
+  await save(2, session2!.id, workspace1!.id);
+  expect(await recordedArchiveKeys(db, all)).toEqual(new Set([keys[1]!, keys[2]!]));
+  // Only the keys asked about are answered.
+  expect(await recordedArchiveKeys(db, [keys[2]!, theirs])).toEqual(new Set([keys[2]!]));
+
+  // With the canvas gone, nothing of it is recorded.
+  await deleteCanvas(db, canvas.id);
+  expect(await recordedArchiveKeys(db, all)).toEqual(new Set());
 });

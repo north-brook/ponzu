@@ -364,6 +364,7 @@ export {
   listAssets,
   listUploadKeys,
   type NewUpload,
+  recordedArchiveKeys,
   type Upload,
 } from "./queries/uploads.ts";
 export {

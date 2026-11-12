@@ -548,10 +548,12 @@ Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), on
 area. Other work that must outlive its request and start at once records its job held and runs
 it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
 (`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
-sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+sweep and any other step (the pull request sweep, and once a day the orphan archive sweep), at
+once. A step that throws is logged as `cron_step_failed` and the
 others still run. A step runs every minute, once in every few minutes, or once an hour at a
 given minute. One on a slot runs once in it however many runs overlap, and catches up within
-five minutes when the run it was due in never came.
+five minutes when the run it was due in never came. A step that runs once a day takes an hourly
+slot and does its work only in its hour.
 
 On the hour, the retention step (`cron/steps/retention.ts`) deletes the rows that only keep
 the service running: `auth_states` a day after they expire, finished `jobs` (completed or
@@ -1131,10 +1133,25 @@ account of the person whose canvas it is alone), recorded or not. They go to the
 `deps.archives`: **set `R2_PRIVATE_BUCKET` before production**, a bucket on the same account
 with no public domain, and they go there; unset (as on dev), they go in the assets bucket, where
 the random key is all that stands between a transcript and the world, since the assets domain
-serves any key it is asked for. Either bucket wants a lifecycle rule that deletes objects under
-`private/` a day old that no checkpoint recorded (an upload whose checkpoint call never came);
-recorded ones are deleted by the API. A settled canvas keeps its last checkpoint, so that
-reopening it resumes the conversation.
+serves any key it is asked for. A settled canvas keeps its last checkpoint, so that reopening it
+resumes the conversation.
+
+**Archives nobody records.** No bucket lifecycle rule may touch `private/`: a rule goes by age
+alone, cannot tell a recorded checkpoint from an unrecorded one, and would delete the last
+checkpoint of every canvas settled for a day. Only `staging/` and incomplete multipart uploads
+take a bucket rule. The API deletes the rest itself: the archives a later checkpoint replaces,
+those of a deleted canvas, and, once a day, the ones nobody records. That last is the cron step
+`archives` (`apps/api/src/cron/steps/archives.ts`), at 09:41 UTC. It lists `private/` in
+`deps.archives` (ListObjectsV2, which gives each object's time) and deletes the objects over a
+day old that no `canvas_runners` row names as its transcript or work in progress, asking the
+database after the listing: an upload whose checkpoint call never came, and one whose delete
+failed. It deletes at most 2,000 a run and reads at most 50 pages of a thousand keys, starting at
+a random key and going round, so a bucket larger than one run reads is still swept whole over
+the days. It keeps an object storage gives no time for, deletes nothing when the database does
+not answer, and logs `archives_swept` with counts only (listed, recorded, young, undated,
+deleted), never a key. So that it can never race a checkpoint, `POST /v1/runner/checkpoint`
+refuses an archive whose upload address ran out more than twelve hours before (404), and the
+runner saves anew.
 
 ### Events
 

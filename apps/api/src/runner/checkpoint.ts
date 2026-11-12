@@ -31,6 +31,13 @@ type CheckpointDeps = Pick<Deps, "db" | "archives" | "clock" | "background" | "l
 /** How long an address that reads an archive back lasts. */
 export const RESTORE_SECONDS = 600;
 
+/**
+ * How long after its upload address runs out an archive can still be recorded. The orphan
+ * archive sweep (cron/steps/archives.ts) deletes an unrecorded archive once it is a day old; an
+ * archive this much younger can never be one it is deleting.
+ */
+export const ARCHIVE_RECORD_HOURS = 12;
+
 /** The checkpoint as the runner protocol carries it. */
 export function savedView(point: SavedRow): SavedPoint {
   return {
@@ -63,6 +70,10 @@ export async function recordRunnerCheckpoint(
     if (id === null) continue;
     const row = rows.find((r) => r.id === id);
     if (!row || row.userId !== null || row.purpose !== purpose) throw notArrived;
+    // Uploaded so long ago that the orphan sweep may be deleting it: the runner saves anew.
+    if (deps.clock.now() > row.expiresAt.getTime() + ARCHIVE_RECORD_HOURS * 3_600_000) {
+      throw new ApiError(404, "not_found", "Those bytes were uploaded too long ago to record.");
+    }
   }
   const arrived = await Promise.all(
     rows.map(async (row) => {

@@ -131,8 +131,14 @@ describe.skipIf(!configured)("R2, for real", () => {
       expect(answer.status).toBe(200);
     }
 
-    expect(await storage.list(`${assetKey}/`)).toEqual({ keys, truncated: false });
-    expect(await storage.list(`${assetKey}/`, { after: keys[0] })).toEqual({
+    const listed = await storage.list(`${assetKey}/`);
+    expect(listed).toMatchObject({ keys, truncated: false });
+    // Each with when it was written: just now, by R2's clock, which is near enough to ours.
+    expect(listed.objects.map((object) => object.key)).toEqual(keys);
+    for (const { modifiedAt } of listed.objects) {
+      expect(Math.abs(modifiedAt!.getTime() - Date.now())).toBeLessThan(10 * 60_000);
+    }
+    expect(await storage.list(`${assetKey}/`, { after: keys[0] })).toMatchObject({
       keys: keys.slice(1),
       truncated: false,
     });
@@ -141,7 +147,7 @@ describe.skipIf(!configured)("R2, for real", () => {
       done: false,
     });
     expect(await deleteUnder(storage, `${assetKey}/`)).toEqual({ deleted: 1, done: true });
-    expect(await storage.list(`${assetKey}/`)).toEqual({ keys: [], truncated: false });
+    expect(await storage.list(`${assetKey}/`)).toMatchObject({ keys: [], truncated: false });
     // Nothing at a key is not an error.
     await storage.deleteMany(keys);
     expect((await storage.head(kept))?.size).toBe(bytes.byteLength);

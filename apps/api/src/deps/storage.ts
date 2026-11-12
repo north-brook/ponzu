@@ -43,7 +43,15 @@ export interface ObjectStorage {
 /** One page of the keys under a prefix. */
 export interface StoredList {
   keys: string[];
+  /** The same keys, in the same order, each with when it was last written. */
+  objects: ListedObject[];
   truncated: boolean;
+}
+
+/** A key a list answered, and when storage says it was last written (null when it did not say). */
+export interface ListedObject {
+  key: string;
+  modifiedAt: Date | null;
 }
 
 /** The most keys one `list` answers with, and one `deleteMany` takes: S3's own limits. */
@@ -342,14 +350,25 @@ export function deleteBody(keys: readonly string[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?><Delete><Quiet>true</Quiet>${objects}</Delete>`;
 }
 
-/** The keys, and whether there are more, from a ListObjectsV2 answer. */
+/**
+ * The keys, when each was last written, and whether there are more, from a ListObjectsV2 answer.
+ */
 export function parseList(xml: string): StoredList {
-  const keys = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)].map((contents) => {
+  const objects = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)].map((contents) => {
     const key = /<Key>([\s\S]*?)<\/Key>/.exec(contents[1]!);
     if (!key) throw new UpstreamError("storage", "LIST answered an object with no key");
-    return unescapeXml(key[1]!);
+    const modified = /<LastModified>([\s\S]*?)<\/LastModified>/.exec(contents[1]!);
+    const at = modified ? new Date(modified[1]!.trim()) : null;
+    return {
+      key: unescapeXml(key[1]!),
+      modifiedAt: at && !Number.isNaN(at.getTime()) ? at : null,
+    };
   });
-  return { keys, truncated: /<IsTruncated>\s*true\s*<\/IsTruncated>/.test(xml) };
+  return {
+    keys: objects.map((object) => object.key),
+    objects,
+    truncated: /<IsTruncated>\s*true\s*<\/IsTruncated>/.test(xml),
+  };
 }
 
 /**
