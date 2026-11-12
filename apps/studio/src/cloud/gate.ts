@@ -38,7 +38,7 @@ function limitLine(whose: string, until: string): string {
 
 /*
  * The blockers the API's wake gates give (apps/api/src/sandboxes/gates.ts), in the words people
- * read when one appears on a canvas's head. Written here once, word for word from the designs
+ * read when one appears on a canvas's head. Written here once, word for word from the plans
  * (billing §11, sweep §6, production §1.5), for the features that show them: the thread's
  * waiting line on the Mac, and on the iPhone its first sentence and what the canvas does.
  * Nothing shows them until a gate gives its blocker.
