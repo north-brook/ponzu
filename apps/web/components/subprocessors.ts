@@ -50,7 +50,7 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "WorkOS, Inc.",
     purpose: "Sign-in and sessions",
-    data: "Name, email and GitHub identity",
+    data: "Name, email and GitHub identity; the IP address and browser of each sign-in",
     location: "United States",
     status: "in-use",
     url: "https://workos.com",

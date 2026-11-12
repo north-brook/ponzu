@@ -18,28 +18,31 @@ address and state are not in the code.
 | Claim | Where it is true | Status |
 |---|---|---|
 | Sign-in is GitHub through WorkOS; we keep GitHub user id, login, name, email, avatar | `packages/db/src/schema/accounts.ts` (`users`); docs/cloud.md "Identity and access" | true |
+| Each sign-in's IP address and browser are passed to WorkOS | `apps/api/src/deps/workos.ts` (`ip_address`, `user_agent` in `authenticate`) | true; Ponzu's own `sessions` rows keep neither |
 | The GitHub user token is encrypted, lasts eight hours, is refreshed, never leaves the servers | `github_user_tokens`; `apps/api/src/github/user-token.ts`; docs/cloud.md "Identity and access" | true |
 | Workspaces, repositories and the person's permission on each, re-asked when old | `memberships`, `repo_access` (`checked_at`, made stale by webhooks) | true |
 | People GitHub lists for each installed repository, including people who never opened Ponzu; display only | `workspace_people` and its comment | true |
 | Canvases, comments, thread, change history, files, previews, exports, comment pictures | `packages/db/src/schema/canvases.ts`; docs/cloud.md "Assets and previews" | true |
+| How far each person has read a canvas and its thread, and when; presence while a canvas is open | `canvas_reads` (`seen_seq`, `seen_thread_seq`, `seen_at`), `presence` | true |
 | Checkpoints: transcript and uncommitted work, at a turn's end and before a sleep; ignored files, files over 5 MB and secret-looking files never saved | `apps/runner/src/save/work.ts` (`LIMITS`); docs/cloud.md "Saving the sandbox", "Known constraints" | true |
 | Checkpoints sit under a random key handed only to the canvas's sandbox | docs/cloud.md "Known constraints": in the assets bucket until `R2_PRIVATE_BUCKET` is set | true; the draft does **not** say "private bucket" (test-enforced) |
 | Commits pushed to `pz/<topic>`, authored as the person at their GitHub noreply address | `apps/api/src/canvases/branch.ts`; `apps/api/src/runner/session.ts` (`author`) | true |
 | Pull requests opened, updated and merged as the person, when they or their turn asks | docs/cloud.md "The agent's pull request" | true |
 | Sandbox disk and snapshot at Vercel | docs/cloud.md "The sandbox" | true |
-| Repo ideas: description, topics, language, file layout, README, up to four manifests, one theme file, and for a small repo the start of up to two files, to Anthropic on Ponzu's key | `apps/api/src/ideas/read-repo.ts`, `snapshot.ts` (`BUDGET`), `apps/api/src/deps/model.ts` | true. The site design listed only description, topics, tree, README and manifests; the draft follows the code |
-| Claude credential (OAuth token or API key) encrypted, with plan label and account email; decrypted only to start the sandbox; in memory, never on disk or in a snapshot | `claude_accounts`; docs/cloud.md "Credentials", "The sandbox" | true |
+| Repo ideas: description, topics, language, file layout, README, up to four manifests, one theme file, and for a small repo the start of up to two files, to Anthropic on Ponzu's key | `apps/api/src/ideas/read-repo.ts`, `snapshot.ts` (`BUDGET`), `apps/api/src/deps/model.ts` | true. The site's plan listed only description, topics, tree, README and manifests; the draft follows the code |
+| Claude credential (OAuth token or API key) encrypted, with plan label, account email, an API key's last four (`key_hint`), and the limits and models Claude reports; decrypted only to start the sandbox; in memory, never on disk or in a snapshot | `claude_accounts`; docs/cloud.md "Credentials", "The sandbox" | true |
 | Whether Vercel keeps the start command's env | docs/cloud.md "Known constraints": not documented, asked in writing | unknown; the draft says so |
 | Repo secrets: names and encrypted values, admins set them, given to sandboxes in memory | `repo_secrets`; docs/cloud.md "Repo environments" | true |
 | Usage: awake seconds per canvas and person; model, tokens and cost per turn | `usage_events` in `packages/db/src/schema/billing.ts` | true |
 | Free credits and the cap; Stripe customer, card brand and last four once billing starts | `credit_ledger`; `workspaces.stripe_customer_id`, `card_brand`, `card_last4` | columns exist; Stripe is not built |
 | iPhone: push token, name, app version, install id; pings not sent | `devices`; `apps/api/src/deps/push.ts` (off without `EXPO_ACCESS_TOKEN`); docs/cloud.md "Notifications" ("Nothing sends pushes yet") | true |
-| Analytics identified by Ponzu id with name, email, GitHub login; never a canvas's name, repo contents or typed text | `apps/api/src/analytics/analytics.ts` (`identify`); docs/analytics.md "Shared rules" | true |
+| Analytics identified by Ponzu id with name, email, GitHub login, grouped by workspace (name, repo count); never a canvas's name, repo contents or typed text | `apps/api/src/analytics/analytics.ts` (`identify`); docs/analytics.md "Shared rules" ("Identity", "Groups", "Canvases") | true |
+| PostHog and IP addresses | The server's client sets `disableGeoip` (`apps/api/src/analytics/posthog.ts`). The apps' and site's posthog-js send from the person's browser, so PostHog sees their IP; whether it keeps it depends on the project's "Discard client IP data" setting | founder reads the setting; open note on the page |
 | Model-call metadata; prompts and replies only with `PONZU_POSTHOG_AI_CONTENT` | docs/analytics.md "Switching it on" (dev is on, code default off) | production setting open |
 | Session replay masks every input and blocks secret fields; `private` hides boards, thread, comments, names | `apps/studio/src/app/analytics/privacy.ts`; docs/analytics.md "Session replay" | production mode open |
 | Turning it off: `PONZU_TELEMETRY=0`, `DO_NOT_TRACK=1`, `~/.ponzu/telemetry.json` `{"enabled": false}` | `apps/desktop/src/telemetry-consent.ts` | true for the desktop app. The settings switch is site slice S10; the cloud iPhone app's analytics are not built |
 | Logs carry ids and outcomes, never tokens, bodies or headers | docs/cloud.md "Security", last paragraph | true by rule; not mechanically enforced everywhere |
-| Website: cookieless PostHog, no person profiles, no recordings; nothing under DNT or GPC; a session-storage crash marker holding the page path | `apps/web/components/site-analytics.ts`, `consent.ts`, `health.ts`; `site-analytics.test.ts` | true in code. PostHog drops cookieless events until the project's setting is on. "Visits told apart by a hash on PostHog's servers" is PostHog's documentation, not our code |
+| Website: cookieless PostHog, no person profiles, no recordings; nothing under DNT or GPC; a session-storage crash marker holding the page path, only while analytics runs; a session-storage note that a download started (`ponzu-download-started:<file>`), always | `apps/web/components/site-analytics.ts`, `consent.ts`, `health.ts`; `apps/web/app/download/download.tsx` (`AutoStart`); `site-analytics.test.ts` | true in code. PostHog drops cookieless events until the project's setting is on. "Visits told apart by a hash on PostHog's servers" is PostHog's documentation, not our code |
 | Servers, database and storage in the US; Cloudflare caches files at its edge | `apps/api/vercel.json` (`iad1`); PostHog default host `us.i.posthog.com` | Neon region and R2 location are the founder's to read |
 | Who can see a canvas: readers of its repo in the workspace; pushers steer; Scratch is the owner's alone | docs/cloud.md "Identity and access", line "A Scratch canvas has no repo and is its owner's alone" | true |
 | Files at unguessable ponzu.cloud addresses; the key is the capability | docs/cloud.md "Assets and previews" | true |
@@ -51,6 +54,7 @@ address and state are not in the code.
 | Deleting a canvas removes document, thread, comments, events, questions, checkpoints, sandbox | `apps/api/src/routes/canvases.ts` (`delete`), `forgetCheckpoints` | true |
 | Deleting a canvas removes its files | `canvas.files_delete` exists (`apps/api/src/canvases/files.ts`) but nothing records the job | not true yet; site slice S9. Open note on the page |
 | Account deletion steps, what stays, the sole-admin refusal | `apps/api/src/account/delete.ts`; docs/cloud.md "Deleting an account" | true; the WorkOS delete runs once in the background, without retry |
+| On deletion, thread items and the actor of their ops become "Deleted user"; a comment author's name inside the document and checkpoints, and words in workspaces already left, are not rewritten | `anonymiseUser` in `packages/db/src/queries/account-deletion.ts`; docs/cloud.md "Deleting an account" (last paragraph) | true |
 | GitHub grant revoked and PostHog data deleted on account deletion | not built | not true yet; site slice S9. The draft says only what is done today (test-enforced) |
 | No full export | no export code beyond board PNG/PDF exports | true |
 | No age gate | none in code; GitHub requires 13+ | true |
@@ -100,7 +104,7 @@ Google Fonts and https images load from the addresses a canvas names (`apps/desk
 | Git tokens for one hour and one repository | docs/cloud.md "Git", "Security" |
 | Merge, ready and auto-merge only in a turn a person began, as them, within repo rules | docs/cloud.md "The agent's pull request" |
 | Canvas HTML sanitized, strict CSP, files on ponzu.cloud | `packages/core` sanitizing; `apps/desktop/src/csp.ts`; docs/cloud.md "Assets and previews" |
-| The prompt-injection paragraph and what limits it | docs/cloud.md "Security", "Prompt injection" |
+| The prompt-injection paragraph and what limits it, including that a talked-into command can get a one-hour git token, and cannot read the runner token | docs/cloud.md "Security", "Prompt injection" |
 | Reporting: `security@ponzu.design` and GitHub private vulnerability reporting | `CONTACT` in site.ts; the founder enables private reporting on the repository |
 | security.txt fields and a 180-day Expires, made again daily | `apps/web/components/security-txt.ts`, `app/security.txt/route.ts`; the `/.well-known/` rewrite in `next.config.ts` |
 
@@ -144,3 +148,6 @@ Google Fonts and https images load from the addresses a canvas names (`apps/desk
     section describes the 1.x site (a PostHog cookie, Do Not Track); once this site replaces it at
     cutover, that section no longer describes ponzu.design. Should the archive say so?
 21. **Safe harbor** wording for good-faith security research, on `/security`.
+22. **IP addresses at PostHog.** The apps and the site send events from the person's browser.
+    Is "Discard client IP data" on in the production project, and if not, does the policy need
+    to say PostHog keeps the IP address and the location it derives?

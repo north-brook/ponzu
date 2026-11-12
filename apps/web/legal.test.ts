@@ -124,6 +124,13 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   expect(text).not.toMatch(/ask PostHog to delete/i);
   // The settings switch is S10's; until it ships the draft must not send people to it.
   expect(text).not.toMatch(/Share usage data/);
+  // Account deletion does rename the person's ops in a canvas's history (anonymiseUser); only a
+  // comment author's name inside the document and its checkpoints stays.
+  expect(text).not.toMatch(/name inside a canvas's history/i);
+  // The download pages keep a session-storage note too (app/download/download.tsx), so the crash
+  // marker is not the only thing the site keeps in the browser.
+  expect(text).not.toMatch(/one thing the site keeps/i);
+  expect(text).toContain("a note that the download has started");
   // The 1.x CLI is gone from this branch, and with it `ponzu telemetry off`.
   expect(text).not.toContain("ponzu telemetry off");
   // The anchor the app's settings will link to.

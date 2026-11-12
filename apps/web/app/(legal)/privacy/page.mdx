@@ -37,7 +37,7 @@ You sign in with GitHub. Ponzu keeps your canvases, threads and comments on our 
 
 ### Your account
 
-When you sign in, GitHub tells us, through our sign-in provider WorkOS, your GitHub user id, login, name, email address and avatar. We use them to know who you are and to show you to your teammates. They are GitHub's: change them on GitHub and they change here at your next sign-in.
+When you sign in, GitHub tells us, through our sign-in provider WorkOS, your GitHub user id, login, name, email address and avatar. We use them to know who you are and to show you to your teammates. They are GitHub's: change them on GitHub and they change here at your next sign-in. Each time you sign in, we pass WorkOS the IP address and browser the sign-in came from, as its sign-in records ask.
 
 ### Your GitHub access
 
@@ -50,6 +50,7 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 - **Canvases:** their pages, boards (HTML and CSS), tokens and notes.
 - **Comments, and each canvas's thread:** your messages, the agent's replies, its questions and your answers.
 - **The canvas's history:** each change, who made it and when.
+- **What you have seen:** how far you have read each canvas and its thread, and when, so the apps can show what is new. While you have a canvas open, the people in it see that you are there.
 - **Files:** images and other files on a canvas, pictures you upload, previews of each canvas, exports, and pictures of where a comment was left.
 - **Checkpoints:** the agent's conversation transcript and your canvas's uncommitted work, saved at the end of each turn and before a sandbox sleeps, so the work survives the sandbox. Files your repository ignores, files over 5 MB, and files that look like secrets (or hold the value of one of your repository's secrets) are never saved. Checkpoints are stored under a random address that our servers hand only to the canvas's own sandbox. <Open who="founder">Before production, checkpoints move to a separate private bucket (R2_PRIVATE_BUCKET). Until then they sit in the same storage as canvas files. Do not say "private bucket" here before it is set.</Open>
 
@@ -66,7 +67,7 @@ To suggest what to make in a repository, we send a short summary of it to Anthro
 
 ### Your Claude credential
 
-You connect your own Claude account: an OAuth token from Claude's sign-in, or an Anthropic API key. We store it encrypted, with your plan's name and the account's email if Claude reports them, and decrypt it only to start your canvas's sandbox. There it is kept in memory, never written to the sandbox's disk or its snapshot. Each turn's prompts, files and tool output go to Anthropic under your account and your plan's terms.
+You connect your own Claude account: an OAuth token from Claude's sign-in, or an Anthropic API key. We store it encrypted, with your plan's name and the account's email if Claude reports them, the last four characters of an API key, and the usage limits and models Claude reports for it, and decrypt it only to start your canvas's sandbox. There it is kept in memory, never written to the sandbox's disk or its snapshot. Each turn's prompts, files and tool output go to Anthropic under your account and your plan's terms.
 
 The credential reaches the sandbox in the command that starts it, at Vercel. Whether Vercel keeps a record of that command's environment is not documented; we have asked Vercel in writing. <Open who="founder">Update this paragraph with Vercel's answer.</Open>
 
@@ -88,7 +89,7 @@ When you turn on notifications in Ponzu for iPhone, it registers the phone with 
 
 We use PostHog to understand how Ponzu is used and to fix what breaks.
 
-- **Events** about what you do in the apps and what happens on our servers, such as a canvas created or a pull request opened, identified by your Ponzu id, with your name, email address and GitHub login. Events never carry a canvas's name, your repository's contents or what you typed (a message is counted by its length).
+- **Events** about what you do in the apps and what happens on our servers, such as a canvas created or a pull request opened, identified by your Ponzu id, with your name, email address and GitHub login, and grouped by workspace (its GitHub account's name, and how many repositories Ponzu reaches there). Events never carry a canvas's name, your repository's contents or what you typed (a message is counted by its length).
 - **Errors,** with their stack traces, from the apps and the servers.
 - **Model calls:** for each call to a model that we or the agent make, the model, token counts, timing, cost, tool names and the outcome. <Open who="founder">Production either sends only this, or also the prompts and replies (PONZU_POSTHOG_AI_CONTENT). The code's default is metadata only. Say which.</Open>
 - **Recordings of app sessions:** what the screen shows, the pointer and keys. Every field you type in is masked, and anything that can show a secret (your Claude credential, a repository's secrets) is blocked from the recording. <Open who="founder">Production's replay mode. With "private" (the code's default), add: a canvas's boards, its thread, its comments and canvas names are hidden from recordings.</Open>
@@ -100,7 +101,7 @@ Our servers log ids and outcomes, never tokens, request bodies or headers. The l
 
 ### This website
 
-ponzu.design counts page views, how far down a page you scrolled, download clicks, whether the sheet that sends a download from a phone to your computer was opened, copied or shared, errors in its own code and how fast pages load, with PostHog. It does this without cookies and without storing anything in your browser for PostHog: per PostHog's documentation, visits are told apart by a hash PostHog makes on its servers. When your browser sends Do Not Track or Global Privacy Control, the site loads no analytics at all. The one thing the site keeps in your browser is a short-lived marker in the tab's session storage, which tells us whether the page crashed; it holds the page's path and nothing about you. Vercel, which hosts the site, sees your IP address as any web host does.
+ponzu.design counts page views, how far down a page you scrolled, download clicks, whether the sheet that sends a download from a phone to your computer was opened, copied or shared and whether the link it sent arrived, errors in its own code and how fast pages load, with PostHog. It does this without cookies and without storing anything in your browser for PostHog: per PostHog's documentation, visits are told apart by a hash PostHog makes on its servers from the visit's IP address, its browser and a value that changes every day. <Open who="founder">Whether "Discard client IP data" is on in PostHog's production project. If it is not, say here and under Product analytics that PostHog keeps the IP address each event came from.</Open> When your browser sends Do Not Track or Global Privacy Control, the site loads no analytics at all. The site keeps two things in your browser, both in the tab's session storage, which is gone when the tab closes: a marker that tells us whether the page crashed, which holds the page's path and nothing about you and is kept only while analytics runs; and, on a download page, a note that the download has started, so reloading the page does not start it again. Vercel, which hosts the site, sees your IP address as any web host does.
 
 ## Where it is kept
 
@@ -141,9 +142,9 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 - What goes: everything that is only yours. Your sessions end at once, on every device. Your Claude credential is destroyed, the sandboxes of canvases you own are deleted, and canvases that are yours alone (your Scratch canvases, and canvases in a workspace no one else is in) are deleted with everything under them, as a deleted canvas is (their files too, once deleting a canvas deletes its files). We ask WorkOS to delete your sign-in there, so your next sign-in is someone new.
 - What stays:
   - Canvases you own in a workspace others are in stay with that workspace, owned by nobody.
-  - Your words in shared threads stay, under "Deleted user".
+  - Your words in shared threads stay, under "Deleted user", and your changes in a canvas's history show "Deleted user", with no picture.
   - The workspace's usage history stays, put down to nobody.
-  - Your name inside a canvas's history and its checkpoints is not rewritten.
+  - The name a canvas's document carries for the author of a comment you left is not rewritten, in the canvas or in its checkpoints; nor are your words in workspaces you had already left.
   - Your branches, commits and pull requests on GitHub, and the pictures a pull request shows, are not touched.
 - You cannot delete your account while you are the only admin of a workspace that others are in. Make someone else an admin first.
 - <Open who="founder">Not done on deletion today, and built by site slice S9: revoking Ponzu's authorization on your GitHub account (you can revoke it yourself in GitHub's settings, under Applications), and deleting your analytics from PostHog (write to us and we will). Replace this with "We also revoke Ponzu's authorization on your GitHub account, and ask PostHog to delete your profile, events and recordings, which it does in batches, usually within about a week" once S9 ships.</Open>

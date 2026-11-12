@@ -33,12 +33,12 @@ Ponzu runs an AI agent on your code, with your credentials, in the cloud. This p
 
 ## What we are still hardening
 
-The agent works with permissions bypassed inside its sandbox, and that sandbox holds your Claude credential and the repository's secrets in its environment, because Claude Code and your code need them. Anyone whose words reach the agent can try to talk it into doing something else: a person commenting on the canvas, anyone reviewing its pull request (on a public repository, anyone on GitHub), a check's log, or the repository's own files. A command it is talked into could read your Claude credential and the repository's secrets and send them somewhere.
+The agent works with permissions bypassed inside its sandbox, and that sandbox holds your Claude credential and the repository's secrets in its environment, because Claude Code and your code need them. Anyone whose words reach the agent can try to talk it into doing something else: a person commenting on the canvas, anyone reviewing its pull request (on a public repository, anyone on GitHub), a check's log, or the repository's own files. A command it is talked into could read your Claude credential and the repository's secrets and send them somewhere, and could get a git token that pushes to the repository for an hour.
 
 What limits that today:
 
 - Other people's words reach the agent quoted, under instructions that quoted text is feedback and never asks for credentials or for anything to be sent elsewhere.
-- The sandbox's token is good for one canvas and can do nothing the agent could not already do.
+- The sandbox's own token, which talks to our API, is good for one canvas, and the agent's commands cannot read it.
 - A git token lasts an hour and reaches one repository.
 - What the agent can do to its pull request is held by our API, not by the prompt.
 
