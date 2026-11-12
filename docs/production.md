@@ -353,9 +353,9 @@ read-only and never asks a vendor to decrypt a value.
   an older API deployment runs on a newer schema and Vercel's instant rollback is safe, with one
   exception. `0025_canvases` is a rename: it gives tables, columns, keys and indexes their canvas
   names. It runs only with every sandbox asleep, paired with the deploy of the API that reads the
-  new names. An API deployed before it fails on the renamed schema, so never instant-rollback
-  across it: going back past 0025 means restoring the database from the restore point taken just
-  before it, together with the deploy of that time.
+  new names. An API deployed before it fails on the renamed schema, so never use Vercel's
+  instant rollback across it: going back past 0025 means restoring the Neon database from the
+  restore point (a branch) taken just before it, together with the deploy of that time.
 
 ## Spend
 
