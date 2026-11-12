@@ -59,4 +59,9 @@ export interface Host {
    * unsubscribe. Left out where the host doesn't tell.
    */
   onApiError?(listener: (error: ApiError) => void): () => void;
+  /**
+   * Whether to show the welcome from Ponzu 1.x now: the shell's answer, true once ever. Absent
+   * where there is no shell (a browser, the tests), which never shows it.
+   */
+  welcome1x?(): Promise<boolean>;
 }

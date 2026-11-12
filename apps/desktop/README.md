@@ -91,7 +91,8 @@ src/
   carry-over.ts     Ponzu Dev's first launch after it was Ponzu Preview
   updater.ts        electron-updater and the notes the update mark shows
   menu.ts           the menus
-  legacy.ts         what Ponzu 1.x left on the computer, removed once
+  support.ts        the Help menu's links, and Contact Support's email
+  legacy.ts         what Ponzu 1.x left on the computer, removed once, and the welcome from it
   linux.ts          an AppImage's desktop entry, so ponzu:// links reach it
   smoke.ts          PONZU_SMOKE
 ```
@@ -190,6 +191,19 @@ the rest of `~/.ponzu` are never touched, and neither is a Cursor `mcp.json` tha
 it did is in `legacy-cleanup.json` in the app's data folder, and it never runs again. Only the
 release does any of this: Ponzu Dev and a development build run beside a 1.x still in use. Windows' PATH entry and design.json association are
 removed by the uninstaller (`build/uninstall.ps1`).
+
+A computer that had 1.x (`~/.ponzu` is there, or `legacy-cleanup.json` recorded a step) sees a
+one-time sheet over the sign-in screen saying Ponzu works in the cloud now and that the .design
+folders stay where they were. The shell decides (`takeWelcome1x` in `legacy.ts`) and writes
+`welcome-1x.json` in the data folder as it answers yes, so it never shows twice. Only the release
+shows it, and never the smoke check or a test build.
+
+## The Help menu
+
+Contact Support opens a `mailto:support@ponzu.design` with the version, commit, environment and
+the `x-request-id` of the API's last answer to the window (`support.ts`). Each fact is checked
+against its shape and the body is scrubbed, so no token or session can reach it. Ponzu Status,
+Privacy Policy and Terms of Service open their pages on ponzu.design.
 
 ## The smoke check
 

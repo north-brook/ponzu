@@ -157,7 +157,7 @@ export function createDeps(env: Env): Deps {
       ...(env.sandbox.vercel ? { credentials: env.sandbox.vercel } : {}),
     }),
     runnerBundle,
-    anthropic: createAnthropic({ fetch: outbound, clock }),
+    anthropic: createAnthropic({ fetch: outbound, clock, ownKey: env.anthropicApiKey }),
     storage,
     archives: env.r2PrivateBucket
       ? createR2Storage({ ...env.r2, bucket: env.r2PrivateBucket, fetch: outbound, clock })

@@ -85,7 +85,20 @@ export class MemoryStorage implements ObjectStorage {
     return new Response(null, { status: 200 });
   };
 
+  /**
+   * The status every `head` fails with, as R2 answers a bad token (403) or a fault (500), or
+   * null to answer from the map. With no status at all (0), it acts out R2 not answering.
+   */
+  headFails: number | null = null;
+
   async head(key: string): Promise<StoredHead | null> {
+    if (this.headFails !== null) {
+      throw new UpstreamError(
+        "storage",
+        "HEAD an object failed",
+        this.headFails === 0 ? {} : { status: this.headFails },
+      );
+    }
     const found = this.objects.get(key);
     if (!found) return null;
     return {
@@ -149,11 +162,18 @@ export class FakeAnthropic implements Anthropic {
   /** Every key asked about, oldest first. */
   readonly asked: string[] = [];
   failing = false;
+  /** Whether Anthropic takes Ponzu's own key. Set false to act out a revoked one. */
+  ownKeyAccepted = true;
 
   async acceptsApiKey(key: string): Promise<boolean> {
     this.asked.push(key);
     if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
     return this.keys.has(key);
+  }
+
+  async acceptsOwnKey(): Promise<boolean> {
+    if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
+    return this.ownKeyAccepted;
   }
 }
 
@@ -185,7 +205,11 @@ export class FakeSealer implements RealtimeSealer {
     this.#clock = clock;
   }
 
+  /** Set to act out a sealer that cannot seal, as with a malformed Realtime secret. */
+  failing = false;
+
   async seal(query: LiveQuery): Promise<SealedQuery> {
+    if (this.failing) throw new Error("The fake sealer was told to fail.");
     this.sealed.push(query);
     const text = JSON.stringify(query);
     return {
