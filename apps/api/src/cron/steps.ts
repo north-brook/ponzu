@@ -3,6 +3,7 @@ import type { Deps } from "../deps/index.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
 import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
+import { retentionStep } from "./steps/retention.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
 import { selfcheckStep } from "./steps/selfcheck.ts";
 
@@ -42,6 +43,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   sandboxesStep,
   pullRequestSweepStep,
   selfcheckStep,
+  retentionStep,
 ];
 
 /**

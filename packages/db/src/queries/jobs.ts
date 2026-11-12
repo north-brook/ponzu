@@ -66,6 +66,10 @@ export function onceId(kind: string, key: string): string {
  * The row is a job recorded already completed, so nothing claims or runs it. Its id is made
  * from the kind and key, so the primary key is what refuses a second: a concurrent insert of
  * the same id waits for the first to commit and then does nothing.
+ *
+ * "Once ever" holds for 30 days: the retention sweep (`retention.ts`) deletes finished jobs,
+ * these marks among them, 30 days after they were recorded. So the key must name a window
+ * that is over well before then; a mark meant to last longer needs a table of its own.
  */
 export async function recordOnce(db: Db, { kind, key }: { kind: string; key: string }) {
   const [row] = await run(

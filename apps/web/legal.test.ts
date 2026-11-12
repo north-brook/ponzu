@@ -131,6 +131,13 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   // marker is not the only thing the site keeps in the browser.
   expect(text).not.toMatch(/one thing the site keeps/i);
   expect(text).toContain("a note that the download has started");
+  // The retention sweep (packages/db/src/queries/retention.ts) is built, at these periods.
+  expect(text).toContain(
+    "The short-lived records we keep while you connect Claude or install Ponzu's GitHub App are deleted a day after they expire.",
+  );
+  // auth_states holds only Claude sign-ins and GitHub App installs, not sign-ins to Ponzu.
+  expect(text).not.toMatch(/records of sign-in attempts/i);
+  expect(text).toMatch(/deleted 30 days after the work finished/);
   // The 1.x CLI is gone from this branch, and with it `ponzu telemetry off`.
   expect(text).not.toContain("ponzu telemetry off");
   // The anchor the app's settings will link to.

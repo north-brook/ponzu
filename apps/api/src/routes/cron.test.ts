@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { enqueueJob, getWorkspaceByInstallation, jobs, repos, workspaces } from "@ponzu/db";
+import {
+  authStates,
+  enqueueJob,
+  getWorkspaceByInstallation,
+  jobs,
+  repos,
+  webhookDeliveries,
+  workspaces,
+} from "@ponzu/db";
 import { jobsStep } from "../cron/steps/jobs.ts";
 import { CRON_STEPS, type CronStep, runCronSteps, slotOf } from "../cron/steps.ts";
 import { syncGithub } from "../github/sync.ts";
@@ -79,6 +87,8 @@ test("only the scheduler's secret runs it", async () => {
         reconciled: 0,
       },
       pull_requests: { swept: 0 },
+      // The test clock starts on the hour, when the hourly retention sweep is due.
+      retention: { auth_states: 0, jobs: 0, webhook_deliveries: 0 },
     },
   });
   // The same answer, logged.
@@ -114,6 +124,60 @@ test("installations nobody has read for hours are read again, which catches a lo
   expect(repo!.removedAt).toBeInstanceOf(Date);
   // Gone, it is not read again.
   expect((await ran()).steps.installations).toEqual({ swept: 0 });
+});
+
+test("on the hour, the retention sweep deletes the operational rows past their time, and logs counts only", async () => {
+  const una = await t.signInAs({ login: "retained" });
+  const at = (ms: number) => new Date(t.clock.now() + ms);
+  toMinute(30);
+  // Rows on the test clock: one of each past its retention, one of each not yet.
+  await t.db.insert(authStates).values([
+    { id: "auth_gone", kind: "github_install", userId: una.userId, expiresAt: at(-25 * HOUR) },
+    { id: "auth_kept", kind: "github_install", userId: una.userId, expiresAt: at(-23 * HOUR) },
+  ]);
+  await t.db.insert(jobs).values([
+    { id: "job_gone", kind: "test.retention", key: "token-like", completedAt: at(-31 * 24 * HOUR) },
+    { id: "job_kept", kind: "test.retention", completedAt: at(-29 * 24 * HOUR) },
+  ]);
+  await t.db.insert(webhookDeliveries).values([
+    { source: "github", deliveryId: "gone", event: "push", receivedAt: at(-31 * 24 * HOUR) },
+    { source: "github", deliveryId: "kept", event: "push", receivedAt: at(-29 * 24 * HOUR) },
+  ]);
+
+  // Not at :30: it is an hourly step.
+  expect((await ran()).steps.retention).toBeUndefined();
+
+  nextHour(0);
+  expect((await ran()).steps.retention).toEqual({ auth_states: 1, jobs: 1, webhook_deliveries: 1 });
+  const named = (names: string[], rows: { id: string }[]) =>
+    rows.map((row) => row.id).filter((id) => names.includes(id));
+  const left = async () => ({
+    auth: named(
+      ["auth_gone", "auth_kept"],
+      await t.db.select({ id: authStates.id }).from(authStates),
+    ),
+    jobs: named(["job_gone", "job_kept"], await t.db.select({ id: jobs.id }).from(jobs)),
+    webhooks: named(
+      ["gone", "kept"],
+      await t.db.select({ id: webhookDeliveries.deliveryId }).from(webhookDeliveries),
+    ),
+  });
+  expect(await left()).toEqual({ auth: ["auth_kept"], jobs: ["job_kept"], webhooks: ["kept"] });
+  const logged = t.logs.filter((line) => line.event === "rows_swept");
+  expect(logged).toEqual([
+    expect.objectContaining({ auth_states: 1, jobs: 1, webhook_deliveries: 1 }),
+  ]);
+  // Counts, and nothing the rows held.
+  expect(JSON.stringify(logged)).not.toMatch(/token-like|auth_gone|job_gone|test\.retention/);
+
+  // A second run in the same hour does not sweep again.
+  expect((await ran()).steps.retention).toBeUndefined();
+
+  // Two days on, the state that had a day to go has gone too.
+  t.clock.advance(2 * 24 * HOUR);
+  toMinute(0);
+  expect((await ran()).steps.retention).toMatchObject({ auth_states: 1 });
+  expect((await left()).auth).toEqual([]);
 });
 
 test("a step that throws is logged and answered as failed, and the others still run", async () => {
