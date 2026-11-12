@@ -2463,9 +2463,9 @@ any prefix that is not exactly a well-formed asset key followed by `/`, before i
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
 bucket. Nothing records the job yet; deleting a canvas or an account will.
 
-Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
-(`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
-ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
+Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
+exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
+and disposition, for ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
 assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
 PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
 
@@ -3034,8 +3034,12 @@ projects also keep the environments apart by more than a name: each has its own 
 env, image registry, spend and firewall. The production project's Preview target holds no
 secrets and runs nothing. The values each environment uses (its addresses, client ids,
 buckets and analytics project) are public and live in
-[`infra/environments.json`](../infra/environments.json); the resources, the founder's steps
-that create production, rotation, backups and spend are in [production.md](production.md).
+[`infra/environments.json`](../infra/environments.json). The desktop app bakes one of them in
+when it is built: a release the one the file's `release` names, which stays dev until the
+cutover, and Ponzu Dev always dev's. A field the app reads that is still `null` fails the
+build, and the release workflow refuses to publish unless `release` is production with every
+field set. The resources, the founder's steps that create production, rotation, backups and
+spend are in [production.md](production.md).
 The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
 redirects never have to move at cutover.
 

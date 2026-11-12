@@ -492,6 +492,15 @@ jobs:
           path: release-tools
           sparse-checkout: scripts
           persist-credentials: false
+      # No release ships pointing at dev: the tag's infra/environments.json must
+      # name production as the release's environment, with every field set
+      # (scripts/prod/desired.ts, docs/production.md). Read from the tag, which
+      # is what the builds baked. A dry run publishes nothing, so it isn't held.
+      - name: The release talks to production
+        if: env.PUBLISH == 'true'
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/prod/desired.ts assert-release production
       - name: The release's notes
         run: bun scripts/release-notes.ts "$RUNNER_TEMP/release-notes.json"
       # Both apps' dated notes, which the site's /changelog reads from the

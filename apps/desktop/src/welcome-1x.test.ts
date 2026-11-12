@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFor } from "./config.ts";
 import { hadPonzu1x, takeWelcome1x } from "./legacy.ts";
+import { built } from "./testing.ts";
 
 /*
  * The welcome from Ponzu 1.x (legacy.ts): shown once, on a computer 1.x was on, by a release
@@ -30,9 +31,9 @@ function computer() {
   };
 }
 
-const release = configFor(true, {}, false, "release");
-const ponzuDev = configFor(true, {}, false, "dev");
-const local = configFor(false, {});
+const release = configFor(true, {}, built());
+const ponzuDev = configFor(true, {}, built({ variant: "dev" }));
+const local = configFor(false, {}, built());
 
 function take(c: ReturnType<typeof computer>, build = release, driven = false) {
   return takeWelcome1x({
