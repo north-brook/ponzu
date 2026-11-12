@@ -1,0 +1,1 @@
+ALTER TABLE "canvases" ADD COLUMN "asset_key_rotated_at" timestamp with time zone;

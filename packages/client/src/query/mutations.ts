@@ -15,7 +15,7 @@ import { queryKeys } from "./keys.ts";
 type Me = Awaited<ReturnType<Api["me"]>>;
 type ClaudeAnswer = Awaited<ReturnType<Api["claude"]["get"]>>;
 type Notifications = Awaited<ReturnType<Api["notifications"]["get"]>>;
-type PingPrefs = Parameters<Api["notifications"]["set"]>[0];
+type PingPrefs = Omit<Parameters<Api["notifications"]["set"]>[0], "timeZone">;
 type Environments = Awaited<ReturnType<Api["environments"]["list"]>>;
 type EnvironmentAnswer = Awaited<ReturnType<Api["environments"]["get"]>>;
 
@@ -252,6 +252,22 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
           ),
         onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications() }),
       }),
+    /** The app's time zone, when it differs from the one kept: the daily email's 9:00 is in it. */
+    setTimeZone: () =>
+      mutationOptions({
+        mutationFn: (timeZone: string) => api.notifications.set({ timeZone }),
+        onSuccess: (answer) => queryClient.setQueryData(queryKeys.notifications(), answer),
+      }),
+    /**
+     * A notification read on the app that showed it. The inbox (`me.notifications`) drops it by
+     * itself; the badge in Settings is asked for again.
+     */
+    readNotification: () =>
+      mutationOptions({
+        mutationFn: ({ id, via }: { id: string; via: "mac" | "ios" }) =>
+          api.notifications.read(id, via),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications() }),
+      }),
     /** Anyone who can push: the repo's base is built again at the next start. */
     rebuildEnvironment: () =>
       mutationOptions({
@@ -296,6 +312,28 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
           api.usage.setCap(workspaceId, capUsd),
         onSuccess: (usage, { workspaceId }) =>
           queryClient.setQueryData(queryKeys.usage(workspaceId), usage),
+      }),
+    /**
+     * Settings › Account › Share usage data: shown flipped at once in `me`, put back if the API
+     * turns it down. The app stops or starts its own reporting beside this (the studio's
+     * PostHog, the Mac's telemetry.json), which is not the API's to do.
+     */
+    setShareUsage: () =>
+      mutationOptions({
+        mutationFn: (shareUsage: boolean) => api.privacy.setShareUsage(shareUsage),
+        onMutate: async (shareUsage) => {
+          await queryClient.cancelQueries({ queryKey: queryKeys.me() });
+          const was = queryClient.getQueryData<Me>(queryKeys.me());
+          if (was) {
+            queryClient.setQueryData<Me>(queryKeys.me(), { ...was, privacy: { shareUsage } });
+          }
+          return { was };
+        },
+        onError: (_error, _shareUsage, context) => {
+          if (context?.was) queryClient.setQueryData(queryKeys.me(), context.was);
+        },
+        onSuccess: (privacy) =>
+          queryClient.setQueryData<Me>(queryKeys.me(), (me) => (me ? { ...me, privacy } : me)),
       }),
     /**
      * Deletes the account, confirmed with the person's GitHub login. 409 `sole_admin` while

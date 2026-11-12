@@ -46,6 +46,8 @@ export type {
   LiveQueryName,
   LiveRows,
   MeRow,
+  NotificationLink,
+  NotificationRow,
   PresenceRow,
   QuestionRow,
 } from "./live/rows.ts";

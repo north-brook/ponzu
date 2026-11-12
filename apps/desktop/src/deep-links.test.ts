@@ -103,6 +103,16 @@ test("the way back from adding a card, and Settings", () => {
     kind: "settings",
     section: "usage",
   });
+  // A billing banner clicked: Plan and usage, naming the notification so opening it reads it.
+  expect(parseDeepLink("ponzu://settings?section=usage&n=ntf_4", "ponzu")).toEqual({
+    kind: "settings",
+    section: "usage",
+    notificationId: "ntf_4",
+  });
+  expect(parseDeepLink("ponzu://settings?section=usage&n=%2F..", "ponzu")).toEqual({
+    kind: "settings",
+    section: "usage",
+  });
 });
 
 test("ids at the edge, and paths that climb", () => {

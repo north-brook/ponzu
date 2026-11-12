@@ -11,26 +11,32 @@ import { keepUnchanged } from "./map.ts";
 
 /**
  * Where each listed canvas's files are, asked for once per canvas while the window is open, for
- * the canvases that have previews. One the API won't answer for is left without.
+ * the canvases that have previews, and again when its file links are reset (its row's
+ * `assetKeyRotatedAt` moves). One the API won't answer for is left without.
  */
 export function useAssetsUrls(
   api: Pick<Api, "canvases">,
-  canvases: readonly { id: string; previewSeq: number | null }[] | null,
+  canvases:
+    | readonly { id: string; previewSeq: number | null; assetKeyRotatedAt?: string | null }[]
+    | null,
 ): ReadonlyMap<string, string> {
   const [known, setKnown] = useState<ReadonlyMap<string, string>>(new Map());
   const wanted = useMemo(
-    () => (canvases ?? []).filter((d) => d.previewSeq !== null).map((d) => d.id),
+    () =>
+      (canvases ?? [])
+        .filter((d) => d.previewSeq !== null)
+        .map((d) => ({ id: d.id, ask: `${d.id} ${d.assetKeyRotatedAt ?? ""}` })),
     [canvases],
   );
   const [asked] = useState(() => new Set<string>());
   useEffect(() => {
-    for (const id of wanted) {
-      if (asked.has(id)) continue;
-      asked.add(id);
+    for (const { id, ask } of wanted) {
+      if (asked.has(ask)) continue;
+      asked.add(ask);
       api.canvases.get(id).then(
         (view) => setKnown((now) => new Map(now).set(id, view.assetsUrl)),
         // Asked again the next time the list changes.
-        () => asked.delete(id),
+        () => asked.delete(ask),
       );
     }
   }, [api, wanted, asked]);

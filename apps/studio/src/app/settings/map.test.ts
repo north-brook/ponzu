@@ -140,25 +140,41 @@ describe("Agents", () => {
 });
 
 describe("Notifications", () => {
-  test("only iPhones are where pings go, each named; one signed in passes the setup's step", async () => {
+  test("Macs and iPhones are where pings go, this Mac first; an iPhone passes the setup's step", async () => {
     const { api } = team();
+    const { device: here } = await api.devices.register({
+      platform: "macos",
+      installId: "mac-here-0000000001",
+      name: "Mayas-MacBook-Pro",
+    });
     expect(hasIphone(await api.notifications.get())).toBe(false);
     await api.devices.register({
-      platform: "macos",
-      pushToken: "aa",
-      pushEnvironment: "production",
-      installId: "mac",
-    });
-    await api.devices.register({
       platform: "ios",
-      pushToken: "bb",
+      pushToken: "ExponentPushToken[bb]",
       pushEnvironment: "production",
-      installId: "phone",
+      installId: "phone-000000000001",
       name: null,
     });
+    await api.devices.register({
+      platform: "macos",
+      installId: "mac-there-00000001",
+      name: "Studio",
+    });
+    // Registering again at the next launch is the same Mac, not another.
+    await api.devices.register({ platform: "macos", installId: "mac-here-0000000001" });
     const answer = await api.notifications.get();
     expect(hasIphone(answer)).toBe(true);
-    expect(toPingDevices(answer).map((d) => d.name)).toEqual(["iPhone"]);
+    expect(toPingDevices(answer, here.id).map((d) => [d.kind, d.name])).toEqual([
+      ["mac", "This Mac"],
+      ["mac", "Studio"],
+      ["iphone", "iPhone"],
+    ]);
+    // Without knowing which is this one (a browser), each is called by its own name.
+    expect(toPingDevices(answer).map((d) => d.name)).toEqual([
+      "Studio",
+      "iPhone",
+      "Mayas-MacBook-Pro",
+    ]);
   });
 });
 

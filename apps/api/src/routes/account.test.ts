@@ -4,6 +4,7 @@ import {
   createCanvas,
   deleteUser,
   getCanvas,
+  getCanvasAssetKey,
   getSandbox,
   recordUsage,
   upsertMembership,
@@ -12,7 +13,9 @@ import {
 } from "@ponzu/db";
 import { canvasSandboxName } from "@ponzu/sandbox";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
+import { CANVAS_FILES_DELETE_JOB, FILES_RETRY_MS } from "../canvases/files.ts";
 import { githubUserToken } from "../github/user-token.ts";
+import { runDueJobs } from "../jobs/run.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type SignedInPerson, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
@@ -175,6 +178,11 @@ describe("deleting Rae", () => {
   let scratchCanvas: string;
   let ownCanvas: string;
   let solsCanvas: string;
+  /** Each canvas's asset key, read before she went. */
+  const assetKeys: Record<string, string> = {};
+  const PULL_REQUEST_PICTURE = `pull-requests/${"p".repeat(32)}/light.png`;
+  const filesOf = (canvasId: string) =>
+    [...t.storage.objects.keys()].filter((key) => key.startsWith(`${assetKeys[canvasId]}/`));
 
   beforeAll(async () => {
     rae = await t.signInAs({ login: "rae" });
@@ -182,12 +190,16 @@ describe("deleting Rae", () => {
     expect((await call(t, rae.headers, "POST", "/v1/claude/api-key", { key: KEY })).status).toBe(
       200,
     );
-    await call(t, rae.headers, "POST", "/v1/me/devices", {
-      platform: "ios",
-      pushToken: "b".repeat(64),
-      pushEnvironment: "production",
-      installId: "rae-phone-install-0001",
-    });
+    expect(
+      (
+        await call(t, rae.headers, "POST", "/v1/me/devices", {
+          platform: "ios",
+          pushToken: "ExponentPushToken[rae-phone-token-0001]",
+          pushEnvironment: "production",
+          installId: "rae-phone-install-0001",
+        })
+      ).status,
+    ).toBe(201);
 
     // A canvas of the team's that she owns and has talked in, with its sandbox up.
     teamCanvas = (await canvasIn(t, ws, "rae", sampleDoc())).id;
@@ -239,6 +251,30 @@ describe("deleting Rae", () => {
       rateCardVersion: 1,
       occurredAt: new Date(t.clock.now()),
       periodStart: new Date(t.clock.now()),
+    });
+
+    // Her canvases' files: 2,500 under her Scratch canvas, a few under the others, and the
+    // pictures of a pull request, which stay.
+    for (const [canvasId, count] of [
+      [scratchCanvas, 2500],
+      [ownCanvas, 3],
+      [teamCanvas, 4],
+      [solsCanvas, 2],
+    ] as const) {
+      const key = (await getCanvasAssetKey(t.db, canvasId))!;
+      assetKeys[canvasId] = key;
+      for (let i = 0; i < count; i++) {
+        t.storage.objects.set(`${key}/assets/${String(i).padStart(5, "0")}.png`, {
+          body: new Uint8Array([i & 255]),
+          headers: {},
+          sha256: null,
+        });
+      }
+    }
+    t.storage.objects.set(`${PULL_REQUEST_PICTURE}`, {
+      body: new Uint8Array([1]),
+      headers: {},
+      sha256: null,
     });
 
     raesGithubToken = await githubUserToken(t.deps, rae.userId);
@@ -325,6 +361,31 @@ describe("deleting Rae", () => {
   test("deletes her Scratch canvases and those in her own account", async () => {
     expect(await getCanvas(t.db, scratchCanvas)).toBeNull();
     expect(await getCanvas(t.db, ownCanvas)).toBeNull();
+  });
+
+  test("deletes those canvases' files through the same purge as one canvas, and keeps the rest", async () => {
+    // Recorded as each row went, keyed by its asset key, and run at once.
+    for (const canvasId of [scratchCanvas, ownCanvas]) {
+      const [job] = await rows(
+        `select payload from jobs
+          where kind = '${CANVAS_FILES_DELETE_JOB}' and key = '${assetKeys[canvasId]}'`,
+      );
+      expect(job?.payload).toEqual({ assetKey: assetKeys[canvasId] });
+    }
+    expect(filesOf(ownCanvas)).toEqual([]);
+    // The first attempt takes 2,000; the cron takes the rest ten seconds on.
+    expect(filesOf(scratchCanvas)).toHaveLength(500);
+    t.clock.advance(FILES_RETRY_MS);
+    await runDueJobs(t.deps, "account-test");
+    expect(filesOf(scratchCanvas)).toEqual([]);
+
+    // What stays with the team keeps its files, and a pull request's pictures stay.
+    expect(filesOf(teamCanvas)).toHaveLength(4);
+    expect(filesOf(solsCanvas)).toHaveLength(2);
+    expect(t.storage.objects.has(PULL_REQUEST_PICTURE)).toBe(true);
+    for (const canvasId of [teamCanvas, solsCanvas]) {
+      expect(await rows(`select 1 from jobs where key = '${assetKeys[canvasId]}'`)).toEqual([]);
+    }
   });
 
   test("keeps the team's canvas, owned by nobody, its sandbox retired", async () => {

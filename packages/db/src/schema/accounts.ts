@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -83,6 +84,13 @@ export const users = pgTable("users", {
   pingPrReady: boolean("ping_pr_ready").notNull().default(true),
   pingTeammateComments: boolean("ping_teammate_comments").notNull().default(false),
   emailDigest: boolean("email_digest").notNull().default(false),
+  /** The IANA time zone the person's app reports, for the daily email's hour. Null: unknown. */
+  timeZone: text("time_zone"),
+  /** The local date of the last daily email, so it goes at most once a day. */
+  digestSentOn: date("digest_sent_on", { mode: "string" }),
+  // Settings › Account › Share usage data: false stops the apps', the API's and the agent's
+  // analytics about this person (docs/analytics.md, "Turning it off").
+  shareUsage: boolean("share_usage").notNull().default(true),
   // Guided setup: when each step that has no other trace was finished.
   onboardingWhereAt: instant("onboarding_where_at"),
   onboardingIphoneAt: instant("onboarding_iphone_at"),
@@ -434,12 +442,18 @@ export const devices = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     platform: text("platform", { enum: DEVICE_PLATFORMS }).notNull(),
-    pushToken: text("push_token").notNull().unique(),
-    pushEnvironment: text("push_environment", { enum: PUSH_ENVIRONMENTS }).notNull(),
     /**
-     * The install of the app that registered the token: a random id it keeps in the Keychain.
-     * Only the same install may move the token to another person (the phone signed in as
-     * someone else). Null for a row registered before it was asked for.
+     * An iPhone's Expo push token (`ExponentPushToken[…]`), which pings go to. A Mac has none:
+     * it shows its own notifications while the app runs, from the live inbox.
+     */
+    pushToken: text("push_token").unique(),
+    /** Which APNs an iPhone's token is for: a development build's or the App Store's. */
+    pushEnvironment: text("push_environment", { enum: PUSH_ENVIRONMENTS }),
+    /**
+     * The install of the app: a random id it keeps (in the Keychain on the phone, beside the
+     * session on the Mac). A device is an install: one row per person and install. Only the
+     * same install may move a token to another person (the phone signed in as someone else).
+     * Null for a row registered before it was asked for.
      */
     installId: text("install_id"),
     name: text("name"),
@@ -448,12 +462,23 @@ export const devices = pgTable(
     /** The phone's own settings turned Ponzu's notifications off: nothing can reach it. */
     pingsBlocked: boolean("pings_blocked").notNull().default(false),
     lastSeenAt: instant("last_seen_at").notNull().defaultNow(),
+    /**
+     * When the person was last at this install: a Mac with a window focused and input in the
+     * last two minutes, a phone in the foreground. A person at a Mac gets its banner first, and
+     * their phone waits.
+     */
+    activeAt: instant("active_at"),
     createdAt: createdAt(),
   },
   (t) => [
     index("devices_user_id_idx").on(t.userId),
+    uniqueIndex("devices_user_install_key")
+      .on(t.userId, t.installId)
+      .where(sql`${t.installId} is not null`),
     check("devices_platform_check", oneOf(t.platform, DEVICE_PLATFORMS)),
     check("devices_push_environment_check", oneOf(t.pushEnvironment, PUSH_ENVIRONMENTS)),
+    // An iPhone is reached by its token; a Mac has none.
+    check("devices_push_token_check", sql`(${t.platform} = 'ios') = (${t.pushToken} is not null)`),
   ],
 );
 

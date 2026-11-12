@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import type { SessionState } from "@ponzu/client";
 import {
@@ -10,6 +11,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
+  Notification,
   protocol,
   safeStorage,
   session as sessions,
@@ -51,12 +53,19 @@ import { registerAppImage } from "./linux.ts";
 import { startMainTelemetry } from "./main-telemetry.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
 import { externalLink, isStudio } from "./navigation.ts";
+import {
+  createNotifier,
+  deviceNameOf,
+  installIdIn,
+  type NotificationClass,
+  type Notifier,
+} from "./notifications.ts";
 import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
 import { requestIdOf, type SupportFacts } from "./support.ts";
-import { telemetryOffBecause } from "./telemetry-consent.ts";
+import { telemetryOffBecause, writeUsageSharing } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
 import { createMainWindow } from "./window.ts";
@@ -239,6 +248,42 @@ const telemetry = posthog
       home: homedir(),
     })
   : null;
+/** The person turned Share usage data off while Ponzu ran: the main process reports no more. */
+let telemetryStopped = false;
+
+/**
+ * What this install is to the API, for the Mac's own notifications (notifications.ts): an id made
+ * once in the app's data folder, and the computer's name. Read when the first window opens.
+ */
+let device: { installId: string; name: string | null } | null = null;
+function deviceFacts() {
+  device ??= {
+    installId: installIdIn(join(userData, "install-id")),
+    name: deviceNameOf(computerName()),
+  };
+  return device;
+}
+
+/**
+ * The name the person gave this computer ("Maya's MacBook Pro", System Settings › General ›
+ * About), which `os.hostname()` gives only as a host name ("Mayas-MacBook-Pro.local"). Read
+ * once; the host name stands in when it can't be.
+ */
+function computerName(): string {
+  if (process.platform === "darwin") {
+    try {
+      const name = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 1000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (name) return name;
+    } catch {
+      // No name kept, or scutil missing: the host name.
+    }
+  }
+  return hostname();
+}
 
 let mainWindow: BrowserWindow | null = null;
 /** Links that arrived before the studio listened for them. */
@@ -298,6 +343,10 @@ function showWindow() {
         dev: app.isPackaged ? "0" : "1",
         scheme: config.linkScheme ?? "",
         ...(analytics ? { analytics: encodeURIComponent(JSON.stringify(analytics)) } : {}),
+        // The Mac's own notifications: whether the system shows any, and this install.
+        notify: !smoke && Notification.isSupported() ? "1" : "0",
+        install: deviceFacts().installId,
+        device: encodeURIComponent(deviceFacts().name ?? ""),
       },
     });
     const win = mainWindow;
@@ -335,12 +384,37 @@ function send(channel: string, ...args: unknown[]) {
 /** A link in this app's scheme: the studio acts on it once it's listening. Anything else is dropped. */
 function openLink(url: string) {
   const link = config.linkScheme ? parseDeepLink(url, config.linkScheme) : null;
-  if (!link) return;
+  if (link) followLink(link);
+}
+
+/** A link the studio acts on once it's listening: from a `ponzu://` link, or a banner clicked. */
+function followLink(link: DeepLink) {
   // Its kind only: what a link names stays out of the log.
   console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
   showWindow();
   if (linkListeners > 0) send(CHANNELS.link, link);
   else pendingLinks.push(link);
+}
+
+/**
+ * The Mac's own banners and the dock's badge (notifications.ts), shown as the studio asks. A
+ * click brings Ponzu forward and hands the banner's link to the studio like any other link.
+ * The smoke check shows none.
+ */
+let notifier: Notifier | null = null;
+function notifications(): Notifier {
+  notifier ??= createNotifier({
+    Notification: Notification satisfies NotificationClass,
+    setBadge: (count) => {
+      if (!smoke) app.setBadgeCount(count);
+    },
+    open: (link) => {
+      comeForward();
+      followLink(link);
+    },
+    failed: (id) => send(CHANNELS.notifyFailed, id),
+  });
+  return notifier;
 }
 
 /* ------------------------------------------------------------------ */
@@ -404,7 +478,40 @@ function registerIpc(session: MainSession, updater: Updates) {
     if (link) void shell.openExternal(link);
   });
   listen(CHANNELS.comeForward, () => comeForward());
+  listen(CHANNELS.notifyShow, (notice) => {
+    if (!smoke) notifications().show(notice);
+  });
+  listen(CHANNELS.notifyRemove, (ids) => notifications().remove(ids));
+  listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
   handle(CHANNELS.welcome1x, () => welcome1x());
+  handle(CHANNELS.usageSharing, (enabled) => setUsageSharing(enabled === true));
+}
+
+/**
+ * Settings › Account › Share usage data, on this computer (docs/analytics.md, "Turning it
+ * off"): the file the next launch reads, and, when it is turned off, the main process's error
+ * reporting stopped now. The studio stops its own PostHog itself.
+ */
+async function setUsageSharing(enabled: boolean): Promise<boolean> {
+  // Off stops reporting first, so a file that can't be written never leaves it running.
+  let shutdown: Promise<void> | null = null;
+  if (!enabled && telemetry && !telemetryStopped) {
+    telemetryStopped = true;
+    // No error after this is reported; what was queued before the person said no is sent.
+    telemetry.stop();
+    shutdown = telemetry.shutdown();
+  }
+  // The file is written before anything is awaited, so changes land in the order they were
+  // made: a later "on" is never overwritten by an earlier "off" still shutting down.
+  try {
+    writeUsageSharing(homedir(), enabled);
+  } finally {
+    await shutdown;
+  }
+  // Whether the next launch reports: this build has a project, and nothing else says no.
+  return (
+    enabled && Boolean(config.posthog) && !smoke && !telemetryOffBecause(process.env, homedir())
+  );
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -611,6 +718,9 @@ if (!app.requestSingleInstanceLock()) {
       // Ponzu Preview, which waits here for the person's first sign-in (carry-over.ts).
       const launching = was === "loading" && keepCarriedOver;
       if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
+      // Nobody's questions wait on the dock, nor their banners in Notification Center, once they
+      // have signed out: whoever signs in next sees none of them. The smoke check touches neither.
+      if (state.status !== was && endsSession(state) && !smoke) notifications().clear();
       was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
@@ -661,7 +771,7 @@ if (!app.requestSingleInstanceLock()) {
   // What the main process has queued goes before it quits, for two seconds at most.
   let flushed = false;
   app.on("will-quit", (event) => {
-    if (!telemetry || flushed) return;
+    if (!telemetry || flushed || telemetryStopped) return;
     event.preventDefault();
     flushed = true;
     void telemetry.shutdown().finally(() => app.quit());

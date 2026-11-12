@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { presence, users } from "../schema/index.ts";
 import { timeParam } from "./json.ts";
@@ -20,6 +20,10 @@ const stale = (now: Date, ttlSeconds: number) =>
  * `pageId` is the page they are on; leave it out to say only "still here", and the page they
  * were on stands. Someone whose row had gone stale is arriving again, not still here, so they
  * join afresh.
+ *
+ * `focused` says whether their window is focused and showing the canvas: true marks it focused
+ * as of `now`, false clears it, and leaving it out keeps what it was. Nobody is pinged about a
+ * canvas they are looking at.
  */
 export async function touchPresence(
   db: Db,
@@ -27,23 +31,58 @@ export async function touchPresence(
     canvasId,
     userId,
     pageId,
+    focused,
     now,
-  }: { canvasId: string; userId: string; pageId?: string | null; now: Date },
+  }: { canvasId: string; userId: string; pageId?: string | null; focused?: boolean; now: Date },
 ): Promise<void> {
   const at = sql`${timeParam(now)}::timestamptz`;
+  const focusedAt = focused === undefined ? undefined : focused ? at : null;
   await run(
     db
       .insert(presence)
-      .values({ canvasId, userId, pageId, joinedAt: at, seenAt: at })
+      .values({
+        canvasId,
+        userId,
+        pageId,
+        joinedAt: at,
+        seenAt: at,
+        ...(focusedAt === undefined ? {} : { focusedAt }),
+      })
       .onConflictDoUpdate({
         target: [presence.canvasId, presence.userId],
         set: {
           ...(pageId === undefined ? {} : { pageId }),
+          ...(focusedAt === undefined ? {} : { focusedAt }),
           joinedAt: sql`case when ${stale(now, PRESENCE_TTL_SECONDS)} then ${at} else ${presence.joinedAt} end`,
           seenAt: at,
         },
       }),
   );
+}
+
+/**
+ * When each of these people last had this canvas focused, for those whose row says so. A row
+ * past the TTL as of `now` counts as not here.
+ */
+export async function focusedPresence(
+  db: Db,
+  { canvasId, userIds, now }: { canvasId: string; userIds: readonly string[]; now: Date },
+): Promise<Map<string, Date>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await run(
+    db
+      .select({ userId: presence.userId, focusedAt: presence.focusedAt })
+      .from(presence)
+      .where(
+        and(
+          eq(presence.canvasId, canvasId),
+          inArray(presence.userId, [...userIds]),
+          sql`${presence.focusedAt} is not null`,
+          sql`not ${stale(now, PRESENCE_TTL_SECONDS)}`,
+        ),
+      ),
+  );
+  return new Map(rows.map((row) => [row.userId, row.focusedAt!]));
 }
 
 export interface PresentUser {

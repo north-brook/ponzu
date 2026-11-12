@@ -122,8 +122,14 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   // (apps/api/src/account/delete.ts, forget.ts), and says what happens when either is down.
   expect(text).toContain("We also revoke Ponzu's authorization on your GitHub account.");
   expect(text).toContain("We ask PostHog to delete your profile, events and recordings");
-  // The settings switch is S10's; until it ships the draft must not send people to it.
-  expect(text).not.toMatch(/Share usage data/);
+  // The settings switch is built (users.share_usage, apps/api/src/analytics/analytics.ts's
+  // withoutOptedOut, the runner's trace flag), and says what it stops, and what it does not.
+  expect(text).toContain("turn off Settings › Account › Share usage data in the desktop app");
+  expect(text).toContain("the agent's turns that you start are not traced");
+  expect(text).toContain(
+    "a turn that was already running when you turned it off may still be traced",
+  );
+  expect(text).toContain("Turning the switch off does not delete what was already sent");
   // Account deletion does rename the person's ops in a canvas's history (anonymiseUser); only a
   // comment author's name inside the document and its checkpoints stays.
   expect(text).not.toMatch(/name inside a canvas's history/i);

@@ -1,6 +1,7 @@
 /* What each composition in compositions.ts draws. */
 import type { Doc } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
+import { ResetFileLinksDialog } from "../dialogs/reset-file-links.tsx";
 import { type CanvasFilter, repoKey } from "../filter.ts";
 import type { CanvasMember, CanvasSummary, Contributor } from "../model.ts";
 import { BoardsPane, SHOW_BOARDS } from "./boards-pane.tsx";
@@ -32,6 +33,7 @@ function CanvasWindow({
   rail: initialRail = true,
   members = f.members,
   boards,
+  resetLinks,
 }: {
   canvases?: CanvasSummary[];
   contributors?: Contributor[];
@@ -42,8 +44,60 @@ function CanvasWindow({
   members?: CanvasMember[];
   /** The canvas's boards, drawn with `&boards` (boards-pane.tsx). */
   boards?: Doc;
+  /**
+   * The viewer is its owner or an admin, so Share's foot offers "Reset file links":
+   * `"asking"` opens the window with its confirmation already up.
+   */
+  resetLinks?: "offered" | "asking";
 }) {
   const [rail, setRail] = useState(initialRail);
+  const [asking, setAsking] = useState(resetLinks === "asking");
+  return (
+    <>
+      <CanvasWindowFrame
+        canvases={canvases}
+        contributors={contributors}
+        query={query}
+        sidebar={sidebar}
+        rail={rail}
+        setRail={setRail}
+        members={members}
+        boards={boards}
+        onResetLinks={resetLinks ? () => setAsking(true) : null}
+      />
+      {resetLinks ? (
+        <ResetFileLinksDialog
+          open={asking}
+          busy={false}
+          onCancel={() => setAsking(false)}
+          onConfirm={() => setAsking(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function CanvasWindowFrame({
+  canvases,
+  contributors,
+  query,
+  sidebar,
+  rail,
+  setRail,
+  members,
+  boards,
+  onResetLinks,
+}: {
+  canvases: CanvasSummary[];
+  contributors: Contributor[];
+  query: string | null;
+  sidebar: "open" | "closed";
+  rail: boolean;
+  setRail: (change: (open: boolean) => boolean) => void;
+  members: CanvasMember[];
+  boards: Doc | undefined;
+  onResetLinks: (() => void) | null;
+}) {
   return (
     <Harness
       canvases={canvases}
@@ -59,6 +113,7 @@ function CanvasWindow({
           railOpen={rail}
           onToggleRail={() => setRail((o) => !o)}
           members={members}
+          onResetLinks={onResetLinks}
         />
       )}
     >
@@ -135,6 +190,8 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search-results": () => <CanvasWindow query="hero" />,
   share: () => <CanvasWindow />,
   "share-not-joined": () => <CanvasWindow members={f.membersMixed} />,
+  "share-reset-links": () => <CanvasWindow resetLinks="offered" />,
+  "share-reset-links-confirm": () => <CanvasWindow resetLinks="asking" />,
   "sidebar-previews-updating": () => <LivePreviews />,
   "canvas-opening": () => <OpeningWindow known="row" />,
   "canvas-opening-launch": () => <OpeningWindow known="nothing" sidebar="closed" />,

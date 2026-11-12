@@ -1,8 +1,8 @@
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
 import { PostHog, type PostHogOptions } from "posthog-node";
 import type { Logger } from "../http/log.ts";
-import { type AiTracing, createAiTracing, scopeContext } from "./ai.ts";
-import { type Analytics, type AnalyticsSink, createAnalytics } from "./analytics.ts";
+import { type AiTracing, createAiTracing, scopeContextFor } from "./ai.ts";
+import { type Analytics, type AnalyticsSink, createAnalytics, type OptOuts } from "./analytics.ts";
 
 /*
  * PostHog, for a deployment: posthog-node for events, people, groups and exceptions, and
@@ -40,7 +40,7 @@ export const CLIENT_OPTIONS = {
 /** The sink and tracing over a posthog-node client (and its `fetch`, for the test's sink). */
 export function createPosthogSink(
   config: PosthogConfig,
-  options: { fetch?: PostHogOptions["fetch"]; ai?: AiTracing } = {},
+  options: { fetch?: PostHogOptions["fetch"]; ai?: AiTracing; optOuts?: OptOuts | null } = {},
 ): { sink: AnalyticsSink; client: PostHog; ai: AiTracing } {
   const client = new PostHog(config.key, {
     ...CLIENT_OPTIONS,
@@ -55,7 +55,7 @@ export function createPosthogSink(
         projectToken: config.key,
         host: config.host,
         privacyMode: !config.aiContent,
-        client: scopeContext,
+        client: scopeContextFor(options.optOuts ?? null),
       }),
       content: config.aiContent,
     });
@@ -76,13 +76,14 @@ export function createPosthogSink(
 
 /**
  * The API's analytics: PostHog when there is a key, else nothing at all. `keep` is Vercel's
- * `waitUntil`, which holds the instance up until each send is done.
+ * `waitUntil`, which holds the instance up until each send is done. `optOuts` is who has turned
+ * usage sharing off: nothing about them is sent.
  */
 export function createPosthogAnalytics(
   config: PosthogConfig | null,
-  { keep, log }: { keep: (work: Promise<void>) => void; log: Logger },
+  { keep, log, optOuts }: { keep: (work: Promise<void>) => void; log: Logger; optOuts: OptOuts },
 ): Analytics | null {
   if (!config) return null;
-  const { sink, ai } = createPosthogSink(config);
-  return createAnalytics({ sink, ai, keep, log });
+  const { sink, ai } = createPosthogSink(config, { optOuts });
+  return createAnalytics({ sink, ai, keep, log, optOuts });
 }

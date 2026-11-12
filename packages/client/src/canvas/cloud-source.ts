@@ -48,6 +48,13 @@ export interface CloudSourceOptions {
   me: Actor;
   /** Shows the last copy of the canvas while the API cannot be reached. */
   cache?: DocCache;
+  /**
+   * Whether the person is looking at the canvas as it opens: its window focused and visible with
+   * this canvas showing. The host says so, and says again through `setFocused` when it changes;
+   * nobody is pinged about a canvas they are looking at. Left out, presence says nothing of
+   * focus until `setFocused` is called.
+   */
+  focused?: boolean;
   clock?: Clock;
 }
 
@@ -56,7 +63,11 @@ type OpListener = (op: Op, origin: Origin, doc: Doc) => void;
 export class CloudSource implements CanvasSource {
   /** There is no image-resizing service: every image loads at its own size. */
   readonly renditions = false;
-  /** Where the canvas's `assets/` are: known once the API has answered. */
+  /**
+   * Where the canvas's `assets/` are: known once the API has answered. It changes in place when
+   * someone resets the canvas's file links (the head's `assetKeyRotatedAt` moves), and `state`
+   * is set anew then, so whatever draws from it draws again.
+   */
   assetBase?: string;
   /** False for a canvas the person may only look at, and until the API has answered. */
   writable = false;
@@ -82,12 +93,18 @@ export class CloudSource implements CanvasSource {
   /** A copy made for the op listeners, for `state` to take up. */
   private fresh: Doc | null = null;
   private head: CanvasHeadRow | null = null;
+  /** When the file links were last reset, as of the address in `assetBase`. */
+  private rotatedAt: string | null = null;
+  /** Asking for the address after a reset, so a burst of head changes asks once. */
+  private refreshing = false;
   /** Who made the last change, for the canvas's activity indicator. */
   private lastOrigin: Origin | undefined;
   /** Why the canvas can no longer be shown: deleted, or the person lost access to it. */
   private failure: string | null = null;
   private people: readonly PresenceRow[] = [];
   private pageId: string | null = null;
+  /** Whether the host says the person is looking at it; undefined until it says. */
+  private focused: boolean | undefined;
   /** Undo and redo, one after another, each after the edits before it are in. */
   private reversing: Promise<void> = Promise.resolve();
   private cleanups: (() => void)[] = [];
@@ -101,6 +118,7 @@ export class CloudSource implements CanvasSource {
     this.opts = opts;
     this.api = opts.api;
     this.clock = opts.clock ?? systemClock;
+    this.focused = opts.focused;
     void this.showCached();
     this.watch();
     void this.open();
@@ -182,6 +200,17 @@ export class CloudSource implements CanvasSource {
     if (this.replica && !this.failure) this.keepPresent();
   }
 
+  /**
+   * Whether the person is looking at the canvas now: the window focused and visible, and this
+   * canvas showing in it. A change is said at once, not at the next beat, so a ping about what
+   * they are looking at is held back from the first moment.
+   */
+  setFocused(focused: boolean): void {
+    if (focused === this.focused) return;
+    this.focused = focused;
+    if (this.replica && !this.failure) this.keepPresent();
+  }
+
   /** Back online, or back in the foreground: try now instead of sitting out a wait. */
   retryNow(): void {
     if (this.replica) {
@@ -242,6 +271,7 @@ export class CloudSource implements CanvasSource {
     if (this.closed || this.replica || this.failure) return;
 
     this.assetBase = view.assetsUrl;
+    this.rotatedAt = view.assetKeyRotatedAt;
     this.writable = view.access === "write";
     const replica = new Replica({
       transport: this.transport(),
@@ -269,7 +299,10 @@ export class CloudSource implements CanvasSource {
       replica.onDrop(({ op, reason }) => this.unsaved({ op, reason })),
       replica.subscribe(() => this.synced()),
     );
-    if (this.head) replica.notify(this.head.seq);
+    if (this.head) {
+      replica.notify(this.head.seq);
+      this.followReset(this.head);
+    }
     this.set({
       path: view.name,
       canUndo: this.writable,
@@ -342,12 +375,41 @@ export class CloudSource implements CanvasSource {
         if (!head) return;
         this.head = head;
         this.replica?.notify(head.seq);
+        if (this.replica) this.followReset(head);
         this.set({ path: head.name, presence: this.presence() });
       }),
       this.opts.live.subscribe("canvas.presence", args, ({ rows }) => {
         this.people = rows ?? [];
         this.set({ presence: this.presence() });
       }),
+    );
+  }
+
+  /**
+   * The canvas's file links were reset since `assetBase` was read: ask for the new address. One
+   * that fails is asked for again at the head's next change.
+   */
+  private followReset(head: CanvasHeadRow): void {
+    if (head.assetKeyRotatedAt === this.rotatedAt || this.refreshing) return;
+    this.refreshing = true;
+    this.api.canvases.get(this.opts.canvasId).then(
+      (view) => {
+        this.refreshing = false;
+        if (this.closed || this.failure) return;
+        const asked = this.rotatedAt;
+        this.rotatedAt = view.assetKeyRotatedAt;
+        if (view.assetsUrl !== this.assetBase) {
+          this.assetBase = view.assetsUrl;
+          this.set({});
+          this.cacheSoon();
+        }
+        // Reset again while this was asked, and its head came meanwhile: ask once more. Only
+        // when the answer moved on, so a head and an answer that never agree can't loop.
+        if (this.head && asked !== this.rotatedAt) this.followReset(this.head);
+      },
+      () => {
+        this.refreshing = false;
+      },
     );
   }
 
@@ -408,7 +470,9 @@ export class CloudSource implements CanvasSource {
   private keepPresent(): void {
     this.cancelPresence?.();
     const beat = () => {
-      void this.api.canvases.presence(this.opts.canvasId, this.pageId).catch(() => {});
+      void this.api.canvases
+        .presence(this.opts.canvasId, this.pageId, this.focused)
+        .catch(() => {});
       this.cancelPresence = this.clock.schedule(beat, PRESENCE_MS);
     };
     beat();

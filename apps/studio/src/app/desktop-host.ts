@@ -63,8 +63,14 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
     docStorage: signedInCache(session, window.localStorage),
+    // A shell from before the Mac's notifications has none, nor an install id to register.
+    notifications: desktop.notifications?.installId
+      ? { ...desktop.notifications, appVersion: desktop.version || null }
+      : null,
     onApiError: errors.listen,
     welcome1x: () => desktop.welcome1x(),
+    // An older shell has no switch to write: the account's own still holds.
+    setUsageSharing: (enabled) => desktop.setUsageSharing?.(enabled) ?? Promise.resolve(false),
   };
 }
 

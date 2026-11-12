@@ -1,6 +1,6 @@
 import type { CanvasProps } from "@ponzu/canvas";
 import { isTyping } from "@ponzu/canvas/modifier-hint";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { CanvasMember, CanvasSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
@@ -47,9 +47,12 @@ export function useCanvasPanes({
   say,
   onClose,
   onConnectClaude,
+  viewerIsAdmin = false,
 }: {
   host: Host;
   me: Person;
+  /** Whether the viewer is an admin of the canvas's workspace: they may reset its file links. */
+  viewerIsAdmin?: boolean;
   open: OpenCanvas | null;
   /** Its row in the sidebar, once the list has it. */
   summary: CanvasSummary | null;
@@ -61,8 +64,17 @@ export function useCanvasPanes({
   rail: { open: boolean; onToggle: () => void };
   page: string | null;
   onPage: (id: string) => void;
-  /** Where a ponzu:// link asked to open it. */
-  link: { page?: string; artboard?: string } | null;
+  /**
+   * Where a ponzu:// link asked to open it: a page or board, a comment's thread on its pin, or
+   * the pull request tab (a notification's link). `at` is when, so the same link is followed again.
+   */
+  link: {
+    page?: string;
+    artboard?: string;
+    thread?: string;
+    tab?: "pull-request";
+    at?: number;
+  } | null;
   /** Opens another canvas, on a page or board of it, as a ponzu:// link does. */
   onOpenCanvas: (at: CanvasAddress) => void;
   seenThreadSeq: number | null;
@@ -86,6 +98,22 @@ export function useCanvasPanes({
     }
     setTabFor(open ? canvasId : null);
   };
+
+  // A link to the pull request opens its tab, once per link: closing it again stays closed.
+  const tabLinked = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!canvasId || link?.tab !== "pull-request" || tabLinked.current === link.at) return;
+    tabLinked.current = link.at;
+    setTabFor(canvasId);
+  }, [canvasId, link]);
+  const boardsLink: BoardsJump | null = link
+    ? {
+        ...(link.page ? { page: link.page } : {}),
+        ...(link.artboard ? { artboard: link.artboard } : {}),
+        ...(link.thread ? { thread: link.thread } : {}),
+        ...(link.at ? { at: link.at } : {}),
+      }
+    : null;
 
   // The tab is read-only: ⌘Z there has nothing to undo. Uncaught, it would reach Edit › Undo,
   // which reverts the last typing anywhere in the window (the thread's draft, beside the tab) and
@@ -158,6 +186,13 @@ export function useCanvasPanes({
         prTab={{ open: prTab, onToggle: togglePrTab }}
         seenThreadSeq={seenThreadSeq}
         onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
+        // Its owner and the workspace's admins, as the API allows.
+        resetLinks={
+          owner?.id === me.id || viewerIsAdmin
+            ? () => host.api.canvases.rotateAssetKey(open.id)
+            : null
+        }
+        say={say}
       />
     ),
     rail: rail.open ? (
@@ -186,7 +221,7 @@ export function useCanvasPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown ? { link: shown } : link ? { link } : {})}
+            {...(shown ? { link: shown } : boardsLink ? { link: boardsLink } : {})}
             onClose={onClose}
           />
         </div>

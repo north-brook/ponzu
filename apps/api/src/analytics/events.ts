@@ -75,6 +75,11 @@ export interface ServerEvents {
     effort: string | null;
   };
   "canvas deleted": { canvas_id: string; by_owner: boolean };
+  /**
+   * Its owner or an admin reset the canvas's file links: its files moved under a new asset key,
+   * and links to the old one stop working. `by_owner`: the owner did it, not an admin.
+   */
+  "canvas file links reset": { canvas_id: string; by_owner: boolean };
   "canvas settled": { canvas_id: string };
   "canvas reopened": { canvas_id: string };
   /**
@@ -129,6 +134,24 @@ export interface ServerEvents {
   "turn stalled": { canvas_id: string };
   "question asked": { canvas_id: string; question_id: string; kind: string };
   "question answered": { canvas_id: string; question_id: string; kind: string };
+
+  // Notifications
+  /**
+   * Ponzu told a person something (a `notifications` row): `muted` when their toggle was off,
+   * `suppressed` why no push was planned, `pushes` how many phones it was planned for, and
+   * `deferred` when those wait for the person at their Mac. About the person told.
+   */
+  "notification created": {
+    kind: string;
+    muted: boolean;
+    suppressed: "pref_off" | "looking" | "rate" | "no_device" | null;
+    pushes: number;
+    deferred: boolean;
+  };
+  /** Expo took a push to one phone. About the person it is for. */
+  "push sent": { kind: string };
+  /** Expo refused a push, at once or by its receipt, with its code. */
+  "push failed": { kind: string; error: string };
 
   // Pull requests
   "pull request created": { canvas_id: string; number: number };

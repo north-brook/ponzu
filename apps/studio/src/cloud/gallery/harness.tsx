@@ -190,6 +190,7 @@ export function CanvasChromeHarness({
   threadUnseen = false,
   changes = true,
   members = f.members,
+  onResetLinks = null,
   overrides = {},
 }: {
   canvas: CanvasSummary;
@@ -198,6 +199,8 @@ export function CanvasChromeHarness({
   contributors: Contributor[] | null;
   /** Who Share lists. */
   members?: CanvasMember[];
+  /** Share's "Reset file links", as its owner and the workspace's admins have it; null for others. */
+  onResetLinks?: (() => void) | null;
   railOpen: boolean;
   /** The window's rail follows the toggle: without it, only the toggle does. */
   onToggleRail?: () => void;
@@ -231,6 +234,7 @@ export function CanvasChromeHarness({
               repo: canvas.project.repo,
               members,
               onOpenRepo: ignore,
+              onResetLinks,
             }
           : null
       }

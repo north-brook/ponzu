@@ -1040,8 +1040,9 @@ test("a message goes in at once, and is acknowledged once the session holds it, 
     text: "Message from Ada:\nMake the hero quieter.",
     priority: "now",
     human: true,
-    // Whose turn it begins: the event, its sender, and their app session (none here).
-    origin: { eventId: event.id, userId: ADA.id, sessionId: null },
+    // Whose turn it begins: the event, its sender, their app session (none here), and whether
+    // it may be traced (an event that says nothing may).
+    origin: { eventId: event.id, userId: ADA.id, sessionId: null, trace: true },
   });
   await until(() => api.lastState?.state === "working");
   await Bun.sleep(30);
@@ -2115,6 +2116,7 @@ test("with analytics on, each turn is traced under its canvas and workspace, for
     eventId: sent.id,
     userId: ADA.id,
     sessionId: "0192e0a0-0000-7000-8000-000000000001",
+    trace: true,
   });
   s.run.take(input);
   // What the agent's trace hands over goes to PostHog's client.
@@ -2137,6 +2139,16 @@ test("with analytics on, each turn is traced under its canvas and workspace, for
     eventId: sent.id,
   });
   expect(report.turn!.durationMs).toBeGreaterThanOrEqual(5_000);
+});
+
+test("an event whose person turned usage sharing off hands the agent an origin that says so", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: ANALYTICS }, telemetry: t.telemetry });
+  s.run.ready("sess_1");
+  const sent = s.api.push({ kind: "message", payload: { text: "Go" } }, { trace: false });
+  s.runner.poke();
+  const input = await s.run.input();
+  expect(input.origin).toEqual({ eventId: sent.id, userId: ADA.id, sessionId: null, trace: false });
 });
 
 test("a turn a person stopped is reported as stopped, with no error code", async () => {

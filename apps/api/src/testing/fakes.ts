@@ -120,7 +120,8 @@ export class MemoryStorage implements ObjectStorage {
 
   async copy(from: string, to: string) {
     const found = this.objects.get(from);
-    if (!found) throw new Error(`Nothing at ${from} to copy.`);
+    // As R2 answers a copy whose source is not there: 404, naming no key.
+    if (!found) throw new UpstreamError("storage", "COPY an object answered 404", { status: 404 });
     // R2 keeps the headers and not the checksum.
     this.objects.set(to, { ...found, sha256: null, modifiedAt: this.#clock.now() });
   }

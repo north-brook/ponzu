@@ -1,4 +1,11 @@
-import { type EventKind, QUESTION_KINDS } from "@ponzu/db/types";
+import {
+  type EventKind,
+  NOTIFICATION_KINDS,
+  NOTIFICATION_OPENS,
+  type NotificationKind,
+  type NotificationOpen,
+  QUESTION_KINDS,
+} from "@ponzu/db/types";
 import type { RunErrorCode } from "@ponzu/runner/protocol";
 import { z } from "zod";
 
@@ -16,21 +23,10 @@ import { z } from "zod";
  * refused unless it has an id's shape.
  */
 
-export const NOTIFICATION_KINDS = [
-  "needs_you",
-  "reply",
-  "finished",
-  "failed",
-  "claude_limit",
-  "pr_ready",
-  "pr_approved",
-  "teammate_comment",
-  "billing_free_used",
-  "billing_cap_warning",
-  "billing_cap_reached",
-  "billing_payment_failed",
-] as const;
-export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+export type { NotificationKind, NotificationOpen };
+// The kinds and where they open are the database's lists: `notifications.kind` is checked against
+// the one, and `notifications.link.open` against the other.
+export { NOTIFICATION_KINDS, NOTIFICATION_OPENS };
 
 /** The toggles of `prefs` that a kind can be under (`GET /v1/me/notifications`). */
 export type PingToggle = "needsYou" | "replies" | "prReady" | "teammateComments";
@@ -68,14 +64,6 @@ export const RATE_EXEMPT_KINDS: ReadonlySet<NotificationKind> = new Set<Notifica
 export function isBillingKind(kind: NotificationKind): kind is BillingKind {
   return (BILLING_KINDS as readonly NotificationKind[]).includes(kind);
 }
-
-/**
- * Where a ping opens: the canvas's thread, its pull request, a comment's pin, or Plan and usage.
- * The words are the shared link grammar's (`open` on a canvas link, which comes with the link
- * groundwork in `@ponzu/core/links`).
- */
-export const NOTIFICATION_OPENS = ["thread", "pull-request", "comment", "usage"] as const;
-export type NotificationOpen = (typeof NOTIFICATION_OPENS)[number];
 
 export const KIND_OPENS: Record<NotificationKind, NotificationOpen> = {
   needs_you: "thread",
@@ -133,6 +121,16 @@ export const BILLING_NOTICES = [
 ] as const;
 export type BillingNotice = (typeof BILLING_NOTICES)[number];
 
+/** `id` when it has an id's shape (the link grammar's), else null: for ids a client chose. */
+export function idOrNull(id: string | null | undefined): string | null {
+  return id && ID.test(id) ? id : null;
+}
+
+/** `login` when it has a GitHub login's shape, else null. */
+export function loginOrNull(login: string | null | undefined): string | null {
+  return login && Login.safeParse(login).success ? login : null;
+}
+
 export const NotifyTrigger = z.discriminatedUnion("kind", [
   /** The runner raised a question (`POST /v1/runner/questions` answered `raised`). */
   z.strictObject({
@@ -158,12 +156,18 @@ export const NotifyTrigger = z.discriminatedUnion("kind", [
     errorCode: z.enum(RUN_ERROR_CODES).nullable(),
     durationMs: z.number().int().min(0),
   }),
-  /** A person's comment was committed to the canvas. */
+  /**
+   * A person's comment was committed to the canvas: where its pin is (its thread, page and
+   * board), never what it says.
+   */
   z.strictObject({
     kind: z.literal("comment_posted"),
     canvasId: Id,
     messageId: Id,
     authorId: Id,
+    threadId: Id.nullable(),
+    pageId: Id.nullable(),
+    artboardId: Id.nullable(),
   }),
   /** `recordRead` found the pull request open, not a draft, checks passing and mergeable. */
   z.strictObject({
@@ -180,6 +184,8 @@ export const NotifyTrigger = z.discriminatedUnion("kind", [
     number: PrNumber,
     reviewId: Id,
     reviewerLogin: Login,
+    /** The reviewer as a Ponzu person, found by their GitHub user id, when they are one. */
+    reviewerId: Id.nullable(),
     authorLogin: Login.nullable(),
   }),
   /** A copy of a message that had lapsed lapsed again: the thread says to send it again. */
@@ -225,7 +231,8 @@ export function triggerKey(trigger: NotifyTrigger): string {
     case "wake_failed":
       return `${trigger.kind}:${trigger.canvasId}:${trigger.failedAt}`;
     case "billing":
-      return `${trigger.kind}:${trigger.notice}:${trigger.workspaceId}:${trigger.periodStart}`;
+      // One spelling of the instant, so "…:00Z" and "…:00.000Z" are one job.
+      return `${trigger.kind}:${trigger.notice}:${trigger.workspaceId}:${new Date(trigger.periodStart).toISOString()}`;
   }
 }
 

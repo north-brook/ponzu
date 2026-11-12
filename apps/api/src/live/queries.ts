@@ -65,7 +65,7 @@ export const LIVE_QUERIES = {
     sql: `select u.id, u.github_login, u.name, u.email, u.avatar_url,
                  u.default_agent, u.default_model, u.default_effort,
                  u.ping_needs_you, u.ping_replies, u.ping_pr_ready, u.ping_teammate_comments,
-                 u.email_digest, u.onboarding_where_at, u.onboarding_iphone_at,
+                 u.email_digest, u.share_usage, u.onboarding_where_at, u.onboarding_iphone_at,
                  a.id as claude_account_id, a.kind as claude_account_kind,
                  a.status as claude_account_status, a.plan_label as claude_plan_label,
                  a.key_hint as claude_key_hint, a.connected_at as claude_connected_at,
@@ -73,6 +73,25 @@ export const LIVE_QUERIES = {
             from users u
             left join claude_accounts a on a.user_id = u.id
            where u.id = $1`,
+  }),
+
+  /**
+   * The person's inbox: what Ponzu told them that they have not read, and every needs-you whose
+   * question is still open, read or not (the badge counts those). The Mac shows its banners and
+   * its dock badge from it. A row leaves once it is read and, for a needs-you, resolved; the
+   * sweep reads unread rows three days old, so the result stays small. The filter is the
+   * predicate of `notifications_inbox_idx`, word for word, so Postgres reads it from that index.
+   * Ids, a canvas's name and Ponzu's own sentences only: never anything a person or the agent
+   * wrote.
+   */
+  "me.notifications": define({
+    args: z.object({}),
+    authorize: async (c) => [person(c).user.id],
+    sql: `select n.id, n.kind, n.workspace_id, n.canvas_id, n.title, n.subtitle, n.body, n.link,
+                 n.count, n.muted, n.read_at, n.resolved_at, n.created_at, n.updated_at
+            from notifications n
+           where n.user_id = $1
+             and (n.read_at is null or (n.kind = 'needs_you' and n.resolved_at is null))`,
   }),
 
   /**
@@ -94,7 +113,7 @@ export const LIVE_QUERIES = {
                  d.name, d.icon, d.branch, d.status, d.settled_at, d.seq, d.preview_seq,
                  d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
                  d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
-                 dr.seen_seq, dr.seen_thread_seq
+                 d.asset_key_rotated_at, dr.seen_seq, dr.seen_thread_seq
             from canvases d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1
             left join repos r on r.id = d.repo_id

@@ -51,6 +51,11 @@ export interface Origin {
   eventId: string;
   userId: string | null;
   sessionId: string | null;
+  /**
+   * False when the person behind the event turned Share usage data off (the event's `trace`):
+   * a turn this begins sends nothing. Absent means true.
+   */
+  trace?: boolean;
 }
 
 /** What a turn was, as the runner reports it with its usage. */
@@ -355,6 +360,8 @@ export class TurnTrace {
   private emit(turn: Turn, end: { id: string; latency: number; error: string | null }): void {
     const options = this.options;
     if (!options) return;
+    // The turn's first event came from someone who turned usage sharing off: no trace of it.
+    if (turn.origin?.trace === false) return;
     try {
       const traceId = end.id;
       const person = turn.origin?.userId ?? null;

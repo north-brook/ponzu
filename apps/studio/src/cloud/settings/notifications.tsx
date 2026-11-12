@@ -1,4 +1,9 @@
-import { ArrowRight01Icon, Mail01Icon, SmartPhone01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowRight01Icon,
+  ComputerIcon,
+  Mail01Icon,
+  SmartPhone01Icon,
+} from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/icon.tsx";
 import { Switch } from "../ui/switch.tsx";
 import { Row, RowIcon, Section, TwoLine } from "./parts.tsx";
@@ -12,10 +17,11 @@ export interface PingPrefs {
   emailDigest: boolean;
 }
 
-/** An iPhone signed in as the person. */
+/** A Mac or an iPhone signed in as the person. */
 export interface PingDevice {
   id: string;
-  /** "iPhone 16 Pro" */
+  kind: "mac" | "iphone";
+  /** "This Mac", "Maya's MacBook Pro", "iPhone 16 Pro" */
   name: string;
   pings: boolean;
   /** iOS turned notifications off for Ponzu: nothing can be sent until the person turns them on there. */
@@ -28,6 +34,8 @@ export interface NotificationsSectionProps {
   devices: PingDevice[];
   onDeviceChange: (device: PingDevice, pings: boolean) => void;
   email: string | null;
+  /** Ponzu can send email: the daily digest's row shows only then. */
+  emailAvailable: boolean;
   /** In a team: a teammate's comment can ping. */
   team: boolean;
   /** No iPhone yet: the step that gets one. */
@@ -41,18 +49,24 @@ const EVENTS: { key: Exclude<keyof PingPrefs, "emailDigest">; title: string; lin
   { key: "teammateComments", title: "A teammate comments", line: "On canvases I own" },
 ];
 
-/** Which events ping the person, and where: each phone, and a daily email. Saved as flipped. */
+/**
+ * Which events ping the person, and where: each Mac (its banners while Ponzu runs) and phone,
+ * and a daily email once Ponzu can send one. Saved as flipped.
+ */
 export function NotificationsSection({
   prefs,
   onPrefsChange,
   devices,
   onDeviceChange,
   email,
+  emailAvailable,
   team,
   onGetIphone,
 }: NotificationsSectionProps) {
   const events = team ? EVENTS : EVENTS.filter((e) => e.key !== "teammateComments");
   const phone = <Icon icon={SmartPhone01Icon} step="control" className="text-muted" />;
+  const computer = <Icon icon={ComputerIcon} step="control" className="text-muted" />;
+  const hasIphone = devices.some((device) => device.kind === "iphone");
   return (
     <>
       <Section label="Ping me when">
@@ -72,27 +86,26 @@ export function NotificationsSection({
         ))}
       </Section>
       <Section label="Where">
-        {devices.length ? (
-          devices.map((device) => (
-            <Row
-              key={device.id}
-              leading={phone}
-              trailing={
-                <Switch
-                  label={device.name}
-                  checked={device.pings && !device.blocked}
-                  disabled={device.blocked}
-                  onCheckedChange={(on) => onDeviceChange(device, on)}
-                />
-              }
-            >
-              <TwoLine
-                title={device.name}
-                line={device.blocked ? "Turned off in iOS Settings" : "Pings"}
+        {devices.map((device) => (
+          <Row
+            key={device.id}
+            leading={device.kind === "mac" ? computer : phone}
+            trailing={
+              <Switch
+                label={device.name}
+                checked={device.pings && !device.blocked}
+                disabled={device.blocked}
+                onCheckedChange={(on) => onDeviceChange(device, on)}
               />
-            </Row>
-          ))
-        ) : (
+            }
+          >
+            <TwoLine
+              title={device.name}
+              line={device.blocked ? "Turned off in iOS Settings" : "Pings"}
+            />
+          </Row>
+        ))}
+        {hasIphone ? null : (
           <Row
             leading={phone}
             trailing={
@@ -106,21 +119,23 @@ export function NotificationsSection({
             <TwoLine title="iPhone" line="Get Ponzu on your iPhone" />
           </Row>
         )}
-        <Row
-          leading={<Icon icon={Mail01Icon} step="control" className="text-muted" />}
-          trailing={
-            <Switch
-              label="Email"
-              checked={prefs.emailDigest}
-              onCheckedChange={(on) => onPrefsChange({ ...prefs, emailDigest: on })}
+        {emailAvailable ? (
+          <Row
+            leading={<Icon icon={Mail01Icon} step="control" className="text-muted" />}
+            trailing={
+              <Switch
+                label="Email"
+                checked={prefs.emailDigest}
+                onCheckedChange={(on) => onPrefsChange({ ...prefs, emailDigest: on })}
+              />
+            }
+          >
+            <TwoLine
+              title="Email"
+              line={email ? `${email} · a daily digest only` : "A daily digest only"}
             />
-          }
-        >
-          <TwoLine
-            title="Email"
-            line={email ? `${email} · a daily digest only` : "A daily digest only"}
-          />
-        </Row>
+          </Row>
+        ) : null}
       </Section>
     </>
   );

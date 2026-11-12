@@ -5,7 +5,7 @@ import { configFor, posthogFrom } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { launchOnce, recordLaunch } from "./launches.ts";
 import { scrubPaths, startMainTelemetry } from "./main-telemetry.ts";
-import { telemetryOffBecause } from "./telemetry-consent.ts";
+import { type ConsentFiles, telemetryOffBecause, writeUsageSharing } from "./telemetry-consent.ts";
 import { built } from "./testing.ts";
 
 const KEY = "phc_test_project";
@@ -86,6 +86,56 @@ test("whoever turned 1.x's telemetry off stays off, the ways they could say it",
   );
   expect(telemetryOffBecause({}, "/home/maya", file('{"id":"x","enabled":true}'))).toBeNull();
   expect(telemetryOffBecause({}, "/home/maya", file("{not json"))).toContain("can't be read");
+});
+
+/** A home folder in memory, for `writeUsageSharing`. */
+function memoryHome(start: Record<string, string> = {}) {
+  const files = new Map(Object.entries(start));
+  const folders: string[] = [];
+  const fs: ConsentFiles = {
+    read: (path) => {
+      const text = files.get(path);
+      if (text === undefined) throw Object.assign(new Error("no file"), { code: "ENOENT" });
+      return text;
+    },
+    write: (path, text) => void files.set(path, text),
+    rename: (from, to) => {
+      files.set(to, files.get(from)!);
+      files.delete(from);
+    },
+    mkdir: (path) => void folders.push(path),
+  };
+  return { files, folders, fs, read: fs.read };
+}
+
+test("Settings' switch writes the file the shell reads at launch: off is read as off, on as on", () => {
+  const home = memoryHome();
+  const path = "/home/maya/.ponzu/telemetry.json";
+  writeUsageSharing("/home/maya", false, home.fs);
+  expect(home.folders).toEqual(["/home/maya/.ponzu"]);
+  expect(JSON.parse(home.files.get(path)!)).toEqual({ enabled: false });
+  // Nothing half-written is left beside it.
+  expect([...home.files.keys()]).toEqual([path]);
+  expect(telemetryOffBecause({}, "/home/maya", home.read)).toContain("Settings");
+
+  writeUsageSharing("/home/maya", true, home.fs);
+  expect(JSON.parse(home.files.get(path)!)).toEqual({ enabled: true });
+  expect(telemetryOffBecause({}, "/home/maya", home.read)).toBeNull();
+  // The environment still wins over the file.
+  expect(telemetryOffBecause({ DO_NOT_TRACK: "1" }, "/home/maya", home.read)).toContain(
+    "DO_NOT_TRACK",
+  );
+});
+
+test("1.x's id in the file is kept, and a file that isn't JSON is replaced", () => {
+  const path = "/home/maya/.ponzu/telemetry.json";
+  const kept = memoryHome({ [path]: '{"id":"anon-1","enabled":true}' });
+  writeUsageSharing("/home/maya", false, kept.fs);
+  expect(JSON.parse(kept.files.get(path)!)).toEqual({ id: "anon-1", enabled: false });
+
+  const broken = memoryHome({ [path]: "{not json" });
+  writeUsageSharing("/home/maya", true, broken.fs);
+  expect(JSON.parse(broken.files.get(path)!)).toEqual({ enabled: true });
 });
 
 test("a launch knows whether it is the first, and what version it was updated from", () => {
