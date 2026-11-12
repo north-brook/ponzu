@@ -34,7 +34,7 @@ const TIMEOUT = 10_000;
 export const LIMITS = { files: 600, bytes: 12 * 1024 * 1024 };
 /** The largest design.json a repo index reads for a card's name. */
 const META_BYTES = 256 * 1024;
-/** Where Ponzu keeps a design's canvas preview (packages/server/src/preview.ts). */
+/** Where Ponzu keeps a design's canvas preview (1.x's local server, its preview.ts). */
 const PREVIEW = ".ponzu/preview.png";
 /** Designs whose design.json the listing reads for a name. */
 const NAMED = 48;

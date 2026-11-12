@@ -13,9 +13,9 @@ One PostHog project per environment.
 | dev (`api.ponzu.design` today, the Ponzu Dev app) | **Ponzu Dev** |
 | production, after cutover | **Ponzu** |
 
-The pre-cloud product's project, and the telemetry in `apps/cli`, `apps/mobile` and `apps/web`
-that reports to it, are left alone. They are deleted or repointed at cutover, and that project
-is retired after it.
+The pre-cloud product's project, and the telemetry in `apps/mobile` and `apps/web` that reports
+to it, are left alone. They are deleted or repointed at cutover, and that project is retired
+after it. The 1.x command line, which also reports to it, is no longer on this branch.
 
 ## Switching it on
 

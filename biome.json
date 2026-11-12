@@ -5,7 +5,6 @@
       "**",
       "!**/dist",
       "!**/out",
-      "!apps/cli/npm",
       "!**/node_modules",
       "!examples",
       "!apps/web/public/demo/seekle.design",
@@ -79,11 +78,7 @@
       }
     },
     {
-      "includes": [
-        "apps/mobile/app.json",
-        "plugin/.claude-plugin/plugin.json",
-        "plugin/.codex-plugin/plugin.json"
-      ],
+      "includes": ["apps/mobile/app.json"],
       "formatter": {
         "enabled": false
       }

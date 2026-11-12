@@ -9,26 +9,20 @@
       "include-component-in-tag": false,
       "draft": true,
       "force-tag-creation": true,
-      "exclude-paths": ["apps/mobile"],
+      "exclude-paths": [
+        "apps/mobile",
+        "apps/api",
+        "apps/runner",
+        "packages/db",
+        "packages/sandbox",
+        "packages/evals",
+        "infra",
+        "docs"
+      ],
       "extra-files": [
         {
           "type": "json",
           "path": "apps/desktop/package.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
-          "path": "apps/cli/package.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
-          "path": "plugin/.claude-plugin/plugin.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
-          "path": "plugin/.codex-plugin/plugin.json",
           "jsonpath": "$.version"
         }
       ],
