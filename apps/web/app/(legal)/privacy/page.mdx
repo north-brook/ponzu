@@ -128,7 +128,7 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 - A canvas's change history is compacted after seven days: older changes are folded into its checkpoints.
 - A sandbox's snapshot expires 30 days after it was last used, and Vercel removes the sandbox 14 days after that.
 - A checkpoint is deleted when a newer one replaces it.
-- Records of sign-in attempts are deleted a day after they expire. Records of finished background work, and of the notices GitHub and our other providers send us, are deleted 30 days after the work finished or the notice arrived.
+- The short-lived records we keep while you connect Claude or install Ponzu's GitHub App are deleted a day after they expire. Records of finished background work, and of the notices GitHub and our other providers send us, are deleted 30 days after the work finished or the notice arrived.
 - <Open who="founder">Analytics: how long PostHog keeps recordings and events on our plan.</Open>
 - <Open who="founder">Backups: Neon's restore window in production (the desired state in infra/neon.json is 7 days of history and daily backups kept 35 days, once applied).</Open>
 - <Open who="founder">Logs: Vercel's log retention on our plan.</Open>
