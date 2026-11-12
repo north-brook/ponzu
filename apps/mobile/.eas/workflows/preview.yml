@@ -2,7 +2,7 @@ name: Preview
 
 # Ponzu Dev (APP_VARIANT=dev: design.ponzu.app.dev, ponzu-dev://) for the
 # phones registered for internal distribution, from the `cloud` branch,
-# against api.ponzu.design. Run by hand only, with `eas workflow:run
+# against api-dev.ponzu.design. Run by hand only, with `eas workflow:run
 # preview.yml`: agents never deploy, so nothing here runs on a push. A new
 # native fingerprint builds a binary (installed from the link EAS gives);
 # anything else ships over the air on the `preview` channel to the builds

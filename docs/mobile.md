@@ -301,11 +301,14 @@ Two apps build from this project (`app.config.ts`, by `APP_VARIANT`):
 | Name | Ponzu | Ponzu Dev |
 | Bundle id | `design.ponzu.app` | `design.ponzu.app.dev` |
 | Scheme | `ponzu://` | `ponzu-dev://` |
-| API | production's, at cutover | `https://api.ponzu.design`, WorkOS staging |
+| API | `EXPO_PUBLIC_PONZU_API_URL`, which a production build must set | `https://api-dev.ponzu.design` unless set, WorkOS staging |
 | Push tokens | production | development for the dev client, production for preview builds |
 | Built by | `production.yml`, on a phone release | the development profile, and `preview.yml` by hand |
 
-Both take universal links on `ponzu.design` (`associatedDomains`). Until
+Neither takes universal links yet: `app.config.ts` sets no `associatedDomains`,
+because `ponzu.design` serves no apple-app-site-association file and the
+provisioning profile may lack the capability. Universal links on
+`ponzu.design` return with the association file. Until
 cutover only Ponzu Dev is installed from the `cloud` branch, so no cloud build
 ever reaches a phone running the 1.x app or TestFlight's groups. The
 `preview` profile is internal distribution on the `preview` channel and EAS
