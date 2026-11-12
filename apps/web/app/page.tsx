@@ -51,7 +51,9 @@ export default function Home() {
         </div>
         <PhonePlatforms testflight={TESTFLIGHT} />
         <p className="m-0 text-sm text-faint">
-          Free to start: {PRICES.freeCredits} credits a month.
+          {BILLING_LIVE
+            ? `Free to start: ${PRICES.freeCredits} credits a month.`
+            : "Free while billing is being set up."}
         </p>
       </header>
 
@@ -140,7 +142,7 @@ export default function Home() {
           title="And in your pocket."
           body={
             <>
-              Comment on canvases and answer Ponzu's questions from your iPhone.{" "}
+              See your canvases live and comment on them from your iPhone.{" "}
               {TESTFLIGHT ? (
                 <a
                   className="inline-flex items-baseline gap-1.5 font-semibold whitespace-nowrap text-ink hover:underline"

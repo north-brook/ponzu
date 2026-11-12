@@ -52,7 +52,7 @@ ground span[Setup] rgb(17, 17, 16)
 ground span[Setup] rgb(17, 17, 16)
 ground span[Setup] rgb(17, 17, 16)
 text "Get Ponzu on your iPhone" rgb(17, 17, 16) 600 28px Funnel Display
-text "Comment on canvases and answer Ponzu's …" rgb(86, 83, 77) 400 15px Inter
+text "See your canvases live and comment on t…" rgb(86, 83, 77) 400 15px Inter
 ground div rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px
 ground div rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px
 icon svg[QR code for Ponzu on the App Store] 75×75 rgb(17, 17, 16) stroke 1px

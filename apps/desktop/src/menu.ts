@@ -115,7 +115,6 @@ export function buildMenu(actions: MenuActions): void {
           label: "Contact Support",
           click: () => void shell.openExternal(supportMailto(actions.supportFacts())),
         },
-        { label: "Ponzu Status", click: () => void shell.openExternal(HELP_LINKS.status) },
         { type: "separator" },
         { label: "Privacy Policy", click: () => void shell.openExternal(HELP_LINKS.privacy) },
         { label: "Terms of Service", click: () => void shell.openExternal(HELP_LINKS.terms) },

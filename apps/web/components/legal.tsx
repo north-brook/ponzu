@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { LEGAL_DRAFT } from "./legal-status";
 import { Link, Table, Td, Th } from "./prose";
 import { CONTACT } from "./site";
 import { STATUS_LABEL, SUBPROCESSORS, type Subprocessor } from "./subprocessors";
@@ -14,10 +15,21 @@ export type OpenFor = "founder" | "counsel";
 const OPEN_LABEL: Record<OpenFor, string> = { founder: "For the founder", counsel: "For counsel" };
 
 /**
- * A question the draft leaves open, marked where it sits so a reader sees what is not settled.
- * legal.test.ts fails while any remain once LEGAL_STATUS is "in-effect".
+ * A question the draft leaves open, kept in the source where it sits. While LEGAL_STATUS is
+ * "draft" it is not drawn: the draft notice already says the page is not in effect, and the notes
+ * are for the founder and counsel, not the public. legal.test.ts fails while any remain once
+ * LEGAL_STATUS is "in-effect".
  */
-export function Open({ who, children }: { who: OpenFor; children: ReactNode }) {
+export function Open({
+  who,
+  children,
+  draft = LEGAL_DRAFT,
+}: {
+  who: OpenFor;
+  children: ReactNode;
+  draft?: boolean;
+}) {
+  if (draft) return null;
   return (
     <span
       className="rounded bg-yuzu/20 px-1 py-0.5 text-[15px] text-ink [box-decoration-break:clone]"

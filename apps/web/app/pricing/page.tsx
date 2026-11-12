@@ -24,7 +24,6 @@ export const metadata: Metadata = {
 const HOW_IT_WORKS: readonly ReactNode[] = [
   `A canvas is awake while Ponzu works on it, and sleeps ${PRICES.sleepMinutes} minutes after the last activity. Asleep costs nothing.`,
   "Opening a canvas to look never wakes it.",
-  "A card is asked for when the free credits are used up, and you can add one any time in Settings.",
   `Each workspace has a monthly cap, ${PRICES.cap} to start, and is never charged past it. At the cap, no new turn starts in the workspace until an admin raises the cap or the month resets. A turn that's running finishes.`,
   "Claude runs on your plan: a Claude Pro or Max subscription, or an Anthropic API key. Ponzu adds nothing for tokens.",
 ];
@@ -40,11 +39,11 @@ const FAQ: readonly { q: string; a: ReactNode }[] = [
   },
   {
     q: "Is the iPhone app extra?",
-    a: "No. Billing lives on the Mac; the iPhone shows usage.",
+    a: "No. Billing lives on the Mac.",
   },
   {
     q: "What happens at the cap?",
-    a: `No new turn starts in the workspace until an admin raises the cap or the month resets. A turn that's running finishes. Admins hear at ${PRICES.warningPercent}% of the cap, and again when it's reached.`,
+    a: `No new turn starts in the workspace until an admin raises the cap or the month resets. A turn that's running finishes.`,
   },
   {
     q: "Who counts for free credits?",

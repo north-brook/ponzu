@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import sitemap from "./app/sitemap.ts";
 import { DraftNotice, LastUpdated } from "./components/draft-notice.tsx";
-import { SubprocessorSummary, SubprocessorTable } from "./components/legal.tsx";
+import { Open, SubprocessorSummary, SubprocessorTable } from "./components/legal.tsx";
 import {
   LEGAL_DRAFT,
   LEGAL_PAGES,
@@ -62,6 +62,18 @@ test("while LEGAL_STATUS is draft, every legal page is noindex, shows the notice
   expect(LEGAL_DRAFT).toBe(LEGAL_STATUS === "draft");
   // The Ponzu 1 policy is the one in effect, so it is listed whatever the drafts are.
   expect(listed).toContain(PONZU_1_POLICY);
+});
+
+test("while a draft, the founder's and counsel's open notes stay in the source but are not drawn", () => {
+  const note = (draft: boolean) =>
+    renderToStaticMarkup(createElement(Open, { who: "founder", draft }, "a question"));
+  expect(note(true)).toBe("");
+  expect(note(false)).toContain("[For the founder: a question]");
+  // The default follows LEGAL_STATUS, so the table draws no confirm note while a draft.
+  if (LEGAL_DRAFT) {
+    expect(renderToStaticMarkup(createElement(Open, { who: "counsel" }, "x"))).toBe("");
+    expect(renderToStaticMarkup(createElement(SubprocessorTable))).not.toContain("data-open");
+  }
 });
 
 test("each page ends on its effective date, or says it is not in effect yet", () => {

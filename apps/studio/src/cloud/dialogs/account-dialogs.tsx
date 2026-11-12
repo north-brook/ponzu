@@ -87,7 +87,7 @@ export function GetIphoneDialog({ open, onDismiss }: { open: boolean; onDismiss:
       open={open}
       onDismiss={onDismiss}
       title="Get Ponzu on your iPhone"
-      body="Comment on canvases and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
+      body="See your canvases live and comment on them from your iPhone."
       wide
     >
       <div className="mt-0.5 flex flex-col">
