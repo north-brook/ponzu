@@ -8,8 +8,9 @@ runbook behind its "Environments" section.
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
 reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
 scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck`, the
-`PONZU_ENVIRONMENT` variable and the production deploy job are later pieces of work. Each is
+`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck` and the
+production deploy job are later pieces of work. (The API's `PONZU_ENVIRONMENT` variable and
+the environment, image, bundle and migration counts in `/v1/health` are built.) Each is
 marked *(not built yet)* where it first appears, and nothing in production exists until the
 founder's steps below create it.
 
