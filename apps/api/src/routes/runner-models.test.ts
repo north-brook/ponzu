@@ -4,6 +4,8 @@ import recorded from "@ponzu/runner/fixtures/supported-models.api-key.json";
 import { reportedModels } from "@ponzu/runner/models";
 import { IMAGE_COMMANDS, type ReportedModel, RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { canvasSandboxName } from "@ponzu/sandbox";
+import { MODELS_REPORT_EVERY_MS } from "../runner/models.ts";
+import { modelNoticeId } from "../runner/session.ts";
 import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
@@ -47,6 +49,7 @@ async function runnerIn(canvasId: string) {
   const headers = { authorization: `Bearer ${token}`, [RUNNER_HEADER]: session.body.runnerId };
   return {
     session: session.body,
+    headers,
     report: (models: ReportedModel[], claudeCode = "2.1.322") =>
       call(t, headers, "POST", "/v1/runner/models", { claudeCode, models }),
   };
@@ -102,6 +105,7 @@ test("an account is offered what its runner reported, and the hand-kept list bef
   ]);
 
   // Later: Opus 6 is new, under Claude Code's name, with its own efforts; Fable is gone.
+  t.clock.advance(MODELS_REPORT_EVERY_MS);
   expect((await runner.report(LATER, "2.1.400")).body).toEqual({ kept: true });
   const later = await call(t, await maya(), "GET", "/v1/claude/defaults");
   expect(later.body).toMatchObject({ model: "claude-opus-5-5", effort: "medium" });
@@ -123,6 +127,45 @@ test("an account is offered what its runner reported, and the hand-kept list bef
     chosen: "claude-fable-5-2",
     runs: "claude-opus-5-5",
   });
+
+  // The thread says so, as the API, once for the change however often the canvas starts.
+  const changed = {
+    id: modelNoticeId("claude-fable-5-2", "claude-opus-5-5"),
+    kind: "notice",
+    payload: {
+      type: "model_changed",
+      from: "claude-fable-5-2",
+      to: "claude-opus-5-5",
+      // Fable is no longer offered, but the hand-kept list still names it.
+      fromName: "Fable 5.2",
+      toName: "Opus 5.5",
+      account: { id: expect.any(String), name: expect.any(String), login: "maya" },
+    },
+  };
+  expect(await modelNotices(onFable)).toEqual([expect.objectContaining(changed)]);
+  await runnerIn(onFable);
+  expect(await modelNotices(onFable)).toEqual([expect.objectContaining(changed)]);
+});
+
+/** The canvas's model notices, as its thread holds them. */
+async function modelNotices(canvasId: string) {
+  const thread = await call(t, await maya(), "GET", `/v1/canvases/${canvasId}/thread`);
+  expect(thread.status).toBe(200);
+  return thread.body.items.filter(
+    (item: { kind: string; payload: { type?: string } }) =>
+      item.kind === "notice" && item.payload.type === "model_changed",
+  );
+}
+
+test("a canvas on a model its account still offers says nothing of models in its thread", async () => {
+  const onOpus = await newCanvas({ model: "claude-opus-5-5" });
+  await runnerIn(onOpus);
+  await runnerIn(onOpus);
+  expect(await modelNotices(onOpus)).toEqual([]);
+  expect(modelNoticeId("claude-fable-5-2", "claude-opus-5-5")).toMatch(/^ti_model-[0-9a-f]{12}$/);
+  expect(modelNoticeId("claude-fable-5-2", "claude-opus-6")).not.toBe(
+    modelNoticeId("claude-fable-5-2", "claude-opus-5-5"),
+  );
 });
 
 test("only what the account offers can be chosen, and a saved choice it no longer offers gives way", async () => {
@@ -181,4 +224,53 @@ test("a report is the protocol's shape or is refused", async () => {
     const answer = await runner.report(bad as ReportedModel[]);
     expect([answer.status, answer.body.error.code]).toEqual([400, "invalid_request"]);
   }
+});
+
+test("a runner cannot write the model notice: only the API knows what the canvas was made with", async () => {
+  const runner = await runnerIn(await newCanvas());
+  const wrote = await call(t, runner.headers, "POST", "/v1/runner/thread", {
+    items: [
+      {
+        id: "ti_0123456789abcdef",
+        kind: "notice",
+        streaming: false,
+        payload: { type: "model_changed", from: "claude-fable-5-2", to: "claude-opus-5-5" },
+      },
+    ],
+  });
+  expect([wrote.status, wrote.body.error.code]).toEqual([400, "invalid_request"]);
+});
+
+test("one report in ten minutes from a runner is kept; the rest are answered kept false, never 429", async () => {
+  const canvasId = await newCanvas();
+  t.clock.advance(1);
+  const first = await runnerIn(canvasId);
+  // Its first report goes through; a second at once does not, however the report changes.
+  expect((await first.report(RECORDED)).body).toEqual({ kept: true });
+  expect((await first.report(LATER)).body).toEqual({ kept: false });
+
+  // The next runner, started a moment later, may report at once: its first.
+  t.clock.advance(1);
+  const next = await runnerIn(canvasId);
+  expect(next.session.models).toMatchObject({ claudeCode: "2.1.322", models: RECORDED });
+  const answers = [await next.report(LATER, "2.1.400"), await next.report(RECORDED)];
+  // Then nothing until ten minutes have gone since the last one kept.
+  t.clock.advance(MODELS_REPORT_EVERY_MS - 1);
+  answers.push(await next.report(RECORDED));
+  expect(answers.map((a) => [a.status, a.body])).toEqual([
+    [200, { kept: true }],
+    [200, { kept: false }],
+    [200, { kept: false }],
+  ]);
+  expect(t.logs.findLast((l) => l.event === "claude_models_reported")).toMatchObject({
+    canvasId,
+    kept: false,
+    refused: "too_soon",
+  });
+  t.clock.advance(1);
+  expect((await next.report(RECORDED)).body).toEqual({ kept: true });
+  expect((await runnerIn(canvasId)).session.models).toMatchObject({
+    claudeCode: "2.1.322",
+    models: RECORDED,
+  });
 });

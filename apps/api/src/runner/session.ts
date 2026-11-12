@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import {
+  appendThreadItemOnce,
   getClaudeAccountById,
   getRunnerContext,
   getSandbox,
@@ -6,8 +8,14 @@ import {
   type SandboxRow,
   takeRunnerLease,
 } from "@ponzu/db";
-import type { Effort, RunnerSession } from "@ponzu/runner/protocol";
-import { effortOrDefault, type ModelOffer, modelOrDefault, offerFor } from "../claude/models.ts";
+import type { Effort, Notice, RunnerSession } from "@ponzu/runner/protocol";
+import {
+  effortOrDefault,
+  type ModelOffer,
+  modelLabel,
+  modelOrDefault,
+  offerFor,
+} from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import { savedView } from "./checkpoint.ts";
@@ -44,10 +52,29 @@ export async function startRunnerSession(
   const claude = canvas.claudeAccountId
     ? await getClaudeAccountById(deps.db, canvas.claudeAccountId)
     : null;
-  const run = runsOn(offerFor(claude), canvas);
-  if (canvas.model !== null && run.model !== canvas.model) {
-    // What it was made with is no longer offered: it runs on what the account offers now.
+  const offer = offerFor(claude);
+  const run = runsOn(offer, canvas);
+  if (canvas.model !== null && run.model !== null && run.model !== canvas.model) {
+    // What it was made with is no longer offered: it runs on what the account offers now, and
+    // the thread says so, once for each change. Named here, while the names are known: the
+    // model gone is no longer in what the account offers, so no app could name it later.
     deps.log.info("model_unoffered", { canvasId, chosen: canvas.model, runs: run.model });
+    const holder = owner && claude?.userId === owner.id ? owner : null;
+    await appendThreadItemOnce(deps.db, {
+      id: modelNoticeId(canvas.model, run.model),
+      canvasId,
+      kind: "notice",
+      payload: {
+        type: "model_changed",
+        from: canvas.model,
+        to: run.model,
+        fromName: modelLabel(offer, canvas.model),
+        toName: modelLabel(offer, run.model),
+        account: holder
+          ? { id: holder.id, name: holder.name ?? holder.githubLogin, login: holder.githubLogin }
+          : null,
+      } satisfies Notice,
+    });
   }
   const { slug, botUserId } = deps.config.githubApp;
   const committer = {
@@ -106,6 +133,16 @@ export function runsOn(
       ? null
       : effortOrDefault(offer, model ?? offer.defaultModel, canvas.effort);
   return { model, effort };
+}
+
+/**
+ * The id of the notice that a canvas made on `chosen` now runs on `runs`: the same for the same
+ * change, so every start after it writes nothing more, and a change to another model is another
+ * notice. A runner's ids are `ti_` and sixteen letters and digits, so no sandbox can take it.
+ */
+export function modelNoticeId(chosen: string, runs: string): string {
+  const hash = createHash("sha256").update(`${chosen}→${runs}`).digest("hex");
+  return `ti_model-${hash.slice(0, 12)}`;
 }
 
 /** Which runner started, in which session, on which image, and what it says it is. */

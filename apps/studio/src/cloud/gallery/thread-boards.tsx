@@ -140,6 +140,15 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       agent={WORKING}
     />
   ),
+  "thread-model-changed": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.modelChangedTurn}
+      agent={IDLE}
+    />
+  ),
   "thread-read-only": () => (
     <CanvasHarness
       canvases={f.teamCanvases}
