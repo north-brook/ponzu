@@ -181,7 +181,9 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=false --jq '"published \(.tag_name) \(.html_url)"'
         env:
@@ -609,7 +611,9 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
         env:
