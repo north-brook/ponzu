@@ -2,7 +2,7 @@ import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { monogramColor, monogramLetter } from "../sidebar/workspace-menu.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
-import { canContinue, type GithubAccount } from "./setup.ts";
+import { accountLabel, canContinue, type GithubAccount, type InstallNotice } from "./setup.ts";
 import {
   LeaveLink,
   RowButton,
@@ -13,8 +13,7 @@ import {
   Waiting,
 } from "./step.tsx";
 
-/** What came back from GitHub's install page when it was not an installation. */
-export type InstallNotice = "requested" | "failed";
+export type { InstallNotice };
 
 export interface WhereStepProps {
   /** The rows, as `GET /v1/github/accounts` gives them; "loading" until the first answer. */
@@ -115,17 +114,10 @@ function AccountRow({
   waiting: boolean;
   onSetUp: () => void;
 }) {
-  const personal = account.kind === "personal";
-  // The person's own account is "Personal" over their login; an organization is its name over
-  // its login, or just the login when it has no other name.
-  const title = personal ? "Personal" : account.name || account.login;
-  const people =
-    !personal && account.status === "ready" && account.memberCount !== null
-      ? ` · ${account.memberCount} ${account.memberCount === 1 ? "person" : "people"}`
-      : "";
-  const line = personal || title !== account.login ? `${account.login}${people}` : people.slice(3);
+  // As the phone labels it too (@ponzu/client/model/setup).
+  const { title, line } = accountLabel(account);
   return (
-    <SetupRow mark={<AccountMark account={account} />} title={title} line={line || null}>
+    <SetupRow mark={<AccountMark account={account} />} title={title} line={line}>
       {account.status === "not_installed" ? (
         <RowButton tone="raised" leaves busy={waiting} onClick={onSetUp}>
           Set up

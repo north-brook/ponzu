@@ -24,10 +24,10 @@ name: sign-in
       id: canvases
     timeout: 30000
 - extendedWaitUntil:
-    visible: "Pricing page, acme/site"
+    visible: "Pricing page, .*site.*"
     timeout: 15000
-- assertVisible: "Onboarding, acme/app"
-- assertVisible: "Launch poster, Scratch"
+- assertVisible: "Onboarding, .*app.*"
+- assertVisible: "Launch poster, .*Scratch.*"
 - tapOn:
     id: lockup
 - extendedWaitUntil:

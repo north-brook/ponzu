@@ -1,7 +1,7 @@
 import { Linking, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PillButton } from "../components/connect-layout";
 import { SliceMark } from "../components/icons";
+import { PillButton } from "../components/step";
 import { useTheme } from "../lib/theme";
 
 /** Where an iPhone gets the current Ponzu: the site sends it on to TestFlight or the App Store. */

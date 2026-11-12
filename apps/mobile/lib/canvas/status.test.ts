@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
+import { CANVAS_WORDS } from "../copy";
 import { allowLoad, assetsOrigin, pageHtml } from "./page";
-import { CANVAS_WORDS, canvasStatus, previewUrl } from "./status";
+import { canvasStatus, previewUrl } from "./status";
 
 const head = (over: Partial<Parameters<typeof canvasStatus>[0] & object> = {}) => ({
   agentState: "idle" as const,

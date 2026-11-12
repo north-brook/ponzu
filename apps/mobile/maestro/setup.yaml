@@ -1,0 +1,50 @@
+appId: design.ponzu.app.dev
+name: setup
+---
+# Setup on the phone, on the fake: Lee is signed in with nothing set up.
+# Set up installs Ponzu's GitHub App through the system's auth session onto
+# the fake's install page (maestro/authorize.ts /install), which comes back
+# on ponzu-dev://github/setup?result=installed, and the row turns Ready.
+# Continue goes on to Connect Claude; an API key connects, and the canvases
+# open, with New canvas over them since Lee has none yet.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=setup-where
+- extendedWaitUntil:
+    visible:
+      id: setup-where
+    timeout: 30000
+- assertVisible: "Where do you build?"
+- assertVisible: "Personal"
+- tapOn:
+    id: setup-account-lee-set-up
+# iOS asks before an app's sign-in sheet opens a site: “Ponzu Dev” Wants to
+# Use “127.0.0.1” to Sign In. The step has its own Continue, under the alert.
+- extendedWaitUntil:
+    visible: ".*Wants to Use.*"
+    timeout: 15000
+- tapOn:
+    text: "Continue"
+    below: ".*Wants to Use.*"
+- extendedWaitUntil:
+    visible: "Personal, Ready"
+    timeout: 30000
+- tapOn:
+    id: setup-where-continue
+- extendedWaitUntil:
+    visible:
+      id: setup-claude
+    timeout: 15000
+- assertVisible: "Connect Claude"
+- tapOn:
+    id: setup-claude-add-key
+- tapOn:
+    id: setup-claude-key-field
+- inputText: "sk-ant-maestro-fake"
+- tapOn:
+    id: setup-claude-connect
+# Lee's workspace has no canvases yet: New canvas comes over the list, once.
+- extendedWaitUntil:
+    visible:
+      id: new-canvas
+    timeout: 30000
+- assertNotVisible: ".*Cannot update a component.*"

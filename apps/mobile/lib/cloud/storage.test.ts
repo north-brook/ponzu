@@ -7,6 +7,7 @@ import {
   INSTALL_ID_KEY,
   installId,
   MAX_CHUNKS,
+  onceUntilFailed,
   type SecureStoreLike,
   wipeAfterReinstall,
 } from "./storage";
@@ -224,5 +225,42 @@ describe("reinstalls", () => {
     expect(id).toBe("4f1c2a9e0b3d4e5f8a7b6c5d4e3f2a1b");
     expect(await installId(storage, uuid)).toBe(id);
     expect(made).toBe(1);
+  });
+});
+
+describe("preparing the Keychain once", () => {
+  test("a failed wipe is tried again by the next call, and one that worked is never redone", async () => {
+    const storage = chunkedStorage(new FakeKeychain());
+    await storage.set(SESSION_KEY, session("left"));
+    let created = false;
+    let markerFails = true;
+    let wipes = 0;
+    const prepare = onceUntilFailed(async () => {
+      wipes++;
+      await wipeAfterReinstall(storage, {
+        exists: () => created,
+        create: () => {
+          if (markerFails) throw new Error("the documents folder is not writable yet");
+          created = true;
+        },
+      });
+    });
+
+    // Two callers at once share the one wipe, and both hear it fail.
+    const [a, b] = await Promise.allSettled([prepare(), prepare()]);
+    expect([a.status, b.status]).toEqual(["rejected", "rejected"]);
+    expect(wipes).toBe(1);
+
+    // The next call is not handed the old failure: it tries again, and this time it works.
+    markerFails = false;
+    await prepare();
+    expect(wipes).toBe(2);
+    expect(created).toBe(true);
+
+    // From then on it is done: a later call never wipes the session signed in since.
+    await storage.set(SESSION_KEY, session("mine"));
+    await prepare();
+    expect(wipes).toBe(2);
+    expect(await storage.get(SESSION_KEY)).toBe(session("mine"));
   });
 });

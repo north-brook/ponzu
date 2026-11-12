@@ -179,3 +179,19 @@ export async function installId(
   await storage.set(INSTALL_ID_KEY, id);
   return id;
 }
+
+/**
+ * `run`, shared and made once for good: every caller waits on the call in flight, and one that
+ * succeeded is never made again. A call that failed is forgotten, so the next caller tries
+ * again, rather than one failed Keychain write failing every Keychain call after it.
+ */
+export function onceUntilFailed(run: () => Promise<void>): () => Promise<void> {
+  let done: Promise<void> | null = null;
+  return () => {
+    done ??= run().catch((error: unknown) => {
+      done = null;
+      throw error;
+    });
+    return done;
+  };
+}

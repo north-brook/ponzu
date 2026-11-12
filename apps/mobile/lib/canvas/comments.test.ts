@@ -3,10 +3,10 @@ import { type Api, ApiError } from "@ponzu/client";
 import { CloudSource } from "@ponzu/client/canvas";
 import { createFakeBackend, FakeClock, type FakePerson } from "@ponzu/client/testing";
 import { parseArtboardFile } from "@ponzu/core";
+import { CANVAS_WORDS, COMMENT_WORDS } from "../copy";
 import { type DraftStorage, Drafts, draftKey, draftsStorageKey } from "../drafts";
 import { actorOf } from "./actor";
 import {
-  COMMENT_WORDS,
   CommentRefusedError,
   commit,
   newThreadOp,
@@ -14,7 +14,6 @@ import {
   replyOp,
   statusOp,
 } from "./comments";
-import { CANVAS_WORDS } from "./status";
 
 /*
  * Comments on the phone (comments.ts) over the real CloudSource and the client's fake backend,

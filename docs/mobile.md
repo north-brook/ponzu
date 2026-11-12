@@ -59,7 +59,7 @@ whoever imports them; the component tests' resolver does the same.
 
 | File | What it does |
 | --- | --- |
-| `config.ts` | The API URL, the WorkOS client id, the variant and its scheme, the version: from `EXPO_PUBLIC_*` and the app config. |
+| `config.ts` | The API URL, the WorkOS client id, the variant and its scheme, the version: from `EXPO_PUBLIC_*` and the app config. Only Ponzu Dev has a default API (`https://api-dev.ponzu.design`); a production build with no `EXPO_PUBLIC_PONZU_API_URL` refuses to start (`apiUrlOf`) rather than talk to it. |
 | `backend.ts` | The real thing: one `createSession`, `createApi` and, per signed-in person, `createLive`. |
 | `backend.fake.ts` | The in-app fake (below), in `backend.ts`'s place when the bundle is built with `PONZU_BACKEND=fake`. |
 | `storage.ts`, `keychain.ts` | The session in the Keychain (below). |
@@ -67,9 +67,11 @@ whoever imports them; the component tests' resolver does the same.
 | `files.ts` | A `KeyValueStorage` over files, for what is large and not secret (the offline canvases' `DocCache`). |
 | `query.tsx` | `CloudProvider`: the signed-in person's QueryClient, its copy on disk, and their `Live`. |
 | `persist.ts` | What of the cache goes to disk: an allow-list. |
-| `gate.ts`, `use-gate.ts` | Where each session state sends the app. |
+| `gate.ts`, `use-gate.ts`, `use-setup.ts` | Where each session state, and each setup step, sends the app. |
+| `install.ts` | Installing the GitHub App: the install page in the auth session, and asking the API how it stands. |
 | `sign-in.ts`, `sign-out.ts` | Continue with GitHub; signing out in order. |
-| `workspace.ts`, `canvases.ts` | The workspace in view, and its canvases. |
+| `workspace.ts`, `canvases.ts`, `list.ts` | The workspace in view, its canvases, and the list's pure rules (below). |
+| `usage.ts` | The workspace's usage this period, read only, from the shared billing rules. |
 
 ### Launch and the gates
 
@@ -77,12 +79,141 @@ The launch screen (`app/index.tsx`) blooms the slice on yuzu while the session
 reads the Keychain, never leaves before the bloom has landed, then goes where
 the session says (`gateRoute`): `signed_out` and `github_reauth` to sign-in
 (the second with "Sign in again so Ponzu can reach GitHub."), `too_old` (a
-426) to the update screen, `signed_in` to the canvases. After that,
-`use-gate.ts` moves the app whenever the session leaves the screen's gate:
-signed out here or elsewhere, a 426 anywhere, a sign-in. Still loading after
-8 seconds, launch says "Can't reach Ponzu. Trying again." Setup's gates
-(where you design, Claude) come between sign-in and the canvases with the
-setup slice.
+426) to the update screen, `signed_in` to setup's next step or the canvases. After
+that, `use-gate.ts` moves the app whenever the session or setup leaves the
+screen's gate: signed out here or elsewhere, a 426 anywhere, a sign-in, a
+setup step done here or on the Mac. Still loading after 8 seconds, launch says
+"Can't reach Ponzu. Trying again."
+
+Signed in, where setup stands comes from `GET /v1/me` (kept on disk, so an
+offline launch still knows), by the Mac's own gates
+(`phoneSetupStep` in `@ponzu/client/model/setup`) with the iPhone step taken
+as done: the phone is the iPhone. Until `me` answers, the screen on show stays
+(the sign-in button keeps turning). When `me` can't be had and there is none on
+disk, launch and the gate both go on to the canvases (`gateStep`), and move on
+to setup once `me` answers.
+
+### Setup
+
+Two steps, each a screen with two progress bars, in the Mac's current words
+(`lib/copy.ts`; `lib/copy.test.ts` reads the studio's setup screens and fails
+when the two differ). The Claude card's states and failures are shared
+outright (`@ponzu/client/model/claude-entry`), as are the account rows' labels
+and the gates.
+
+- **Where do you build?** (`app/setup/where.tsx`): GitHub is synced as the
+  step opens, then the person's own account and each organization with Ponzu.
+  Set up opens GitHub's install page in the system's auth session
+  (`lib/cloud/install.ts`) on `<scheme>://github/setup`. While it is open the
+  app asks `GET /v1/github/installs/:id` every 2 seconds; whichever comes first,
+  the setup page's link or a settled answer (which closes the sheet), is the
+  outcome, and GitHub is synced again however it ended. "Don't see an
+  organization? Grant access on GitHub" opens GitHub's own install page the
+  same way, as the Mac does. Continue records the step. A quiet Sign out sits
+  under it.
+- **Connect Claude** (`app/setup/claude.tsx`): Sign in starts a claude.ai
+  sign-in, pushes the code screen and opens claude.ai in Safari. Add key turns
+  the card into a secure field. **Paste the code** (`app/setup/code.tsx`) has
+  iOS's paste control at the field's edge (no paste alert; nothing is read
+  without a tap), every failure in the Mac's words, Open sign-in again, and
+  Change, which lets the sign-in go, as leaving the screen does. Once Claude is
+  connected, here or on the Mac, the live `me` row moves the app to the
+  canvases.
+
+`app/github/setup.tsx` takes the setup page's link when it reaches the app
+outside the auth session, hands it to "Where do you build?" if that is on
+screen (or syncs itself), and goes back.
+
+### The canvases list
+
+The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
+`components/canvas-row.tsx`, `lib/cloud/list.ts`):
+
+- **Rows** come from the live query `workspace.canvases`, painted first from
+  `GET /v1/workspaces/:id/canvases` kept on disk, so the list opens offline
+  onto the last rows, as they were and not dimmed. They are mapped through the
+  shared `toSummary` and ordered by the shared `orderCanvases`: on a team,
+  canvases waiting on the viewer first, then newest activity.
+- **A row** is the Mac's three lines beside a 64×48 preview: the repo (or
+  Scratch) with one indicator at its end, the name, then the branch (or
+  Scratch's place) with the pull request's number. The indicator is the
+  shared `rowIndicator`: the needs-you count in a yuzu pill, else the turning
+  slice while the agent works or wakes, else a yuzu dot for something new.
+  While a canvas waits on the viewer, its third line is the first open
+  question, named as the Mac's needs-you strip names it. Questions are watched
+  live (`canvas.questions`) for at most 8 rows, the top needs-you ones.
+- **Previews** are `<assetsUrl>previews/<previewSeq>-<light|dark>.png`, in the
+  phone's appearance, through `expo-image` with its disk cache. `assetsUrl`
+  comes from `GET /v1/canvases/:id`, asked once for each canvas that has a
+  preview and kept on disk with the list.
+- **A press** opens `/canvas/<id>` (`lib/canvas/open.ts`). **Holding** a row
+  opens the system's menu with Settle, or Reopen in the tray; the live row
+  then moves it. A failure says "“name” couldn't be changed. Try again.", as
+  the Mac does.
+- **Settled** canvases fold into a tray at the foot, closed until tapped,
+  most recently settled first, with no indicators.
+- While nothing has come the rows' shapes stand in, in the chip colour, and
+  the lockup's slice juices. A workspace with no canvases shows a faint trace
+  of rows and "No canvases yet. Canvases you make in Ponzu show up here."
+
+The workspace in view is kept per person (`ponzu.workspace.<userId>`) and is
+one choice for the whole app (`lib/cloud/workspace.ts`): settings lists the
+person's usable workspaces when there are more than one, and picking one moves
+the list under it at once and on the next launch. Settings also shows the
+workspace's usage this period, read only: the total, the Mac's line under it
+and the bar, with nothing to raise, add or pay, and no word sending anyone to
+pay elsewhere.
+
+### New canvas
+
+New canvas (`app/new.tsx`) is a full screen pushed over the list from the
+header's New canvas, with only the glass back button. It says what the Mac's
+create page says (`lib/copy.ts`; `lib/copy.test.ts` reads the studio's create
+page, composer, pickers and Claude dialog): the slice, then "Make something
+in" over the repo's `owner/name`, or "Make something from" over "scratch",
+and the composer's "Describe what you want to make". The rules are pure, in
+`lib/cloud/create.ts`; the canvas's first name comes from the shared
+`nameFor` (`@ponzu/client/model/create`), as on the Mac.
+
+- **The project** starts on the repo the person pushed to last, or Scratch
+  when they can push to none; the control under the statement opens **Pick a
+  project** (`app/pick-project.tsx`, a sheet): a search, then a group for each
+  usable workspace (the person's own first, each headed by its name when there
+  is more than one), each its Scratch and then its repos, pushed to lately
+  first, the chosen one ticked. Picking a project in another workspace moves
+  the whole app to that workspace (`lib/cloud/workspace.ts`), as the Mac's
+  picker does. "Allow more on GitHub" at the foot opens GitHub's install page
+  in the auth session, and GitHub is synced however it ends. The pick and the
+  prompt being written are held in memory (`lib/cloud/new-canvas.ts`) until
+  sent or signed out.
+- **The composer** (radius 26) holds Attach (the photo library, as JPEG), the
+  model and effort (`components/model-sheet.tsx`: the system's menu with the
+  models, then the efforts the chosen one takes; the last pick is kept at
+  `ponzu.create.model`, an id), and Send, yuzu once there is a prompt and the
+  project is known.
+- **Send** makes the canvas with its first message in one call, in the chosen
+  repo or Scratch, on the model and effort shown, then replaces New canvas
+  with `/canvas/<id>`. Each composition carries one create key (a UUID), and a
+  tap while one is on its way does nothing, so a double tap makes one canvas.
+  With photos the canvas is made first, they go up, then the message says
+  them; if that fails the canvas stays, the line says so, and sending again
+  goes to the same canvas. A key once sent without its message always says
+  the message itself afterwards, so a canvas made whose answer was lost still
+  hears it. A new project gets a new key.
+- **What stops a send**, read from `me` (Send waits for it, unless it can't be
+  had, when the API answers the send itself): a Claude never connected, run out or
+  signed out opens the Claude card as a sheet, titled and worded as the Mac's
+  dialog, and the kept prompt goes once Claude is connected; Cancel sends
+  nothing. A plan at its limit asks first, "Your Claude plan resets at
+  <time>. Ponzu sends this then.", with Send then and Cancel: Send then makes
+  the canvas, which waits for the plan. A send that fails says why in the
+  Mac's words under the composer and keeps the prompt, photos and project. At
+  a billing limit (402) the line is only the API message's first sentence:
+  the workspace's state, never a word about paying.
+
+Someone through setup whose workspace has no canvases yet gets New canvas
+over the list by itself, once per person on this phone
+(`lib/cloud/use-first-canvas.ts`, `ponzu.firstCanvas.<userId>`).
 
 ### Signing in
 
@@ -121,6 +252,10 @@ handled in the background can read it) and never restored to another device
 - **The install id.** 32 random hex characters (`Crypto.randomUUID()` without
   dashes) at `ponzu.installId`, made once and kept across reinstalls. It goes
   only to `POST /v1/me/devices`.
+
+Before the session first reads the Keychain, the reinstall wipe runs once.
+If it fails (the Keychain locked, the marker unwritable), the next call tries
+again: one failed write never fails every Keychain call after it.
 
 The unit tests prove these rules over a Map standing in for the Keychain.
 Nothing yet proves them on a real Keychain: the simulator runs use the fake
@@ -176,7 +311,7 @@ grammar is `@ponzu/core/links`, the one the Mac and the API share, and
 
 `lib/cloud/backend.fake.ts` is Ponzu Cloud in memory: the client's own
 `createFakeBackend`, with Maya in the acme workspace (three canvases) and Sam
-alone in an empty one. Metro puts it in `backend.ts`'s place when started with
+alone in an empty one, both through setup with Claude connected. Metro puts it in `backend.ts`'s place when started with
 `PONZU_BACKEND=fake` (`metro.config.js`), so a real build never carries it or
 its test code. The component tests always use it.
 
@@ -184,8 +319,12 @@ Signing in on the fake goes through the real auth session when
 `EXPO_PUBLIC_PONZU_FAKE_AUTHORIZE_URL` names a page that sends the browser
 back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
 skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
-state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`. Only a
-fake build takes that link.
+state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
+`setup-where` (Lee, whose own account has no Ponzu yet) and `setup-claude`
+(Ava, with no Claude). Only a fake build takes that link. With the authorize
+page running, the fake's install links open its `/install` page, which comes
+back as a finished install. A component test can put the person's Claude plan
+at a limit with `backend.limitClaude(until)`.
 
 ```sh
 cd apps/mobile
@@ -376,11 +515,11 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup |
-| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped |
-| `success` | A comment or reply sent; a thread resolved |
-| `thud` | Sign out; a draft discarded |
-| `fail` | A sign-in that failed; a comment that didn't send |
+| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened; the project control or Attach pressed; a project, model or effort picked; a send stopped to ask first |
+| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
+| `success` | A comment or reply sent; a thread resolved; a new canvas made |
+| `thud` | Sign out; a draft discarded; a canvas settled |
+| `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take; a new canvas that couldn't be made |
 
 ## Styling
 

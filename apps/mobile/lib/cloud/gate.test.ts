@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SessionState } from "@ponzu/client";
-import { areaOf, gateMove, gateRoute, signInNotice } from "./gate";
+import { areaOf, gateMove, gateRoute, gateStep, signInNotice } from "./gate";
 
 const user = {
   id: "usr_1",
@@ -18,11 +18,29 @@ const STATES: Record<SessionState["status"], SessionState> = {
 };
 
 test("each state of the session has its screen; loading keeps the launch screen", () => {
-  expect(gateRoute(STATES.loading)).toBeNull();
-  expect(gateRoute(STATES.signed_out)).toBe("/sign-in");
-  expect(gateRoute(STATES.github_reauth)).toBe("/sign-in");
-  expect(gateRoute(STATES.too_old)).toBe("/update");
-  expect(gateRoute(STATES.signed_in)).toBe("/canvases");
+  expect(gateRoute(STATES.loading, null)).toBeNull();
+  expect(gateRoute(STATES.signed_out, null)).toBe("/sign-in");
+  expect(gateRoute(STATES.github_reauth, null)).toBe("/sign-in");
+  expect(gateRoute(STATES.too_old, null)).toBe("/update");
+  expect(gateRoute(STATES.signed_in, "done")).toBe("/canvases");
+});
+
+test("signed in, setup's steps come before the canvases; unknown setup waits", () => {
+  expect(gateRoute(STATES.signed_in, null)).toBeNull();
+  expect(gateRoute(STATES.signed_in, "where")).toBe("/setup/where");
+  expect(gateRoute(STATES.signed_in, "claude")).toBe("/setup/claude");
+  // Setup never holds back a signed-out or too-old app.
+  expect(gateRoute(STATES.signed_out, "where")).toBe("/sign-in");
+  expect(gateRoute(STATES.too_old, "claude")).toBe("/update");
+});
+
+test("no `me` to be had and none on disk: the gates go on as if done, never wait for good", () => {
+  expect(gateStep({ step: null, unreachable: false })).toBeNull();
+  expect(gateStep({ step: null, unreachable: true })).toBe("done");
+  expect(gateStep({ step: "where", unreachable: false })).toBe("where");
+  // Signed in on the sign-in screen with `me` failing: on to the canvases, not a turning button.
+  const step = gateStep({ step: null, unreachable: true });
+  expect(gateMove(STATES.signed_in, ["sign-in"], step)).toBe("/canvases");
 });
 
 test("sign-in says why only when GitHub needs granting again", () => {
@@ -33,10 +51,15 @@ test("sign-in says why only when GitHub needs granting again", () => {
 test("every screen sits behind a gate, but those that move on by themselves", () => {
   expect(areaOf([])).toBeNull();
   expect(areaOf(["auth", "callback"])).toBeNull();
+  expect(areaOf(["github", "setup"])).toBeNull();
   expect(areaOf(["dev"])).toBeNull();
   expect(areaOf(["+not-found"])).toBeNull();
   expect(areaOf(["sign-in"])).toBe("/sign-in");
   expect(areaOf(["update"])).toBe("/update");
+  expect(areaOf(["setup", "where"])).toBe("/setup/where");
+  expect(areaOf(["setup", "claude"])).toBe("/setup/claude");
+  // Pasting the code is part of Connect Claude.
+  expect(areaOf(["setup", "code"])).toBe("/setup/claude");
   expect(areaOf(["(tabs)", "(canvases)", "canvases"])).toBe("/canvases");
   expect(areaOf(["settings"])).toBe("/canvases");
   expect(areaOf(["canvas", "[id]"])).toBe("/canvases");
@@ -45,18 +68,39 @@ test("every screen sits behind a gate, but those that move on by themselves", ()
 test("the app moves when the session leaves the screen's gate, and only then", () => {
   const tabs = ["(tabs)", "(canvases)", "canvases"];
   // Signed out elsewhere, or here from settings.
-  expect(gateMove(STATES.signed_out, tabs)).toBe("/sign-in");
-  expect(gateMove(STATES.signed_out, ["settings"])).toBe("/sign-in");
+  expect(gateMove(STATES.signed_out, tabs, null)).toBe("/sign-in");
+  expect(gateMove(STATES.signed_out, ["settings"], null)).toBe("/sign-in");
+  expect(gateMove(STATES.signed_out, ["setup", "where"], null)).toBe("/sign-in");
   // A 426 on any screen.
-  expect(gateMove(STATES.too_old, tabs)).toBe("/update");
-  expect(gateMove(STATES.too_old, ["sign-in"])).toBe("/update");
-  // Signing in.
-  expect(gateMove(STATES.signed_in, ["sign-in"])).toBe("/canvases");
+  expect(gateMove(STATES.too_old, tabs, "done")).toBe("/update");
+  expect(gateMove(STATES.too_old, ["sign-in"], null)).toBe("/update");
+  // Signing in: to setup, or past it.
+  expect(gateMove(STATES.signed_in, ["sign-in"], "done")).toBe("/canvases");
+  expect(gateMove(STATES.signed_in, ["sign-in"], "where")).toBe("/setup/where");
+  // Until `me` answers, the sign-in screen stays.
+  expect(gateMove(STATES.signed_in, ["sign-in"], null)).toBeNull();
   // Staying put.
-  expect(gateMove(STATES.signed_in, tabs)).toBeNull();
-  expect(gateMove(STATES.signed_out, ["sign-in"])).toBeNull();
-  expect(gateMove(STATES.github_reauth, ["sign-in"])).toBeNull();
-  expect(gateMove(STATES.loading, tabs)).toBeNull();
+  expect(gateMove(STATES.signed_in, tabs, "done")).toBeNull();
+  expect(gateMove(STATES.signed_in, tabs, null)).toBeNull();
+  expect(gateMove(STATES.signed_out, ["sign-in"], null)).toBeNull();
+  expect(gateMove(STATES.github_reauth, ["sign-in"], null)).toBeNull();
+  expect(gateMove(STATES.loading, tabs, null)).toBeNull();
   // The launch screen makes its own first move.
-  expect(gateMove(STATES.signed_in, [])).toBeNull();
+  expect(gateMove(STATES.signed_in, [], "where")).toBeNull();
+});
+
+test("setup moves the app on as each step is done, here or on another device", () => {
+  // Continue on Where do you build?
+  expect(gateMove(STATES.signed_in, ["setup", "where"], "claude")).toBe("/setup/claude");
+  // Claude connected, from the code screen or the key, or on the Mac.
+  expect(gateMove(STATES.signed_in, ["setup", "code"], "done")).toBe("/canvases");
+  expect(gateMove(STATES.signed_in, ["setup", "claude"], "done")).toBe("/canvases");
+  // Pasting the code is still Connect Claude.
+  expect(gateMove(STATES.signed_in, ["setup", "code"], "claude")).toBeNull();
+  // GitHub took the only workspace away: back to where they build.
+  expect(gateMove(STATES.signed_in, ["(tabs)", "(canvases)", "canvases"], "where")).toBe(
+    "/setup/where",
+  );
+  // GitHub's setup link goes back by itself.
+  expect(gateMove(STATES.signed_in, ["github", "setup"], "claude")).toBeNull();
 });

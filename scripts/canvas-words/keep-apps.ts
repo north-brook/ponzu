@@ -9,16 +9,17 @@ export const KEEP_APPS: Keep[] = [
     why: "1.x /open",
   },
   {
-    path: "apps/studio/src/app/create.tsx",
+    path: "packages/client/src/model/create.ts",
     has: "(?:design|make|create|build|draw",
     why: "the verbs people type",
   },
   {
-    path: "apps/studio/src/app/create.tsx",
+    path: "packages/client/src/model/create.ts",
     has: '("Design a pricing card',
     why: "an example of what people type",
   },
   { path: "apps/studio/src/app/create.test.ts", has: '"Design ', why: "what people type" },
+  { path: "packages/client/src/model/create.test.ts", has: '"Design ', why: "what people type" },
   {
     path: "apps/studio/src/app/comment-picture.tsx",
     has: "without a picture, by design",

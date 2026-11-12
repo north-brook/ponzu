@@ -65,6 +65,18 @@ export default function RootLayout() {
                   name="update"
                   options={{ animation: "fade", gestureEnabled: false }}
                 />
+                {/* Setup: no way back to a step done, and the next one fades in over it. */}
+                <Stack.Screen
+                  name="setup/where"
+                  options={{ animation: "fade", gestureEnabled: false }}
+                />
+                <Stack.Screen
+                  name="setup/claude"
+                  options={{ animation: "fade", gestureEnabled: false }}
+                />
+                {/* Pasting claude.ai's code is a push from Connect Claude: back is Change. */}
+                <Stack.Screen name="setup/code" />
+                <Stack.Screen name="github/setup" options={{ animation: "none" }} />
                 <Stack.Screen
                   name="(tabs)"
                   options={{ animation: "none", gestureEnabled: false }}
@@ -74,6 +86,17 @@ export default function RootLayout() {
                   options={{
                     presentation: "formSheet",
                     sheetAllowedDetents: [0.5, 1],
+                    sheetGrabberVisible: true,
+                    contentStyle: { backgroundColor: color.bg },
+                  }}
+                />
+                {/* New canvas: a full screen pushed over the list; its picker, a sheet. */}
+                <Stack.Screen name="new" />
+                <Stack.Screen
+                  name="pick-project"
+                  options={{
+                    presentation: "formSheet",
+                    sheetAllowedDetents: [0.6, 1],
                     sheetGrabberVisible: true,
                     contentStyle: { backgroundColor: color.bg },
                   }}
