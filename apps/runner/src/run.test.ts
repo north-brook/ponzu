@@ -934,20 +934,21 @@ async function brokenOff(opts: { pickups?: number } = {}) {
   const input = await first.run.input();
   first.run.take(input);
   await until(() => first.api.delivered.includes(message.id));
-  if (opts.pickups) {
-    writeFileSync(
-      join(stateDir, "turn.json"),
-      JSON.stringify({ uuid: input.uuid, event: message.id, pickups: opts.pickups }),
-    );
-  }
-  // Cut off: no result ever comes.
+  // Cut off: no result ever comes, and the runner dies under the turn. A stop shuts down in
+  // order and clears what is in flight, so the disk is put back as a kill would leave it.
   await first.runner.stop();
+  writeFileSync(
+    join(stateDir, "turn.json"),
+    JSON.stringify({ uuid: input.uuid, event: message.id, pickups: opts.pickups ?? 0 }),
+  );
+  // What the thread said before the next runner starts (the stop's own notice).
+  const said = notices(first.api, "error").length;
 
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_1", { messages: new Set([input.uuid]), toolResults: new Set() });
   first.api.sessionInfo.claudeSessionId = "sess_1";
   const second = await setup({ api: first.api, agent, stateDir });
-  return { api: first.api, message, second };
+  return { api: first.api, message, second, said };
 }
 
 test("a turn cut off after the session took its message is picked up by the next runner, and said", async () => {
@@ -972,8 +973,8 @@ test("a turn cut off after the session took its message is picked up by the next
 });
 
 test("a turn picked up twice already asks the person to send it again", async () => {
-  const { api, second } = await brokenOff({ pickups: 2 });
-  await until(() => notices(api, "error").length > 0);
+  const { api, second, said } = await brokenOff({ pickups: 2 });
+  await until(() => notices(api, "error").length > said);
   expect(notices(api, "error").at(-1)?.payload).toMatchObject({
     code: "turn_failed",
     message: "Claude was cut off again before it finished. Send your message again to retry.",
