@@ -50,8 +50,14 @@ const RetirePayload = z.object({
   canvasId: z.string(),
   from: z.string(),
   to: z.string(),
-  /** When the key was swapped, in milliseconds: what changed at `from` since is copied again. */
+  /** When the key was swapped, in milliseconds. */
   swappedAt: z.number(),
+  /**
+   * When the first copy began, in milliseconds: what changed at `from` since is copied again, so
+   * a second pass that failed loses nothing. A job recorded before this was carried has only
+   * `swappedAt`, and uses it.
+   */
+  copiedSince: z.number().optional(),
 });
 
 /**
@@ -176,7 +182,7 @@ export async function rotateAssetKey(
     now: new Date(swappedAt),
     job: {
       kind: ASSET_KEY_RETIRE_JOB,
-      payload: { canvasId, from, to, swappedAt },
+      payload: { canvasId, from, to, swappedAt, copiedSince: began },
       runAt: new Date(swappedAt + ASSET_KEY_RETIRE_DELAY_MS),
       maxAttempts: ASSET_KEY_RETIRE_ATTEMPTS,
     },
@@ -202,7 +208,8 @@ export async function rotateAssetKey(
 
 /**
  * The retire job's handler: while the canvas's files are still under `to`, copy what `from`
- * gained or changed since the swap; then delete a page of `from`'s files, and come back while
+ * gained or changed since the first copy began (what the second pass covers, should it have
+ * failed); then delete a page of `from`'s files, and come back while
  * more remain, as the files delete does. A canvas reset again gets what changed at `from` since
  * the swap under its current key. A canvas deleted meanwhile needs no copy, and what is under `to` is deleted
  * here as well as by its files job, which may have run while the reset still copied into it.
@@ -212,10 +219,13 @@ export async function runAssetKeyRetireJob(
   payload: unknown,
   job?: Pick<RunningJob, "attempts" | "maxAttempts">,
 ): Promise<void> {
-  const { canvasId, from, to, swappedAt } = RetirePayload.parse(payload);
+  const { canvasId, from, to, swappedAt, copiedSince } = RetirePayload.parse(payload);
   const now = await getCanvasAssetKey(deps.db, canvasId);
   if (now === to) {
-    await copyUnder(deps.storage, from, to, { changedSince: swappedAt - CLOCK_SLACK_MS });
+    // Since the first pass began, as the second pass would have: that one may have failed.
+    await copyUnder(deps.storage, from, to, {
+      changedSince: (copiedSince ?? swappedAt) - CLOCK_SLACK_MS,
+    });
   } else if (now !== null && isAssetKey(now) && now !== from) {
     // Reset again since: what came late to `from` never reached `to`, so `to`'s own job cannot
     // carry it on. It goes straight to the canvas's key now, but only what changed since this

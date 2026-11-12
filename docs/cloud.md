@@ -2529,8 +2529,9 @@ makes a new asset key and:
 4. answers the canvas as `GET` does, with its new `assetsUrl`.
 
 The job runs once every upload address signed for the old key has run out (ten minutes, with
-five over): while the canvas is still under the new key it copies once more what came late, then
-deletes everything under the old key, a page at a time as the files delete does. Neither that
+five over): while the canvas is still under the new key it copies once more what changed under
+the old key since the first pass began (all the second pass covers, so a second pass that failed
+loses nothing), then deletes everything under the old key, a page at a time as the files delete does. Neither that
 copy nor the second pass writes over a file that was written under the new key after the one
 under the old key, so a file the runner replaced since the swap keeps its newer version: each
 copy reads the new key's file again just before it copies. That narrows the race to one round

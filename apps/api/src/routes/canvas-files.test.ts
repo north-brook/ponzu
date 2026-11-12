@@ -588,6 +588,52 @@ describe("POST /v1/canvases/:id/asset-key/rotate", () => {
     expect(paths(to)).toEqual([]);
   });
 
+  test("a slow first pass and a failed second: the retire job copies what changed since the first began", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Slow"));
+    const from = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, from, 2);
+    t.clock.advance(120_000);
+    const began = t.clock.now();
+    const image = `${from}/assets/00000.png`;
+    const body = (n: number) => new Uint8Array([n, n, n]);
+
+    // The first pass copies the image, which is then rewritten under the old key; that pass runs
+    // on for two minutes, longer than the slack for storage's clock. Then every copy fails.
+    const copy = t.storage.copy.bind(t.storage);
+    let copies = 0;
+    t.storage.copy = async (source: string, target: string) => {
+      copies++;
+      if (copies > 2) throw new Error("storage is down");
+      await copy(source, target);
+      if (source === image) {
+        t.clock.advance(1);
+        t.storage.objects.set(image, {
+          body: body(2),
+          headers: { "content-type": "image/png" },
+          sha256: null,
+          modifiedAt: t.clock.now(),
+        });
+        t.clock.advance(120_000);
+      }
+    };
+    let answered: { status: number; body: any };
+    try {
+      answered = await rotate("maya", canvas.id);
+    } finally {
+      t.storage.copy = copy;
+    }
+    await t.backgroundDone();
+    expect(answered.status).toBe(200);
+    const to = (await getCanvasAssetKey(t.db, canvas.id))!;
+    expect(t.storage.objects.get(`${to}/assets/00000.png`)?.body).not.toEqual(body(2));
+    const [job] = await jobsFor(ASSET_KEY_RETIRE_JOB, from);
+    expect(job).toMatchObject({ payload: { copiedSince: began } });
+
+    await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    expect(paths(from)).toEqual([]);
+    expect(t.storage.objects.get(`${to}/assets/00000.png`)?.body).toEqual(body(2));
+  });
+
   test("a file written under the new key since the swap is never copied over by the old", async () => {
     const canvas = await canvasIn(t, ws, "maya", emptyDoc("Newer"));
     const from = (await getCanvasAssetKey(t.db, canvas.id))!;
