@@ -1,4 +1,5 @@
 import type { MDXComponents } from "mdx/types";
+import { Li } from "@/components/legal";
 import { Code, H1, H2, H3, Link, Ol, P, Pre, Strong, Table, Td, Th, Ul } from "@/components/prose";
 
 /*
@@ -7,7 +8,7 @@ import { Code, H1, H2, H3, Link, Ol, P, Pre, Strong, Table, Td, Th, Ul } from "@
  * Router. A page wraps its MDX in <Prose> (its layout) for the column.
  */
 
-const components: MDXComponents = {
+export const components: MDXComponents = {
   h1: H1,
   h2: H2,
   h3: H3,
@@ -17,6 +18,7 @@ const components: MDXComponents = {
   code: Code,
   ul: Ul,
   ol: Ol,
+  li: Li,
   pre: Pre,
   table: Table,
   th: Th,

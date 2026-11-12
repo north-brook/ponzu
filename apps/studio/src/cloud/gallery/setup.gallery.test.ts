@@ -157,6 +157,17 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await focused()).toBe("Change cap");
   });
 
+  test("plan, while billing is off: credits and the free line, no dollars and no cap", async () => {
+    await open("settings-plan-free");
+    const section = await page.textContent(dialog);
+    expect(section).toContain("Ponzu is free while billing is set up. Nothing here is charged.");
+    expect(section).toContain("2,060 credits");
+    expect(section).not.toContain("$");
+    expect(section).not.toContain("Monthly cap");
+    expect(await page.$('button[aria-label="Change cap"]')).toBeNull();
+    expect(await page.$('[role="meter"]')).toBeNull();
+  });
+
   test("roles: an admin changes a member's, and the account's owner is locked", async () => {
     await open("settings-members");
     expect(await page.$('button[aria-label^="Role of Ada Park"]')).toBeNull();

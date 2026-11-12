@@ -1,26 +1,10 @@
 import { expect, test } from "bun:test";
-import { DEV_API_URL, NO_API_URL, readConfig, requireApiUrl } from "./config";
+import { apiUrlOf, DEV_API_URL, readConfig } from "./config";
 import { pickWorkspace, workspaceKey } from "./workspace-rules";
 
-test("a production build that names no API talks to none, never the development one", () => {
-  for (const url of [undefined, "", "  "]) {
-    const cfg = readConfig({
-      env: { EXPO_PUBLIC_PONZU_API_URL: url, EXPO_PUBLIC_WORKOS_CLIENT_ID: "client_123" },
-      variant: "production",
-      version: "1.0.0",
-    });
-    expect(cfg.apiUrl).toBeNull();
-    expect(() => requireApiUrl(cfg)).toThrow(NO_API_URL);
-  }
-  // An unknown variant is production, and refused the same way.
-  expect(readConfig({ env: {}, variant: "staging", version: undefined }).apiUrl).toBeNull();
-  // Ponzu Dev alone has a default.
-  expect(requireApiUrl(readConfig({ env: {}, variant: "dev", version: undefined }))).toBe(
-    DEV_API_URL,
-  );
-});
-
-test("Ponzu Dev talks to api.ponzu.design under ponzu-dev://", () => {
+test("Ponzu Dev talks to api-dev.ponzu.design under ponzu-dev://", () => {
+  expect(DEV_API_URL).toBe("https://api-dev.ponzu.design");
+  expect(apiUrlOf(readConfig({ env: {}, variant: "dev", version: "1.0.0" }))).toBe(DEV_API_URL);
   expect(readConfig({ env: {}, variant: "dev", version: "0.12.1" })).toEqual({
     apiUrl: DEV_API_URL,
     workosClientId: "",
@@ -48,6 +32,20 @@ test("production is the default, and the environment names the API and the clien
     version: "0.0.0",
     appName: "Ponzu",
   });
+});
+
+test("a production build that names no API is an error, never dev by omission", () => {
+  for (const url of [undefined, "", "  "]) {
+    const cfg = readConfig({
+      env: { EXPO_PUBLIC_PONZU_API_URL: url },
+      variant: "production",
+      version: "1.0.0",
+    });
+    expect(cfg.apiUrl).toBe("");
+    expect(() => apiUrlOf(cfg)).toThrow("EXPO_PUBLIC_PONZU_API_URL is empty");
+  }
+  // No variant at all is production too, as a store build must be.
+  expect(() => apiUrlOf(readConfig({ env: {}, variant: undefined, version: "1.0.0" }))).toThrow();
 });
 
 test("the workspace in view: the one picked while it's still theirs, else the first", () => {

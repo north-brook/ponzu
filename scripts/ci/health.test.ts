@@ -111,6 +111,7 @@ describe("the health assert", () => {
       migrations: journal.entries.length,
     });
     expect(apiUrlOf("production")).toBe("https://api.ponzu.design");
+    expect(apiUrlOf("dev")).toBe("https://api-dev.ponzu.design");
     expect(() => apiUrlOf("staging")).toThrow("no apiUrl for staging");
   });
 });

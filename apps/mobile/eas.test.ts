@@ -347,9 +347,9 @@ describe("app variants (app.config.ts)", () => {
     ).toContainEqual(["expo-notifications", { mode: "production" }]);
   });
 
-  test("both apps take universal links on ponzu.design", () => {
+  test("neither app claims universal links until ponzu.design serves the association file", () => {
     for (const env of [{}, { APP_VARIANT: "dev" }]) {
-      expect(configFor(expo, env).ios?.associatedDomains).toEqual(["applinks:ponzu.design"]);
+      expect(configFor(expo, env).ios?.associatedDomains).toBeUndefined();
     }
   });
 

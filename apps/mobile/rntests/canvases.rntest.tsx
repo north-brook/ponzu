@@ -238,7 +238,9 @@ describe("the canvases list", () => {
         <List />
       </CloudProvider>,
     );
-    expect(await screen.findByLabelText("No canvases yet.")).toBeTruthy();
+    expect(
+      await screen.findByLabelText("No canvases yet. Canvases you make in Ponzu show up here."),
+    ).toBeTruthy();
     expect(screen.queryByTestId("canvases-loading")).toBeNull();
   });
 });

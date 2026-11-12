@@ -135,3 +135,6 @@ export const COMMENT_WORDS = {
   /** A canvas with no repo (Scratch) the person can only look at. */
   readOnlyScratch: "You can look at this canvas.",
 } as const;
+
+/** What the canvases list says when the workspace has no canvases: where they come from. */
+export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";

@@ -10,6 +10,9 @@ import { select, tick } from "../../../lib/haptics";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 
+/** What the list says when the workspace has no canvases (components/canvas-list-parts.tsx). */
+export { EMPTY_CANVASES } from "../../../lib/copy";
+
 /**
  * Canvases, the first tab: the Mac sidebar at phone size (docs/mobile.md, "The canvases list").
  * The workspace in view's canvases under the lockup in the system's see-through header

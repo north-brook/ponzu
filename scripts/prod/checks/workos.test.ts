@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadEnvironments, loadInfra } from "../desired.ts";
+import { loadEnvironments } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
   evaluateWorkos,
@@ -19,7 +20,7 @@ const raw = () =>
     refusedHop: WorkosAnswers["hops"][number];
   };
 const recorded = (): WorkosAnswers => WorkosAnswers.parse(raw());
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const desired = (env: "dev" | "production"): WorkosDesired => workosDesired({ env, infra });
 const byId = (findings: Finding[]) => Object.fromEntries(findings.map((f) => [f.id, f]));
 const DEV_APP_CLIENT = "Iv23liHZazTP8ngUY968";

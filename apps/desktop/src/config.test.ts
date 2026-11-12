@@ -49,20 +49,26 @@ test("the smoke check claims no link scheme, and Ponzu Local has none to claim",
 });
 
 describe("the environment a build bakes", () => {
-  test("today a release and Ponzu Dev both bake dev, as infra/environments.json has it", () => {
+  test("a release bakes production and Ponzu Dev bakes dev, as infra/environments.json has it", () => {
     const file = JSON.parse(readFileSync(ENVIRONMENTS_FILE, "utf8"));
-    expect(file.release).toBe("dev");
-    const fromFile = file.environments.dev;
-    const expected: BuildEnvironment = {
-      name: "dev",
-      apiUrl: fromFile.apiUrl,
-      workosClientId: fromFile.workosClientId,
-      realtimeUrl: fromFile.realtimeUrl,
-      assetsUrl: fromFile.assetsUrl,
+    expect(file.release).toBe("production");
+    const production: BuildEnvironment = {
+      name: "production",
+      apiUrl: "https://api.ponzu.design",
+      workosClientId: "client_01M72Y00V5GD7G4VZJR56D5JS7",
+      realtimeUrl: "https://ep-sweet-wind-bcfbxi95.rt.c-16.us-east-1.aws.neon.tech",
+      assetsUrl: "https://assets.ponzu.cloud",
     };
-    expect(bakeEnvironment(file, "release")).toEqual(expected);
-    expect(bakeEnvironment(file, "dev")).toEqual(expected);
-    expect(DEV_ENVIRONMENT).toEqual(expected);
+    const dev: BuildEnvironment = {
+      name: "dev",
+      apiUrl: "https://api-dev.ponzu.design",
+      workosClientId: "client_01M72Y00K1VV63G6V5D25YCE6K",
+      realtimeUrl: "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
+      assetsUrl: "https://assets-dev.ponzu.cloud",
+    };
+    expect(bakeEnvironment(file, "release")).toEqual(production);
+    expect(bakeEnvironment(file, "dev")).toEqual(dev);
+    expect(DEV_ENVIRONMENT).toEqual(dev);
   });
 
   test("once release names production, a release bakes production and Ponzu Dev stays on dev", () => {
@@ -82,9 +88,20 @@ describe("the environment a build bakes", () => {
   });
 
   test("a release build refuses a null field, naming each; a dev build of the same file doesn't", () => {
-    // Today's file, with release flipped before production's fields exist.
+    // The repository's file, as it was before production's sign-in and Realtime existed.
     const file = environmentsFile();
-    const early: EnvironmentsFile = { ...file, release: "production" };
+    const early: EnvironmentsFile = {
+      ...file,
+      release: "production",
+      environments: {
+        ...file.environments,
+        production: {
+          ...(file.environments.production as EnvironmentsFile["environments"][string]),
+          workosClientId: null,
+          realtimeUrl: null,
+        },
+      },
+    };
     expect(() => bakeEnvironment(early, "release")).toThrow(
       [
         "production.workosClientId is not set in infra/environments.json",
@@ -95,6 +112,7 @@ describe("the environment a build bakes", () => {
     // Dev's own null fails Ponzu Dev and a release on dev alike.
     const devless: EnvironmentsFile = {
       ...file,
+      release: "dev",
       environments: {
         ...file.environments,
         dev: {
@@ -231,7 +249,7 @@ test("the policy names exactly its environment's hosts, and none of the other's"
     dev: {
       connect: [
         "'self'",
-        "https://api.ponzu.design",
+        "https://api-dev.ponzu.design",
         "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
         "wss://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
         "https://assets-dev.ponzu.cloud",
@@ -314,13 +332,20 @@ test("the build reads infra/environments.json through desired.ts's schema, so a 
   const file = JSON.parse(readFileSync(ENVIRONMENTS_FILE, "utf8"));
   const ok = bake(file, "release");
   expect(ok.status).toBe(0);
-  expect(JSON.parse(ok.stdout)).toEqual(DEV_ENVIRONMENT);
-  const flipped = bake({ ...file, release: "production" }, "release");
-  expect(flipped.status).toBe(1);
-  expect(flipped.stderr).toContain(
+  expect(JSON.parse(ok.stdout)).toMatchObject({
+    name: "production",
+    apiUrl: "https://api.ponzu.design",
+    workosClientId: "client_01M72Y00V5GD7G4VZJR56D5JS7",
+  });
+  expect(JSON.parse(bake(file, "dev").stdout)).toEqual(DEV_ENVIRONMENT);
+  const unset = structuredClone(file);
+  unset.environments.production.workosClientId = null;
+  const refusedRelease = bake(unset, "release");
+  expect(refusedRelease.status).toBe(1);
+  expect(refusedRelease.stderr).toContain(
     "production.workosClientId is not set in infra/environments.json",
   );
-  expect(bake({ ...file, release: "production" }, "dev").status).toBe(0);
+  expect(bake(unset, "dev").status).toBe(0);
   // Not an https origin: the schema refuses it before anything is baked.
   const broken = structuredClone(file);
   broken.environments.dev.apiUrl = "http://api.ponzu.design";

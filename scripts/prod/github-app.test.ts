@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeNetwork, Reply, type Routes } from "./apply/testing.ts";
-import { loadInfra } from "./desired.ts";
+import { infraBeforeLaunch } from "./fixtures/infra.ts";
 import {
   APP_ENV,
   escapeHtml,
@@ -16,7 +16,7 @@ import {
   renderForm,
 } from "./github-app.ts";
 
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const FIXTURES = join(import.meta.dir, "fixtures");
 const fixture = (name: string) =>
   JSON.parse(readFileSync(join(FIXTURES, "github", name), "utf8")) as Record<string, unknown>;

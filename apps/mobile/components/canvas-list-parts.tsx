@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { EMPTY_CANVASES } from "../lib/copy";
 import { select } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
 import { PREVIEW, ROW_HEIGHT } from "./canvas-row";
@@ -60,7 +61,7 @@ const SKELETON = ["a", "b", "c", "d"] as const;
 export function EmptyTrace({ margin }: { margin: number }) {
   const { color } = useTheme();
   return (
-    <View testID="canvases-empty" accessible accessibilityLabel="No canvases yet.">
+    <View testID="canvases-empty" accessible accessibilityLabel={EMPTY_CANVASES}>
       <View style={{ opacity: 0.5 }}>
         {[0, 1, 2].map((i) => (
           <View key={i} style={{ opacity: 1 - i * 0.3 }}>
@@ -78,7 +79,7 @@ export function EmptyTrace({ margin }: { margin: number }) {
           color: color.faint,
         }}
       >
-        No canvases yet.
+        {EMPTY_CANVASES}
       </Text>
     </View>
   );

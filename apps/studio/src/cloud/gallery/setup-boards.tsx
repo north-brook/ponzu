@@ -139,6 +139,18 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
   "settings-environments": () => <SettingsWindow section="environments" />,
   "settings-plan": () => <SettingsWindow section="plan" />,
   "settings-plan-solo": () => <SettingsWindow section="plan" data={SOLO_SETTINGS} />,
+  "settings-plan-free": () => (
+    <SettingsWindow
+      section="plan"
+      data={{
+        ...TEAM_SETTINGS,
+        // As the API answers today: no card, nothing billed.
+        usage: { ...TEAM_SETTINGS.usage, card: null, notBilled: true },
+        billingOn: false,
+        byCanvas: s.byCanvas,
+      }}
+    />
+  ),
   "settings-plan-breakdown": () => (
     <SettingsWindow
       section="plan"

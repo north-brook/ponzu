@@ -57,7 +57,7 @@ export default function Page() {
                   iPhone <Beta />
                 </>
               }
-              body="Comment on canvases and answer Ponzu's questions on the go"
+              body="See your canvases live and comment on them from your iPhone."
               action={
                 IPHONE_URL_TARGET.includes("testflight.apple.com") ? "TestFlight →" : "App Store →"
               }

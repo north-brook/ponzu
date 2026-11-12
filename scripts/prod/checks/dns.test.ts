@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import {
   type CertificateReader,
   type DnsObserved,
@@ -15,7 +15,7 @@ import type { CheckContext, Finding } from "./finding.ts";
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "dns");
 const fixture = (name: string): DnsObserved =>
   JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const triples = (findings: Finding[]) => findings.map((f) => [f.status, f.id, f.says]);
 const byId = (findings: Finding[]) => Object.fromEntries(findings.map((f) => [f.id, f]));
 

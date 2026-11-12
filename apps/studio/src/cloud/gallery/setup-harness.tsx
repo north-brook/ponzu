@@ -184,6 +184,8 @@ export interface SettingsData {
   byCanvas?: CanvasUsage[];
   /** Ponzu can send email: Notifications shows the daily digest's row. Shown unless false. */
   emailAvailable?: boolean;
+  /** The API's billing switch is "on": Plan and usage shows dollars and the cap. Shown unless false. */
+  billingOn?: boolean;
 }
 
 export const TEAM_SETTINGS: SettingsData = {
@@ -306,10 +308,12 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
             : null
         }
         byCanvas={data.byCanvas}
+        billingOn={data.billingOn ?? true}
         canManage={!team || data.byPerson !== null}
         onCapChange={(capUsd) => set({ usage: { ...data.usage, capUsd } })}
         onManageCard={ignore}
-        onAddCard={ignore}
+        // Cards can't be added while billing is off, as plan-view.tsx leaves it out.
+        onAddCard={data.billingOn === false ? undefined : ignore}
       />
     ),
     github: () => (

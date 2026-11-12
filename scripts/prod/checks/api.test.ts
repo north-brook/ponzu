@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SELFCHECK_IDS as API_SELFCHECK_IDS } from "../../../apps/api/src/ops/selfcheck.ts";
 import currentImage from "../../../apps/runner/image/current.json" with { type: "json" };
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import {
   type ApiObserved,
   apiDesired,
@@ -17,7 +17,7 @@ import type { CheckContext, Finding } from "./finding.ts";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "api");
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const health = (): Health => fixture("dev-health.json");
 const selfcheck = (): SelfcheckAnswer => fixture("dev-selfcheck.json");
 const read = <T>(body: T, status = 200) => ({ ok: true as const, status, body });

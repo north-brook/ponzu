@@ -73,7 +73,6 @@ test("the request id comes from the API's answer, in any case, and only when it 
 
 test("the Help menu's pages are ponzu.design's, exactly", () => {
   expect(HELP_LINKS).toEqual({
-    status: "https://ponzu.design/status",
     privacy: "https://ponzu.design/privacy",
     terms: "https://ponzu.design/terms",
   });

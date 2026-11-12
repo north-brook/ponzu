@@ -131,9 +131,11 @@ test("the page prints the rate card's numbers, and says billing hasn't started",
     "The team row assumes 5 people, so 500 credits are free.",
     "no new turn starts in the workspace until an admin raises the cap or the month resets",
     "A turn that's running finishes.",
-    "you can add one any time in Settings",
   ])
     expect(text).toContain(words);
+  // No card can be added and no alert is sent yet, so the page promises neither.
+  expect(text).not.toContain("A card is asked for");
+  expect(text).not.toContain("Admins hear at");
   // The source scan above misses an amount split across JSX ({"$"}100), so the rendered page is
   // checked too: every dollar amount on it is one the rate card works out.
   const worked = new Set([

@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { router } from "expo-router";
 import { Text } from "react-native";
+import { EMPTY_CANVASES } from "../app/(tabs)/(canvases)/canvases";
 import Settings from "../app/settings";
 import { CanvasNameRow } from "../components/canvas-name-row";
 import { backend } from "../lib/cloud/backend.fake";
@@ -20,7 +21,7 @@ function List() {
       {canvases?.map((canvas) => (
         <CanvasNameRow key={canvas.id} canvas={canvas} margin={16} />
       ))}
-      {canvases?.length === 0 && <Text>No canvases yet.</Text>}
+      {canvases?.length === 0 && <Text>{EMPTY_CANVASES}</Text>}
     </>
   );
 }
@@ -54,7 +55,9 @@ describe("the canvases list", () => {
         <List />
       </CloudProvider>,
     );
-    expect(await screen.findByText("No canvases yet.")).toBeTruthy();
+    expect(
+      await screen.findByText("No canvases yet. Canvases you make in Ponzu show up here."),
+    ).toBeTruthy();
   });
 });
 
