@@ -35,10 +35,6 @@ async function launch(ms: number) {
   await advance(ms);
 }
 
-// The offline launch runs on the real clock, and on a busy CI runner the shared cleanup after it
-// (Testing Library's own afterEach, which waits a tick and unmounts) took over the 5 s default.
-jest.setTimeout(20_000);
-
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.useFakeTimers();
@@ -100,9 +96,11 @@ describe("launch goes where the session says", () => {
     expect(await AsyncStorage.getItem("ponzu.queries")).toBeTruthy();
     replace.mockClear();
     // The next launch is offline, and the session is read from the Keychain after it mounts,
-    // as on the phone: the launch must read `me` on Ava's client, which holds the copy. (On the
-    // real clock: the copy is read back through promises the fake one does not move.)
-    jest.useRealTimers();
+    // as on the phone: the launch must read `me` on Ava's client, which holds the copy. (On a
+    // fake clock that moves with the real one: the copy is read back through promises a still
+    // fake clock does not move, and leaving fake timers for real ones mid-test left the shared
+    // cleanup after it waiting for good on CI.)
+    jest.useFakeTimers({ advanceTimers: true });
     onlineManager.setOnline(false);
     setState({ status: "loading" });
     await render(
