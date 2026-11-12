@@ -338,6 +338,8 @@ export class Runner {
   private secretCalls: string[] = [];
   /** Secret values given mid-turn: scrubbed from the thread and the state like the start's. */
   private given: string[] = [];
+  /** Counts each time the agent's questions stopped being waited on: a turn ended, or the runner is going to sleep. */
+  private askRound = 0;
 
   /** Claude Code is in a turn: from what it took in until its result. */
   private inTurn = false;
@@ -978,6 +980,9 @@ export class Runner {
     );
     if (!answer) return { refused: reason };
     const later = `${asked.name} is saved to this repository's secrets in Ponzu, but couldn't be handed over now. It's in the environment of every command from the sandbox's next start. Never print it.`;
+    // Only the turn that is still waiting gets the file: one that ended while the value was on
+    // its way leaves it to the next start.
+    const round = this.askRound;
     let given: { name: string; value: string };
     try {
       given = await this.api.secret(id);
@@ -985,7 +990,7 @@ export class Runner {
       this.log(`fetching the secret for ${id} failed: ${said(err)}`);
       return { refused: later };
     }
-    if (given.name !== asked.name) return { refused: later };
+    if (given.name !== asked.name || round !== this.askRound) return { refused: later };
     // Scrubbed before it is anywhere: the state, the thread's steps, the log, traces, checkpoints.
     this.given.push(given.value);
     this.opts.keepSecret?.(given.value);
@@ -1611,6 +1616,7 @@ export class Runner {
    * when the sandbox is going to sleep they stay open, and an answer comes in as a message.
    */
   private dropAsks(reason: string): void {
+    this.askRound++;
     for (const [id, askId] of this.asks) {
       if (askId) this.withdrawAsk(askId, reason);
       if (this.stopping) {

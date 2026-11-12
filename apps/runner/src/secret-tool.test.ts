@@ -218,6 +218,27 @@ test("a value that can't be fetched leaves it to the next start, and says so", a
   expect(s.kept).toEqual([]);
 });
 
+test("a turn that ends while the value is on its way gets no file, and the tool says the next start", async () => {
+  const s = await setup();
+  // The fetch is slow enough for the turn to end while it is out.
+  s.api.delays.set("secret", 2_000);
+  const result = s.run.call(REQUEST_SECRET, { name: "SLOW_KEY" });
+  const id = derivedId("q", "toolu_1");
+  await until(() => s.api.questions.get(id));
+  s.api.giveSecret(id, VALUE);
+  s.runner.poke();
+  await until(() => s.api.calls.includes("secret"));
+
+  s.run.end();
+  const said = await result;
+
+  expect(said.text).toBe(
+    "SLOW_KEY is saved to this repository's secrets in Ponzu, but couldn't be handed over now. It's in the environment of every command from the sandbox's next start. Never print it.",
+  );
+  expect(existsSync(join(s.folder, "SLOW_KEY"))).toBe(false);
+  nowhere(s);
+}, 10_000);
+
 test("a secret given after the turn ended goes in as a message that names it and not its value", async () => {
   const s = await setup();
   const result = s.run.call(REQUEST_SECRET, { name: "AFTER_KEY" });
