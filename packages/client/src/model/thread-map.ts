@@ -109,6 +109,8 @@ function noticeOf(
       return { type: "error", code: notice.code as RunErrorCode, message: notice.message };
     case "pull_request_agent":
       return { ...notice, as: notice.as ? personOf(notice.as, people) : null };
+    case "model_changed":
+      return { ...notice, account: notice.account ? personOf(notice.account, people) : null };
     default:
       return notice;
   }

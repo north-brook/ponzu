@@ -434,14 +434,24 @@ export const runner = new Hono<AppEnv>()
   })
 
   /**
-   * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
-   * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
+   * What Claude Code offers the account the canvas runs on ("Models"). Kept from a runner on the
+   * credential the account holds now, at most once in ten minutes after a runner's first; past
+   * that it is answered 200 with `kept: false`, never 429, so the runner does not try again.
    */
   .post("/models", access.runner, validate("json", Models), async (c) => {
-    const kept = await recordReportedModels(c.var.deps, c.var.actor.canvasId, c.req.valid("json"));
+    const { canvasId, runnerId } = c.var.actor;
+    const kept = await recordReportedModels(
+      c.var.deps,
+      { canvasId, runnerId },
+      c.req.valid("json"),
+    );
     return c.json({ kept } satisfies ModelsResponse);
   })
 
+  /**
+   * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
+   * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
+   */
   .post("/usage", access.runner, validate("json", Usage), async (c) => {
     const { turns } = c.req.valid("json");
     const recorded = await recordTurnUsage(c.var.deps.db, {

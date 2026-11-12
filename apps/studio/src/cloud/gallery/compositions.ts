@@ -192,7 +192,7 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
-    // Lenny Learning's heading and Scratch are there at once; its repos haven't arrived. Its
+    // Bramble School's heading and Scratch are there at once; its repos haven't arrived. Its
     // group is under the fold, so the picture would be pick-a-project-workspaces': the styles
     // hold its heading, its Scratch and the place kept for its repos.
     id: "pick-a-project-workspaces-loading",
@@ -327,6 +327,11 @@ export const COMPOSITIONS: Composition[] = [
   {
     id: "limit-teammate",
     title: "Thread · the owner's plan at its limit, as a teammate",
+    ...WINDOW,
+  },
+  {
+    id: "thread-model-changed",
+    title: "Thread · the canvas's model is no longer offered",
     ...WINDOW,
   },
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },

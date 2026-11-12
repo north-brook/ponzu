@@ -263,6 +263,19 @@ export type ThreadNotice =
       url: string;
       title: string;
       as: Person | null;
+    }
+  /**
+   * The model the canvas was made with is no longer one its Claude account offers, so it runs
+   * on `to` in its place. The names are the ones Ponzu knew then; `account` is whose Claude it
+   * is, null when that is not known.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
     };
 
 /** What the agent did to its pull request, as its thread line says. */

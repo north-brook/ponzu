@@ -21,6 +21,7 @@ import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { Runner, type RunnerOptions, summaryAnswer, type Timing } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
 import { type Git, gitIn } from "./save/work.ts";
+import type { AgentFeedback } from "./telemetry.ts";
 
 const FAST: Partial<Timing> = {
   threadGapMs: 5,
@@ -1999,16 +2000,18 @@ test("stopping waits for the agent's edits to reach the API, then reports idle",
 function recordingTelemetry() {
   const made: RunnerAnalytics[] = [];
   const captured: AiEvent[][] = [];
+  const feedback: AgentFeedback[] = [];
   const calls: string[] = [];
   const telemetry: RunnerOptions["telemetry"] = (config) => {
     made.push(config);
     return {
       capture: (events) => void captured.push(events),
+      feedback: (sent) => void feedback.push(sent),
       flush: async () => void calls.push("flush"),
       shutdown: async () => void calls.push("shutdown"),
     };
   };
-  return { telemetry, made, captured, calls };
+  return { telemetry, made, captured, feedback, calls };
 }
 
 const ANALYTICS: RunnerAnalytics = { key: "phc_test", host: "https://ph.test", content: false };
@@ -2097,6 +2100,7 @@ test("a PostHog that fails to send does not cut short the wait for the thread be
     session: { analytics: ANALYTICS },
     telemetry: () => ({
       capture: () => {},
+      feedback: () => {},
       flush: async () => {},
       shutdown: () => Promise.reject(new Error("PostHog is down")),
     }),
@@ -2172,4 +2176,69 @@ test("on an API key, the runner reports no limit whatever Claude Code says", asy
   const before = s.api.states.length;
   await until(() => s.api.states.length >= before + 3);
   expect(s.api.states.every((st) => st.claudeLimit === undefined)).toBe(true);
+});
+
+/* ------------------------------------------------------------------ */
+/* The agent's feedback                                                */
+/* ------------------------------------------------------------------ */
+
+const FEEDBACK_ARGS = {
+  sentiment: "negative",
+  category: "bug",
+  summary: "export failed on a board with a video.",
+  tool: "export",
+};
+
+const NOT_SENT =
+  "Not sent: this Ponzu doesn't share anything with the Ponzu team (telemetry is off). Mention it to the person if it matters.";
+
+test("with analytics on, send_feedback goes to PostHog under the canvas and its workspace", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({
+    session: { analytics: ANALYTICS, workspaceId: "ws_test" },
+    telemetry: t.telemetry,
+  });
+  const send = s.run.opts.tools.find((def) => def.name === "send_feedback")!;
+  const result = await send.run(FEEDBACK_ARGS);
+  expect(result.text).toBe("Sent to the Ponzu team. Thank you.");
+  expect(t.feedback).toEqual([
+    {
+      sentiment: "negative",
+      category: "bug",
+      summary: "export failed on a board with a video.",
+      tool: "export",
+      client: "claude",
+      canvasId: "cnv_test",
+      workspaceId: "ws_test",
+    },
+  ]);
+});
+
+test("with analytics off, send_feedback says it was not sent, and nothing is made to send it", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: null }, telemetry: t.telemetry });
+  const send = s.run.opts.tools.find((def) => def.name === "send_feedback")!;
+  const result = await send.run(FEEDBACK_ARGS);
+  expect(result.text).toBe(NOT_SENT);
+  expect(t.made).toEqual([]);
+  expect(t.feedback).toEqual([]);
+});
+
+test("feedback PostHog cannot take is not sent, and its words stay out of the log", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => ({
+      capture: () => {},
+      feedback: () => {
+        throw new Error("queue closed: export failed on a board with a video.");
+      },
+      flush: async () => {},
+      shutdown: async () => {},
+    }),
+  });
+  const send = s.run.opts.tools.find((def) => def.name === "send_feedback")!;
+  const result = await send.run(FEEDBACK_ARGS);
+  expect(result.text).toBe(NOT_SENT);
+  expect(s.logs).toContain("the agent's feedback could not be queued");
+  expect(s.logs.join("\n")).not.toContain("a board with a video");
 });
