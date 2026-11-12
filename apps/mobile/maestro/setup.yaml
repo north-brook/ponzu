@@ -40,8 +40,11 @@ name: setup
 - tapOn:
     id: setup-claude-key-field
 - inputText: "sk-ant-maestro-fake"
-- tapOn:
-    id: setup-claude-connect
+# The keyboard stays up over the step's Connect (the field is focused as it
+# opens), so a person connects with the keyboard's Go key, which does what
+# Connect does (rntests/setup.rntest.tsx presses Connect itself). Maestro taps
+# an element where it is, and Connect's place is under the keyboard.
+- pressKey: Enter
 # Lee's workspace has no canvases yet: New canvas comes over the list, once.
 - extendedWaitUntil:
     visible:

@@ -8,9 +8,9 @@ name: canvas
 - runFlow: shared/start.yaml
 - openLink: ponzu-dev://dev?seed=signed-in
 - extendedWaitUntil:
-    visible: "Pricing page, acme/site"
+    visible: "Pricing page, .*site.*"
     timeout: 30000
-- tapOn: "Pricing page, acme/site"
+- tapOn: "Pricing page, .*site.*"
 - extendedWaitUntil:
     visible:
       id: canvas

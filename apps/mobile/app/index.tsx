@@ -1,13 +1,14 @@
+import type { PhoneSetupStep } from "@ponzu/client/model/setup";
 import { useSessionState } from "@ponzu/client/react";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, FadeIn, FadeInDown, useReducedMotion } from "react-native-reanimated";
+import { SetupStepReader } from "../components/gate";
 import { startHandoff } from "../components/handoff";
 import { backend } from "../lib/cloud/backend";
-import { gateRoute, gateStep } from "../lib/cloud/gate";
-import { useSetupStep } from "../lib/cloud/use-setup";
+import { gateRoute } from "../lib/cloud/gate";
 import { LAUNCH } from "../lib/mark";
 import { BLOOM_IN_MS, Slice } from "../lib/slice";
 import { useHideSplash } from "../lib/splash";
@@ -48,9 +49,10 @@ export default function Launch() {
   }, []);
 
   // Signed in, launch waits for where setup stands. With no `me` at all (offline on a first
-  // launch since the cache went), the canvases say what there is.
-  const setup = useSetupStep();
-  const target = prepared ? gateRoute(state, gateStep(setup)) : null;
+  // launch since the cache went), the canvases say what there is. It is read by a reader keyed
+  // to the person, since the session is read from the Keychain after this screen mounts.
+  const [step, setStep] = useState<PhoneSetupStep | null>(null);
+  const target = prepared ? gateRoute(state, step) : null;
   useEffect(() => {
     if (!target || gone.current) return;
     const landed = still ? 0 : mounted.current + BLOOM_IN_MS - Date.now();
@@ -73,6 +75,7 @@ export default function Launch() {
       style={{ flex: 1, backgroundColor: brand.yuzu }}
     >
       <StatusBar style="dark" />
+      <SetupStepReader onStep={setStep} />
       <View
         style={[
           StyleSheet.absoluteFill,

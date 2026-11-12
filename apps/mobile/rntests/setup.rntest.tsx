@@ -8,9 +8,9 @@ import { Linking } from "react-native";
 import ConnectClaude from "../app/setup/claude";
 import PasteCode from "../app/setup/code";
 import Where from "../app/setup/where";
+import { Gate } from "../components/gate";
 import { backend } from "../lib/cloud/backend.fake";
-import { CloudProvider } from "../lib/cloud/query";
-import { useGate } from "../lib/cloud/use-gate";
+import { CloudProvider, useCloud } from "../lib/cloud/query";
 
 jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),
@@ -27,12 +27,12 @@ const segments = useSegments as unknown as jest.Mock<() => string[]>;
 const params = useLocalSearchParams as unknown as jest.Mock<() => Record<string, string>>;
 const openURL = jest.spyOn(Linking, "openURL");
 
-/** The app's gate, on the screen `at` names: where it sends the app is `router.replace`'s. */
-function Gate() {
-  useGate();
-  return null;
+/** A screen the gate opens once someone is signed in. */
+function WhenSignedIn({ children }: { children: ReactNode }) {
+  return useCloud().userId ? children : null;
 }
 
+/** The app's gate, on the screen `at` names: where it sends the app is `router.replace`'s. */
 async function show(screenNode: ReactNode, at: string[]) {
   segments.mockReturnValue(at);
   await render(
@@ -97,6 +97,45 @@ describe("where do you build", () => {
     await fireEvent.press(next);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup/claude"));
     expect(backend.world.fake.onboarding.get(backend.world.lee.id)?.whereAt).not.toBeNull();
+  });
+
+  test("signed in after the app opened: Continue still takes the gate on to Connect Claude", async () => {
+    // The gate is mounted while nobody is signed in, as on a phone's first sign-in; signing in
+    // brings a new QueryClient under it, and the gate then opens "Where do you build?".
+    await show(
+      <WhenSignedIn>
+        <Where />
+      </WhenSignedIn>,
+      ["setup", "where"],
+    );
+    await act(async () => {
+      backend.seed("setup-where");
+    });
+    openAuthSession.mockResolvedValue({
+      type: "success",
+      url: `ponzu://github/setup?result=installed&workspace=${backend.world.leeAccount.id}`,
+    });
+    await fireEvent.press(await screen.findByRole("button", { name: "Set up Personal" }));
+    expect(await screen.findByLabelText("Personal, Ready")).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Continue" });
+    await waitFor(() => expect(next).toBeEnabled());
+    await fireEvent.press(next);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup/claude"));
+  });
+
+  test("set up here, then Continue: the gate goes on to Connect Claude", async () => {
+    backend.seed("setup-where");
+    await show(<Where />, ["setup", "where"]);
+    openAuthSession.mockResolvedValue({
+      type: "success",
+      url: `ponzu://github/setup?result=installed&workspace=${backend.world.leeAccount.id}`,
+    });
+    await fireEvent.press(await screen.findByRole("button", { name: "Set up Personal" }));
+    expect(await screen.findByLabelText("Personal, Ready")).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Continue" });
+    await waitFor(() => expect(next).toBeEnabled());
+    await fireEvent.press(next);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup/claude"));
   });
 
   test("Set up opens GitHub's page in the auth session, and the setup link brings back Ready", async () => {
