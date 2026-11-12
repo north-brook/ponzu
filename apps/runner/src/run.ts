@@ -1620,7 +1620,7 @@ export class Runner {
     // after Create PR or a turn's end) has the agent's git going: the push is left to its end.
     // Not on the way to sleep, which has cut the turn already and is the last chance.
     const held = () => {
-      if (why === "sleep" || !this.working) return false;
+      if (why === "stop" || !this.working) return false;
       if (why === "asked") this.pushAsked = true;
       return true;
     };
