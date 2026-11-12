@@ -26,7 +26,7 @@ function sh(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }).trim();
 }
 
-/** A repository on "GitHub" (a bare one) with `main`, and a checkout of it on the design's branch. */
+/** A repository on "GitHub" (a bare one) with `main`, and a checkout of it on the canvas's branch. */
 function repo() {
   const root = mkdtempSync(join(tmpdir(), "ponzu-push-"));
   dirs.push(root);
@@ -240,9 +240,9 @@ test("the thread says what happened and what to do, in Ponzu's words", () => {
   expect(
     pushFailureText({ kind: "transient", said: "fatal: repository 'x' not found" }, where),
   ).toBe(
-    "Ponzu couldn't push pz/hero to north/fern (fatal: repository 'x' not found). 2 commits on pz/hero are safe in this design's sandbox: Ponzu tries again when Claude's next turn ends, and Create PR tries again too.",
+    "Ponzu couldn't push pz/hero to north/fern (fatal: repository 'x' not found). 2 commits on pz/hero are safe in this canvas's sandbox: Ponzu tries again when Claude's next turn ends, and Create PR tries again too.",
   );
   expect(pushFailureText({ kind: "diverged", said: "" }, { ...where, unpushed: 1 })).toBe(
-    "pz/hero on GitHub has commits this design doesn't, so Ponzu didn't push over them. 1 commit on pz/hero is safe in this design's sandbox. Ask Claude to bring in what's on GitHub and push again.",
+    "pz/hero on GitHub has commits this canvas doesn't, so Ponzu didn't push over them. 1 commit on pz/hero is safe in this canvas's sandbox. Ask Claude to bring in what's on GitHub and push again.",
   );
 });

@@ -14,7 +14,7 @@ import {
   touchesStructure,
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import type { OpenDesign } from "./design.ts";
+import type { OpenCanvas } from "./canvas.ts";
 import type { AgentFiles } from "./disk.ts";
 
 /** Bytes on their way out of the tools, under the name to keep them by. */
@@ -26,35 +26,35 @@ export interface NamedBytes {
 }
 
 /**
- * Everything a tool handler can reach. A host builds one: the runner in a design's sandbox
- * with `createCloudWorkspace`, for that one design, and the local server for the folders it
+ * Everything a tool handler can reach. A host builds one: the runner in a canvas's sandbox
+ * with `createCloudWorkspace`, for that one canvas, and the local server for the folders it
  * has open.
  */
 export interface Workspace {
-  /** The open designs, by key: one in the cloud, any number of folders locally. */
-  designs(): OpenDesign[];
-  /** The design a call works on. The local server takes a file argument (a path, name or key). */
-  resolve(file?: string): Promise<OpenDesign>;
+  /** The open canvases, by key: one in the cloud, any number of folders locally. */
+  canvases(): OpenCanvas[];
+  /** The canvas a call works on. The local server takes a file argument (a path, name or key). */
+  resolve(file?: string): Promise<OpenCanvas>;
   /** Create a new .design and open it. */
-  create?(path: string, doc: Doc): Promise<OpenDesign>;
+  create?(path: string, doc: Doc): Promise<OpenCanvas>;
   renderer?: Renderer;
   /** How a path the agent names is read and written. This process's own access when absent. */
   files?: AgentFiles;
-  /** Where a renderer loads this design's assets/ from, when the host serves them. */
+  /** Where a renderer loads this canvas's assets/ from, when the host serves them. */
   assetBase?(key: string): string | undefined;
   /** Ask any open studio to show this artboard. */
   focus?(key: string, artboardId: string): void;
   /** Tell any open studio an agent just captured an artboard, so it flashes on it. */
   capture?(key: string, capture: Capture): void;
   /**
-   * A link the person can click to open this design in Ponzu, on the artboard if one is given.
+   * A link the person can click to open this canvas in Ponzu, on the artboard if one is given.
    * `origin` is where the agent reached this host, for a canvas link that works from its machine.
    * Absent, or undefined, when there's no canvas for one to open.
    */
   link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
   /**
-   * The link to one page or artboard of this design, for the agent to paste into what it writes
-   * to the person: where they read it, a click takes their canvas there. Tools that tell the
+   * The link to one page or artboard of this canvas, for the agent to paste into what it writes
+   * to the person: where they read it, a click takes their view there. Tools that tell the
    * agent of a page or board give it beside the id, so it never builds one from parts. Absent
    * where nothing follows such a link in place (the local server).
    */
@@ -67,9 +67,9 @@ export interface Workspace {
   presence: PresenceHub;
   /** Usage events and agent feedback for the Ponzu team. Without it nothing is sent. */
   telemetry?: Telemetry;
-  /** Keep what the person asked for, as an agent distilled it, in the design's history. */
+  /** Keep what the person asked for, as an agent distilled it, in the canvas's history. */
   intent?(key: string, text: string, origin: Author): void;
-  /** Keep a file as one of this design's assets. Resolves to the reference markup uses: `assets/<name>`. */
+  /** Keep a file as one of this canvas's assets. Resolves to the reference markup uses: `assets/<name>`. */
   storeAsset?(key: string, asset: NamedBytes): Promise<string>;
   /** Put an export where a link reaches it. Resolves to the link. */
   publish?(key: string, file: NamedBytes): Promise<string>;
@@ -83,7 +83,7 @@ export interface Workspace {
 
 /**
  * Where a host sends usage. Properties are names, counts and timings, never
- * design content, file names or paths.
+ * canvas content, file names or paths.
  */
 export interface Telemetry {
   capture(event: string, properties?: Record<string, unknown>): void;
@@ -115,32 +115,32 @@ export interface ToolCaller {
 
 /** What one agent connection remembers between calls. */
 export interface ToolSession {
-  /** The design this agent last created, named or reached by id: calls without `file` use it. */
+  /** The canvas this agent last created, named or reached by id: calls without `file` use it. */
   file?: string;
-  /** The designs it has worked in, most recent first: waits hear from all of them. */
+  /** The canvases it has worked in, most recent first: waits hear from all of them. */
   files?: string[];
 }
 
-/** How many designs a session remembers working in. */
+/** How many canvases a session remembers working in. */
 export const SESSION_FILES = 8;
 
-/** How a call found its design: named, by the ids it passed, the session's file, or the only one. */
+/** How a call found its canvas: named, by the ids it passed, the session's file, or the only one. */
 export type FileSource = "arg" | "ids" | "session" | "only";
 
 export interface ToolContext {
   ws: Workspace;
   caller: ToolCaller;
   signal?: AbortSignal;
-  /** Without one, every call without `file` needs a single open design. */
+  /** Without one, every call without `file` needs a single open canvas. */
   session?: ToolSession;
   /** Set while the call runs, by resolveFile. */
   resolved?: { from: FileSource; note?: string };
   /**
-   * Set by the local tool list, whose host has several designs open: finds the one a call
+   * Set by the local tool list, whose host has several canvases open: finds the one a call
    * means from its `file` argument and the ids it passes. Without it a call works on the
-   * workspace's one design.
+   * workspace's one canvas.
    */
-  pick?(ids: (string | undefined)[]): Promise<OpenDesign>;
+  pick?(ids: (string | undefined)[]): Promise<OpenCanvas>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -159,7 +159,7 @@ export interface KeyedEvent {
 }
 
 export interface EventFilter {
-  /** The designs to hear from. All of them when absent. */
+  /** The canvases to hear from. All of them when absent. */
   keys?: string[];
   types?: EventType[];
   excludeAuthor?: string;
@@ -211,7 +211,7 @@ export class EventHub {
   }
 
   /**
-   * Tell what an op did to a design, read against the doc after it: each comment in it, then
+   * Tell what an op did to a canvas, read against the doc after it: each comment in it, then
    * the change to the canvas if there was one.
    */
   emitOp(key: string, doc: Doc, e: { op: Op; origin: Author; artboards: string[] }): void {
@@ -344,7 +344,7 @@ export class PresenceHub {
   private map = new Map<string, Presence>();
   private listeners = new Set<(p: Presence[]) => void>();
   private idle = new Map<string, ReturnType<typeof setTimeout>>();
-  /** The design each agent's calls last resolved to, read or written: where its disk edits go. */
+  /** The canvas each agent's calls last resolved to, read or written: where its disk edits go. */
   private seenIn = new Map<string, string>();
   /** When each agent was last reminded to watch the canvas. */
   private reminded = new Map<string, number>();
@@ -499,7 +499,7 @@ export class PresenceHub {
   /**
    * These artboards in `file` changed on disk. An agent writing the files
    * itself makes no tool call, so credit the agent most likely behind it:
-   * the one seen most recently in this design, or in the project that holds
+   * the one seen most recently in this canvas, or in the project that holds
    * it, that isn't waiting for activity (a waiting agent is watching for the
    * person's edits). With none, it was the person.
    */

@@ -1,12 +1,12 @@
 import { previewArtboard, type Replica } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import type { ReplicaDesign } from "@ponzu/tools";
+import type { ReplicaCanvas } from "@ponzu/tools";
 import type { RunnerApi, UploadFile } from "./api/api.ts";
 
 const THEMES = ["light", "dark"] as const;
 
 /**
- * The pictures of the design the sidebar and the phone show: its first page, in each theme,
+ * The pictures of the canvas the sidebar and the phone show: its first page, in each theme,
  * drawn once the edits have stopped for a moment and reached the API, and uploaded with the
  * seq they show. A failure is logged and waits for the next edit.
  */
@@ -19,7 +19,7 @@ export class Previews {
   constructor(
     private readonly opts: {
       replica: Replica;
-      design: ReplicaDesign;
+      canvas: ReplicaCanvas;
       renderer: Renderer;
       api: RunnerApi;
       assetBase: string;
@@ -29,7 +29,7 @@ export class Previews {
     },
   ) {}
 
-  /** The design changed: draw it again once it has been still for a moment. */
+  /** The canvas changed: draw it again once it has been still for a moment. */
   changed(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
@@ -66,9 +66,9 @@ export class Previews {
   }
 
   private async upload(): Promise<void> {
-    const { replica, design, renderer, api, assetBase } = this.opts;
+    const { replica, canvas, renderer, api, assetBase } = this.opts;
     // The picture should show what everyone else will load, so what the agent drew goes first.
-    await design.settled(this.opts.settleMs);
+    await canvas.settled(this.opts.settleMs);
     const seq = replica.seq;
     if (seq === this.shown) return;
     const doc = replica.doc;

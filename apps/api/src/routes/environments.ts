@@ -30,7 +30,7 @@ import type { Logger } from "../http/log.ts";
 import { validate } from "../http/validate.ts";
 
 /*
- * Settings › Environments (docs/cloud.md, "Environments"): per repo, the base its designs
+ * Settings › Environments (docs/cloud.md, "Environments"): per repo, the base its canvases
  * start from and the secrets its sandboxes receive. Anyone who can read the repo sees them, by
  * name; a workspace admin adds, replaces and removes secrets; anyone who can push to the repo
  * may ask for a rebuild. A secret's value goes into the vault and comes out only into a

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { getClaudeAccount } from "@ponzu/db";
 import { SandboxError, signInSandboxName } from "@ponzu/sandbox";
 import { lifetime } from "../claude/sign-in.ts";
-import { call } from "../testing/designs.ts";
+import { call } from "../testing/canvases.ts";
 import { createTestApp, TEST_CRON_SECRET, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 let t: TestApp;
@@ -288,7 +288,7 @@ describe("a subscription sign-in", () => {
 });
 
 describe("defaults", () => {
-  test("new designs start on Opus 5.5 at medium, and a person's choice is kept", async () => {
+  test("new canvases start on Opus 5.5 at medium, and a person's choice is kept", async () => {
     const headers = await as("ivy");
     const before = await call(t, headers, "GET", "/v1/claude/defaults");
     expect(before.body).toMatchObject({ model: "claude-opus-5-5", effort: "medium" });

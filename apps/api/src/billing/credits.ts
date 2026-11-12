@@ -14,7 +14,7 @@
  *   a cap           whole dollars; it may not be set below what the period has billed, rounded
  *                   up to the dollar, nor below $1
  *
- * A breakdown (by person, by design) shares out the rounded total rather than rounding each
+ * A breakdown (by person, by canvas) shares out the rounded total rather than rounding each
  * part on its own, so its parts always add up to the headline: each part gets its own use
  * rounded down, and the credits the fractions add up to go one each to the parts with the
  * largest fractions (`apportion`). A part never gets more than its exact use rounded up. It adds

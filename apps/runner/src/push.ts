@@ -2,10 +2,10 @@ import { ShellError, text } from "./save/shell.ts";
 import type { Git } from "./save/work.ts";
 
 /*
- * Getting a design's commits to GitHub without relying on the agent (docs/cloud.md, "Git").
+ * Getting a canvas's commits to GitHub without relying on the agent (docs/cloud.md, "Git").
  * The agent commits and pushes as it goes, but a push can fail (GitHub refused a token it had
  * just minted: "Repository not found"), and an agent can forget, give up or be cut off. So the
- * runner pushes the design's branch itself at the end of every turn, before the sandbox sleeps,
+ * runner pushes the canvas's branch itself at the end of every turn, before the sandbox sleeps,
  * when it starts, and when a person presses Create PR while GitHub lacks the commits. It pushes
  * with plain git through the same credential helper as the agent, never forces, and tries a
  * failure that may pass again a few times, giving the token back between tries so the next one
@@ -40,7 +40,7 @@ export interface PushOutcome {
 export interface BranchPushOptions {
   /** The checkout's git, as the agent (`gitIn`). */
   git: Git;
-  /** The design's branch. */
+  /** The canvas's branch. */
   branch: string;
   defaultBranch: string;
   /**
@@ -51,7 +51,7 @@ export interface BranchPushOptions {
   /** A structured line for the journal. */
   event(name: string, fields: Record<string, unknown>): void;
   /**
-   * Whether the design's pull request was merged: a branch GitHub no longer has is then one that
+   * Whether the canvas's pull request was merged: a branch GitHub no longer has is then one that
    * was deleted after its merge, not one to push again.
    */
   merged?(): boolean;
@@ -80,7 +80,7 @@ export class BranchPush {
   }
 
   /**
-   * Commits on the design's branch that GitHub does not have, as the checkout last knew GitHub:
+   * Commits on the canvas's branch that GitHub does not have, as the checkout last knew GitHub:
    * beyond `origin/<branch>` when that is in its history, else beyond the default branch, and
    * none for a branch deleted on GitHub after it was pushed. No network.
    */
@@ -112,7 +112,7 @@ export class BranchPush {
   }
 
   /**
-   * Push the design's branch when it has commits GitHub lacks, trying a failure that may pass
+   * Push the canvas's branch when it has commits GitHub lacks, trying a failure that may pass
    * again (`waitsMs`) until `deadline`. Never forces: a branch GitHub moved on past is reported,
    * not overwritten. A branch GitHub already has at this commit is left alone, so one deleted on
    * GitHub after it was merged is not put back; new commits on it are pushed, as the agent's own
@@ -125,7 +125,7 @@ export class BranchPush {
     const nothing: PushOutcome = { unpushed: 0, pushed: 0, failure: null };
     if (!(await this.has(local))) return nothing;
     const base = `refs/remotes/origin/${defaultBranch}`;
-    // Nothing of the design's own yet: nothing to push, and nothing for a pull request.
+    // Nothing of the canvas's own yet: nothing to push, and nothing for a pull request.
     if ((await this.has(base)) && (await this.count(`${base}..${local}`)) === 0) return nothing;
     const remote = `refs/remotes/origin/${branch}`;
     if (await this.has(remote)) {
@@ -168,7 +168,7 @@ export class BranchPush {
 
   /**
    * The branch was on GitHub once and is not now, as far as the checkout knows: it has an
-   * upstream but no remote-tracking ref (a fetch pruned it), or the design's pull request was
+   * upstream but no remote-tracking ref (a fetch pruned it), or the canvas's pull request was
    * merged (`merged`), after which GitHub or Ponzu deletes the branch.
    */
   private async deletedOnGithub(): Promise<boolean> {
@@ -233,11 +233,11 @@ export function pushFailureText(
   where: { branch: string; repo: string; unpushed: number },
 ): string {
   const commits = where.unpushed === 1 ? "1 commit" : `${where.unpushed} commits`;
-  const safe = `${commits} on ${where.branch} ${where.unpushed === 1 ? "is" : "are"} safe in this design's sandbox`;
+  const safe = `${commits} on ${where.branch} ${where.unpushed === 1 ? "is" : "are"} safe in this canvas's sandbox`;
   const said = failure.said.split("\n").at(-1) ?? "";
   switch (failure.kind) {
     case "diverged":
-      return `${where.branch} on GitHub has commits this design doesn't, so Ponzu didn't push over them. ${safe}. Ask Claude to bring in what's on GitHub and push again.`;
+      return `${where.branch} on GitHub has commits this canvas doesn't, so Ponzu didn't push over them. ${safe}. Ask Claude to bring in what's on GitHub and push again.`;
     case "refused":
       return `GitHub refused the push to ${where.branch} in ${where.repo} (${said}). ${safe}. Ask Claude to fix what GitHub objects to and push again.`;
     case "transient":

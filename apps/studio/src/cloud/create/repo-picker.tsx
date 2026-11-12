@@ -38,7 +38,7 @@ const keyOf = (choice: ProjectChoice, workspaceId: string | null) =>
   choice.kind === "repo" ? choice.repo.id : workspaceId ? `${SCRATCH}:${workspaceId}` : SCRATCH;
 
 /**
- * The create page's project selector, in its header beside the logo: the repo the design is made
+ * The create page's project selector, in its header beside the logo: the repo the canvas is made
  * in (`owner/name`, the owner quieter so the name leads) or Scratch, in the display face, with a
  * chevron. It reads as part of the header, not as a chip, and has a quiet button's grounds.
  * `value` is null until the window's repos are known, and holds the selector's place meanwhile.

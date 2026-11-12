@@ -28,7 +28,7 @@ import { QuietButton, RowIcon, Section } from "./parts.tsx";
 import { STACK_LOGOS } from "./stack-logos.ts";
 
 export interface EnvironmentsSectionProps {
-  /** The workspace's repos that have a base: one has, once a design has run in it. */
+  /** The workspace's repos that have a base: one has, once a canvas has run in it. */
   environments: RepoEnvironment[];
   /** The repos shown open, by id; the app remembers them on this device. */
   open: string[];
@@ -80,7 +80,7 @@ export function EnvironmentsSection({
         })
       ) : (
         <p className="m-0 flex min-h-12 items-center text-13 text-muted">
-          Nothing here yet. Ponzu sets a repo up the first time you design in it.
+          Nothing here yet. Ponzu sets a repo up the first time you start a canvas in it.
         </p>
       )}
     </Section>
@@ -152,7 +152,7 @@ function RepoEnvironmentRow({
               </span>
             ))}
             {base.status === "none" ? (
-              <span className="text-12 text-faint">Ponzu sets it up as a design here starts.</span>
+              <span className="text-12 text-faint">Ponzu sets it up as a canvas here starts.</span>
             ) : null}
             <span className="flex-1" />
             {base.status !== "none" && canRebuild(repo) ? (

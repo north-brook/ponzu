@@ -44,9 +44,9 @@ import { ApiError, type Endpoint, request, TIMEOUT_MS } from "./request.ts";
  */
 export class HttpRunnerApi implements RunnerApi {
   readonly sync: SyncTransport;
-  private readonly endpoint: Endpoint & { designId: string };
+  private readonly endpoint: Endpoint & { canvasId: string };
 
-  constructor(endpoint: Endpoint & { designId: string }) {
+  constructor(endpoint: Endpoint & { canvasId: string }) {
     this.endpoint = { ...endpoint, runnerId: null };
     this.sync = this.transport();
   }
@@ -211,11 +211,11 @@ export class HttpRunnerApi implements RunnerApi {
 
   /** The existing document routes, as core's `Replica` asks for them. */
   private transport(): SyncTransport {
-    const design = `/v1/designs/${encodeURIComponent(this.endpoint.designId)}`;
+    const canvas = `/v1/canvases/${encodeURIComponent(this.endpoint.canvasId)}`;
     return {
       commit: async (ops) => {
         try {
-          return await this.call("POST", `${design}/ops`, { ops });
+          return await this.call("POST", `${canvas}/ops`, { ops });
         } catch (err) {
           // Malformed or too large: the same post will never be taken.
           if (err instanceof ApiError && (err.status === 400 || err.status === 413))
@@ -225,13 +225,13 @@ export class HttpRunnerApi implements RunnerApi {
       },
       fetchOps: async (after) => {
         try {
-          return await this.call("GET", `${design}/ops?after=${after}`);
+          return await this.call("GET", `${canvas}/ops?after=${after}`);
         } catch (err) {
           if (err instanceof ApiError && err.status === 410) return "gone";
           throw err;
         }
       },
-      fetchDoc: () => this.call("GET", `${design}/doc`),
+      fetchDoc: () => this.call("GET", `${canvas}/doc`),
     };
   }
 

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { DesignListRow, PresenceRow } from "@ponzu/client";
+import type { CanvasListRow, PresenceRow } from "@ponzu/client";
 import { createFakeBackend } from "@ponzu/client/testing";
 import {
+  canvasMembers,
   contributors,
-  designMembers,
   hereNow,
   isUnseen,
   keepUnchanged,
@@ -19,8 +19,8 @@ import {
   usableWorkspaces,
 } from "./map.ts";
 
-const row = (over: Partial<DesignListRow> = {}): DesignListRow => ({
-  id: "dsn_1",
+const row = (over: Partial<CanvasListRow> = {}): CanvasListRow => ({
+  id: "cnv_1",
   workspaceId: "ws_1",
   repoId: "repo_1",
   repoFullName: "north-brook/ponzu",
@@ -56,7 +56,7 @@ const member = (userId: string, login: string, name: string | null) => ({
 });
 
 const presence = (userId: string, login: string): PresenceRow => ({
-  designId: "dsn_1",
+  canvasId: "cnv_1",
   userId,
   pageId: null,
   joinedAt: "2026-11-10T10:00:00.000Z",
@@ -101,7 +101,7 @@ test("the switcher calls a personal workspace Personal, and offers only those Po
   ).toEqual(["ws_a"]);
 });
 
-test("a new design can be made in the repos the person can push to, pushed to lately first", () => {
+test("a new canvas can be made in the repos the person can push to, pushed to lately first", () => {
   const repo = (id: string, canPush: boolean, pushedAt: string | null) => ({
     id,
     fullName: `north-brook/${id}`,
@@ -164,7 +164,7 @@ test("a row: where it lives, whose it is, and what it's waiting on", () => {
   expect(toSummary(row({ ownerId: "usr_gone" }), { people }).owner).toBeNull();
 });
 
-test("unseen: the design moved past what the person last saw, unless it is open now", () => {
+test("unseen: the canvas moved past what the person last saw, unless it is open now", () => {
   expect(isUnseen({ seq: 4, seenSeq: 4 })).toBe(false);
   expect(isUnseen({ seq: 5, seenSeq: 4 })).toBe(true);
   // Never opened: unseen once it has anything in it.
@@ -216,12 +216,12 @@ test("a live update keeps what it didn't change: other rows, and an unchanged pr
   const at = { people, assetsUrl: "https://assets.test/k/" };
   const before = [
     toSummary(row({ previewSeq: 12 }), at),
-    toSummary(row({ id: "dsn_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
+    toSummary(row({ id: "cnv_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
   ];
   // The first row's status moved on; the second came back as a new object, the same.
   const after = keepUnchanged(before, [
     toSummary(row({ previewSeq: 12, agentState: "working", seq: 5 }), at),
-    toSummary(row({ id: "dsn_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
+    toSummary(row({ id: "cnv_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
   ]);
   expect(after).not.toBe(before);
   expect(after[0]).not.toBe(before[0]);
@@ -241,7 +241,7 @@ test("a live update keeps what it didn't change: other rows, and an unchanged pr
 
 test("Share lists the owner first, then everyone who can edit", () => {
   const members = [member("usr_sam", "sam", "Sam"), member("usr_maya", "maya", "Maya")];
-  expect(designMembers(members, "usr_maya").map((m) => [m.person.login, m.access])).toEqual([
+  expect(canvasMembers(members, "usr_maya").map((m) => [m.person.login, m.access])).toEqual([
     ["maya", "owner"],
     ["sam", "edit"],
   ]);
@@ -257,15 +257,15 @@ test("Share lists everyone GitHub gives access to the repo, who hasn't opened Po
     repos: [{ name: "fernwood", access: { [maya.id]: "read" } }, { name: "other" }],
     githubOnly: [
       { login: "tingqgao", name: "Ting Gao", repos: { fernwood: "write" } },
-      // Only in another repo: not someone who can open this design.
+      // Only in another repo: not someone who can open this canvas.
       { login: "elsewhere", repos: { other: "write" } },
     ],
   });
   const { api } = backend.connect(bryce);
-  const design = await api.designs.create({ workspaceId: ws.id, repoId: ws.repos[0]!.id });
+  const canvas = await api.canvases.create({ workspaceId: ws.id, repoId: ws.repos[0]!.id });
 
-  const { people } = await api.designs.people(design.id);
-  const members = designMembers([], bryce.id, people);
+  const { people } = await api.canvases.people(canvas.id);
+  const members = canvasMembers([], bryce.id, people);
   expect(members.map((m) => [m.person.login, m.access, m.joined])).toEqual([
     ["brycedbjork", "owner", true],
     ["maya", "view", true],
@@ -285,16 +285,16 @@ test("a page is working while the agent is on one of its boards", () => {
   ]);
 });
 
-test("search finds every place the query is in a design's name, whatever its case", () => {
+test("search finds every place the query is in a canvas's name, whatever its case", () => {
   const people = new Map();
-  const designs = [
-    toSummary(row({ id: "dsn_1", name: "Hero, hero again" }), { people }),
-    toSummary(row({ id: "dsn_2", name: "Pricing" }), { people }),
+  const canvases = [
+    toSummary(row({ id: "cnv_1", name: "Hero, hero again" }), { people }),
+    toSummary(row({ id: "cnv_2", name: "Pricing" }), { people }),
   ];
-  const results = searchByName("HERO", designs);
-  expect(results.designs.map((hit) => [hit.design.id, hit.matches])).toEqual([
+  const results = searchByName("HERO", canvases);
+  expect(results.canvases.map((hit) => [hit.canvas.id, hit.matches])).toEqual([
     [
-      "dsn_1",
+      "cnv_1",
       [
         [0, 4],
         [6, 10],
@@ -302,5 +302,5 @@ test("search finds every place the query is in a design's name, whatever its cas
     ],
   ]);
   expect(results.boards).toEqual([]);
-  expect(searchByName("  ", designs).designs).toEqual([]);
+  expect(searchByName("  ", canvases).canvases).toEqual([]);
 });

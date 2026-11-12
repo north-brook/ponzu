@@ -12,7 +12,7 @@ import { validate } from "../http/validate.ts";
 import { agentActOnPullRequest, agentReadPullRequest } from "../pull-requests/agent.ts";
 
 /*
- * The design's agent driving its pull request, through its runner (docs/cloud.md, "The agent's
+ * The canvas's agent driving its pull request, through its runner (docs/cloud.md, "The agent's
  * pull request"). Each does what the person's own route does, through the same code, as the
  * person the turn is for (`pull-requests/agent.ts`), behind the guardrails that code holds to:
  * a turn no person began never merges, marks ready or turns on auto-merge; the person must still
@@ -36,10 +36,10 @@ const Act = z.object({ turn: TurnId }).strict();
 const ActAt = z.object({ turn: TurnId, headSha: HeadSha }).strict();
 
 export const runnerPullRequest = new Hono<AppEnv>()
-  /** Where the design's pull request stands, read now, and who the agent would act as. */
+  /** Where the canvas's pull request stands, read now, and who the agent would act as. */
   .get("/pull-request", access.runner, validate("query", TurnQuery), async (c) => {
     const { turn } = c.req.valid("query");
-    const standing = await agentReadPullRequest(c.var.deps, c.var.actor.designId, {
+    const standing = await agentReadPullRequest(c.var.deps, c.var.actor.canvasId, {
       eventId: turn ?? null,
       runnerId: c.var.actor.runnerId,
     });
@@ -74,12 +74,12 @@ export const runnerPullRequest = new Hono<AppEnv>()
   });
 
 async function answer(
-  vars: { deps: Deps; actor: { designId: string; runnerId: string } },
+  vars: { deps: Deps; actor: { canvasId: string; runnerId: string } },
   action: AgentPullRequestAction,
   turn: string | null,
   headSha?: string,
 ): Promise<AgentPullRequestAnswer> {
-  return agentActOnPullRequest(vars.deps, vars.actor.designId, {
+  return agentActOnPullRequest(vars.deps, vars.actor.canvasId, {
     action,
     turn: { eventId: turn, runnerId: vars.actor.runnerId },
     ...(headSha ? { headSha } : {}),

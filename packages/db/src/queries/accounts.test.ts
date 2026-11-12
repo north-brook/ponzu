@@ -30,7 +30,7 @@ import {
   upsertWorkspace,
   wasUninstalled,
 } from "./accounts.ts";
-import { createDesign, getDesign, listWorkspaceDesigns } from "./designs.ts";
+import { createCanvas, getCanvas, listWorkspaceCanvases } from "./canvases.ts";
 import { recordReachableRepos, recordRepoAccess } from "./repo-access.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -526,7 +526,7 @@ describe("repos", () => {
     expect(after).toMatchObject({ id: before!.id, workspaceId: to.id, fullName: "b/site" });
   });
 
-  test("a transferred repo takes its designs to the new workspace, and leaves Scratch behind", async () => {
+  test("a transferred repo takes its canvases to the new workspace, and leaves Scratch behind", async () => {
     const [from, to, user] = await Promise.all([
       seedWorkspace(db),
       seedWorkspace(db),
@@ -534,7 +534,7 @@ describe("repos", () => {
     ]);
     const [repo] = await upsertRepos(db, { workspaceId: from.id, repos: [seen(211, "a/app")] });
     const make = (name: string, repoId: string | null) =>
-      createDesign(db, {
+      createCanvas(db, {
         workspaceId: from.id,
         repoId,
         ownerId: user.id,
@@ -551,10 +551,10 @@ describe("repos", () => {
 
     await upsertRepos(db, { workspaceId: to.id, repos: [seen(211, "b/app")] });
 
-    expect((await getDesign(db, inRepo.id))!.workspaceId).toBe(to.id);
-    expect((await getDesign(db, scratch.id))!.workspaceId).toBe(from.id);
+    expect((await getCanvas(db, inRepo.id))!.workspaceId).toBe(to.id);
+    expect((await getCanvas(db, scratch.id))!.workspaceId).toBe(from.id);
     const names = async (workspaceId: string) =>
-      (await listWorkspaceDesigns(db, { workspaceId, userId: user.id })).map((d) => d.name);
+      (await listWorkspaceCanvases(db, { workspaceId, userId: user.id })).map((d) => d.name);
     expect(await names(from.id)).toEqual(["Lisbon"]);
     expect(await names(to.id)).toEqual(["checkout"]);
   });

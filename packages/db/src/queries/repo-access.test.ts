@@ -5,7 +5,7 @@ import { seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { repoAccess } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { markReposRemoved, upsertRepos } from "./accounts.ts";
-import { createDesign } from "./designs.ts";
+import { createCanvas } from "./canvases.ts";
 import {
   getRepoAccess,
   listWorkspaceRepoAccess,
@@ -52,14 +52,14 @@ describe("listWorkspaceRepoAccess", () => {
       seedWorkspace(db, "acme"),
       seedWorkspace(db, "other"),
     ]);
-    const [withDesign, asked, empty, foreign] = await Promise.all([
+    const [withCanvas, asked, empty, foreign] = await Promise.all([
       seedRepo(db, workspace.id, "acme/site"),
       seedRepo(db, workspace.id, "acme/app"),
       seedRepo(db, workspace.id, "acme/empty"),
       seedRepo(db, elsewhere.id, "other/site"),
     ]);
-    for (const repo of [withDesign, asked, foreign]) {
-      await createDesign(db, {
+    for (const repo of [withCanvas, asked, foreign]) {
+      await createCanvas(db, {
         workspaceId: repo.workspaceId,
         repoId: repo.id,
         ownerId: user.id,
@@ -71,7 +71,7 @@ describe("listWorkspaceRepoAccess", () => {
     }
     await recordRepoAccess(db, [
       { userId: user.id, repoId: asked.id, permission: "write", checkedAt: at("12:00:00") },
-      { userId: teammate.id, repoId: withDesign.id, permission: "read", checkedAt: at("12:00:00") },
+      { userId: teammate.id, repoId: withCanvas.id, permission: "read", checkedAt: at("12:00:00") },
       { userId: user.id, repoId: empty.id, permission: "read", checkedAt: at("12:00:00") },
     ]);
 
@@ -85,10 +85,10 @@ describe("listWorkspaceRepoAccess", () => {
     // Seeded in this order, so their GitHub ids are too. A removed repo is listed too.
     expect(listed.sort((a, b) => a.githubRepoId - b.githubRepoId)).toEqual([
       {
-        repoId: withDesign.id,
-        githubRepoId: withDesign.githubRepoId,
+        repoId: withCanvas.id,
+        githubRepoId: withCanvas.githubRepoId,
         fullName: "acme/site",
-        hasDesign: true,
+        hasCanvas: true,
         permission: null,
         checkedAt: null,
       },
@@ -96,7 +96,7 @@ describe("listWorkspaceRepoAccess", () => {
         repoId: asked.id,
         githubRepoId: asked.githubRepoId,
         fullName: "acme/app",
-        hasDesign: true,
+        hasCanvas: true,
         permission: "write",
         checkedAt: at("12:00:00"),
       },
@@ -104,7 +104,7 @@ describe("listWorkspaceRepoAccess", () => {
         repoId: empty.id,
         githubRepoId: empty.githubRepoId,
         fullName: "acme/empty",
-        hasDesign: false,
+        hasCanvas: false,
         permission: "read",
         checkedAt: at("12:00:00"),
       },

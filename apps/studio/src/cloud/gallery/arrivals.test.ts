@@ -1,10 +1,10 @@
 /*
- * A design opening with its answers late, in a real Chromium (the gallery's `design-opening`
+ * A canvas opening with its answers late, in a real Chromium (the gallery's `canvas-opening`
  * compositions, opening.tsx): each answer delivered in turn and the movement it starts stepped
  * on its own clock (stepArrival), never by counting frames or waiting. Nothing on screen before
- * an answer moves by more than a pixel when it comes, except by the one designed movement (a
+ * an answer moves by more than a pixel when it comes, except by the one movement meant to happen (a
  * room opening or closing, whose start and end are checked), and what arrives fades in where it
- * rests. Switching designs replays nothing; reduced motion moves nothing and lands the same.
+ * rests. Switching canvases replays nothing; reduced motion moves nothing and lands the same.
  * Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
@@ -84,7 +84,7 @@ function expectFadesIn(frames: ArrivalFrame[], key: string) {
   }
 }
 
-describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
+describe.skipIf(!chromiumPath)("a canvas opening, its answers late", () => {
   let built: Awaited<ReturnType<typeof buildGallery>>;
   let server: ReturnType<typeof serve>;
   let browser: Browser;
@@ -115,7 +115,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   const SHARE = "button[Share]";
 
   test("from the row, the mark is there at the first paint and the action's room is held", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     const { before } = await stepArrival(page, "nothing", 1);
     expect(before.pieces[MARK]).toBeDefined();
     expect(before.pieces[MERGE]).toBeUndefined();
@@ -128,7 +128,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("the pages fade in where they rest, and nothing else moves", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     const { before, frames, animations } = await stepArrival(page, "pages");
     expect(animations.map((a) => a.id)).toContain("arrival-content");
     expectStill(before, frames);
@@ -136,7 +136,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("the expected action comes into its held room: nothing moves, it fades in", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     const { before, frames, animations } = await stepArrival(page, "action");
     expect(animations.map((a) => a.id)).toEqual(["arrival-content"]);
     // Its room is already there: nothing to wait for, it starts in the frame it lands.
@@ -149,7 +149,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("an action other than expected eases the room to its own width, the mark gliding once", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     const { before, frames, animations } = await stepArrival(page, "action:update_branch");
     const markWas = before.pieces[MARK]!.x;
     const rest = frames.at(-1)!;
@@ -166,7 +166,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("people joining: their room opens, you glide aside once, the rest stays", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     const { before, frames } = await stepArrival(page, "people");
     const was = before.pieces[ME]!.x;
     const rest = frames.at(-1)!;
@@ -178,7 +178,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("an action shown becoming another: the new one fades in as its room eases, never cut", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     await stepArrival(page, "action");
     const { before, frames, animations } = await stepArrival(page, "action:update_branch");
     expect(animations.map((a) => a.id).sort()).toEqual(["arrival-content", "arrival-room"]);
@@ -207,7 +207,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("another answer landing while people join neither restarts them nor clips them", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     // Halfway through their rooms opening (held there), the pages land: a render of the whole
     // chrome while the people are still moving.
     const { mid, after, rooms } = await page.evaluate(() => {
@@ -245,7 +245,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("the action leaving is the arrival reversed: it fades, its room closes, the mark glides back", async () => {
-    await open("design-opening");
+    await open("canvas-opening");
     await stepArrival(page, "action");
     const { before, frames } = await stepArrival(page, "action:none");
     const action = before.pieces[MERGE]!;
@@ -259,7 +259,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("at launch, the mark and the action arrive together as one movement", async () => {
-    await open("design-opening-launch");
+    await open("canvas-opening-launch");
     const title = await stepArrival(page, "title");
     // The name opens its room from the left block: the divider glides out by its width, once,
     // and everything right of the tabs (none yet) stays.
@@ -282,7 +282,7 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("at launch, the mark arriving alone opens the action's held room with it, on one clock", async () => {
-    await open("design-opening-launch");
+    await open("canvas-opening-launch");
     await stepArrival(page, "title");
     const { frames, animations } = await stepArrival(page, "pull-request");
     // Two rooms open together: the mark's, and the one held for the action it predicts.
@@ -303,12 +303,12 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
     expectFadesIn(frames, MARK);
   });
 
-  test("switching to another design replays nothing: what both have is simply there", async () => {
-    await open("design-opening");
+  test("switching to another canvas replays nothing: what both have is simply there", async () => {
+    await open("canvas-opening");
     await stepArrival(page, "everything");
     const { frames, animations } = await stepArrival(page, "switch");
     expect(animations).toEqual([]);
-    // The other design's mark, and its own expected action's room, from its first frame.
+    // The other canvas's mark, and its own expected action's room, from its first frame.
     expect(frames.at(-1)!.pieces["button[Pull request #405]"]?.opacity).toBe(1);
     const room = await page.$eval(
       '[data-arrival="action"]',
@@ -318,11 +318,11 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
   });
 
   test("reduced motion: nothing eases or travels, and every answer lands where it would", async () => {
-    await open("design-opening", "no-preference");
+    await open("canvas-opening", "no-preference");
     await stepArrival(page, "everything");
     await stepArrival(page, "action:update_branch");
     const moving = (await stepArrival(page, "action:fix_checks")).frames.at(-1)!;
-    await open("design-opening", "reduce");
+    await open("canvas-opening", "reduce");
     const steps = [
       await stepArrival(page, "everything"),
       await stepArrival(page, "action:update_branch"),

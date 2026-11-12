@@ -25,7 +25,7 @@ function api(reply: (seen: Seen) => Response) {
   }) as typeof fetch;
   const http = new HttpRunnerApi({
     baseUrl: "https://api.test",
-    designId: "des_1",
+    canvasId: "cnv_1",
     token: "pzr_secret",
     client: "runner/0.1.0",
     fetch: fake,
@@ -124,9 +124,9 @@ test("the document routes speak the replica's transport", async () => {
   expect(await http.sync.fetchOps(7)).toBe("gone");
   expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname}${new URL(s.url).search}`)).toEqual(
     [
-      "POST /v1/designs/des_1/ops",
-      "POST /v1/designs/des_1/ops",
-      "GET /v1/designs/des_1/ops?after=7",
+      "POST /v1/canvases/cnv_1/ops",
+      "POST /v1/canvases/cnv_1/ops",
+      "GET /v1/canvases/cnv_1/ops?after=7",
     ],
   );
 });

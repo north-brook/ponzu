@@ -1,5 +1,5 @@
 /*
- * The numbers a design's sandbox lives by (docs/cloud.md, "The sandbox").
+ * The numbers a canvas's sandbox lives by (docs/cloud.md, "The sandbox").
  */
 
 /**
@@ -23,7 +23,7 @@ export const SESSION_CYCLE_MS = 23.5 * 3600_000;
  */
 export const SESSION_CYCLE_BUSY_MS = MAX_SESSION_MS - 15 * 60_000;
 /**
- * How long Vercel keeps a design's snapshot after its last use. Past it the next wake boots an
+ * How long Vercel keeps a canvas's snapshot after its last use. Past it the next wake boots an
  * empty disk and the runner rebuilds from git and the last checkpoint.
  */
 export const SNAPSHOT_EXPIRATION_MS = 30 * 24 * 3600_000;
@@ -31,5 +31,5 @@ export const SNAPSHOT_EXPIRATION_MS = 30 * 24 * 3600_000;
 export const RUNNER_TOKEN_SECONDS = 25 * 3600;
 /** How long `ponzu-stop` may take: the runner's shutdown (20 s at most), its lock, and `sync`. */
 export const STOP_COMMAND_MS = 30_000;
-/** The size of a design's sandbox: 2 vCPUs and 4 GB. */
+/** The size of a canvas's sandbox: 2 vCPUs and 4 GB. */
 export const SANDBOX_VCPUS = 2 as const;

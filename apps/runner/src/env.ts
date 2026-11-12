@@ -5,7 +5,7 @@ import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
 /** The environment the runner starts with, read and checked once. */
 export interface RunnerEnv {
   apiUrl: string;
-  designId: string;
+  canvasId: string;
   token: string;
   /** The port `/poke` and `/health` listen on. */
   port: number;
@@ -50,7 +50,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
     return value;
   };
   // Claude Code takes the API key over the OAuth token when it has both, without a word, and
-  // bills the key's account for a design whose owner meant their own plan.
+  // bills the key's account for a canvas whose owner meant their own plan.
   const credentials = CLAUDE_CREDENTIALS.filter((name) => env[name]);
   if (credentials.length !== 1) {
     throw new EnvError(
@@ -66,7 +66,7 @@ export function readEnv(env: NodeJS.ProcessEnv): RunnerEnv {
   const stateDir = env.PONZU_STATE_DIR ?? join(home, ".ponzu");
   return {
     apiUrl: need("PONZU_API_URL"),
-    designId: need("PONZU_DESIGN_ID"),
+    canvasId: need("PONZU_CANVAS_ID"),
     token: need("PONZU_RUNNER_TOKEN"),
     port,
     portToken: need("PONZU_PORT_TOKEN"),

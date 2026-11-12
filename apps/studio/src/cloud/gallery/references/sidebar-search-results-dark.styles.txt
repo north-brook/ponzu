@@ -30,10 +30,10 @@ ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
-ground div[Designs] rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px
-icon svg[Designs] 16×16 rgb(142, 138, 130) stroke 1.7px
+ground div[Canvases] rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px
+icon svg[Canvases] 16×16 rgb(142, 138, 130) stroke 1.7px
 icon svg[Close search] 14×14 rgb(142, 138, 130) stroke 1.9px
-text "Designs" rgb(118, 115, 105) 600 11px Inter
+text "Canvases" rgb(118, 115, 105) 600 11px Inter
 ground div[Search results] rgb(48, 48, 46)
 ground span[Search results] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 image img[Search results] hero.png

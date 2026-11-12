@@ -4,7 +4,7 @@ import { mutate, type StorePonzu } from "./store-ponzu.ts";
 import { toAsk } from "./thread-map.ts";
 
 /*
- * What the agent waits on in one open design: the `design.questions` live query, which holds
+ * What the agent waits on in one open canvas: the `canvas.questions` live query, which holds
  * the open questions alone, and the viewer's answers on their way. The first answer wins.
  *
  * A question that leaves while the viewer is on it (chose something, typed a note, or sent an
@@ -34,7 +34,7 @@ export class AskStore {
     private readonly opts: {
       ponzu: StorePonzu;
       live: Pick<Live, "subscribe">;
-      designId: string;
+      canvasId: string;
       /** Says, in a sentence, that an answer didn't go. */
       onError: (message: string) => void;
     },
@@ -42,8 +42,8 @@ export class AskStore {
 
   start(): this {
     this.stopLive = this.opts.live.subscribe(
-      "design.questions",
-      { designId: this.opts.designId },
+      "canvas.questions",
+      { canvasId: this.opts.canvasId },
       ({ rows }) => {
         const before = this.rows;
         this.rows = rows ?? [];
@@ -82,8 +82,8 @@ export class AskStore {
     const asked = toAsk(row);
     this.sending.add(id);
     this.emit();
-    const { ponzu, designId } = this.opts;
-    mutate(ponzu, ponzu.mutations.answerQuestion(), { designId, questionId: id, body }).then(
+    const { ponzu, canvasId } = this.opts;
+    mutate(ponzu, ponzu.mutations.answerQuestion(), { canvasId, questionId: id, body }).then(
       () => this.emit(),
       (error: unknown) => {
         this.sending.delete(id);
@@ -118,10 +118,10 @@ export class AskStore {
    * closed, then kept as that. `by` is who the API's refusal named, if it did.
    */
   private settle(asked: Ask, by: Person | null): void {
-    const { ponzu, designId } = this.opts;
+    const { ponzu, canvasId } = this.opts;
     this.touched.delete(asked.id);
     this.settling.set(asked.id, asked);
-    ponzu.queryClient.fetchQuery(ponzu.queries.question(designId, asked.id)).then(
+    ponzu.queryClient.fetchQuery(ponzu.queries.question(canvasId, asked.id)).then(
       (question) => {
         // The rail resolves them to the member they are, picture and all.
         const who = question.answeredBy ? { ...question.answeredBy, avatarUrl: null } : by;

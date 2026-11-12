@@ -2,7 +2,7 @@ import type { Clock } from "@ponzu/sandbox";
 import type { Fetch } from "./fetch.ts";
 
 /**
- * Tells a design's runner there may be something to claim (docs/cloud.md, "The other way: the
+ * Tells a canvas's runner there may be something to claim (docs/cloud.md, "The other way: the
  * poke"): `POST /poke` on the sandbox's public port, with the port's bearer token, carrying
  * nothing. The runner trusts nothing about it and only claims from the API with its own token,
  * so a poke that is lost costs at most the minute until the runner's own claim.

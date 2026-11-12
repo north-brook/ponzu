@@ -43,7 +43,7 @@ test("a link survives only to http, https or mailto", () => {
     "vbscript:msgbox(1)",
     "file:///etc/passwd",
     "/relative",
-    "ponzu://design/1",
+    "ponzu://canvas/1",
   ]) {
     expect(safeHref(href)).toBeNull();
     const out = html(`[click](${href})`);
@@ -57,19 +57,19 @@ test("a link survives only to http, https or mailto", () => {
   expect(html("[mail](mailto:hi@ponzu.design)")).toContain('href="mailto:hi@ponzu.design"');
 });
 
-test("a link to a design's page or board is held to the same rules as any other", () => {
+test("a link to a canvas's page or board is held to the same rules as any other", () => {
   // Followed in place only once it is a safe https address (place-link.test.tsx): what the rules
   // refuse stays text however much it looks like one of ours.
   for (const href of [
-    "javascript:location='https://ponzu.design/designs/des_1?artboard=ab_1'",
-    "ponzu://design/des_1?artboard=ab_1",
-    "/designs/des_1?artboard=ab_1",
-    "data:text/html,https://ponzu.design/designs/des_1",
+    "javascript:location='https://ponzu.design/canvases/cnv_1?artboard=ab_1'",
+    "ponzu://canvas/cnv_1?artboard=ab_1",
+    "/canvases/cnv_1?artboard=ab_1",
+    "data:text/html,https://ponzu.design/canvases/cnv_1",
   ]) {
     expect(html(`[Note: Pricing](${href})`)).not.toContain("<a");
   }
   // And as an image, it still loads nothing.
-  expect(html("![x](https://ponzu.design/designs/des_1?artboard=ab_1)")).not.toContain("<img");
+  expect(html("![x](https://ponzu.design/canvases/cnv_1?artboard=ab_1)")).not.toContain("<img");
 });
 
 test("a link opens outside the app, and tells it nothing", () => {

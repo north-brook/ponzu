@@ -1,16 +1,16 @@
 import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId, randomString } from "../ids.ts";
-import { designRunners, runnerTokens } from "../schema/index.ts";
+import { canvasRunners, runnerTokens } from "../schema/index.ts";
 import { run } from "./run.ts";
 
 /**
- * Make a token a runner signs in with. It is good for one design until it expires or is
+ * Make a token a runner signs in with. It is good for one canvas until it expires or is
  * revoked. The token itself is returned here and nowhere else; the table keeps its hash.
  */
 export async function createRunnerToken(
   db: Db,
-  { designId, ttlSeconds }: { designId: string; ttlSeconds: number },
+  { canvasId, ttlSeconds }: { canvasId: string; ttlSeconds: number },
 ): Promise<{ id: string; token: string; expiresAt: Date }> {
   // 260 random bits, so a plain hash is enough: there is nothing to guess.
   const token = `pzr_${randomString(52)}`;
@@ -19,7 +19,7 @@ export async function createRunnerToken(
       .insert(runnerTokens)
       .values({
         id: newId("rt"),
-        designId,
+        canvasId,
         tokenHash: await hash(token),
         expiresAt: sql`now() + make_interval(secs => ${ttlSeconds})`,
       })
@@ -29,22 +29,22 @@ export async function createRunnerToken(
 }
 
 /**
- * The design a token is good for, with the runner that holds the design's lease now (null
+ * The canvas a token is good for, with the runner that holds the canvas's lease now (null
  * before any has started), or null if the token is unknown, expired or revoked.
  */
 export async function verifyRunnerToken(
   db: Db,
   token: string,
-): Promise<{ id: string; designId: string; leaseRunnerId: string | null } | null> {
+): Promise<{ id: string; canvasId: string; leaseRunnerId: string | null } | null> {
   const [row] = await run(
     db
       .select({
         id: runnerTokens.id,
-        designId: runnerTokens.designId,
-        leaseRunnerId: designRunners.runnerId,
+        canvasId: runnerTokens.canvasId,
+        leaseRunnerId: canvasRunners.runnerId,
       })
       .from(runnerTokens)
-      .leftJoin(designRunners, eq(designRunners.designId, runnerTokens.designId))
+      .leftJoin(canvasRunners, eq(canvasRunners.canvasId, runnerTokens.canvasId))
       .where(
         and(
           eq(runnerTokens.tokenHash, await hash(token)),
@@ -67,12 +67,12 @@ export async function revokeRunnerToken(db: Db, id: string): Promise<void> {
 }
 
 /**
- * Revoke every token a design's runners hold, as when its sandbox is destroyed, or every one but
+ * Revoke every token a canvas's runners hold, as when its sandbox is destroyed, or every one but
  * `except`, the one its sandbox now runs on. Answers how many.
  */
 export async function revokeRunnerTokens(
   db: Db,
-  designId: string,
+  canvasId: string,
   { except }: { except?: string | null } = {},
 ): Promise<number> {
   const revoked = await run(
@@ -81,7 +81,7 @@ export async function revokeRunnerTokens(
       .set({ revokedAt: sql`now()` })
       .where(
         and(
-          eq(runnerTokens.designId, designId),
+          eq(runnerTokens.canvasId, canvasId),
           isNull(runnerTokens.revokedAt),
           except ? ne(runnerTokens.id, except) : undefined,
         ),

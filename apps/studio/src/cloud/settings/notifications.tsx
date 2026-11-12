@@ -36,9 +36,9 @@ export interface NotificationsSectionProps {
 
 const EVENTS: { key: Exclude<keyof PingPrefs, "emailDigest">; title: string; line: string }[] = [
   { key: "needsYou", title: "Ponzu needs you", line: "A question, a permission, a sign-in" },
-  { key: "replies", title: "Ponzu replies to my comment", line: "On designs I commented on" },
+  { key: "replies", title: "Ponzu replies to my comment", line: "On canvases I commented on" },
   { key: "prReady", title: "A pull request is ready", line: "Checks passed and it can merge" },
-  { key: "teammateComments", title: "A teammate comments", line: "On designs I own" },
+  { key: "teammateComments", title: "A teammate comments", line: "On canvases I own" },
 ];
 
 /** Which events ping the person, and where: each phone, and a daily email. Saved as flipped. */

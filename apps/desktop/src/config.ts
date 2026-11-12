@@ -37,7 +37,7 @@ const BAKED_POSTHOG =
 
 /**
  * What session replay may show (docs/analytics.md, "Session replay"): `full`, everything a person
- * sees; `private`, the chrome and how it is used, with designs, the thread and the composer
+ * sees; `private`, the chrome and how it is used, with canvases, the thread and the composer
  * blocked or masked. `private` unless a build is told otherwise.
  */
 export type ReplayMode = "full" | "private";
@@ -62,7 +62,7 @@ export interface Config {
   /** The WorkOS environment's client id: public, the app ships it. Staging until cutover. */
   workosClientId: string;
   /**
-   * The origins the window may reach beyond the API: Neon Realtime and a design's files, as the
+   * The origins the window may reach beyond the API: Neon Realtime and a canvas's files, as the
    * API's environment names them. Null in a development build, which may reach any of each kind.
    */
   realtimeUrl: string | null;

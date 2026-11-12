@@ -5,8 +5,8 @@ import {
   type AgentBlocker,
   type ClaudeAccountKind,
   type ClaudeModelReport,
+  canvases,
   claudeAccounts,
-  designs,
   users,
 } from "../schema/index.ts";
 import type { ClaudeAccount } from "./accounts.ts";
@@ -16,7 +16,7 @@ import { run } from "./run.ts";
 /*
  * A person's own Claude (docs/cloud.md, "Credentials"): one row each, which keeps its id for
  * good. Connecting again replaces the credential on the same row, and disconnecting destroys
- * the credential and keeps the row, so the designs that record the account keep pointing at it.
+ * the credential and keeps the row, so the canvases that record the account keep pointing at it.
  */
 
 /**
@@ -142,8 +142,8 @@ export async function disconnectClaudeAccount(db: Db, userId: string): Promise<s
 }
 
 /**
- * Say on the active designs that run on this account why their agent waits, or (with null)
- * that it no longer waits for Claude. Answers the designs whose head changed, and whether each
+ * Say on the active canvases that run on this account why their agent waits, or (with null)
+ * that it no longer waits for Claude. Answers the canvases whose head changed, and whether each
  * has something in its feed its agent must take up.
  */
 export async function setClaudeBlocker(
@@ -157,36 +157,36 @@ export async function setClaudeBlocker(
   const claude = ["claude_not_connected", "claude_expired"];
   const rows = await run(
     db
-      .update(designs)
+      .update(canvases)
       .set({
         agentBlocker: blocker,
         // With a blocker nothing runs, whatever its runner last said.
-        agentState: sql`case when ${designs.agentState} in ${blocker ? sql`('waking', 'working')` : sql`('waking')`}
-                             then 'idle' else ${designs.agentState} end`,
+        agentState: sql`case when ${canvases.agentState} in ${blocker ? sql`('waking', 'working')` : sql`('waking')`}
+                             then 'idle' else ${canvases.agentState} end`,
       })
       .where(
         and(
-          eq(designs.status, "active"),
-          sql`(${designs.claudeAccountId} = ${claudeAccountId}
-               or (${designs.claudeAccountId} is null and ${designs.ownerId} = ${userId}))`,
+          eq(canvases.status, "active"),
+          sql`(${canvases.claudeAccountId} = ${claudeAccountId}
+               or (${canvases.claudeAccountId} is null and ${canvases.ownerId} = ${userId}))`,
           blocker === null
-            ? inArray(designs.agentBlocker, claude as AgentBlocker[])
-            : sql`${designs.agentBlocker} is distinct from ${blocker}`,
+            ? inArray(canvases.agentBlocker, claude as AgentBlocker[])
+            : sql`${canvases.agentBlocker} is distinct from ${blocker}`,
         ),
       )
       .returning({
-        id: designs.id,
+        id: canvases.id,
         // Named in full: inside a `returning`, Drizzle writes a column without its table.
         pending: sql<boolean>`exists (
           select 1 from events e
-           where e.design_id = "designs"."id" and e.delivered_at is null
+           where e.canvas_id = "canvases"."id" and e.delivered_at is null
              and e.priority in ('now', 'next'))`.mapWith(Boolean),
       }),
   );
   return rows;
 }
 
-/** A person's defaults for new designs. */
+/** A person's defaults for new canvases. */
 export async function setAgentDefaults(
   db: Db,
   { userId, model, effort }: { userId: string; model?: string | null; effort?: string | null },

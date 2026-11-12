@@ -191,15 +191,15 @@ test("a pull request action's answer is the tab the query holds", async () => {
     members: { [maya.id]: "admin" },
     repos: [{ name: "site" }],
   });
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: team.id,
     repoId: team.repos[0]!.id,
     name: "Pricing",
   });
-  backend.agent(design.id).push();
-  await queryClient.fetchQuery(queries.pullRequest(design.id));
-  await mutate(mutations.pullRequestAction(), { designId: design.id, action: { kind: "open" } });
-  const tab = queryClient.getQueryData(queries.pullRequest(design.id).queryKey);
+  backend.agent(canvas.id).push();
+  await queryClient.fetchQuery(queries.pullRequest(canvas.id));
+  await mutate(mutations.pullRequestAction(), { canvasId: canvas.id, action: { kind: "open" } });
+  const tab = queryClient.getQueryData(queries.pullRequest(canvas.id).queryKey);
   expect(tab?.pullRequest?.state).toBe("draft");
   expect(tab?.nextAction).toBe("ready");
 });
@@ -213,7 +213,7 @@ test("a model the account stopped offering since the picker read it reads the de
   // A runner reported since: this account is offered Opus 5.5 alone.
   const opus = before.models.find((m) => m.id === "claude-opus-5-5")!;
   backend.claude.offer(maya.id, [opus]);
-  const refused = await mutate(mutations.createDesign(), {
+  const refused = await mutate(mutations.createCanvas(), {
     workspaceId: own.id,
     model: "claude-fable-5-2",
   }).catch((e: unknown) => e);

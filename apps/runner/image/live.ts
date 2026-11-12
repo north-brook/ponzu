@@ -202,9 +202,9 @@ export function buildRunnerBundle(): Bundle {
   }
 }
 
-/** What one design's sandbox is given at every start: never at create, never on disk. */
+/** What one canvas's sandbox is given at every start: never at create, never on disk. */
 export interface Start {
-  designId: string;
+  canvasId: string;
   runnerToken: string;
   portToken: string;
   bundle: string;
@@ -213,7 +213,7 @@ export interface Start {
 
 export function newStart(bundle: Bundle, anthropicKey: string): Start {
   return {
-    designId: `des_${randomBytes(8).toString("hex")}`,
+    canvasId: `cnv_${randomBytes(8).toString("hex")}`,
     runnerToken: `pzr_${randomBytes(18).toString("base64url")}`,
     portToken: randomBytes(32).toString("base64url"),
     bundle: bundle.sha256,
@@ -225,7 +225,7 @@ export function newStart(bundle: Bundle, anthropicKey: string): Start {
 export function startEnv(start: Start, bundle = start.bundle): Record<string, string> {
   const env = {
     PONZU_API_URL: `http://127.0.0.1:${FAKE_API_PORT}`,
-    PONZU_DESIGN_ID: start.designId,
+    PONZU_CANVAS_ID: start.canvasId,
     PONZU_RUNNER_TOKEN: start.runnerToken,
     PONZU_PORT_TOKEN: start.portToken,
     PONZU_RUNNER_BUNDLE: bundle,
@@ -261,7 +261,7 @@ export async function startFakeApi(box: Box, start: Start, opts: { hold?: boolea
     cmd: "bash",
     args: ["-c", `exec /opt/ponzu/bin/bun ${FAKE_DIR}/fake-api.js >> ${FAKE_DIR}/log 2>&1`],
     env: {
-      PONZU_DESIGN_ID: start.designId,
+      PONZU_CANVAS_ID: start.canvasId,
       PONZU_RUNNER_TOKEN: start.runnerToken,
       PONZU_PORT_TOKEN: start.portToken,
       PONZU_FAKE_API_STATE: FAKE_STATE,
@@ -500,7 +500,7 @@ export async function gh<T = unknown>(token: string, path: string, method = "GET
 }
 
 /**
- * The session a repo design's runner gets: GITHUB_TEST_REPO on a new branch, authored as
+ * The session a repo canvas's runner gets: GITHUB_TEST_REPO on a new branch, authored as
  * E2E_PERSON (the App's bot when unset) and committed as the App's bot.
  */
 export async function repoSession(github: { jwt: string; token: string }, branch: string) {

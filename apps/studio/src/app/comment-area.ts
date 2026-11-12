@@ -1,7 +1,7 @@
 /*
  * What a comment's picture shows: the area of the page round its pin. Centred on the pin, at a
  * scale where what it points at is recognisable (the node it is pinned to with room round it, a
- * stretch of the board, or the boards either side of a pin on the open canvas), then moved only
+ * stretch of the board, or the boards either side of a pin on the ground), then moved only
  * as far as keeps it from running off the boards into empty canvas, never so far the pin leaves
  * it. Pure, in page px, so the rules are tested on their own.
  */
@@ -17,11 +17,11 @@ export interface Rect {
 export const AREA_WIDTH = { min: 360, max: 2400 } as const;
 /** The stretch of a board a pin on it, on no node of its own, shows. */
 const BOARD_WIDTH = { min: 480, max: 960 } as const;
-/** On the open canvas: the least, and the room past the nearest board's edge. */
+/** On the ground: the least, and the room past the nearest board's edge. */
 const OPEN_WIDTH = 720;
 const OPEN_REACH = 280;
 /**
- * How far from every board a pin on the open canvas may be and still have a picture: past this,
+ * How far from every board a pin on the ground may be and still have a picture: past this,
  * the widest picture reaches no board, and a field of empty canvas says nothing of where the
  * comment was (it says so in words instead).
  */
@@ -79,7 +79,7 @@ function place(pin: number, size: number, content: { at: number; size: number } 
  * - `board`: the one the pin is on, if any.
  * - `node`: the node it is pinned to, in page px, when it is smaller than its board.
  *
- * Null for a pin on the open canvas with no board in reach: there is nothing to show.
+ * Null for a pin on the ground with no board in reach: there is nothing to show.
  */
 export function pictureArea({
   pin,
@@ -109,7 +109,7 @@ export function pictureArea({
   w = clamp(w, AREA_WIDTH.min, AREA_WIDTH.max);
   const h = w / aspect;
 
-  // What the picture keeps to: the pin's board, or on the open canvas the boards near it.
+  // What the picture keeps to: the pin's board, or on the ground the boards near it.
   const around = { x: pin.x - w, y: pin.y - h, w: 2 * w, h: 2 * h };
   const content = board ?? union(boards.filter((b) => overlaps(b, around)));
   const area = {

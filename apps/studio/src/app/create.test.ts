@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { claudeReady, nameFor, newCreateKey } from "./create.tsx";
 
-test("a new design is called by what its first line is about, until the agent names it", () => {
+test("a new canvas is called by what its first line is about, until the agent names it", () => {
   expect(nameFor("  A pricing page\nwith three plans")).toBe("Pricing page");
   expect(
     nameFor("A 360×240 pricing card: a heading 'Pro', a price '$12/mo' and a blue button"),
@@ -12,7 +12,7 @@ test("a new design is called by what its first line is about, until the agent na
     "Settings page so that every section fits…",
   );
   expect(nameFor("x".repeat(60))).toBe(`X${"x".repeat(39)}…`);
-  expect(nameFor("Design")).toBe("Design");
+  expect(nameFor("Canvas")).toBe("Canvas");
 });
 
 test("a create key is one the API takes", () => {

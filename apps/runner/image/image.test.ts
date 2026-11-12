@@ -63,7 +63,7 @@ test("the same inputs hash the same in any order, and any change makes another t
   expect(inputsHash(changed)).not.toBe(hash);
 });
 
-test("the image commands are the ones the design gives", () => {
+test("the image commands are the ones the spec gives", () => {
   const read = (name: string) =>
     new TextDecoder().decode(imageInputs().find((i) => i.path === `libexec/${name}`)!.bytes);
   const start = read("ponzu-start");

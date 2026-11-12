@@ -39,13 +39,13 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
 /**
  * Bring an installation's workspace and repos in line with GitHub, and answer the workspace.
  *
- * - Gone from GitHub (uninstalled): the workspace keeps its row, members and designs, loses the
+ * - Gone from GitHub (uninstalled): the workspace keeps its row, members and canvases, loses the
  *   installation, and its repos are marked removed. Answers null.
  * - Suspended: recorded on the workspace if Ponzu has one; GitHub mints a suspended
  *   installation no token, so its repos stay as last seen. Answers that workspace, or null
  *   when there is none: a suspension makes no new workspace.
  * - Otherwise the workspace is made or updated, every repo the installation can see is
- *   recorded, and any it no longer sees is marked removed (never deleted: designs point at
+ *   recorded, and any it no longer sees is marked removed (never deleted: canvases point at
  *   it). A repo list GitHub served only in part marks nothing removed.
  *
  * Who can reach its repos (`github/people.ts`) is read with it when `people` is `read`: the

@@ -41,7 +41,7 @@ class MemoryStorage implements KeyValueStorage {
 }
 
 /**
- * A design with one board, which Maya and Ines can both edit, Omar can only read, and the
+ * A canvas with one board, which Maya and Ines can both edit, Omar can only read, and the
  * agent works on; `open` gives each of them a CloudSource on it, as their app would.
  */
 async function harness() {
@@ -56,14 +56,14 @@ async function harness() {
     repos: [{ name: "site", access: { [omar.id]: "read" } }],
   });
   const mayaClient = backend.connect(maya);
-  const design = await mayaClient.api.designs.create({
+  const canvas = await mayaClient.api.canvases.create({
     workspaceId: ws.id,
     repoId: ws.repos[0]!.id,
     name: "Kettle",
   });
-  const page = backend.design(design.id).sequencer.doc.pages[0]!.id;
+  const page = backend.canvas(canvas.id).sequencer.doc.pages[0]!.id;
   backend
-    .agent(design.id)
+    .agent(canvas.id)
     .commit([{ op: "artboard.create", page, index: 0, artboard: board("ab_home") }]);
 
   const open = (person: FakePerson, opts: { cache?: DocCache } = {}) => {
@@ -71,7 +71,7 @@ async function harness() {
     const source = new CloudSource({
       api: client.api,
       live: client.live,
-      designId: design.id,
+      canvasId: canvas.id,
       me: actorOf(person),
       clock,
       ...opts,
@@ -91,11 +91,11 @@ async function harness() {
     doc(source).pages[0]!.artboards.find((a) => a.id === "ab_home");
   /** Let the API answer, Realtime deliver and the replicas fetch what it told them of. */
   const settle = () => clock.advance(0);
-  return { clock, backend, design, page, maya, ines, omar, open, doc, home, settle };
+  return { clock, backend, canvas, page, maya, ines, omar, open, doc, home, settle };
 }
 
 describe("opening", () => {
-  test("a design opens ready, with its assets and live DOM for every board", async () => {
+  test("a canvas opens ready, with its assets and live DOM for every board", async () => {
     const h = await harness();
     const { source } = h.open(h.maya);
     expect(source.getState().status).toBe("connecting");
@@ -105,51 +105,51 @@ describe("opening", () => {
     expect([state.status, state.path, state.doc?.name]).toEqual(["ready", "Kettle", "Kettle"]);
     expect(h.home(source)?.name).toBe("Home");
     expect(source.writable).toBe(true);
-    expect(source.assetBase).toBe(`https://assets.test/${h.design.id}/`);
+    expect(source.assetBase).toBe(`https://assets.test/${h.canvas.id}/`);
     expect(source.renditions).toBe(false);
     const canvas: CanvasSource = source;
     expect(canvas.snapshotUrl).toBeUndefined();
     expect(canvas.loopsUrl).toBeUndefined();
   });
 
-  test("a design the person may only look at refuses every edit up front", async () => {
+  test("a canvas the person may only look at refuses every edit up front", async () => {
     const h = await harness();
     const omar = h.open(h.omar);
     await h.settle();
     expect(omar.source.writable).toBe(false);
 
-    const before = h.backend.design(h.design.id).sequencer.seq;
+    const before = h.backend.canvas(h.canvas.id).sequencer.seq;
     omar.source.apply({ op: "artboard.update", id: "ab_home", x: 500 });
     omar.source.undo();
     await h.settle();
     expect(h.home(omar.source)?.x).toBe(0);
     expect(omar.unsaved.map((u) => u.reason)).toEqual([
-      "This design can only be looked at right now.",
+      "This canvas can only be looked at right now.",
     ]);
-    expect(h.backend.design(h.design.id).sequencer.seq).toBe(before);
+    expect(h.backend.canvas(h.canvas.id).sequencer.seq).toBe(before);
   });
 
-  test("a design that is not there, or not theirs, is an error, not a spinner", async () => {
+  test("a canvas that is not there, or not theirs, is an error, not a spinner", async () => {
     const h = await harness();
     const stranger = h.backend.addPerson({ login: "stranger" });
     const { source } = h.open(stranger);
     await h.settle();
     expect(source.getState().status).toBe("error");
-    expect(source.getState().error).toBe("There is no such design.");
+    expect(source.getState().error).toBe("There is no such canvas.");
   });
 
-  test("opened after something else already watches the design's head, it still hears it", async () => {
+  test("opened after something else already watches the canvas's head, it still hears it", async () => {
     const h = await harness();
-    h.backend.agent(h.design.id).work(["ab_home"], "Drawing Home");
+    h.backend.agent(h.canvas.id).work(["ab_home"], "Drawing Home");
     const client = h.backend.connect(h.ines);
     // The app's header, watching the same query before the canvas opens.
-    client.live.subscribe("design.head", { designId: h.design.id }, () => {});
+    client.live.subscribe("canvas.head", { canvasId: h.canvas.id }, () => {});
     await h.settle();
 
     const source = new CloudSource({
       api: client.api,
       live: client.live,
-      designId: h.design.id,
+      canvasId: h.canvas.id,
       me: actorOf(h.ines),
       clock: h.clock,
     });
@@ -157,11 +157,11 @@ describe("opening", () => {
     expect(source.getState().presence.map((p) => p.name)).toEqual(["Claude"]);
   });
 
-  test("a design deleted while open stops at the API's first no, and what waited is unsaved", async () => {
+  test("a canvas deleted while open stops at the API's first no, and what waited is unsaved", async () => {
     const h = await harness();
     const client = h.backend.connect(h.ines);
     const asked: string[] = [];
-    const designs = new Proxy(client.api.designs, {
+    const canvases = new Proxy(client.api.canvases, {
       get(target, key) {
         const method = Reflect.get(target, key) as (...args: unknown[]) => unknown;
         return (...args: unknown[]) => {
@@ -171,20 +171,20 @@ describe("opening", () => {
       },
     });
     const source = new CloudSource({
-      api: { designs },
+      api: { canvases },
       live: client.live,
-      designId: h.design.id,
+      canvasId: h.canvas.id,
       me: actorOf(h.ines),
       clock: h.clock,
     });
     const unsaved: Unsaved[] = [];
     source.onUnsaved((u) => unsaved.push(u));
     await h.settle();
-    await h.backend.connect(h.maya).api.designs.delete(h.design.id);
+    await h.backend.connect(h.maya).api.canvases.delete(h.canvas.id);
 
     source.apply({ op: "artboard.update", id: "ab_home", x: 70 });
     await h.settle();
-    expect(source.getState()).toMatchObject({ status: "error", error: "There is no such design." });
+    expect(source.getState()).toMatchObject({ status: "error", error: "There is no such canvas." });
     expect(source.writable).toBe(false);
     expect(unsaved.map((u) => u.op)).toEqual([{ op: "artboard.update", id: "ab_home", x: 70 }]);
 
@@ -202,7 +202,7 @@ describe("opening", () => {
     await h.settle();
     source.setPage(h.page);
     await h.settle();
-    const present = () => h.backend.design(h.design.id).presence;
+    const present = () => h.backend.canvas(h.canvas.id).presence;
     expect(present().get(h.maya.id)?.pageId).toBe(h.page);
 
     const seen = present().get(h.maya.id)!.seenAt;
@@ -233,7 +233,7 @@ describe("editing as the canvas expects", () => {
 
     expect(h.home(source)).toMatchObject({ x: 640, y: 80 });
     expect(states.every((x) => x === 640)).toBe(true);
-    expect(h.backend.design(h.design.id).sequencer.doc.pages[0]!.artboards[0]!.x).toBe(640);
+    expect(h.backend.canvas(h.canvas.id).sequencer.doc.pages[0]!.artboards[0]!.x).toBe(640);
     // Heard once, as Maya's: her own edit is not animated as someone else's arriving.
     expect(ops.map((o) => [o.op.op, o.who])).toEqual([["artboard.update", "Maya"]]);
   });
@@ -277,13 +277,13 @@ describe("editing as the canvas expects", () => {
     maya.source.apply({ op: "artboard.update", id: "ab_home", x: 100 });
     ines.source.apply({ op: "artboard.update", id: "ab_home", y: 200 });
     h.backend
-      .agent(h.design.id)
+      .agent(h.canvas.id)
       .commit([
         { op: "artboard.create", page: h.page, index: 1, artboard: board("ab_price", 900) },
       ]);
     await h.clock.advance(1_000);
 
-    const server = h.backend.design(h.design.id).sequencer.doc;
+    const server = h.backend.canvas(h.canvas.id).sequencer.doc;
     expect(maya.source.getState().doc).toEqual(server);
     expect(ines.source.getState().doc).toEqual(server);
     expect(h.home(maya.source)).toMatchObject({ x: 100, y: 200 });
@@ -335,7 +335,7 @@ describe("editing as the canvas expects", () => {
     source.undo();
     await h.clock.advance(1_000);
     expect(h.home(source)?.x).toBe(10);
-    expect(h.backend.design(h.design.id).sequencer.doc.pages[0]!.artboards[0]!.x).toBe(10);
+    expect(h.backend.canvas(h.canvas.id).sequencer.doc.pages[0]!.artboards[0]!.x).toBe(10);
 
     source.redo();
     await h.clock.advance(1_000);
@@ -351,7 +351,7 @@ describe("editing as the canvas expects", () => {
     const h = await harness();
     const { source } = h.open(h.maya);
     await h.settle();
-    h.backend.agent(h.design.id).work(["ab_home"], "Drawing Home");
+    h.backend.agent(h.canvas.id).work(["ab_home"], "Drawing Home");
     await h.settle();
     expect(source.getState().presence).toEqual([
       expect.objectContaining({
@@ -361,7 +361,7 @@ describe("editing as the canvas expects", () => {
         status: "Drawing Home",
       }),
     ]);
-    h.backend.agent(h.design.id).idle();
+    h.backend.agent(h.canvas.id).idle();
     await h.settle();
     expect(source.getState().presence).toEqual([]);
   });
@@ -393,13 +393,13 @@ describe("offline", () => {
     expect(again.source.writable).toBe(true);
   });
 
-  test("the cache keeps the last few designs and forgets the oldest", async () => {
+  test("the cache keeps the last few canvases and forgets the oldest", async () => {
     const storage = new MemoryStorage();
     const cache = new DocCache(storage, 2);
-    const entry = (designId: string) => ({
-      designId,
-      name: designId,
-      doc: { name: designId, pages: [], tokens: "", threads: [], notes: {} },
+    const entry = (canvasId: string) => ({
+      canvasId,
+      name: canvasId,
+      doc: { name: canvasId, pages: [], tokens: "", threads: [], notes: {} },
       seq: 1,
       assetsUrl: "https://assets.test/x/",
     });

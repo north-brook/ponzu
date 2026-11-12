@@ -7,11 +7,11 @@ import { queryJson } from "./json.ts";
  * step, each step safe to repeat, and deletes the person's row last: until then the person can
  * ask again, and once it is gone everything that hangs off it goes with it (sessions, GitHub
  * token, memberships, repo access, Claude account, devices, sign-ins), and what other people's
- * work points at forgets them (a design's owner, who wrote a thread item, who answered a
+ * work points at forgets them (a canvas's owner, who wrote a thread item, who answered a
  * question, whom usage is put down to).
  */
 
-/** How a person's deletion stands: what blocks it, and what happens to their designs. */
+/** How a person's deletion stands: what blocks it, and what happens to their canvases. */
 export interface AccountDeletionPlan {
   /**
    * Workspaces, an organization's or their own account's, that the person is the only admin of
@@ -20,11 +20,11 @@ export interface AccountDeletionPlan {
    */
   soleAdminOf: { id: string; name: string }[];
   /**
-   * Designs the person owns that are theirs alone: Scratch, and those in a workspace nobody
+   * Canvases the person owns that are theirs alone: Scratch, and those in a workspace nobody
    * else is in.
    */
   deleted: string[];
-  /** Designs the person owns in a workspace others are in, which stay with them. */
+  /** Canvases the person owns in a workspace others are in, which stay with them. */
   kept: string[];
 }
 
@@ -57,7 +57,7 @@ export async function planAccountDeletion(db: Db, userId: string): Promise<Accou
                (d.repo_id is null or not exists (
                   select 1 from memberships o
                    where o.workspace_id = d.workspace_id and o.user_id <> ${userId})) as theirs
-          from designs d
+          from canvases d
          where d.owner_id = ${userId}
       )
       select json_build_object(
@@ -78,8 +78,8 @@ export const DELETED_PERSON = { name: "Deleted user", login: "ghost" } as const;
 
 /**
  * Take the person's name, login and picture out of what other people still see: the thread
- * items they wrote or stopped a run in, and the actor of their ops in the design's history, in
- * every design of a workspace they are in or that they own. Their words stay, under
+ * items they wrote or stopped a run in, and the actor of their ops in the canvas's history, in
+ * every canvas of a workspace they are in or that they own. Their words stay, under
  * `DELETED_PERSON`. Safe to repeat. Answers how many rows it wrote.
  */
 export async function anonymiseUser(db: Db, userId: string): Promise<number> {
@@ -88,7 +88,7 @@ export async function anonymiseUser(db: Db, userId: string): Promise<number> {
     db,
     sql`
       with theirs as (
-        select d.id from designs d
+        select d.id from canvases d
          where d.owner_id = ${userId}
             or d.workspace_id in (select workspace_id from memberships where user_id = ${userId})
       ),
@@ -98,13 +98,13 @@ export async function anonymiseUser(db: Db, userId: string): Promise<number> {
               then jsonb_set(t.payload, '{from}', ${ghost}::jsonb)
             else jsonb_set(t.payload, '{by}', ${ghost}::jsonb)
           end
-         where t.design_id in (select id from theirs)
+         where t.canvas_id in (select id from theirs)
            and (t.payload -> 'from' ->> 'id' = ${userId} or t.payload -> 'by' ->> 'id' = ${userId})
         returning 1
       ),
       ops as (
-        update design_ops o set actor_name = ${DELETED_PERSON.name}, actor_avatar_url = null
-         where o.design_id in (select id from theirs)
+        update canvas_ops o set actor_name = ${DELETED_PERSON.name}, actor_avatar_url = null
+         where o.canvas_id in (select id from theirs)
            and o.actor_kind = 'user' and o.actor_id = ${userId}
         returning 1
       )

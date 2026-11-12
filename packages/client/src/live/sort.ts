@@ -1,5 +1,5 @@
 import type { ThreadItem } from "@ponzu/runner/protocol";
-import type { DesignListRow, PresenceRow, QuestionRow } from "./rows.ts";
+import type { CanvasListRow, PresenceRow, QuestionRow } from "./rows.ts";
 
 /*
  * Live queries cannot ORDER BY (each change would re-send the whole result), so the lists are
@@ -7,13 +7,13 @@ import type { DesignListRow, PresenceRow, QuestionRow } from "./rows.ts";
  */
 
 /** The sidebar's order: most recently active first. */
-export function byRecentActivity(designs: readonly DesignListRow[]): DesignListRow[] {
-  return [...designs].sort(
+export function byRecentActivity(canvases: readonly CanvasListRow[]): CanvasListRow[] {
+  return [...canvases].sort(
     (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id),
   );
 }
 
-/** The thread, or a design's questions, in the order they were written. */
+/** The thread, or a canvas's questions, in the order they were written. */
 export function bySeq<Row extends ThreadItem | QuestionRow>(rows: readonly Row[]): Row[] {
   return [...rows].sort((a, b) => a.seq - b.seq);
 }
@@ -22,7 +22,7 @@ export function bySeq<Row extends ThreadItem | QuestionRow>(rows: readonly Row[]
 export const PRESENCE_TTL_MS = 75_000;
 
 /**
- * Who has the design open as of `now`, longest here first. A row whose `seenAt` is older than
+ * Who has the canvas open as of `now`, longest here first. A row whose `seenAt` is older than
  * 75 seconds is someone who left without saying so; the API's sweeper deletes it later.
  */
 export function presentNow(rows: readonly PresenceRow[], now: number): PresenceRow[] {

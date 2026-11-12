@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
   createRunnerToken,
-  getDesignHead,
+  getCanvasHead,
   getQuestion,
   listAssets,
   listThreadItems,
@@ -22,7 +22,7 @@ import { ScriptedAgent } from "../../../runner/src/agent/scripted.ts";
 import { HttpRunnerApi } from "../../../runner/src/api/http.ts";
 import { derivedId } from "../../../runner/src/ids.ts";
 import { Runner, type Timing } from "../../../runner/src/run.ts";
-import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, MemoryStorage, type TestApp } from "../testing/index.ts";
 
 const FAST: Partial<Timing> = {
@@ -80,9 +80,9 @@ const inProcess: typeof fetch = Object.assign(
   { preconnect: () => {} },
 );
 
-/** The runner as a sandbox starts it, for a design of Maya's. */
-async function startRunner(designId: string) {
-  const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 3600 });
+/** The runner as a sandbox starts it, for a canvas of Maya's. */
+async function startRunner(canvasId: string) {
+  const { token } = await createRunnerToken(t.db, { canvasId, ttlSeconds: 3600 });
   const work = await mkdtemp(join(tmpdir(), "ponzu-e2e-"));
   dirs.push(work);
   const agent = new ScriptedAgent();
@@ -92,7 +92,7 @@ async function startRunner(designId: string) {
     baseUrl: "https://api.test",
     token,
     client: "runner/0.1.0",
-    designId,
+    canvasId,
     fetch: inProcess,
   });
   const runner = new Runner({
@@ -112,13 +112,13 @@ async function startRunner(designId: string) {
 const as = (login: string) => ws.people[login]!.headers;
 
 test("a message, a reply, a question and its answer, state and usage, between a person and the runner", async () => {
-  const design = await designIn(t, ws, "maya", sampleDoc());
-  const { runner, run, api } = await startRunner(design.id);
+  const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+  const { runner, run, api } = await startRunner(canvas.id);
   run.ready("sess_e2e");
   // The runner says it started before Maya writes, so the thread's order below is the same
   // however its writes are batched.
   await until(async () => {
-    const thread = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/thread`);
+    const thread = await call(t, as("maya"), "GET", `/v1/canvases/${canvas.id}/thread`);
     return thread.body.items.some(
       (item: { kind: string; payload: { type?: string } }) =>
         item.kind === "notice" && item.payload.type === "started",
@@ -126,7 +126,7 @@ test("a message, a reply, a question and its answer, state and usage, between a 
   });
 
   // Maya says something; the runner hears of it and puts it into the run.
-  const sent = await call(t, as("maya"), "POST", `/v1/designs/${design.id}/messages`, {
+  const sent = await call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/messages`, {
     text: "Pick a headline",
   });
   expect(sent.status).toBe(201);
@@ -134,22 +134,22 @@ test("a message, a reply, a question and its answer, state and usage, between a 
   const input = await run.input();
   expect(input.text).toBe("Message from Maya:\nPick a headline");
   run.take(input);
-  await until(async () => (await feedOf(t.db, design.id))[0]?.deliveredAt);
+  await until(async () => (await feedOf(t.db, canvas.id))[0]?.deliveredAt);
 
   // The agent says something and asks a question.
   run.say("msg_1", "Two ways to go.");
   const replied = run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
   const questionId = derivedId("q", "toolu_ask");
-  await until(() => getQuestion(t.db, { designId: design.id, id: questionId }));
-  await until(async () => (await getDesignHead(t.db, design.id))?.agentState === "needs_you");
-  expect((await getDesignHead(t.db, design.id))!.needsYouCount).toBe(1);
+  await until(() => getQuestion(t.db, { canvasId: canvas.id, id: questionId }));
+  await until(async () => (await getCanvasHead(t.db, canvas.id))?.agentState === "needs_you");
+  expect((await getCanvasHead(t.db, canvas.id))!.needsYouCount).toBe(1);
 
   // Maya answers it; the answer goes back to the waiting question.
   const answered = await call(
     t,
     as("maya"),
     "POST",
-    `/v1/designs/${design.id}/questions/${questionId}/answer`,
+    `/v1/canvases/${canvas.id}/questions/${questionId}/answer`,
     { answers: { [HEADLINE.question]: "Shorten it" } },
   );
   expect(answered.body).toEqual({ id: questionId, status: "answered" });
@@ -160,7 +160,7 @@ test("a message, a reply, a question and its answer, state and usage, between a 
     note: undefined,
   });
   run.answered("toolu_ask");
-  await until(async () => (await feedOf(t.db, design.id)).every((event) => event.deliveredAt));
+  await until(async () => (await feedOf(t.db, canvas.id)).every((event) => event.deliveredAt));
 
   // A file the agent adds, through the upload protocol, to the storage fake.
   const [stored] = await api.upload([
@@ -172,7 +172,7 @@ test("a message, a reply, a question and its answer, state and usage, between a 
     },
   ]);
   expect(stored!.ref).toBe("assets/hero.png");
-  expect(await listAssets(t.db, { designId: design.id, paths: ["assets/hero.png"] })).toHaveLength(
+  expect(await listAssets(t.db, { canvasId: canvas.id, paths: ["assets/hero.png"] })).toHaveLength(
     1,
   );
 
@@ -191,17 +191,17 @@ test("a message, a reply, a question and its answer, state and usage, between a 
       },
     ],
   });
-  await until(async () => (await getDesignHead(t.db, design.id))?.agentState === "idle");
+  await until(async () => (await getCanvasHead(t.db, canvas.id))?.agentState === "idle");
   await until(async () => {
     const result = await t.db.execute(
-      `select 1 from usage_events where design_id = '${design.id}'`,
+      `select 1 from usage_events where canvas_id = '${canvas.id}'`,
     );
     return (result as unknown as { rows: unknown[] }).rows.length === 1;
   });
 
   // What a client reads from the thread: Maya's message, the turn's work item opening it, the
   // agent's words, the question it asked on the way, and its answer, which the record names.
-  const thread = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/thread`);
+  const thread = await call(t, as("maya"), "GET", `/v1/canvases/${canvas.id}/thread`);
   const shown = thread.body.items.map(
     ({ kind, payload }: { kind: string; payload: Record<string, unknown> }) =>
       `${kind}:${payload[{ notice: "type", tool: "label" }[kind] ?? "text"]}`,
@@ -221,11 +221,11 @@ test("a message, a reply, a question and its answer, state and usage, between a 
     log: [],
   });
   expect(thread.body.items.every((item: { streaming: boolean }) => !item.streaming)).toBe(true);
-  expect((await getQuestion(t.db, { designId: design.id, id: questionId }))!.status).toBe(
+  expect((await getQuestion(t.db, { canvasId: canvas.id, id: questionId }))!.status).toBe(
     "answered",
   );
   // The session the events went into is the one a runner that starts again resumes.
-  const { token } = await createRunnerToken(t.db, { designId: design.id, ttlSeconds: 60 });
+  const { token } = await createRunnerToken(t.db, { canvasId: canvas.id, ttlSeconds: 60 });
   const next = await call(
     t,
     { authorization: `Bearer ${token}` },
@@ -237,23 +237,23 @@ test("a message, a reply, a question and its answer, state and usage, between a 
 }, 20_000);
 
 test("a stop from a person ends the turn, and the runner's stopped notice names them; a newer runner stops the old one", async () => {
-  const design = await designIn(t, ws, "maya", sampleDoc());
-  const first = await startRunner(design.id);
+  const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+  const first = await startRunner(canvas.id);
   first.run.ready("sess_stop");
-  await call(t, as("maya"), "POST", `/v1/designs/${design.id}/messages`, { text: "Go" });
+  await call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/messages`, { text: "Go" });
   first.runner.poke();
   first.run.take(await first.run.input());
 
-  await call(t, as("maya"), "POST", `/v1/designs/${design.id}/stop`);
+  await call(t, as("maya"), "POST", `/v1/canvases/${canvas.id}/stop`);
   first.runner.poke();
   await until(() => first.run.interrupts > 0);
   first.run.end({ error: { code: "interrupted", message: "The turn was stopped." } });
   await until(async () =>
-    (await listThreadItems(t.db, { designId: design.id })).some(
+    (await listThreadItems(t.db, { canvasId: canvas.id })).some(
       (item) => (item.payload as { type?: string }).type === "stopped",
     ),
   );
-  const stopped = (await listThreadItems(t.db, { designId: design.id })).find(
+  const stopped = (await listThreadItems(t.db, { canvasId: canvas.id })).find(
     (item) => (item.payload as { type?: string }).type === "stopped",
   );
   expect(stopped!.payload).toEqual({
@@ -261,9 +261,9 @@ test("a stop from a person ends the turn, and the runner's stopped notice names 
     by: { id: ws.people.maya!.userId, name: "Maya", login: "maya" },
   });
 
-  // A second sandbox for the design takes the lease; the first is refused at its next call.
-  await startRunner(design.id);
+  // A second sandbox for the canvas takes the lease; the first is refused at its next call.
+  await startRunner(canvas.id);
   first.runner.poke();
   await until(() => first.fatal.length > 0);
-  expect(first.fatal[0]).toContain("Another runner took over this design");
+  expect(first.fatal[0]).toContain("Another runner took over this canvas");
 }, 20_000);

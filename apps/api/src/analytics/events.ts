@@ -3,7 +3,7 @@
  * misspelt at a call site and docs/analytics.md has something to agree with ("Server events").
  *
  * Names are "object verb" in the past tense; properties are snake_case. An event about a
- * design carries `design_id`, never its name. Nothing here is a repo's contents, a file path,
+ * canvas carries `canvas_id`, never its name. Nothing here is a repo's contents, a file path,
  * a token, or anything a person typed: a message is its length, not its words.
  *
  * Who an event is about (the PostHog distinct id) and which workspace (the `workspace` group)
@@ -11,8 +11,8 @@
  * the cron). Every event also gets `$session_id` when the app sent its session with the request.
  */
 
-/** How a design began, as the create says: the composer's idea, the person's own words, or Scratch. */
-export type DesignSource = "idea" | "prompt" | "scratch";
+/** How a canvas began, as the create says: the composer's idea, the person's own words, or Scratch. */
+export type CanvasOrigin = "idea" | "prompt" | "scratch";
 
 /** How a turn ended. */
 export type TurnOutcome = "completed" | "failed" | "stopped";
@@ -51,7 +51,7 @@ export interface ServerEvents {
   /** Every sign-in exchange that let someone in, the first included. */
   "user signed in": { new_user: boolean };
   "user signed out": Record<string, never>;
-  "account deleted": { deleted_designs: number; kept_designs: number };
+  "account deleted": { deleted_canvases: number; kept_canvases: number };
 
   // Workspaces: the GitHub App's installations
   /** The App was installed on an account Ponzu had no workspace for, or installed again. */
@@ -62,41 +62,41 @@ export interface ServerEvents {
   "repo access changed": { workspace_id: string; repos: number };
 
   // Claude
-  "claude connected": { kind: "api_key" | "subscription"; woke_designs: number };
+  "claude connected": { kind: "api_key" | "subscription"; woke_canvases: number };
   "claude disconnected": Record<string, never>;
 
-  // Designs
-  "design created": {
-    design_id: string;
-    source: DesignSource;
+  // Canvases
+  "canvas created": {
+    canvas_id: string;
+    source: CanvasOrigin;
     /** Whether it began with a first message, which sets the agent going. */
     with_message: boolean;
     model: string | null;
     effort: string | null;
   };
-  "design deleted": { design_id: string; by_owner: boolean };
-  "design settled": { design_id: string };
-  "design reopened": { design_id: string };
+  "canvas deleted": { canvas_id: string; by_owner: boolean };
+  "canvas settled": { canvas_id: string };
+  "canvas reopened": { canvas_id: string };
 
   // The thread
   "message sent": {
-    design_id: string;
-    /** The message the design began with, sent by its create. */
+    canvas_id: string;
+    /** The message the canvas began with, sent by its create. */
     first: boolean;
     characters: number;
     attachments: number;
   };
   /** A person's comment on the canvas, or a reply in one of its threads. */
-  "comment posted": { design_id: string; reply: boolean };
+  "comment posted": { canvas_id: string; reply: boolean };
   /** A person asked the agent to stop. */
-  "turn stopped": { design_id: string };
+  "turn stopped": { canvas_id: string };
   /**
    * The agent took up what was put in and began. Captured when the runner reports the turn,
    * with the time it began as the event's time.
    */
-  "turn started": { design_id: string; turn_id: string };
+  "turn started": { canvas_id: string; turn_id: string };
   "turn finished": {
-    design_id: string;
+    canvas_id: string;
     /** The turn's id, which is also its trace's id in LLM analytics. */
     turn_id: string;
     outcome: TurnOutcome;
@@ -114,21 +114,21 @@ export interface ServerEvents {
    * was delivered got nothing written after it. `sent_again`: a copy went into the feed.
    */
   "turn lapsed": {
-    design_id: string;
+    canvas_id: string;
     kinds: string[];
     sent_again: boolean;
     agent_state: string;
     waited_ms: number;
   };
   /** A runner said it was working and wrote nothing of the turn for an hour: started again. */
-  "turn stalled": { design_id: string };
-  "question asked": { design_id: string; question_id: string; kind: string };
-  "question answered": { design_id: string; question_id: string; kind: string };
+  "turn stalled": { canvas_id: string };
+  "question asked": { canvas_id: string; question_id: string; kind: string };
+  "question answered": { canvas_id: string; question_id: string; kind: string };
 
   // Pull requests
-  "pull request created": { design_id: string; number: number };
-  "pull request merged": { design_id: string; number: number };
-  "pull request closed": { design_id: string; number: number };
+  "pull request created": { canvas_id: string; number: number };
+  "pull request merged": { canvas_id: string; number: number };
+  "pull request closed": { canvas_id: string; number: number };
 
   // Sandboxes
   /**
@@ -137,7 +137,7 @@ export interface ServerEvents {
    * sandbox was made again on a new image.
    */
   "sandbox woke": {
-    design_id: string;
+    canvas_id: string;
     start: WakeStart;
     duration_ms: number;
     fresh: boolean;
@@ -145,9 +145,9 @@ export interface ServerEvents {
     image: string;
   };
   /** The sandbox was stopped, after its runner shut down, and `awake_ms` metered. */
-  "sandbox slept": { design_id: string; why: SleepWhy; awake_ms: number };
+  "sandbox slept": { canvas_id: string; why: SleepWhy; awake_ms: number };
   /** A runner found its disk behind the last checkpoint and restored from it. */
-  "sandbox restored": { design_id: string; kind: "rollback" | "rebuilt" };
+  "sandbox restored": { canvas_id: string; kind: "rollback" | "rebuilt" };
 
   // Ideas
   "ideas generated": {
@@ -161,7 +161,8 @@ export interface ServerEvents {
   /**
    * No ideas were made this time: the workspace asked for too many this hour, nothing in the
    * model's answers passed the checks and the gate (`rejected`), the gate found an idea asking
-   * the reader for something other than a design (`unsafe`), or GitHub or a model failed.
+   * the reader for something other than work on the canvas (`unsafe`), or GitHub or a model
+   * failed.
    */
   "ideas skipped": {
     repo_id: string;
@@ -169,8 +170,8 @@ export interface ServerEvents {
   };
 
   // Files and money
-  /** A person's file reached a design (an image they pasted or dropped into the thread). */
-  "file uploaded": { design_id: string; content_type: string; bytes: number };
+  /** A person's file reached a canvas (an image they pasted or dropped into the thread). */
+  "file uploaded": { canvas_id: string; content_type: string; bytes: number };
   "monthly cap set": { cap_usd: number | null };
   "repo secret changed": { repo_id: string; action: "added" | "replaced" | "removed" };
 }

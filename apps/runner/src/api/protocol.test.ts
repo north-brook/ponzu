@@ -22,13 +22,13 @@ function served(fake = new FakeRunnerApi()) {
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
-    fetch: fakeApiHandler(fake, { designId: "des_test", token: TOKEN }),
+    fetch: fakeApiHandler(fake, { canvasId: "cnv_test", token: TOKEN }),
   });
   stops.push(() => server.stop(true));
   const http = (token = TOKEN) =>
     new HttpRunnerApi({
       baseUrl: `http://127.0.0.1:${server.port}`,
-      designId: "des_test",
+      canvasId: "cnv_test",
       token,
       client: "runner/test",
     });
@@ -125,7 +125,7 @@ test("an upload goes to the address the API gave, and comes back as a reference"
   expect(fake.uploads[0]?.bytes).toEqual(new Uint8Array([60]));
 });
 
-test("a Scratch design has no git credential, and another repository's is refused", async () => {
+test("a Scratch canvas has no git credential, and another repository's is refused", async () => {
   const { fake, connected } = served();
   const http = await connected();
   const ask = { protocol: "https", host: "github.com", path: "north/fern.git" };
@@ -198,7 +198,7 @@ test("a checkpoint over HTTP: archives up, recorded only forward, and read back 
   expect(saved).toMatchObject({ turn: 2, claudeSessionId: "s1", session: true, workspace: true });
   // Late, or sent again: the API keeps the newer one.
   expect((await http.saveCheckpoint({ ...none, turn: 1 })).turn).toBe(2);
-  // The archives never go where the design's files are.
+  // The archives never go where the canvas's files are.
   expect(fake.uploads).toEqual([]);
 
   const back = await http.restore();
@@ -219,7 +219,7 @@ test("a checkpoint over HTTP: archives up, recorded only forward, and read back 
   expect((await connected().then((c) => c.session())).saved?.turn).toBe(2);
 });
 
-test("the state answer carries the design's head, and the pull request summary goes through", async () => {
+test("the state answer carries the canvas's head, and the pull request summary goes through", async () => {
   const { fake, connected } = served();
   const http = await connected();
   const state = { state: "idle" as const, status: null, artboards: [], claudeSessionId: null };

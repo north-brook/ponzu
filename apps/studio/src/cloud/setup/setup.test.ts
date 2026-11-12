@@ -46,7 +46,7 @@ describe("the gates, as people meet them", () => {
     expect(steps).toEqual(["sign_in", "where", "where", "claude", "iphone", "done"]);
   });
 
-  test("a teammate whose organization is already set up still sees where they design once", () => {
+  test("a teammate whose organization is already set up still sees where they build once", () => {
     expect(setupStep({ ...brandNew, workspaces: [ready] })).toBe("where");
   });
 
@@ -61,7 +61,7 @@ describe("the gates, as people meet them", () => {
     expect(setupStep(fromPhone)).toBe("done");
   });
 
-  test("losing every installation sends a returning person back to where they design", () => {
+  test("losing every installation sends a returning person back to where they build", () => {
     const returning: SetupFacts = {
       ...brandNew,
       workspaces: [removed, suspended],
@@ -97,7 +97,7 @@ describe("the gates, as people meet them", () => {
   });
 });
 
-describe("where do you design", () => {
+describe("where do you build", () => {
   const account = (over: Partial<GithubAccount>): GithubAccount => ({
     githubAccountId: 1,
     login: "brycedbjork",

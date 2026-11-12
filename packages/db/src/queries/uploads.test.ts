@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { seedDesign } from "../fixtures.ts";
+import { seedCanvas } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { createTestDb } from "../testing.ts";
-import { getDesignHead } from "./designs.ts";
+import { getCanvasHead } from "./canvases.ts";
 import {
   advancePreviewSeq,
   completeUpload,
@@ -18,9 +18,9 @@ beforeAll(async () => {
 });
 afterAll(() => db.$client.close());
 
-const upload = (designId: string, over: Partial<NewUpload> = {}): NewUpload => ({
+const upload = (canvasId: string, over: Partial<NewUpload> = {}): NewUpload => ({
   id: newId("up"),
-  designId,
+  canvasId,
   purpose: "asset",
   name: "logo.png",
   objectKey: "key/uploads/logo.png",
@@ -32,25 +32,25 @@ const upload = (designId: string, over: Partial<NewUpload> = {}): NewUpload => (
   ...over,
 });
 
-test("an upload is found by its design and id only", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  const [made] = await createUploads(db, [upload(one.design.id)]);
+test("an upload is found by its canvas and id only", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  const [made] = await createUploads(db, [upload(one.canvas.id)]);
 
-  expect(await getUploads(db, { designId: one.design.id, ids: [made!.id] })).toEqual([made!]);
-  expect(await getUploads(db, { designId: other.design.id, ids: [made!.id] })).toEqual([]);
+  expect(await getUploads(db, { canvasId: one.canvas.id, ids: [made!.id] })).toEqual([made!]);
+  expect(await getUploads(db, { canvasId: other.canvas.id, ids: [made!.id] })).toEqual([]);
   expect(made).toMatchObject({ completedAt: null, servedKey: null });
 });
 
 test("completing an asset records the file, once, and replaces one at the same path", async () => {
-  const { design, user } = await seedDesign(db);
+  const { canvas, user } = await seedCanvas(db);
   const [first, second] = await createUploads(db, [
-    upload(design.id),
-    upload(design.id, { size: 99, userId: user.id, sha256: "cd".repeat(32) }),
+    upload(canvas.id),
+    upload(canvas.id, { size: 99, userId: user.id, sha256: "cd".repeat(32) }),
   ]);
   const complete = (id: string) =>
     completeUpload(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       id,
       servedKey: "key/assets/logo.png",
       asset: { path: "assets/logo.png" },
@@ -61,31 +61,31 @@ test("completing an asset records the file, once, and replaces one at the same p
   await complete(second!.id);
 
   expect(
-    await listAssets(db, { designId: design.id, paths: ["assets/logo.png", "assets/x"] }),
+    await listAssets(db, { canvasId: canvas.id, paths: ["assets/logo.png", "assets/x"] }),
   ).toMatchObject([
     { path: "assets/logo.png", size: 99, sha256: "cd".repeat(32), createdByUserId: user.id },
   ]);
 });
 
-test("completing another design's upload does nothing", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  const [made] = await createUploads(db, [upload(one.design.id, { purpose: "export" })]);
+test("completing another canvas's upload does nothing", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  const [made] = await createUploads(db, [upload(one.canvas.id, { purpose: "export" })]);
 
   expect(
-    await completeUpload(db, { designId: other.design.id, id: made!.id, servedKey: "x" }),
+    await completeUpload(db, { canvasId: other.canvas.id, id: made!.id, servedKey: "x" }),
   ).toBeNull();
   expect(
-    (await getUploads(db, { designId: one.design.id, ids: [made!.id] }))[0]!.completedAt,
+    (await getUploads(db, { canvasId: one.canvas.id, ids: [made!.id] }))[0]!.completedAt,
   ).toBeNull();
 });
 
 test("previews only move forward, and say which ones they replaced", async () => {
-  const { design } = await seedDesign(db);
+  const { canvas } = await seedCanvas(db);
 
-  expect(await advancePreviewSeq(db, { designId: design.id, seq: 4 })).toEqual({ previous: null });
-  expect(await advancePreviewSeq(db, { designId: design.id, seq: 9 })).toEqual({ previous: 4 });
-  expect(await advancePreviewSeq(db, { designId: design.id, seq: 9 })).toBeUndefined();
-  expect(await advancePreviewSeq(db, { designId: design.id, seq: 7 })).toBeUndefined();
-  expect((await getDesignHead(db, design.id))!.previewSeq).toBe(9);
+  expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 4 })).toEqual({ previous: null });
+  expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 9 })).toEqual({ previous: 4 });
+  expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 9 })).toBeUndefined();
+  expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 7 })).toBeUndefined();
+  expect((await getCanvasHead(db, canvas.id))!.previewSeq).toBe(9);
 });

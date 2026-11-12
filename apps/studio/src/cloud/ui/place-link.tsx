@@ -1,31 +1,31 @@
 import { createContext, type MouseEvent, type ReactNode, useContext } from "react";
-import type { DesignAddress } from "./design-address.ts";
+import type { CanvasAddress } from "./canvas-address.ts";
 import { Tip } from "./tooltip.tsx";
 
 /**
- * What lets a link in Prose to a design's own address (design-address.ts) go there in place:
- * the thread of an open design provides it. Without it (a pull request's tab) such a link is an
+ * What lets a link in Prose to a canvas's own address (canvas-address.ts) go there in place:
+ * the thread of an open canvas provides it. Without it (a pull request's tab) such a link is an
  * ordinary one.
  */
-export interface DesignPlaces {
-  /** The open design's id. */
-  designId: string;
+export interface CanvasPlaces {
+  /** The open canvas's id. */
+  canvasId: string;
   /**
-   * Whether a page or board of the open design is there now: true, false once it is known not
-   * to be (deleted, or an id that never was), undefined while the design is still loading.
+   * Whether a page or board of the open canvas is there now: true, false once it is known not
+   * to be (deleted, or an id that never was), undefined while the canvas is still loading.
    */
   has(at: { page?: string; artboard?: string }): boolean | undefined;
-  /** Shows the place: on this design's canvas, or by opening the design it is in. */
-  open(at: DesignAddress): void;
+  /** Shows the place: on this canvas, or by opening the canvas it is in. */
+  open(at: CanvasAddress): void;
 }
 
-const Places = createContext<DesignPlaces | null>(null);
+const Places = createContext<CanvasPlaces | null>(null);
 
-export function DesignPlacesProvider({
+export function CanvasPlacesProvider({
   value,
   children,
 }: {
-  value: DesignPlaces;
+  value: CanvasPlaces;
   children: ReactNode;
 }) {
   return <Places.Provider value={value}>{children}</Places.Provider>;
@@ -42,9 +42,9 @@ export const placeLinkClass =
 const goneClass = "rounded-2 text-muted outline-none focus-ring";
 
 /**
- * A link to a page or board, in a line of the agent's: it moves the canvas there. One to a place
- * that isn't in the design any more reads as muted text that says so when pointed at; one to
- * another design opens that design. `external` is what it is without a design to follow it in.
+ * A link to a page or board, in a line of the agent's: it moves the view there. One to a place
+ * that isn't in the canvas any more reads as muted text that says so when pointed at; one to
+ * another canvas opens that canvas. `external` is what it is without a canvas to follow it in.
  */
 export function PlaceLink({
   address,
@@ -52,18 +52,18 @@ export function PlaceLink({
   external,
   children,
 }: {
-  address: DesignAddress;
+  address: CanvasAddress;
   href: string;
   external: ReactNode;
   children: ReactNode;
 }) {
   const places = useContext(Places);
   if (!places) return <>{external}</>;
-  const here = address.designId === places.designId;
+  const here = address.canvasId === places.canvasId;
   const named = address.artboard ? "board" : address.page ? "page" : null;
   if (here && named && places.has(address) === false) {
     return (
-      <Tip label={`This ${named} isn't in the design any more`} side="top">
+      <Tip label={`This ${named} isn't in the canvas any more`} side="top">
         {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the reason too */}
         <span tabIndex={0} data-place="gone" className={goneClass}>
           {children}
@@ -79,8 +79,8 @@ export function PlaceLink({
     <a
       href={href}
       onClick={open}
-      data-place={here ? (named ?? "design") : "other-design"}
-      aria-description={here ? "Shows it on the canvas" : "Opens that design"}
+      data-place={here ? (named ?? "canvas") : "other-canvas"}
+      aria-description={here ? "Shows it here" : "Opens that canvas"}
       className={placeLinkClass}
     >
       {children}

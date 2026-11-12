@@ -1,5 +1,5 @@
 /**
- * The guides that are about the work and not about where a design lives: every host serves
+ * The guides that are about the work and not about where a canvas lives: every host serves
  * them as they are. Product shots, scenes and the kit are in product.ts.
  */
 
@@ -27,7 +27,7 @@ export const TYPOGRAPHY_GUIDE = `# Typography
 
 export const MOTION_GUIDE = `# Motion and states
 
-Designs run no scripts, so motion is CSS (@keyframes, transitions, animation-timeline), SVG <animate>, and scenes: a product demo written as beats (click, type, show, count) that Ponzu turns into animations (get_guide('act')). Ponzu pauses all of it and seeks to exact times, so frames are the same every time and cost no real waiting.
+Canvases run no scripts, so motion is CSS (@keyframes, transitions, animation-timeline), SVG <animate>, and scenes: a product demo written as beats (click, type, show, count) that Ponzu turns into animations (get_guide('act')). Ponzu pauses all of it and seeks to exact times, so frames are the same every time and cost no real waiting.
 
 See it
 - screenshot shows the settled page: every finite animation has finished. at: 0 shows the first frame; any other at shows that moment.
@@ -37,7 +37,7 @@ See it
 
 What the person sees
 - On their canvas, the load plays once when the artboard appears: when they open its page, and each time you edit it. Then a finite animation holds its end. Hovering or clicking the artboard doesn't replay it, so never tell them it will.
-- Their canvas plays what record shows. It holds motion still on purpose: while its window is in the background on battery, while they pan across a crowded page, for parts too small to see at their zoom, and for loops longer than 20 s on an artboard zoomed far out. If record shows the motion working and they say it doesn't play, tell the Ponzu team with send_feedback instead of reworking the design.
+- Their canvas plays what record shows. It holds motion still on purpose: while its window is in the background on battery, while they pan across a crowded page, for parts too small to see at their zoom, and for loops longer than 20 s on an artboard zoomed far out. If record shows the motion working and they say it doesn't play, tell the Ponzu team with send_feedback instead of reworking the board.
 - A hint that fades out ends hidden, so the canvas shows nothing once it has played.
 - When they need to watch the motion (an entrance to review, a hint that leaves), put a looping copy on an artboard beside the real one: animation-iteration-count: infinite, with a beat of about a second held at the end of the keyframes so each cycle reads as one play. Keep the real one finite, and say which is which in a note.
 - If the motion answers something the person does, put it on :hover or :focus, so they can set it off themselves.

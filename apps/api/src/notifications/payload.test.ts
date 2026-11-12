@@ -11,7 +11,7 @@ import {
 } from "./payload.ts";
 
 const token = "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]";
-const canvasId = "des_7k2m9x4q0c8v5n1t";
+const canvasId = "cnv_7k2m9x4q0c8v5n1t";
 const question = "What colour should the checkout button be, given the brand?";
 const branch = "pz/secret-launch-plan";
 

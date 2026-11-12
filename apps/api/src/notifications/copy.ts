@@ -12,7 +12,7 @@ import type { FailedReason } from "./kinds.ts";
  *   agent's words, a repo, a branch, a file path or a secret's name: no function here takes one.
  *
  * Ponzu speaks, never Claude, and the product says "ping", never "push". The billing pings use
- * billing's words (its design, §9), with "You've" and "Your" for a personal workspace as the
+ * billing's words (its spec, §9), with "You've" and "Your" for a personal workspace as the
  * billing walls say them.
  */
 

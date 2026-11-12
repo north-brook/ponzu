@@ -42,8 +42,8 @@ unless built with the release's credentials. CI builds it and runs its smoke che
 
 It was called Ponzu Preview (`design.ponzu.app.preview`, `ponzu-preview://`), and a checkout run
 was called Ponzu Dev. Its first launch (`src/carry-over.ts`) copies Ponzu Preview's window state
-(the studio's localStorage: the workspace and design last open, the sidebar, rail and filters)
-and keeps it through the signed-out launch until the person signs in; the designs Ponzu Preview
+(the studio's localStorage: the workspace and canvas last open, the sidebar, rail and filters)
+and keeps it through the signed-out launch until the person signs in; the canvases Ponzu Preview
 cached come over in the same copy and the studio drops them at once. While Ponzu Preview is
 open, it asks the person to quit it and Try Again, or to Continue Without. The session can't come
 with it: it is sealed by "Ponzu Preview Safe Storage", which only Ponzu Preview opens, so the
@@ -104,7 +104,7 @@ API's CORS allows exactly it) and the app and its UI always match. Every file go
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
 hosts, in `config.ts`; a development build allows any of each), and Google Fonts, for the
-fonts a design names (the studio's own fonts ship inside it). Images load
+fonts a canvas names (the studio's own fonts ship inside it). Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
 A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a
@@ -139,13 +139,13 @@ keychain is asked only when there is a session to read or write, so a launch wit
 in (and the smoke check) never prompts for it. The main process
 is the only refresher, and the rotated pair is written before the new access token is used. The
 studio borrows an access token per request and never sees the refresh token; Sign Out ends the
-session at the API and forgets it here, with everything the studio kept: the designs last
+session at the API and forgets it here, with everything the studio kept: the canvases last
 opened (with the keys to their files) and the window's remembered state.
 
 ## Links
 
 ```
-ponzu://design/<design id>?page=<page id>&artboard=<artboard id>   open a design
+ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>   open a canvas
 ponzu://github/setup?result=installed&workspace=<workspace id>     back from GitHub's install
 ponzu://github/setup?result=requested | pending | sign_in | failed
 ```
@@ -175,7 +175,7 @@ The first launch after the update removes what the local app wired up and the up
 dead (`legacy.ts`): the wake helper (a LaunchAgent, or systemd user units), the
 `~/.ponzu/bin/ponzu` shim and the links to it on the PATH, and the `ponzu` MCP server in Claude
 Code, Codex and Cursor that runs the shim. Each goes only when it is in the exact form 1.x
-wrote and what it runs is gone; nothing goes while a 1.x app is still installed. Designs and
+wrote and what it runs is gone; nothing goes while a 1.x app is still installed. Canvases and
 the rest of `~/.ponzu` are never touched, and neither is a Cursor `mcp.json` that is a link
 (into someone's dotfiles, say). A step that fails is logged and doesn't stop the others. What
 it did is in `legacy-cleanup.json` in the app's data folder, and it never runs again. Only the

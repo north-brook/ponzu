@@ -11,7 +11,7 @@ filter.ts         the sidebar filter
 search.ts         match highlighting, keyboard selection over results
 pull-request.ts   the next action and the pull request mark's state
 time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the clock they read
-gate.ts           what keeps someone from steering a design (read access, the owner's Claude), in words
+gate.ts           what keeps someone from steering a canvas (read access, the owner's Claude), in words
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
@@ -28,7 +28,7 @@ thread/           the thread rail: its lines, a running turn's asides and the wo
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
-setup/            guided first run: the gates (setup.ts), sign in, where you design, Connect
+setup/            guided first run: the gates (setup.ts), sign in, where you build, Connect
                   Claude and its card, the iPhone step
 settings/         the Settings modal and its sections, with their rules (billing, members,
                   environments)
@@ -37,9 +37,9 @@ dialogs/          what a send can need first: a card, a higher cap, Claude again
 gallery/          dev-only: every board composed from fixtures, every component's states
 ```
 
-`AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
-create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
-is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
+`AppWindow` takes the sidebar, the chrome past its left block (`CanvasChrome`, or nothing on the
+create page), the rail's content (null while closed) and the main pane's content. `ThreadRail`
+is the rail's content, needs you included; `PullRequestView` fills the main pane while the pull
 request tab is open. Settings plugs in the same way.
 
 ### Three zones
@@ -53,7 +53,7 @@ was (open at its width or closed, its scroll, its draft, its working state), so 
 sidebar, both toggles and ⌘B, ⌥⌘B keep working, the chrome reads as on any page, and no pane
 moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
 `inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
-`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
+`canvas-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
 page, position, zoom and selection. The tab fits whatever width the middle has: details over
 files in one column at a reading measure below 1080, the board's two columns from there
 (`Columns` in `pr-tab/pull-request-view.tsx`).
@@ -67,7 +67,7 @@ on the window; a drag never eases. Anything that lines up with a pane's edge (th
 reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
 move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
 `pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
-Dragging one edge holds the other pane still (its panel disabled) and stops where the canvas
+Dragging one edge holds the other pane still (its panel disabled) and stops where the main pane
 reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
 each open pane takes its remembered width, or in a window too small for both a share of the
 shortfall (`fitPanes`); what's remembered changes only when the person moves an edge.
@@ -86,11 +86,11 @@ so the rest is still checked against the boards.
 
 The chrome reads, left to right (the founder's order), the right side the left's mirror:
 
-- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`.
+- sidebar collapsed, a canvas open: `[traffic lights] [sidebar toggle] [canvas name] | [tabs] +`.
   The name is the row's type (13, medium), cut with an ellipsis at 240, and not a control: a
   double-click there zooms the window, as on any Mac title bar, so renaming stays on the row.
 - sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +`, the divider on the
-  sidebar's edge, where the canvas pane starts (its pixel the canvas's first column). The name's
+  sidebar's edge, where the main pane starts (its pixel the canvas's first column). The name's
   room closes to nothing.
 - rail open: `[people] [PR mark] [action] | …  [thread toggle]`. The cluster (presence and
   Share's +, the pull request mark, the next action) sits over the canvas and ends 12 before the
@@ -99,7 +99,7 @@ The chrome reads, left to right (the founder's order), the right side the left's
 - rail closed: `[people] [PR mark] [action] | [thread toggle]`, together at the window's edge,
   12 either side of the divider. The pull request tab leaves the rail as it was, so it reads as
   on any page: open or closed by the rail.
-- the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
+- the create page, or no canvas: `[traffic lights] [sidebar toggle]` and nothing else: no
   name, no divider.
 
 Each divider's place comes from its pane's width, which the panels write to `--pane-sidebar` and
@@ -110,21 +110,21 @@ tabs give way, scrolling under their fade; the cluster never wraps or clips.
 
 ### What comes after the first paint
 
-Nothing on a page moves when data arrives, and the chrome holds to it. Opening a design, its
+Nothing on a page moves when data arrives, and the chrome holds to it. Opening a canvas, its
 parts come from different answers: the name, the repo (and so the people's cluster) and the pull
 request's number, state and checks are on the sidebar's row, there at once; the pages come with
-the design's document, the people here and the agent's state with presence and the head (live
+the canvas's document, the people here and the agent's state with presence and the head (live
 queries, each sealed by the API before Realtime answers), and the action button with a read of
 GitHub through the API (`pullRequest`). In that order of preference, each is:
 
 - **Not late.** The mark is drawn from the row until the head comes (the same columns, with what
   the last read said of whether it can merge), so the head confirms it without a change. The
-  pull request's read is TanStack Query's, kept half an hour (`gcTime`), and the design's store
-  starts from it, so a design opened again shows its action from the first frame while the read
-  on opening confirms it; the read goes out as the design opens, not after its head. Until that
+  pull request's read is TanStack Query's, kept half an hour (`gcTime`), and the canvas's store
+  starts from it, so a canvas opened again shows its action from the first frame while the read
+  on opening confirms it; the read goes out as the canvas opens, not after its head. Until that
   read answers, the kept answer is offered only while it agrees with the row and the head (the
   same number, state and checks: `offeredTab`), so a pull request merged or closed while the
-  design was away never offers Merge; otherwise its room is held as on a first opening. The
+  canvas was away never offers Merge; otherwise its room is held as on a first opening. The
   pointer resting on a row, or the keyboard stopping on it, for 80 ms asks for that read ahead
   (`onIntent`, `prefetchQuery`), and the read on opening stands on an answer under ten seconds
   old.
@@ -144,34 +144,34 @@ GitHub through the API (`pullRequest`). In that order of preference, each is:
   place of it, the new words fading in as the room eases (`swap`). Leaving is the same gesture
   back: it fades and sinks, its room closes. The pages and the new-page + only fade, since
   nothing beside them moves. Someone joining the people opens
-  their own room; those who were there at the first paint are simply there. A design opened anew
+  their own room; those who were there at the first paint are simply there. A canvas opened anew
   is a new chrome: what it has at once shows at once, never as an entrance, so switching between
-  two designs replays nothing they both have. Under reduced motion nothing eases or travels, and
+  two canvases replays nothing they both have. Under reduced motion nothing eases or travels, and
   the end state is there at once. An entrance never holds back what is ready: the room starts
   opening in the frame the answer lands, and into a room already held the action starts fading
   in that frame too.
 
 The pull request tab, opened while its read is on its way, shows its skeleton and then settles
 what GitHub said in over it (`settle`); opened with the last answer kept, it is simply there.
-The gallery's `design-opening` and `design-opening-launch` draw a design opening with its answers
+The gallery's `canvas-opening` and `canvas-opening-launch` draw a canvas opening with its answers
 late, delivered on demand (`window.galleryArrive`, or `?later` on a schedule);
 `gallery/arrivals.test.ts` steps each arrival on its own clock (`stepArrival` in
-`scripts/visual-lib.ts`) and holds every piece that was on screen to a pixel, but the designed
-movement, whose start and end it checks. `app/opening.e2e.test.ts` opens designs in the app with
-every answer slowed and checks what the first frame shows.
+`scripts/visual-lib.ts`) and holds every piece that was on screen to a pixel, but the one
+movement meant to happen, whose start and end it checks. `app/opening.e2e.test.ts` opens
+canvases in the app with every answer slowed and checks what the first frame shows.
 
 ⌘B toggles the sidebar and ⌥⌘B the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
 toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
 reach the studio as commands. Neither toggles while a menu or a modal is open over the window,
-or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
+or while a canvas's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
-everything that moves with them: the pane's width, the canvas pane's margin, the left block's
+everything that moves with them: the pane's width, the main pane's margin, the left block's
 width, the name's room, and the rail's block in the chrome, so each divider stays on its pane's
 edge in every frame (the rail's until the edge passes where it rests with the rail closed). The
 rail, like the sidebar, keeps its content still at the window's edge while its room opens or
-closes, and holds it until it has closed. The canvas
+closes, and holds it until it has closed. The boards view
 keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
 moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
 the app's end-to-end test that the boards don't move.
@@ -191,7 +191,7 @@ menus show their current item by its highlight, whichever way they were opened.
 
 Controls that act on the window, not on themselves, take no focus from a click at all, as a
 Mac's toolbar buttons don't (`data-toolbar`: the chrome's toggles and page tabs, and the
-sidebar's Search and New design), so the next key goes where it went before the click. Search
+sidebar's Search and New canvas), so the next key goes where it went before the click. Search
 gives focus back where it found it when it closes (the composer after ⌘K, nowhere if it was
 nowhere), as the keyboard's if it was.
 
@@ -200,9 +200,9 @@ Text from the model or GitHub (replies, plans, a pull request's body and comment
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
 in-page links we drop, so `[^1]` reads as written) and GitHub's line breaks, drawn into our
 elements: raw HTML stays text (no rehype-raw), images become links so nothing loads by itself, a
-link survives only to http, https or mailto and opens outside the app, except one to a design's
-own address with a page or board on it (`design-address.ts`), which in an open design's thread
-moves the canvas there (`place-link.tsx`: dotted where an outside link is solid, muted once what
+link survives only to http, https or mailto and opens outside the app, except one to a canvas's
+own address with a page or board on it (`canvas-address.ts`), which in an open canvas's thread
+moves the view there (`place-link.tsx`: dotted where an outside link is solid, muted once what
 it names is gone). While a reply streams, a link still being written shows as its words alone
 (`settled`). Text shaped to make the
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
@@ -212,23 +212,23 @@ Blocks are memoised in runs of 16, so a reply streaming in parses only its last 
 
 | Shortcut | What it does | Where |
 | --- | --- | --- |
-| ⌘N | New design (the create page) | sidebar, File menu |
+| ⌘N | New canvas (the create page) | sidebar, File menu |
 | ⌘K | Search (expands a collapsed sidebar first) | sidebar |
 | ⌥⌘B | Show or hide the thread; opened, the caret is in its composer | thread toggle |
 | ⌘P | Show or hide the pull request | pull request mark |
 | ⌘⇧↵ | Press the action button (Create PR, Ready, Merge…) | action button |
 | ⌘, | Settings | sidebar, app menu |
-| ⌘1–⌘8, ⌘9 | Open the sidebar's first eight designs, and ⌘9 its last | sidebar |
+| ⌘1–⌘8, ⌘9 | Open the sidebar's first eight canvases, and ⌘9 its last | sidebar |
 | ⌘0 | The create page | sidebar |
-| ⌃1–⌃8, ⌃9 | Open the design's first eight pages, and ⌃9 its last | page tabs |
+| ⌃1–⌃8, ⌃9 | Open the canvas's first eight pages, and ⌃9 its last | page tabs |
 | Esc | Close search, a menu or a popover | |
 
-Off the Mac, Ctrl stands for ⌘ and Alt for ⌃. The design numbers are the 1.x studio's; pages
+Off the Mac, Ctrl stands for ⌘ and Alt for ⌃. The canvas numbers are the 1.x studio's; pages
 moved from ⌥ to ⌃, which types nothing (`ui/shortcut.ts`):
 
-- **Which list.** ⌘ numbers follow the sidebar's active designs as it shows them, filtered and
-  ordered; settled designs aren't counted. While search's results take the list's place, ⌘1–9
-  rest (⌘0 still works). With the sidebar collapsed they open the same designs, unseen. ⌃ numbers
+- **Which list.** ⌘ numbers follow the sidebar's active canvases as it shows them, filtered and
+  ordered; settled canvases aren't counted. While search's results take the list's place, ⌘1–9
+  rest (⌘0 still works). With the sidebar collapsed they open the same canvases, unseen. ⌃ numbers
   follow the page tabs. 9 is always the last, however many there are.
 - **Hints.** Holding the modifier on its own for 250 ms shows each target's number
   (`ui/shortcut-hint.tsx`): on a row, over its preview's top-left corner; on a page tab, in its
@@ -247,7 +247,7 @@ The thread and the pull request's keys:
   request tab) puts the caret in its composer once the pane has opened (it is `inert` until
   then), without scrolling the thread or showing a ring; with a question in the
   composer's place, on its first option. Not under a menu, popover or dialog, not from a field
-  elsewhere that has the caret (search, a rename), and not when the pane comes with a design
+  elsewhere that has the caret (search, a rename), and not when the pane comes with a canvas
   being opened. Closing it with the keyboard inside gives the keyboard back to where it was.
   So a canvas key (C for a comment) right after opening the thread types in the composer.
 - **⌘P and ⌘⇧↵** do what a click on the pull request mark and the action button does, from
@@ -260,9 +260,9 @@ The thread and the pull request's keys:
 The create page's keys and caret:
 
 - **The caret goes to the composer** (`create/focus.ts`, `focusCreateComposer`, once the page
-  has drawn) after New design (its button, ⌘N), after a workspace is switched to from the
+  has drawn) after New canvas (its button, ⌘N), after a workspace is switched to from the
   sidebar's menu, and after another workspace's Scratch or repo is chosen in the picker; only
-  when the create page is what shows: not where the workspace opens on a design, not under a
+  when the create page is what shows: not where the workspace opens on a canvas, not under a
   menu, popover or dialog, and not while a send is under way. Settings' own switcher leaves it.
 - **After a choice** in the project picker or the model menu, the caret goes back to the
   composer (`after` on `RepoPicker` and `ModelPicker`), to go on typing; closed without one
@@ -277,10 +277,10 @@ The create page's keys and caret:
 - Style with Tailwind utilities that name a token, and nothing else: `bg-surface`, `text-muted`,
   `rounded-8`, `shadow-pop`, `text-13`. cloud.css clears Tailwind's own palette, radii and
   shadows, so a raw color utility does nothing. Sizes and spacing may be arbitrary values copied
-  from the design (`h-[34px]`).
+  from the mockup (`h-[34px]`).
 - Every color is a `--c-*` in `styles/tokens.css`, written `light-dark(light, dark)`. The app
   follows the system appearance; `data-theme="light" | "dark"` on `<html>` pins one. Where the
-  design gives no dark value the file says "derived".
+  mockup gives no dark value the file says "derived".
 - A new token goes in tokens.css, in cloud.css's `@theme inline`, and, for a size, radius or
   shadow, in `ui/cn.ts` so tailwind-merge knows it.
 - Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at a step of the
@@ -317,7 +317,7 @@ line (1.0–1.1 px), and a small icon reads at the weight of a large one.
 
 | Step | Size / stroke | Where |
 | --- | --- | --- |
-| `control` | 16 / 1.7 | alone in a 24–28px button (the chrome's toggles, the sidebar's Search, Filter and New design, the composer's +, the canvas's tools and zoom), or leading a menu's, a nav's or a list's row |
+| `control` | 16 / 1.7 | alone in a 24–28px button (the chrome's toggles, the sidebar's Search, Filter and New canvas, the composer's +, the canvas's tools and zoom), or leading a menu's, a nav's or a list's row |
 | `inline` | 14 / 1.9 | inside a compact control beside 13px words: a page tab, a check in a list, a field's glyph, the 28px send arrow |
 | `small` | 12 / 2 | beside 12px words: a quiet button's project, the action button, a status line, a submenu's chevron |
 | `meta` | 11 / 2.2 | beside 11px words: the meta line's repo, branch and pull request; a header's chevron; a link's arrow |
@@ -337,7 +337,7 @@ defined by being quiet.
 | Step | Treatment | Where |
 | --- | --- | --- |
 | `body` | 13 | what a person reads: messages, a dialog's words |
-| `name` | 13 medium | a design's, a page tab's, a setting's name |
+| `name` | 13 medium | a canvas's, a page tab's, a setting's name |
 | `title` | 13 semibold | the heading of a small surface: the workspace, a dialog's row |
 | `control` | 12 medium | a button's words (quiet muted, raised ink, action semibold on ink) |
 | `secondary` | 12 | a line under a name (faint) or a value at rest (muted) |
@@ -384,14 +384,14 @@ listing every class in the new files that still names shadcn's theme, a bare `bo
 color beside it (Tailwind v4's is currentColor, an ink hairline here), a `dark:` variant (it
 follows only the system, not a pinned `data-theme`, and our tokens already hold both themes) and
 shadcn's `disabled:opacity-50` (ours is 35). Map each one onto our tokens, swap any lucide icon
-for `ui/icon.tsx` at the design's size, and drop shadcn's `[&_svg]:size-4` rules (they override a
+for `ui/icon.tsx` at the mockup's size, and drop shadcn's `[&_svg]:size-4` rules (they override a
 Hugeicon's own size). The new-york v4 registry ignores `iconLibrary` for some items (checkbox
 still imports `CheckIcon` from lucide-react), so the script's lucide warning is expected: the
 file won't typecheck until the icon is swapped. `styles/shadcn-names.test.ts` fails on any left
 behind.
 
 Then build the product's piece on it. Name that for what it is in the product and give it the
-product's types (a row takes a `DesignSummary`, not strings per pixel); where shadcn's API
+product's types (a row takes a `CanvasSummary`, not strings per pixel); where shadcn's API
 differs from what callers use, keep the product's names in a wrapper (`menu.tsx` over
 `dropdown-menu.tsx`, `modal.tsx` over `dialog.tsx`, `TextField` over `input-group.tsx`). Keep
 fixtures out of it. Give every control hover, pressed, keyboard focus (`focus-ring`) and disabled
@@ -405,7 +405,7 @@ spread in.
 
 The added files are edited to name our tokens; shadcn's semantic variables are not defined. Two
 of its names are already ours with another meaning (`muted` is a text color here, a ground
-there), and the design gives each surface its own radius and shadow (a menu 12, a popover 14, a
+there), and the mockup gives each surface its own radius and shadow (a menu 12, a popover 14, a
 tip 7, a dialog 16), which shadcn's one `--radius` can't say, so aliasing them would either
 repaint something or say what isn't so. The usual swaps:
 
@@ -421,7 +421,7 @@ repaint something or say what isn't so. The usual swaps:
 | `bg-border`, `border-input`                       | `bg-rule`, `shadow-field`                      |
 | `focus-visible:ring-[3px] ring-ring/50`           | `focus-ring` (a field: `focus-within:shadow-field-focus`) |
 | `bg-black/50` (a dialog's overlay)                | `bg-dim`, `bg-dim-dialog`                      |
-| `rounded-sm`…`rounded-xl`                         | the design's: `rounded-7`, `-8`, `-12`, `-14`, `-16` |
+| `rounded-sm`…`rounded-xl`                         | the mockup's: `rounded-7`, `-8`, `-12`, `-14`, `-16` |
 | `shadow-md`, `shadow-lg`                          | `shadow-pop`; a tip `shadow-tip`               |
 | `text-xs`, `text-sm`                              | `text-11`, `text-12`, `text-13`                |
 | `animate-in fade-in-0 zoom-in-95 …`               | `pop` (menus, popovers, dialogs), `tip`        |
@@ -436,15 +436,15 @@ repaint something or say what isn't so. The usual swaps:
 - The needs-you options list and the thread's follow-the-foot logic: shadcn's newer
   questionnaire and message-scroller parts are the path once they settle; they are too young to
   build on now.
-- `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
+- `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the mockup specifies.
 - AI Elements (now shadcn/ui's own patterns): none are used. The thread has no fold since the
   founder asked for a plain one, so Chain of Thought (and the Trace and Collapsible it was built
   on) went with it. The rest stay ours: Chat and Message Scroller (the follow-the-foot logic
   above; ours also windows a thousand lines and anchors by hand), Message and its Bubble (the
-  design's bubble, avatars and comment frames), the streaming response (`Prose`, with its rules
+  mockup's bubble, avatars and comment frames), the streaming response (`Prose`, with its rules
   for untrusted Markdown), Tool and Reasoning (the thread never shows a tool's input or output,
   and Claude Code's thinking isn't streamed to it), the shimmer utility for the working line (the
-  design draws the turning slice, not a sweep of light), and Prompt Input (the composer, the
+  mockup draws the turning slice, not a sweep of light), and Prompt Input (the composer, the
   product's own).
 - `window/arrival.tsx`, what comes after the first paint (above): a room whose width at rest is
   `auto`, which a CSS transition can't ease from or to, so it is the Web Animations API, from the
@@ -462,8 +462,8 @@ repaint something or say what isn't so. The usual swaps:
 - The create page departs from board 5 (fresh start) on purpose, at the founder's direction:
   Ponzu's mark (the slice, 56) over one statement in the display face at 28 stands where the
   question was, "Make something in" over "owner/name ⌄" on a second line, or "Make something
-  from scratch ⌄" on one, whose last words are the project selector, about making rather than
-  designing; the ideas are not tiles under the composer but take turns as its placeholder
+  from scratch ⌄" on one, whose last words are the project selector, about making anything;
+  the ideas are not tiles under the composer but take turns as its placeholder
   (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
   rises in), put away by typing and taken into the field with Tab, to edit and send; and the
   page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
@@ -485,9 +485,9 @@ repaint something or say what isn't so. The usual swaps:
   lower, the picker in a window at the app's smallest shows a little less than five and a half
   rows, and scrolls.
 - The create page's layout (the founder's direction), with its measures in `create/create.ts`:
-  the composer is docked at the foot of the canvas pane, centred at its 660, 10 above the pane's
+  the composer is docked at the foot of the main pane, centred at its 660, 10 above the pane's
   edge (`DOCK_INSET`, the distance the thread's composer keeps from the rail's foot, so a send
-  travels nearly level: the canvas pane ends 6 above the window's edge, so the two feet are 6
+  travels nearly level: the main pane ends 6 above the window's edge, so the two feet are 6
   apart), and grows upward with what is typed or attached. The hero (the mark over the
   statement) has its centre 5% of the pane's height above the pane's true centre (`HERO_RISE`:
   45 in a pane of 900, so it scales with the window; the founder found the room's centre too
@@ -509,22 +509,22 @@ repaint something or say what isn't so. The usual swaps:
   when chosen. Each pane is a radio group named by its label. `create/model-picker.tsx`.
 - A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
   The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
-  width as the pane narrows), the design's view comes (its chrome with the name it will have,
-  the canvas pane on the same dotted ground, and the thread's pane opening whatever it was left
+  width as the pane narrows), the new canvas's view comes (its chrome with the name it will have,
+  the main pane on the same dotted ground, and the thread's pane opening whatever it was left
   as, with the sent words as its first line and the agent waking), and the composer travels from
-  the foot of the canvas pane to its home at the foot of the thread, changing size on the way.
+  the foot of the main pane to its home at the foot of the thread, changing size on the way.
   It is one card that moves: its surface, its + and its send button (which keep their corners
   and become the thread's +, and Stop in its place); what was written keeps the width it was
   written at and fades in the first third, the thread composer's words fade in over the last
   two fifths, and nothing reflows. The travel is 1.75 of the panes' clock (385 at `--dur-pane`
   220), on `--ease-travel`, a relative of `--ease-out` that starts from rest: it begins with the
   pane opening and lands once the pane has settled, so it reads as the pane making room and the
-  composer going home. It lands empty with the caret in it; the design the API makes takes the
+  composer going home. It lands empty with the caret in it; the canvas the API makes takes the
   launch's place under it (anything typed meanwhile, and the caret, carried over). After
   `LANDING_BEAT_MS` (1400) the thread's pane closes on its usual easing and that is remembered as
   the toggle would; it stays open, remembered so, if since the send the person moved the pointer
   into it, pressed, focused, typed or scrolled there, and the toggle or ⌥⌘B pressed then is the
-  person's say. Only a send from the create page has a beat; another design opened, or the
+  person's say. Only a send from the create page has a beat; another canvas opened, or the
   create page again, before it ends leaves the pane closed. A send that fails comes back to the
   page as it was (words, images, project, the caret in the field), the error said, and nothing
   travels back; a second press while it goes does nothing. With reduced motion nothing travels
@@ -535,7 +535,7 @@ repaint something or say what isn't so. The usual swaps:
   agent is doing in the pane's place (`window/thread-toggle.tsx`, `railSignal`): the count of
   questions waiting on the person (yuzu), the turning slice while it works, a dot once it has
   said something since the pane was last open (an answer, or a turn that failed or stopped); and
-  the design's row in the sidebar says the same. Nothing opens the pane by itself.
+  the canvas's row in the sidebar says the same. Nothing opens the pane by itself.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics, each titled `owner/name` with the owner quieter (no owner heading, no line under
   Scratch), and Scratch's dashed-folder icon from `ui/project-icons.ts`, the one place both
@@ -588,10 +588,10 @@ bun scripts/visual.ts compare --design <path to the .design folder>
 bun scripts/visual.ts references
 ```
 
-`compare` draws each composition and the design's own board at the board's size in light and
+`compare` draws each composition and the mockup's own board at the board's size in light and
 dark, and writes ours, theirs, the difference and the pair to `.context/visual`, with the share
 of pixels that differ, overall and outside the regions this code doesn't draw (the canvas's
-boards, the thread rail). The design file is not in the repo.
+boards, the thread rail). The mockup's file is not in the repo.
 
 `references` redraws `gallery/references/`, what `gallery.references.*.test.ts` compares the
 compositions against, two ways:

@@ -1,7 +1,7 @@
 import type { Doc, Op } from "../doc.ts";
 import type { PElement, PNode } from "../types.ts";
 
-/** Test fixtures: a small design, and one op of every variant that applies to it. */
+/** Test fixtures: a small canvas, and one op of every variant that applies to it. */
 
 export function el(id: string, tag: string, children: PNode[] = []): PElement {
   return { kind: "el", id, tag, attrs: {}, style: {}, children };

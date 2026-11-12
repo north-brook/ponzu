@@ -5,7 +5,7 @@ import {
   getSandbox,
   getWakeContext,
   moveSandbox,
-  recordDesignClaudeAccount,
+  recordCanvasClaudeAccount,
   revokeRunnerToken,
   revokeRunnerTokens,
   type SandboxClaim,
@@ -16,7 +16,7 @@ import {
 import { IMAGE_COMMANDS, RUNNER_PORT } from "@ponzu/runner/protocol";
 import {
   type At,
-  designSandboxName,
+  canvasSandboxName,
   SandboxError,
   type SandboxErrorCode,
   type SandboxSpec,
@@ -39,9 +39,9 @@ import {
 } from "./environment.ts";
 
 /*
- * Waking a design's sandbox (docs/cloud.md, "The sandbox"): the job `requestWake` records, run
+ * Waking a canvas's sandbox (docs/cloud.md, "The sandbox"): the job `requestWake` records, run
  * at once by the request and again by the cron until it is done. The database decides who does
- * it: a wake first claims the design's row (`waking`, held by the wake's job), so of any number
+ * it: a wake first claims the canvas's row (`waking`, held by the wake's job), so of any number
  * of wakes racing one starts the runner and the rest leave it be. The claim counts the
  * sandboxes already up in the workspace and for the owner; one past the limits waits.
  *
@@ -62,7 +62,7 @@ import {
  * start, is waited out: the job is tried again, and the head says it is waiting.
  */
 
-/** The job that wakes a design's sandbox. One waits per design: its key is the design's id. */
+/** The job that wakes a canvas's sandbox. One waits per canvas: its key is the canvas's id. */
 export const WAKE_JOB = "sandbox.wake";
 /** A wake keeps trying for about three hours of waits before it gives up. */
 export const WAKE_ATTEMPTS = 40;
@@ -81,13 +81,13 @@ const WAITS: ReadonlySet<SandboxErrorCode> = new Set([
   "not_running",
 ]);
 
-/** A design's sandbox's name at Vercel. */
-export function sandboxName(deps: Pick<JobDeps, "config">, designId: string): string {
-  return designSandboxName(deps.config.sandbox.scope, designId);
+/** A canvas's sandbox's name at Vercel. */
+export function sandboxName(deps: Pick<JobDeps, "config">, canvasId: string): string {
+  return canvasSandboxName(deps.config.sandbox.scope, canvasId);
 }
 
-/** A design's sandbox's spec, on `image`. */
-export function designSpec(image: string): SandboxSpec {
+/** A canvas's sandbox's spec, on `image`. */
+export function sandboxSpec(image: string): SandboxSpec {
   return {
     image,
     persistent: true,
@@ -103,31 +103,31 @@ export async function runWakeJob(
   payload: RunningJob["payload"],
   job: RunningJob,
 ): Promise<void> {
-  await wakeDesign(deps, String(payload.designId), job);
+  await wakeCanvas(deps, String(payload.canvasId), job);
 }
 
 /** The wake job running: its id is what holds the row while it is `waking`. */
 type Wake = Pick<RunningJob, "id" | "attempts" | "maxAttempts">;
 
 /**
- * Make sure the design's runner is running on its owner's current Claude credential. Safe to
+ * Make sure the canvas's runner is running on its owner's current Claude credential. Safe to
  * run twice at once and again after a crash at any point.
  */
-export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Promise<void> {
+export async function wakeCanvas(deps: JobDeps, canvasId: string, job: Wake): Promise<void> {
   const { db, clock, log } = deps;
   const began = clock.now();
-  const context = await getWakeContext(db, designId);
+  const context = await getWakeContext(db, canvasId);
   if (!context || context.status === "settled") return;
 
   // Nothing to start it with. The event waits in the feed; what is missing wakes it once it's
   // there, or the next message does.
   const problem = context.ownerMember ? claudeProblem(context.claude, began) : "claude_owner_left";
   if (problem) {
-    await showAgentWaiting(db, { designId, waking: false, blocker: problem });
-    log.info("wake_blocked", { designId, blocker: problem });
+    await showAgentWaiting(db, { canvasId, waking: false, blocker: problem });
+    log.info("wake_blocked", { canvasId, blocker: problem });
     return;
   }
-  await recordDesignClaudeAccount(db, { designId, claudeAccountId: context.claude!.id });
+  await recordCanvasClaudeAccount(db, { canvasId, claudeAccountId: context.claude!.id });
 
   try {
     const waking = await claim(deps, context, job.id);
@@ -135,13 +135,13 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
     const woke = await bringUp(deps, context, waking, job.id);
     if (!woke) return;
     const ms = clock.now() - began;
-    log.info("sandbox_awake", { designId, start: woke.start, fresh: woke.fresh, ms });
-    // About the design's owner, whose Claude it runs on: whoever's message woke it, it runs
+    log.info("sandbox_awake", { canvasId, start: woke.start, fresh: woke.fresh, ms });
+    // About the canvas's owner, whose Claude it runs on: whoever's message woke it, it runs
     // for them.
     deps.analytics.capture(
       "sandbox woke",
       {
-        design_id: designId,
+        canvas_id: canvasId,
         start: woke.start,
         duration_ms: ms,
         fresh: woke.fresh,
@@ -154,53 +154,53 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
     if (!(error instanceof SandboxError)) throw error;
     if (WAITS.has(error.code) && job.attempts < job.maxAttempts) {
       const blocker = error.code === "rate_limited" ? "sandbox_busy" : null;
-      await showAgentWaiting(db, { designId, waking: true, blocker });
+      await showAgentWaiting(db, { canvasId, waking: true, blocker });
       throw new RetryLater(waitAfter(error, job.attempts), error.message);
     }
     // It will not start this way, or it has been tried long enough. The next message tries again.
     await moveSandbox(db, {
-      designId,
+      canvasId,
       from: ["waking"],
       to: "asleep",
       now: new Date(clock.now()),
       by: job.id,
       changes: { failure: error.message.slice(0, 500) },
     });
-    await showAgentWaiting(db, { designId, waking: false, blocker: "sandbox_failed" });
-    log.error("wake_failed", { designId, refusal: error.code, error });
+    await showAgentWaiting(db, { canvasId, waking: false, blocker: "sandbox_failed" });
+    log.error("wake_failed", { canvasId, refusal: error.code, error });
   }
 }
 
 /**
- * The design's row, now `waking` and held by the wake `by`; null when there is nothing for this
+ * The canvas's row, now `waking` and held by the wake `by`; null when there is nothing for this
  * wake to do (another holds it, or it is awake on the credential it should be).
  */
 async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<SandboxRow | null> {
   const { db, clock } = deps;
   const { limits } = deps.config.sandbox;
-  const { designId } = context;
+  const { canvasId } = context;
   let row = context.sandbox;
   const now = () => new Date(clock.now());
-  if (!row) return claimed(await beginSandbox(db, { designId, now: now(), by, limits }));
+  if (!row) return claimed(await beginSandbox(db, { canvasId, now: now(), by, limits }));
   if (row.state === "stopping") {
-    await showAgentWaiting(db, { designId, waking: true, blocker: null });
-    row = await afterStop(deps, designId);
+    await showAgentWaiting(db, { canvasId, waking: true, blocker: null });
+    row = await afterStop(deps, canvasId);
     if (!row) return claim(deps, { ...context, sandbox: null }, by);
   }
   switch (row.state) {
     case "asleep":
       return claimed(
-        await claimSandbox(db, { designId, from: ["asleep"], now: now(), by, limits }),
+        await claimSandbox(db, { canvasId, from: ["asleep"], now: now(), by, limits }),
       );
     case "awake":
       // On the credential it should be: the request's poke reached it.
       if (row.claudeCredential === credentialMark(context.claude!)) return null;
       // A restart in place, on the owner's new credential.
-      return claimed(await claimSandbox(db, { designId, from: ["awake"], now: now(), by, limits }));
+      return claimed(await claimSandbox(db, { canvasId, from: ["awake"], now: now(), by, limits }));
     case "waking":
       // Its own, from an earlier attempt, or one left past its lease.
       return claimed(
-        await claimSandbox(db, { designId, from: ["waking"], now: now(), by, limits }),
+        await claimSandbox(db, { canvasId, from: ["waking"], now: now(), by, limits }),
       );
     default:
       return null;
@@ -212,14 +212,14 @@ async function claim(deps: JobDeps, context: WakeContext, by: string): Promise<S
  * wake into a session whose runner is shutting down would be stopped under it, and a retire
  * holds the row until its sandbox is deleted, so a late delete never hits a new sandbox.
  */
-async function afterStop(deps: JobDeps, designId: string): Promise<SandboxRow | null> {
+async function afterStop(deps: JobDeps, canvasId: string): Promise<SandboxRow | null> {
   const until = deps.clock.now() + STOP_WAIT_MS;
   for (;;) {
     await deps.clock.sleep(STOP_POLL_MS);
-    const row = await getSandbox(deps.db, designId);
+    const row = await getSandbox(deps.db, canvasId);
     if (row?.state !== "stopping") return row;
     if (deps.clock.now() >= until) {
-      throw new SandboxError("busy", "A stop of the design's sandbox is still under way.");
+      throw new SandboxError("busy", "A stop of the canvas's sandbox is still under way.");
     }
   }
 }
@@ -244,7 +244,7 @@ interface Woke {
 }
 
 /**
- * The runner started in the design's sandbox, and the row awake on it. Null when the row was
+ * The runner started in the canvas's sandbox, and the row awake on it. Null when the row was
  * taken from this wake meanwhile (a retire, or another wake after the lease).
  */
 async function bringUp(
@@ -254,13 +254,13 @@ async function bringUp(
   by: string,
 ): Promise<Woke | null> {
   const { db, clock, vault, sandboxes } = deps;
-  const { designId } = context;
+  const { canvasId } = context;
   const claude = context.claude!;
-  await showAgentWaiting(db, { designId, waking: true, blocker: null });
+  await showAgentWaiting(db, { canvasId, waking: true, blocker: null });
 
-  const name = sandboxName(deps, designId);
+  const name = sandboxName(deps, canvasId);
   const image = await imageFor(deps, waking);
-  const up = await sandboxes.up(name, designSpec(image));
+  const up = await sandboxes.up(name, sandboxSpec(image));
   const at: At = { name, sessionId: up.sessionId };
   let environment: Environment | null = null;
   try {
@@ -273,20 +273,20 @@ async function bringUp(
         timeoutMs: STOP_COMMAND_MS,
       });
     }
-    environment = await newEnvironment(deps, designId, claude);
+    environment = await newEnvironment(deps, canvasId, claude);
     await sandboxes.start(at, {
       cmd: IMAGE_COMMANDS.start,
       env: environment.env,
       sudo: true,
     });
-    const encryptedPortToken = await vault.seal(environment.portToken, portBinding(designId));
+    const encryptedPortToken = await vault.seal(environment.portToken, portBinding(canvasId));
     // A restart in place keeps the session, and with it when the session began.
     const sessionStartedAt =
       waking.sessionId === up.sessionId && waking.sessionStartedAt
         ? waking.sessionStartedAt
         : new Date(up.startedAt);
     const awake = await moveSandbox(db, {
-      designId,
+      canvasId,
       from: ["waking"],
       to: "awake",
       now: new Date(clock.now()),
@@ -305,11 +305,11 @@ async function bringUp(
     if (!awake) {
       // Taken from this wake (a retire, a repair, or a wake after the lease).
       await revokeRunnerToken(db, environment.runnerTokenId);
-      await letGo(deps, designId, at);
+      await letGo(deps, canvasId, at);
       return null;
     }
     // The runner it replaced, if any, hears at its next call that it is done.
-    await revokeRunnerTokens(db, designId, { except: environment.runnerTokenId });
+    await revokeRunnerTokens(db, canvasId, { except: environment.runnerTokenId });
     return {
       start: up.wasRunning ? "restart" : up.fresh ? "create" : "resume",
       fresh: up.fresh,
@@ -340,38 +340,38 @@ async function stopQuietly(deps: JobDeps, at: At): Promise<void> {
 /**
  * A wake whose row was taken from it after its `up()`: what it started is stopped unless the
  * row's holder now runs on that same session (a wake after the lease, which shuts down whatever
- * runs there itself), and the sandbox is removed when its design is settled or gone, since the
+ * runs there itself), and the sandbox is removed when its canvas is settled or gone, since the
  * retire that took the row may have finished before this wake's `up()` made it again.
  */
-async function letGo(deps: JobDeps, designId: string, at: At): Promise<void> {
-  const row = await getSandbox(deps.db, designId);
+async function letGo(deps: JobDeps, canvasId: string, at: At): Promise<void> {
+  const row = await getSandbox(deps.db, canvasId);
   const theirs =
     row?.state === "waking" || (row?.state === "awake" && row.sessionId === at.sessionId);
   if (theirs) return;
   await stopQuietly(deps, at);
-  const context = await getWakeContext(deps.db, designId);
+  const context = await getWakeContext(deps.db, canvasId);
   if (!context || context.status === "settled") {
     await deps.sandboxes.remove(at.name).catch((error: unknown) => {
-      deps.log.warn("sandbox_remove_failed", { designId, error });
+      deps.log.warn("sandbox_remove_failed", { canvasId, error });
     });
   }
-  deps.log.warn("wake_let_go", { designId, sessionId: at.sessionId, state: row?.state ?? null });
+  deps.log.warn("wake_let_go", { canvasId, sessionId: at.sessionId, state: row?.state ?? null });
 }
 
 /**
- * The image the design's sandbox is to run. The image set now, unless its sandbox runs another
- * one and the design's last checkpoint does not hold everything that went into its session:
+ * The image the canvas's sandbox is to run. The image set now, unless its sandbox runs another
+ * one and the canvas's last checkpoint does not hold everything that went into its session:
  * `up()` recreates a sandbox on a new image, which loses its disk, so it waits until a sleep's
  * checkpoint covers it (docs/cloud.md, "How images roll out").
  */
 async function imageFor(deps: JobDeps, row: SandboxRow): Promise<string> {
   const image = deps.config.sandbox.image;
   if (!row.image || sameImage(row.image, image)) return image;
-  const cover = await getCheckpointCover(deps.db, row.designId);
+  const cover = await getCheckpointCover(deps.db, row.canvasId);
   const held = imageHold(cover);
   if (!held) return image;
   deps.log.info("sandbox_move_held", {
-    designId: row.designId,
+    canvasId: row.canvasId,
     from: row.image,
     to: image,
     reason: held,
@@ -379,7 +379,7 @@ async function imageFor(deps: JobDeps, row: SandboxRow): Promise<string> {
   return row.image;
 }
 
-/** Why a design on another image stays on it at this wake, or null when it moves. */
+/** Why a canvas on another image stays on it at this wake, or null when it moves. */
 export function imageHold(cover: "covered" | "behind" | "none"): Held | null {
   if (cover === "behind") return "checkpoint_behind";
   if (cover === "none") return "no_checkpoint";

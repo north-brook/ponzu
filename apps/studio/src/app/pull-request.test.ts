@@ -15,7 +15,7 @@ import { PullRequestStore } from "./pull-request-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
 
 /*
- * A design's pull request: the API's answer mapped onto the tab, and each state and action on
+ * A canvas's pull request: the API's answer mapped onto the tab, and each state and action on
  * Ponzu Cloud in memory, which keeps the API's next action and refusals.
  */
 
@@ -241,7 +241,7 @@ test("the API's pull request, field by field, as the tab draws it", () => {
   expect(toPullRequestDetail(merged).endedAt).toBe("2026-11-10T12:00:00.000Z");
 });
 
-test("the chrome's mark comes from the design's head, and its button from the API's next action", () => {
+test("the chrome's mark comes from the canvas's head, and its button from the API's next action", () => {
   expect(prSummary(undefined)).toBeNull();
   const head = {
     prNumber: 412,
@@ -313,7 +313,7 @@ test("an answer kept from before is offered only while the row and the head stil
   };
   // The same pull request, as it was: Merge, from the first frame.
   expect(offeredTab({ tab: kept, confirmed: false }, now)).toBe(kept);
-  // Merged, closed or its checks moved while the design was away: not until the read says.
+  // Merged, closed or its checks moved while the canvas was away: not until the read says.
   expect(offeredTab({ tab: kept, confirmed: false }, { ...now, state: "merged" })).toBeNull();
   expect(offeredTab({ tab: kept, confirmed: false }, { ...now, state: "closed" })).toBeNull();
   expect(offeredTab({ tab: kept, confirmed: false }, { ...now, checks: "failing" })).toBeNull();
@@ -322,9 +322,9 @@ test("an answer kept from before is offered only while the row and the head stil
   // Read since it opened: GitHub's word stands, even ahead of the head hearing of it.
   expect(offeredTab({ tab: kept, confirmed: true }, { ...now, state: "merged" })).toBe(kept);
   // The row's mark takes whether it can merge only from a read of the same pull request.
-  const design = { pullRequest: now } as unknown as Parameters<typeof rowPullRequest>[0];
-  expect(rowPullRequest(design, kept)?.mergeable).toBe(API_PULL.mergeable);
-  const merged = { pullRequest: { ...now, state: "merged" } } as unknown as typeof design;
+  const canvas = { pullRequest: now } as unknown as Parameters<typeof rowPullRequest>[0];
+  expect(rowPullRequest(canvas, kept)?.mergeable).toBe(API_PULL.mergeable);
+  const merged = { pullRequest: { ...now, state: "merged" } } as unknown as typeof canvas;
   expect(rowPullRequest(merged, kept)?.mergeable).toBeNull();
 });
 
@@ -352,7 +352,7 @@ async function world() {
     repos: [{ name: "site" }],
   });
   const client = backend.connect(maya);
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: ws.id,
     repoId: ws.repos[0]!.id,
     name: "Pricing",
@@ -362,11 +362,11 @@ async function world() {
   const ponzu = storePonzu(client.api);
   const store = new PullRequestStore({
     ponzu,
-    designId: design.id,
+    canvasId: canvas.id,
     say: (m) => said.push(m),
     tellAgent: (t) => told.push(t),
   });
-  const github = backend.design(design.id).github!;
+  const github = backend.canvas(canvas.id).github!;
   const read = async () => {
     store.refresh();
     await settle();
@@ -377,14 +377,14 @@ async function world() {
     await settle();
     return store.getSnapshot();
   };
-  return { backend, client, ponzu, design, store, github, said, told, read, run };
+  return { backend, client, ponzu, canvas, store, github, said, told, read, run };
 }
 
-test("from changes on the branch to a merge: create, ready, merge, and the design settles", async () => {
+test("from changes on the branch to a merge: create, ready, merge, and the canvas settles", async () => {
   const w = await world();
   expect((await w.read()).tab?.nextAction).toBe("none");
 
-  w.backend.agent(w.design.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
   const pushed = await w.read();
   expect(chromeAction(pushed.tab!)).toBe("create_pr");
 
@@ -396,16 +396,16 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
   expect(opened.tab?.pullRequest).toMatchObject({ state: "draft", title: "Pricing" });
   expect(chromeAction(opened.tab!)).toBe("ready");
   // GitHub's word is said in the thread once, and the head follows.
-  const head = await w.client.api.designs.get(w.design.id);
+  const head = await w.client.api.canvases.get(w.canvas.id);
   expect([head.prNumber, head.prState]).toEqual([opened.tab!.pullRequest!.number, "draft"]);
 
   expect(chromeAction((await w.run("ready")).tab!)).toBe("merge");
   const merged = await w.run("merge");
   expect(merged.tab?.pullRequest?.state).toBe("merged");
   expect(chromeAction(merged.tab!)).toBeNull();
-  expect((await w.client.api.designs.get(w.design.id)).status).toBe("settled");
+  expect((await w.client.api.canvases.get(w.canvas.id)).status).toBe("settled");
   const notices = w.backend
-    .design(w.design.id)
+    .canvas(w.canvas.id)
     .thread.map((e) => e.item)
     .filter((i) => i.kind === "notice");
   expect(
@@ -414,28 +414,28 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
   expect(w.said).toEqual([]);
 });
 
-test("a design opened again starts from its last answer; a read asked ahead stands for the one on opening", async () => {
+test("a canvas opened again starts from its last answer; a read asked ahead stands for the one on opening", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
   await w.read();
   w.store.close();
   // Opened again, on the same cache: the tab is there before anything is read.
   const { ponzu } = w;
-  const again = new PullRequestStore({ ponzu, designId: w.design.id, say() {}, tellAgent() {} });
+  const again = new PullRequestStore({ ponzu, canvasId: w.canvas.id, say() {}, tellAgent() {} });
   expect(again.getSnapshot()).toMatchObject({ status: "ready" });
   expect(chromeAction(again.getSnapshot().tab!)).toBe("create_pr");
-  // Another design never shows this one's.
-  const other = await w.client.api.designs.create({
-    workspaceId: w.design.workspaceId,
-    repoId: w.design.repo!.id,
+  // Another canvas never shows this one's.
+  const other = await w.client.api.canvases.create({
+    workspaceId: w.canvas.workspaceId,
+    repoId: w.canvas.repo!.id,
     name: "Other",
   });
-  const elsewhere = new PullRequestStore({ ponzu, designId: other.id, say() {}, tellAgent() {} });
+  const elsewhere = new PullRequestStore({ ponzu, canvasId: other.id, say() {}, tellAgent() {} });
   expect(elsewhere.getSnapshot()).toMatchObject({ tab: null, status: "loading" });
   // Just answered (as a read on the row's hover would be): the read on opening stands on it.
   let reads = 0;
-  const get = w.client.api.designs.pullRequest.get;
-  w.client.api.designs.pullRequest.get = (id) => {
+  const get = w.client.api.canvases.pullRequest.get;
+  w.client.api.canvases.pullRequest.get = (id) => {
     reads++;
     return get(id);
   };
@@ -445,10 +445,10 @@ test("a design opened again starts from its last answer; a read asked ahead stan
   expect(again.getSnapshot().confirmed).toBe(true);
   again.close();
   // Kept from longer ago: shown, but not yet confirmed, and the read on opening goes out.
-  ponzu.queryClient.setQueryData(ponzu.queries.pullRequest(w.design.id).queryKey, (tab) => tab, {
+  ponzu.queryClient.setQueryData(ponzu.queries.pullRequest(w.canvas.id).queryKey, (tab) => tab, {
     updatedAt: Date.now() - 60_000,
   });
-  const later = new PullRequestStore({ ponzu, designId: w.design.id, say() {}, tellAgent() {} });
+  const later = new PullRequestStore({ ponzu, canvasId: w.canvas.id, say() {}, tellAgent() {} });
   expect(later.getSnapshot()).toMatchObject({ status: "ready", confirmed: false });
   const kept = later.getSnapshot().tab;
   later.refreshOnOpen();
@@ -494,17 +494,17 @@ test("a push Create PR waits on that fails says why, and the button comes back",
   await settle();
   expect(w.store.getSnapshot().busy).toBe("create_pr");
 
-  w.github.failPush("pz/pricing on GitHub has commits this design doesn't.");
+  w.github.failPush("pz/pricing on GitHub has commits this canvas doesn't.");
   await w.read();
   expect(w.store.getSnapshot().busy).toBeNull();
-  expect(w.said).toEqual(["pz/pricing on GitHub has commits this design doesn't."]);
+  expect(w.said).toEqual(["pz/pricing on GitHub has commits this canvas doesn't."]);
   expect(chromeAction(w.store.getSnapshot().tab!)).toBe("create_pr");
   w.store.close();
 });
 
 test("checks running offer auto-merge; failing ones and conflicts are asked of the agent", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -530,7 +530,7 @@ test("checks running offer auto-merge; failing ones and conflicts are asked of t
 
 test("behind its base, Update branch; held by the rules without auto-merge, Merge asks first", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -561,7 +561,7 @@ test("behind its base, Update branch; held by the rules without auto-merge, Merg
 
 test("Merge anyway goes out with the commit the person confirmed, never one pushed since", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -571,7 +571,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
   const asked = (await w.run("blocked")).bypass!;
 
   // The agent pushes while the dialog is open, and the next read has the new head.
-  w.backend.agent(w.design.id).push([{ path: "src/x.ts", additions: 3 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/x.ts", additions: 3 }]);
   const moved = await w.read();
   expect(moved.tab?.pullRequest?.head.sha).not.toBe(asked.headSha);
   // The question was about a commit that isn't the head now: it closes.
@@ -582,7 +582,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
 
   // Asked again, and confirmed after a push the store hasn't read: the API refuses it.
   const again = (await w.run("blocked")).bypass!;
-  w.backend.agent(w.design.id).push([{ path: "src/y.ts", additions: 1 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/y.ts", additions: 1 }]);
   w.store.confirmBypass();
   await settle();
   expect(w.said.at(-1)).toBe("The branch has new commits since you looked. Look again first.");
@@ -593,7 +593,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
 
 test("the bypass question keeps its reason true, and closes once the rules let the merge go", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -609,7 +609,7 @@ test("the bypass question keeps its reason true, and closes once the rules let t
 
 test("Fix checks and Resolve ask the agent once for a commit", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -626,7 +626,7 @@ test("Fix checks and Resolve ask the agent once for a commit", async () => {
   expect(w.told).toHaveLength(2);
 
   // A push moves the head: the question is new.
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   w.github.setChecks([{ name: "ci / e2e", state: "failed" }]);
   expect((await w.read()).asked).toBeNull();
   await w.run("fix_checks");
@@ -635,7 +635,7 @@ test("Fix checks and Resolve ask the agent once for a commit", async () => {
 
 test("a merge GitHub's rules refuse says why, and the button follows what is true now", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -650,17 +650,17 @@ test("a merge GitHub's rules refuse says why, and the button follows what is tru
   // A push since the person looked.
   w.github.protect({ review: false });
   await w.read();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.run("merge");
   expect(w.said[1]).toBe("The branch has new commits since you looked. Look again first.");
 });
 
 test("a closed pull request offers to open another once the branch has changes", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
-  await w.client.api.designs.pullRequest.close(w.design.id);
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
   const closed = await w.read();
   expect(closed.tab?.pullRequest?.state).toBe("closed");
   expect(chromeAction(closed.tab!)).toBe("create_pr");
@@ -668,7 +668,7 @@ test("a closed pull request offers to open another once the branch has changes",
 
 test("a file's diff is asked for when its card opens, with where a renamed one was", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push([
+  w.backend.agent(w.canvas.id).push([
     { path: "src/a.tsx", patch: "@@ -1 +1 @@\n-a\n+b" },
     { path: "logo.png", patch: null },
     { path: "src/hero-copy.tsx", change: "renamed", previousPath: "src/copy.tsx" },
@@ -687,24 +687,25 @@ test("a file's diff is asked for when its card opens, with where a renamed one w
   await expect(w.store.loadDiff("nope.ts")).rejects.toMatchObject({ code: "not_found" });
 });
 
-test("a Scratch design has no pull request to read", async () => {
+test("a Scratch canvas has no pull request to read", async () => {
   const w = await world();
-  const scratch = await w.client.api.designs.create({
-    workspaceId: (await w.client.api.designs.get(w.design.id)).workspaceId,
+  const scratch = await w.client.api.canvases.create({
+    workspaceId: (await w.client.api.canvases.get(w.canvas.id)).workspaceId,
   });
-  const refused = await w.client.api.designs.pullRequest.get(scratch.id).catch((e) => e);
+  const refused = await w.client.api.canvases.pullRequest.get(scratch.id).catch((e) => e);
   expect(refused.code).toBe("no_repository");
 });
 
 test("the tab shows a description without what Ponzu wrote for GitHub's own page", () => {
   const body = [
     "<!-- ponzu:summary -->\nAdds the **Pro** pricing card.\n<!-- /ponzu:summary -->",
-    '<!-- ponzu:picture --><a href="https://ponzu.design/designs/des_1"><picture><source media="(prefers-color-scheme: dark)" srcset="https://assets/d.png"><img src="https://assets/l.png" alt="Pricing card" width="720"></picture></a><!-- /ponzu:picture -->',
-    "Designed in Ponzu: [Pricing card](https://ponzu.design/designs/des_1)",
+    '<!-- ponzu:picture --><a href="https://ponzu.design/canvases/cnv_1"><picture><source media="(prefers-color-scheme: dark)" srcset="https://assets/d.png"><img src="https://assets/l.png" alt="Pricing card" width="720"></picture></a><!-- /ponzu:picture -->',
+    "Made in Ponzu: [Pricing card](https://ponzu.design/canvases/cnv_1)",
     "Reviewer note: <b>kept</b>.",
   ].join("\n\n");
   expect(bodyForTab(body)).toBe("Adds the **Pro** pricing card.\n\nReviewer note: <b>kept</b>.");
-  // An empty summary leaves nothing.
+  // An empty summary leaves nothing, and neither does the footer of a pull request opened before
+  // canvases had their name.
   expect(
     bodyForTab(
       "<!-- ponzu:summary -->\n\n<!-- /ponzu:summary -->\n\nDesigned in Ponzu: [A](https://ponzu.design/designs/des_1)",

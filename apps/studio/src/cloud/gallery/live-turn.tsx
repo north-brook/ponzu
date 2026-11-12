@@ -118,7 +118,7 @@ export function LiveTurnRail({ earlier = false }: { earlier?: boolean }) {
     <TipProvider>
       <div className="flex h-[560px] w-[360px] flex-col bg-chrome px-2.5 pb-2.5">
         <ThreadRail
-          designId="live-turn"
+          canvasId="live-turn"
           meId={f.bryce.id}
           repoName="fernwood"
           items={items}

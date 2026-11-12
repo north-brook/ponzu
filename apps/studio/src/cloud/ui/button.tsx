@@ -1,9 +1,9 @@
 /*
- * shadcn/ui's button, with the design's variants in place of shadcn's. Every button has the same
+ * shadcn/ui's button, with the mockup's variants in place of shadcn's. Every button has the same
  * four states: hover lifts it a wash, pressed a second, keyboard focus rings it, disabled fades
  * it and takes it out of reach. A menu or popover's trigger keeps its wash while open, read from
  * aria-expanded (Radix's data-state is the tooltip's on a trigger that has one); a pane toggle,
- * which has no popup, never shows an open state. Most are sized by the caller, as the design
+ * which has no popup, never shows an open state. Most are sized by the caller, as the mockup
  * sizes each one; `size` names the ones that repeat.
  */
 import { ArrowUp02Icon } from "@hugeicons/core-free-icons";

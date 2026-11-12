@@ -42,7 +42,7 @@ const ask = {
 
 const scope = {
   userId: () => "usr_ada",
-  designId: () => null,
+  canvasId: () => null,
   sessionId: "0192e0a0-0000-7000-8000-000000000001",
   requestId: "req_1",
   route: () => "GET /v1/repos/:id/ideas",

@@ -3,7 +3,7 @@ import { sampleDoc } from "@ponzu/core/fixtures";
 import { listThreadItems } from "@ponzu/db";
 import { FakeClock } from "@ponzu/sandbox";
 import { createPoke } from "../deps/poke.ts";
-import { call, designIn, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasIn, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 import { requestWake } from "./wake.ts";
 
@@ -13,16 +13,16 @@ beforeAll(async () => {
 });
 afterAll(() => t.close());
 
-const wakes = async (designId: string) => {
+const wakes = async (canvasId: string) => {
   const result = await t.db.execute(
-    `select completed_at, failed_at, locked_by from jobs where kind = 'sandbox.wake' and key = '${designId}'`,
+    `select completed_at, failed_at, locked_by from jobs where kind = 'sandbox.wake' and key = '${canvasId}'`,
   );
   return (result as unknown as { rows: { completed_at: unknown; failed_at: unknown }[] }).rows;
 };
 
 test("a wake that cannot be recorded is logged, and never fails what was already written", async () => {
   const ws = await workspaceWithRepo(t, { maya: "write" });
-  const design = await designIn(t, ws, "maya", sampleDoc());
+  const canvas = await canvasIn(t, ws, "maya", sampleDoc());
   await t.db.execute(`
     create function jobs_refuse() returns trigger language plpgsql as $$
     begin raise exception 'the database went away'; end $$`);
@@ -31,13 +31,13 @@ test("a wake that cannot be recorded is logged, and never fails what was already
   );
   try {
     const message = { text: "Make it blue" };
-    const path = `/v1/designs/${design.id}/messages`;
+    const path = `/v1/canvases/${canvas.id}/messages`;
     const posted = await call(t, ws.people.maya!.headers, "POST", path, message);
 
     expect(posted.status).toBe(201);
-    expect(await listThreadItems(t.db, { designId: design.id })).toHaveLength(1);
+    expect(await listThreadItems(t.db, { canvasId: canvas.id })).toHaveLength(1);
     expect(t.logs.findLast((line) => line.event === "wake_failed")).toMatchObject({
-      designId: design.id,
+      canvasId: canvas.id,
       reason: "message",
     });
   } finally {
@@ -48,16 +48,16 @@ test("a wake that cannot be recorded is logged, and never fails what was already
 
 test("only a message, an answer or a comment records a wake, and it runs at once", async () => {
   const ws = await workspaceWithRepo(t, { maya: "write" });
-  const design = await designIn(t, ws, "maya", sampleDoc());
+  const canvas = await canvasIn(t, ws, "maya", sampleDoc());
 
-  await requestWake(t.deps, design.id, "edit");
-  await requestWake(t.deps, design.id, "stop");
-  expect(await wakes(design.id)).toHaveLength(0);
+  await requestWake(t.deps, canvas.id, "edit");
+  await requestWake(t.deps, canvas.id, "stop");
+  expect(await wakes(canvas.id)).toHaveLength(0);
 
-  await requestWake(t.deps, design.id, "comment");
+  await requestWake(t.deps, canvas.id, "comment");
   await t.backgroundDone();
-  // Nobody connected Claude, so the wake is over at once: the design says why it waits.
-  const [ran] = await wakes(design.id);
+  // Nobody connected Claude, so the wake is over at once: the canvas says why it waits.
+  const [ran] = await wakes(canvas.id);
   expect(ran!.completed_at).not.toBeNull();
   expect(ran!.failed_at).toBeNull();
   // Without an awake sandbox there is nobody to poke.

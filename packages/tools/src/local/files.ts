@@ -1,8 +1,8 @@
 import { type Doc, emptyDoc, locate, newId, type Op, parseTokens } from "@ponzu/core";
 import { z } from "zod";
+import type { OpenCanvas, ToolCanvas } from "../canvas.ts";
 import { type FileSource, SESSION_FILES, type ToolContext } from "../context.ts";
 import { type ToolDef, ToolError, tool } from "../define.ts";
-import type { OpenDesign, ToolDesign } from "../design.ts";
 import { ICON_HINT, icon } from "../organize.ts";
 import { apply, plural } from "../util.ts";
 
@@ -34,8 +34,8 @@ export interface DesignFiles {
 }
 
 /** The local server only opens designs kept as files, so its tools can ask about them. */
-export function filesOf(design: ToolDesign): DesignFiles {
-  return design as ToolDesign & DesignFiles;
+export function filesOf(design: ToolCanvas): DesignFiles {
+  return design as ToolCanvas & DesignFiles;
 }
 
 /**
@@ -62,11 +62,11 @@ export async function resolveFile(
   ctx: ToolContext,
   file: string | undefined,
   ids: (string | undefined)[] = [],
-): Promise<OpenDesign> {
+): Promise<OpenCanvas> {
   const { ws, session } = ctx;
-  const all = ws.designs();
+  const all = ws.canvases();
   const current = all.find((d) => d.key === session?.file);
-  let picked: OpenDesign;
+  let picked: OpenCanvas;
   let from: FileSource;
   const wanted = ids.filter((id): id is string => Boolean(id));
   if (file) {
@@ -75,7 +75,7 @@ export async function resolveFile(
   } else {
     // The files that hold the most of these ids: an id only one copy has outweighs ids they
     // share, and a page name passed in place of an id counts for none.
-    const counts = all.map((d) => wanted.filter((id) => holds(d.design.doc, id)).length);
+    const counts = all.map((d) => wanted.filter((id) => holds(d.canvas.doc, id)).length);
     const best = all.length > 1 ? Math.max(0, ...counts) : 0;
     const holders = best ? all.filter((_, i) => counts[i] === best) : [];
     if (holders.length === 1) {
@@ -100,10 +100,10 @@ export async function resolveFile(
     }
   }
   // Ids from two files in one call: refuse before any of it lands in the wrong one.
-  const doc = picked.design.doc;
+  const doc = picked.canvas.doc;
   for (const id of wanted) {
     if (holds(doc, id)) continue;
-    const other = all.find((d) => d.key !== picked.key && holds(d.design.doc, id));
+    const other = all.find((d) => d.key !== picked.key && holds(d.canvas.doc, id));
     if (other)
       throw new ToolError(
         `${id} is in ${label(other, all)}, not ${label(picked, all)}. One call works on one file: ${file ? "split the call" : "pass file, or split the call"}.`,
@@ -128,9 +128,9 @@ export async function resolveFile(
 }
 
 /** A design's name, with its path when another open file shares the name. */
-export function label(picked: OpenDesign, all: OpenDesign[]): string {
-  const name = picked.design.doc.name;
-  return all.some((d) => d.key !== picked.key && d.design.doc.name === name)
+export function label(picked: OpenCanvas, all: OpenCanvas[]): string {
+  const name = picked.canvas.doc.name;
+  return all.some((d) => d.key !== picked.key && d.canvas.doc.name === name)
     ? `"${name}" (${picked.key})`
     : `"${name}"`;
 }
@@ -145,8 +145,8 @@ function holds(doc: Doc, id: string): boolean {
 }
 
 /** "Name (path), …", at most five. */
-export function fileList(files: OpenDesign[], limit = 5): string {
-  const shown = files.slice(0, limit).map((f) => `${f.design.doc.name} (${f.key})`);
+export function fileList(files: OpenCanvas[], limit = 5): string {
+  const shown = files.slice(0, limit).map((f) => `${f.canvas.doc.name} (${f.key})`);
   return files.length > limit
     ? `${shown.join(", ")} and ${files.length - limit} more`
     : shown.join(", ");
@@ -168,12 +168,12 @@ export const fileTools = [
         .describe("Only files whose name or path contains this, case-insensitive."),
     },
     handler(args, { ws, session }) {
-      const all = ws.designs();
+      const all = ws.canvases();
       if (!all.length) return { text: "No files open. Use create_file." };
       const q = args.query?.toLowerCase();
       const files = q
         ? all.filter(
-            ({ key, design }) =>
+            ({ key, canvas: design }) =>
               key.toLowerCase().includes(q) || design.doc.name.toLowerCase().includes(q),
           )
         : all;
@@ -183,7 +183,7 @@ export const fileTools = [
         };
       return {
         text: files
-          .map(({ key, design }) => {
+          .map(({ key, canvas: design }) => {
             const ab = design.doc.pages.reduce((n, p) => n + p.artboards.length, 0);
             return `${design.doc.name} — ${key} (${plural(design.doc.pages.length, "page")}, ${plural(ab, "artboard")})${key === session?.file ? " (current)" : ""}`;
           })
@@ -250,7 +250,7 @@ export const fileTools = [
         });
       }
       if (args.tokens) doc.tokens = args.tokens.endsWith("\n") ? args.tokens : `${args.tokens}\n`;
-      const { key, design } = await ws.create(args.path, doc);
+      const { key, canvas: design } = await ws.create(args.path, doc);
       if (session) session.file = key;
       const link = ws.link?.(key, { origin: caller.reachedAt });
       return {
@@ -275,7 +275,7 @@ export const fileTools = [
         .describe("true archives it, out of the person's Recent designs; false brings it back."),
     },
     async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file);
+      const { key, canvas: design } = await resolveFile(ctx, args.file);
       const ops: Op[] = [];
       if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
       if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });

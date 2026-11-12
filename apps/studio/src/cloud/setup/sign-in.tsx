@@ -16,7 +16,7 @@ export interface SignInCopy {
 
 const SIGN_IN: SignInCopy = {
   title: "Sign in to Ponzu",
-  body: "Design on a canvas, steer with comments, and ship pull requests to your repos.",
+  body: "Build on a canvas, steer with comments, and ship pull requests to your repos.",
 };
 
 /** Signing in to Ponzu, with GitHub: the mark, one line on what Ponzu is, and the one button. */

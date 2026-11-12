@@ -29,7 +29,7 @@ takes.
 | `PONZU_POSTHOG_AI_CONTENT` | `1`: AI observability events carry the model's inputs and outputs (prompts, replies, tool arguments and results). Anything else, or unset: only metadata goes (model, tokens, cost, latency, tool names, outcome). Dev runs with `1`; production's setting is the founder's call, and the default in code is off. |
 
 On the server, set them on the API's Vercel project for the environment. The API hands all
-three to each design's runner in its session (`POST /v1/runner/session`, `analytics`), so a
+three to each canvas's runner in its session (`POST /v1/runner/session`, `analytics`), so a
 sandbox needs no variables of its own, and a change reaches a runner the next time one starts.
 The runner's code that uses them is in the runner bundle the API serves, so it ships with the
 API.
@@ -43,13 +43,13 @@ API.
   GitHub account's login), `kind` (`organization` or `user`), `repos` (how many the App
   reaches), `repository_selection` (`all` or `selected`). The server sets them whenever it reads
   the installation from GitHub.
-- **Designs.** Every event about a design carries `design_id`. Never a design's name, a repo's
+- **Canvases.** Every event about a canvas carries `canvas_id`. Never a canvas's name, a repo's
   contents, a file path from someone's machine, or what someone typed (a message is its length).
 - **One fact, one side.** A fact is captured once, by the side that knows it for certain. What
   happens on the server is a server event; what only the app knows (the screen showing, a setup
   step reached, an idea chosen instead of typing, a pane toggled, a hotkey, an update installed,
   a sign-in started or failed) is an app event. When unsure, the server owns it.
-- **Names.** Events are lowercase "object verb" in the past tense (`design created`); properties
+- **Names.** Events are lowercase "object verb" in the past tense (`canvas created`); properties
   are snake_case. Each side keeps its events in one typed catalogue, so a name cannot be misspelt
   at a call site: the server's is `apps/api/src/analytics/events.ts`.
 - **Sessions.** The app sends its PostHog session with every request to the API, the PostHog
@@ -80,31 +80,31 @@ Every event about a workspace also carries `workspace_id`.
 | `user signed up` | | The first sign-in of a GitHub account: its `users` row was made. |
 | `user signed in` | `new_user` | Every sign-in exchange that let someone in. |
 | `user signed out` | | |
-| `account deleted` | `deleted_designs`, `kept_designs` | |
+| `account deleted` | `deleted_canvases`, `kept_canvases` | |
 | `workspace connected` | `workspace_id`, `kind`, `repos` | The App was installed on an account, or installed again, or unsuspended. Once, even when its webhook and the setup read it at the same moment: the database tells exactly one of them it made the change. About whoever installed it when Ponzu knows them, else the person whose sign-in found it. |
 | `workspace disconnected` | `workspace_id`, `reason` (`uninstalled`, `suspended`) | About no one. An uninstall is said by the reader that took it off the workspace; a suspension under one id per suspension, at GitHub's time for it. |
 | `repo access changed` | `workspace_id`, `repos` | GitHub said the repos the App reaches changed. About no one. |
-| `claude connected` | `kind` (`subscription`, `api_key`), `woke_designs` | |
+| `claude connected` | `kind` (`subscription`, `api_key`), `woke_canvases` | |
 | `claude disconnected` | | |
-| `design created` | `design_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a design with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
-| `design deleted` | `design_id`, `by_owner` | |
-| `design settled` / `design reopened` | `design_id` | |
-| `message sent` | `design_id`, `first`, `characters`, `attachments` | `first`: the message a design began with, sent by its create. |
-| `comment posted` | `design_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
-| `turn stopped` | `design_id` | A person asked the agent to stop. |
-| `turn started` | `design_id`, `turn_id` | Timed when the turn began. Captured when the runner reports the turn. About the person whose message began it. |
-| `turn finished` | `design_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `runner`, `bundle` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). `runner` is what the runner said it is (`runner/0.1.0+<bundle>`), `bundle` the first twelve hex of the runner bundle's SHA-256 it said it runs, null for a runner started outside a sandbox. |
-| `turn lapsed` | `design_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the design's owner. |
-| `turn stalled` | `design_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the design's owner. |
-| `question asked` | `design_id`, `question_id`, `kind` | The agent asked; about no one. |
-| `question answered` | `design_id`, `question_id`, `kind` | |
-| `pull request created` / `merged` / `closed` | `design_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
-| `sandbox woke` | `design_id`, `start` (`create`, `resume`, `restart`), `fresh`, `recreated`, `duration_ms`, `image` | About the design's owner, whose Claude it runs on. `duration_ms` is from the wake's start until `ponzu-start` was sent. `create`: the session booted on an empty disk (a first wake, a new image, or a snapshot that expired); `resume`: from its snapshot; `restart`: the runner started again in a session that was already running (a changed Claude credential, or a session left running). `fresh`: the disk was empty, so the runner rebuilds from git and the last checkpoint. `recreated`: the sandbox was deleted and made again on a new image (docs/cloud.md, "How images roll out"). `image` is the `ponzu-runner@sha256:…` it runs. |
-| `sandbox slept` | `design_id`, `why` (`idle`, `claude_unusable`, `claude_disconnected`, `owner_left`, `restart`, `failed`, `cycle`, `expired`), `awake_ms` | The sandbox was stopped after its runner shut down, and `awake_ms` metered. `restart`: put to sleep to be woken again at once (a runner unheard for 90 seconds, a lapsed or stalled turn); `cycle`: its session neared Vercel's 24-hour cap; `expired`: Vercel had already stopped the session when the sweep went to extend it. About the design's owner. |
-| `sandbox restored` | `design_id`, `kind` (`rollback`, `rebuilt`) | A runner found its disk behind the last checkpoint. About no one. |
-| `ideas generated` | `repo_id`, `count`, `duration_ms`, `attempts`, `input_tokens`, `output_tokens` | About whoever's visit started it. `count` is 1 to 4: ideas the gate found are not designs are dropped. The tokens are the writer's; the gate's calls are traced as `repo_ideas_gate`. |
-| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `unsafe`, `failed`) | `unsafe`: the gate found an idea asking the reader for something other than a design, so none were kept (what it said goes to the logs only, never here). `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
-| `file uploaded` | `design_id`, `content_type`, `bytes` | A person's image reached a design. |
+| `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
+| `canvas deleted` | `canvas_id`, `by_owner` | |
+| `canvas settled` / `canvas reopened` | `canvas_id` | |
+| `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
+| `comment posted` | `canvas_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
+| `turn stopped` | `canvas_id` | A person asked the agent to stop. |
+| `turn started` | `canvas_id`, `turn_id` | Timed when the turn began. Captured when the runner reports the turn. About the person whose message began it. |
+| `turn finished` | `canvas_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `runner`, `bundle` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). `runner` is what the runner said it is (`runner/0.1.0+<bundle>`), `bundle` the first twelve hex of the runner bundle's SHA-256 it said it runs, null for a runner started outside a sandbox. |
+| `turn lapsed` | `canvas_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the canvas's owner. |
+| `turn stalled` | `canvas_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the canvas's owner. |
+| `question asked` | `canvas_id`, `question_id`, `kind` | The agent asked; about no one. |
+| `question answered` | `canvas_id`, `question_id`, `kind` | |
+| `pull request created` / `merged` / `closed` | `canvas_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
+| `sandbox woke` | `canvas_id`, `start` (`create`, `resume`, `restart`), `fresh`, `recreated`, `duration_ms`, `image` | About the canvas's owner, whose Claude it runs on. `duration_ms` is from the wake's start until `ponzu-start` was sent. `create`: the session booted on an empty disk (a first wake, a new image, or a snapshot that expired); `resume`: from its snapshot; `restart`: the runner started again in a session that was already running (a changed Claude credential, or a session left running). `fresh`: the disk was empty, so the runner rebuilds from git and the last checkpoint. `recreated`: the sandbox was deleted and made again on a new image (docs/cloud.md, "How images roll out"). `image` is the `ponzu-runner@sha256:…` it runs. |
+| `sandbox slept` | `canvas_id`, `why` (`idle`, `claude_unusable`, `claude_disconnected`, `owner_left`, `restart`, `failed`, `cycle`, `expired`), `awake_ms` | The sandbox was stopped after its runner shut down, and `awake_ms` metered. `restart`: put to sleep to be woken again at once (a runner unheard for 90 seconds, a lapsed or stalled turn); `cycle`: its session neared Vercel's 24-hour cap; `expired`: Vercel had already stopped the session when the sweep went to extend it. About the canvas's owner. |
+| `sandbox restored` | `canvas_id`, `kind` (`rollback`, `rebuilt`) | A runner found its disk behind the last checkpoint. About no one. |
+| `ideas generated` | `repo_id`, `count`, `duration_ms`, `attempts`, `input_tokens`, `output_tokens` | About whoever's visit started it. `count` is 1 to 4: ideas the gate found not visible (not something people see or do) are dropped. The tokens are the writer's; the gate's calls are traced as `repo_ideas_gate`. |
+| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `unsafe`, `failed`) | `unsafe`: the gate found an idea asking the reader for something other than work on the canvas, so none were kept (what it said goes to the logs only, never here). `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
+| `file uploaded` | `canvas_id`, `content_type`, `bytes` | A person's image reached a canvas. |
 | `monthly cap set` | `cap_usd` | |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
 
@@ -116,7 +116,7 @@ traffic (claims, acks, state reports, thread writes).
 An error nobody expected goes to PostHog's error tracking (`captureException`): a 500 from a
 route, a failed background task, a webhook's or a job's failure, a failed step of the sandbox
 sweep. Each carries the person, the workspace, `$session_id`, the route as declared
-(`POST /v1/designs/:id/messages`, never the address asked) and the request id, and is in the
+(`POST /v1/canvases/:id/messages`, never the address asked) and the request id, and is in the
 logs exactly as before. A refusal (validation, not found, signed out, forbidden: any 4xx) is the
 API working, and is not an exception.
 
@@ -142,7 +142,7 @@ and guarded at runtime by the gate (docs/cloud.md, "Ideas").
 
 ### Agent turns
 
-Each turn of the agent in a design's sandbox is one trace in LLM analytics, sent by the runner
+Each turn of the agent in a canvas's sandbox is one trace in LLM analytics, sent by the runner
 straight to PostHog (`apps/runner/src/agent/trace.ts`, `apps/runner/src/telemetry.ts`):
 
 | Event | What |
@@ -151,9 +151,9 @@ straight to PostHog (`apps/runner/src/agent/trace.ts`, `apps/runner/src/telemetr
 | `$ai_generation` | Each model call, the main agent's (`agent`) and every subagent's (`subagent`): model, input and output tokens, cache reads and writes, latency, time to first token, stop reason. |
 | `$ai_span` | Each tool call: its name, how long it took, whether it failed. A subagent's calls hang under the tool call that started it. |
 
-Every event carries `design_id`, the `workspace` group, `ponzu_runner` (the runner and the bundle
-it runs, `runner/0.1.0+<hash>`), `$ai_session_id` (the design id, so a
-design's turns read as one conversation whatever Claude session each ran in), and `$session_id`
+Every event carries `canvas_id`, the `workspace` group, `ponzu_runner` (the runner and the bundle
+it runs, `runner/0.1.0+<hash>`), `$ai_session_id` (the canvas id, so a
+canvas's turns read as one conversation whatever Claude session each ran in), and `$session_id`
 of the app session that sent the message, when it said. The distinct id is the person whose
 message began the turn; a turn nobody's message began is about no one. With content on, the
 prompt, the replies and the tools' arguments and results go too, each clipped to 16,000
@@ -178,14 +178,14 @@ so subagents' model calls would be lost. The events are the documented manual-ca
 ## App events
 
 Captured by the Mac app: its studio (`apps/studio`) and shell (`apps/desktop`). The app captures what only it
-knows: what is on screen and what was pressed. A design created, a turn finished, a pull request
+knows: what is on screen and what was pressed. A canvas created, a turn finished, a pull request
 merged are the API's. The catalogue is `apps/studio/src/app/analytics/events.ts`, typed, so a
 name can't be misspelt at a call site.
 
 Every event carries `app_version`, `channel` (`Ponzu`, `Ponzu Dev` or `Ponzu Local`, a run from a checkout),
 `platform` and `os_version`, the `workspace` group in view, and `$current_url` as the view's
-synthetic URL (below). Nothing carries what someone typed, a design's or repo's name, or a path:
-a design is its `design_id`.
+synthetic URL (below). Nothing carries what someone typed, a canvas's or repo's name, or a path:
+a canvas is its `canvas_id`.
 
 | Event | Properties | When |
 |---|---|---|
@@ -200,26 +200,26 @@ a design is its `design_id`.
 | `setup step reached` | `step`: `where`, `claude`, `iphone` | a first-run step shows |
 | `setup step completed` | `step` | it gives way to the next, or to the window |
 | `idea chosen` | `position` | an idea on the create page is picked into the composer |
-| `create prompt sent` | `source`: `idea`, `idea_edited`, `typed`; `project`: `repo`, `scratch`; `images` | the create page made its design |
-| `design opened` | `design_id`, `via`: `sidebar`, `search`, `link`, `created`, `restored` | |
-| `page switched` | `design_id` | |
-| `pane toggled` | `pane`: `sidebar`, `thread`, `pull_request`; `open`; `design_id` | |
-| `comment mode entered` | `design_id` | the canvas's Comment tool, by button or `C` |
+| `create prompt sent` | `source`: `idea`, `idea_edited`, `typed`; `project`: `repo`, `scratch`; `images` | the create page made its canvas |
+| `canvas opened` | `canvas_id`, `via`: `sidebar`, `search`, `link`, `created`, `restored` | |
+| `page switched` | `canvas_id` | |
+| `pane toggled` | `pane`: `sidebar`, `thread`, `pull_request`; `open`; `canvas_id` | |
+| `comment mode entered` | `canvas_id` | the canvas's Comment tool, by button or `C` |
 | `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+j` | the window's ⌘ shortcuts |
 | `settings section viewed` | `section` | |
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
-| `$pageview` | `design_id` on a design | the view changes |
+| `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 
 Autocapture records clicks, changes and submits for heatmaps, dead clicks and paths, with no
 element's text (`mask_all_text`) and none of its attributes (`mask_all_element_attributes`): a
-sidebar row's `aria-label` names its design, repo and branch, and a board's `title` is its name.
+sidebar row's `aria-label` names its canvas, repo and branch, and a board's `title` is its name.
 What is left is each element's tag and place. Pointer-level detail is left to it.
 
 **Views.** The studio has no routes and, in a development build, a page address that names the
 checkout, so every event and recording says where the window is as a stable synthetic URL, and a
 `$pageview` is captured when it changes: `ponzu://app/sign-in`, `/update`, `/setup/<step>`,
-`/create`, `/design`, `/design/pull-request`, `/settings/<section>`, `/no-access`. The referrer is
+`/create`, `/canvas`, `/canvas/pull-request`, `/settings/<section>`, `/no-access`. The referrer is
 always `$direct`.
 
 **Identity.** The distinct id is the Ponzu user id, set when the session is known; person
@@ -237,7 +237,7 @@ anonymous. The main process puts its exceptions down to whoever is signed in.
 Every session is recorded when a project is set (turn session replay on, at 100%, in the
 project's settings): the DOM, pointer and keys, console logs, and network timing (method, status
 and duration, and the request's address: the API's with its path and without its query, anything
-else only its origin, since a design's files sit under its asset key, which is the capability to
+else only its origin, since a canvas's files sit under its asset key, which is the capability to
 read them; never headers or bodies). Heatmaps and dead clicks are on.
 
 Both modes mask every input, and block outright (an empty box of its size) anything that can
@@ -247,11 +247,11 @@ secret's field in Needs you, and a repo's secrets in Settings. What else shows i
 
 | Mode | Shows |
 |---|---|
-| `private` (the default) | the chrome, the layout and every interaction. A design's boards are blocked wherever they are drawn (the canvas's live boards and pictures, the thread's miniatures and attachments, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab, and the sidebar's design names and search results are masked. |
-| `full` (Ponzu Dev) | everything a person sees, boards and thread included. The recording keeps the addresses of a design's pictures so the player can show them, and with them the design's asset key: anyone who can watch a `full` recording can read that design's files. |
+| `private` (the default) | the chrome, the layout and every interaction. A canvas's boards are blocked wherever they are drawn (its live boards and pictures, the thread's miniatures and attachments, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab, and the sidebar's canvas names and search results are masked. |
+| `full` (Ponzu Dev) | everything a person sees, boards and thread included. The recording keeps the addresses of a canvas's pictures so the player can show them, and with them the canvas's asset key: anyone who can watch a `full` recording can read that canvas's files. |
 
 The rules are `apps/studio/src/app/analytics/privacy.ts`; `analytics.e2e.test.ts` records a
-design in each mode against a local sink and checks what the recording holds.
+canvas in each mode against a local sink and checks what the recording holds.
 
 ## Pointing the Mac app at a project
 

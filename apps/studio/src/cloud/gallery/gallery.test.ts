@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's components in a real Chromium: the sidebar's keyboard and focus
- * behaviour, its menus, search and presence. Creating a design, the repo picker, the page tabs
+ * behaviour, its menus, search and presence. Creating a canvas, the repo picker, the page tabs
  * and the pull request tab are in gallery.create.test.ts; the compositions against their
  * references in gallery.references.*.test.ts. Skips where there is no Chrome or Chromium.
  */
@@ -77,7 +77,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
   test("the filter narrows the list as you choose, stays open, and marks itself on", async () => {
     await open("team-sidebar");
-    const rows = () => page.$$eval("[data-design-row]", (els) => els.length);
+    const rows = () => page.$$eval("[data-canvas-row]", (els) => els.length);
     expect(await rows()).toBe(6);
     await page.click('button[aria-label="Filter"]');
     await page.click('[role="menuitemcheckbox"]:has-text("fernwood")');
@@ -101,7 +101,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         )!;
         const name = trigger.querySelector("span")!;
         const sidebar = document.querySelector("#sidebar")!.getBoundingClientRect();
-        const buttons = ["Search", "Filter", "New design"].map((label) => {
+        const buttons = ["Search", "Filter", "New canvas"].map((label) => {
           const r = document
             .querySelector(`#sidebar button[aria-label^="${label}"]`)!
             .getBoundingClientRect();
@@ -135,17 +135,17 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Meta+k");
     const field = 'input[role="combobox"]';
     await page.waitForSelector(field);
-    await focusOn("Search designs, boards and comments");
-    expect(await page.$$eval("[data-design-row]", (els) => els.length)).toBe(6);
+    await focusOn("Search canvases, boards and comments");
+    expect(await page.$$eval("[data-canvas-row]", (els) => els.length)).toBe(6);
     await page.keyboard.type("hero");
     await page.waitForSelector('[role="listbox"]');
     const active = () => page.$eval(field, (el) => el.getAttribute("aria-activedescendant"));
-    expect(await active()).toBe("search-design-dsn_quieter");
+    expect(await active()).toBe("search-canvas-cnv_quieter");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     expect(await active()).toBe("search-board-ab_hero_b");
     await page.keyboard.press("ArrowUp");
-    expect(await active()).toBe("search-design-dsn_settled_1");
+    expect(await active()).toBe("search-canvas-cnv_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
     // Back where ⌘K found it: nowhere, so the next key goes to the window, and the Search
@@ -157,7 +157,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("sidebar-collapsed");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(true);
     await page.keyboard.press("Meta+k");
-    await focusOn("Search designs, boards and comments");
+    await focusOn("Search canvases, boards and comments");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(false);
     // Focused without scrolling the pane's content aside while it opens.
     expect(await page.$eval("#sidebar", (el) => el.scrollLeft)).toBe(0);
@@ -187,15 +187,15 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await focusOn("Jordan · last here 2 days ago");
     await page.waitForSelector('[role="tooltip"]:has-text("Jordan · last here 2 days ago")');
     const stops = await page.$$eval(
-      '[aria-label="People in this design"] [role="img"]',
+      '[aria-label="People in this canvas"] [role="img"]',
       (els) => els.filter((e) => e.tabIndex === 0).length,
     );
     expect(stops).toBe(1);
   });
-  test("unchecking a repo keeps Scratch's designs, and Scratch has its own box", async () => {
+  test("unchecking a repo keeps Scratch's canvases, and Scratch has its own box", async () => {
     await open("create");
     const names = () =>
-      page.$$eval("[data-design-row]", (els) => els.map((e) => e.textContent ?? ""));
+      page.$$eval("[data-canvas-row]", (els) => els.map((e) => e.textContent ?? ""));
     await page.click('button[aria-label="Filter"]');
     await page.click('[role="menuitemcheckbox"]:has-text("brand")');
     expect((await names()).some((n) => n.includes("Autumn drop moodboard"))).toBe(true);
@@ -211,19 +211,19 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     expect(await duration()).toBe("1.2s");
   });
-  test("the design list is one Tab stop that the arrows move through", async () => {
+  test("the canvas list is one Tab stop that the arrows move through", async () => {
     await open("team-sidebar");
-    await page.focus('[data-design-row="dsn_quieter"]');
+    await page.focus('[data-canvas-row="cnv_quieter"]');
     await page.keyboard.press("ArrowDown");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-design-row"))).toBe(
-      "dsn_checkout",
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row"))).toBe(
+      "cnv_checkout",
     );
     await page.keyboard.press("End");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-design-row"))).toBe(
-      "dsn_brand",
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row"))).toBe(
+      "cnv_brand",
     );
     const stops = await page.$$eval(
-      "[data-design-row]",
+      "[data-canvas-row]",
       (els) => els.filter((e) => e.tabIndex === 0).length,
     );
     expect(stops).toBe(1);

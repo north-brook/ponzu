@@ -2,15 +2,15 @@ import type { PullRequestTab } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import { useEffect, useMemo } from "react";
 import { type PullRequestTabState, PullRequestView } from "../cloud/pr-tab/pull-request-view.tsx";
+import type { OpenCanvas } from "./canvas.tsx";
 import { BypassMergeDialog } from "./confirm-dialogs.tsx";
-import type { OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { prSummary, toPullRequestDetail } from "./pull-request-map.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /**
- * The pull request tab, in the canvas's pane: what GitHub has, read again as it opens, with
- * the summary from the design's head while the read is on its way or when it fails.
+ * The pull request tab, in the main pane: what GitHub has, read again as it opens, with
+ * the summary from the canvas's head while the read is on its way or when it fails.
  */
 export function PullRequestPane({
   host,
@@ -18,11 +18,11 @@ export function PullRequestPane({
   viewerLogin,
 }: {
   host: Host;
-  open: OpenDesign;
+  open: OpenCanvas;
   viewerLogin: string;
 }) {
   const pull = useSnapshot(open.pullRequest);
-  const head = useLiveQuery("design.head", { designId: open.id }).rows?.[0];
+  const head = useLiveQuery("canvas.head", { canvasId: open.id }).rows?.[0];
   const summary = prSummary(head);
   const store = open.pullRequest;
 
@@ -79,7 +79,7 @@ export function stillSettling(pr: Pull, now: number): boolean {
 }
 
 /** Asks before a merge that goes past the repo's rules, wherever the button was pressed. */
-export function BypassConfirmation({ open }: { open: OpenDesign }) {
+export function BypassConfirmation({ open }: { open: OpenCanvas }) {
   const { bypass } = useSnapshot(open.pullRequest);
   return (
     <BypassMergeDialog

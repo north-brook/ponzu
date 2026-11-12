@@ -28,7 +28,7 @@ describe.skipIf(!chromium)("theme lint in Chromium", () => {
       await renderer.render({ artboard: board(body), tokens: css, lint: true, colorScheme })
     ).issues.filter((i) => i.kind === "theme");
 
-  test("a design that uses its tokens throughout, and a dark card that stays dark, are clean in both themes", async () => {
+  test("a canvas that uses its tokens throughout, and a dark card that stays dark, are clean in both themes", async () => {
     const body = `<div data-id="n_card" data-name="Card" style="background:var(--card);padding:16px"><p data-id="n_p" style="color:var(--muted)">Quiet</p></div>
 <div data-id="n_term" style="background:#0e0e0e;color:#f2f2f2;padding:12px"><code data-id="n_c">ponzu</code></div>`;
     expect(await lint(body)).toEqual([]);
@@ -52,14 +52,14 @@ describe.skipIf(!chromium)("theme lint in Chromium", () => {
     }
   });
 
-  test("a part pinned to one scheme, and a design with no theme, are left alone", async () => {
+  test("a part pinned to one scheme, and a canvas with no theme, are left alone", async () => {
     const pinned = `<div data-id="n_mock" data-name="Light mock" style="color-scheme:light;background:#ffffff;padding:16px"><p data-id="n_t" style="color:#111110">Always light</p></div>`;
     expect(await lint(pinned, "dark")).toEqual([]);
     const fixed = `<div data-id="n_card" style="background:#fff"><p data-id="n_t" style="color:#111">Hi</p></div>`;
     expect(await lint(fixed, "dark", ":root { --bg: #f3f3f1; --ink: #111; }")).toEqual([]);
   });
 
-  test("a design themed with prefers-color-scheme is checked in both themes too", async () => {
+  test("a canvas themed with prefers-color-scheme is checked in both themes too", async () => {
     const media = `:root { --bg: #f3f3f1; --ink: #111110; }
 @media (prefers-color-scheme: dark) { :root { --bg: #121212; --ink: #f2f2f2; } }`;
     const body = `<p data-id="n_fixed" data-name="Fixed" style="color:#111110">Fixed ink</p><p data-id="n_ok" style="color:var(--ink)">Themed</p>`;

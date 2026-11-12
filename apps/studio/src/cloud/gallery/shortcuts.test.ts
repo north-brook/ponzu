@@ -1,5 +1,5 @@
 /*
- * The number shortcuts in a real Chromium, on the gallery's `shortcuts` boards (twelve designs,
+ * The number shortcuts in a real Chromium, on the gallery's `shortcuts` boards (twelve canvases,
  * eleven pages): ⌘1–9 and ⌘0 over the sidebar, ⌃1–9 over the page tabs, where they hold back,
  * and the hints a held modifier shows, frame by frame. Skips where there is no Chrome or
  * Chromium. With PONZU_SHOTS set to a folder, it leaves pictures of the hints there at 2x, in
@@ -20,7 +20,7 @@ import {
 setDefaultTimeout(60_000);
 
 const SHOTS = process.env.PONZU_SHOTS;
-const ROWS = 'ul[aria-label="Designs"] [data-design-row]';
+const ROWS = 'ul[aria-label="Canvases"] [data-canvas-row]';
 const TABS = '[aria-label="Pages"] [role="tab"]';
 
 describe.skipIf(!chromiumPath)("the number shortcuts", () => {
@@ -53,13 +53,13 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     // Pages: ⌃ on a Mac, Alt off it (ui/shortcut.ts).
     pageMod = mod === "Meta" ? "Control" : "Alt";
   };
-  /** The rows top to bottom, by design id, and the open one. */
+  /** The rows top to bottom, by canvas id, and the open one. */
   const rows = () =>
-    page.$$eval(ROWS, (els) => els.map((el) => el.getAttribute("data-design-row") ?? ""));
+    page.$$eval(ROWS, (els) => els.map((el) => el.getAttribute("data-canvas-row") ?? ""));
   const openRow = () =>
     page.evaluate(
       () =>
-        document.querySelector('[aria-current="page"]')?.getAttribute("data-design-row") ?? null,
+        document.querySelector('[aria-current="page"]')?.getAttribute("data-canvas-row") ?? null,
     );
   const activeTab = () =>
     page.evaluate(
@@ -70,7 +70,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
       TABS,
     );
   const tabCount = () => page.$$eval(TABS, (els) => els.length);
-  /** The hints showing now, as "design-3", "page-9". */
+  /** The hints showing now, as "canvas-3", "page-9". */
   const shownHints = () =>
     page.$$eval("[data-hint][data-shown]", (els) =>
       els.map((el) => el.getAttribute("data-hint") ?? ""),
@@ -93,7 +93,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
       prefix,
     );
 
-  test("⌘1–8 open the sidebar's designs in order, ⌘9 the last, ⌘0 the create page", async () => {
+  test("⌘1–8 open the sidebar's canvases in order, ⌘9 the last, ⌘0 the create page", async () => {
     await open("shortcuts");
     const order = await rows();
     expect(order.length).toBe(12);
@@ -147,11 +147,11 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await page.keyboard.up(pageMod);
   });
 
-  test("while search shows results, ⌘1–9 rest and ⌘0 still makes a design", async () => {
+  test("while search shows results, ⌘1–9 rest and ⌘0 still makes a canvas", async () => {
     await open("shortcuts");
     await press(`${mod}+k`);
     await page.keyboard.type("hero");
-    await page.waitForFunction(() => !document.querySelector('ul[aria-label="Designs"]'));
+    await page.waitForFunction(() => !document.querySelector('ul[aria-label="Canvases"]'));
     const before = await openRow();
     await press(`${mod}+Digit2`);
     expect(await openRow()).toBe(before);
@@ -177,7 +177,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     expect(await openRow()).toBe(order[4]!);
   });
 
-  test("with the sidebar collapsed ⌘ numbers open the same designs, with no hints", async () => {
+  test("with the sidebar collapsed ⌘ numbers open the same canvases, with no hints", async () => {
     await open("shortcuts-collapsed");
     const order = await rows();
     await press(`${mod}+Digit3`);
@@ -209,7 +209,7 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
     await hintsUp();
     const hints = await shownHints();
     await page.keyboard.up(mod);
-    expect(hints).toEqual(order.map((_, i) => `design-${i + 1}`));
+    expect(hints).toEqual(order.map((_, i) => `canvas-${i + 1}`));
   });
 
   /**

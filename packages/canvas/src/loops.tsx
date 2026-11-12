@@ -184,7 +184,7 @@ export function syncLiveToVideos(root: ShadowRoot | null | undefined, layer: HTM
   // interleaved they cost a style recalc per animation: two seconds for a
   // board of 2,400.
   const all = animationsOf(root);
-  // Only what the handoff paused: an animation the design paused itself stays paused.
+  // Only what the handoff paused: an animation the board's CSS paused itself stays paused.
   const held = heldBy.get(root);
   heldBy.delete(root);
   const paused = held ? all.filter((a) => held.has(a) && a.playState === "paused") : [];
@@ -286,7 +286,7 @@ export async function handoffToVideos(
       if (t === null || t === undefined) return null;
       return liveTimeFor(t, loops.t0, x.r.period, (timeOf(x) ?? 0) - x.r.period / 2);
     });
-    // Only what's running: one the design paused (a loop that plays on hover) isn't in the
+    // Only what's running: one the board's CSS paused (a loop that plays on hover) isn't in the
     // video, and is left as it is, so the next thaw doesn't start it.
     const running = regions.map(({ anims }) => anims.filter((a) => a.playState === "running"));
     const paused = new Set<Animation>();

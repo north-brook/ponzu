@@ -51,6 +51,6 @@ export interface Host {
   update: PonzuDesktop["update"] | null;
   /** Open an https link in the system browser. */
   openExternal(url: string): void;
-  /** Where the last designs opened are kept for showing offline, while someone is signed in. */
+  /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
 }

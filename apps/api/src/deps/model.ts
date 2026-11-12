@@ -15,7 +15,7 @@ import type { Fetch } from "./fetch.ts";
 
 /*
  * A small fast Claude model, paid for by Ponzu, for the small things the API itself asks a
- * model: never a person's work. A design's agent runs on the person's own Claude plan in its
+ * model: never a person's work. A canvas's agent runs on the person's own Claude plan in its
  * sandbox and never comes through here. The one caller today is `ideas/`.
  *
  * The call is the AI SDK's `generateText` with a structured output. It reaches Claude through

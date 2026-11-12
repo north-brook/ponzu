@@ -25,7 +25,7 @@ async function world({
     repos: [{ name: "site" }],
   });
   const client = backend.connect(maya);
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: ws.id,
     repoId: ws.repos[0]!.id,
     name: "Pricing",
@@ -36,7 +36,7 @@ async function world({
   const released: string[] = [];
   let urls = 0;
   const pictures = new CommentPictures({
-    designId: design.id,
+    canvasId: canvas.id,
     meId: maya.id,
     source: {
       onOp: (listener) => {
@@ -45,7 +45,7 @@ async function world({
       },
       saved: () => committed,
     },
-    api: client.api.designs,
+    api: client.api.canvases,
     draw:
       draw ??
       (async ({ messageId }) => {
@@ -65,7 +65,7 @@ async function world({
       op: "thread.create",
       thread: {
         id: `th_${messageId}`,
-        pageId: backend.design(design.id).sequencer.doc.pages[0]!.id,
+        pageId: backend.canvas(canvas.id).sequencer.doc.pages[0]!.id,
         x: 10,
         y: 10,
         status: "open",
@@ -76,14 +76,14 @@ async function world({
         ],
       },
     };
-    const commit = () => client.api.designs.commit(design.id, [{ id: `op_${messageId}`, op }]);
+    const commit = () => client.api.canvases.commit(canvas.id, [{ id: `op_${messageId}`, op }]);
     if (opts.commit !== false) await commit();
-    for (const listener of listeners) listener(op, me, backend.design(design.id).sequencer.doc);
+    for (const listener of listeners) listener(op, me, backend.canvas(canvas.id).sequencer.doc);
     return commit;
   };
   const kept = (messageId: string) =>
     backend
-      .design(design.id)
+      .canvas(canvas.id)
       .thread.map(({ item }) => item)
       .find((item) => item.kind === "comment" && item.payload.messageId === messageId);
   return {

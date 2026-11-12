@@ -13,24 +13,24 @@ import {
 } from "@ponzu/core";
 import type { MeasureRequest, MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
+import type { OpenCanvas } from "./canvas.ts";
 import type { ToolContext } from "./context.ts";
 import { ToolError, type ToolResult, tool } from "./define.ts";
-import type { OpenDesign } from "./design.ts";
 import { overlapLine, pageOverlapList } from "./overlap.ts";
-import { type ArtboardNote, designOf, linkNote, plural } from "./util.ts";
+import { type ArtboardNote, canvasOf, linkNote, plural } from "./util.ts";
 
 /**
- * What get_basic_info says about a design wherever it is kept, a line or a block each.
- * `summary` is the design in outline; `linkAbout` says what its link is for.
+ * What get_basic_info says about a canvas wherever it is kept, a line or a block each.
+ * `summary` is the canvas in outline; `linkAbout` says what its link is for.
  */
 export async function overview(
   ctx: ToolContext,
-  { key, design }: OpenDesign,
+  { key, canvas }: OpenCanvas,
   summary: string,
   linkAbout: string,
 ): Promise<string[]> {
   const { ws } = ctx;
-  const doc = design.doc;
+  const doc = canvas.doc;
   const lines = [summary];
   const link = ws.link?.(key, { origin: ctx.caller.reachedAt });
   if (link) lines.push(`Link: ${link} (${linkAbout})`);
@@ -61,7 +61,7 @@ export async function overview(
   if (ws.theme)
     lines.push(
       isThemed(doc.tokens) || doc.pages.some((p) => p.artboards.some((ab) => isThemed("", ab.root)))
-        ? `The person's canvas is in ${ws.theme} mode, so they see this design's light-dark() colors in ${ws.theme}. Screenshots default to it.`
+        ? `The person sees Ponzu in ${ws.theme} mode, so they see this canvas's light-dark() colors in ${ws.theme}. Screenshots default to it.`
         : `The person's canvas is in ${ws.theme} mode. These tokens don't change with the theme, so artboards show as they are in both. Notes, diagrams and docs you make for the person should still follow it: give them light-dark() colors.`,
     );
   const working = ws.presence.list().filter((p) => p.working.length);
@@ -79,8 +79,8 @@ export async function getNode(
   kept?: ArtboardNote,
 ): Promise<ToolResult> {
   const { ws } = ctx;
-  const open = await designOf(ctx, [id]);
-  const doc = open.design.doc;
+  const open = await canvasOf(ctx, [id]);
+  const doc = open.canvas.doc;
   const hit = locate(doc, id);
   if (!hit) throw new ToolError(`No node with id ${id}.`);
   const n = hit.node;
@@ -122,17 +122,17 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, and what is being worked on. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the canvas: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, and what is being worked on. Call get_guide('basics') once per session for the house rules.",
     input: {},
     async handler(_args, ctx) {
-      const open = await designOf(ctx);
+      const open = await canvasOf(ctx);
       const lines = await overview(
         ctx,
         open,
-        docSummary(open.design.doc, { linkOf: (at) => ctx.ws.linkTo?.(open.key, at) }),
+        docSummary(open.canvas.doc, { linkOf: (at) => ctx.ws.linkTo?.(open.key, at) }),
         ctx.ws.linkTo
-          ? "opens this design in Ponzu, for a pull request description; each page and artboard above has its own, for your messages"
-          : "opens this design in Ponzu",
+          ? "opens this canvas in Ponzu, for a pull request description; each page and artboard above has its own, for your messages"
+          : "opens this canvas in Ponzu",
       );
       return { text: lines.join("\n") };
     },
@@ -144,14 +144,14 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Indented outline of an artboard, node or page: tag, id, layer name, short text and layout hints. Cheap; use it to find ids before editing. Omit id for the whole design.",
+      "Indented outline of an artboard, node or page: tag, id, layer name, short text and layout hints. Cheap; use it to find ids before editing. Omit id for the whole canvas.",
     input: {
-      id: z.string().optional().describe("Artboard, node or page id. Omit for the whole design."),
+      id: z.string().optional().describe("Artboard, node or page id. Omit for the whole canvas."),
       depth: z.number().int().min(1).max(12).optional().describe("Levels to show. Default 4."),
     },
     async handler({ id, depth }, ctx) {
-      const { key, design } = await designOf(ctx, [id]);
-      const doc = design.doc;
+      const { key, canvas } = await canvasOf(ctx, [id]);
+      const doc = canvas.doc;
       if (!id) return { text: docSummary(doc, { linkOf: (at) => ctx.ws.linkTo?.(key, at) }) };
       const page = findPage(doc, id);
       if (page) {
@@ -196,14 +196,14 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "The HTML of an artboard or node, exactly as stored: every size, color and font setting. Use it to study or reuse existing work, and as the spec when you build a design in code.",
+      "The HTML of an artboard or node, exactly as stored: every size, color and font setting. Use it to study or reuse existing work, and as the spec when you build a canvas in code.",
     input: {
       id: z.string(),
       ids: z.boolean().optional().describe("Include data-id attributes. Default true."),
     },
     async handler({ id, ids }, ctx) {
-      const { design } = await designOf(ctx, [id]);
-      const hit = locate(design.doc, id);
+      const { canvas } = await canvasOf(ctx, [id]);
+      const hit = locate(canvas.doc, id);
       if (!hit) throw new ToolError(`No artboard or node with id ${id}.`);
       const html = serializeNode(hit.node, { omitIds: ids === false });
       const limit = 60_000;
@@ -222,7 +222,7 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Search nodes by text, layer name, tag, or declared style (property and/or value, including var(--token) references). Filters combine with AND. Searches the whole design unless `within` is given.",
+      "Search nodes by text, layer name, tag, or declared style (property and/or value, including var(--token) references). Filters combine with AND. Searches the whole canvas unless `within` is given.",
     input: {
       text: z.string().optional().describe("Case-insensitive substring of the node's own text."),
       name: z.string().optional().describe("Case-insensitive substring of the layer name."),
@@ -238,8 +238,8 @@ export const orientTools = [
       limit: z.number().int().min(1).max(200).optional(),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.within]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.within]);
+      const doc = canvas.doc;
       const roots = scopeRoots(doc, args.within);
       const results: string[] = [];
       const limit = args.limit ?? 50;

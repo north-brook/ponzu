@@ -47,7 +47,7 @@ export function serve(opts: {
 /**
  * What git's credential helper (credential.ts) asks for, on a socket in the sandbox: `POST /get`
  * and `POST /erase` with git's request. The runner answers through its own lease and token, so
- * the agent's git needs neither. Whoever can open the socket can get a token for the design's
+ * the agent's git needs neither. Whoever can open the socket can get a token for the canvas's
  * repository, which is what the agent's git is for; the file's group and mode say who that is.
  */
 export function serveCredentials(opts: {

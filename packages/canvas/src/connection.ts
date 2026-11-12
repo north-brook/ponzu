@@ -39,7 +39,7 @@ export class SocketSource implements CanvasSource {
   readonly renditions = true;
 
   /**
-   * `watch` only listens: the home screen's live cards show a design without
+   * `watch` only listens: the home screen's live cards show a canvas without
    * editing it or counting as an open canvas.
    */
   constructor(
@@ -264,7 +264,7 @@ export class MemorySource implements CanvasSource {
   private redoStack: Op[] = [];
   readonly assetBase?: string;
 
-  /** `assetBase` is where the design's assets/ live, such as a raw GitHub URL at one commit. */
+  /** `assetBase` is where the canvas's assets/ live, such as a raw GitHub URL at one commit. */
   constructor(
     doc: Doc,
     private onChange?: (doc: Doc, op: Op) => void,

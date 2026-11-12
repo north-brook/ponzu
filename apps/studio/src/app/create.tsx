@@ -14,17 +14,17 @@ import {
   type Repo,
 } from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
-import type { FreshDesign } from "./design.tsx";
+import type { FreshCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
 import { Banner } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
 import { useClaudeConnect } from "./setup/claude-connect.ts";
 
 /*
- * Fresh start: the create page, made real. Sending makes the design with its first message in
- * one call (POST /v1/designs), on the model and effort the picker shows (the last ones picked
+ * Fresh start: the create page, made real. Sending makes the canvas with its first message in
+ * one call (POST /v1/canvases), on the model and effort the picker shows (the last ones picked
  * here, on this Mac, or else the person's defaults), in the chosen repo or Scratch, and opens it. Each composition carries
- * a create key, so sending it twice makes one design. A prompt with images makes the design
+ * a create key, so sending it twice makes one canvas. A prompt with images makes the canvas
  * first, uploads them to it, then says the message with them.
  *
  * What a send needs first opens over the window with the prompt kept, and the prompt goes once
@@ -38,7 +38,7 @@ const PREVIEWS_KEPT_MS = 60_000;
 const NAME_MAX = 40;
 
 /**
- * What a design is called until the agent names it: what the first line of the prompt is about,
+ * What a canvas is called until the agent names it: what the first line of the prompt is about,
  * as a title. Its first clause, without the request's verb and article ("Design a pricing card:
  * a heading…" is "Pricing card"), cut at a word when it is still long.
  */
@@ -72,7 +72,7 @@ export function claudeReady(me: Pick<Me, "claudeAccount"> | undefined): boolean 
   return me?.claudeAccount?.status === "connected";
 }
 
-/** An image picked to go with the prompt, held here until there is a design to upload it to. */
+/** An image picked to go with the prompt, held here until there is a canvas to upload it to. */
 interface Picked extends PendingAttachment {
   file: File;
 }
@@ -92,7 +92,7 @@ export interface CreateHandoff {
 }
 
 /**
- * A send, the moment it goes: what the design's view shows while the API makes it (its first
+ * A send, the moment it goes: what the canvas's view shows while the API makes it (its first
  * line, its name), and where the composer was, to travel from (cloud/create/landing.ts).
  */
 export interface Launch {
@@ -133,21 +133,21 @@ export function CreateView({
   onSwitchWorkspace: (handoff: CreateHandoff) => void;
   /** Ideas show while the person is new to the workspace. */
   showIdeas: boolean;
-  /** A send went: the design's view comes at once, without waiting on the API. */
+  /** A send went: the canvas's view comes at once, without waiting on the API. */
   onLaunch: (launch: Launch) => void;
   /** The send came to nothing: the create page again, as it was, with the error said. */
   onLaunchFailed: () => void;
   /**
-   * The design is made: open it, with what its answer said, so it opens on its first message.
+   * The canvas is made: open it, with what its answer said, so it opens on its first message.
    * `messageFailed` when the first message didn't go.
    */
-  onCreated: (design: FreshDesign, messageFailed: boolean) => void;
+  onCreated: (canvas: FreshCanvas, messageFailed: boolean) => void;
   onAllowMore: () => void;
 }) {
   const { queries, mutations } = usePonzu();
   const me = useQuery(queries.me());
   const defaults = useQuery(queries.claudeDefaults());
-  const create = useMutation(mutations.createDesign());
+  const create = useMutation(mutations.createCanvas());
   // Handed over by the page in the workspace just left, or fresh.
   const [taken] = useState(() => (handoff?.workspaceId === workspaceId ? handoff : null));
   const [prompt, setPrompt] = useState(taken?.prompt ?? "");
@@ -170,7 +170,7 @@ export function CreateView({
   const shown: ProjectChoice | null =
     chosen ??
     (repos === null ? null : repos[0] ? { kind: "repo", repo: repos[0] } : { kind: "scratch" });
-  // A design sent before the repos are known is made in Scratch, as the API would.
+  // A canvas sent before the repos are known is made in Scratch, as the API would.
   const project: ProjectChoice = shown ?? { kind: "scratch" };
   const ideas = useRepoIdeas(
     host.api,
@@ -228,7 +228,7 @@ export function CreateView({
     setSending(true);
     setError(null);
     const images = picked;
-    // The design's view, now: the composer travels from where it is to the thread.
+    // The canvas's view, now: the composer travels from where it is to the thread.
     const shown = images.map(
       ({ name, previewUrl, file }): Attachment => ({
         ref: `assets/${name}`,
@@ -245,14 +245,14 @@ export function CreateView({
     });
     setLaunched(true);
     try {
-      const design = await create.mutateAsync({
+      const canvas = await create.mutateAsync({
         workspaceId,
         repoId: project.kind === "repo" ? project.repo.id : null,
         name: nameFor(text),
-        // Without an answer about the defaults, the API starts the design on them itself.
+        // Without an answer about the defaults, the API starts the canvas on them itself.
         ...(choice ? { model: choice.model, effort: choice.effort } : {}),
         createKey: createKey.current,
-        // With images, the message waits until they are files of the design.
+        // With images, the message waits until they are files of the canvas.
         ...(images.length ? {} : { message: { text } }),
       });
       const idea = pickedIdea.current;
@@ -262,24 +262,24 @@ export function CreateView({
         images: images.length,
       });
       pickedIdea.current = null;
-      const said = images.length ? await sayWithImages(host.api, design.id, text, images) : true;
+      const said = images.length ? await sayWithImages(host.api, canvas.id, text, images) : true;
       createKey.current = newCreateKey();
       setPrompt("");
-      // The thread shows them until it has the design's own copies.
+      // The thread shows them until it has the canvas's own copies.
       setTimeout(() => release(images), PREVIEWS_KEPT_MS);
       handedOver.current = true;
       setPicked([]);
       onCreated(
         {
-          id: design.id,
-          name: design.name,
+          id: canvas.id,
+          name: canvas.name,
           message: said ? text : null,
           attachments: shown,
-          access: design.access,
+          access: canvas.access,
           head: {
-            agentState: design.agentState,
-            agentStatus: design.agentStatus,
-            agentBlocker: design.agentBlocker,
+            agentState: canvas.agentState,
+            agentStatus: canvas.agentStatus,
+            agentBlocker: canvas.agentBlocker,
           },
         },
         !said,
@@ -293,14 +293,14 @@ export function CreateView({
           .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
           ?.focus({ preventScroll: true }),
       );
-      analytics.capture("notice shown", { notice: "design_not_made" });
+      analytics.capture("notice shown", { notice: "canvas_not_made" });
       setError(
         failure instanceof ApiError && failure.code === "network"
           ? "Ponzu can't be reached. Check your connection and send it again."
           : failure instanceof ApiError && failure.code === "model_not_offered"
             ? // The defaults are read again (mutations.ts), so the picker shows what is offered.
               "Your Claude account doesn't offer that model any more. Check the model and send it again."
-            : "That design couldn't be made. Try again.",
+            : "That canvas couldn't be made. Try again.",
       );
     } finally {
       going.current = false;
@@ -400,7 +400,7 @@ export function CreateView({
 
 type Choice = { model: string; effort: Effort };
 
-/** Where the last model and effort picked here are kept, so the next design starts on them. */
+/** Where the last model and effort picked here are kept, so the next canvas starts on them. */
 const CHOICE_KEY = "ponzu.create.model";
 
 function loadChoice(): Choice | null {
@@ -436,17 +436,17 @@ function release(images: Picked[]) {
   for (const image of images) URL.revokeObjectURL(image.previewUrl);
 }
 
-/** Uploads the images to the new design, then says the message with them. */
+/** Uploads the images to the new canvas, then says the message with them. */
 async function sayWithImages(
   api: Api,
-  designId: string,
+  canvasId: string,
   text: string,
   images: Picked[],
 ): Promise<boolean> {
   try {
     const uploaded = await Promise.all(
       images.map(async ({ file }) =>
-        api.designs.upload(designId, {
+        api.canvases.upload(canvasId, {
           name: file.name,
           type: file.type,
           bytes: new Uint8Array(await file.arrayBuffer()),
@@ -454,7 +454,7 @@ async function sayWithImages(
       ),
     );
     const attachments = uploaded.flatMap((file) => (file.ref ? [file.ref] : []));
-    await api.designs.sendMessage(designId, { text, attachments });
+    await api.canvases.sendMessage(canvasId, { text, attachments });
     return true;
   } catch {
     return false;

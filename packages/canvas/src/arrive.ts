@@ -6,7 +6,7 @@ import type { Artboard, Doc, Op, PElement, PNode } from "@ponzu/core";
  * itself is still hidden; then it develops out of whatever it sits on, top first, as the outlines
  * fade. Nothing slides: the layout is where it will stay from the first frame. A new artboard
  * draws its frame before it fills in. An agent's writes arrive this way, and so do files saved
- * straight into the design, though only what's new in them. The person's own edits on the
+ * straight into its folder, though only what's new in them. The person's own edits on the
  * canvas, undo and redo just appear. It never holds the agent up: it runs after a write has
  * landed, in the page only.
  */
@@ -199,8 +199,8 @@ export function reducedMotion(): boolean {
 
 /**
  * Where a board's outlines are drawn: over its sheet in the same shadow root, a sibling of the
- * design rather than part of it, so its styles and selectors never see it. `all:initial` keeps the
- * design's own rules (a `div {…}`, say) off it.
+ * board's content rather than part of it, so its styles and selectors never see it. `all:initial`
+ * keeps the board's own rules (a `div {…}`, say) off it.
  */
 export function arriveLayer(root: ShadowRoot): HTMLElement {
   const found = root.querySelector<HTMLElement>(":host > [data-pz-arrive]");

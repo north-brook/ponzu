@@ -48,7 +48,7 @@ function scrub(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value).map(([key, inner]) => [scrubText(key), inner]));
 }
 
-/** What `createDesign` and `writeCheckpoint` throw for a document that cannot be stored. */
+/** What `createCanvas` and `writeCheckpoint` throw for a document that cannot be stored. */
 export function unstorableDocument(): Error {
   return new Error(
     "The document holds text Postgres cannot store: a NUL, or half of a surrogate pair.",

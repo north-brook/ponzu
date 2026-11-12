@@ -3,7 +3,7 @@ import type { Attachment, OlderItems } from "../cloud/model.ts";
 import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
- * One open design's thread: the `design.thread` live query, pages of its history from the API
+ * One open canvas's thread: the `canvas.thread` live query, pages of its history from the API
  * while the live rows aren't there yet (the first paint, offline), and the viewer's messages on
  * their way. A message shows at once; once the API has it, its own item takes the bubble's place
  * and the live row follows with the same id. The live row often comes first (the API wakes the
@@ -12,7 +12,7 @@ import { mutate, type StorePonzu } from "./store-ponzu.ts";
  * Pages of history are the client's `threadPage` queries, and a send its `sendMessage`.
  */
 
-type RunnerItem = LiveRows["design.thread"];
+type RunnerItem = LiveRows["canvas.thread"];
 
 /** A message the viewer sent that the thread doesn't hold yet. */
 export interface PendingMessage {
@@ -56,7 +56,7 @@ export class ThreadStore {
     private readonly opts: {
       ponzu: StorePonzu;
       live: Pick<Live, "subscribe">;
-      designId: string;
+      canvasId: string;
       /** The viewer, whose messages the bubbles are. */
       meId: string;
       now?: () => number;
@@ -66,8 +66,8 @@ export class ThreadStore {
   /** Starts watching: the live rows, and the newest page of history beside them. */
   start(): this {
     this.stopLive = this.opts.live.subscribe(
-      "design.thread",
-      { designId: this.opts.designId },
+      "canvas.thread",
+      { canvasId: this.opts.canvasId },
       (live) => {
         this.live = live;
         // A message the live rows hold no longer needs the API's answer to show it.
@@ -126,7 +126,7 @@ export class ThreadStore {
   }
 
   /**
-   * The first message of a design just made with it, which the API already has: shown at once,
+   * The first message of a canvas just made with it, which the API already has: shown at once,
    * as on its way, until the thread's own item arrives in its place. Nothing is sent.
    */
   seed(text: string, attachments: Attachment[] = []): void {
@@ -204,9 +204,9 @@ export class ThreadStore {
   private async deliver(message: PendingMessage): Promise<void> {
     const refs = message.attachments.map((a) => a.ref);
     try {
-      const { ponzu, designId } = this.opts;
+      const { ponzu, canvasId } = this.opts;
       const item = await mutate(ponzu, ponzu.mutations.sendMessage(), {
-        designId,
+        canvasId,
         body: { text: message.text, ...(refs.length ? { attachments: refs } : {}) },
       });
       // Held until the live rows have it, unless they already do.
@@ -222,8 +222,8 @@ export class ThreadStore {
   }
 
   private page(page: { before?: number; limit: number }) {
-    const { ponzu, designId } = this.opts;
-    return ponzu.queryClient.fetchQuery(ponzu.queries.threadPage(designId, page));
+    const { ponzu, canvasId } = this.opts;
+    return ponzu.queryClient.fetchQuery(ponzu.queries.threadPage(canvasId, page));
   }
 
   private emit(): void {

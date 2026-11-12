@@ -183,7 +183,7 @@ export function ValuePicker<T extends string>({
 /** A meter: a 6px track with the share used in ink. */
 export function Meter({ value, label }: { value: number | null; label: string }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the design's bar
+    // biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the mockup's bar
     <span
       role="meter"
       aria-label={label}

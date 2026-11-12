@@ -72,9 +72,9 @@ export function linkSchemeOf(scheme: string | undefined): LinkScheme | "none" {
 const CACHE = "ponzu.cache.";
 
 /**
- * The designs last opened, kept to show offline while someone is signed in and only then: they
+ * The canvases last opened, kept to show offline while someone is signed in and only then: they
  * are whole documents of private repos with the keys that open their files. Nothing is written
- * once the session ends (a design closing as its window unmounts would), and what was kept
+ * once the session ends (a canvas closing as its window unmounts would), and what was kept
  * goes with it. The main process clears the studio's storage then too.
  */
 export function signedInCache(
@@ -89,7 +89,7 @@ export function signedInCache(
   session.subscribe(() => {
     if (!signedIn()) forget();
   });
-  // Opened already signed out, with designs kept from before (Ponzu Dev's first launch, when the
+  // Opened already signed out, with canvases kept from before (Ponzu Dev's first launch, when the
   // main process keeps what came from Ponzu Preview for the window state's sake): drop them now.
   if (!signedIn() && session.getState().status !== "loading") forget();
   return {

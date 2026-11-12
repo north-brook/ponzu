@@ -4,10 +4,10 @@ import {
   type AgentBlocker,
   type AgentState,
   authStates,
+  type CanvasStatus,
   type ClaudeAccountKind,
   type ClaudeAccountStatus,
-  type DesignStatus,
-  designs,
+  canvases,
   type SandboxState,
   sandboxes,
 } from "../schema/index.ts";
@@ -16,8 +16,8 @@ import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
 /*
- * A design's sandbox as the API drives it (docs/cloud.md, "The sandbox"). The database decides
- * every move: a design has at most one row (its primary key), and each move between states holds
+ * A canvas's sandbox as the API drives it (docs/cloud.md, "The sandbox"). The database decides
+ * every move: a canvas has at most one row (its primary key), and each move between states holds
  * to the states it moves from, and to the job holding a `waking` or `stopping` row, so of two
  * function instances racing on one sandbox only one moves it. Leaving `awake` meters the stretch
  * it was awake for, in the statement that moves it, so awake time is never lost and never
@@ -47,28 +47,28 @@ export interface SandboxLimits {
  */
 export type SandboxClaim = { sandbox: SandboxRow } | { full: true } | null;
 
-/** The design's sandbox row, if it has one. */
-export async function getSandbox(db: Db, designId: string): Promise<SandboxRow | null> {
-  const [row] = await run(db.select().from(sandboxes).where(eq(sandboxes.designId, designId)));
+/** The canvas's sandbox row, if it has one. */
+export async function getSandbox(db: Db, canvasId: string): Promise<SandboxRow | null> {
+  const [row] = await run(db.select().from(sandboxes).where(eq(sandboxes.canvasId, canvasId)));
   return row ?? null;
 }
 
-/** Where the API reaches the runner of a design whose sandbox is awake, its port token sealed. */
+/** Where the API reaches the runner of a canvas whose sandbox is awake, its port token sealed. */
 export async function getAwakeSandboxAddress(
   db: Db,
-  designId: string,
-): Promise<{ designId: string; address: string; encryptedPortToken: string | null } | null> {
+  canvasId: string,
+): Promise<{ canvasId: string; address: string; encryptedPortToken: string | null } | null> {
   const [row] = await run(
     db
       .select({
-        designId: sandboxes.designId,
+        canvasId: sandboxes.canvasId,
         address: sandboxes.address,
         encryptedPortToken: sandboxes.encryptedPortToken,
       })
       .from(sandboxes)
       .where(
         and(
-          eq(sandboxes.designId, designId),
+          eq(sandboxes.canvasId, canvasId),
           eq(sandboxes.state, "awake"),
           isNotNull(sandboxes.address),
         ),
@@ -78,31 +78,31 @@ export async function getAwakeSandboxAddress(
 }
 
 /**
- * The design's first sandbox row, `waking` and held by the wake `by`, under the limits. Null
- * when the design already has one: whoever holds that one decides.
+ * The canvas's first sandbox row, `waking` and held by the wake `by`, under the limits. Null
+ * when the canvas already has one: whoever holds that one decides.
  */
 export async function beginSandbox(
   db: Db,
-  { designId, now, by, limits }: { designId: string; now: Date; by: string; limits: SandboxLimits },
+  { canvasId, now, by, limits }: { canvasId: string; now: Date; by: string; limits: SandboxLimits },
 ): Promise<SandboxClaim> {
   const at = timeParam(now);
   const result = await queryJson<MoveResult>(
     db,
     sql`
       with made as (
-        insert into sandboxes (design_id, state, state_at, waking_by, last_activity_at,
+        insert into sandboxes (canvas_id, state, state_at, waking_by, last_activity_at,
                                awake_user_id, created_at, updated_at)
         select d.id, 'waking', ${at}::timestamptz, ${by}, ${at}::timestamptz,
-               (${newestPerson(designId)}), ${at}::timestamptz, ${at}::timestamptz
-          from designs d
-         where d.id = ${designId} and ${roomFor(sql`d.id`, limits)}
-        on conflict (design_id) do nothing
+               (${newestPerson(canvasId)}), ${at}::timestamptz, ${at}::timestamptz
+          from canvases d
+         where d.id = ${canvasId} and ${roomFor(sql`d.id`, limits)}
+        on conflict (canvas_id) do nothing
         returning *
       )
       select json_build_object(
         'row', (select row_to_json(made) from made),
-        'full', not ${roomFor(sql`${designId}`, limits)}
-          and not exists (select 1 from sandboxes where design_id = ${designId})
+        'full', not ${roomFor(sql`${canvasId}`, limits)}
+          and not exists (select 1 from sandboxes where canvas_id = ${canvasId})
       ) as result
     `,
   );
@@ -110,27 +110,27 @@ export async function beginSandbox(
 }
 
 /**
- * Take the design's sandbox for the wake `by`, moving it into `waking` from one of `from`. A
+ * Take the canvas's sandbox for the wake `by`, moving it into `waking` from one of `from`. A
  * row that is `waking` is taken only by the wake that holds it, or once it was left unmoved for
  * a lease. Counted against `limits` in the same statement.
  */
 export async function claimSandbox(
   db: Db,
   {
-    designId,
+    canvasId,
     from,
     now,
     by,
     limits,
   }: {
-    designId: string;
+    canvasId: string;
     from: readonly SandboxState[];
     now: Date;
     by: string;
     limits: SandboxLimits;
   },
 ): Promise<SandboxClaim> {
-  return claimFrom(await move(db, { designId, from, to: "waking", now, by, limits }));
+  return claimFrom(await move(db, { canvasId, from, to: "waking", now, by, limits }));
 }
 
 type MoveResult = { row: Record<string, unknown> | null; full: boolean };
@@ -141,17 +141,17 @@ function claimFrom(result: MoveResult | null): SandboxClaim {
 }
 
 /**
- * Whether the design `design` may have one more sandbox up: fewer than the limits are waking or
+ * Whether the canvas `canvas` may have one more sandbox up: fewer than the limits are waking or
  * awake in its workspace, and for its owner, leaving its own aside.
  */
-function roomFor(design: SQL, limits: SandboxLimits) {
+function roomFor(canvas: SQL, limits: SandboxLimits) {
   const up = (match: SQL) => sql`(
-    select count(*) from sandboxes o join designs od on od.id = o.design_id
+    select count(*) from sandboxes o join canvases od on od.id = o.canvas_id
      where o.state in ('waking', 'awake') and od.id <> r.id and ${match})`;
   return sql`coalesce((
     select ${up(sql`od.workspace_id = r.workspace_id`)} < ${limits.perWorkspace}
        and (r.owner_id is null or ${up(sql`od.owner_id = r.owner_id`)} < ${limits.perOwner})
-      from designs r where r.id = ${design}), false)`;
+      from canvases r where r.id = ${canvas}), false)`;
 }
 
 /** What a move can set beside the state. */
@@ -170,7 +170,7 @@ export interface SandboxChanges {
 
 /** A move of a sandbox, and what it holds to beside the states it moves from. */
 export interface Move {
-  designId: string;
+  canvasId: string;
   from: readonly SandboxState[];
   to: SandboxState;
   now: Date;
@@ -188,9 +188,9 @@ export interface Move {
   idleBefore?: Date;
   /** Only if the row holds this session. */
   sessionId?: string;
-  /** Only while the design is settled: a retire never takes the row of a design reopened. */
+  /** Only while the canvas is settled: a retire never takes the row of a canvas reopened. */
   whileSettled?: boolean;
-  /** Not from another retire still inside its lease: two retires of one design never overlap. */
+  /** Not from another retire still inside its lease: two retires of one canvas never overlap. */
   unlessRetiring?: boolean;
   changes?: SandboxChanges;
 }
@@ -220,7 +220,7 @@ const TIME_COLUMNS = { sessionStartedAt: "session_started_at", expiresAt: "expir
 async function move(
   db: Db,
   {
-    designId,
+    canvasId,
     from,
     to,
     now,
@@ -287,7 +287,7 @@ async function move(
   if (sessionId !== undefined) conditions.push(sql`s.session_id = ${sessionId}`);
   if (whileSettled) {
     conditions.push(
-      sql`exists (select 1 from designs d where d.id = s.design_id and d.status = 'settled')`,
+      sql`exists (select 1 from canvases d where d.id = s.canvas_id and d.status = 'settled')`,
     );
   }
   if (unlessRetiring) {
@@ -297,23 +297,23 @@ async function move(
                and s.state_at >= ${leaseOver}::timestamptz)`,
     );
   }
-  if (limits) conditions.push(roomFor(sql`s.design_id`, limits));
+  if (limits) conditions.push(roomFor(sql`s.canvas_id`, limits));
   return queryJson<MoveResult>(
     db,
     sql`
       with before as (
-        select design_id, state, awake_since from sandboxes where design_id = ${designId}
+        select canvas_id, state, awake_since from sandboxes where canvas_id = ${canvasId}
       ),
       moved as (
         update sandboxes s
            set ${sql.join(set, sql`, `)}
-         where s.design_id = ${designId} and ${sql.join(conditions, sql` and `)}
+         where s.canvas_id = ${canvasId} and ${sql.join(conditions, sql` and `)}
         returning s.*
       ),
       metered as (
-        insert into usage_events (id, workspace_id, design_id, user_id, kind, seconds, payer,
+        insert into usage_events (id, workspace_id, canvas_id, user_id, kind, seconds, payer,
                                   rate_card_version, occurred_at)
-        select b.design_id || '/' || floor(extract(epoch from b.awake_since) * 1000)::bigint,
+        select b.canvas_id || '/' || floor(extract(epoch from b.awake_since) * 1000)::bigint,
                d.workspace_id, d.id, m.awake_user_id, 'sandbox',
                greatest(0, round(extract(epoch from (${at} - b.awake_since))))::int,
                'ponzu',
@@ -323,59 +323,59 @@ async function move(
                ),
                b.awake_since
           from moved m
-          join before b on b.design_id = m.design_id
-          join designs d on d.id = m.design_id
+          join before b on b.canvas_id = m.canvas_id
+          join canvases d on d.id = m.canvas_id
          where b.state = 'awake' and m.state <> 'awake'
         on conflict (id) do nothing
       )
       select json_build_object(
         'row', (select row_to_json(moved) from moved),
-        'full', ${limits ? sql`not ${roomFor(sql`${designId}`, limits)}` : sql`false`}
+        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`}
       ) as result
     `,
   );
 }
 
 /**
- * Delete the design's row once the retire `by` that holds it has removed its sandbox. False when
+ * Delete the canvas's row once the retire `by` that holds it has removed its sandbox. False when
  * it no longer holds it.
  */
 export async function deleteSandboxRow(
   db: Db,
-  { designId, by }: { designId: string; by: string },
+  { canvasId, by }: { canvasId: string; by: string },
 ): Promise<boolean> {
   const rows = await run(
     db
       .delete(sandboxes)
       .where(
         and(
-          eq(sandboxes.designId, designId),
+          eq(sandboxes.canvasId, canvasId),
           eq(sandboxes.state, "stopping"),
           eq(sandboxes.wakingBy, by),
         ),
       )
-      .returning({ designId: sandboxes.designId }),
+      .returning({ canvasId: sandboxes.canvasId }),
   );
   return rows.length > 0;
 }
 
 /**
- * Something kept the design's sandbox awake as of `now`: a person did something, or its agent
+ * Something kept the canvas's sandbox awake as of `now`: a person did something, or its agent
  * reported working. Its awake time is put down to the person behind the newest event in the
- * design's feed. Answers the sandbox's state, or null when it has none.
+ * canvas's feed. Answers the sandbox's state, or null when it has none.
  */
 export async function touchSandbox(
   db: Db,
-  { designId, now }: { designId: string; now: Date },
+  { canvasId, now }: { canvasId: string; now: Date },
 ): Promise<SandboxState | null> {
   const [row] = await run(
     db
       .update(sandboxes)
       .set({
         lastActivityAt: sql`greatest(${sandboxes.lastActivityAt}, ${timeParam(now)}::timestamptz)`,
-        awakeUserId: sql`coalesce((${newestPerson(designId)}), ${sandboxes.awakeUserId})`,
+        awakeUserId: sql`coalesce((${newestPerson(canvasId)}), ${sandboxes.awakeUserId})`,
       })
-      .where(eq(sandboxes.designId, designId))
+      .where(eq(sandboxes.canvasId, canvasId))
       .returning({ state: sandboxes.state }),
   );
   return row?.state ?? null;
@@ -384,7 +384,7 @@ export async function touchSandbox(
 /** Record the session's new deadline after extending it, while the row still holds that session. */
 export async function setSandboxExpiry(
   db: Db,
-  { designId, sessionId, expiresAt }: { designId: string; sessionId: string; expiresAt: Date },
+  { canvasId, sessionId, expiresAt }: { canvasId: string; sessionId: string; expiresAt: Date },
 ): Promise<boolean> {
   const rows = await run(
     db
@@ -392,30 +392,30 @@ export async function setSandboxExpiry(
       .set({ expiresAt: sql`${timeParam(expiresAt)}::timestamptz` })
       .where(
         and(
-          eq(sandboxes.designId, designId),
+          eq(sandboxes.canvasId, canvasId),
           eq(sandboxes.state, "awake"),
           eq(sandboxes.sessionId, sessionId),
         ),
       )
-      .returning({ designId: sandboxes.designId }),
+      .returning({ canvasId: sandboxes.canvasId }),
   );
   return rows.length > 0;
 }
 
 /** Count a restart of a runner that was found dead. Answers how many there have been in a row. */
-export async function countSandboxRestart(db: Db, designId: string): Promise<number> {
+export async function countSandboxRestart(db: Db, canvasId: string): Promise<number> {
   const [row] = await run(
     db
       .update(sandboxes)
       .set({ restarts: sql`${sandboxes.restarts} + 1` })
-      .where(eq(sandboxes.designId, designId))
+      .where(eq(sandboxes.canvasId, canvasId))
       .returning({ restarts: sandboxes.restarts }),
   );
   return row?.restarts ?? 0;
 }
 
 /**
- * Show on the design's head why its agent is waiting, and whether a wake is under way. `waking`
+ * Show on the canvas's head why its agent is waiting, and whether a wake is under way. `waking`
  * turns an idle agent to `waking`; without it, a `waking` agent goes back to idle, and so does a
  * `working` one when there is a blocker: nothing runs then, whatever its runner last said. The
  * row clients watch is written only when this changes what it shows.
@@ -423,33 +423,33 @@ export async function countSandboxRestart(db: Db, designId: string): Promise<num
 export async function showAgentWaiting(
   db: Db,
   {
-    designId,
+    canvasId,
     waking,
     blocker,
-  }: { designId: string; waking: boolean; blocker: AgentBlocker | null },
+  }: { canvasId: string; waking: boolean; blocker: AgentBlocker | null },
 ): Promise<void> {
   const stopped = blocker ? sql`('waking', 'working')` : sql`('waking')`;
   const state = waking
-    ? sql`case when ${designs.agentState} in ('idle', 'limited') then 'waking' else ${designs.agentState} end`
-    : sql`case when ${designs.agentState} in ${stopped} then 'idle' else ${designs.agentState} end`;
+    ? sql`case when ${canvases.agentState} in ('idle', 'limited') then 'waking' else ${canvases.agentState} end`
+    : sql`case when ${canvases.agentState} in ${stopped} then 'idle' else ${canvases.agentState} end`;
   await run(
     db
-      .update(designs)
+      .update(canvases)
       .set({ agentBlocker: blocker, agentState: state })
       .where(
         and(
-          eq(designs.id, designId),
-          sql`(${designs.agentBlocker}, ${designs.agentState}) is distinct from (${blocker}::text, ${state})`,
+          eq(canvases.id, canvasId),
+          sql`(${canvases.agentBlocker}, ${canvases.agentState}) is distinct from (${blocker}::text, ${state})`,
         ),
       ),
   );
 }
 
-/** What waking a design takes: the design, whose Claude it runs on, and its sandbox now. */
+/** What waking a canvas takes: the canvas, whose Claude it runs on, and its sandbox now. */
 export interface WakeContext {
-  designId: string;
+  canvasId: string;
   workspaceId: string;
-  status: DesignStatus;
+  status: CanvasStatus;
   ownerId: string | null;
   /** The Claude account it runs on: the one it was started on, else its owner's now. */
   claude: {
@@ -469,18 +469,18 @@ export interface WakeContext {
   ownerMember: boolean;
 }
 
-/** Whether the design `d`'s owner is still a member of its workspace. */
+/** Whether the canvas `d`'s owner is still a member of its workspace. */
 const ownerMember = sql`exists (
   select 1 from memberships m where m.user_id = d.owner_id and m.workspace_id = d.workspace_id)`;
 
-/** Whether the Claude account `a` is the one the design `d` runs on. */
+/** Whether the Claude account `a` is the one the canvas `d` runs on. */
 const runsOn = sql`(a.id = d.claude_account_id
                     or (d.claude_account_id is null and a.user_id = d.owner_id))`;
 
-/** Everything a wake decides on, in one read. Null when there is no such design. */
-export async function getWakeContext(db: Db, designId: string): Promise<WakeContext | null> {
+/** Everything a wake decides on, in one read. Null when there is no such canvas. */
+export async function getWakeContext(db: Db, canvasId: string): Promise<WakeContext | null> {
   const result = await queryJson<{
-    design: { id: string; workspace_id: string; status: DesignStatus; owner_id: string | null };
+    canvas: { id: string; workspace_id: string; status: CanvasStatus; owner_id: string | null };
     claude: {
       id: string;
       user_id: string;
@@ -496,26 +496,26 @@ export async function getWakeContext(db: Db, designId: string): Promise<WakeCont
     db,
     sql`
       select json_build_object(
-        'design', json_build_object('id', d.id, 'workspace_id', d.workspace_id,
+        'canvas', json_build_object('id', d.id, 'workspace_id', d.workspace_id,
                                     'status', d.status, 'owner_id', d.owner_id),
         'claude', (select row_to_json(a) from claude_accounts a
                     where a.id = d.claude_account_id
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
                     order by (a.id = d.claude_account_id) desc limit 1),
-        'sandbox', (select row_to_json(s) from sandboxes s where s.design_id = d.id),
+        'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
         'owner_member', ${ownerMember}
       ) as result
-        from designs d
-       where d.id = ${designId}
+        from canvases d
+       where d.id = ${canvasId}
     `,
   );
   if (!result) return null;
-  const { design, claude } = result;
+  const { canvas, claude } = result;
   return {
-    designId: design.id,
-    workspaceId: design.workspace_id,
-    status: design.status,
-    ownerId: design.owner_id,
+    canvasId: canvas.id,
+    workspaceId: canvas.workspace_id,
+    status: canvas.status,
+    ownerId: canvas.owner_id,
     claude: claude && {
       id: claude.id,
       userId: claude.user_id,
@@ -532,10 +532,10 @@ export async function getWakeContext(db: Db, designId: string): Promise<WakeCont
 
 /**
  * The awake sandboxes whose runner may hold this Claude account's credential: those of the
- * designs that run on it, and its owner's that have not run yet. The credential lives only in
+ * canvases that run on it, and its owner's that have not run yet. The credential lives only in
  * the running runner's memory, so an asleep one holds nothing.
  */
-export async function listDesignsWithSandboxOn(
+export async function listCanvasesWithSandboxOn(
   db: Db,
   { claudeAccountId, userId }: { claudeAccountId: string; userId: string },
 ): Promise<SandboxRow[]> {
@@ -543,46 +543,46 @@ export async function listDesignsWithSandboxOn(
     db
       .select({ sandbox: sandboxes })
       .from(sandboxes)
-      .innerJoin(designs, eq(designs.id, sandboxes.designId))
+      .innerJoin(canvases, eq(canvases.id, sandboxes.canvasId))
       .where(
         and(
           eq(sandboxes.state, "awake"),
-          sql`(${designs.claudeAccountId} = ${claudeAccountId}
-               or (${designs.claudeAccountId} is null and ${designs.ownerId} = ${userId}))`,
+          sql`(${canvases.claudeAccountId} = ${claudeAccountId}
+               or (${canvases.claudeAccountId} is null and ${canvases.ownerId} = ${userId}))`,
         ),
       ),
   );
   return rows.map((row) => row.sandbox);
 }
 
-/** Record the Claude account a design runs on, if it records none yet. */
-export async function recordDesignClaudeAccount(
+/** Record the Claude account a canvas runs on, if it records none yet. */
+export async function recordCanvasClaudeAccount(
   db: Db,
-  { designId, claudeAccountId }: { designId: string; claudeAccountId: string },
+  { canvasId, claudeAccountId }: { canvasId: string; claudeAccountId: string },
 ): Promise<void> {
   await run(
     db
-      .update(designs)
+      .update(canvases)
       .set({ claudeAccountId })
-      .where(and(eq(designs.id, designId), sql`${designs.claudeAccountId} is null`)),
+      .where(and(eq(canvases.id, canvasId), sql`${canvases.claudeAccountId} is null`)),
   );
 }
 
 /** A sandbox as the minute's sweep weighs it. */
 export interface SweptSandbox {
   sandbox: SandboxRow;
-  designStatus: DesignStatus;
-  /** When the design's runner last took the lease or reported its state. */
+  canvasStatus: CanvasStatus;
+  /** When the canvas's runner last took the lease or reported its state. */
   heardAt: Date | null;
-  /** When the design's current runner took the lease. */
+  /** When the canvas's current runner took the lease. */
   runnerStartedAt: Date | null;
   /** The runner that holds the lease. */
   runnerId: string | null;
   /** When a runner last wrote something of a turn to the thread. */
   saidAt: Date | null;
-  /** What the design's head says its agent is doing. */
+  /** What the canvas's head says its agent is doing. */
   agentState: AgentState;
-  /** Whether the design's feed has something its agent must take up (`now` or `next`). */
+  /** Whether the canvas's feed has something its agent must take up (`now` or `next`). */
   pending: boolean;
   /**
    * The events that are owed a turn (docs/cloud.md, "A turn that never came"): the ones that begin
@@ -592,13 +592,13 @@ export interface SweptSandbox {
   owed: { id: string; deliveredAt: Date }[];
   /** Whether the Claude account it runs on can run it now. */
   claudeUsable: boolean;
-  /** Whether the design's owner is still a member of its workspace. */
+  /** Whether the canvas's owner is still a member of its workspace. */
   ownerMember: boolean;
 }
 
 /**
  * What the minute's sweep acts on: every sandbox that is moving or awake, and every sandbox of a
- * settled design. Asleep sandboxes of active designs cost almost nothing and are left out.
+ * settled canvas. Asleep sandboxes of active canvases cost almost nothing and are left out.
  */
 export async function listSandboxesToSweep(
   db: Db,
@@ -607,7 +607,7 @@ export async function listSandboxesToSweep(
   const result = await queryJson<{
     rows: {
       sandbox: Record<string, unknown>;
-      design_status: DesignStatus;
+      canvas_status: CanvasStatus;
       heard_at: string | null;
       runner_started_at: string | null;
       runner_id: string | null;
@@ -623,7 +623,7 @@ export async function listSandboxesToSweep(
     sql`
       select json_build_object('rows', coalesce(json_agg(json_build_object(
         'sandbox', row_to_json(s),
-        'design_status', d.status,
+        'canvas_status', d.status,
         'heard_at', r.heard_at,
         'runner_started_at', r.started_at,
         'runner_id', r.runner_id,
@@ -631,13 +631,13 @@ export async function listSandboxesToSweep(
         'agent_state', d.agent_state,
         'pending', exists (
           select 1 from events e
-           where e.design_id = d.id and e.delivered_at is null and e.priority in ('now', 'next')
+           where e.canvas_id = d.id and e.delivered_at is null and e.priority in ('now', 'next')
         ),
         'owed', case when s.state = 'awake' then (
           select json_agg(json_build_object('id', e.id, 'delivered_at', e.delivered_at)
                           order by e.seq)
             from events e
-           where e.design_id = d.id and e.delivered_at is not null and e.lapsed_at is null
+           where e.canvas_id = d.id and e.delivered_at is not null and e.lapsed_at is null
              and (r.said_at is null or e.delivered_at > r.said_at)
              and e.priority in ('now', 'next')
              and e.kind in (${sql.join(
@@ -647,7 +647,7 @@ export async function listSandboxesToSweep(
              -- A person's stop after it says not to answer it: never sent again.
              and not exists (
                select 1 from events s
-                where s.design_id = e.design_id and s.kind = 'stop' and s.seq > e.seq
+                where s.canvas_id = e.canvas_id and s.kind = 'stop' and s.seq > e.seq
              )
         ) end,
         'claude_usable', exists (
@@ -659,14 +659,14 @@ export async function listSandboxesToSweep(
         'owner_member', ${ownerMember}
       )), '[]'::json)) as result
         from sandboxes s
-        join designs d on d.id = s.design_id
-        left join design_runners r on r.design_id = s.design_id
+        join canvases d on d.id = s.canvas_id
+        left join canvas_runners r on r.canvas_id = s.canvas_id
        where s.state in ('waking', 'awake', 'stopping') or d.status = 'settled'
     `,
   );
   return (result?.rows ?? []).map((row) => ({
     sandbox: toSandbox(row.sandbox),
-    designStatus: row.design_status,
+    canvasStatus: row.canvas_status,
     heardAt: row.heard_at ? new Date(row.heard_at) : null,
     runnerStartedAt: row.runner_started_at ? new Date(row.runner_started_at) : null,
     runnerId: row.runner_id,
@@ -679,11 +679,11 @@ export async function listSandboxesToSweep(
   }));
 }
 
-/** What reconcile knows of a design a sandbox at Vercel is named for. */
-export interface ReconciledDesign {
-  /** False when the design was deleted: its id never comes back. */
+/** What reconcile knows of a canvas a sandbox at Vercel is named for. */
+export interface ReconciledCanvas {
+  /** False when the canvas was deleted: its id never comes back. */
   exists: boolean;
-  status: DesignStatus | null;
+  status: CanvasStatus | null;
   sandbox: SandboxRow | null;
 }
 
@@ -696,27 +696,27 @@ export interface ReconciledSignIn {
 }
 
 /**
- * For reconcile: the designs and the sign-ins the sandboxes at Vercel are named for, as the
+ * For reconcile: the canvases and the sign-ins the sandboxes at Vercel are named for, as the
  * database has them. Every id asked for is in the answer.
  */
 export async function getSandboxOwners(
   db: Db,
-  { designIds, signInIds }: { designIds: string[]; signInIds: string[] },
+  { canvasIds, signInIds }: { canvasIds: string[]; signInIds: string[] },
 ): Promise<{
-  designs: Map<string, ReconciledDesign>;
+  canvases: Map<string, ReconciledCanvas>;
   signIns: Map<string, ReconciledSignIn>;
 }> {
   const [found, rows, states] = await Promise.all([
-    designIds.length
+    canvasIds.length
       ? run(
           db
-            .select({ id: designs.id, status: designs.status })
-            .from(designs)
-            .where(inArray(designs.id, designIds)),
+            .select({ id: canvases.id, status: canvases.status })
+            .from(canvases)
+            .where(inArray(canvases.id, canvasIds)),
         )
       : [],
-    designIds.length
-      ? run(db.select().from(sandboxes).where(inArray(sandboxes.designId, designIds)))
+    canvasIds.length
+      ? run(db.select().from(sandboxes).where(inArray(sandboxes.canvasId, canvasIds)))
       : [],
     signInIds.length
       ? run(
@@ -731,17 +731,17 @@ export async function getSandboxOwners(
         )
       : [],
   ]);
-  const statuses = new Map(found.map((design) => [design.id, design.status]));
-  const byDesign = new Map(rows.map((row) => [row.designId, row]));
+  const statuses = new Map(found.map((canvas) => [canvas.id, canvas.status]));
+  const byCanvas = new Map(rows.map((row) => [row.canvasId, row]));
   const byState = new Map(states.map((state) => [state.id, state]));
   return {
-    designs: new Map(
-      designIds.map((id) => [
+    canvases: new Map(
+      canvasIds.map((id) => [
         id,
         {
           exists: statuses.has(id),
           status: statuses.get(id) ?? null,
-          sandbox: byDesign.get(id) ?? null,
+          sandbox: byCanvas.get(id) ?? null,
         },
       ]),
     ),
@@ -762,14 +762,14 @@ export async function getSandboxOwners(
 }
 
 /**
- * Whether the design's last checkpoint holds everything its sandbox has done (docs/cloud.md,
+ * Whether the canvas's last checkpoint holds everything its sandbox has done (docs/cloud.md,
  * "How images roll out"): `covered` when no event went into its session after the checkpoint
  * was recorded, `behind` when one did, `none` when its runner has saved none though events went
  * in.
  */
 export type CheckpointCover = "covered" | "behind" | "none";
 
-export async function getCheckpointCover(db: Db, designId: string): Promise<CheckpointCover> {
+export async function getCheckpointCover(db: Db, canvasId: string): Promise<CheckpointCover> {
   const result = await queryJson<{
     saved_turn: number | null;
     through: number | null;
@@ -778,13 +778,13 @@ export async function getCheckpointCover(db: Db, designId: string): Promise<Chec
     db,
     sql`
       select json_build_object(
-        'saved_turn', (select saved_turn from design_runners where design_id = ${designId}),
-        'through', (select saved_through from design_runners where design_id = ${designId}),
+        'saved_turn', (select saved_turn from canvas_runners where canvas_id = ${canvasId}),
+        'through', (select saved_through from canvas_runners where canvas_id = ${canvasId}),
         -- A stop and a push are acknowledged without going into the session, and a push after
         -- the turn's checkpoint changes nothing the sleep's would save: neither is work a
         -- checkpoint must hold.
         'last', (select max(seq) from events
-                  where design_id = ${designId} and delivered_at is not null
+                  where canvas_id = ${canvasId} and delivered_at is not null
                     and kind not in ('stop', 'push'))
       ) as result
     `,
@@ -796,11 +796,11 @@ export async function getCheckpointCover(db: Db, designId: string): Promise<Chec
   return through !== null && through >= last ? "covered" : "behind";
 }
 
-/** A design's sandbox with what says which image it runs, for a report on a rollout. */
+/** A canvas's sandbox with what says which image it runs, for a report on a rollout. */
 export interface SandboxImage {
   sandbox: SandboxRow;
-  designStatus: DesignStatus;
-  /** What its runner said it is when it last started (`design_runners.client`). */
+  canvasStatus: CanvasStatus;
+  /** What its runner said it is when it last started (`canvas_runners.client`). */
   client: string | null;
 }
 
@@ -809,31 +809,31 @@ export async function listSandboxImages(db: Db): Promise<SandboxImage[]> {
   const result = await queryJson<{
     rows: {
       sandbox: Record<string, unknown>;
-      design_status: DesignStatus;
+      canvas_status: CanvasStatus;
       client: string | null;
     }[];
   }>(
     db,
     sql`
       select json_build_object('rows', coalesce(json_agg(json_build_object(
-        'sandbox', row_to_json(s), 'design_status', d.status, 'client', r.client
+        'sandbox', row_to_json(s), 'canvas_status', d.status, 'client', r.client
       ) order by s.created_at), '[]'::json)) as result
         from sandboxes s
-        join designs d on d.id = s.design_id
-        left join design_runners r on r.design_id = s.design_id
+        join canvases d on d.id = s.canvas_id
+        left join canvas_runners r on r.canvas_id = s.canvas_id
     `,
   );
   return (result?.rows ?? []).map((row) => ({
     sandbox: toSandbox(row.sandbox),
-    designStatus: row.design_status,
+    canvasStatus: row.canvas_status,
     client: row.client,
   }));
 }
 
-/** The person behind the newest event in a design's feed that a person is behind. */
-function newestPerson(designId: string) {
+/** The person behind the newest event in a canvas's feed that a person is behind. */
+function newestPerson(canvasId: string) {
   return sql`select e.user_id from events e
-              where e.design_id = ${designId} and e.user_id is not null
+              where e.canvas_id = ${canvasId} and e.user_id is not null
               order by e.seq desc limit 1`;
 }
 

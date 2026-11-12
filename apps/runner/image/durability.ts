@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /**
- * What a design keeps across a sleep and across losing its sandbox altogether, for real, in a
+ * What a canvas keeps across a sleep and across losing its sandbox altogether, for real, in a
  * Vercel Sandbox made from the image (docs/cloud.md, "Saving the sandbox"), with real Claude
  * Code on Haiku:
  *
  *   bun apps/runner/image/durability.ts [image]     current.json's image by default
  *
- * A repo design on GITHUB_TEST_REPO. Turn one gives Claude something to remember; turn two
+ * A repo canvas on GITHUB_TEST_REPO. Turn one gives Claude something to remember; turn two
  * writes a file and does not commit it. Each turn's checkpoint goes to the fake API (R2's
  * stand-in), with the work in progress and nothing of it on GitHub. Then:
  *   1. a sleep as the API's (ponzu-stop, then stop) and a wake (up, ponzu-start): the snapshot
@@ -137,7 +137,7 @@ async function proof(): Promise<void> {
   const wip = {
     commit: two.wipCommit,
     archived: two.workspace,
-    wipRefOnGithub: await onGithub(`/git/ref/ponzu/wip/${start.designId}`),
+    wipRefOnGithub: await onGithub(`/git/ref/ponzu/wip/${start.canvasId}`),
     branchOnGithub: await onGithub(`/branches/${encodeURIComponent(branch)}`),
   };
   say("checkpoints", { one, two, wip });

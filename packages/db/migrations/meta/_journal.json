@@ -176,6 +176,13 @@
       "when": 1794449137081,
       "tag": "0024_claude_models",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794472324144,
+      "tag": "0025_canvases",
+      "breakpoints": true
     }
   ]
 }

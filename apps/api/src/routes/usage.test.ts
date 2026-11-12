@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import { beginSandbox, moveSandbox, recordUsage } from "@ponzu/db";
-import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 
 /*
@@ -31,11 +31,11 @@ afterAll(() => t.close());
 
 const as = async (login: string) => (await t.signInAs({ login })).headers;
 
-async function awake(login: string, designId: string, hours: number, at: string) {
+async function awake(login: string, canvasId: string, hours: number, at: string) {
   await recordUsage(t.db, {
     id: `test-${n++}`,
     workspaceId: ws.id,
-    designId,
+    canvasId,
     userId: ws.people[login]!.userId,
     kind: "sandbox",
     seconds: hours * HOUR,
@@ -53,8 +53,8 @@ describe("usage this period", () => {
   let mayas: string;
 
   beforeAll(async () => {
-    bryces = (await designIn(t, ws, "bryce", sampleDoc())).id;
-    mayas = (await designIn(t, ws, "maya", sampleDoc())).id;
+    bryces = (await canvasIn(t, ws, "bryce", sampleDoc())).id;
+    mayas = (await canvasIn(t, ws, "maya", sampleDoc())).id;
     await awake("bryce", bryces, 30, "2025-12-10T10:00:00Z");
     await awake("maya", mayas, 34, "2025-12-28T10:00:00Z");
     // The period before: not this one's.
@@ -88,7 +88,7 @@ describe("usage this period", () => {
       ["bryce", 150],
       ["omar", 0],
     ]);
-    expect(got.body.byDesign.map((row: { usedCredits: number }) => row.usedCredits)).toEqual([
+    expect(got.body.byCanvas.map((row: { usedCredits: number }) => row.usedCredits)).toEqual([
       170, 150,
     ]);
   });
@@ -102,20 +102,20 @@ describe("usage this period", () => {
       canManage: false,
       mine: { admin: false, usedCredits: 0 },
       byPerson: null,
-      byDesign: null,
+      byCanvas: null,
       unattributedCredits: null,
     });
   });
 
   test("counts the stretch awake right now, to the minute", async () => {
     const before = await call(t, await as("maya"), "GET", `/v1/workspaces/${ws.id}/usage`);
-    const designId = (await designIn(t, ws, "maya", sampleDoc())).id;
+    const canvasId = (await canvasIn(t, ws, "maya", sampleDoc())).id;
     const now = new Date(t.clock.now());
     const limits = { perWorkspace: 10, perOwner: 10 };
-    const begun = await beginSandbox(t.db, { designId, now, by: "test", limits });
+    const begun = await beginSandbox(t.db, { canvasId, now, by: "test", limits });
     if (!begun || !("sandbox" in begun)) throw new Error("no sandbox");
     await moveSandbox(t.db, {
-      designId,
+      canvasId,
       from: ["waking"],
       to: "awake",
       now,

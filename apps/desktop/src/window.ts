@@ -4,8 +4,8 @@ import { shellGround } from "./shell-ground.ts";
 import { trafficLights } from "./traffic-lights.ts";
 
 /*
- * The main window. It shows the studio, which draws designs agents wrote and comments anyone
- * can leave, so it runs as a web page with nothing more: isolated, sandboxed, no Node, and
+ * The main window. It shows the studio, which draws the canvases agents make and the comments
+ * anyone can leave, so it runs as a web page with nothing more: isolated, sandboxed, no Node, and
  * unable to leave the studio. A link out goes to the system browser once it checks out.
  */
 
@@ -79,7 +79,7 @@ export function createMainWindow(opts: {
     return { action: "deny" };
   });
   win.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  // Copying a design's link is the one permission the studio uses.
+  // Copying a canvas's link is the one permission the studio uses.
   const session = win.webContents.session;
   session.setPermissionRequestHandler((_contents, permission, grant) =>
     grant(permission === "clipboard-sanitized-write"),

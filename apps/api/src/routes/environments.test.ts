@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import { upsertRepos } from "@ponzu/db";
 import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "@ponzu/runner/protocol";
-import { designSandboxName } from "@ponzu/sandbox";
+import { canvasSandboxName } from "@ponzu/sandbox";
 import { secretBinding } from "../environments/secrets.ts";
-import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_SCOPE, TEST_VAULT_KEY, type TestApp } from "../testing/index.ts";
 import { createVault } from "../vault/vault.ts";
 
@@ -57,12 +57,12 @@ describe("the list", () => {
     expect(got.body).toEqual({ repos: [], canManageSecrets: true });
   });
 
-  test("lists a repo once someone has designed in it, before its base is built", async () => {
+  test("lists a repo once someone has made a canvas in it, before its base is built", async () => {
     const other = await workspaceWithRepo(t, { kim: "admin" });
     const list = async () =>
       (await call(t, await as("kim"), "GET", `/v1/workspaces/${other.id}/environments`)).body;
     expect((await list()).repos).toEqual([]);
-    await designIn(t, other, "kim", sampleDoc());
+    await canvasIn(t, other, "kim", sampleDoc());
     expect((await list()).repos).toMatchObject([
       { repo: { id: other.repo.id }, base: { status: "none" }, secrets: [] },
     ]);
@@ -308,14 +308,14 @@ describe("a sandbox's environment", () => {
 
   /** What the runner was started with, and the secrets it unpacks from it for the agent. */
   async function started(scratch = false) {
-    const design = await designIn(t, ws, "ada", sampleDoc(), scratch ? "scratch" : "repo");
-    const said = await call(t, await as("ada"), "POST", `/v1/designs/${design.id}/messages`, {
+    const canvas = await canvasIn(t, ws, "ada", sampleDoc(), scratch ? "scratch" : "repo");
+    const said = await call(t, await as("ada"), "POST", `/v1/canvases/${canvas.id}/messages`, {
       text: "Make the footer darker",
     });
     expect(said.status).toBe(201);
     await t.backgroundDone();
     const start = t.sandboxes
-      .commands(designSandboxName(TEST_SCOPE, design.id))
+      .commands(canvasSandboxName(TEST_SCOPE, canvas.id))
       .findLast((command) => command.kind === "start");
     const given = start!.command.env!;
     return { given, secrets: decodeRepoSecrets(given[REPO_SECRETS_VARIABLE]) };
@@ -325,13 +325,13 @@ describe("a sandbox's environment", () => {
     const { given, secrets } = await started();
     expect(secrets).toEqual({ DATABASE_URL });
     expect(given.ANTHROPIC_API_KEY).toBe(KEY);
-    expect(given.PONZU_DESIGN_ID).toBeString();
+    expect(given.PONZU_CANVAS_ID).toBeString();
     expect(given.PONZU_RUNNER_TOKEN).toBeString();
     // Never as variables of the runner's own, and another repo's are not its.
     expect(Object.keys(given).toSorted()).toEqual([
       "ANTHROPIC_API_KEY",
       "PONZU_API_URL",
-      "PONZU_DESIGN_ID",
+      "PONZU_CANVAS_ID",
       "PONZU_PORT_TOKEN",
       REPO_SECRETS_VARIABLE,
       "PONZU_RUNNER_BUNDLE",
@@ -370,7 +370,7 @@ describe("a sandbox's environment", () => {
     await t.db.execute(`delete from repo_secrets where name in ('ANTHROPIC_BASE_URL', 'BROKEN')`);
   });
 
-  test("a Scratch design has no repo, and so no secrets", async () => {
+  test("a Scratch canvas has no repo, and so no secrets", async () => {
     const { given } = await started(true);
     expect(given[REPO_SECRETS_VARIABLE]).toBeUndefined();
     expect(given.ANTHROPIC_API_KEY).toBe(KEY);

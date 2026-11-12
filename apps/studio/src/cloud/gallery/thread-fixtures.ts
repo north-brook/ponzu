@@ -133,7 +133,7 @@ export const heroThread: ThreadItem[] = [
   heroTurn,
   reply("Folding that into B: no paragraph, and the photo does the talking."),
 ];
-/** What board 1's agent is doing: its working state, from the design's head. */
+/** What board 1's agent is doing: its working state, from the canvas's head. */
 export const heroAgent: AgentActivity = {
   state: "working",
   status: "Writing Hero · B's headline",
@@ -150,7 +150,7 @@ export const setUpThread: ThreadItem[] = [
 ];
 export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding Welcome · Picks" };
 
-/** Together on a design: three people steer one run. */
+/** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(bryce, ASK),
   comment(sam, "The photo should lead here, not the headline."),
@@ -169,7 +169,7 @@ const flowSaid = [
   "Copied the screen layout to steps 3–5. Now I'm filling in **3 · Experience**.",
   'Now "4 · About you": age, height and weight, with a ruler picker (`WeightRuler`) for weight.',
   'Now "5 · Schedule":\n\n- training days\n- session length\n- time of day',
-  "Next is [1 · Welcome](https://ponzu.design/designs/dsn_quieter?artboard=ab_welcome), a dark intro screen.",
+  "Next is [1 · Welcome](https://ponzu.design/canvases/cnv_quieter?artboard=ab_welcome), a dark intro screen.",
 ];
 const flowFinal =
   "The flow is ready: seven screens from **Welcome** to **Plan ready**, sharing one layout and the app's tokens. The weight picker is a ruler; *Plan ready* summarises the plan with week 1's sessions.";
@@ -417,7 +417,7 @@ export const everyKind: ThreadItem[] = [
     title: "Quieter hero, editorial take",
     state: "merged",
   }),
-  reply("Merged. The design settles on its own.", true),
+  reply("Merged. The canvas settles on its own.", true),
 ];
 
 /**

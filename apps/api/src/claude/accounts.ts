@@ -3,7 +3,7 @@ import {
   claudeAccountIdFor,
   connectClaudeAccount,
   disconnectClaudeAccount,
-  listDesignsWithSandboxOn,
+  listCanvasesWithSandboxOn,
   setClaudeBlocker,
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
@@ -12,8 +12,8 @@ import { startWake } from "../sandboxes/wake.ts";
 
 /*
  * A person's own Claude (docs/cloud.md, "Credentials"): sealed in the vault, bound to its row,
- * and opened only to go into the start command of a design's runner. Connecting lets the person's
- * designs that were waiting for Claude run; disconnecting destroys the credential and puts to
+ * and opened only to go into the start command of a canvas's runner. Connecting lets the person's
+ * canvases that were waiting for Claude run; disconnecting destroys the credential and puts to
  * sleep every runner that holds it.
  */
 
@@ -45,7 +45,7 @@ export interface NewCredential {
 const BINDING = "claude_accounts.encrypted_credential";
 
 /**
- * Store the person's credential in place of whatever they had, and wake their designs that
+ * Store the person's credential in place of whatever they had, and wake their canvases that
  * were waiting for Claude with something to take up.
  */
 export async function connectClaude(
@@ -69,13 +69,13 @@ export async function connectClaude(
     });
     if (!account) continue;
     const unblocked = await setClaudeBlocker(db, { claudeAccountId: id, userId, blocker: null });
-    for (const design of unblocked) {
-      if (design.pending) deps.background("wake", startWake(deps, design.id, "claude"));
+    for (const canvas of unblocked) {
+      if (canvas.pending) deps.background("wake", startWake(deps, canvas.id, "claude"));
     }
     deps.log.info("claude_connected", { userId, kind: credential.kind, woke: unblocked.length });
     deps.analytics.capture(
       "claude connected",
-      { kind: credential.kind, woke_designs: unblocked.filter((d) => d.pending).length },
+      { kind: credential.kind, woke_canvases: unblocked.filter((d) => d.pending).length },
       { distinctId: userId, workspaceId: null },
     );
     return account;
@@ -84,12 +84,12 @@ export async function connectClaude(
 }
 
 /**
- * Destroy the person's credential, wherever it is. Their designs say they wait for Claude, and
+ * Destroy the person's credential, wherever it is. Their canvases say they wait for Claude, and
  * every awake sandbox whose runner was started with it is put to sleep at once: the credential
  * lives only in the running runner's memory (it went in the start command's env, never on the
  * disk), so an asleep one holds nothing and is left alone. Whether Vercel itself keeps a
  * command's env is not documented: an open question put to Vercel in writing (docs/cloud.md,
- * "Known constraints"); if it does, the credential moves into the runner's session. A design
+ * "Known constraints"); if it does, the credential moves into the runner's session. A canvas
  * waking at this moment is put to sleep by the minute's sweep. Safe to repeat.
  */
 export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promise<void> {
@@ -101,10 +101,10 @@ export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promis
     userId,
     blocker: "claude_not_connected",
   });
-  const holding = await listDesignsWithSandboxOn(db, { claudeAccountId: accountId, userId });
+  const holding = await listCanvasesWithSandboxOn(db, { claudeAccountId: accountId, userId });
   deps.log.info("claude_disconnected", {
     userId,
-    designs: blocked.length,
+    canvases: blocked.length,
     sandboxes: holding.length,
   });
   deps.analytics.capture("claude disconnected", {}, { distinctId: userId, workspaceId: null });

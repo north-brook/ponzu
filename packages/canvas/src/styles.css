@@ -22,7 +22,7 @@
   --pz-chip: #e8e6e0;
   --pz-surface: #ffffff;
   --pz-hover: rgba(17, 17, 16, 0.05);
-  /* Selection is neutral: color on the canvas belongs to the brand and the design. */
+  /* Selection is neutral: color on the canvas belongs to the brand and the work. */
   --pz-select: var(--pz-ink);
   /* Pins are yuzu, the brand's color, so the conversation reads as Ponzu. Ink numbers. */
   --pz-comment: #ffc81e;

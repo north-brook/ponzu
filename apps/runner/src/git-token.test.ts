@@ -161,7 +161,7 @@ function cgi(program: string, env: Record<string, string>, body: Uint8Array): Pr
   });
 }
 
-/** A checkout of the server's repository with a new commit on the design's branch. */
+/** A checkout of the server's repository with a new commit on the canvas's branch. */
 function checkout(server: { bare: string }) {
   const work = join(temp("ponzu-gitwork-"), "fern");
   sh(server.bare, "clone", "-q", server.bare, work);
@@ -213,7 +213,7 @@ function socketFor(credentials: GitCredentials): string {
   return path;
 }
 
-test("as it was: a push the instant the design's first token is minted gets 'Repository not found'", async () => {
+test("as it was: a push the instant the canvas's first token is minted gets 'Repository not found'", async () => {
   const minted = new Map<string, number>();
   const server = gitServer(minted, 1_500);
   const api = mintingApi(minted);
@@ -230,7 +230,7 @@ test("as it was: a push the instant the design's first token is minted gets 'Rep
   expect(api.erased).toEqual([]);
 });
 
-test("a push the instant the design's first token is minted lands: the runner waits until GitHub honours it", async () => {
+test("a push the instant the canvas's first token is minted lands: the runner waits until GitHub honours it", async () => {
   const minted = new Map<string, number>();
   const server = gitServer(minted, 1_500);
   const api = mintingApi(minted);

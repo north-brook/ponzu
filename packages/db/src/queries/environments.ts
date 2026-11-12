@@ -5,10 +5,10 @@ import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
 /*
- * A repo's environment (docs/cloud.md, "Environments"): the base its designs start from and
+ * A repo's environment (docs/cloud.md, "Environments"): the base its canvases start from and
  * the secrets its sandboxes receive as environment variables. A secret's value is sealed by the
  * API, bound to its row, and only ever leaves this package sealed: the lists here name secrets
- * and never carry a value, but for `listDesignSecrets`, which the sandbox lifecycle opens.
+ * and never carry a value, but for `listCanvasSecrets`, which the sandbox lifecycle opens.
  */
 
 /** A repo's environment as Settings shows it. Never a secret's value. */
@@ -104,7 +104,7 @@ export async function getRepoEnvironment(
  * The environments of a workspace's repos that `userId` can read, as `repo_access` last said
  * (whether that is recent enough, and that they are a member, is the caller's to make sure
  * of), most recently pushed first. A repo is listed once it has an environment to show: a
- * design (whose start builds its base), a base, a rebuild asked for, or a secret.
+ * canvas (whose start builds its base), a base, a rebuild asked for, or a secret.
  */
 export async function listWorkspaceEnvironments(
   db: Db,
@@ -122,7 +122,7 @@ export async function listWorkspaceEnvironments(
        where r.workspace_id = ${workspaceId} and r.removed_at is null
          and (r.base_status <> 'none' or r.base_rebuild_requested_at is not null
               or exists (select 1 from repo_secrets s where s.repo_id = r.id)
-              or exists (select 1 from designs d where d.repo_id = r.id))
+              or exists (select 1 from canvases d where d.repo_id = r.id))
     `,
   );
   return (result?.repos ?? []).map(toEnvironment);
@@ -244,10 +244,10 @@ export interface SealedSecret {
 }
 
 /**
- * The secrets of a design's repo, sealed, by name: what its sandbox's environment carries.
+ * The secrets of a canvas's repo, sealed, by name: what its sandbox's environment carries.
  * None for Scratch, and none once the App has lost the repo.
  */
-export function listDesignSecrets(db: Db, designId: string): Promise<SealedSecret[]> {
+export function listCanvasSecrets(db: Db, canvasId: string): Promise<SealedSecret[]> {
   return run(
     db
       .select({
@@ -259,7 +259,7 @@ export function listDesignSecrets(db: Db, designId: string): Promise<SealedSecre
       .innerJoin(repos, eq(repos.id, repoSecrets.repoId))
       .where(
         and(
-          sql`${repos.id} = (select repo_id from designs where id = ${designId})`,
+          sql`${repos.id} = (select repo_id from canvases where id = ${canvasId})`,
           sql`${repos.removedAt} is null`,
         ),
       )

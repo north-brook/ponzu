@@ -33,7 +33,14 @@ try {
     "select count(*)::int as applied from drizzle.__drizzle_migrations",
   );
   const applied = rows[0]?.applied ?? 0;
-  if (applied !== journal.entries.length) {
+  if (applied > journal.entries.length) {
+    // An older checkout against a database a newer branch migrated: nothing here was skipped.
+    console.error(
+      `The database is ahead of this checkout: it has ${applied} migrations applied and this journal lists ${journal.entries.length}. ` +
+        "Update this checkout (rebase it on the branch that migrated the database) before migrating or running against it.",
+    );
+    process.exitCode = 1;
+  } else if (applied !== journal.entries.length) {
     console.error(
       `The database has ${applied} migrations applied and the journal lists ${journal.entries.length}. ` +
         "One was skipped: it is older than the newest one applied. Regenerate it so that it comes last.",

@@ -16,7 +16,7 @@ import type {
   AgentPullRequestAnswer,
   PullRequestStanding,
 } from "@ponzu/runner/protocol";
-import { requireDesign } from "../auth/authorize.ts";
+import { requireCanvas } from "../auth/authorize.ts";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
@@ -27,21 +27,21 @@ import { readPullRequest, recordCurrent, targetOf } from "./sync.ts";
 import { type PullRequestTab, toTab } from "./view.ts";
 
 /*
- * The design's agent driving its own pull request (docs/cloud.md, "The agent's pull request"):
+ * The canvas's agent driving its own pull request (docs/cloud.md, "The agent's pull request"):
  * opening it, marking it ready, bringing its branch up to date, turning on auto-merge and merging
  * it, through the very code the person's routes run (`openPullRequest`, `actAndSay`), as a
  * person. The agent holds no GitHub credential: the API acts for it, as the person it works for.
  *
- * Who that is, and what they may have it do, is decided here from the design's feed, never from
+ * Who that is, and what they may have it do, is decided here from the canvas's feed, never from
  * anything the agent says:
  *
  * - The turn's event is the one the runner names: the event whose message began the turn (a
  *   person's message or comment; a check; a review), or none for a turn an edit or Ponzu's own
- *   note began, even once a person's words come in during it. It must be one of this design's
+ *   note began, even once a person's words come in during it. It must be one of this canvas's
  *   that the runner asking was handed.
  * - A person's event (message, answer, comment) is a person's turn: the agent acts as them.
  * - Any other turn (a check, a review, an edit, Ponzu's own notes, none) acts as the last person
- *   whose words went into the session, else the design's owner, and may only open, update the
+ *   whose words went into the session, else the canvas's owner, and may only open, update the
  *   branch and read: never merge, mark ready or turn on auto-merge. Nor may a person's turn once
  *   a check or a review went into the session after its event, or may yet (text from GitHub is
  *   not the person), nor once anyone else's message, answer or comment did (it is no longer one
@@ -56,7 +56,7 @@ type AgentDeps = Deps;
 /** What a person's turn may have the agent do that any turn may not. */
 const PERSON_ONLY: ReadonlySet<AgentPullRequestAction> = new Set(["ready", "auto_merge", "merge"]);
 
-/** How many times an hour the agent may do each to one design's pull request. */
+/** How many times an hour the agent may do each to one canvas's pull request. */
 export const AGENT_LIMITS: Record<AgentPullRequestAction, number> = {
   open: 3,
   ready: 5,
@@ -99,11 +99,11 @@ export interface Acting {
  */
 export async function actingFor(
   deps: Pick<Deps, "db">,
-  designId: string,
+  canvasId: string,
   { eventId, runnerId }: Turn,
 ): Promise<Acting> {
-  const origin = await getTurnOrigin(deps.db, { designId, eventId, runnerId });
-  if (!origin) throw new ApiError(404, "not_found", "There is no such design.");
+  const origin = await getTurnOrigin(deps.db, { canvasId, eventId, runnerId });
+  if (!origin) throw new ApiError(404, "not_found", "There is no such canvas.");
   const { event } = origin;
   const fromPerson =
     event !== null &&
@@ -125,23 +125,23 @@ export async function actingFor(
     : origin.githubSince
       ? "Words from GitHub (a check or a review) came in after the person's message that began this turn."
       : origin.othersSince
-        ? "Someone else spoke in the design after the person's message that began this turn, so it is no longer one person's request."
+        ? "Someone else spoke in the canvas after the person's message that began this turn, so it is no longer one person's request."
         : null;
   return { user, personTurn: why === null, why };
 }
 
 /**
- * Throws when `user` may not have the agent do this to the design's pull request: they must be a
+ * Throws when `user` may not have the agent do this to the canvas's pull request: they must be a
  * member of its workspace who can push to its repository (GitHub's word, as for steering it), and
  * Ponzu must hold a GitHub connection for them that works. Every refusal is said for the agent to
  * repeat, and never as 401, which a runner takes as its own token being dead.
  */
-async function allowed(deps: AgentDeps, designId: string, user: User): Promise<void> {
+async function allowed(deps: AgentDeps, canvasId: string, user: User): Promise<void> {
   const name = user.name ?? user.githubLogin;
   try {
-    await requireDesign(
+    await requireCanvas(
       { var: { deps, actor: { kind: "user", user, sessionId: "" } } },
-      designId,
+      canvasId,
       "write",
     );
   } catch (error) {
@@ -149,7 +149,7 @@ async function allowed(deps: AgentDeps, designId: string, user: User): Promise<v
       throw new ApiError(
         403,
         "forbidden",
-        `${name} can't change this design's repository on GitHub now (they are no longer in the workspace, or GitHub no longer lets them push to it), so Ponzu won't act as them. Someone who can push to the repository can ask again, or use the pull request tab.`,
+        `${name} can't change this canvas's repository on GitHub now (they are no longer in the workspace, or GitHub no longer lets them push to it), so Ponzu won't act as them. Someone who can push to the repository can ask again, or use the pull request tab.`,
       );
     }
     throw error;
@@ -176,7 +176,7 @@ async function asTool<T>(name: string, run: () => Promise<T>): Promise<T> {
 /**
  * The GitHub ids, among the authors of the pull request's unresolved line comments, of those
  * GitHub says can push to the repository: the only ones whose words the agent's read quotes, as
- * only theirs reach it as a review (`tellDesigns`). A stranger on a public repository can't put
+ * only theirs reach it as a review (`tellCanvases`). A stranger on a public repository can't put
  * words into a person's turn this way. A question GitHub can't answer now drops the comment.
  */
 async function pushers(
@@ -184,9 +184,9 @@ async function pushers(
   context: PullRequestContext,
   tab: PullRequestTab,
 ): Promise<Set<number>> {
-  const { design, repo, installationId, suspendedAt } = context;
+  const { canvas, repo, installationId, suspendedAt } = context;
   const can = new Set<number>();
-  if (!repo || !design.repoId) return can;
+  if (!repo || !canvas.repoId) return can;
   const authors = new Map<number, string>();
   for (const said of tab.pullRequest?.conversation ?? []) {
     if (said.path === null || said.resolved !== false) continue;
@@ -198,54 +198,54 @@ async function pushers(
       const person = await getUserByGithubId(deps.db, githubUserId);
       const permission = await repoPermission(deps, {
         user: { id: person?.id ?? null, githubUserId, githubLogin },
-        repo: { id: design.repoId, githubRepoId: repo.githubRepoId, fullName: repo.fullName },
+        repo: { id: canvas.repoId, githubRepoId: repo.githubRepoId, fullName: repo.fullName },
         installation: { installationId, suspendedAt },
       });
       if (canWrite(permission)) can.add(githubUserId);
     } catch (error) {
-      deps.log.warn("pull_request_agent_author_unknown", { designId: design.id, error });
+      deps.log.warn("pull_request_agent_author_unknown", { canvasId: canvas.id, error });
     }
   }
   return can;
 }
 
-async function contextOf(deps: Pick<Deps, "db">, designId: string): Promise<PullRequestContext> {
-  const context = await getPullRequestContext(deps.db, designId);
-  if (!context) throw new ApiError(404, "not_found", "There is no such design.");
+async function contextOf(deps: Pick<Deps, "db">, canvasId: string): Promise<PullRequestContext> {
+  const context = await getPullRequestContext(deps.db, canvasId);
+  if (!context) throw new ApiError(404, "not_found", "There is no such canvas.");
   return context;
 }
 
 /**
- * Where the design's pull request stands, for the agent, read now as the App, with who it would
+ * Where the canvas's pull request stands, for the agent, read now as the App, with who it would
  * act as this turn and whether it may merge. Any turn may read.
  */
 export async function agentReadPullRequest(
   deps: AgentDeps,
-  designId: string,
+  canvasId: string,
   turn: Turn,
 ): Promise<PullRequestStanding> {
-  const context = await contextOf(deps, designId);
+  const context = await contextOf(deps, canvasId);
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
   const found = await readPullRequest(deps, target);
-  await recordCurrent(deps, target.designId, found);
-  const acting = await actingFor(deps, designId, turn);
+  await recordCurrent(deps, target.canvasId, found);
+  const acting = await actingFor(deps, canvasId, turn);
   const tab = toTab(target, found.read, deps.config.githubApp.slug);
   return standing(tab, acting, await pushers(deps, context, tab));
 }
 
 /**
- * Do `action` to the design's pull request for its agent, as the person `actingFor` names, once
+ * Do `action` to the canvas's pull request for its agent, as the person `actingFor` names, once
  * the guardrails pass: the turn may do it, the person may, and the hour's limit is not reached.
  * The merge never sets the repo's rules aside. What it did goes in the thread as the agent's own
  * line, naming the person.
  */
 export async function agentActOnPullRequest(
   deps: AgentDeps,
-  designId: string,
+  canvasId: string,
   { action, turn, headSha }: { action: AgentPullRequestAction; turn: Turn; headSha?: string },
 ): Promise<AgentPullRequestAnswer> {
-  const acting = await actingFor(deps, designId, turn);
+  const acting = await actingFor(deps, canvasId, turn);
   if (PERSON_ONLY.has(action) && !acting.personTurn) {
     throw new ApiError(
       403,
@@ -255,7 +255,7 @@ export async function agentActOnPullRequest(
   }
   const since = new Date(deps.clock.now() - HOUR_MS);
   const count = await countAgentPullRequestActions(deps.db, {
-    designId,
+    canvasId,
     action: DONE[action],
     since,
   });
@@ -263,13 +263,13 @@ export async function agentActOnPullRequest(
     throw new ApiError(
       409,
       "agent_limit",
-      `Claude has already done this ${count} times to this design's pull request in the last hour, the most Ponzu allows. A person can still do it in the pull request tab.`,
+      `Claude has already done this ${count} times to this canvas's pull request in the last hour, the most Ponzu allows. A person can still do it in the pull request tab.`,
     );
   }
   const { user } = acting;
-  await allowed(deps, designId, user);
+  await allowed(deps, canvasId, user);
   const name = user.name ?? user.githubLogin;
-  const context = await contextOf(deps, designId);
+  const context = await contextOf(deps, canvasId);
 
   let tab: PullRequestTab;
   let did: boolean;
@@ -306,7 +306,7 @@ export async function agentActOnPullRequest(
     await appendThreadItemOnce(deps.db, {
       // Not a runner's shape (`ti_` and sixteen letters and digits): no sandbox can write it.
       id: `ti_pra-${randomString(16)}`,
-      designId,
+      canvasId,
       kind: "notice",
       payload: {
         type: "pull_request_agent",
@@ -319,7 +319,7 @@ export async function agentActOnPullRequest(
         at: new Date(deps.clock.now()).toISOString(),
       },
     });
-    deps.log.info("pull_request_agent", { designId, action, number: pr.number, as: user.id });
+    deps.log.info("pull_request_agent", { canvasId, action, number: pr.number, as: user.id });
   }
   return { did, pushing, ...standing(tab, acting, await pushers(deps, context, tab)) };
 }

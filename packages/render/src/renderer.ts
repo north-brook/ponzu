@@ -72,11 +72,11 @@ export interface RenderRequest {
   at?: number;
   /** Hover, focus or press a node first; `at` then counts from that moment. */
   interact?: Interaction;
-  /** Base URL for this design's assets/ paths, when it differs from the renderer's own. */
+  /** Base URL for this canvas's assets/ paths, when it differs from the renderer's own. */
   assetBase?: string;
   /**
    * A small picture (a thumbnail, a preview, a canvas snapshot), not a
-   * screenshot: the design's big images load as copies sized to the render
+   * screenshot: the board's big images load as copies sized to the render
    * (see RENDITION_WIDTHS), which is much faster. Screenshots, exports and
    * agents' tools leave it out and get the originals.
    */

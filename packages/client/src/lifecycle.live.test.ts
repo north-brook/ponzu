@@ -5,12 +5,12 @@ import { createSession } from "./session.ts";
 import { sessionFile } from "./testing/session-file.ts";
 
 /*
- * A design's whole life on the real services, opt in, observed through the API alone: a design
+ * A canvas's whole life on the real services, opt in, observed through the API alone: a canvas
  * made with its first message in the test repository's workspace, its Vercel sandbox created
  * from current.json's image, Claude Code drawing an artboard on the developer's Anthropic key,
  * the agent going idle, the idle stop putting the sandbox to sleep (ponzu-stop, then Vercel's
  * stop and snapshot), a second message resuming it from its snapshot and being answered in the
- * same Claude session, and the design deleted with its sandbox. It spends real money (a few
+ * same Claude session, and the canvas deleted with its sandbox. It spends real money (a few
  * cents on Haiku, a few minutes of a 2 vCPU sandbox).
  *
  *   PONZU_LIFECYCLE_LIVE=1 PONZU_API_URL=… PONZU_SESSION_FILE=… WORKOS_CLIENT_ID=… \
@@ -46,7 +46,7 @@ interface Item {
   payload: Record<string, unknown>;
 }
 
-describe.skipIf(!ready)("a design's sandbox, for real", () => {
+describe.skipIf(!ready)("a canvas's sandbox, for real", () => {
   test(
     "wakes on its first message, draws, sleeps when idle, wakes again in the same session, and goes",
     async () => {
@@ -115,19 +115,19 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
       await call("POST", "claude/api-key", { key: env.ANTHROPIC_API_KEY });
 
       const live = createLive({ api });
-      const created = await call<{ id: string; branch: string }>("POST", "designs", {
+      const created = await call<{ id: string; branch: string }>("POST", "canvases", {
         ...found,
         message: { text: FIRST },
         model: "claude-haiku-5-5",
         effort: "low",
         createKey: `lifecycle-live-${Date.now()}`,
       });
-      mark("design created with its first message");
-      const designId = created.id;
+      mark("canvas created with its first message");
+      const canvasId = created.id;
       expect(created.branch).toMatch(/^pz\//);
       const sandboxState = () =>
-        live.snapshot("design.head", { designId }).rows?.[0]?.sandboxState ?? null;
-      const stop = live.subscribe("design.head", { designId }, (snapshot) => {
+        live.snapshot("canvas.head", { canvasId }).rows?.[0]?.sandboxState ?? null;
+      const stop = live.subscribe("canvas.head", { canvasId }, (snapshot) => {
         const row = snapshot.rows?.[0];
         if (row?.agentState === "waking") mark("head says waking");
         if (row?.sandboxState === "awake") mark("sandbox awake");
@@ -135,7 +135,7 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
       });
 
       try {
-        const thread = () => call<{ items: Item[] }>("GET", `designs/${designId}/thread`);
+        const thread = () => call<{ items: Item[] }>("GET", `canvases/${canvasId}/thread`);
         const fromRunner = (items: Item[]) =>
           items.filter((item) => item.kind !== "message" && item.kind !== "comment");
         await until("the runner's first thread item", 5 * MINUTE, async () =>
@@ -146,20 +146,20 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
         await until("an artboard by the agent", 5 * MINUTE, async () => {
           const { doc } = await call<{ doc: { pages: { artboards: unknown[] }[] } }>(
             "GET",
-            `designs/${designId}/doc`,
+            `canvases/${canvasId}/doc`,
           );
           return doc.pages.some((page) => page.artboards.length > 0) || undefined;
         });
         mark("first artboard committed");
         const { ops } = await call<{ ops: { actor: { kind: string } }[] }>(
           "GET",
-          `designs/${designId}/ops?after=0`,
+          `canvases/${canvasId}/ops?after=0`,
         );
         expect(ops.some((op) => op.actor.kind === "agent")).toBe(true);
 
         await until("the agent to be idle", 5 * MINUTE, async () => {
-          const design = await call<{ agentState: string }>("GET", `designs/${designId}`);
-          return design.agentState === "idle" || undefined;
+          const canvas = await call<{ agentState: string }>("GET", `canvases/${canvasId}`);
+          return canvas.agentState === "idle" || undefined;
         });
         mark("agent idle");
 
@@ -171,7 +171,7 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
         mark("sandbox asleep after the idle window");
 
         const asked = at();
-        await call("POST", `designs/${designId}/messages`, {
+        await call("POST", `canvases/${canvasId}/messages`, {
           text: "Repeat the first sentence of my first message to you, word for word, and nothing else.",
         });
         const answered = await until("the answer to the second message", 5 * MINUTE, async () => {
@@ -191,7 +191,7 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
             return sandboxState() === "asleep" || undefined;
           });
           const againAsked = at();
-          await call("POST", `designs/${designId}/messages`, { text: "Reply with the word ok." });
+          await call("POST", `canvases/${canvasId}/messages`, { text: "Reply with the word ok." });
           await until("the sandbox to wake again", 3 * MINUTE, async () =>
             sandboxState() === "awake" ? true : undefined,
           );
@@ -207,8 +207,8 @@ describe.skipIf(!ready)("a design's sandbox, for real", () => {
       } finally {
         stop();
         live.close();
-        await call("DELETE", `designs/${designId}`);
-        mark("design deleted");
+        await call("DELETE", `canvases/${canvasId}`);
+        mark("canvas deleted");
         // Leave the developer's Claude as it was found: not connected.
         await call("DELETE", "claude");
         console.log(JSON.stringify(marks, null, 2));

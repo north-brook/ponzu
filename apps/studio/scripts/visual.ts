@@ -3,7 +3,7 @@
  * The cloud gallery, drawn in headless Chromium.
  *
  *   bun scripts/visual.ts compare --design <path to a .design folder> [--out <dir>] [--only <id>]
- *     Draws every composition that names a board, and the design's own board, at the board's
+ *     Draws every composition that names a board, and the mockup's own board, at the board's
  *     size in light and dark; writes ours, theirs, the difference and the two side by side to
  *     <out> (.context/visual by default), and prints how much differs, overall and outside the
  *     masked regions: what this code doesn't draw, and the chrome, which departs from the boards
@@ -103,7 +103,7 @@ try {
   built.dispose();
 }
 
-/** The design's board on the left, ours on the right. */
+/** The mockup's board on the left, ours on the right. */
 async function sideBySide(page: Page, left: Buffer, right: Buffer): Promise<Buffer> {
   const data = await page.evaluate(
     async ({ left, right }) => {

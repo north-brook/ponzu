@@ -9,7 +9,7 @@ import type { RepoEnvironment } from "../settings/environments.ts";
 import type { Installation } from "../settings/github.tsx";
 import type { Member } from "../settings/members.ts";
 import type { PingDevice, PingPrefs } from "../settings/notifications.tsx";
-import type { DesignUsage } from "../settings/plan.tsx";
+import type { CanvasUsage } from "../settings/plan.tsx";
 import type { GithubAccount } from "../setup/setup.ts";
 import {
   alex,
@@ -31,7 +31,7 @@ const local = (month: number, day: number, hour = 12, minute = 0, year = 2026) =
 
 export const email = "bryce@northbrook.co";
 
-// Where do you design: the person's own account, and the organizations Ponzu is installed on.
+// Where do you build: the person's own account, and the organizations Ponzu is installed on.
 export const personalAccount: GithubAccount = {
   githubAccountId: 1001,
   login: bryce.login,
@@ -271,16 +271,16 @@ export const byPerson: PersonUsage[] = [
 ];
 /**
  * The same period with someone's account deleted (30 of Alex's credits put down to nobody) and
- * by design, with deleted designs and designs the viewer can't open: each adds up to 2,060.
+ * by canvas, with deleted canvases and canvases the viewer can't open: each adds up to 2,060.
  */
 export const byPersonWithNobody: PersonUsage[] = byPerson.map((row) =>
   row.person.id === alex.id ? { ...row, usedCredits: 80 } : row,
 );
 export const unattributedCredits = 30;
-export const byDesign: DesignUsage[] = [
-  { kind: "design", id: "des_checkout", name: "Checkout, one page", usedCredits: 940 },
-  { kind: "design", id: "des_onboarding", name: "Onboarding tour", usedCredits: 610 },
-  { kind: "design", id: "des_empty", name: "Empty states", usedCredits: 0 },
+export const byCanvas: CanvasUsage[] = [
+  { kind: "canvas", id: "cnv_checkout", name: "Checkout, one page", usedCredits: 940 },
+  { kind: "canvas", id: "cnv_onboarding", name: "Onboarding tour", usedCredits: 610 },
+  { kind: "canvas", id: "cnv_empty", name: "Empty states", usedCredits: 0 },
   { kind: "deleted", id: null, name: null, usedCredits: 330 },
   { kind: "hidden", id: null, name: null, usedCredits: 180 },
 ];

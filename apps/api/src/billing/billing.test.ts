@@ -46,7 +46,7 @@ const person = (id: string, role: UsagePerson["role"] = "member"): UsagePerson =
   role,
 });
 
-/** A period of awake hours by person, each in a design of their own. */
+/** A period of awake hours by person, each in a canvas of their own. */
 function read(
   hours: Record<string, number>,
   extra: Partial<WorkspaceUsageRead> = {},
@@ -58,13 +58,13 @@ function read(
     monthlyCapCents: null,
     rows: ids.map((id) => ({
       userId: id,
-      designId: `des_${id}`,
+      canvasId: `cnv_${id}`,
       rateCardVersion: 1,
       seconds: hours[id]! * HOUR,
       modelCredits: 0,
     })),
     people: ids.map((id, i) => person(id, i === 0 ? "admin" : "member")),
-    designs: ids.map((id) => ({ id: `des_${id}`, name: `${id}'s design`, readable: true })),
+    canvases: ids.map((id) => ({ id: `cnv_${id}`, name: `${id}'s canvas`, readable: true })),
     granted: { userIds: [], departed: 0 },
     ...extra,
   };
@@ -205,36 +205,36 @@ describe("who sees what", () => {
       rows: [
         {
           userId: "bryce",
-          designId: "des_a",
+          canvasId: "cnv_a",
           rateCardVersion: 1,
           seconds: 10 * HOUR,
           modelCredits: 0,
         },
         {
           userId: "maya",
-          designId: "des_b",
+          canvasId: "cnv_b",
           rateCardVersion: 1,
           seconds: 4 * HOUR,
           modelCredits: 0,
         },
-        { userId: null, designId: null, rateCardVersion: 1, seconds: 2 * HOUR, modelCredits: 0 },
+        { userId: null, canvasId: null, rateCardVersion: 1, seconds: 2 * HOUR, modelCredits: 0 },
       ],
-      designs: [
-        { id: "des_a", name: "Checkout", readable: true },
-        { id: "des_b", name: "Secret project", readable: false },
+      canvases: [
+        { id: "cnv_a", name: "Checkout", readable: true },
+        { id: "cnv_b", name: "Secret project", readable: false },
       ],
     },
   );
 
-  test("an admin sees everyone, nobody's use, and the designs they may know of by name", () => {
+  test("an admin sees everyone, nobody's use, and the canvases they may know of by name", () => {
     const usage = workspaceUsage(team, period, viewer("bryce"));
     expect(usage.canManage).toBe(true);
     expect(usage.unattributedCredits).toBe(10);
-    // A deleted design's use is its own line, not "designs you can't open".
-    expect(usage.byDesign).toEqual([
-      { kind: "design", design: { id: "des_a", name: "Checkout" }, usedCredits: 50 },
-      { kind: "deleted", design: null, usedCredits: 10 },
-      { kind: "hidden", design: null, usedCredits: 20 },
+    // A deleted canvas's use is its own line, not "canvases you can't open".
+    expect(usage.byCanvas).toEqual([
+      { kind: "canvas", canvas: { id: "cnv_a", name: "Checkout" }, usedCredits: 50 },
+      { kind: "deleted", canvas: null, usedCredits: 10 },
+      { kind: "hidden", canvas: null, usedCredits: 20 },
     ]);
   });
 
@@ -244,7 +244,7 @@ describe("who sees what", () => {
     expect(usage.canManage).toBe(false);
     expect(usage.mine.usedCredits).toBe(20);
     expect(usage.byPerson).toBeNull();
-    expect(usage.byDesign).toBeNull();
+    expect(usage.byCanvas).toBeNull();
     expect(usage.unattributedCredits).toBeNull();
   });
 
@@ -296,27 +296,27 @@ describe("the billing period", () => {
 describe("a breakdown adds up to the headline", () => {
   const minutes = (m: number) => m * 60;
 
-  test("the second run's numbers: 4 credits used, and the designs share all 4", () => {
-    // Designs at 1.6, 0.4 and 2.4 credits of awake time (4.4 in all, 4 used): rounded each on
+  test("the second run's numbers: 4 credits used, and the canvases share all 4", () => {
+    // Canvases at 1.6, 0.4 and 2.4 credits of awake time (4.4 in all, 4 used): rounded each on
     // its own they read 1 + 0 + 2 = 3 against a headline of 4.
     const usage = workspaceUsage(
       read(
         { bryce: 0 },
         {
           rows: [
-            ["des_a", 19.2],
-            ["des_b", 4.8],
+            ["cnv_a", 19.2],
+            ["cnv_b", 4.8],
             [null, 28.8],
-          ].map(([designId, m]) => ({
+          ].map(([canvasId, m]) => ({
             userId: "bryce",
-            designId: designId as string | null,
+            canvasId: canvasId as string | null,
             rateCardVersion: 1,
             seconds: minutes(m as number),
             modelCredits: 0,
           })),
-          designs: [
-            { id: "des_a", name: "Checkout", readable: true },
-            { id: "des_b", name: "Onboarding", readable: true },
+          canvases: [
+            { id: "cnv_a", name: "Checkout", readable: true },
+            { id: "cnv_b", name: "Onboarding", readable: true },
           ],
         },
       ),
@@ -324,9 +324,9 @@ describe("a breakdown adds up to the headline", () => {
       viewer("bryce"),
     );
     expect(usage.usedCredits).toBe(4);
-    expect(usage.byDesign?.map((row) => [row.kind, row.usedCredits])).toEqual([
-      ["design", 2],
-      ["design", 0],
+    expect(usage.byCanvas?.map((row) => [row.kind, row.usedCredits])).toEqual([
+      ["canvas", 2],
+      ["canvas", 0],
       ["deleted", 2],
     ]);
     expect(usage.byPerson?.map((row) => row.usedCredits)).toEqual([4]);
@@ -346,13 +346,13 @@ describe("a breakdown adds up to the headline", () => {
     );
   });
 
-  test("by design and by person, for any usage, sum exactly to what was used", () => {
+  test("by canvas and by person, for any usage, sum exactly to what was used", () => {
     const people = ["ada", "bryce", "maya"];
-    const designs = ["des_a", "des_b", "des_c", "des_d"];
+    const canvases = ["cnv_a", "cnv_b", "cnv_c", "cnv_d"];
     const second: RateCardNumbers = { ...CARD, version: 2, sandboxCreditsPerAwakeHour: 2.5 };
     const row = fc.record({
       userId: fc.constantFrom<string | null>(null, ...people),
-      designId: fc.constantFrom<string | null>(null, "des_unknown", ...designs),
+      canvasId: fc.constantFrom<string | null>(null, "cnv_unknown", ...canvases),
       rateCardVersion: fc.constantFrom(1, 2),
       seconds: fc.nat({ max: 20 * HOUR }),
       modelCredits: fc.integer({ min: 0, max: 99_999 }).map((n) => n / 10_000),
@@ -361,7 +361,7 @@ describe("a breakdown adds up to the headline", () => {
     return fc.assert(
       fc.property(
         fc.array(row, { maxLength: 30 }),
-        fc.array(fc.boolean(), { minLength: designs.length, maxLength: designs.length }),
+        fc.array(fc.boolean(), { minLength: canvases.length, maxLength: canvases.length }),
         (rows, readable) => {
           const got = workspaceUsage(
             {
@@ -369,12 +369,12 @@ describe("a breakdown adds up to the headline", () => {
               cards: [CARD, second],
               rows,
               people: people.map((id) => person(id, "admin")),
-              designs: designs.map((id, i) => ({ id, name: id, readable: readable[i]! })),
+              canvases: canvases.map((id, i) => ({ id, name: id, readable: readable[i]! })),
             },
             period,
             viewer("ada"),
           );
-          expect(sum(got.byDesign!.map((d) => d.usedCredits))).toBe(got.usedCredits);
+          expect(sum(got.byCanvas!.map((d) => d.usedCredits))).toBe(got.usedCredits);
           expect(sum(got.byPerson!.map((p) => p.usedCredits)) + got.unattributedCredits!).toBe(
             got.usedCredits,
           );
@@ -390,7 +390,7 @@ describe("a breakdown adds up to the headline", () => {
   test("a member who sees only their own line sees their own use, which others' can't move", () => {
     const row = (userId: string, seconds: number) => ({
       userId,
-      designId: null,
+      canvasId: null,
       rateCardVersion: 1,
       seconds,
       modelCredits: 0,
@@ -411,23 +411,23 @@ describe("a breakdown adds up to the headline", () => {
   });
 
   test("a tie goes the same way however the rows came back", () => {
-    // Half a credit in each of three designs: 1.5 in all, 1 used.
-    const rows = ["des_a", "des_b", "des_c"].map((designId) => ({
+    // Half a credit in each of three canvases: 1.5 in all, 1 used.
+    const rows = ["cnv_a", "cnv_b", "cnv_c"].map((canvasId) => ({
       userId: "bryce",
-      designId,
+      canvasId,
       rateCardVersion: 1,
       seconds: 360,
       modelCredits: 0,
     }));
-    const designs = ["des_a", "des_b", "des_c"].map((id) => ({ id, name: id, readable: true }));
+    const canvases = ["cnv_a", "cnv_b", "cnv_c"].map((id) => ({ id, name: id, readable: true }));
     const credited = (order: typeof rows) =>
       workspaceUsage(
-        read({ bryce: 0 }, { rows: order, designs }),
+        read({ bryce: 0 }, { rows: order, canvases }),
         period,
         viewer("bryce"),
-      ).byDesign?.find((row) => row.usedCredits === 1)?.design?.id;
-    expect(credited(rows)).toBe("des_a");
-    expect(credited(rows.toReversed())).toBe("des_a");
+      ).byCanvas?.find((row) => row.usedCredits === 1)?.canvas?.id;
+    expect(credited(rows)).toBe("cnv_a");
+    expect(credited(rows.toReversed())).toBe("cnv_a");
   });
 });
 

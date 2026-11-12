@@ -3,7 +3,7 @@ import type { Effort } from "@ponzu/runner/protocol";
 import { ApiError } from "../http/errors.ts";
 
 /*
- * What a design's agent may run on (docs/cloud.md, "Models"). A runner reports what Claude Code
+ * What a canvas's agent may run on (docs/cloud.md, "Models"). A runner reports what Claude Code
  * offers the account it runs as (the Agent SDK's `supportedModels()`), and that is what the
  * account is offered: a model Anthropic ships appears once the sandbox image's Claude Code knows
  * it, with no Ponzu release. The list below is what an account nobody has reported for yet is
@@ -29,7 +29,7 @@ export const CLAUDE_MODELS: readonly ClaudeModel[] = [
   { id: "claude-haiku-5-5", label: "Haiku 5.5", efforts: [...EFFORTS] },
 ];
 
-/** What a person's new designs run on until they choose otherwise, when their account offers it. */
+/** What a person's new canvases run on until they choose otherwise, when their account offers it. */
 export const DEFAULT_MODEL = "claude-opus-5-5";
 export const DEFAULT_EFFORT: Effort = "medium";
 

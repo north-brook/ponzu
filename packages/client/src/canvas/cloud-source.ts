@@ -15,38 +15,38 @@ import { type Clock, systemClock } from "../clock.ts";
 import type { DocCache } from "../doc-cache.ts";
 import { ApiError } from "../errors.ts";
 import type { Live } from "../live/live.ts";
-import type { DesignHeadRow, PresenceRow } from "../live/rows.ts";
+import type { CanvasHeadRow, PresenceRow } from "../live/rows.ts";
 import { presentNow } from "../live/sort.ts";
 
 /*
  * The canvas on Ponzu Cloud (docs/cloud.md, "Clients"): `CanvasSource` over a core `Replica`.
- * Edits show at once and are posted behind; `design.head` says when someone else's have
+ * Edits show at once and are posted behind; `canvas.head` says when someone else's have
  * landed. The canvas was written for a server a millisecond away that echoed every edit, so
  * this keeps the promises that made true: a board dropped stays where it was dropped, a
  * comment sent stays on screen, and each op reaches `onOp` once, with who made it.
  */
 
-/** How often to say the design is still open. The API forgets a person after 75 seconds. */
+/** How often to say the canvas is still open. The API forgets a person after 75 seconds. */
 const PRESENCE_MS = 30_000;
 /** How long the document rests before it is written to the cache. */
 const CACHE_AFTER_MS = 2_000;
 const RETRY_MS = { first: 1_000, last: 30_000 };
 
-/** An edit that did not make it into the design, for the UI to say so. */
+/** An edit that did not make it into the canvas, for the UI to say so. */
 export interface Unsaved {
-  /** In words: the API's reason, why it no longer fits, or that the design is read only. */
+  /** In words: the API's reason, why it no longer fits, or that the canvas is read only. */
   reason: string;
   /** The op, when there was one (an undo that failed has none). */
   op?: Op;
 }
 
 export interface CloudSourceOptions {
-  api: Pick<Api, "designs">;
+  api: Pick<Api, "canvases">;
   live: Pick<Live, "subscribe">;
-  designId: string;
+  canvasId: string;
   /** The signed-in person, as the API stamps their ops: `{ kind: "user", id, name, avatarUrl }`. */
   me: Actor;
-  /** Shows the last copy of the design while the API cannot be reached. */
+  /** Shows the last copy of the canvas while the API cannot be reached. */
   cache?: DocCache;
   clock?: Clock;
 }
@@ -56,13 +56,13 @@ type OpListener = (op: Op, origin: Origin, doc: Doc) => void;
 export class CloudSource implements CanvasSource {
   /** There is no image-resizing service: every image loads at its own size. */
   readonly renditions = false;
-  /** Where the design's `assets/` are: known once the API has answered. */
+  /** Where the canvas's `assets/` are: known once the API has answered. */
   assetBase?: string;
-  /** False for a design the person may only look at, and until the API has answered. */
+  /** False for a canvas the person may only look at, and until the API has answered. */
   writable = false;
 
   private readonly opts: CloudSourceOptions;
-  private readonly api: Pick<Api, "designs">;
+  private readonly api: Pick<Api, "canvases">;
   private readonly clock: Clock;
   private state: CanvasState = {
     status: "connecting",
@@ -81,10 +81,10 @@ export class CloudSource implements CanvasSource {
   private copied: Doc | null = null;
   /** A copy made for the op listeners, for `state` to take up. */
   private fresh: Doc | null = null;
-  private head: DesignHeadRow | null = null;
+  private head: CanvasHeadRow | null = null;
   /** Who made the last change, for the canvas's activity indicator. */
   private lastOrigin: Origin | undefined;
-  /** Why the design can no longer be shown: deleted, or the person lost access to it. */
+  /** Why the canvas can no longer be shown: deleted, or the person lost access to it. */
   private failure: string | null = null;
   private people: readonly PresenceRow[] = [];
   private pageId: string | null = null;
@@ -127,7 +127,7 @@ export class CloudSource implements CanvasSource {
 
   apply(op: Op): void {
     if (!this.replica || !this.writable) {
-      this.unsaved({ op, reason: "This design can only be looked at right now." });
+      this.unsaved({ op, reason: "This canvas can only be looked at right now." });
       return;
     }
     try {
@@ -145,10 +145,10 @@ export class CloudSource implements CanvasSource {
     this.reverse("redo");
   }
 
-  /** Puts a file in the design's `assets/` and answers with its reference. */
+  /** Puts a file in the canvas's `assets/` and answers with its reference. */
   async upload(file: File): Promise<string> {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const uploaded = await this.api.designs.upload(this.opts.designId, {
+    const uploaded = await this.api.canvases.upload(this.opts.canvasId, {
       name: file.name,
       type: file.type,
       bytes,
@@ -161,7 +161,7 @@ export class CloudSource implements CanvasSource {
   /* For the host                                                      */
   /* ---------------------------------------------------------------- */
 
-  /** Hear of an edit that will not be in the design: "That change could not be saved." */
+  /** Hear of an edit that will not be in the canvas: "That change could not be saved." */
   onUnsaved(listener: (unsaved: Unsaved) => void): () => void {
     this.unsavedListeners.add(listener);
     return () => this.unsavedListeners.delete(listener);
@@ -169,7 +169,7 @@ export class CloudSource implements CanvasSource {
 
   /**
    * Resolves once every edit made here so far has been sent and answered: committed, or turned
-   * away (`onUnsaved` says which). What needs an op in the design first waits on it.
+   * away (`onUnsaved` says which). What needs an op in the canvas first waits on it.
    */
   saved(): Promise<void> {
     return this.replica ? settled(this.replica) : Promise.resolve();
@@ -193,7 +193,7 @@ export class CloudSource implements CanvasSource {
     void this.open();
   }
 
-  /** Close the design: stop syncing, say the person left, and keep a copy for next time. */
+  /** Close the canvas: stop syncing, say the person left, and keep a copy for next time. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -202,7 +202,7 @@ export class CloudSource implements CanvasSource {
     this.cancelRetry?.();
     this.replica?.close();
     if (this.replica) {
-      void this.api.designs.leave(this.opts.designId).catch(() => {});
+      void this.api.canvases.leave(this.opts.canvasId).catch(() => {});
       this.cancelCache?.();
       void this.saveCopy();
     }
@@ -213,20 +213,20 @@ export class CloudSource implements CanvasSource {
   /* ---------------------------------------------------------------- */
 
   private async showCached(): Promise<void> {
-    const cached = await this.opts.cache?.read(this.opts.designId);
+    const cached = await this.opts.cache?.read(this.opts.canvasId);
     if (!cached || this.replica || this.closed) return;
     this.assetBase = cached.assetsUrl;
     this.set({ doc: cached.doc, path: cached.name });
   }
 
   private async open(): Promise<void> {
-    const { designId, me } = this.opts;
-    let view: Awaited<ReturnType<Api["designs"]["get"]>>;
+    const { canvasId, me } = this.opts;
+    let view: Awaited<ReturnType<Api["canvases"]["get"]>>;
     let current: { doc: Doc; seq: number };
     try {
       [view, current] = await Promise.all([
-        this.api.designs.get(designId),
-        this.api.designs.doc(designId),
+        this.api.canvases.get(canvasId),
+        this.api.canvases.doc(canvasId),
       ]);
     } catch (error) {
       if (this.closed) return;
@@ -296,11 +296,11 @@ export class CloudSource implements CanvasSource {
     if (changed) this.cacheSoon();
   }
 
-  /** The replica's way to the API, for this design. */
+  /** The replica's way to the API, for this canvas. */
   private transport(): SyncTransport {
-    const { designs } = this.api;
-    const id = this.opts.designId;
-    /** Deleted, or no longer theirs: stop now, rather than retry until `design.head` says so. */
+    const { canvases } = this.api;
+    const id = this.opts.canvasId;
+    /** Deleted, or no longer theirs: stop now, rather than retry until `canvas.head` says so. */
     const gone = (error: unknown) => {
       if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
         this.fail(error.message);
@@ -310,7 +310,7 @@ export class CloudSource implements CanvasSource {
     return {
       async commit(ops) {
         try {
-          return await designs.commit(id, ops);
+          return await canvases.commit(id, ops);
         } catch (error) {
           gone(error);
           // Refused outright (malformed, too large, not allowed): sending it again can't help.
@@ -322,29 +322,29 @@ export class CloudSource implements CanvasSource {
       },
       async fetchOps(after) {
         try {
-          return await designs.ops(id, after);
+          return await canvases.ops(id, after);
         } catch (error) {
           if (error instanceof ApiError && error.code === "ops_pruned") return "gone";
           throw gone(error);
         }
       },
-      fetchDoc: () => designs.doc(id).catch((error) => Promise.reject(gone(error))),
+      fetchDoc: () => canvases.doc(id).catch((error) => Promise.reject(gone(error))),
     };
   }
 
-  /** The design's head and who has it open, live. */
+  /** The canvas's head and who has it open, live. */
   private watch(): void {
-    const args = { designId: this.opts.designId };
+    const args = { canvasId: this.opts.canvasId };
     this.cleanups.push(
-      this.opts.live.subscribe("design.head", args, ({ rows, status, error }) => {
-        if (status === "ended") return this.fail(error?.message ?? "This design is gone.");
+      this.opts.live.subscribe("canvas.head", args, ({ rows, status, error }) => {
+        if (status === "ended") return this.fail(error?.message ?? "This canvas is gone.");
         const head = rows?.[0];
         if (!head) return;
         this.head = head;
         this.replica?.notify(head.seq);
         this.set({ path: head.name, presence: this.presence() });
       }),
-      this.opts.live.subscribe("design.presence", args, ({ rows }) => {
+      this.opts.live.subscribe("canvas.presence", args, ({ rows }) => {
         this.people = rows ?? [];
         this.set({ presence: this.presence() });
       }),
@@ -394,7 +394,7 @@ export class CloudSource implements CanvasSource {
     this.reversing = this.reversing.then(async () => {
       await settled(replica);
       try {
-        const { committed, seq } = await this.api.designs[kind](this.opts.designId);
+        const { committed, seq } = await this.api.canvases[kind](this.opts.canvasId);
         replica.ingest([committed]);
         replica.notify(seq);
       } catch (error) {
@@ -404,11 +404,11 @@ export class CloudSource implements CanvasSource {
     });
   }
 
-  /** Say the design is open now and every 30 seconds after, until it is closed. */
+  /** Say the canvas is open now and every 30 seconds after, until it is closed. */
   private keepPresent(): void {
     this.cancelPresence?.();
     const beat = () => {
-      void this.api.designs.presence(this.opts.designId, this.pageId).catch(() => {});
+      void this.api.canvases.presence(this.opts.canvasId, this.pageId).catch(() => {});
       this.cancelPresence = this.clock.schedule(beat, PRESENCE_MS);
     };
     beat();
@@ -427,7 +427,7 @@ export class CloudSource implements CanvasSource {
     const replica = this.replica;
     if (!this.opts.cache || !replica || !this.assetBase) return;
     await this.opts.cache.write({
-      designId: this.opts.designId,
+      canvasId: this.opts.canvasId,
       name: this.state.path,
       doc: replica.doc,
       seq: replica.seq,

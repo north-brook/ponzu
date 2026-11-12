@@ -1,6 +1,6 @@
 import {
-  type DesignAccess,
-  getDesignAccess,
+  type CanvasAccess,
+  getCanvasAccess,
   getMemberWorkspace,
   getRepoIdeasAccess,
   type MemberRole,
@@ -47,45 +47,45 @@ export async function requireWorkspace(
   return workspace;
 }
 
-/** A design as the caller may have it: they may look (`read`) or also steer it (`write`). */
-export interface DesignGrant extends DesignAccess {
+/** A canvas as the caller may have it: they may look (`read`) or also steer it (`write`). */
+export interface CanvasGrant extends CanvasAccess {
   access: "read" | "write";
 }
 
-type DesignContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: Actor } };
+type CanvasContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: Actor } };
 
 /**
- * The design `designId` names, if the caller may `need` it. Opening a design takes read access
+ * The canvas `canvasId` names, if the caller may `need` it. Opening a canvas takes read access
  * to its repository and steering it takes write access, both GitHub's to say (docs/cloud.md,
- * "Identity and access"), and either takes membership of its workspace; a Scratch design has
- * no repository and is its owner's alone. A runner may look at and steer its own design and
+ * "Identity and access"), and either takes membership of its workspace; a Scratch canvas has
+ * no repository and is its owner's alone. A runner may look at and steer its own canvas and
  * no other.
  */
-export async function requireDesign(
-  c: DesignContext,
-  designId: string,
+export async function requireCanvas(
+  c: CanvasContext,
+  canvasId: string,
   need: "read" | "write",
-): Promise<DesignGrant> {
+): Promise<CanvasGrant> {
   const { deps, actor } = c.var;
-  const notFound = new ApiError(404, "not_found", "There is no such design.");
-  if (actor.kind === "runner" && actor.designId !== designId) throw notFound;
-  const found = await getDesignAccess(deps.db, {
-    designId,
+  const notFound = new ApiError(404, "not_found", "There is no such canvas.");
+  if (actor.kind === "runner" && actor.canvasId !== canvasId) throw notFound;
+  const found = await getCanvasAccess(deps.db, {
+    canvasId,
     userId: actor.kind === "user" ? actor.user.id : null,
   });
   if (!found) throw notFound;
   const access = actor.kind === "runner" ? "write" : await personAccess(deps, actor.user, found);
   if (!access) throw notFound;
-  noteWorkspace(found.design.workspaceId);
+  noteWorkspace(found.canvas.workspaceId);
   if (need === "write" && access !== "write") {
-    throw new ApiError(403, "forbidden", "You can open this design but not change it.");
+    throw new ApiError(403, "forbidden", "You can open this canvas but not change it.");
   }
   return { ...found, access };
 }
 
 /**
  * The repo `repoId` names, with its ideas, if the signed-in person may read it: a member of its
- * workspace whom GitHub lets read the repo (as `requireDesign` asks for a design in it). The
+ * workspace whom GitHub lets read the repo (as `requireCanvas` asks for a canvas in it). The
  * same 404 when it does not exist, the App has lost it, or the person may not read it. Pass
  * `"write"` for something only someone who can push to it may do: 403 for a reader.
  */
@@ -112,20 +112,20 @@ export async function requireRepo(
 }
 
 /**
- * What a person may do with the design: nothing outside its workspace, and inside it what
+ * What a person may do with the canvas: nothing outside its workspace, and inside it what
  * GitHub lets them do in its repository. Null for nothing.
  */
 async function personAccess(
   deps: Pick<Deps, "db" | "github" | "clock">,
   user: User,
-  { design, repo, installationId, suspendedAt, known, member }: DesignAccess,
-): Promise<DesignGrant["access"] | null> {
-  // Membership is GitHub's too, and a person who loses it loses the workspace's designs at
+  { canvas, repo, installationId, suspendedAt, known, member }: CanvasAccess,
+): Promise<CanvasGrant["access"] | null> {
+  // Membership is GitHub's too, and a person who loses it loses the workspace's canvases at
   // once, whatever answer about the repo is still kept.
   if (!member) return null;
-  if (!repo) return design.ownerId === user.id ? "write" : null;
+  if (!repo) return canvas.ownerId === user.id ? "write" : null;
   // Without the App, or while it is suspended, it is `none`: nobody to ask, and nothing the
-  // design could do anyway.
+  // canvas could do anyway.
   const installation = { installationId, suspendedAt };
   const permission = await repoPermission(deps, { user, repo, installation, known });
   if (canWrite(permission)) return "write";

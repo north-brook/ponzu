@@ -1,7 +1,7 @@
 /* The compositions of the thread rail, needs you and the pull request tab (compositions.ts). */
 import type { ReactNode } from "react";
-import type { AgentActivity, DesignSummary } from "../model.ts";
-import { DesignHarness } from "./design-harness.tsx";
+import type { AgentActivity, CanvasSummary } from "../model.ts";
+import { CanvasHarness } from "./canvas-harness.tsx";
 import * as f from "./fixtures.ts";
 import { LiveTurnRail } from "./live-turn.tsx";
 import * as t from "./thread-fixtures.ts";
@@ -10,17 +10,17 @@ export const WORKING: AgentActivity = { state: "working", status: null };
 const WAITING: AgentActivity = { state: "needs_you", status: null };
 const IDLE: AgentActivity = { state: "idle", status: null };
 
-const QUIETER = "dsn_quieter";
-const quieter = (designs: DesignSummary[]) => designs.find((d) => d.id === QUIETER)!;
-/** Mac boards 2 and 3: the open design waits on two questions. */
-const asking = f.soloDesigns.map((d) => (d.id === QUIETER ? { ...d, needsYou: 2 } : d));
+const QUIETER = "cnv_quieter";
+const quieter = (canvases: CanvasSummary[]) => canvases.find((d) => d.id === QUIETER)!;
+/** Mac boards 2 and 3: the open canvas waits on two questions. */
+const asking = f.soloCanvases.map((d) => (d.id === QUIETER ? { ...d, needsYou: 2 } : d));
 const long = t.longThread();
 
-/** An open design whose rail shows one of the turn fixtures. */
+/** An open canvas whose rail shows one of the turn fixtures. */
 const turnBoard = (thread: ReturnType<typeof t.said>[], agent: AgentActivity) => () => (
-  <DesignHarness
-    designs={f.soloDesigns}
-    design={quieter(f.soloDesigns)}
+  <CanvasHarness
+    canvases={f.soloCanvases}
+    canvas={quieter(f.soloCanvases)}
     contributors={f.justYou}
     thread={thread}
     agent={agent}
@@ -50,9 +50,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
   // The same, under sixty earlier lines: for reading up while it ends.
   "turn-live-long": () => <LiveTurnRail earlier />,
   "needs-you-a-question": () => (
-    <DesignHarness
-      designs={asking}
-      design={quieter(asking)}
+    <CanvasHarness
+      canvases={asking}
+      canvas={quieter(asking)}
       contributors={f.justYou}
       thread={t.askingThread}
       agent={WAITING}
@@ -60,9 +60,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-tab": () => (
-    <DesignHarness
-      designs={asking}
-      design={quieter(asking)}
+    <CanvasHarness
+      canvases={asking}
+      canvas={quieter(asking)}
       contributors={null}
       thread={t.askingThread}
       agent={WAITING}
@@ -71,19 +71,19 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       tab="pull-request"
     />
   ),
-  "together-on-a-design": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+  "together-on-a-canvas": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={f.contributors}
       thread={t.teamThread}
       agent={t.teamAgent}
     />
   ),
   "crowded-chrome": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
       thread={t.teamThread}
       agent={t.teamAgent}
@@ -91,9 +91,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "crowded-chrome-closed": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
       thread={t.teamThread}
       agent={t.teamAgent}
@@ -103,9 +103,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
   ),
   // The same at the smallest window: the page tabs give way to the cluster.
   "crowded-chrome-min-window": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
       thread={t.teamThread}
       agent={WORKING}
@@ -113,9 +113,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "long-thread": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={f.justYou}
       thread={long.slice(-200)}
       olderThread={long.slice(0, -200)}
@@ -123,27 +123,27 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "thread-loading": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={f.justYou}
       thread={null}
       agent={IDLE}
     />
   ),
   "thread-every-kind": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={f.contributors}
       thread={t.everyKind}
       agent={WORKING}
     />
   ),
   "thread-read-only": () => (
-    <DesignHarness
-      designs={f.teamDesigns}
-      design={quieter(f.teamDesigns)}
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
       contributors={f.contributors}
       thread={t.teamThread}
       agent={t.teamAgent}
@@ -151,9 +151,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-busy": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={{ ...quieter(f.soloDesigns), pullRequest: { ...f.pr412, state: "draft" } }}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "draft" } }}
       contributors={null}
       thread={t.heroThread}
       agent={t.heroAgent}
@@ -162,9 +162,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-merged": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={{ ...quieter(f.soloDesigns), pullRequest: { ...f.pr412, state: "merged" } }}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "merged" } }}
       contributors={null}
       thread={t.heroThread}
       agent={IDLE}
@@ -176,9 +176,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-one-file": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={{ ...quieter(f.soloDesigns), pullRequest: { ...f.pr412, state: "merged" } }}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "merged" } }}
       contributors={null}
       thread={t.heroThread}
       agent={IDLE}
@@ -200,9 +200,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-rail-closed": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={null}
       thread={t.heroThread}
       agent={IDLE}
@@ -212,9 +212,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-min-window": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={null}
       thread={t.heroThread}
       agent={IDLE}
@@ -231,9 +231,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-wide": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={null}
       thread={t.heroThread}
       agent={IDLE}
@@ -243,9 +243,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-loading": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={null}
       thread={t.heroThread}
       agent={t.heroAgent}
@@ -254,9 +254,9 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
   "pull-request-error": () => (
-    <DesignHarness
-      designs={f.soloDesigns}
-      design={quieter(f.soloDesigns)}
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={quieter(f.soloCanvases)}
       contributors={null}
       thread={t.heroThread}
       agent={t.heroAgent}

@@ -79,41 +79,41 @@ const key = (
   isComposing: false,
 });
 
-test("on a Mac ⌘ takes 0–9 for designs and ⌃ takes 1–9 for pages", () => {
-  expect(jumpDigit(key("Digit1", { meta: true }), "design", true)).toBe(1);
-  expect(jumpDigit(key("Digit0", { meta: true }), "design", true)).toBe(0);
+test("on a Mac ⌘ takes 0–9 for canvases and ⌃ takes 1–9 for pages", () => {
+  expect(jumpDigit(key("Digit1", { meta: true }), "canvas", true)).toBe(1);
+  expect(jumpDigit(key("Digit0", { meta: true }), "canvas", true)).toBe(0);
   expect(jumpDigit(key("Digit3", { ctrl: true }), "page", true)).toBe(3);
   expect(jumpDigit(key("Digit0", { ctrl: true }), "page", true)).toBeNull();
-  // Each modifier is its own: ⌘ doesn't change pages, ⌃ doesn't open designs, ⌥ does neither.
-  expect(jumpDigit(key("Digit1", { ctrl: true }), "design", true)).toBeNull();
+  // Each modifier is its own: ⌘ doesn't change pages, ⌃ doesn't open canvases, ⌥ does neither.
+  expect(jumpDigit(key("Digit1", { ctrl: true }), "canvas", true)).toBeNull();
   expect(jumpDigit(key("Digit1", { meta: true }), "page", true)).toBeNull();
   expect(jumpDigit(key("Digit1", { alt: true }), "page", true)).toBeNull();
-  expect(jumpDigit(key("Digit1", { alt: true }), "design", true)).toBeNull();
+  expect(jumpDigit(key("Digit1", { alt: true }), "canvas", true)).toBeNull();
 });
 
-test("off the Mac Ctrl takes the designs and Alt the pages", () => {
-  expect(jumpDigit(key("Digit9", { ctrl: true }), "design", false)).toBe(9);
-  expect(jumpDigit(key("Digit0", { ctrl: true }), "design", false)).toBe(0);
+test("off the Mac Ctrl takes the canvases and Alt the pages", () => {
+  expect(jumpDigit(key("Digit9", { ctrl: true }), "canvas", false)).toBe(9);
+  expect(jumpDigit(key("Digit0", { ctrl: true }), "canvas", false)).toBe(0);
   expect(jumpDigit(key("Digit3", { alt: true }), "page", false)).toBe(3);
   expect(jumpDigit(key("Digit0", { alt: true }), "page", false)).toBeNull();
   expect(jumpDigit(key("Digit1", { ctrl: true }), "page", false)).toBeNull();
-  expect(jumpDigit(key("Digit1", { alt: true }), "design", false)).toBeNull();
+  expect(jumpDigit(key("Digit1", { alt: true }), "canvas", false)).toBeNull();
 });
 
 test("a number with ⇧, with two modifiers, from the keypad or while composing jumps nowhere", () => {
   for (const onMac of [true, false]) {
-    expect(jumpDigit(key("Digit1", { meta: true, shift: true }), "design", onMac)).toBeNull();
+    expect(jumpDigit(key("Digit1", { meta: true, shift: true }), "canvas", onMac)).toBeNull();
     expect(jumpDigit(key("Digit1", { ctrl: true, shift: true }), "page", onMac)).toBeNull();
-    expect(jumpDigit(key("Digit1", { meta: true, alt: true }), "design", onMac)).toBeNull();
-    expect(jumpDigit(key("Digit1", { meta: true, ctrl: true }), "design", onMac)).toBeNull();
+    expect(jumpDigit(key("Digit1", { meta: true, alt: true }), "canvas", onMac)).toBeNull();
+    expect(jumpDigit(key("Digit1", { meta: true, ctrl: true }), "canvas", onMac)).toBeNull();
     expect(jumpDigit(key("Digit1", { ctrl: true, alt: true }), "page", onMac)).toBeNull();
-    expect(jumpDigit(key("Numpad1", { meta: true }), "design", onMac)).toBeNull();
-    expect(jumpDigit(key("KeyB", { meta: true }), "design", onMac)).toBeNull();
+    expect(jumpDigit(key("Numpad1", { meta: true }), "canvas", onMac)).toBeNull();
+    expect(jumpDigit(key("KeyB", { meta: true }), "canvas", onMac)).toBeNull();
     expect(
-      jumpDigit({ ...key("Digit1", { meta: true }), isComposing: true }, "design", onMac),
+      jumpDigit({ ...key("Digit1", { meta: true }), isComposing: true }, "canvas", onMac),
     ).toBeNull();
     // No modifier: a digit typed anywhere is just a digit.
-    expect(jumpDigit(key("Digit1"), "design", onMac)).toBeNull();
+    expect(jumpDigit(key("Digit1"), "canvas", onMac)).toBeNull();
     expect(jumpDigit(key("Digit1"), "page", onMac)).toBeNull();
   }
 });

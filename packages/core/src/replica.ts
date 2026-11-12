@@ -21,7 +21,7 @@ export interface ReplicaOptions {
   schedule: Scheduler;
   /** Who edits here. Their own ops reach the op listener under this name. */
   actor: Actor;
-  /** The design as of `seq`, from `fetchDoc`. The replica keeps it and changes it. */
+  /** The canvas as of `seq`, from `fetchDoc`. The replica keeps it and changes it. */
   doc: Doc;
   seq: number;
   /** Makes each op's id. `newOpId` unless a test wants to know them. */
@@ -36,7 +36,7 @@ export interface AppliedOp {
   inverse: Op;
 }
 
-/** A pending op that will never be in the design. */
+/** A pending op that will never be in the canvas. */
 export interface DroppedOp {
   /** The id `apply` returned for it. */
   id: string;
@@ -51,7 +51,7 @@ export interface DroppedOp {
 export interface OpInfo {
   /** The id it was posted under: for an op made here, the one `apply` returned. */
   id: string;
-  /** Its place in the design's order. Absent for an op made here that isn't committed yet. */
+  /** Its place in the canvas's order. Absent for an op made here that isn't committed yet. */
   seq?: number;
   /**
    * True when the op was made here and already heard as it was applied, and this is the
@@ -75,7 +75,7 @@ interface Pending extends ClientOp {
 const RETRY_MS = { first: 500, last: 30_000 };
 
 /**
- * One design on one device: the client side of the sync protocol (docs/cloud.md, "The
+ * One canvas on one device: the client side of the sync protocol (docs/cloud.md, "The
  * replica"). The Mac app, the phone and the sandbox all edit through one of these.
  *
  * It holds the document as the API last confirmed it, and a queue of ops made here that the
@@ -86,7 +86,7 @@ const RETRY_MS = { first: 500, last: 30_000 };
  * It talks to the API one request at a time, and never on a timer of its own.
  */
 export class Replica {
-  /** The design as of `seq`: only committed ops, in order. */
+  /** The canvas as of `seq`: only committed ops, in order. */
   private confirmed: Doc;
   /** `confirmed` with the pending ops applied. */
   private view: Doc;
@@ -133,14 +133,14 @@ export class Replica {
     this.head = opts.seq;
   }
 
-  /** Fetch the design and start a replica of it. */
+  /** Fetch the canvas and start a replica of it. */
   static async open(opts: Omit<ReplicaOptions, "doc" | "seq">): Promise<Replica> {
     const { doc, seq } = await opts.transport.fetchDoc();
     return new Replica({ ...opts, doc, seq });
   }
 
   /**
-   * The design as the person sees it: confirmed ops, then their own pending ones. Read
+   * The canvas as the person sees it: confirmed ops, then their own pending ones. Read
    * only, and read afresh after each change: when committed ops land under pending ones
    * this is a new object, not the old one changed.
    */
@@ -182,7 +182,7 @@ export class Replica {
     return () => this.opListeners.delete(listener);
   }
 
-  /** Hear of each pending op that will never be in the design. */
+  /** Hear of each pending op that will never be in the canvas. */
   onDrop(listener: (dropped: DroppedOp) => void): () => void {
     this.dropListeners.add(listener);
     return () => this.dropListeners.delete(listener);
@@ -216,7 +216,7 @@ export class Replica {
     this.finish(this.settle(committed, []));
   }
 
-  /** The design's head moved to `seq`: fetch what's missing. Late, repeated and stale calls are fine. */
+  /** The canvas's head moved to `seq`: fetch what's missing. Late, repeated and stale calls are fine. */
   notify(seq: number): void {
     if (seq > this.head) this.head = seq;
     // Word from the API means it can be reached: don't sit out the rest of a wait.
@@ -318,7 +318,7 @@ export class Replica {
           return { heard: [], dropped: [] };
         }
         // The API says where the head is. If it has less than this replica had been told of
-        // when it asked, what it was told was wrong (word of another design, or of one since
+        // when it asked, what it was told was wrong (word of another canvas, or of one since
         // reset), and asking again would get the same answer. Word that came while the
         // request was out stays: the API may have answered before that op was committed.
         if (answer.seq < told && this.head === told) this.head = this.confirmedSeq;

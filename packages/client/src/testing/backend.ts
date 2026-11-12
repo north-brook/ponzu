@@ -34,17 +34,17 @@ import { FakeSettings, type SettingsWorld } from "./settings.ts";
 
 /*
  * Ponzu Cloud in memory, behind the same interfaces as the real thing: a `Session` signed in
- * as someone, an `Api` over in-memory workspaces, designs and threads (ops ordered by core's
+ * as someone, an `Api` over in-memory workspaces, canvases and threads (ops ordered by core's
  * test sequencer, as the API orders them), and a `Live` whose feed is these tables. Screens
  * and stories built on it need no network; tests drive the agent and the network by hand.
  */
 
 type Permission = "admin" | "write" | "read" | "none";
 type Role = "admin" | "member";
-type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
+type CanvasView = Awaited<ReturnType<Api["canvases"]["get"]>>;
 type RepoIdeasAnswer = Awaited<ReturnType<Api["repos"]["ideas"]>>;
-type AgentBlocker = NonNullable<DesignView["agentBlocker"]>;
-type AgentState = DesignView["agentState"];
+type AgentBlocker = NonNullable<CanvasView["agentBlocker"]>;
+type AgentState = CanvasView["agentState"];
 
 export type FakePerson = Profile;
 
@@ -101,8 +101,8 @@ interface FakeQuestion {
   answer: { userId: string; body: AnswerBody } | null;
 }
 
-/** One design and everything under it. */
-export interface FakeDesign {
+/** One canvas and everything under it. */
+export interface FakeCanvas {
   id: string;
   workspaceId: string;
   repoId: string | null;
@@ -118,7 +118,7 @@ export interface FakeDesign {
   agent: { state: AgentState; status: string | null; artboards: string[] };
   /** Why the agent can't run now, as the API's sandbox jobs say it. */
   blocker: AgentBlocker | null;
-  /** The design's seq its previews show, once the runner has drawn them. */
+  /** The canvas's seq its previews show, once the runner has drawn them. */
   previewSeq: number | null;
   /** `pz/<topic>`, from the first message; null for Scratch and before it. */
   branch: string | null;
@@ -179,9 +179,9 @@ export interface FakeAgent {
   withdraw(questionId: string): void;
   /** Why the agent can't run, as the API's sandbox jobs set it; null when it can. */
   block(blocker: AgentBlocker | null): void;
-  /** The runner drew the previews of the design as it is now. */
+  /** The runner drew the previews of the canvas as it is now. */
   preview(): void;
-  /** Commits pushed to the design's branch on GitHub. */
+  /** Commits pushed to the canvas's branch on GitHub. */
   push(...files: Parameters<FakePullRequests["push"]>): string;
 }
 
@@ -196,17 +196,17 @@ export class FakeBackend {
   readonly realtime: FakeRealtime;
   readonly people = new Map<string, FakePerson>();
   readonly workspaces = new Map<string, FakeWorkspace>();
-  readonly designs = new Map<string, FakeDesign>();
+  readonly canvases = new Map<string, FakeCanvas>();
   /**
    * What `GET /v1/repos/:id/ideas` answers for each repo, in turn: each ask takes the next
    * answer and the last one stays. A repo with none set has `none`.
    */
   readonly repoIdeas = new Map<string, RepoIdeasAnswer[]>();
-  /** Each person's own Claude: connecting it, and what their designs start on. */
+  /** Each person's own Claude: connecting it, and what their canvases start on. */
   readonly claude: FakeClaude;
   /** When each person finished the guided setup steps that leave no other trace. */
   readonly onboarding = new Map<string, { whereAt: string | null; iphoneAt: string | null }>();
-  /** Designs by the person's create key: a create sent again makes nothing new. */
+  /** Canvases by the person's create key: a create sent again makes nothing new. */
   private readonly createKeys = new Map<string, string>();
   /** While false, every call fails as if there were no network. */
   online = true;
@@ -249,7 +249,7 @@ export class FakeBackend {
     /** Who owns the account on GitHub. A personal account's admins own it. */
     owners?: string[];
     repos?: { name: string; access?: Record<string, Permission> }[];
-    /** False: a GitHub account the App is not on yet, which "Where do you design?" offers. */
+    /** False: a GitHub account the App is not on yet, which "Where do you build?" offers. */
     installed?: boolean;
     suspended?: boolean;
     /**
@@ -371,35 +371,35 @@ export class FakeBackend {
     };
   }
 
-  design(id: string): FakeDesign {
-    const design = this.designs.get(id);
-    if (!design) throw new Error(`No design ${id}.`);
-    return design;
+  canvas(id: string): FakeCanvas {
+    const canvas = this.canvases.get(id);
+    if (!canvas) throw new Error(`No canvas ${id}.`);
+    return canvas;
   }
 
-  /** The design's runner, played by hand. */
-  agent(designId: string): FakeAgent {
-    const design = this.design(designId);
+  /** The canvas's runner, played by hand. */
+  agent(canvasId: string): FakeAgent {
+    const canvas = this.canvas(canvasId);
     return {
       commit: (ops) => {
-        const result = design.sequencer.commit(
+        const result = canvas.sequencer.commit(
           ops.map((op) => ({ id: newOpId(), op })),
           AGENT,
         );
-        this.touch(design);
+        this.touch(canvas);
         // A test that hands the agent an op that cannot apply has a bug: say so.
         if (result.rejected.length) throw new Error(`Rejected: ${result.rejected[0]!.reason}`);
         return result.committed;
       },
       say: (text, { id = this.id("ti"), streaming = false } = {}) => {
-        const existing = design.thread.find((entry) => entry.item.id === id);
+        const existing = canvas.thread.find((entry) => entry.item.id === id);
         if (existing?.item.streaming) {
           existing.item = { ...existing.item, payload: { text }, streaming } as ThreadItem;
           existing.updatedAt = this.now();
         } else if (!existing) {
-          this.append(design, { kind: "assistant", payload: { text } }, null, streaming, id);
+          this.append(canvas, { kind: "assistant", payload: { text } }, null, streaming, id);
         }
-        this.touch(design);
+        this.touch(canvas);
         return id;
       },
       tool: (
@@ -407,56 +407,56 @@ export class FakeBackend {
         { id = this.id("ti"), streaming = true, steps = 1, artboards = [], turn } = {},
       ) => {
         const payload = { label, steps, artboards, ...(turn ? { turn } : {}) };
-        const existing = design.thread.find((entry) => entry.item.id === id);
+        const existing = canvas.thread.find((entry) => entry.item.id === id);
         if (existing?.item.streaming) {
           existing.item = { ...existing.item, payload, streaming } as ThreadItem;
           existing.updatedAt = this.now();
         } else if (!existing) {
-          this.append(design, { kind: "tool", payload }, null, streaming, id);
+          this.append(canvas, { kind: "tool", payload }, null, streaming, id);
         }
-        this.touch(design);
+        this.touch(canvas);
         return id;
       },
       work: (artboards, status) => {
-        design.agent = { state: "working", status: status ?? null, artboards };
-        this.touch(design);
+        canvas.agent = { state: "working", status: status ?? null, artboards };
+        this.touch(canvas);
       },
       idle: () => {
-        design.agent = { state: "idle", status: null, artboards: [] };
-        this.touch(design);
+        canvas.agent = { state: "idle", status: null, artboards: [] };
+        this.touch(canvas);
       },
       wake: () => {
-        design.agent = { state: "waking", status: null, artboards: [] };
-        this.append(design, { kind: "notice", payload: { type: "waking" } });
-        this.touch(design);
+        canvas.agent = { state: "waking", status: null, artboards: [] };
+        this.append(canvas, { kind: "notice", payload: { type: "waking" } });
+        this.touch(canvas);
       },
       fail: (code, message = "") => {
-        this.append(design, { kind: "notice", payload: { type: "error", code, message } });
-        design.agent = { state: "idle", status: null, artboards: [] };
-        this.touch(design);
+        this.append(canvas, { kind: "notice", payload: { type: "error", code, message } });
+        canvas.agent = { state: "idle", status: null, artboards: [] };
+        this.touch(canvas);
       },
       withdraw: (questionId) => {
-        const question = design.questions.find((q) => q.id === questionId);
+        const question = canvas.questions.find((q) => q.id === questionId);
         if (question?.status === "open") question.status = "cancelled";
-        if (!design.questions.some((q) => q.status === "open")) design.agent.state = "idle";
-        this.touch(design);
+        if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "idle";
+        this.touch(canvas);
       },
       block: (blocker) => {
-        design.blocker = blocker;
-        this.touch(design);
+        canvas.blocker = blocker;
+        this.touch(canvas);
       },
       preview: () => {
-        design.previewSeq = design.sequencer.seq;
-        this.touch(design);
+        canvas.previewSeq = canvas.sequencer.seq;
+        this.touch(canvas);
       },
       push: (...files) => {
-        if (!design.github) throw new Error("A Scratch design has no branch.");
-        return design.github.push(...files);
+        if (!canvas.github) throw new Error("A Scratch canvas has no branch.");
+        return canvas.github.push(...files);
       },
       ask: (body, header = "A question") => {
         const id = this.id("q");
-        const seq = this.nextThreadSeq(design);
-        design.questions.push({
+        const seq = this.nextThreadSeq(canvas);
+        canvas.questions.push({
           id,
           seq,
           body,
@@ -466,12 +466,12 @@ export class FakeBackend {
         });
         const text =
           body.kind === "question" ? (body.payload.questions[0]?.question ?? "") : header;
-        this.append(design, {
+        this.append(canvas, {
           kind: "notice",
           payload: { type: "question", questionId: id, header, text },
         });
-        design.agent = { ...design.agent, state: "needs_you" };
-        this.touch(design);
+        canvas.agent = { ...canvas.agent, state: "needs_you" };
+        this.touch(canvas);
         return id;
       },
     };
@@ -496,24 +496,24 @@ export class FakeBackend {
       return run();
     };
     const readable = (id: string) => {
-      const design = this.designs.get(id);
-      if (!design || this.permission(person.id, design) === "none") {
-        throw new ApiError(404, "not_found", "There is no such design.");
+      const canvas = this.canvases.get(id);
+      if (!canvas || this.permission(person.id, canvas) === "none") {
+        throw new ApiError(404, "not_found", "There is no such canvas.");
       }
-      return design;
+      return canvas;
     };
     const writable = (id: string) => {
-      const design = readable(id);
-      if (!canWrite(this.permission(person.id, design))) {
-        throw new ApiError(403, "forbidden", "You can only look at this design.");
+      const canvas = readable(id);
+      if (!canWrite(this.permission(person.id, canvas))) {
+        throw new ApiError(403, "forbidden", "You can only look at this canvas.");
       }
-      return design;
+      return canvas;
     };
-    const github = (design: FakeDesign) => {
-      if (!design.github) {
-        throw new ApiError(409, "no_repository", "A Scratch design has no repository.");
+    const github = (canvas: FakeCanvas) => {
+      if (!canvas.github) {
+        throw new ApiError(409, "no_repository", "A Scratch canvas has no repository.");
       }
-      return design.github;
+      return canvas.github;
     };
     const member = (workspaceId: string) => {
       const workspace = this.workspaces.get(workspaceId);
@@ -521,46 +521,46 @@ export class FakeBackend {
       if (!workspace || !role) throw new ApiError(404, "not_found", "There is no such workspace.");
       return { workspace, role };
     };
-    const commit = (design: FakeDesign, ops: ClientOp[]) => {
+    const commit = (canvas: FakeCanvas, ops: ClientOp[]) => {
       let result: ReturnType<Sequencer["commit"]>;
       try {
-        result = design.sequencer.commit(ops, actor);
+        result = canvas.sequencer.commit(ops, actor);
       } catch (error) {
         if (error instanceof InvalidOpError) {
           throw new ApiError(400, "invalid_request", error.message);
         }
         throw error;
       }
-      const done = design.done.get(person.id) ?? [];
+      const done = canvas.done.get(person.id) ?? [];
       for (const op of result.committed) if (!done.includes(op.seq)) done.push(op.seq);
-      design.done.set(person.id, done);
-      if (result.committed.length) design.undone.set(person.id, []);
+      canvas.done.set(person.id, done);
+      if (result.committed.length) canvas.undone.set(person.id, []);
       // A new comment or reply reaches the thread with its commit, as the API's statement does.
-      const doc = design.sequencer.doc;
+      const doc = canvas.sequencer.doc;
       for (const { op } of result.committed) {
         for (const comment of commentsIn(op, doc)) {
           const payload = { ...comment, from: personOf(person) };
-          this.append(design, { kind: "comment", payload }, person.id);
+          this.append(canvas, { kind: "comment", payload }, person.id);
         }
       }
-      this.touch(design);
+      this.touch(canvas);
       return result;
     };
-    const reverse = (design: FakeDesign, kind: "undo" | "redo") => {
-      const from = kind === "undo" ? design.done : design.undone;
-      const to = kind === "undo" ? design.undone : design.done;
+    const reverse = (canvas: FakeCanvas, kind: "undo" | "redo") => {
+      const from = kind === "undo" ? canvas.done : canvas.undone;
+      const to = kind === "undo" ? canvas.undone : canvas.done;
       const seq = from.get(person.id)?.pop();
       if (seq === undefined) {
         throw new ApiError(409, `nothing_to_${kind}`, `There is nothing to ${kind}.`);
       }
-      const before = JSON.parse(design.sequencer.history[seq - 1]!) as Doc;
-      const inverse = applyOp(before, design.sequencer.log[seq - 1]!.op);
-      const { committed } = design.sequencer.commit([{ id: newOpId(), op: inverse }], actor);
+      const before = JSON.parse(canvas.sequencer.history[seq - 1]!) as Doc;
+      const inverse = applyOp(before, canvas.sequencer.log[seq - 1]!.op);
+      const { committed } = canvas.sequencer.commit([{ id: newOpId(), op: inverse }], actor);
       const reversal = committed[0];
       if (!reversal) throw new ApiError(409, `nothing_to_${kind}`, `There is nothing to ${kind}.`);
       to.set(person.id, [...(to.get(person.id) ?? []), reversal.seq]);
-      this.touch(design);
-      return { committed: reversal, seq: design.sequencer.seq };
+      this.touch(canvas);
+      return { committed: reversal, seq: canvas.sequencer.seq };
     };
     const summary = (workspace: FakeWorkspace, role: Role) => ({
       id: workspace.id,
@@ -742,12 +742,12 @@ export class FakeBackend {
               people: peopleOf(workspace),
             };
           }),
-        designs: (id) =>
+        canvases: (id) =>
           call(() => {
             member(id);
             return {
-              designs: this.visibleDesigns(id, person.id).map((design) =>
-                listRow(this.headOf(design), design, person.id),
+              canvases: this.visibleCanvases(id, person.id).map((canvas) =>
+                listRow(this.headOf(canvas), canvas, person.id),
               ),
             };
           }),
@@ -789,7 +789,7 @@ export class FakeBackend {
             return answer ?? { status: "none" as const, ideas: [] };
           }),
       },
-      designs: {
+      canvases: {
         create: (body) =>
           call(() => {
             const key = body.createKey ? `${person.id}:${body.createKey}` : null;
@@ -802,7 +802,7 @@ export class FakeBackend {
             if (body.repoId && !repo)
               throw new ApiError(404, "not_found", "There is no such repo.");
             if (repo && !canWrite(repoPermission(repo, person.id))) {
-              throw new ApiError(403, "forbidden", "Designs need a repo you can push to.");
+              throw new ApiError(403, "forbidden", "Canvases need a repo you can push to.");
             }
             if (body.model !== undefined || body.effort !== undefined) {
               this.claude.checkOffered(
@@ -817,8 +817,8 @@ export class FakeBackend {
               pages: [{ id: newId("pg"), name: "Page 1", artboards: [] }],
             };
             const branch = repo ? `pz/${topic(name)}` : null;
-            const design: FakeDesign = {
-              id: this.id("dsn"),
+            const canvas: FakeCanvas = {
+              id: this.id("cnv"),
               workspaceId: workspace.id,
               repoId: repo?.id ?? null,
               ownerId: person.id,
@@ -844,55 +844,55 @@ export class FakeBackend {
               presence: new Map(),
               reads: new Map(),
             };
-            design.sequencer.now = this.clock.now();
-            if (repo && branch) design.github = this.pullRequestsOf(design, repo.fullName, branch);
-            this.designs.set(design.id, design);
-            if (key) this.createKeys.set(key, design.id);
+            canvas.sequencer.now = this.clock.now();
+            if (repo && branch) canvas.github = this.pullRequestsOf(canvas, repo.fullName, branch);
+            this.canvases.set(canvas.id, canvas);
+            if (key) this.createKeys.set(key, canvas.id);
             if (body.message) {
               const payload = { text: body.message.text, from: personOf(person) };
-              this.append(design, { kind: "message", payload }, person.id);
+              this.append(canvas, { kind: "message", payload }, person.id);
               // As the API: the first message wakes the agent, on its owner's Claude; without
-              // one connected, the design waits for it.
+              // one connected, the canvas waits for it.
               if (this.claude.view(person.id)?.status === "connected") {
-                design.agent = { state: "waking", status: null, artboards: [] };
-                this.append(design, { kind: "notice", payload: { type: "waking" } });
+                canvas.agent = { state: "waking", status: null, artboards: [] };
+                this.append(canvas, { kind: "notice", payload: { type: "waking" } });
               } else {
-                design.blocker = "claude_not_connected";
+                canvas.blocker = "claude_not_connected";
               }
             }
             this.changed();
-            return this.view(design, person.id);
+            return this.view(canvas, person.id);
           }),
         get: (id) => call(() => this.view(readable(id), person.id)),
         rename: (id, body) =>
           call(() => {
-            const design = writable(id);
+            const canvas = writable(id);
             const ops: Op[] = [];
             if (body.name !== undefined) ops.push({ op: "file.rename", name: body.name });
             if (body.icon !== undefined) ops.push({ op: "file.icon", icon: body.icon });
-            if (ops.length) commit(design, [{ id: newOpId(), op: { op: "batch", ops } }]);
-            if (body.icon !== undefined) design.icon = body.icon ?? null;
-            return this.view(design, person.id);
+            if (ops.length) commit(canvas, [{ id: newOpId(), op: { op: "batch", ops } }]);
+            if (body.icon !== undefined) canvas.icon = body.icon ?? null;
+            return this.view(canvas, person.id);
           }),
         settle: (id, settled) =>
           call(() => {
-            const design = writable(id);
-            design.settledAt = settled ? this.now() : null;
-            this.touch(design);
-            return this.view(design, person.id);
+            const canvas = writable(id);
+            canvas.settledAt = settled ? this.now() : null;
+            this.touch(canvas);
+            return this.view(canvas, person.id);
           }),
         delete: (id) =>
           call(() => {
-            const design = writable(id);
-            const { role } = member(design.workspaceId);
-            if (design.ownerId !== person.id && role !== "admin") {
+            const canvas = writable(id);
+            const { role } = member(canvas.workspaceId);
+            if (canvas.ownerId !== person.id && role !== "admin") {
               throw new ApiError(
                 403,
                 "forbidden",
                 "Only its owner or a workspace admin can delete it.",
               );
             }
-            this.designs.delete(id);
+            this.canvases.delete(id);
             this.changed();
           }),
         doc: (id) => call(() => readable(id).sequencer.snapshot()),
@@ -909,18 +909,18 @@ export class FakeBackend {
         redo: (id) => call(() => reverse(writable(id), "redo")),
         people: (id) =>
           call(() => {
-            const design = readable(id);
-            const workspace = this.workspaces.get(design.workspaceId)!;
-            const repo = workspace.repos.find((candidate) => candidate.id === design.repoId);
+            const canvas = readable(id);
+            const workspace = this.workspaces.get(canvas.workspaceId)!;
+            const repo = workspace.repos.find((candidate) => candidate.id === canvas.repoId);
             const accessOf = (userId: string | null, permission: Permission) =>
-              userId === design.ownerId
+              userId === canvas.ownerId
                 ? ("owner" as const)
                 : permission === "read"
                   ? ("view" as const)
                   : ("edit" as const);
             const joined = [...workspace.members.keys()]
               .filter((userId) =>
-                repo ? repoPermission(repo, userId) !== "none" : userId === design.ownerId,
+                repo ? repoPermission(repo, userId) !== "none" : userId === canvas.ownerId,
               )
               .map((userId) => ({
                 ...joinedRow(workspace, userId),
@@ -940,17 +940,17 @@ export class FakeBackend {
           }),
         presence: (id, pageId) =>
           call(() => {
-            const design = readable(id);
+            const canvas = readable(id);
             const now = this.now();
-            const was = design.presence.get(person.id);
-            design.presence.set(person.id, {
+            const was = canvas.presence.get(person.id);
+            canvas.presence.set(person.id, {
               pageId: pageId === undefined ? (was?.pageId ?? null) : pageId,
               joinedAt: was?.joinedAt ?? now,
               seenAt: now,
             });
             this.changed();
             return {
-              present: [...design.presence].map(([userId, row]) => {
+              present: [...canvas.presence].map(([userId, row]) => {
                 const who = this.people.get(userId)!;
                 return {
                   userId,
@@ -969,31 +969,31 @@ export class FakeBackend {
           }),
         seen: (id, body = {}) =>
           call(() => {
-            const design = readable(id);
-            const was = design.reads.get(person.id);
-            design.reads.set(person.id, {
-              seq: Math.max(was?.seq ?? 0, body.seq ?? design.sequencer.seq),
+            const canvas = readable(id);
+            const was = canvas.reads.get(person.id);
+            canvas.reads.set(person.id, {
+              seq: Math.max(was?.seq ?? 0, body.seq ?? canvas.sequencer.seq),
               threadSeq: body.threadSeq ?? was?.threadSeq ?? null,
             });
             this.changed();
           }),
         sendMessage: (id, body) =>
           call(() => {
-            const design = writable(id);
+            const canvas = writable(id);
             const text = body.text.trim();
             if (!text) throw new ApiError(400, "invalid_request", "Say something.");
             const refs = [...new Set(body.attachments ?? [])];
-            const missing = refs.find((ref) => !design.assets.has(ref));
+            const missing = refs.find((ref) => !canvas.assets.has(ref));
             if (missing) {
               throw new ApiError(
                 400,
                 "invalid_request",
-                `${missing} is not one of this design's files.`,
+                `${missing} is not one of this canvas's files.`,
               );
             }
-            const attachments = refs.map((ref) => ({ ref, contentType: design.assets.get(ref)! }));
+            const attachments = refs.map((ref) => ({ ref, contentType: canvas.assets.get(ref)! }));
             const item = this.append(
-              design,
+              canvas,
               {
                 kind: "message",
                 payload: {
@@ -1004,13 +1004,13 @@ export class FakeBackend {
               },
               person.id,
             );
-            this.touch(design);
+            this.touch(canvas);
             return item;
           }),
         answer: (id, questionId, body) =>
           call(() => {
-            const design = writable(id);
-            const question = design.questions.find((q) => q.id === questionId);
+            const canvas = writable(id);
+            const question = canvas.questions.find((q) => q.id === questionId);
             if (!question) throw new ApiError(404, "not_found", "There is no such question.");
             if (question.status !== "open") {
               // As the API: who answered it first is named, when someone did.
@@ -1026,8 +1026,8 @@ export class FakeBackend {
             question.status = "answered";
             question.answer = { userId: person.id, body };
             // The runner takes the answer at once, and works again.
-            if (!design.questions.some((q) => q.status === "open")) design.agent.state = "working";
-            this.touch(design);
+            if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
+            this.touch(canvas);
             return { id: question.id, status: question.status };
           }),
         question: (id, questionId) =>
@@ -1053,18 +1053,18 @@ export class FakeBackend {
           }),
         stop: (id) =>
           call(() => {
-            const design = writable(id);
-            design.stops.push(person.id);
+            const canvas = writable(id);
+            canvas.stops.push(person.id);
             // The runner answers a stop at once: the turn ends, and it says who stopped it.
-            for (const entry of design.thread) {
+            for (const entry of canvas.thread) {
               if (entry.item.streaming) entry.item = { ...entry.item, streaming: false };
             }
-            this.append(design, {
+            this.append(canvas, {
               kind: "notice",
               payload: { type: "stopped", by: personOf(person) },
             });
-            design.agent = { state: "idle", status: null, artboards: [] };
-            this.touch(design);
+            canvas.agent = { state: "idle", status: null, artboards: [] };
+            this.touch(canvas);
           }),
         thread: (id, page = {}) =>
           call(() => {
@@ -1076,7 +1076,7 @@ export class FakeBackend {
           }),
         upload: (id, file) =>
           call(() => {
-            const design = writable(id);
+            const canvas = writable(id);
             if (!file.type.startsWith("image/")) {
               throw new ApiError(400, "invalid_request", "A person uploads images only.");
             }
@@ -1085,23 +1085,23 @@ export class FakeBackend {
             const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
             const ext = dot > 0 ? file.name.slice(dot) : "";
             const ref = `assets/${stem}-${this.id("x").slice(-6)}${ext}`;
-            design.assets.set(ref, file.type);
-            return { id: this.id("up"), ref, url: `${assetsUrl(design)}${ref}` };
+            canvas.assets.set(ref, file.type);
+            return { id: this.id("up"), ref, url: `${assetsUrl(canvas)}${ref}` };
           }),
         uploadCommentPicture: (id, messageId, files) =>
           call(() => {
-            const design = writable(id);
+            const canvas = writable(id);
             return (["light", "dark"] as const).map((theme) => {
               const upload = this.id("up");
               const ref = `comments/${messageId}-${theme}-${upload.slice(-6)}.webp`;
-              design.pictures.set(upload, { ref, bytes: files[theme], userId: person.id });
+              canvas.pictures.set(upload, { ref, bytes: files[theme], userId: person.id });
               return upload;
             });
           }),
         attachCommentPicture: (id, messageId, uploads) =>
           call(() => {
-            const design = writable(id);
-            const refs = uploads.map((upload) => design.pictures.get(upload));
+            const canvas = writable(id);
+            const refs = uploads.map((upload) => canvas.pictures.get(upload));
             const of = (theme: string) =>
               refs.find((r) => r?.userId === person.id && r.ref.includes(`${messageId}-${theme}-`));
             const light = of("light");
@@ -1110,7 +1110,7 @@ export class FakeBackend {
               throw new ApiError(400, "invalid_request", "A comment's picture is its two files.");
             }
             // As the API's statement does: the author's comment keeps the first it is given.
-            const entry = design.thread.find(
+            const entry = canvas.thread.find(
               ({ item, userId }) =>
                 item.kind === "comment" &&
                 item.payload.messageId === messageId &&
@@ -1134,8 +1134,8 @@ export class FakeBackend {
           file: (id, path) => call(() => github(readable(id)).file(path)),
           open: (id) =>
             call(() => {
-              const design = writable(id);
-              return github(design).open(person.githubLogin, design.sequencer.doc.name).tab;
+              const canvas = writable(id);
+              return github(canvas).open(person.githubLogin, canvas.sequencer.doc.name).tab;
             }),
           ready: (id) => call(() => github(writable(id)).ready()),
           merge: (id, body) =>
@@ -1199,7 +1199,7 @@ export class FakeBackend {
         throw new ApiError(404, "not_found", "There is no such repo.");
       },
       repos: (workspaceId) => readable(member(workspaceId).workspace),
-      designedIn: (repoId) => [...this.designs.values()].some((d) => d.repoId === repoId),
+      hasCanvasIn: (repoId) => [...this.canvases.values()].some((d) => d.repoId === repoId),
       person: (userId) => this.people.get(userId)!,
       soleAdminOf: (userId) =>
         [...this.workspaces.values()]
@@ -1227,15 +1227,15 @@ export class FakeBackend {
       throw new ApiError(404, "not_found", "There is no live query by that name.");
     }
     if (name === "me") return;
-    if (name === "workspace.designs") {
+    if (name === "workspace.canvases") {
       if (!this.workspaces.get(String(args.workspaceId))?.members.has(userId)) {
         throw new ApiError(404, "not_found", "There is no such workspace.");
       }
       return;
     }
-    const design = this.designs.get(String(args.designId));
-    if (!design || this.permission(userId, design) === "none") {
-      throw new ApiError(404, "not_found", "There is no such design.");
+    const canvas = this.canvases.get(String(args.canvasId));
+    if (!canvas || this.permission(userId, canvas) === "none") {
+      throw new ApiError(404, "not_found", "There is no such canvas.");
     }
   }
 
@@ -1246,7 +1246,7 @@ export class FakeBackend {
     } catch {
       return [];
     }
-    const design = this.designs.get(String(args.designId));
+    const canvas = this.canvases.get(String(args.canvasId));
     switch (name as LiveQueryName) {
       case "me": {
         const who = this.people.get(userId)!;
@@ -1280,11 +1280,11 @@ export class FakeBackend {
         };
         return [row];
       }
-      case "workspace.designs":
-        return this.visibleDesigns(String(args.workspaceId), userId).map((visible) => {
+      case "workspace.canvases":
+        return this.visibleCanvases(String(args.workspaceId), userId).map((visible) => {
           const read = visible.reads.get(userId);
           const head = this.headOf(visible);
-          const row: RawRow<"workspace.designs"> = {
+          const row: RawRow<"workspace.canvases"> = {
             id: visible.id,
             workspace_id: visible.workspaceId,
             repo_id: visible.repoId,
@@ -1311,9 +1311,9 @@ export class FakeBackend {
           };
           return row;
         });
-      case "design.head": {
-        const head = this.headOf(design!);
-        const row: RawRow<"design.head"> = {
+      case "canvas.head": {
+        const head = this.headOf(canvas!);
+        const row: RawRow<"canvas.head"> = {
           id: head.id,
           workspace_id: head.workspaceId,
           name: head.name,
@@ -1336,11 +1336,11 @@ export class FakeBackend {
         };
         return [row];
       }
-      case "design.thread":
-        return design!.thread.map(({ item, userId: author, updatedAt }) => {
-          const row: RawRow<"design.thread"> = {
+      case "canvas.thread":
+        return canvas!.thread.map(({ item, userId: author, updatedAt }) => {
+          const row: RawRow<"canvas.thread"> = {
             id: item.id,
-            design_id: design!.id,
+            canvas_id: canvas!.id,
             seq: String(item.seq),
             kind: item.kind,
             user_id: author,
@@ -1351,13 +1351,13 @@ export class FakeBackend {
           };
           return row;
         });
-      case "design.questions":
-        return design!.questions
+      case "canvas.questions":
+        return canvas!.questions
           .filter((question) => question.status === "open")
           .map((question) => {
-            const row: RawRow<"design.questions"> = {
+            const row: RawRow<"canvas.questions"> = {
               id: question.id,
-              design_id: design!.id,
+              canvas_id: canvas!.id,
               seq: String(question.seq),
               kind: question.body.kind,
               payload: question.body.payload,
@@ -1366,11 +1366,11 @@ export class FakeBackend {
             };
             return row;
           });
-      case "design.presence":
-        return [...design!.presence].map(([presentId, presence]) => {
+      case "canvas.presence":
+        return [...canvas!.presence].map(([presentId, presence]) => {
           const who = this.people.get(presentId)!;
-          const row: RawRow<"design.presence"> = {
-            design_id: design!.id,
+          const row: RawRow<"canvas.presence"> = {
+            canvas_id: canvas!.id,
             user_id: presentId,
             page_id: presence.pageId,
             joined_at: presence.joinedAt,
@@ -1384,84 +1384,84 @@ export class FakeBackend {
     }
   }
 
-  private view(design: FakeDesign, userId: string): DesignView {
-    const head = this.headOf(design);
+  private view(canvas: FakeCanvas, userId: string): CanvasView {
+    const head = this.headOf(canvas);
     return {
       ...head,
-      repo: design.repoId ? { id: design.repoId, fullName: this.repoOf(design)!.fullName } : null,
-      ownerId: design.ownerId,
-      settledAt: design.settledAt,
-      createdAt: design.createdAt,
-      access: canWrite(this.permission(userId, design)) ? "write" : "read",
-      assetsUrl: assetsUrl(design),
+      repo: canvas.repoId ? { id: canvas.repoId, fullName: this.repoOf(canvas)!.fullName } : null,
+      ownerId: canvas.ownerId,
+      settledAt: canvas.settledAt,
+      createdAt: canvas.createdAt,
+      access: canWrite(this.permission(userId, canvas)) ? "write" : "read",
+      assetsUrl: assetsUrl(canvas),
     };
   }
 
-  private headOf(design: FakeDesign) {
-    const doc = design.sequencer.doc;
-    const pr = design.github?.row;
+  private headOf(canvas: FakeCanvas) {
+    const doc = canvas.sequencer.doc;
+    const pr = canvas.github?.row;
     return {
-      id: design.id,
-      workspaceId: design.workspaceId,
+      id: canvas.id,
+      workspaceId: canvas.workspaceId,
       name: doc.name,
-      icon: design.icon,
-      branch: design.branch,
-      status: design.settledAt ? ("settled" as const) : ("active" as const),
-      seq: design.sequencer.seq,
-      previewSeq: design.previewSeq,
-      agentState: design.agent.state,
-      agentStatus: design.agent.status,
-      agentArtboards: design.agent.artboards,
-      agentBlocker: design.blocker,
-      needsYouCount: design.questions.filter((question) => question.status === "open").length,
+      icon: canvas.icon,
+      branch: canvas.branch,
+      status: canvas.settledAt ? ("settled" as const) : ("active" as const),
+      seq: canvas.sequencer.seq,
+      previewSeq: canvas.previewSeq,
+      agentState: canvas.agent.state,
+      agentStatus: canvas.agent.status,
+      agentArtboards: canvas.agent.artboards,
+      agentBlocker: canvas.blocker,
+      needsYouCount: canvas.questions.filter((question) => question.status === "open").length,
       prNumber: pr?.prNumber ?? null,
       prState: pr?.prState ?? null,
       prChecks: pr?.prChecks ?? ("none" as const),
       prMergeable: pr?.prMergeable ?? null,
       prAutoMerge: pr?.prAutoMerge ?? false,
-      lastActivityAt: design.lastActivityAt,
+      lastActivityAt: canvas.lastActivityAt,
     };
   }
 
-  /** The design's branch and pull request, saying in its thread what GitHub does to it. */
-  private pullRequestsOf(design: FakeDesign, repo: string, branch: string): FakePullRequests {
+  /** The canvas's branch and pull request, saying in its thread what GitHub does to it. */
+  private pullRequestsOf(canvas: FakeCanvas, repo: string, branch: string): FakePullRequests {
     return new FakePullRequests(repo, branch, () => this.now(), {
       notice: (number, url, title, state) => {
         const verb = state === "draft" || state === "open" ? "opened" : state;
         const id = `ti_pr-${number}-${verb}`;
-        if (design.thread.some((entry) => entry.item.id === id)) return;
+        if (canvas.thread.some((entry) => entry.item.id === id)) return;
         const payload = { type: "pull_request", number, url, title, state } as const;
-        this.append(design, { kind: "notice", payload }, null, false, id);
+        this.append(canvas, { kind: "notice", payload }, null, false, id);
       },
-      // A merge settles the design, as a read that finds it merged does.
+      // A merge settles the canvas, as a read that finds it merged does.
       merged: () => {
-        design.settledAt = this.now();
+        canvas.settledAt = this.now();
       },
-      changed: () => this.touch(design),
+      changed: () => this.touch(canvas),
     });
   }
 
-  private visibleDesigns(workspaceId: string, userId: string): FakeDesign[] {
-    return [...this.designs.values()].filter(
-      (design) => design.workspaceId === workspaceId && this.permission(userId, design) !== "none",
+  private visibleCanvases(workspaceId: string, userId: string): FakeCanvas[] {
+    return [...this.canvases.values()].filter(
+      (canvas) => canvas.workspaceId === workspaceId && this.permission(userId, canvas) !== "none",
     );
   }
 
-  /** What GitHub would say `userId` may do in the design's repo, or the owner's own Scratch. */
-  private permission(userId: string, design: FakeDesign): Permission {
-    const workspace = this.workspaces.get(design.workspaceId);
+  /** What GitHub would say `userId` may do in the canvas's repo, or the owner's own Scratch. */
+  private permission(userId: string, canvas: FakeCanvas): Permission {
+    const workspace = this.workspaces.get(canvas.workspaceId);
     if (!workspace?.members.has(userId)) return "none";
-    const repo = this.repoOf(design);
-    if (!repo) return design.ownerId === userId ? "admin" : "none";
+    const repo = this.repoOf(canvas);
+    if (!repo) return canvas.ownerId === userId ? "admin" : "none";
     return repoPermission(repo, userId);
   }
 
-  private repoOf(design: FakeDesign): FakeRepo | undefined {
-    return this.workspaces.get(design.workspaceId)?.repos.find((repo) => repo.id === design.repoId);
+  private repoOf(canvas: FakeCanvas): FakeRepo | undefined {
+    return this.workspaces.get(canvas.workspaceId)?.repos.find((repo) => repo.id === canvas.repoId);
   }
 
   private append(
-    design: FakeDesign,
+    canvas: FakeCanvas,
     content: Pick<ThreadItem, "kind" | "payload">,
     userId: string | null = null,
     streaming = false,
@@ -1469,42 +1469,42 @@ export class FakeBackend {
   ): ThreadItem {
     const item = {
       id,
-      seq: this.nextThreadSeq(design),
+      seq: this.nextThreadSeq(canvas),
       at: this.now(),
       streaming,
       ...content,
     } as ThreadItem;
-    design.thread.push({ item, userId, updatedAt: item.at });
+    canvas.thread.push({ item, userId, updatedAt: item.at });
     return item;
   }
 
-  private nextThreadSeq(design: FakeDesign): number {
-    const seqs = [...design.thread.map((e) => e.item.seq), ...design.questions.map((q) => q.seq)];
+  private nextThreadSeq(canvas: FakeCanvas): number {
+    const seqs = [...canvas.thread.map((e) => e.item.seq), ...canvas.questions.map((q) => q.seq)];
     return Math.max(0, ...seqs) + 1;
   }
 
-  private touch(design: FakeDesign): void {
-    design.lastActivityAt = this.now();
+  private touch(canvas: FakeCanvas): void {
+    canvas.lastActivityAt = this.now();
     this.changed();
   }
 
   /**
    * The person's Claude changed, as the API's `setClaudeBlocker` follows it: connected, their
-   * active designs that waited on it no longer do, and one with a message to take up wakes.
+   * active canvases that waited on it no longer do, and one with a message to take up wakes.
    */
   private claudeChanged(userId: string): void {
     if (this.claude.view(userId)?.status === "connected") {
-      for (const design of this.designs.values()) {
+      for (const canvas of this.canvases.values()) {
         const waited =
-          design.blocker === "claude_not_connected" || design.blocker === "claude_expired";
-        if (design.ownerId !== userId || design.settledAt !== null || !waited) continue;
-        design.blocker = null;
+          canvas.blocker === "claude_not_connected" || canvas.blocker === "claude_expired";
+        if (canvas.ownerId !== userId || canvas.settledAt !== null || !waited) continue;
+        canvas.blocker = null;
         // What the person said while it waited is still to be taken up: the agent wakes for it.
-        if (design.thread.at(-1)?.item.kind === "message") {
-          design.agent = { state: "waking", status: null, artboards: [] };
-          this.append(design, { kind: "notice", payload: { type: "waking" } });
+        if (canvas.thread.at(-1)?.item.kind === "message") {
+          canvas.agent = { state: "waking", status: null, artboards: [] };
+          this.append(canvas, { kind: "notice", payload: { type: "waking" } });
         }
-        this.touch(design);
+        this.touch(canvas);
       }
     }
     this.changed();
@@ -1541,19 +1541,19 @@ function personOf(person: FakePerson) {
   return { id: person.id, name: person.name ?? person.githubLogin, login: person.githubLogin };
 }
 
-function listRow(head: ReturnType<FakeBackend["headOf"]>, design: FakeDesign, userId: string) {
-  const read = design.reads.get(userId);
+function listRow(head: ReturnType<FakeBackend["headOf"]>, canvas: FakeCanvas, userId: string) {
+  const read = canvas.reads.get(userId);
   return {
-    id: design.id,
-    workspaceId: design.workspaceId,
-    repoId: design.repoId,
+    id: canvas.id,
+    workspaceId: canvas.workspaceId,
+    repoId: canvas.repoId,
     repoFullName: null,
-    ownerId: design.ownerId,
+    ownerId: canvas.ownerId,
     name: head.name,
     icon: head.icon,
     branch: head.branch,
     status: head.status,
-    settledAt: design.settledAt,
+    settledAt: canvas.settledAt,
     seq: head.seq,
     previewSeq: head.previewSeq,
     agentState: head.agentState,
@@ -1562,14 +1562,14 @@ function listRow(head: ReturnType<FakeBackend["headOf"]>, design: FakeDesign, us
     prNumber: head.prNumber,
     prState: head.prState,
     prChecks: head.prChecks,
-    lastActivityAt: design.lastActivityAt,
-    createdAt: design.createdAt,
+    lastActivityAt: canvas.lastActivityAt,
+    createdAt: canvas.createdAt,
     seenSeq: read?.seq ?? null,
     seenThreadSeq: read?.threadSeq ?? null,
   };
 }
 
-/** The new comments and replies an op makes, as apps/api/src/designs/events.ts finds them. */
+/** The new comments and replies an op makes, as apps/api/src/canvases/events.ts finds them. */
 function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
   if (op.op === "batch") return op.ops.flatMap((inner) => commentsIn(inner, doc));
   const said =
@@ -1603,15 +1603,15 @@ function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
 
 type CommentPayload = Extract<ThreadItem, { kind: "comment" }>["payload"];
 
-/** Where the design's files are served, as `GET /v1/designs/:id` answers it. */
-function assetsUrl(design: FakeDesign): string {
-  return `https://assets.test/${design.id}/`;
+/** Where the canvas's files are served, as `GET /v1/canvases/:id` answers it. */
+function assetsUrl(canvas: FakeCanvas): string {
+  return `https://assets.test/${canvas.id}/`;
 }
 
-/** A branch's topic from the design's first words, as the API names `pz/<topic>`. */
+/** A branch's topic from the canvas's first words, as the API names `pz/<topic>`. */
 function topic(name: string): string {
   const words = name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  return words.slice(0, 3).join("-") || "design";
+  return words.slice(0, 3).join("-") || "canvas";
 }
 
 /**

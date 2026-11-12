@@ -221,7 +221,7 @@ export function ThreadCard({
   thread: Thread;
   source: CanvasSource;
   me: Author;
-  /** The design it's in, by its key: what its unsent words are kept under. */
+  /** The canvas it's in, by its key: what its unsent words are kept under. */
   file?: string;
   /** Only the messages: no reply, resolve, edit or delete. */
   readOnly?: boolean;

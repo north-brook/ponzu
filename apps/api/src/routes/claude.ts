@@ -24,9 +24,9 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 
 /*
- * A person's own Claude (docs/cloud.md, "Credentials"): which account designs they start run
+ * A person's own Claude (docs/cloud.md, "Credentials"): which account canvases they start run
  * on, connecting one by a subscription sign-in or an API key, disconnecting it, and the model
- * and effort their new designs start on. Never the credential: it goes into the vault and
+ * and effort their new canvases start on. Never the credential: it goes into the vault and
  * comes out only into a sandbox.
  */
 
@@ -88,7 +88,7 @@ const DefaultsBody = z
   .partial()
   .refine((body) => Object.keys(body).length > 0, "Say what to change.");
 const DefaultsView = z.object({
-  /** What a new design runs on: the saved choice while the account offers it, or the default. */
+  /** What a new canvas runs on: the saved choice while the account offers it, or the default. */
   model: z.string(),
   effort: z.enum(EFFORTS),
   /**
@@ -181,7 +181,7 @@ export const claude = new Hono<AppEnv>()
   })
 
   /**
-   * Disconnects the person's Claude: the credential is destroyed, their designs wait until they
+   * Disconnects the person's Claude: the credential is destroyed, their canvases wait until they
    * connect again, and what runs on it now is stopped.
    */
   .delete("/", async (c) => {
@@ -189,7 +189,7 @@ export const claude = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  /** The model and effort the person's new designs start on, and what there is to choose. */
+  /** The model and effort the person's new canvases start on, and what there is to choose. */
   .get("/defaults", async (c) => {
     const { user } = c.var.actor;
     const offer = await offerOf(c.var.deps, user.id);

@@ -1,7 +1,7 @@
 /*
  * The handoff: the page a browser is left on when it hands the person back to Ponzu (docs/cloud.md,
  * "Handing back to the app"). The API's GitHub setup page and the Mac app's sign-in page are this
- * document; the site's design link page is the same pattern in React (apps/web), with the same
+ * document; the site's canvas link page is the same pattern in React (apps/web), with the same
  * wait and the same words.
  *
  * The pattern is the old product's (`/local` on ponzu.design): the page opens the app's link by

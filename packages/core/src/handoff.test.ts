@@ -15,7 +15,7 @@ describe("the links a handoff may open", () => {
   test("only the apps' own, with plain paths", () => {
     for (const href of [
       "ponzu://github/setup?result=installed&workspace=ws_1",
-      "ponzu-dev://design/dsn_1?page=pg_1",
+      "ponzu-dev://canvas/cnv_1?page=pg_1",
       "ponzu-preview://github/setup?result=pending",
     ]) {
       expect(isAppLink(href)).toBe(true);

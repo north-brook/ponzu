@@ -15,7 +15,7 @@ const stale = (now: Date, ttlSeconds: number) =>
   sql`${presence.seenAt} < ${timeParam(new Date(now.getTime() - ttlSeconds * 1000))}::timestamptz`;
 
 /**
- * Say a person has a design open, as of `now`. Call it on opening and every 30 seconds after.
+ * Say a person has a canvas open, as of `now`. Call it on opening and every 30 seconds after.
  *
  * `pageId` is the page they are on; leave it out to say only "still here", and the page they
  * were on stands. Someone whose row had gone stale is arriving again, not still here, so they
@@ -24,19 +24,19 @@ const stale = (now: Date, ttlSeconds: number) =>
 export async function touchPresence(
   db: Db,
   {
-    designId,
+    canvasId,
     userId,
     pageId,
     now,
-  }: { designId: string; userId: string; pageId?: string | null; now: Date },
+  }: { canvasId: string; userId: string; pageId?: string | null; now: Date },
 ): Promise<void> {
   const at = sql`${timeParam(now)}::timestamptz`;
   await run(
     db
       .insert(presence)
-      .values({ designId, userId, pageId, joinedAt: at, seenAt: at })
+      .values({ canvasId, userId, pageId, joinedAt: at, seenAt: at })
       .onConflictDoUpdate({
-        target: [presence.designId, presence.userId],
+        target: [presence.canvasId, presence.userId],
         set: {
           ...(pageId === undefined ? {} : { pageId }),
           joinedAt: sql`case when ${stale(now, PRESENCE_TTL_SECONDS)} then ${at} else ${presence.joinedAt} end`,
@@ -56,14 +56,14 @@ export interface PresentUser {
   seenAt: Date;
 }
 
-/** Who has a design open as of `now`, longest here first. Rows past the TTL are left out. */
+/** Who has a canvas open as of `now`, longest here first. Rows past the TTL are left out. */
 export function listPresence(
   db: Db,
   {
-    designId,
+    canvasId,
     now,
     ttlSeconds = PRESENCE_TTL_SECONDS,
-  }: { designId: string; now: Date; ttlSeconds?: number },
+  }: { canvasId: string; now: Date; ttlSeconds?: number },
 ): Promise<PresentUser[]> {
   return run(
     db
@@ -78,18 +78,18 @@ export function listPresence(
       })
       .from(presence)
       .innerJoin(users, eq(users.id, presence.userId))
-      .where(and(eq(presence.designId, designId), sql`not ${stale(now, ttlSeconds)}`))
+      .where(and(eq(presence.canvasId, canvasId), sql`not ${stale(now, ttlSeconds)}`))
       .orderBy(presence.joinedAt, presence.userId),
   );
 }
 
-/** Say a person closed a design, so they leave at once and not when their row goes stale. */
+/** Say a person closed a canvas, so they leave at once and not when their row goes stale. */
 export async function removePresence(
   db: Db,
-  { designId, userId }: { designId: string; userId: string },
+  { canvasId, userId }: { canvasId: string; userId: string },
 ): Promise<void> {
   await run(
-    db.delete(presence).where(and(eq(presence.designId, designId), eq(presence.userId, userId))),
+    db.delete(presence).where(and(eq(presence.canvasId, canvasId), eq(presence.userId, userId))),
   );
 }
 

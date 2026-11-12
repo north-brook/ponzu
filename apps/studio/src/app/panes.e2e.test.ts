@@ -1,10 +1,10 @@
 /*
  * The window's side panes, resized by hand: the studio built as it ships, in a real Chromium, on
- * Ponzu Cloud in memory (fake-host.ts), with a design open so both the sidebar and the thread
+ * Ponzu Cloud in memory (fake-host.ts), with a canvas open so both the sidebar and the thread
  * rail are there. Dragging an edge moves its pane within its limits and the chrome with it in the
  * same frame, over the canvas's frames too; the arrow keys and a double-click move it; the toggles
- * still collapse and expand it, back to the width it was left at; a small window keeps the canvas
- * room; and the widths come back after a reload. Skips where there is no Chrome or Chromium.
+ * still collapse and expand it, back to the width it was left at; a small window keeps the main
+ * pane room; and the widths come back after a reload. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves pictures of an edge at rest, hovered, dragged and
  * focused there, in light and dark.
@@ -41,7 +41,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     page.on("pageerror", (error) => errors.push(String(error)));
     // Signed in past setup: the first run is app.e2e's and the slow-answer walks'.
     await page.goto(`${server.url}?as=returning`);
-    await openTheDesign(page);
+    await openTheCanvas(page);
     await measureEachMove(page);
   });
   afterAll(async () => {
@@ -76,13 +76,13 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   const sidebarEdgeX = async () => box(page, "#sidebar-pane-edge").then((b) => b.x + b.width / 2);
   const railEdgeX = async () => box(page, "#thread-pane-edge").then((b) => b.x + b.width / 2);
 
-  test("the panes open at the design's widths, the chrome's dividers on their edges", async () => {
+  test("the panes open at the mockup's widths, the chrome's dividers on their edges", async () => {
     const g = await geometry(page);
     expect(g.sidebar).toBeCloseTo(PANES.sidebar.default, 0);
     expect(g.rail).toBeCloseTo(PANES.rail.default, 0);
     // The canvas starts where the sidebar's gutter ends, and stops where the rail's begins.
-    expect(g.canvasLeft).toBeCloseTo(300, 0);
-    expect(g.canvasRight).toBeCloseTo(WIDTH - 360, 0);
+    expect(g.mainLeft).toBeCloseTo(300, 0);
+    expect(g.mainRight).toBeCloseTo(WIDTH - 360, 0);
     // The chrome's left block ends a header gap before x 300; the rail's divider is on x 1080,
     // the rail's edge, its pixel the canvas's last column.
     expect(g.chromeLeftEnd + 4).toBeCloseTo(300, 0);
@@ -124,8 +124,8 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     // On the canvas's side of the gutter, under the chrome's divider: never in the gutter's
     // middle, a few pixels off it.
     const drawn = await box(page, "#sidebar-pane-edge > span");
-    const canvas = await box(page, "#canvas-pane main");
-    expect(drawn.x + drawn.width).toBeCloseTo(canvas.x, 0);
+    const main = await box(page, "#main-pane main");
+    expect(drawn.x + drawn.width).toBeCloseTo(main.x, 0);
     await shootBoth("2-hover", x);
     await page.mouse.move(x + 200, GRIP_Y);
   });
@@ -140,14 +140,14 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       const g = await sameFrame(page);
       expect(g.sidebar).toBeCloseTo(300 + dx, 0);
       expect(g.chromeLeftEnd + 4).toBeCloseTo(g.sidebar, 1);
-      expect(g.canvasLeft).toBeCloseTo(g.sidebar, 1);
+      expect(g.mainLeft).toBeCloseTo(g.sidebar, 1);
     }
     // While held: the window says so (cursor, no selecting, frames let the pointer through),
     // and nothing eases.
     expect(await page.locator("[data-pane-drag]").count()).toBe(1);
     expect(await page.locator("[data-pane-motion]").count()).toBe(0);
     expect(await page.locator("#sidebar-pane-edge").getAttribute("data-separator")).toBe("active");
-    expect(await page.locator("#canvas-pane").evaluate((el) => getComputedStyle(el).cursor)).toBe(
+    expect(await page.locator("#main-pane").evaluate((el) => getComputedStyle(el).cursor)).toBe(
       "col-resize",
     );
     await shootBoth("3-dragging", x + 84);
@@ -182,9 +182,9 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
         before.railDividerRight - before.railLeft,
         1,
       );
-      expect(g.canvasRight).toBeCloseTo(WIDTH - g.rail, 1);
+      expect(g.mainRight).toBeCloseTo(WIDTH - g.rail, 1);
       // On the canvas's edge, in the same frame as the pane.
-      expect(g.railDividerRight).toBeCloseTo(g.canvasRight, 1);
+      expect(g.railDividerRight).toBeCloseTo(g.mainRight, 1);
     }
     await shootBoth("4-dragging-rail", x - 100);
     await page.mouse.up();
@@ -208,7 +208,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
     const closed = await geometry(page);
     // The canvas comes to 6 from the window's edge, and the edge can't be taken hold of.
-    expect(closed.canvasLeft).toBeCloseTo(6, 0);
+    expect(closed.mainLeft).toBeCloseTo(6, 0);
     expect(await page.locator("#sidebar-pane-edge").getAttribute("tabindex")).toBeNull();
     await toggle.click();
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
@@ -223,7 +223,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await page.locator("#thread-pane").textContent()).toContain("I drew the welcome screen");
     await waitUntil(async () => (await geometry(page)).rail < 0.5);
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
-    expect((await geometry(page)).canvasRight).toBeCloseTo(WIDTH - 6, 0);
+    expect((await geometry(page)).mainRight).toBeCloseTo(WIDTH - 6, 0);
     await thread.click();
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
     expect((await geometry(page)).rail).toBeCloseTo(460, 0);
@@ -308,7 +308,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     );
   });
 
-  test("double-clicking an edge returns its pane to the design's width", async () => {
+  test("double-clicking an edge returns its pane to the mockup's width", async () => {
     const x = await sidebarEdgeX();
     await page.mouse.dblclick(x, GRIP_Y);
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
@@ -343,7 +343,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       const g = await sameFrame(page);
       expect(g.sidebar).toBeCloseTo(300 + dx, 0);
       expect(g.chromeLeftEnd + 4).toBeCloseTo(g.sidebar, 1);
-      expect(g.canvasLeft).toBeCloseTo(g.sidebar, 1);
+      expect(g.mainLeft).toBeCloseTo(g.sidebar, 1);
     }
     // Held like an edge: the cursor everywhere, nothing easing, and the pane's own limits.
     expect(await page.locator("[data-pane-drag]").count()).toBe(1);
@@ -365,12 +365,12 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await page.mouse.move(right.x - 50, right.y);
     const g = await sameFrame(page);
     expect(g.rail).toBeCloseTo(410, 0);
-    expect(g.canvasRight).toBeCloseTo(WIDTH - g.rail, 1);
-    expect(g.railDividerRight).toBeCloseTo(g.canvasRight, 1);
+    expect(g.mainRight).toBeCloseTo(WIDTH - g.rail, 1);
+    expect(g.railDividerRight).toBeCloseTo(g.mainRight, 1);
     await page.mouse.up();
     await waitUntil(async () => (await saved(page))?.railWidth === 410);
 
-    // A double click on either puts its pane back at the design's width.
+    // A double click on either puts its pane back at the mockup's width.
     const leftNow = await grip("sidebar");
     await page.mouse.dblclick(leftNow.x, leftNow.y);
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
@@ -404,7 +404,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(wide.rail).toBeCloseTo(PANES.rail.max, 0);
 
     await page.setViewportSize({ width: 1100, height: HEIGHT });
-    await waitUntil(async () => (await geometry(page)).canvasWidth >= 400 - 0.5);
+    await waitUntil(async () => (await geometry(page)).mainWidth >= 400 - 0.5);
     const small = await geometry(page);
     expect(small.sidebar).toBeGreaterThanOrEqual(PANES.sidebar.min - 0.5);
     expect(small.rail).toBeGreaterThanOrEqual(PANES.rail.min - 0.5);
@@ -428,7 +428,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await page.mouse.dblclick(await railEdgeX(), GRIP_Y);
     await page.setViewportSize({ width: 1100, height: HEIGHT });
     await waitUntil(
-      async () => Math.abs((await geometry(page)).canvasWidth - (1100 - 300 - 360)) < 1,
+      async () => Math.abs((await geometry(page)).mainWidth - (1100 - 300 - 360)) < 1,
     );
     const before = await geometry(page);
     const x = await sidebarEdgeX();
@@ -437,7 +437,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await page.mouse.move(x + 200, GRIP_Y, { steps: 6 });
     const held = await geometry(page);
     // Stopped where the canvas reached its 400; the rail where it was, while held too.
-    expect(held.canvasWidth).toBeCloseTo(400, 0);
+    expect(held.mainWidth).toBeCloseTo(400, 0);
     expect(held.rail).toBeCloseTo(before.rail, 0);
     await page.mouse.up();
     const after = await geometry(page);
@@ -451,9 +451,9 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     const keyed = await geometry(page);
     expect(keyed.sidebar).toBeCloseTo(after.sidebar, 0);
     expect(keyed.rail).toBeCloseTo(before.rail, 0);
-    // Back to the design's widths for what follows.
+    // Back to the mockup's widths for what follows.
     await page.setViewportSize({ width: WIDTH, height: HEIGHT });
-    await waitUntil(async () => (await geometry(page)).canvasWidth > 600);
+    await waitUntil(async () => (await geometry(page)).mainWidth > 600);
     await page.mouse.dblclick(await sidebarEdgeX(), GRIP_Y);
     await waitUntil(async () => (await saved(page))?.sidebarWidth === 300);
   });
@@ -466,9 +466,9 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     });
     await page.setViewportSize({ width: 1100, height: HEIGHT });
     await page.reload();
-    await openTheDesign(page);
+    await openTheCanvas(page);
     const small = await geometry(page);
-    expect(small.canvasWidth).toBeCloseTo(400, 0);
+    expect(small.mainWidth).toBeCloseTo(400, 0);
     // Each gave up some of its width, in proportion to its room above its minimum: neither
     // squeezed to it while the other kept all of its own.
     expect(small.sidebar).toBeGreaterThan(PANES.sidebar.min + 40);
@@ -485,19 +485,19 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 });
 
-/** Opens the team's design, as its link does, for someone signed in past setup. */
-async function openTheDesign(page: Page) {
+/** Opens the team's canvas, as its link does, for someone signed in past setup. */
+async function openTheCanvas(page: Page) {
   await page.locator("#sidebar").waitFor();
   const find = () =>
     page.evaluate(
       () =>
-        [...window.ponzuFake!.backend.designs.values()].find(
+        [...window.ponzuFake!.backend.canvases.values()].find(
           (d) => d.sequencer.doc.name === "Onboarding flow",
         )?.id ?? null,
     );
   await waitUntil(async () => (await find()) !== null);
-  const designId = (await find())!;
-  await page.evaluate((id) => window.ponzuFake!.link({ kind: "design", designId: id }), designId);
+  const canvasId = (await find())!;
+  await page.evaluate((id) => window.ponzuFake!.link({ kind: "canvas", canvasId: id }), canvasId);
   await page.locator('[data-board-name][title="Welcome"]').waitFor();
   await page.locator("#thread").waitFor();
   await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
@@ -542,7 +542,7 @@ function measure() {
     return el.getBoundingClientRect();
   };
   const header = document.querySelector("header")!;
-  const canvas = rect("#canvas-pane main");
+  const main = rect("#main-pane main");
   // A pane's width takes in its gutter, the edge (the sidebar's 8, the rail's 10).
   const sidebar = rect("#sidebar-pane").width;
   const rail = rect("#thread-pane").width;
@@ -551,9 +551,9 @@ function measure() {
     sidebar: sidebar > 0.5 ? sidebar + 8 : 0,
     rail: rail > 0.5 ? rail + 10 : 0,
     railLeft: railEdge.left,
-    canvasLeft: canvas.left,
-    canvasRight: canvas.right,
-    canvasWidth: canvas.width,
+    mainLeft: main.left,
+    mainRight: main.right,
+    mainWidth: main.width,
     chromeLeftEnd: header.firstElementChild!.getBoundingClientRect().right,
     // The rail's divider, the chrome's last (the right side's `| … [toggle]`).
     railDividerRight: [...header.querySelectorAll("[data-chrome-divider]")]

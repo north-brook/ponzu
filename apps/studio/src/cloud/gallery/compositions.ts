@@ -2,7 +2,7 @@
  * The gallery's full-window compositions: what each is, its size, and how it is compared. The
  * React for each is in boards.tsx; this file stays free of it so the visual scripts can read it.
  *
- * - `board` names the design's artboard file (under its pages/ folder) it is compared with.
+ * - `board` names the mockup's artboard file (under its pages/ folder) it is compared with.
  * - `open` is a control pressed before the picture: a menu or a popover's trigger.
  * - `masks` cover what the gallery doesn't draw: the canvas's boards, and on the sidebar's
  *   boards the thread rail, which their compositions leave empty.
@@ -34,7 +34,7 @@ export interface Composition {
 }
 
 /**
- * The chrome as the design's boards draw it, 44px across the window's width. Masked in every
+ * The chrome as the mockup's boards draw it, 44px across the window's width. Masked in every
  * comparison with the boards (visual.ts adds it): ours departs from them on purpose, with no
  * lockup, the toggles at the window's edges, and 38px tall (README, "The window chrome"), which
  * this covers too. Under it, everything of ours sits 6px higher than on a board.
@@ -42,9 +42,9 @@ export interface Composition {
 export const CHROME_HEIGHT = 44;
 
 /** The panes under our 38px chrome. */
-const CANVAS: Rect = { x: 300, y: 38, width: 780, height: 856 };
+const MAIN: Rect = { x: 300, y: 38, width: 780, height: 856 };
 const RAIL: Rect = { x: 1080, y: 38, width: 360, height: 862 };
-const DESIGN = [CANVAS, RAIL];
+const CANVAS = [MAIN, RAIL];
 const WINDOW = { width: 1440, height: 900 };
 /** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
 const MIN = { width: 1100, height: 640 };
@@ -55,7 +55,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "Team sidebar",
     board: "teams/team-sidebar.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -64,7 +64,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/sidebar-team-menu.html",
     ...WINDOW,
     open: 'button[aria-label^="Workspace"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -73,7 +73,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/sidebar-filter.html",
     ...WINDOW,
     open: 'button[aria-label^="Filter"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -81,14 +81,14 @@ export const COMPOSITIONS: Composition[] = [
     title: "Sidebar · Search",
     board: "mac/sidebar-search.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
   },
   {
     id: "sidebar-search-results",
     title: "Sidebar · Search results",
     board: "mac/sidebar-search-results.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -97,16 +97,16 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
   },
   {
-    // For the tests and a look: a design opening with its answers late, delivered on demand
+    // For the tests and a look: a canvas opening with its answers late, delivered on demand
     // (`window.galleryArrive`, or `?later` on a schedule). Its first paint: the row's mark, the
     // action's room held, you alone, no pages yet.
-    id: "design-opening",
-    title: "Opening a design · its answers arriving late",
+    id: "canvas-opening",
+    title: "Opening a canvas · its answers arriving late",
     ...WINDOW,
   },
   {
-    id: "design-opening-launch",
-    title: "Opening a design at launch · nothing known yet, the sidebar collapsed",
+    id: "canvas-opening-launch",
+    title: "Opening a canvas at launch · nothing known yet, the sidebar collapsed",
     ...WINDOW,
   },
   {
@@ -115,7 +115,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "teams/share.html",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -125,7 +125,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "Share · some haven't opened Ponzu",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: "styles",
   },
   {
@@ -133,7 +133,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {
@@ -141,7 +141,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "6 · Claude sets it up",
     board: "mac/6-claude-sets-it-up.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
   },
   { id: "create", title: "4 · Create", board: "mac/4-create.html", ...WINDOW, reference: true },
   {
@@ -257,7 +257,7 @@ export const COMPOSITIONS: Composition[] = [
   { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW, reference: true },
   {
     id: "sidebar-collapsed-long-name",
-    title: "Sidebar collapsed · a long design name",
+    title: "Sidebar collapsed · a long canvas name",
     ...WINDOW,
     reference: true,
   },
@@ -276,7 +276,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/2-needs-you-a-question.html",
     ...WINDOW,
     open: '[role="radio"]:has-text("Shorten it")',
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {
@@ -285,17 +285,17 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/3-pull-request-tab.html",
     ...WINDOW,
     open: 'button[aria-controls="file-src/components/hero.tsx"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
     differs:
       "the tab no longer folds the thread away: the rail stays as it was (open here), and the pull request fits the canvas's column, stacked at this width (both masked)",
   },
   {
-    id: "together-on-a-design",
-    title: "Together on a design",
+    id: "together-on-a-canvas",
+    title: "Together on a canvas",
     board: "teams/together-on-a-design.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {

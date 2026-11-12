@@ -26,7 +26,7 @@ export interface ToolResult {
 
 /**
  * Why a call failed, coarsely, for telemetry. A fixed list, never words from
- * an error message, which can carry ids and names from the person's design.
+ * an error message, which can carry ids and names from the person's canvas.
  */
 export type ErrorClass =
   | "invalid_target"

@@ -8,7 +8,7 @@ import { sessionFile } from "./testing/session-file.ts";
 /*
  * The real thing, opt in: Ponzu Cloud at PONZU_API_URL (https://api.ponzu.design unless set),
  * signed in as the developer whose session `bun run dev:signin` saved (apps/api/scripts). It
- * makes a Scratch design, opens it twice as two devices would, edits it on one and waits for
+ * makes a Scratch canvas, opens it twice as two devices would, edits it on one and waits for
  * the edit to reach the other through Neon Realtime, then deletes it.
  *
  *   PONZU_SESSION_FILE=… WORKOS_CLIENT_ID=… bun test packages/client/src/cloud.live.test.ts
@@ -47,14 +47,14 @@ describe.skipIf(!file || !workosClientId)("Ponzu Cloud, for real", () => {
       name: me.user.name ?? me.user.githubLogin,
     };
 
-    const design = await api.designs.create({
+    const canvas = await api.canvases.create({
       workspaceId: workspace.id,
       name: "Client live check",
     });
     // Two devices: each its own sockets and its own replica.
     const lives = [createLive({ api }), createLive({ api })];
     const [a, b] = lives.map(
-      (live) => new CloudSource({ api, live, designId: design.id, me: actor }),
+      (live) => new CloudSource({ api, live, canvasId: canvas.id, me: actor }),
     );
     try {
       await until(
@@ -62,9 +62,9 @@ describe.skipIf(!file || !workosClientId)("Ponzu Cloud, for real", () => {
         20_000,
         "both to open",
       );
-      // B hears of A's edits only from its design.head subscription: wait for that to be live.
+      // B hears of A's edits only from its canvas.head subscription: wait for that to be live.
       await until(
-        () => lives[1]!.snapshot("design.head", { designId: design.id }).status === "live",
+        () => lives[1]!.snapshot("canvas.head", { canvasId: canvas.id }).status === "live",
         20_000,
         "the head to be live",
       );
@@ -86,7 +86,7 @@ describe.skipIf(!file || !workosClientId)("Ponzu Cloud, for real", () => {
       a?.close();
       b?.close();
       for (const live of lives) live.close();
-      await api.designs.delete(design.id);
+      await api.canvases.delete(canvas.id);
     }
   }, 90_000);
 });

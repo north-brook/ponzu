@@ -45,7 +45,7 @@ const rows = (pane: Element | null) => [
 ];
 
 /**
- * The model and effort a new design runs with: Claude's mark, the model, the effort, quietly,
+ * The model and effort a new canvas runs with: Claude's mark, the model, the effort, quietly,
  * one step under the composer's own type size (14 to its 16). A model that takes no effort shows
  * its name alone.
  *

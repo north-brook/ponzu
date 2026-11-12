@@ -53,10 +53,10 @@ export function sanitizeNodes(nodes: PNode[], dropped: Dropped[] = []): PNode[] 
  * and `artboard.create`, the maps of `attrs` and `style`, the CSS of `tokens`, and the ops
  * of a `batch`. The other variants carry nothing to sanitize and come back as they are.
  *
- * It sees the op alone, not the design it lands in, so two rules that depend on where a node
+ * It sees the op alone, not the canvas it lands in, so two rules that depend on where a node
  * ends up are the serializer's to keep instead (html.ts): a scene script stays data and a
  * text-only element writes only text, wherever an `insert` or a `move` puts them. Text that
- * an op puts into a `<style>` already in the design is not checked for script in CSS.
+ * an op puts into a `<style>` already in the canvas is not checked for script in CSS.
  */
 export function sanitizeOp(op: Op, dropped: Dropped[] = []): Op {
   switch (op.op) {

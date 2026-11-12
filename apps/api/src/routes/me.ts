@@ -25,7 +25,7 @@ const Onboarding = z.object({
 });
 
 const OnboardingBody = z.object({
-  /** Continue on "Where do you design?", or Start designing on the iPhone step. */
+  /** Continue on "Where do you build?", or Start building on the iPhone step. */
   step: z.enum(["where", "iphone"]),
 });
 
@@ -33,7 +33,7 @@ const Me = z.object({
   user: Profile,
   onboarding: Onboarding,
   /**
-   * The person's own Claude, or null if none is connected: whether their designs can run, and
+   * The person's own Claude, or null if none is connected: whether their canvases can run, and
    * whether it runs out soon. Never its credential.
    */
   claudeAccount: ClaudeAccountView.nullable(),

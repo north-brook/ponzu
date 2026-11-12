@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
-  createDesign,
+  createCanvas,
   deleteUser,
-  getDesign,
+  getCanvas,
   getSandbox,
   recordUsage,
   upsertMembership,
   upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
-import { designSandboxName } from "@ponzu/sandbox";
-import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { canvasSandboxName } from "@ponzu/sandbox";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type SignedInPerson, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 /*
@@ -86,7 +86,7 @@ describe("refusals", () => {
 describe("a personal account others are in", () => {
   let dee: SignedInPerson;
   let own: { id: string };
-  let deesDesign: string;
+  let deesCanvas: string;
 
   beforeAll(async () => {
     dee = await t.signInAs({ login: "dee" });
@@ -126,8 +126,8 @@ describe("a personal account others are in", () => {
       role: "member",
       githubAccess: "collaborator",
     });
-    deesDesign = (
-      await createDesign(t.db, {
+    deesCanvas = (
+      await createCanvas(t.db, {
         workspaceId: own.id,
         repoId: repo!.id,
         ownerId: dee.userId,
@@ -147,16 +147,16 @@ describe("a personal account others are in", () => {
       message: "Make someone else an admin first.",
       details: { workspaces: [{ id: own.id, name: "dee" }] },
     });
-    expect(await getDesign(t.db, deesDesign)).not.toBeNull();
+    expect(await getCanvas(t.db, deesCanvas)).not.toBeNull();
   });
 
-  test("keeps the design the collaborator shares once someone else is its admin", async () => {
+  test("keeps the canvas the collaborator shares once someone else is its admin", async () => {
     await t.db.execute(
       `update memberships set role = 'admin' where workspace_id = '${own.id}' and role = 'member'`,
     );
     const deleted = await call(t, dee.headers, "DELETE", "/v1/me", { confirm: "dee" });
     expect(deleted.status).toBe(204);
-    expect((await getDesign(t.db, deesDesign))?.ownerId).toBeNull();
+    expect((await getCanvas(t.db, deesCanvas))?.ownerId).toBeNull();
     expect(await rows(`select role from memberships where workspace_id = '${own.id}'`)).toEqual([
       { role: "admin" },
     ]);
@@ -165,10 +165,10 @@ describe("a personal account others are in", () => {
 
 describe("deleting Rae", () => {
   let rae: SignedInPerson;
-  let teamDesign: string;
-  let scratchDesign: string;
-  let ownDesign: string;
-  let solsDesign: string;
+  let teamCanvas: string;
+  let scratchCanvas: string;
+  let ownCanvas: string;
+  let solsCanvas: string;
 
   beforeAll(async () => {
     rae = await t.signInAs({ login: "rae" });
@@ -183,18 +183,18 @@ describe("deleting Rae", () => {
       installId: "rae-phone-install-0001",
     });
 
-    // A design of the team's that she owns and has talked in, with its sandbox up.
-    teamDesign = (await designIn(t, ws, "rae", sampleDoc())).id;
-    const said = await call(t, rae.headers, "POST", `/v1/designs/${teamDesign}/messages`, {
+    // A canvas of the team's that she owns and has talked in, with its sandbox up.
+    teamCanvas = (await canvasIn(t, ws, "rae", sampleDoc())).id;
+    const said = await call(t, rae.headers, "POST", `/v1/canvases/${teamCanvas}/messages`, {
       text: "Tighten the pricing table",
     });
     expect(said.status).toBe(201);
-    await call(t, rae.headers, "PATCH", `/v1/designs/${teamDesign}`, { name: "Pricing, tighter" });
+    await call(t, rae.headers, "PATCH", `/v1/canvases/${teamCanvas}`, { name: "Pricing, tighter" });
     await t.backgroundDone();
-    expect((await getSandbox(t.db, teamDesign))?.state).toBe("awake");
+    expect((await getSandbox(t.db, teamCanvas))?.state).toBe("awake");
 
-    // Her Scratch design, and one in her own account's workspace.
-    scratchDesign = (await designIn(t, ws, "rae", sampleDoc(), "scratch")).id;
+    // Her Scratch canvas, and one in her own account's workspace.
+    scratchCanvas = (await canvasIn(t, ws, "rae", sampleDoc(), "scratch")).id;
     const own = await upsertWorkspace(t.db, {
       githubAccountId: rae.github.id,
       githubLogin: "rae",
@@ -206,8 +206,8 @@ describe("deleting Rae", () => {
       installedByUserId: null,
     });
     await upsertMembership(t.db, { workspaceId: own.id, userId: rae.userId, role: "admin" });
-    ownDesign = (
-      await createDesign(t.db, {
+    ownCanvas = (
+      await createCanvas(t.db, {
         workspaceId: own.id,
         repoId: null,
         ownerId: rae.userId,
@@ -217,13 +217,13 @@ describe("deleting Rae", () => {
         doc: sampleDoc(),
       })
     ).id;
-    // A teammate's design, which is not hers to delete.
-    solsDesign = (await designIn(t, ws, "sol", sampleDoc())).id;
+    // A teammate's canvas, which is not hers to delete.
+    solsCanvas = (await canvasIn(t, ws, "sol", sampleDoc())).id;
 
     await recordUsage(t.db, {
       id: "rae-usage",
       workspaceId: ws.id,
-      designId: teamDesign,
+      canvasId: teamCanvas,
       userId: rae.userId,
       kind: "sandbox",
       seconds: 3600,
@@ -260,22 +260,22 @@ describe("deleting Rae", () => {
     }
   });
 
-  test("deletes her Scratch designs and those in her own account", async () => {
-    expect(await getDesign(t.db, scratchDesign)).toBeNull();
-    expect(await getDesign(t.db, ownDesign)).toBeNull();
+  test("deletes her Scratch canvases and those in her own account", async () => {
+    expect(await getCanvas(t.db, scratchCanvas)).toBeNull();
+    expect(await getCanvas(t.db, ownCanvas)).toBeNull();
   });
 
-  test("keeps the team's design, owned by nobody, its sandbox retired", async () => {
-    const design = await getDesign(t.db, teamDesign);
-    expect(design?.ownerId).toBeNull();
-    expect(await getSandbox(t.db, teamDesign)).toBeNull();
-    expect(await t.sandboxes.status(designSandboxName(TEST_SCOPE, teamDesign))).toBeNull();
-    expect((await getDesign(t.db, solsDesign))?.ownerId).not.toBeNull();
+  test("keeps the team's canvas, owned by nobody, its sandbox retired", async () => {
+    const canvas = await getCanvas(t.db, teamCanvas);
+    expect(canvas?.ownerId).toBeNull();
+    expect(await getSandbox(t.db, teamCanvas)).toBeNull();
+    expect(await t.sandboxes.status(canvasSandboxName(TEST_SCOPE, teamCanvas))).toBeNull();
+    expect((await getCanvas(t.db, solsCanvas))?.ownerId).not.toBeNull();
   });
 
-  test("keeps her words in the team's design, under a deleted user's name", async () => {
+  test("keeps her words in the team's canvas, under a deleted user's name", async () => {
     const sol = await as("sol");
-    const thread = await call(t, sol, "GET", `/v1/designs/${teamDesign}/thread`);
+    const thread = await call(t, sol, "GET", `/v1/canvases/${teamCanvas}/thread`);
     expect(thread.status).toBe(200);
     const message = thread.body.items.find((item: { kind: string }) => item.kind === "message");
     expect(message.payload).toMatchObject({
@@ -283,8 +283,8 @@ describe("deleting Rae", () => {
       from: { name: "Deleted user", login: "ghost" },
     });
     const ops = await rows(
-      `select actor_name, actor_avatar_url from design_ops
-        where design_id = '${teamDesign}' and actor_id = '${rae.userId}'`,
+      `select actor_name, actor_avatar_url from canvas_ops
+        where canvas_id = '${teamCanvas}' and actor_id = '${rae.userId}'`,
     );
     expect(ops.length).toBeGreaterThan(0);
     for (const op of ops)

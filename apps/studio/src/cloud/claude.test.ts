@@ -62,16 +62,16 @@ describe("limits", () => {
     ).toEqual({ percent: 38, line: "Resets Monday 9:00", full: false });
   });
 
-  test("at 100% says how long designs wait, and is not an error", () => {
+  test("at 100% says how long canvases wait, and is not an error", () => {
     expect(
       limitView({ window: "session", utilization: 1, resetsAt: local(2026, 10, 10, 16, 0) }, now),
-    ).toEqual({ percent: 100, line: "Designs wait until 16:00", full: true });
+    ).toEqual({ percent: 100, line: "Canvases wait until 16:00", full: true });
     expect(
       limitView(
         { window: "week_opus", utilization: 1.02, resetsAt: local(2026, 10, 16, 9, 0) },
         now,
       ),
-    ).toEqual({ percent: 100, line: "Designs wait until Monday 9:00", full: true });
+    ).toEqual({ percent: 100, line: "Canvases wait until Monday 9:00", full: true });
   });
 
   test("a window that has reset since it was seen reads empty", () => {
@@ -80,7 +80,7 @@ describe("limits", () => {
     ).toEqual({ percent: 0, line: null, full: false });
   });
 
-  test("before any design has run there is nothing to show", () => {
+  test("before any canvas has run there is nothing to show", () => {
     expect(limitView({ window: "session", utilization: null, resetsAt: null }, now)).toEqual({
       percent: null,
       line: null,

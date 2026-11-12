@@ -1,8 +1,8 @@
 # @ponzu/runner
 
-The one long-lived process inside each design's sandbox. It runs Claude Code through the Agent
-SDK with the canvas tools in-process, keeps the design in step with the API, writes what the
-agent does to the thread and the design's state, and puts what people do back into the run.
+The one long-lived process inside each canvas's sandbox. It runs Claude Code through the Agent
+SDK with Ponzu's tools in-process, keeps the canvas in step with the API, writes what the
+agent does to the thread and the canvas's state, and puts what people do back into the run.
 [docs/cloud.md](../../docs/cloud.md) ("The runner", "Events", "Needs you", "Credentials" and
 "The runner protocol") is its specification.
 
@@ -78,8 +78,8 @@ output and the runner's in `/var/log/ponzu/runner.log` rather than in Vercel's c
 supervisor starts `runner.js` as `ponzu` (group `agent`, `CAP_DAC_READ_SEARCH` to read Claude
 Code's 0600 transcripts) and restarts it on failure, after 1, 2, 4 … 30 seconds, except on exit
 0 or 78. 78 means only a new start of the sandbox can mend it: the environment is wrong, the API
-revoked the runner token (the design was deleted or settled), or a newer runner took over the
-design's lease. Before every stop the API runs `ponzu-stop`: SIGTERM to the supervisor, which
+revoked the runner token (the canvas was deleted or settled), or a newer runner took over the
+canvas's lease. Before every stop the API runs `ponzu-stop`: SIGTERM to the supervisor, which
 passes it to the runner; the runner stops the turn, lets the agent's edits reach the API,
 reports its final state, saves a checkpoint and closes Claude Code, and the supervisor kills
 what is left of its group after 20 seconds at most; then `sync`. Every wake boots the sandbox
@@ -99,8 +99,8 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | Variable | |
 |---|---|
 | `PONZU_API_URL` | `https://api.ponzu.design` |
-| `PONZU_DESIGN_ID` | The design this sandbox works on. |
-| `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this design only. |
+| `PONZU_CANVAS_ID` | The canvas this sandbox works on. |
+| `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this canvas only. |
 | `PONZU_PORT_TOKEN` | The bearer every request to the runner's port must carry. New at every start. |
 | `PONZU_RUNNER_BUNDLE` | The SHA-256 of the bundle this start runs; the runner names it in `X-Ponzu-Client`. |
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Exactly one. With both the runner refuses to start: Claude Code would silently use the key and bill its account. |
@@ -138,14 +138,14 @@ address, which anyone with the URL can reach, so every request must carry
 answers 401. `POST /poke` (204) means "there may be something to claim". It carries nothing and
 the runner trusts nothing about it: it only starts a claim, which the runner makes to the API
 with its own token. The runner also claims every minute without one. `GET /health` answers
-`{ started, state }`: `started` once the design is open, Claude Code is up and the claims run.
+`{ started, state }`: `started` once the canvas is open, Claude Code is up and the claims run.
 
 ## Sleep, and what the disk keeps
 
 docs/cloud.md ("The sandbox", "Saving the sandbox") is the specification.
 
 - **After each turn** has settled, the runner saves a checkpoint: the Claude session's
-  transcript and the work in progress (a repo's as a commit, never on the design's branch nor
+  transcript and the work in progress (a repo's as a commit, never on the canvas's branch nor
   anywhere on GitHub, carried in a git bundle; Scratch's as an archive), both uploaded where no
   client reads them, under a turn marker the API keeps the highest of, then runs `sync`. Files
   over the size limits, or that look like or hold a secret (a `.env`, a key, a file with a repo
@@ -161,8 +161,8 @@ docs/cloud.md ("The sandbox", "Saving the sandbox") is the specification.
   (a rollback) or has none (a new or recreated sandbox, or a snapshot that expired) gets the
   checkpoint back, never over anything newer, and the runner logs `sandbox_rollback` or
   `sandbox_rebuilt` as JSON and tells the API.
-- **The pull request summary.** On a checked-out repo design the runner hosts
-  `describe_pull_request` beside the canvas tools: the agent's own words on what its branch
+- **The pull request summary.** On a canvas with a checked-out repo the runner hosts
+  `describe_pull_request` beside Ponzu's tools: the agent's own words on what its branch
   changes, which the API writes into the pull request's description.
 - **The agent's pull request** (`src/pull-request-tools.ts`). Beside it, `open_pull_request`,
   `read_pull_request`, `mark_pull_request_ready`, `update_pull_request_branch`,
@@ -183,14 +183,14 @@ stops the turn, `/quit` shuts the runner down. The thread prints as it is writte
 `--bundle` it runs `dist/runner.js` instead of the source.
 
 Against a local API, run `bun src/main.ts` with `PONZU_API_URL` pointed at it and a runner
-token it issued for the design. A local API that wakes designs in real sandboxes needs `dist/`
+token it issued for the canvas. A local API that wakes canvases in real sandboxes needs `dist/`
 (`bun run build`) for the bundle it serves, and an address a sandbox can reach.
 
 ## Claude Code's configuration
 
-- `bypassPermissions`: a VM per design, running as a non-root user (`agent`), with nobody to click
+- `bypassPermissions`: a VM per canvas, running as a non-root user (`agent`), with nobody to click
   "allow". AskUserQuestion, plan approval (ExitPlanMode) and any other prompt still reach
-  `canUseTool` and become questions in the design's needs-you; the SDK's warning that
+  `canUseTool` and become questions in the canvas's needs-you; the SDK's warning that
   `canUseTool` "will not be invoked" in this mode is about ordinary tool calls.
 - `settingSources: ["project"]`: the repo's own CLAUDE.md, `.claude/settings.json` (hooks,
   permission rules), skills, commands and agents apply. The sandbox user's settings
@@ -203,15 +203,15 @@ token it issued for the design. A local API that wakes designs in real sandboxes
 
 **What a hostile repo or a hostile comment can do.** A repo's hooks, MCP servers, skills and
 code run as the agent's user in the sandbox (`agent` in the image). So does whatever the agent
-is talked into: anyone whose words become a prompt (a person commenting on the design, anyone
+is talked into: anyone whose words become a prompt (a person commenting on the canvas, anyone
 reviewing its pull request, which on a public repo is anyone on GitHub, a check's log) can try
 to make the agent run a command. Either way that reaches the Claude credential, a one-hour
 token for that one repository (through the runner's socket) and the repo's own secrets, and
-nothing of any other design. In the image it does not reach the runner token: `agent` cannot
+nothing of any other canvas. In the image it does not reach the runner token: `agent` cannot
 read the supervisor's or runner's `/proc` or the runner's log, and has no sudo, and the canvas tools
 read and write the paths it names as `agent` (`PONZU_AS_AGENT`). The runner keeps the
 exposure down where it can: other people's words reach the model quoted, under instructions
 that quoted text never directs it; the runner token can only write what an agent could anyway
 (a runner cannot write the API's own notices, such as a pull request's); and the lease means a
-stolen token can stop this design's runner but not act beside it. docs/cloud.md ("Security")
+stolen token can stop this canvas's runner but not act beside it. docs/cloud.md ("Security")
 has the whole threat and the hardening that remains.

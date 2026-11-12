@@ -18,7 +18,7 @@ const Who = z.object({
   login: z.string(),
   avatarUrl: z.string().nullable(),
   bot: z.boolean(),
-  /** The Ponzu App's own bot: the design's agent, which pushes and writes as the App. */
+  /** The Ponzu App's own bot: the canvas's agent, which pushes and writes as the App. */
   ponzu: z.boolean(),
 });
 const MergeMethod = z.enum(["squash", "merge", "rebase"]);
@@ -147,7 +147,7 @@ export const PullRequestView = z.object({
 });
 
 export const PullRequestTabView = z.object({
-  /** The design's branch on GitHub; `exists` is false until something is pushed to it. */
+  /** The canvas's branch on GitHub; `exists` is false until something is pushed to it. */
   branch: z.object({
     name: z.string(),
     base: z.string(),
@@ -156,14 +156,14 @@ export const PullRequestTabView = z.object({
     aheadBy: z.number(),
     behindBy: z.number(),
     /**
-     * Commits the design's sandbox has on the branch that GitHub does not, as its runner last
+     * Commits the canvas's sandbox has on the branch that GitHub does not, as its runner last
      * said: Ponzu pushes them at the end of each turn, and Create PR pushes them first.
      */
     unpushed: z.number(),
     /** Why the last push of them failed, in words for a person; null when it did not. */
     pushError: z.string().nullable(),
   }),
-  /** The design's newest pull request; null before one is opened. */
+  /** The canvas's newest pull request; null before one is opened. */
   pullRequest: PullRequestView.nullable(),
   /** How Merge merges: the first of squash, merge and rebase the repo allows. */
   mergeMethod: MergeMethod.nullable(),
@@ -221,7 +221,7 @@ export function toTab(
 }
 
 /**
- * What the action button offers (the spec's PR states): open one when the design has commits its
+ * What the action button offers (the spec's PR states): open one when the canvas has commits its
  * base lacks and no open pull request (or commits since its merged one), on GitHub or still only
  * in its sandbox (`unpushed`: Create PR pushes them first); then ready a draft, resolve conflicts,
  * fix failing checks, wait on running ones with auto-merge where the repo allows it (and offer

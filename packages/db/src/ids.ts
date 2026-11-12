@@ -6,7 +6,7 @@ export type IdPrefix =
   | "ws"
   | "repo"
   | "cla"
-  | "des"
+  | "cnv"
   | "ti"
   | "evt"
   | "q"
@@ -21,7 +21,7 @@ export type IdPrefix =
   | "job"
   | "auth";
 
-/** A primary key like `des_7k2m9x4q0c8v5n1t`: what the row is, then 80 random bits. */
+/** A primary key like `cnv_7k2m9x4q0c8v5n1t`: what the row is, then 80 random bits. */
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${randomString(16)}`;
 }

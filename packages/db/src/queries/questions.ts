@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNotNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { designs, events, type Json, questions, repoSecrets } from "../schema/index.ts";
+import { canvases, events, type Json, questions, repoSecrets } from "../schema/index.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
@@ -9,7 +9,7 @@ export type Question = typeof questions.$inferSelect;
 
 /**
  * Raise something the agent needs a person for, under an id the caller chose (a runner derives
- * it from the tool call), so raising it again changes nothing. The design's `needs_you_count`
+ * it from the tool call), so raising it again changes nothing. The canvas's `needs_you_count`
  * goes up in the same statement when the question is new, so the count clients watch never
  * disagrees with the questions for long enough to see. Answers where the question stands, and
  * whether this raised it.
@@ -17,11 +17,11 @@ export type Question = typeof questions.$inferSelect;
 export async function createQuestion(
   db: Db,
   {
-    designId,
+    canvasId,
     id = newId("q"),
     kind,
     payload,
-  }: { designId: string; id?: string; kind: Question["kind"]; payload: Json },
+  }: { canvasId: string; id?: string; kind: Question["kind"]; payload: Json },
 ): Promise<{ id: string; status: Question["status"]; raised: boolean }> {
   // A conflict takes the row as it stands, whoever raised it, even one raised by a statement
   // running at the same moment, which `do nothing` would hand back as nothing. Setting the id to
@@ -29,43 +29,43 @@ export async function createQuestion(
   const raised = db.$with("raised").as(
     db
       .insert(questions)
-      .values({ id, designId, kind, payload: scrubbed(payload) })
+      .values({ id, canvasId, kind, payload: scrubbed(payload) })
       .onConflictDoUpdate({
-        target: [questions.designId, questions.id],
+        target: [questions.canvasId, questions.id],
         set: { id: sql`${questions.id}` },
       })
       .returning({ status: questions.status, raised: sql<boolean>`xmax = 0`.as("raised") }),
   );
   const counted = db.$with("counted").as(
     db
-      .update(designs)
+      .update(canvases)
       // Relative, so two questions raised at once both count.
-      .set({ needsYouCount: sql`${designs.needsYouCount} + 1` })
-      .where(and(eq(designs.id, designId), sql`exists (select 1 from ${raised} where raised)`))
-      .returning({ id: designs.id }),
+      .set({ needsYouCount: sql`${canvases.needsYouCount} + 1` })
+      .where(and(eq(canvases.id, canvasId), sql`exists (select 1 from ${raised} where raised)`))
+      .returning({ id: canvases.id }),
   );
   const [row] = await run(db.with(raised, counted).select().from(raised));
   return { id, ...row! };
 }
 
-/** One of a design's questions, or null. */
+/** One of a canvas's questions, or null. */
 export async function getQuestion(
   db: Db,
-  { designId, id }: { designId: string; id: string },
+  { canvasId, id }: { canvasId: string; id: string },
 ): Promise<Question | null> {
   const [question] = await run(
     db
       .select()
       .from(questions)
-      .where(and(eq(questions.designId, designId), eq(questions.id, id))),
+      .where(and(eq(questions.canvasId, canvasId), eq(questions.id, id))),
   );
   return question ?? null;
 }
 
 /**
- * Answer an open question, take it off the design's count, and add the `answer` event that
+ * Answer an open question, take it off the canvas's count, and add the `answer` event that
  * takes the answer to the agent, in one statement. The first answer wins: null, and nothing
- * written, when the question is not open any more, or is not this design's.
+ * written, when the question is not open any more, or is not this canvas's.
  *
  * The event carries the question as it was raised (`question: { kind, payload }`), so a runner
  * that no longer has it in mind can say again what was asked, and `answer`'s fields beside it.
@@ -75,13 +75,13 @@ export async function getQuestion(
 export async function answerQuestion(
   db: Db,
   {
-    designId,
+    canvasId,
     id,
     answer,
     userId,
     posthogSessionId = null,
   }: {
-    designId: string;
+    canvasId: string;
     id: string;
     answer: Json;
     userId: string;
@@ -90,15 +90,15 @@ export async function answerQuestion(
   },
 ): Promise<Question | null> {
   const answered = answering(db, {
-    designId,
+    canvasId,
     id,
     answer: scrubbed(answer),
     userId,
     only: ne(questions.kind, "secret"),
   });
   const told = db.$with("told", { id: events.id }).as(sql`
-    insert into ${events} (id, design_id, kind, priority, payload, user_id, posthog_session_id)
-    select ${newId("evt")}, ${answered.designId}, 'answer', 'now',
+    insert into ${events} (id, canvas_id, kind, priority, payload, user_id, posthog_session_id)
+    select ${newId("evt")}, ${answered.canvasId}, 'answer', 'now',
            jsonb_build_object(
              'questionId', ${answered.id},
              'question', jsonb_build_object('kind', ${answered.kind}, 'payload', ${answered.payload})
@@ -109,7 +109,7 @@ export async function answerQuestion(
   `);
   const [question] = await run(
     db
-      .with(answered, uncounted(db, designId, answered), told)
+      .with(answered, uncounted(db, canvasId, answered), told)
       .select()
       .from(answered),
   );
@@ -121,13 +121,13 @@ export async function answerQuestion(
  * the repo's secrets, and record on the question only which secret was given. One statement,
  * so the question is not closed without the secret being kept.
  *
- * Null, and nothing written, when the question is not an open secret question of this design,
- * or the design is Scratch: secrets belong to a repo, and Scratch has none.
+ * Null, and nothing written, when the question is not an open secret question of this canvas,
+ * or the canvas is Scratch: secrets belong to a repo, and Scratch has none.
  */
 export async function answerSecretQuestion(
   db: Db,
   input: {
-    designId: string;
+    canvasId: string;
     id: string;
     name: string;
     encryptedValue: string;
@@ -136,13 +136,13 @@ export async function answerSecretQuestion(
     userId: string;
   },
 ): Promise<Question | null> {
-  const { designId, id, name, encryptedValue, valueBytes, userId } = input;
+  const { canvasId, id, name, encryptedValue, valueBytes, userId } = input;
   const inRepo = db
-    .select({ id: designs.id })
-    .from(designs)
-    .where(and(eq(designs.id, designId), isNotNull(designs.repoId)));
+    .select({ id: canvases.id })
+    .from(canvases)
+    .where(and(eq(canvases.id, canvasId), isNotNull(canvases.repoId)));
   const answered = answering(db, {
-    designId,
+    canvasId,
     id,
     answer: { name },
     userId,
@@ -154,7 +154,7 @@ export async function answerSecretQuestion(
       .select(
         db
           .select({
-            repoId: sql<string>`${designs.repoId}`.as("repo_id"),
+            repoId: sql<string>`${canvases.repoId}`.as("repo_id"),
             name: sql<string>`${name}`.as("name"),
             encryptedValue: sql<string>`${encryptedValue}`.as("encrypted_value"),
             valueBytes: sql<number>`${valueBytes}::integer`.as("value_bytes"),
@@ -162,8 +162,8 @@ export async function answerSecretQuestion(
             createdAt: sql<Date>`now()`.as("created_at"),
             updatedAt: sql<Date>`now()`.as("updated_at"),
           })
-          .from(designs)
-          .where(and(eq(designs.id, designId), sql`exists (select 1 from ${answered})`)),
+          .from(canvases)
+          .where(and(eq(canvases.id, canvasId), sql`exists (select 1 from ${answered})`)),
       )
       .onConflictDoUpdate({
         target: [repoSecrets.repoId, repoSecrets.name],
@@ -178,7 +178,7 @@ export async function answerSecretQuestion(
   );
   const [question] = await run(
     db
-      .with(answered, uncounted(db, designId, answered), kept)
+      .with(answered, uncounted(db, canvasId, answered), kept)
       .select()
       .from(answered),
   );
@@ -186,13 +186,13 @@ export async function answerSecretQuestion(
 }
 
 /**
- * Close a design's open questions without an answer, and take them off its count: all of
+ * Close a canvas's open questions without an answer, and take them off its count: all of
  * them, or those in `ids`. For a run that was stopped, or a sandbox that was lost, with a
  * question still up that nobody can answer now. Answers how many were closed.
  */
 export async function cancelQuestions(
   db: Db,
-  { designId, ids }: { designId: string; ids?: string[] },
+  { canvasId, ids }: { canvasId: string; ids?: string[] },
 ): Promise<number> {
   if (ids?.length === 0) return 0;
   const cancelled = db.$with("cancelled").as(
@@ -201,7 +201,7 @@ export async function cancelQuestions(
       .set({ status: "cancelled" })
       .where(
         and(
-          eq(questions.designId, designId),
+          eq(questions.canvasId, canvasId),
           eq(questions.status, "open"),
           ids ? inArray(questions.id, ids) : undefined,
         ),
@@ -210,31 +210,31 @@ export async function cancelQuestions(
   );
   const [row] = await run(
     db
-      .with(cancelled, uncounted(db, designId, cancelled))
+      .with(cancelled, uncounted(db, canvasId, cancelled))
       .select({ closed: count() })
       .from(cancelled),
   );
   return row?.closed ?? 0;
 }
 
-/** How many of a design's questions are waiting for an answer. */
-export async function countOpenQuestions(db: Db, designId: string): Promise<number> {
+/** How many of a canvas's questions are waiting for an answer. */
+export async function countOpenQuestions(db: Db, canvasId: string): Promise<number> {
   const [row] = await run(
     db
       .select({ open: count() })
       .from(questions)
-      .where(and(eq(questions.designId, designId), eq(questions.status, "open"))),
+      .where(and(eq(questions.canvasId, canvasId), eq(questions.status, "open"))),
   );
   return row?.open ?? 0;
 }
 
-/** A design's questions that are waiting for an answer, in the order they were asked. */
-export function listOpenQuestions(db: Db, designId: string): Promise<Question[]> {
+/** A canvas's questions that are waiting for an answer, in the order they were asked. */
+export function listOpenQuestions(db: Db, canvasId: string): Promise<Question[]> {
   return run(
     db
       .select()
       .from(questions)
-      .where(and(eq(questions.designId, designId), eq(questions.status, "open")))
+      .where(and(eq(questions.canvasId, canvasId), eq(questions.status, "open")))
       .orderBy(questions.seq),
   );
 }
@@ -253,7 +253,7 @@ function answering(db: Db, input: Answer) {
       .where(
         and(
           eq(questions.id, input.id),
-          eq(questions.designId, input.designId),
+          eq(questions.canvasId, input.canvasId),
           eq(questions.status, "open"),
           input.only,
         ),
@@ -263,7 +263,7 @@ function answering(db: Db, input: Answer) {
 }
 
 interface Answer {
-  designId: string;
+  canvasId: string;
   id: string;
   answer: Json;
   userId: string;
@@ -271,17 +271,17 @@ interface Answer {
 }
 
 /**
- * `with counted`: take the questions `closed` just closed off the design's count. It subtracts
+ * `with counted`: take the questions `closed` just closed off the canvas's count. It subtracts
  * what was closed, not what was asked for, so answering or cancelling twice counts once.
  */
-function uncounted(db: Db, designId: string, closed: Parameters<Db["with"]>[number]) {
+function uncounted(db: Db, canvasId: string, closed: Parameters<Db["with"]>[number]) {
   return db.$with("counted").as(
     db
-      .update(designs)
+      .update(canvases)
       .set({
-        needsYouCount: sql`greatest(${designs.needsYouCount} - (select count(*) from ${closed}), 0)`,
+        needsYouCount: sql`greatest(${canvases.needsYouCount} - (select count(*) from ${closed}), 0)`,
       })
-      .where(and(eq(designs.id, designId), sql`exists (select 1 from ${closed})`))
-      .returning({ id: designs.id }),
+      .where(and(eq(canvases.id, canvasId), sql`exists (select 1 from ${closed})`))
+      .returning({ id: canvases.id }),
   );
 }

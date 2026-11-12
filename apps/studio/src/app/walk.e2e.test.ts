@@ -1,13 +1,13 @@
 /*
  * The whole product past setup, in one go: the studio built as it ships, in a real Chromium, on
  * Ponzu Cloud in memory (fake-host.ts), with the backend playing GitHub, claude.ai, the agent and
- * a teammate. Fresh start with its ideas; pick one and send, and the design opens waking, never
- * empty; every section of Settings; a design waiting on Claude connects it; a teammate answers
+ * a teammate. Fresh start with its ideas; pick one and send, and the canvas opens waking, never
+ * empty; every section of Settings; a canvas waiting on Claude connects it; a teammate answers
  * first; switch workspace; sign out. The first run, and an agent's work through to a merge, are
  * app.e2e.test.ts's. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves a picture of each step there (and four in dark),
- * to look at beside the design's boards.
+ * to look at beside the mockup's boards.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
@@ -81,28 +81,28 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     const IDEA = await field.inputValue();
     expect(KETTLE_IDEAS).toContain(IDEA);
 
-    // Send: the design opens straight into its thread, the message there and the agent waking,
-    // never an empty design on the way.
+    // Send: the canvas opens straight into its thread, the message there and the agent waking,
+    // never an empty canvas on the way.
     // Picking it put the cursor at the end of the prompt.
     await waitUntil(
       async () => (await page.evaluate(() => document.activeElement?.tagName)) === "TEXTAREA",
     );
-    // Every answer takes a moment, as over a network: the design must not wait on them to show.
+    // Every answer takes a moment, as over a network: the canvas must not wait on them to show.
     await fake(() => {
       window.ponzuFake!.backend.latencyMs = 400;
     });
-    await watchForAnEmptyDesign(page, IDEA);
+    await watchForAnEmptyCanvas(page, IDEA);
     await page.keyboard.press("Enter");
     await rail().getByText(IDEA).waitFor();
     await rail().getByText("Waking up", { exact: true }).first().waitFor();
-    expect(await sawAnEmptyDesign(page)).toEqual([]);
+    expect(await sawAnEmptyCanvas(page)).toEqual([]);
     await fake(() => {
       window.ponzuFake!.backend.latencyMs = 0;
     });
-    await shoot("design-waking");
+    await shoot("canvas-waking");
     // Left alone, the thread's pane closes after its beat, having shown where the thread lives.
     await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
-    // Maya opens it again, and that is remembered for the designs she opens next.
+    // Maya opens it again, and that is remembered for the canvases she opens next.
     await page.click('button[aria-controls="thread"]');
     await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
 
@@ -140,7 +140,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await page.getByRole("alertdialog").waitFor({ state: "detached" });
 
     await nav().getByRole("button", { name: "Agents" }).click();
-    await page.getByText("Defaults for new designs").waitFor();
+    await page.getByText("Defaults for new canvases").waitFor();
     await shoot("settings-agents");
 
     await nav().getByRole("button", { name: "Notifications" }).click();
@@ -216,24 +216,24 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
       2000,
     );
 
-    // Switch workspace: the team's designs.
+    // Switch workspace: the team's canvases.
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
     const onboarding = page.getByRole("button", { name: /Onboarding flow/ });
     await onboarding.waitFor();
     await shoot("team-workspace");
 
-    // A design waiting on Maya's own Claude: Connect, from its composer, and it wakes.
+    // A canvas waiting on Maya's own Claude: Connect, from its composer, and it wakes.
     await fake(() => {
       const { backend } = window.ponzuFake!;
-      const design = [...backend.designs.values()].find(
+      const canvas = [...backend.canvases.values()].find(
         (d) => d.sequencer.doc.name === "Onboarding flow",
       )!;
-      backend.agent(design.id).block("claude_expired");
+      backend.agent(canvas.id).block("claude_expired");
     });
     await onboarding.click();
-    await rail().getByText("Your Claude sign-in has run out. This design waits.").waitFor();
-    await shoot("design-waits-on-claude");
+    await rail().getByText("Your Claude sign-in has run out. This canvas waits.").waitFor();
+    await shoot("canvas-waits-on-claude");
     await rail().getByRole("button", { name: "Connect" }).click();
     const dialog = page.getByRole("dialog");
     // Put as the strip put it, and it can be put away.
@@ -241,24 +241,24 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await dialog.getByRole("button", { name: "Cancel" }).waitFor();
     await dialog.getByRole("button", { name: "Add key" }).click();
     await dialog.getByLabel("Paste your Anthropic API key").fill("sk-ant-api03-walk-4f2a");
-    await shoot("design-connect-claude");
+    await shoot("canvas-connect-claude");
     await dialog.getByRole("button", { name: "Connect" }).click();
     await dialog.waitFor({ state: "detached" });
     await rail().getByPlaceholder("Steer, or ask more").waitFor();
     expect(
-      await rail().getByText("Your Claude sign-in has run out. This design waits.").count(),
+      await rail().getByText("Your Claude sign-in has run out. This canvas waits.").count(),
     ).toBe(0);
 
     // It asks; Maya chooses, but Sam answers first: his name and his choice, not hers.
     const onboardingId = await fake(
       () =>
-        [...window.ponzuFake!.backend.designs.values()].find(
+        [...window.ponzuFake!.backend.canvases.values()].find(
           (d) => d.sequencer.doc.name === "Onboarding flow",
         )!.id,
     );
     const tone = await fake(
-      (designId) =>
-        window.ponzuFake!.backend.agent(designId).ask(
+      (canvasId) =>
+        window.ponzuFake!.backend.agent(canvasId).ask(
           {
             kind: "question",
             payload: {
@@ -282,11 +282,11 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     const toneAsk = page.getByRole("region", { name: "Ponzu needs you: Tone" });
     await toneAsk.getByRole("radio", { name: /Warm/ }).click();
     await fake(
-      ([designId, q]) => {
+      ([canvasId, q]) => {
         const { backend, teammate } = window.ponzuFake!;
         return backend
           .connect(teammate)
-          .api.designs.answer(designId!, q!, { answers: { "Warm or plain?": "Plain" } });
+          .api.canvases.answer(canvasId!, q!, { answers: { "Warm or plain?": "Plain" } });
       },
       [onboardingId, tone] as const,
     );
@@ -297,7 +297,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     expect(await toneAsk.getByRole("radio", { name: /Warm/ }).getAttribute("aria-checked")).toBe(
       "false",
     );
-    await shoot("design-teammate-answered", { dark: true });
+    await shoot("canvas-teammate-answered", { dark: true });
     await toneAsk.getByRole("button", { name: "OK" }).click();
     await rail().getByPlaceholder("Steer, or ask more").waitFor();
 
@@ -320,13 +320,13 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
 });
 
 /**
- * Watches every frame from now for the open design showing nothing of itself: past the create
- * page, a canvas pane or a thread rail without the first message in it.
+ * Watches every frame from now for the open canvas showing nothing of itself: past the create
+ * page, a main pane or a thread rail without the first message in it.
  */
-async function watchForAnEmptyDesign(page: Page, message: string) {
+async function watchForAnEmptyCanvas(page: Page, message: string) {
   await page.evaluate((text) => {
     const seen: string[] = [];
-    (window as unknown as { emptyDesign: string[] }).emptyDesign = seen;
+    (window as unknown as { emptyCanvas: string[] }).emptyCanvas = seen;
     const started = performance.now();
     const look = () => {
       const creating = document.body.textContent?.includes("Make something");
@@ -341,9 +341,9 @@ async function watchForAnEmptyDesign(page: Page, message: string) {
   }, message);
 }
 
-async function sawAnEmptyDesign(page: Page): Promise<string[]> {
+async function sawAnEmptyCanvas(page: Page): Promise<string[]> {
   await page.waitForTimeout(100);
   return page.evaluate(() => [
-    ...new Set((window as unknown as { emptyDesign: string[] }).emptyDesign),
+    ...new Set((window as unknown as { emptyCanvas: string[] }).emptyCanvas),
   ]);
 }

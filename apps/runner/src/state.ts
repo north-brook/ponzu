@@ -5,7 +5,7 @@ import { Pacer } from "./pacer.ts";
 /**
  * Reports what the agent is doing as it changes, at most a couple of times a second, and again
  * every heartbeat whether it changed or not: the heartbeat is how the API keeps a working
- * sandbox awake and notices a runner that died. Each answer carries the design's head.
+ * sandbox awake and notices a runner that died. Each answer carries the canvas's head.
  */
 export class StateReporter {
   private state: StateRequest = {
@@ -25,7 +25,7 @@ export class StateReporter {
     private readonly opts: {
       gapMs: number;
       heartbeatMs: number;
-      /** The design's head, from each answer. */
+      /** The canvas's head, from each answer. */
       onSeq(seq: number): void;
       onError?(err: unknown): void;
       backoff?: (failures: number) => number;

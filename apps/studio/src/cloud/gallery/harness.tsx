@@ -13,11 +13,11 @@ import {
 } from "react";
 import type { ProjectChoice, RepoShelf } from "../create/create.ts";
 import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
-import { type DesignFilter, NO_FILTER } from "../filter.ts";
+import { type CanvasFilter, NO_FILTER } from "../filter.ts";
 import type {
+  CanvasMember,
+  CanvasSummary,
   Contributor,
-  DesignMember,
-  DesignSummary,
   Effort,
   Match,
   Repo,
@@ -28,18 +28,18 @@ import { nextAction } from "../pull-request.ts";
 import { Sidebar } from "../sidebar/sidebar.tsx";
 import { railSignal } from "../status.ts";
 import { AppWindow } from "../window/app-window.tsx";
-import { DesignChrome, type DesignChromeProps } from "../window/design-chrome.tsx";
+import { CanvasChrome, type CanvasChromeProps } from "../window/canvas-chrome.tsx";
 import { PANES } from "../window/panes.ts";
 import * as f from "./fixtures.ts";
 
-/** `?rail=<px>`: the rail's width, in place of the design's. */
+/** `?rail=<px>`: the rail's width, in place of the mockup's. */
 const RAIL_WIDTH =
   typeof location === "undefined" ? 0 : Number(new URLSearchParams(location.search).get("rail"));
 
 const ignore = () => {};
 
 /** Everything matching `query` in the fixtures, the way the API's search answers. */
-function searchFixtures(query: string, designs: DesignSummary[]): SearchResults {
+function searchFixtures(query: string, canvases: CanvasSummary[]): SearchResults {
   const q = query.trim().toLowerCase();
   const find = (text: string): Match[] => {
     const at = text.toLowerCase().indexOf(q);
@@ -52,8 +52,8 @@ function searchFixtures(query: string, designs: DesignSummary[]): SearchResults 
     });
   return {
     query,
-    designs: hits([...designs, ...f.settled], (d) => d.name).map(({ item, matches }) => ({
-      design: item,
+    canvases: hits([...canvases, ...f.settled], (d) => d.name).map(({ item, matches }) => ({
+      canvas: item,
       matches,
     })),
     boards: hits(f.heroResults.boards, (b) => b.name).map(({ item, matches }) => ({
@@ -78,14 +78,14 @@ export interface HarnessProps {
   workspace?: Workspace;
   /** Those the workspace switcher lists. */
   workspaces?: Workspace[];
-  designs: DesignSummary[] | null;
+  canvases: CanvasSummary[] | null;
   openId: string | null;
   initialQuery?: string | null;
   initialSettledOpen?: boolean;
-  initialFilter?: DesignFilter;
+  initialFilter?: CanvasFilter;
   settledCount?: number;
   sidebar?: "open" | "closed" | "none";
-  /** Past the left block: a design's chrome, or nothing on the create page. */
+  /** Past the left block: a canvas's chrome, or nothing on the create page. */
   chrome?: (sidebarOpen: boolean) => ReactNode;
   rail?: boolean;
   /** What the open rail holds; an empty rail without it. */
@@ -97,7 +97,7 @@ export interface HarnessProps {
 export function Harness({
   workspace: initialWorkspace = f.northbrook,
   workspaces = f.workspaces,
-  designs,
+  canvases,
   openId: initialOpen,
   initialQuery = null,
   initialSettledOpen = false,
@@ -114,8 +114,8 @@ export function Harness({
   const [filter, setFilter] = useState(initialFilter);
   const [query, setQuery] = useState<string | null>(initialQuery);
   const [settledOpen, setSettledOpen] = useState(initialSettledOpen);
-  const results = query?.trim() ? searchFixtures(query, designs ?? []) : null;
-  const openDesign = useCallback((d: DesignSummary) => setOpenId(d.id), []);
+  const results = query?.trim() ? searchFixtures(query, canvases ?? []) : null;
+  const openCanvas = useCallback((d: CanvasSummary) => setOpenId(d.id), []);
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const shown = useMemo(
     () => ({ workspace, workspaces, onSwitch: setWorkspace }),
@@ -138,10 +138,10 @@ export function Harness({
                     workspace={workspace}
                     workspaces={workspaces}
                     teammates={f.teammates}
-                    designs={designs}
-                    settled={{ count: settledCount, designs: f.settled, expanded: settledOpen }}
+                    canvases={canvases}
+                    settled={{ count: settledCount, canvases: f.settled, expanded: settledOpen }}
                     onSettledExpandedChange={setSettledOpen}
-                    openDesignId={openId}
+                    openCanvasId={openId}
                     collapsed={!open}
                     onExpand={() => setOpen(true)}
                     filter={filter}
@@ -150,13 +150,13 @@ export function Harness({
                     onQueryChange={setQuery}
                     results={results}
                     onOpenResult={(key) => {
-                      if (key.startsWith("design:")) setOpenId(key.slice("design:".length));
+                      if (key.startsWith("canvas:")) setOpenId(key.slice("canvas:".length));
                       setQuery(null);
                     }}
-                    onOpen={openDesign}
+                    onOpen={openCanvas}
                     onAction={ignore}
                     onRename={ignore}
-                    onNewDesign={() => setOpenId(null)}
+                    onNewCanvas={() => setOpenId(null)}
                     onSwitchWorkspace={setWorkspace}
                     onAddWorkspace={ignore}
                     onSettings={ignore}
@@ -178,11 +178,11 @@ export function Harness({
   );
 }
 
-type ChromeOverrides = Partial<Omit<DesignChromeProps, "sidebarOpen">>;
+type ChromeOverrides = Partial<Omit<CanvasChromeProps, "sidebarOpen">>;
 
-/** The chrome of an open design, as the boards draw it. */
-export function DesignChromeHarness({
-  design,
+/** The chrome of an open canvas, as the boards draw it. */
+export function CanvasChromeHarness({
+  canvas,
   sidebarOpen,
   contributors,
   railOpen,
@@ -192,17 +192,17 @@ export function DesignChromeHarness({
   members = f.members,
   overrides = {},
 }: {
-  design: DesignSummary;
+  canvas: CanvasSummary;
   sidebarOpen: boolean;
   /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
   contributors: Contributor[] | null;
   /** Who Share lists. */
-  members?: DesignMember[];
+  members?: CanvasMember[];
   railOpen: boolean;
   /** The window's rail follows the toggle: without it, only the toggle does. */
   onToggleRail?: () => void;
   threadUnseen?: boolean;
-  /** The branch has commits, so a design with no pull request offers Create PR. */
+  /** The branch has commits, so a canvas with no pull request offers Create PR. */
   changes?: boolean;
   overrides?: ChromeOverrides;
 }) {
@@ -210,11 +210,11 @@ export function DesignChromeHarness({
   const [prTab, setPrTab] = useState(false);
   const [own, setOwn] = useState(railOpen);
   const rail = onToggleRail ? railOpen : own;
-  const pr = design.pullRequest;
+  const pr = canvas.pullRequest;
   const action = nextAction(pr, changes);
   return (
-    <DesignChrome
-      name={design.name}
+    <CanvasChrome
+      name={canvas.name}
       sidebarOpen={sidebarOpen}
       pages={f.homePages}
       activePageId={prTab ? null : page}
@@ -224,11 +224,11 @@ export function DesignChromeHarness({
       }}
       onAddPage={ignore}
       team={
-        contributors && design.project.kind === "repo"
+        contributors && canvas.project.kind === "repo"
           ? {
               meId: f.bryce.id,
               contributors,
-              repo: design.project.repo,
+              repo: canvas.project.repo,
               members,
               onOpenRepo: ignore,
             }
@@ -238,7 +238,7 @@ export function DesignChromeHarness({
       action={action ? { kind: action, onRun: ignore } : null}
       rail={{
         open: rail,
-        signal: railSignal(design, threadUnseen),
+        signal: railSignal(canvas, threadUnseen),
         onToggle: onToggleRail ?? (() => setOwn((o) => !o)),
       }}
       {...overrides}

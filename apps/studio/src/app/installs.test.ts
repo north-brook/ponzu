@@ -107,12 +107,12 @@ test("the page's link and the answer are one outcome, acted on once, whichever c
 
 test("links from the shell otherwise pass as they are, the same one twice included", async () => {
   const w = world([]);
-  const design: DeepLink = { kind: "design", designId: "dsn_1" };
-  w.shellSends(design);
+  const canvas: DeepLink = { kind: "canvas", canvasId: "cnv_1" };
+  w.shellSends(canvas);
   w.shellSends({ kind: "github_setup", result: "pending" });
   w.shellSends({ kind: "github_setup", result: "pending" });
   expect(w.heard).toEqual([
-    design,
+    canvas,
     { kind: "github_setup", result: "pending" },
     { kind: "github_setup", result: "pending" },
   ]);

@@ -1,6 +1,6 @@
 /*
  * Drawing the cloud gallery in headless Chromium: build it, serve it, screenshot a composition,
- * draw one of the design's own boards, and compare two pictures. Used by `scripts/visual.ts`
+ * draw one of the mockup's own boards, and compare two pictures. Used by `scripts/visual.ts`
  * and by the gallery's tests. Playwright comes from @ponzu/render, which already depends on it.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -103,8 +103,8 @@ export async function shootComposition(
 }
 
 /**
- * One of the design's boards (an artboard file of a .design folder) at its size, with the
- * design's tokens. Dark swaps the board's `.ui-light` for `.ui-dark`; colors a board writes as
+ * One of the mockup's boards (an artboard file of a .design folder) at its size, with the
+ * mockup's tokens. Dark swaps the board's `.ui-light` for `.ui-dark`; colors a board writes as
  * literals stay light.
  */
 export async function shootBoard(
@@ -135,9 +135,9 @@ async function settle(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
-    // An avatar, and a design's preview, draw their picture only once it has loaded
-    // (ui/avatar.tsx, sidebar/design-preview.tsx).
-    const loading = ["avatar", "design-preview"]
+    // An avatar, and a canvas's preview, draw their picture only once it has loaded
+    // (ui/avatar.tsx, sidebar/canvas-preview.tsx).
+    const loading = ["avatar", "canvas-preview"]
       .map((slot) => `[data-slot="${slot}"][data-status="loading"]`)
       .join(", ");
     for (let tries = 0; tries < 100; tries++) {
@@ -315,7 +315,7 @@ export async function compare(
 /** Where things are in one frame, after layout and the canvas's own resize handling. */
 export interface Frame {
   t: number;
-  /** The canvas pane's edges. */
+  /** The main pane's edges. */
   left: number;
   right: number;
   /** The divider before the tabs, and the one at the rail's edge. */
@@ -324,7 +324,7 @@ export interface Frame {
   /** The first page tab, and the thread toggle. */
   tab: number;
   thread: number;
-  /** The design's name in the chrome: its room's width, and how opaque it is. */
+  /** The canvas's name in the chrome: its room's width, and how opaque it is. */
   title: number;
   titleOpacity: number;
   /** The name's own width inside its room: set once, not re-cut as the room moves. */
@@ -354,7 +354,7 @@ export interface Toggle {
 /**
  * Presses `selector` and records every frame painted until the panes have rested (the window no
  * longer wears `data-pane-motion`, and two frames more). Measured in a ResizeObserver on the
- * canvas pane made after the page's own: where a frame is painted, after the canvas has answered
+ * main pane made after the page's own: where a frame is painted, after the canvas has answered
  * its pane's resize. How many frames that is depends on the machine: assert what holds in each
  * one, never how many there were. The clocks are every transition the press started on what
  * moves with a pane (the panels and `pane-motion`, cloud.css), caught as they are made.

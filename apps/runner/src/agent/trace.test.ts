@@ -53,7 +53,7 @@ function traced(over: Partial<TraceOptions> = {}) {
     {
       sink: (events) => sent.push(events),
       content: false,
-      designId: "des_1",
+      canvasId: "cnv_1",
       workspaceId: "ws_1",
       ...over,
     },
@@ -134,9 +134,9 @@ test("a turn is one trace: its model call and tool call, under the turn's id, fo
     expect(event.groups).toEqual({ workspace: "ws_1" });
     expect(event.properties).toMatchObject({
       $ai_trace_id: "res-turn-1",
-      $ai_session_id: "des_1",
+      $ai_session_id: "cnv_1",
       $session_id: "s-1",
-      design_id: "des_1",
+      canvas_id: "cnv_1",
     });
   }
   const [generation, span, trace] = events.map((e) => e.properties);
@@ -295,7 +295,7 @@ test("a sink that throws never reaches the run", () => {
       throw new Error("PostHog is down");
     },
     content: false,
-    designId: "des_1",
+    canvasId: "cnv_1",
     workspaceId: null,
   });
   trace.observe(assistant("msg_1", [{ type: "text", text: "Hi" }]));

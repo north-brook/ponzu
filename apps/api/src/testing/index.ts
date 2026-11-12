@@ -4,6 +4,7 @@ import type { RunnerBundle } from "@ponzu/runner/bundle";
 import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
 import { createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
+import { DocCache } from "../canvases/doc-cache.ts";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
@@ -12,7 +13,6 @@ import { CLAUDE_SONNET } from "../deps/model.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
-import { DocCache } from "../designs/doc-cache.ts";
 import type { SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
@@ -60,7 +60,7 @@ export const TEST_SCOPE = "7e57000000a0";
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
 /** What the test app's cron route takes as its bearer token. */
 export const TEST_CRON_SECRET = "test_cron_secret_".padEnd(40, "x");
-/** Where the test app says design files are served from. */
+/** Where the test app says canvases' files are served from. */
 export const TEST_ASSETS_URL = "https://assets.test";
 /** The test App's bot, who commits are committed by. */
 export const TEST_BOT_USER_ID = 9_000_001;
@@ -206,7 +206,7 @@ export async function createTestApp(
         image: TEST_IMAGE,
         apiUrl: TEST_API_URL,
         idleSeconds: 300,
-        // Higher than a deployment's, since a test file keeps many designs awake at once.
+        // Higher than a deployment's, since a test file keeps many canvases awake at once.
         limits: { perWorkspace: 100, perOwner: 100 },
         scope: TEST_SCOPE,
         vercel: null,

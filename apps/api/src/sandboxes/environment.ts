@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   type AgentBlocker,
   createRunnerToken,
-  listDesignSecrets,
+  listCanvasSecrets,
   type SandboxRow,
   type WakeContext,
 } from "@ponzu/db";
@@ -12,9 +12,9 @@ import { secretBinding, secretNameProblem } from "../environments/secrets.ts";
 import { RUNNER_TOKEN_SECONDS } from "./constants.ts";
 
 /*
- * What a design's runner starts with (docs/cloud.md, "Environment" and "Credentials"): where the
- * API is, which design, a runner token good for that design alone and new at every start, the
- * bearer of its public port, the bundle it runs, exactly one Claude credential, the design's
+ * What a canvas's runner starts with (docs/cloud.md, "Environment" and "Credentials"): where the
+ * API is, which canvas, a runner token good for that canvas alone and new at every start, the
+ * bearer of its public port, the bundle it runs, exactly one Claude credential, the canvas's
  * owner's, and its repo's secrets, packed into one variable that only the agent's side unpacks
  * (`REPO_SECRETS_VARIABLE`). It goes in the env of the one `ponzu-start` command and nowhere
  * else: not the sandbox's own env, which Vercel keeps and every command inherits, not a file,
@@ -29,7 +29,7 @@ const ENV_LIMITS = { bytes: 64 * 1024 };
 
 type Claude = NonNullable<WakeContext["claude"]>;
 
-/** Why the design's Claude cannot run it now, or null when it can. */
+/** Why the canvas's Claude cannot run it now, or null when it can. */
 export function claudeProblem(claude: WakeContext["claude"], now: number): AgentBlocker | null {
   if (!claude || claude.status === "revoked" || !claude.encryptedCredential) {
     return "claude_not_connected";
@@ -57,28 +57,28 @@ export interface Environment {
   portToken: string;
 }
 
-/** What the port token is sealed to: the design's row. */
-export function portBinding(designId: string) {
-  return { column: "sandboxes.encrypted_port_token", row: designId };
+/** What the port token is sealed to: the canvas's row. */
+export function portBinding(canvasId: string) {
+  return { column: "sandboxes.encrypted_port_token", row: canvasId };
 }
 
 /** Where the API reaches an awake runner, with its port's bearer; null when it has none. */
 export async function runnerTarget(
   { vault }: Pick<Deps, "vault">,
-  row: Pick<SandboxRow, "designId" | "address" | "encryptedPortToken">,
+  row: Pick<SandboxRow, "canvasId" | "address" | "encryptedPortToken">,
 ): Promise<{ url: string; token: string } | null> {
   if (!row.address || !row.encryptedPortToken) return null;
-  const token = await vault.open(row.encryptedPortToken, portBinding(row.designId));
+  const token = await vault.open(row.encryptedPortToken, portBinding(row.canvasId));
   return { url: row.address, token };
 }
 
 /**
- * A new environment for one start of the design's runner, with a runner token and a port token
+ * A new environment for one start of the canvas's runner, with a runner token and a port token
  * made now, and its repo's secrets as they are now.
  */
 export async function newEnvironment(
   deps: Pick<Deps, "db" | "vault" | "config" | "log" | "runnerBundle">,
-  designId: string,
+  canvasId: string,
   claude: Claude,
 ): Promise<Environment> {
   const credential = await deps.vault.open(claude.encryptedCredential!, {
@@ -86,13 +86,13 @@ export async function newEnvironment(
     row: claude.id,
   });
   const [token, secrets] = await Promise.all([
-    createRunnerToken(deps.db, { designId, ttlSeconds: RUNNER_TOKEN_SECONDS }),
-    repoSecrets(deps, designId),
+    createRunnerToken(deps.db, { canvasId, ttlSeconds: RUNNER_TOKEN_SECONDS }),
+    repoSecrets(deps, canvasId),
   ]);
   const portToken = randomBytes(32).toString("base64url");
   const own = {
     PONZU_API_URL: deps.config.sandbox.apiUrl,
-    PONZU_DESIGN_ID: designId,
+    PONZU_CANVAS_ID: canvasId,
     PONZU_RUNNER_TOKEN: token.token,
     PONZU_PORT_TOKEN: portToken,
     PONZU_RUNNER_BUNDLE: deps.runnerBundle().sha256,
@@ -103,7 +103,7 @@ export async function newEnvironment(
       ? { ...own, ANTHROPIC_API_KEY: credential }
       : { ...own, CLAUDE_CODE_OAUTH_TOKEN: credential };
   const plain = asEnv(withClaude);
-  const packed = packSecrets(deps, designId, plain, secrets);
+  const packed = packSecrets(deps, canvasId, plain, secrets);
   return {
     env: packed ? { ...plain, [REPO_SECRETS_VARIABLE]: packed } : plain,
     runnerTokenId: token.id,
@@ -120,15 +120,15 @@ function asEnv(env: StartEnv): Record<string, string> {
 }
 
 /**
- * The design's repo's secrets, opened. Never fails the wake: a name that is not allowed (one
+ * The canvas's repo's secrets, opened. Never fails the wake: a name that is not allowed (one
  * stored before it was reserved) or a value the vault cannot open (sealed with a key since
  * retired) is left out and logged, by count, and the runner starts without it.
  */
 async function repoSecrets(
   deps: Pick<Deps, "db" | "vault" | "log">,
-  designId: string,
+  canvasId: string,
 ): Promise<[name: string, value: string][]> {
-  const sealed = await listDesignSecrets(deps.db, designId);
+  const sealed = await listCanvasSecrets(deps.db, canvasId);
   const opened = await Promise.all(
     sealed.map(async ({ repoId, name, encryptedValue }) => {
       if (secretNameProblem(name)) return null;
@@ -144,7 +144,7 @@ async function repoSecrets(
   );
   const kept = opened.filter((entry) => entry !== null);
   if (kept.length < sealed.length) {
-    deps.log.warn("repo_secrets_skipped", { designId, skipped: sealed.length - kept.length });
+    deps.log.warn("repo_secrets_skipped", { canvasId, skipped: sealed.length - kept.length });
   }
   return kept;
 }
@@ -157,7 +157,7 @@ async function repoSecrets(
  */
 function packSecrets(
   deps: Pick<Deps, "log">,
-  designId: string,
+  canvasId: string,
   own: Record<string, string>,
   secrets: [name: string, value: string][],
 ): string | null {
@@ -176,6 +176,6 @@ function packSecrets(
     used += size;
   }
   const left = secrets.length - fitting.length;
-  if (left > 0) deps.log.warn("repo_secrets_over_limit", { designId, skipped: left });
+  if (left > 0) deps.log.warn("repo_secrets_over_limit", { canvasId, skipped: left });
   return fitting.length > 0 ? encodeRepoSecrets(fitting) : null;
 }

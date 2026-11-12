@@ -2,7 +2,7 @@ export { type Clock, FakeClock, systemClock } from "./clock.ts";
 export { SandboxError, type SandboxErrorCode } from "./errors.ts";
 export { type FakeOptions, FakeSandboxes } from "./fake.ts";
 export {
-  designSandboxName,
+  canvasSandboxName,
   type ParsedSandboxName,
   parseSandboxName,
   scopePrefix,

@@ -8,7 +8,7 @@ const studio = [STUDIO_ORIGIN, "http://localhost:5173"];
 
 test("the window stays on the studio", () => {
   expect(isStudio("ponzu-studio://app/", studio)).toBe(true);
-  expect(isStudio("ponzu-studio://app/design/dsn_1?x=1", studio)).toBe(true);
+  expect(isStudio("ponzu-studio://app/canvas/cnv_1?x=1", studio)).toBe(true);
   expect(isStudio("http://localhost:5173/", studio)).toBe(true);
   for (const url of [
     "ponzu-studio://other/",
@@ -31,7 +31,7 @@ test("only plain https links leave for the browser", () => {
   for (const url of [
     "http://example.com/",
     "file:///Applications/Calculator.app",
-    "ponzu://design/dsn_1",
+    "ponzu://canvas/cnv_1",
     "vscode://file/etc/hosts",
     "javascript:alert(1)",
     "https://user:pass@example.com/",

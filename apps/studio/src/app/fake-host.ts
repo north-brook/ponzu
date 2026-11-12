@@ -8,7 +8,7 @@ import { linksWithInstalls } from "./installs.ts";
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
  * (@ponzu/client/testing) for someone on their first run. Their team's workspace is set up,
- * with a design an agent has drawn on; their own GitHub account is not, and its install page
+ * with a canvas an agent has drawn on; their own GitHub account is not, and its install page
  * finishes at the next sync (as coming back from GitHub does). claude.ai takes any code but one
  * starting "wrong". It starts signed out; Continue with GitHub signs in at once.
  * `window.ponzuFake` hands the test the backend, to play GitHub, the agent and teammates with.
@@ -38,10 +38,10 @@ export interface FakeWorld {
   personalId: string;
   /** Every address the app opened in the system browser. */
   opened: string[];
-  /** Draw a board on the design's first page, as its agent. */
-  drawBoard(designId: string, name: string, color?: string): string;
+  /** Draw a board on the canvas's first page, as its agent. */
+  drawBoard(canvasId: string, name: string, color?: string): string;
   /** Reply in a comment thread, as the teammate. */
-  reply(designId: string, threadId: string, text: string): Promise<void>;
+  reply(canvasId: string, threadId: string, text: string): Promise<void>;
   /** Send a ponzu:// link, as the shell would. */
   link(link: DeepLink): void;
   command(command: MenuCommand): void;
@@ -134,8 +134,8 @@ export function fakeHost(): Host {
     comeForward: () => {},
   });
 
-  const drawBoard = (designId: string, name: string, color = "#ffc81e") => {
-    const doc = backend.design(designId).sequencer.doc;
+  const drawBoard = (canvasId: string, name: string, color = "#ffc81e") => {
+    const doc = backend.canvas(canvasId).sequencer.doc;
     const page = doc.pages[0]!;
     const id = newId("ab");
     const artboard: Artboard = {
@@ -168,7 +168,7 @@ export function fakeHost(): Host {
       },
     };
     const op: Op = { op: "artboard.create", page: page.id, index: page.artboards.length, artboard };
-    backend.agent(designId).commit([op]);
+    backend.agent(canvasId).commit([op]);
     return id;
   };
 
@@ -185,10 +185,10 @@ export function fakeHost(): Host {
     personalId: personal.id,
     opened,
     drawBoard,
-    async reply(designId, threadId, text) {
+    async reply(canvasId, threadId, text) {
       const author = { kind: "user" as const, id: teammate.id, name: teammate.name ?? "Sam" };
       const message = { id: newId("m"), author, text, createdAt: Date.now() };
-      await teammateApi.designs.commit(designId, [
+      await teammateApi.canvases.commit(canvasId, [
         { id: newOpId(), op: { op: "thread.message", id: threadId, message } },
       ]);
     },
@@ -273,7 +273,7 @@ function countAnswers(api: object, answers: FakeWorld["answers"]) {
   }
 }
 
-/** One design the agent has worked on, so the sidebar and a canvas have something in them. */
+/** One canvas the agent has worked on, so the sidebar and the boards have something in them. */
 async function seed(
   backend: FakeBackend,
   api: Host["api"],
@@ -282,11 +282,11 @@ async function seed(
   drawBoard: FakeWorld["drawBoard"],
   teammate: FakePerson,
 ) {
-  const design = await api.designs.create({ workspaceId, repoId, name: "Onboarding flow" });
-  drawBoard(design.id, "Welcome");
-  drawBoard(design.id, "Pick a repo", "#f4f3ef");
-  backend.agent(design.id).say("I drew the welcome screen and the repo picker.");
-  await backend.connect(teammate).api.designs.presence(design.id);
+  const canvas = await api.canvases.create({ workspaceId, repoId, name: "Onboarding flow" });
+  drawBoard(canvas.id, "Welcome");
+  drawBoard(canvas.id, "Pick a repo", "#f4f3ef");
+  backend.agent(canvas.id).say("I drew the welcome screen and the repo picker.");
+  await backend.connect(teammate).api.canvases.presence(canvas.id);
 }
 
 /**

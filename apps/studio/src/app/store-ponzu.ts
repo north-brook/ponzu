@@ -9,7 +9,7 @@ import {
 import { MutationObserver, type MutationOptions, type QueryClient } from "@tanstack/react-query";
 
 /*
- * What an open design's stores ask the API through: the window's one QueryClient and the
+ * What an open canvas's stores ask the API through: the window's one QueryClient and the
  * client's query and mutation options, so their requests share its cache (a pull request read
  * by the tab and by an action's answer is one entry) and its rules (what is retried, what is
  * kept). The stores stay plain classes because what they hold is a live query merged with

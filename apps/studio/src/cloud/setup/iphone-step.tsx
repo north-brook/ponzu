@@ -24,10 +24,10 @@ export function IphoneStep({
     <StepLayout
       progress={3}
       title="Get Ponzu on your iPhone"
-      body="Comment on designs and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
+      body="Comment on canvases and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
       actions={
         <StepButton onClick={onStart} busy={starting}>
-          Start designing
+          Start building
         </StepButton>
       }
       below={<PhoneMock />}
@@ -57,7 +57,7 @@ export function IphoneCard() {
           Scan with your iPhone
         </span>
         <span className="text-13 text-muted leading-[1.5]">
-          Sign in with the same GitHub account. Every design is already there.
+          Sign in with the same GitHub account. Every canvas is already there.
         </span>
       </div>
     </SetupCard>

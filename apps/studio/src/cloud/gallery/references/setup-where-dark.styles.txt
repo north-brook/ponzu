@@ -6,8 +6,8 @@ ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(58, 57, 54)
 ground span[Setup] rgb(58, 57, 54)
-text "Where do you design?" rgb(244, 243, 239) 600 28px Funnel Display
-text "Design on your real product, with your …" rgb(183, 179, 169) 400 15px Inter
+text "Where do you build?" rgb(244, 243, 239) 600 28px Funnel Display
+text "Build on your real product, with your t…" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
 image img bryce.svg
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px

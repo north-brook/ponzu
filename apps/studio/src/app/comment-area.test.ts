@@ -69,7 +69,7 @@ test("a small board shows whole, centred, on its ground", () => {
   expect(inside(pin, area)).toBe(true);
 });
 
-test("a pin on the open canvas between two boards shows both, and the ground between", () => {
+test("a pin on the ground between two boards shows both, and the ground between", () => {
   const left: Rect = { x: 0, y: 0, w: 1440, h: 900 };
   const right: Rect = { x: 1640, y: 0, w: 1440, h: 900 };
   const pin = { x: 1540, y: 300 };
@@ -96,7 +96,7 @@ test("a pin far from every board reaches the nearest, and never leaves the pictu
   expect(inside(pin, area)).toBe(true);
 });
 
-test("a pin on the open canvas with no board in reach has no picture: it would be empty", () => {
+test("a pin on the ground with no board in reach has no picture: it would be empty", () => {
   const board: Rect = { x: 0, y: 0, w: 1440, h: 900 };
   const far = { x: 5000, y: 5000 };
   expect(pictureArea({ pin: far, boards: [board], board: null, node: null, aspect: ASPECT })).toBe(

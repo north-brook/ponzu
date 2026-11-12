@@ -2,7 +2,7 @@ import { app, Menu, shell } from "electron";
 import type { MenuCommand } from "./bridge.ts";
 
 /*
- * The app's menus. What the studio carries out (a new design, Settings) goes to it as a
+ * The app's menus. What the studio carries out (a new canvas, Settings) goes to it as a
  * command, so a shortcut does the same thing from anywhere in the window; signing out and
  * updating are the main process's own.
  */
@@ -59,9 +59,9 @@ export function buildMenu(actions: MenuActions): void {
       label: "File",
       submenu: [
         {
-          label: "New Design",
+          label: "New Canvas",
           accelerator: "CmdOrCtrl+N",
-          click: () => actions.command("new-design"),
+          click: () => actions.command("new-canvas"),
         },
         { type: "separator" },
         mac ? { role: "close" } : { role: "quit" },
@@ -70,9 +70,9 @@ export function buildMenu(actions: MenuActions): void {
     { role: "editMenu" },
     {
       label: "View",
-      // No zoom roles, as in 1.x: the studio takes ⌘0 (the create page) with ⌘1–9 (designs),
-      // and the canvas takes ⌘= and ⌘- for its own zoom. Electron's default menu would make
-      // ⌘0 Actual Size and scale the whole window.
+      // No zoom roles, as in 1.x: the studio takes ⌘0 (the create page) with ⌘1–9 (canvases),
+      // and the boards view takes ⌘= and ⌘- for its own zoom. Electron's default menu would
+      // make ⌘0 Actual Size and scale the whole window.
       submenu: [
         // The studio takes these keys itself, from anywhere in the window (text fields too), and
         // the page has a key before the menu does; a click here reaches it as a command. It

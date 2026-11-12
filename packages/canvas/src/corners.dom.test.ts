@@ -6,7 +6,7 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
 
 /*
  * A board whose root has a border-radius, drawn by the canvas in a real browser: its corners are
- * the design's, not squared off by the canvas's own few px, and its sheet, shadow and working
+ * the board's own, not squared off by the view's few px, and its sheet, shadow and working
  * ring follow them. The second run of the Mac app drew a 16px card square while the sandbox's
  * screenshot showed it round.
  */

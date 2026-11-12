@@ -85,7 +85,7 @@ describe("the gates, on the API's answers", () => {
     expect(await stepOf(second)).toBe("iphone");
   });
 
-  test("losing the only workspace to a suspension sends the person back to where they design", async () => {
+  test("losing the only workspace to a suspension sends the person back to where they build", async () => {
     const { backend, maya, own } = world();
     backend.install(own.id);
     backend.finishStep(maya.id, "where");

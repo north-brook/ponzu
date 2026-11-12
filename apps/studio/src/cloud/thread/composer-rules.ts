@@ -28,14 +28,14 @@ export function composerButton({
 }
 
 /*
- * Drafts: what someone started typing to a design stays with that design, through switching
- * designs and restarting the app. Kept in the browser's storage, one key per person and design,
+ * Drafts: what someone started typing to a canvas stays with that canvas, through switching
+ * canvases and restarting the app. Kept in the browser's storage, one key per person and canvas,
  * and nowhere else: a draft is the person's own until they send it, so someone else signing in
  * on the same Mac never sees it, and signing out clears them all.
  */
 
 const PREFIX = "ponzu.draft.";
-const keyOf = (meId: string, designId: string) => `${PREFIX}${meId}.${designId}`;
+const keyOf = (meId: string, canvasId: string) => `${PREFIX}${meId}.${canvasId}`;
 const listeners = new Set<() => void>();
 
 function storage(): Storage | null {
@@ -49,8 +49,8 @@ function storage(): Storage | null {
 /** Without storage (a locked-down window), drafts last as long as the page. */
 const memory = new Map<string, string>();
 
-export function readDraft(meId: string, designId: string): string {
-  const key = keyOf(meId, designId);
+export function readDraft(meId: string, canvasId: string): string {
+  const key = keyOf(meId, canvasId);
   try {
     return storage()?.getItem(key) ?? memory.get(key) ?? "";
   } catch {
@@ -58,8 +58,8 @@ export function readDraft(meId: string, designId: string): string {
   }
 }
 
-export function writeDraft(meId: string, designId: string, text: string): void {
-  const key = keyOf(meId, designId);
+export function writeDraft(meId: string, canvasId: string, text: string): void {
+  const key = keyOf(meId, canvasId);
   const empty = !text.trim();
   if (empty) memory.delete(key);
   else memory.set(key, text);
@@ -85,16 +85,16 @@ export function clearDrafts(): void {
   for (const listener of listeners) listener();
 }
 
-/** The viewer's draft for a design, and a setter that keeps it. */
-export function useDraft(meId: string, designId: string): [string, (text: string) => void] {
+/** The viewer's draft for a canvas, and a setter that keeps it. */
+export function useDraft(meId: string, canvasId: string): [string, (text: string) => void] {
   const text = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => readDraft(meId, designId),
+    () => readDraft(meId, canvasId),
   );
-  const set = useCallback((next: string) => writeDraft(meId, designId, next), [meId, designId]);
+  const set = useCallback((next: string) => writeDraft(meId, canvasId, next), [meId, canvasId]);
   return [text, set];
 }
 

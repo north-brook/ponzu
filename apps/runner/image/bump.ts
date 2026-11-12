@@ -356,7 +356,7 @@ export function pullRequest(r: RunResults) {
     "",
     "1. Read the release notes above for anything that changes how the runner drives Claude Code: permissions, hooks, sessions, the SDK's options and messages (apps/runner/src/agent/sdk.ts).",
     "2. The table must be all passes. A typecheck failure means the SDK's API changed: fix the runner in this branch. A failing check or turn with a passing typecheck means Claude Code behaves differently: read the log.",
-    '3. Merging ships the image with the next API deploy; each design moves to it at its next wake (docs/cloud.md, "How images roll out").',
+    '3. Merging ships the image with the next API deploy; each canvas moves to it at its next wake (docs/cloud.md, "How images roll out").',
     "",
     `Made by [this run](${r.runUrl}) of the Claude Code workflow (apps/runner/image/bump.ts). Nothing merges it but a person.`,
   );

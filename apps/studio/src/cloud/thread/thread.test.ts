@@ -332,16 +332,16 @@ test("Stop while working with nothing typed; Send once there is something to sen
   expect(composerButton({ ...base, working: true, gate })).toBe("stop");
 });
 
-test("drafts are kept per person and design, and signing out clears them", () => {
-  writeDraft("bryce", "dsn_hero", "Calmer, and keep the green");
-  writeDraft("maya", "dsn_hero", "Try the serif smaller");
-  expect(readDraft("bryce", "dsn_hero")).toBe("Calmer, and keep the green");
+test("drafts are kept per person and canvas, and signing out clears them", () => {
+  writeDraft("bryce", "cnv_hero", "Calmer, and keep the green");
+  writeDraft("maya", "cnv_hero", "Try the serif smaller");
+  expect(readDraft("bryce", "cnv_hero")).toBe("Calmer, and keep the green");
   // Someone else signed in on the same Mac sees their own draft, not yours.
-  expect(readDraft("maya", "dsn_hero")).toBe("Try the serif smaller");
-  expect(readDraft("bryce", "dsn_other")).toBe("");
+  expect(readDraft("maya", "cnv_hero")).toBe("Try the serif smaller");
+  expect(readDraft("bryce", "cnv_other")).toBe("");
   clearDrafts();
-  expect(readDraft("bryce", "dsn_hero")).toBe("");
-  expect(readDraft("maya", "dsn_hero")).toBe("");
+  expect(readDraft("bryce", "cnv_hero")).toBe("");
+  expect(readDraft("maya", "cnv_hero")).toBe("");
 });
 
 test("a message that failed to send comes back ahead of what was typed since", () => {

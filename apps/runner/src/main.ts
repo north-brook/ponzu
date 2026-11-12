@@ -1,5 +1,5 @@
 /*
- * The runner's entry: `bun runner.js` in a design's sandbox, started and restarted by the
+ * The runner's entry: `bun runner.js` in a canvas's sandbox, started and restarted by the
  * supervisor (supervise.ts), which the API starts with a detached command at every start of the
  * sandbox. README.md has its environment and how to run it elsewhere.
  */
@@ -80,7 +80,7 @@ const helperFile = join(
 const runner = new Runner({
   api: new HttpRunnerApi({
     baseUrl: env.apiUrl,
-    designId: env.designId,
+    canvasId: env.canvasId,
     token: env.token,
     client,
   }),
@@ -91,7 +91,7 @@ const runner = new Runner({
     env: agentEnv(process.env),
   }),
   ...(env.asAgent ? { files: agentFiles(env.asAgent, agentEnv(process.env)) } : {}),
-  // The repo's dev server is on this machine, so a design may load from it.
+  // The repo's dev server is on this machine, so a canvas may load from it.
   renderer: new ChromiumRenderer({
     loopback: true,
     ...(env.chromium ? { executablePath: env.chromium } : {}),
@@ -134,7 +134,7 @@ const runner = new Runner({
       session.repo && session.branch
         ? new GitWork({
             cwd,
-            designId: session.design.id,
+            canvasId: session.canvas.id,
             branch: session.branch,
             defaultBranch: session.repo.defaultBranch,
             // The image's git already runs as the agent; elsewhere the agent is this user.
@@ -146,7 +146,7 @@ const runner = new Runner({
     return { transcripts, work };
   },
   boot,
-  // The runner pushes the design's branch with the agent's git, so the checkout stays theirs.
+  // The runner pushes the canvas's branch with the agent's git, so the checkout stays theirs.
   checkoutGit: (cwd) => gitIn(agentShell(undefined, agentEnv(process.env)), env.git ?? "git", cwd),
   // A token goes to git once GitHub's git endpoint honours it for a push (git-token.ts).
   gitProbe: receivePackProbe(),
@@ -155,7 +155,7 @@ const runner = new Runner({
   // With content on, what the agent saw and said is scrubbed of every secret its environment holds.
   telemetry: (config) =>
     posthogTelemetry(config, { log, secrets: secretValues(process.env), client }),
-  event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
+  event: (name, fields) => log(JSON.stringify({ event: name, canvasId: env.canvasId, ...fields })),
   onFatal: () => {
     server.stop();
     process.exit(EXIT_CONFIG);

@@ -12,8 +12,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { LEDGER_REASONS, USAGE_KINDS, USAGE_PAYERS } from "../enums.ts";
 import { users, workspaces } from "./accounts.ts";
+import { canvases } from "./canvases.ts";
 import { createdAt, instant, oneOf } from "./columns.ts";
-import { designs } from "./designs.ts";
 
 /** What a model costs us, in millionths of a dollar per million tokens. */
 export interface ModelRate {
@@ -59,7 +59,7 @@ export const usageEvents = pgTable(
     workspaceId: text("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "restrict" }),
-    designId: text("design_id").references(() => designs.id, { onDelete: "set null" }),
+    canvasId: text("canvas_id").references(() => canvases.id, { onDelete: "set null" }),
     /** Who the usage is put down to. */
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     kind: text("kind", { enum: USAGE_KINDS }).notNull(),
@@ -82,8 +82,8 @@ export const usageEvents = pgTable(
   },
   (t) => [
     index("usage_events_workspace_id_occurred_at_idx").on(t.workspaceId, t.occurredAt),
-    // Deleting a design clears it from its usage; without this that reads the whole table.
-    index("usage_events_design_id_idx").on(t.designId),
+    // Deleting a canvas clears it from its usage; without this that reads the whole table.
+    index("usage_events_canvas_id_idx").on(t.canvasId),
     check("usage_events_kind_check", oneOf(t.kind, USAGE_KINDS)),
     check("usage_events_payer_check", oneOf(t.payer, USAGE_PAYERS)),
     check("usage_events_seconds_check", sql`(${t.kind} = 'sandbox') = (${t.seconds} is not null)`),

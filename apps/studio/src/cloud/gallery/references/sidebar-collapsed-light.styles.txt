@@ -37,7 +37,7 @@ text "Northbrook" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
 icon svg[Search] 16×16 rgb(86, 83, 77) stroke 1.7px
 icon svg[Filter] 16×16 rgb(86, 83, 77) stroke 1.7px
-icon svg[New design] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[New canvas] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground button[Quieter shop hero, 2 waiting for you, f…] rgb(255, 255, 255)
 ground span[Quieter shop hero, 2 waiting for you, f…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 image img[Quieter shop hero, 2 waiting for you, f…] hero.png
@@ -98,5 +98,5 @@ icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(169, 165, 155) s
 text "pz/relaunch" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
-icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
+icon svg[Canvases] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px

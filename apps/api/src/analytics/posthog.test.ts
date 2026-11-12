@@ -50,18 +50,18 @@ function connected() {
 
 const scope = {
   userId: () => "usr_ada",
-  designId: () => null,
+  canvasId: () => null,
   sessionId: "0192e0a0-0000-7000-8000-000000000001",
   requestId: "req_1",
-  route: () => "POST /v1/designs",
+  route: () => "POST /v1/canvases",
   workspaceId: "ws_1",
 };
 
 test("an event reaches PostHog under the project token, the person, the workspace and the session", async () => {
   const { ph, analytics, client, sent } = connected();
   withScope(scope, () =>
-    analytics.capture("design created", {
-      design_id: "des_1",
+    analytics.capture("canvas created", {
+      canvas_id: "cnv_1",
       source: "idea",
       with_message: true,
       model: null,
@@ -73,10 +73,10 @@ test("an event reaches PostHog under the project token, the person, the workspac
   expect(ph.batches[0]!.api_key).toBe("phc_dev");
   const [event] = ph.events();
   expect(event).toMatchObject({
-    event: "design created",
+    event: "canvas created",
     distinct_id: "usr_ada",
     properties: {
-      design_id: "des_1",
+      canvas_id: "cnv_1",
       source: "idea",
       workspace_id: "ws_1",
       $session_id: "0192e0a0-0000-7000-8000-000000000001",
@@ -127,7 +127,7 @@ test("people and workspaces get their profiles, and an exception goes to error t
   });
   expect(byName.get("$exception")).toMatchObject({
     distinct_id: "usr_ada",
-    properties: { route: "POST /v1/designs", request_id: "req_1", status: 500 },
+    properties: { route: "POST /v1/canvases", request_id: "req_1", status: 500 },
   });
   await client.shutdown();
 });

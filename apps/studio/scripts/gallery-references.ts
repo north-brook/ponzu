@@ -32,9 +32,9 @@ import {
 const TOLERANCE = 0.002;
 
 /**
- * The part of the app a composition shows: first run's steps; creating a design; a workspace's
+ * The part of the app a composition shows: first run's steps; starting a canvas; a workspace's
  * GitHub, environments and plan in settings; the rest of settings and the dialogs beside them
- * (setup-compositions.ts); the sidebar; the people in a design (sharing, the thread rail, working
+ * (setup-compositions.ts); the sidebar; the people in a canvas (sharing, the thread rail, working
  * together); or the window around the canvas (its chrome, a question, the pull request tab, the
  * smallest window).
  */
@@ -50,7 +50,7 @@ export function areaOf(c: Composition): Area {
   if (/^settings-(github|environments|plan)|^free-credits/.test(c.id)) return "workspace";
   if (SETUP.has(c.id)) return "settings";
   if (c.id.includes("sidebar")) return "sidebar";
-  if (/^share|^thread-in-the-right-rail$|^together-on-a-design$/.test(c.id)) return "people";
+  if (/^share|^thread-in-the-right-rail$|^together-on-a-canvas$/.test(c.id)) return "people";
   return "window";
 }
 

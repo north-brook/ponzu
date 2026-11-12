@@ -1,7 +1,7 @@
 import { countWorkspacePeople, listUserWorkspaces, type User, type WorkspaceKind } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 
-/** One row of the "Where do you design?" step: a GitHub account the person could design in. */
+/** One row of the "Where do you build?" step: a GitHub account the person could build in. */
 export interface GithubAccountRow {
   githubAccountId: number;
   login: string;

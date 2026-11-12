@@ -2,7 +2,7 @@ import { type Api, ApiError } from "@ponzu/client";
 import type { Doc, Op, Origin } from "@ponzu/core";
 
 /*
- * The pictures of the comments the viewer leaves on one design's canvas. Each comment or reply
+ * The pictures of the comments the viewer leaves on one canvas's boards. Each comment or reply
  * they send is drawn the moment it reaches the document (`drawCommentPicture`, from the document
  * as it is then), and given to its thread item once the API has it: uploaded straight to
  * storage, then attached once the comment's op is committed. The comment goes as it always has;
@@ -28,7 +28,7 @@ export type LocalPicture =
   | { state: "drawn"; light: string; dark: string };
 
 export interface CommentPicturesOptions {
-  designId: string;
+  canvasId: string;
   /** The person viewing: their comments are the ones drawn. */
   meId: string;
   source: {
@@ -37,7 +37,7 @@ export interface CommentPicturesOptions {
     saved(): Promise<void>;
     assetBase?: string | undefined;
   };
-  api: Pick<Api["designs"], "uploadCommentPicture" | "attachCommentPicture">;
+  api: Pick<Api["canvases"], "uploadCommentPicture" | "attachCommentPicture">;
   /** Draws a comment's picture in both themes (`drawCommentPicture`). */
   draw: (comment: {
     doc: Doc;
@@ -105,7 +105,7 @@ export class CommentPictures {
 
   private async make(doc: Doc, threadId: string, messageId: string): Promise<void> {
     if (this.closed) return;
-    const { api, designId, source } = this.opts;
+    const { api, canvasId, source } = this.opts;
     let files: Record<Theme, Blob>;
     try {
       files = await this.opts.draw({ doc, threadId, messageId, assetBase: source.assetBase });
@@ -122,7 +122,7 @@ export class CommentPictures {
     void (async () => {
       try {
         const bytes = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
-        const uploads = await api.uploadCommentPicture(designId, messageId, {
+        const uploads = await api.uploadCommentPicture(canvasId, messageId, {
           light: await bytes(files.light),
           dark: await bytes(files.dark),
         });
@@ -141,7 +141,7 @@ export class CommentPictures {
     for (let tried = 1; ; tried++) {
       if (this.closed) return;
       try {
-        await this.opts.api.attachCommentPicture(this.opts.designId, messageId, uploads);
+        await this.opts.api.attachCommentPicture(this.opts.canvasId, messageId, uploads);
         return;
       } catch (error) {
         const notYet = error instanceof ApiError && error.status === 404;

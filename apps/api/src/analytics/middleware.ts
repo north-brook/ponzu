@@ -14,7 +14,7 @@ export const DISTINCT_ID_HEADER = "x-posthog-distinct-id";
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Runs the rest of the request inside its analytics scope (`scope.ts`): the person and design
+ * Runs the rest of the request inside its analytics scope (`scope.ts`): the person and canvas
  * as the route's access declaration finds them, the app's PostHog session, the request's id,
  * and the route as declared. Whatever captures during the request, or in work it starts, says
  * only what happened.
@@ -27,9 +27,9 @@ export const analyticsScope: MiddlewareHandler<AppEnv> = (c, next) => {
         const actor = c.get("actor");
         return actor?.kind === "user" ? actor.user.id : null;
       },
-      designId: () => {
+      canvasId: () => {
         const actor = c.get("actor");
-        return actor?.kind === "runner" ? actor.designId : null;
+        return actor?.kind === "runner" ? actor.canvasId : null;
       },
       sessionId: given && SESSION_ID.test(given) ? given.toLowerCase() : null,
       requestId: c.var.requestId,

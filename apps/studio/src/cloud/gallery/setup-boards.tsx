@@ -27,7 +27,7 @@ function OnSend({ children }: { children: (dismiss: () => void, open: boolean) =
   const [open, setOpen] = useState(true);
   return (
     <>
-      <Harness designs={f.soloDesigns} openId={null}>
+      <Harness canvases={f.soloCanvases} openId={null}>
         <CreateHarness initialPrompt={PROMPT} />
       </Harness>
       {children(() => setOpen(false), open)}
@@ -143,7 +143,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         ...TEAM_SETTINGS,
         byPerson: s.byPersonWithNobody,
         unattributedCredits: s.unattributedCredits,
-        byDesign: s.byDesign,
+        byCanvas: s.byCanvas,
       }}
     />
   ),

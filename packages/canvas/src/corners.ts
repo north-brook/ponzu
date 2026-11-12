@@ -2,15 +2,15 @@ import type { Artboard } from "@ponzu/core";
 
 /*
  * A board's corners on the canvas. The canvas rounds every board a touch (a few screen px at any
- * zoom), and a design whose root has its own border-radius keeps it: each corner is the larger
+ * zoom), and a board whose root has its own border-radius keeps it: each corner is the larger
  * of the two. The same radii shape everything drawn round the board: its sheet and shadow, the
  * live board's root in its shadow root, the arrival's outlines, the working ring and the frame
- * that draws a new board in. Thumbnails, screenshots and exports draw the design's own corners
- * (packages/render), which this matches whenever the design's are the larger.
+ * that draws a new board in. Thumbnails, screenshots and exports draw the board's own corners
+ * (packages/render), which this matches whenever the board's are the larger.
  *
  * The live board measures its root's radii as the browser resolves them (measureCorners), so a
  * token, a calc() or a % rounds the sheet, ring and frame just as it rounds the content. Until a
- * board has been live the canvas guesses from the document (designCorners), which reads only px.
+ * board has been live the canvas guesses from the document (ownCorners), which reads only px.
  */
 
 /** Top left, top right, bottom right, bottom left, in board px. */
@@ -36,10 +36,11 @@ function px(v: string): number | null {
 }
 
 /**
- * The radii the design gives its root (inline, as the document keeps them), or null when it gives
- * one the canvas can't read as px: the first paint's guess, before the live board measures them.
+ * The radii a board's own CSS gives its root (inline, as the document keeps them), or null when
+ * it gives one the canvas can't read as px: the first paint's guess, before the live board
+ * measures them.
  */
-export function designCorners(ab: Pick<Artboard, "root">): Corners | null {
+export function ownCorners(ab: Pick<Artboard, "root">): Corners | null {
   // The document keeps properties kebab-case (core's parseStyle and toKebab).
   const style = ab.root.style as Record<string, string | undefined>;
   const corners = [0, 0, 0, 0];
@@ -88,7 +89,7 @@ export function lengths(v: string): string[] {
 }
 
 /**
- * The radii the browser gives a board's root, in its own px: whatever the design wrote, a token
+ * The radii the browser gives a board's root, in its own px: whatever the board's CSS says, a token
  * (`var(--radius-lg)`), a calc() or a %, resolved against the root's box. Null while the root has
  * no box to resolve against. Read it before the canvas rounds the root itself.
  */
@@ -110,7 +111,7 @@ export function measureCorners(root: HTMLElement): Radii | null {
   const h = root.offsetHeight;
   if (!w || !h) return null;
   // Each corner's two lengths become a probe's width and height in a box the root's size, so the
-  // browser resolves them just as it does the radius. Reset and inline, so the design's own
+  // browser resolves them just as it does the radius. Reset and inline, so the board's own
   // stylesheet can't size them.
   const doc = root.ownerDocument;
   const box = doc.createElement("div");
@@ -133,7 +134,7 @@ export function measureCorners(root: HTMLElement): Radii | null {
   return { x: x as unknown as Corners, y: y as unknown as Corners };
 }
 
-/** One side's four radii as CSS, each the design's or `least` where that is larger. */
+/** One side's four radii as CSS, each the board's own or `least` where that is larger. */
 function side(c: Corners, each: (r: number) => string): string {
   const [a, b, cc, d] = c.map(each);
   return a === b && b === cc && cc === d ? a! : `${a} ${b} ${cc} ${d}`;
@@ -147,11 +148,11 @@ function pair(r: Radii, each: (n: number) => string): string {
 }
 
 /**
- * The board's border-radius: each of the design's corners, or the canvas's own `least` (a CSS
+ * The board's border-radius: each of its own corners, or the view's `least` (a CSS
  * length, `var(--pz-board-radius)` say) where that is larger.
  */
-export function cornersCss(design: Radii, least: string): string {
-  return pair(design, (r) => (r > 0 ? `max(${round(r)}px, ${least})` : least));
+export function cornersCss(own: Radii, least: string): string {
+  return pair(own, (r) => (r > 0 ? `max(${round(r)}px, ${least})` : least));
 }
 
 /**

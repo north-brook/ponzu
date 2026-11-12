@@ -50,7 +50,7 @@ const schema = z.object({
   /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
   NEON_REALTIME_URL: z.url(),
   NEON_REALTIME_SECRET: z.string(),
-  /** Where design files are served from, without a trailing slash: `https://assets.ponzu.cloud`. */
+  /** Where canvases' files are served from, without a trailing slash: `https://assets.ponzu.cloud`. */
   PONZU_ASSETS_URL: z.url(),
   /** The Cloudflare R2 bucket behind PONZU_ASSETS_URL, and an API token that can write it. */
   R2_ACCOUNT_ID: z.string().regex(/^[0-9a-f]{32}$/),
@@ -91,7 +91,7 @@ const schema = z.object({
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
 });
 
-/** How designs' sandboxes are made and kept. */
+/** How canvases' sandboxes are made and kept. */
 export interface SandboxConfig {
   /**
    * The image every sandbox runs: `ponzu-runner@sha256:…` in the ponzu-api project's container

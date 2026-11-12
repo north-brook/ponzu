@@ -5,7 +5,7 @@ import { HANDOFF_WAIT_MS } from "@ponzu/core/handoff";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DownloadArrow, Slice } from "@/components/icons";
 import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
-import { appOf } from "../designs/[id]/app-link";
+import { appOf } from "../canvases/[id]/app-link";
 
 /*
  * Hands the design in the page's #fragment to Ponzu as a ponzu://open link, which the Mac app and

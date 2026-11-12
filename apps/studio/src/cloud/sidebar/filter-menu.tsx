@@ -1,6 +1,6 @@
 import { FilterMailIcon, UserGroupIcon } from "@hugeicons/core-free-icons";
 import {
-  type DesignFilter,
+  type CanvasFilter,
   isFiltering,
   isProjectChecked,
   type ProjectCount,
@@ -26,8 +26,8 @@ import {
 const EVERYONE = "everyone";
 
 /**
- * Narrows the design list by who started a design (one person, or everyone) and by project
- * (checkboxes for each repo and Scratch, with how many designs each has). It changes the list as
+ * Narrows the canvas list by who started a canvas (one person, or everyone) and by project
+ * (checkboxes for each repo and Scratch, with how many canvases each has). It changes the list as
  * you choose and stays open until you click away. A small yuzu dot on the icon says a filter is
  * on. A personal workspace has nobody else to filter by, so no Person section; with nothing to
  * choose either, there is no Filter at all.
@@ -39,8 +39,8 @@ export function FilterMenu({
   teammates,
   projects,
 }: {
-  filter: DesignFilter;
-  onChange: (filter: DesignFilter) => void;
+  filter: CanvasFilter;
+  onChange: (filter: CanvasFilter) => void;
   me: Person;
   /** Null in a personal workspace. */
   teammates: Person[] | null;

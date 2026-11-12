@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 /*
  * Whether nobody can be watching the window, so nothing in it should loop: it's hidden
- * (minimized, on another Space, a background tab), or it's out of focus on battery. A design
+ * (minimized, on another Space, a background tab), or it's out of focus on battery. A canvas
  * looping behind another app drained a MacBook Air in an afternoon. Plugged in, a window beside
  * the one you're in keeps playing.
  */

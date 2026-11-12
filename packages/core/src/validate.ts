@@ -35,7 +35,7 @@ export class InvalidOpError extends Error {
  * doesn't, the right types, well-formed ids and names, text the database can hold, and sizes
  * within limits.ts. Returns the input itself, typed, or throws `InvalidOpError`.
  *
- * This is the shape only. Whether the op fits a design is `applyOp`'s to say, and what its
+ * This is the shape only. Whether the op fits a canvas is `applyOp`'s to say, and what its
  * nodes may hold is `sanitizeOp`'s.
  */
 export function validateOp(input: unknown): Op {

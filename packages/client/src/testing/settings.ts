@@ -45,8 +45,8 @@ export interface SettingsWorld {
   repo(repoId: string): { id: string; fullName: string; workspaceId: string; canPush: boolean };
   /** The repos of a workspace the person can read. */
   repos(workspaceId: string): { id: string }[];
-  /** Some design was made on the repo: its start builds the repo's base. */
-  designedIn(repoId: string): boolean;
+  /** Some canvas was made on the repo: its start builds the repo's base. */
+  hasCanvasIn(repoId: string): boolean;
   person(userId: string): {
     id: string;
     name: string | null;
@@ -158,7 +158,7 @@ export class FakeSettings {
           ? [...workspace.members.keys()].map(row).sort((a, b) => b.usedCredits - a.usedCredits)
           : null,
         unattributedCredits: admin ? 0 : null,
-        byDesign: admin ? [] : null,
+        byCanvas: admin ? [] : null,
       };
     };
 
@@ -219,10 +219,10 @@ export class FakeSettings {
             return {
               repos: world
                 .repos(workspaceId)
-                // As the API: once it has a design, a base or a secret.
+                // As the API: once it has a canvas, a base or a secret.
                 .filter(
                   (repo) =>
-                    world.designedIn(repo.id) ||
+                    world.hasCanvasIn(repo.id) ||
                     this.bases.has(repo.id) ||
                     this.secrets.has(repo.id),
                 )

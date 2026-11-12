@@ -1,13 +1,13 @@
 /// <reference types="vite/client" />
 /*
- * The design boards' sample content as the product's types. The boards' local-era leftovers are
- * not reproduced: every repo design here is on a `pz/` branch, and "brand" is a repo like any
+ * The mockup boards' sample content as the product's types. The boards' local-era leftovers are
+ * not reproduced: every repo canvas here is on a `pz/` branch, and "brand" is a repo like any
  * other.
  */
 import type {
+  CanvasMember,
+  CanvasSummary,
   Contributor,
-  DesignMember,
-  DesignSummary,
   Idea,
   ModelOption,
   PageTab,
@@ -183,9 +183,9 @@ const pr405: PullRequestSummary = {
   autoMerge: false,
 };
 
-function design(
-  partial: Pick<DesignSummary, "id" | "name" | "project" | "preview"> & Partial<DesignSummary>,
-): DesignSummary {
+function canvas(
+  partial: Pick<CanvasSummary, "id" | "name" | "project" | "preview"> & Partial<CanvasSummary>,
+): CanvasSummary {
   return {
     status: "active",
     agentState: "idle",
@@ -200,16 +200,16 @@ function design(
   };
 }
 
-const quieter = design({
-  id: "dsn_quieter",
+const quieter = canvas({
+  id: "cnv_quieter",
   name: "Quieter shop hero",
   project: { kind: "repo", repo: fernwood, branch: "pz/hero-refresh" },
   preview: preview(heroPreview),
   pullRequest: pr412,
   lastActivityAt: minutesAgo(2),
 });
-const pricing = design({
-  id: "dsn_pricing",
+const pricing = canvas({
+  id: "cnv_pricing",
   name: "Pricing page, three takes",
   project: { kind: "repo", repo: fernwood, branch: "pz/pricing" },
   preview: preview(pricingPreview),
@@ -218,15 +218,15 @@ const pricing = design({
   owner: maya,
   lastActivityAt: minutesAgo(20),
 });
-const moodboard = design({
-  id: "dsn_moodboard",
+const moodboard = canvas({
+  id: "cnv_moodboard",
   name: "Autumn drop moodboard",
   project: { kind: "scratch", city: "lisbon" },
   preview: preview(moodboardPreview),
   lastActivityAt: minutesAgo(45),
 });
-const survey = design({
-  id: "dsn_survey",
+const survey = canvas({
+  id: "cnv_survey",
   name: "Survey results readout",
   project: { kind: "repo", repo: lenny, branch: "pz/survey-readout" },
   preview: preview(surveyPreview),
@@ -234,24 +234,24 @@ const survey = design({
   owner: jordan,
   lastActivityAt: minutesAgo(90),
 });
-const checkout = design({
-  id: "dsn_checkout",
+const checkout = canvas({
+  id: "cnv_checkout",
   name: "One-page checkout",
   project: { kind: "repo", repo: fernwood, branch: "pz/checkout" },
   preview: preview(checkoutPreview),
   owner: sam,
   lastActivityAt: minutesAgo(180),
 });
-const brandKit = design({
-  id: "dsn_brand",
+const brandKit = canvas({
+  id: "cnv_brand",
   name: "Brand kit for the relaunch",
   project: { kind: "repo", repo: brand, branch: "pz/relaunch" },
   preview: preview(brandPreview),
   owner: alex,
   lastActivityAt: minutesAgo(600),
 });
-const inbox = design({
-  id: "dsn_inbox",
+const inbox = canvas({
+  id: "cnv_inbox",
   name: "Support inbox triage",
   project: { kind: "repo", repo: lenny, branch: "pz/inbox-triage" },
   preview: preview(inboxPreview),
@@ -260,14 +260,14 @@ const inbox = design({
 });
 
 /** Mac boards 1 to 6: Northbrook with nobody else around. */
-export const soloDesigns = [quieter, pricing, moodboard, survey, checkout, brandKit, inbox];
-/** Board 1: the agent at work on the open design. */
-export const soloWorking = soloDesigns.map((d) =>
+export const soloCanvases = [quieter, pricing, moodboard, survey, checkout, brandKit, inbox];
+/** Board 1: the agent at work on the open canvas. */
+export const soloWorking = soloCanvases.map((d) =>
   d === quieter ? { ...d, agentState: "working" as const } : d,
 );
 
-/** The team boards: a question waiting on you, a teammate's run, people in designs now. */
-export const teamDesigns = [
+/** The team boards: a question waiting on you, a teammate's run, people in canvases now. */
+export const teamCanvases = [
   { ...quieter, needsYou: 2, hereNow: [sam, maya] },
   { ...checkout, agentState: "working" as const, lastActivityAt: minutesAgo(1) },
   { ...pricing, hereNow: [maya] },
@@ -276,9 +276,9 @@ export const teamDesigns = [
   brandKit,
 ];
 
-/** Board 6: a design that was just made, its agent building the first boards. */
-export const justCreated = design({
-  id: "dsn_onboarding",
+/** Board 6: a canvas that was just made, its agent building the first boards. */
+export const justCreated = canvas({
+  id: "cnv_onboarding",
   name: "Shorter onboarding flow",
   project: { kind: "repo", repo: fernwood, branch: "pz/onboarding" },
   preview: null,
@@ -286,7 +286,7 @@ export const justCreated = design({
   lastActivityAt: minutesAgo(0),
 });
 
-export const settled: DesignSummary[] = [
+export const settled: CanvasSummary[] = [
   "Holiday gift guide",
   "Three takes on the hero",
   "Care card refresh",
@@ -297,8 +297,8 @@ export const settled: DesignSummary[] = [
   "Returns page",
   "Loyalty card",
 ].map((name, i) =>
-  design({
-    id: `dsn_settled_${i}`,
+  canvas({
+    id: `cnv_settled_${i}`,
     name,
     project: {
       kind: "repo",
@@ -337,10 +337,10 @@ export const contributors: Contributor[] = [
   { person: jordan, here: false, lastHereAt: minutesAgo(60 * 24 * 2) },
 ];
 
-/** A design only you have worked on: the spec's default still shows you and the "+". */
+/** A canvas only you have worked on: the spec's default still shows you and the "+". */
 export const justYou: Contributor[] = [{ person: bryce, here: true, lastHereAt: null }];
 
-export const members: DesignMember[] = [
+export const members: CanvasMember[] = [
   { person: bryce, access: "owner", joined: true },
   { person: sam, access: "edit", joined: true },
   { person: maya, access: "edit", joined: true },
@@ -349,7 +349,7 @@ export const members: DesignMember[] = [
 ];
 
 /** Share with two people who have access on GitHub and haven't opened Ponzu yet. */
-export const membersMixed: DesignMember[] = [
+export const membersMixed: CanvasMember[] = [
   ...members.slice(0, 3),
   { person: ting, access: "edit", joined: false },
   { person: leo, access: "view", joined: false },
@@ -390,22 +390,22 @@ export const reportedModels: ModelOption[] = [
 const threeTakes = settled[1]!;
 export const heroResults: SearchResults = {
   query: "hero",
-  designs: [
-    { design: teamDesigns[0]!, matches: [[13, 17]] },
-    { design: threeTakes, matches: [[19, 23]] },
+  canvases: [
+    { canvas: teamCanvases[0]!, matches: [[13, 17]] },
+    { canvas: threeTakes, matches: [[19, 23]] },
   ],
   boards: [
     {
       id: "ab_hero_b",
       name: "Hero · B",
       matches: [[0, 4]],
-      design: { id: quieter.id, name: quieter.name },
+      canvas: { id: quieter.id, name: quieter.name },
     },
     {
       id: "ab_hero_dark",
       name: "Hero, dark",
       matches: [[0, 4]],
-      design: { id: brandKit.id, name: brandKit.name },
+      canvas: { id: brandKit.id, name: brandKit.name },
     },
   ],
   comments: [
@@ -415,7 +415,7 @@ export const heroResults: SearchResults = {
       text: "Can C try the serif at a smaller size on the hero?",
       matches: [[44, 48]],
       author: maya,
-      design: { id: quieter.id, name: quieter.name },
+      canvas: { id: quieter.id, name: quieter.name },
       at: minutesAgo(120),
     },
   ],

@@ -1,7 +1,7 @@
 import { type RefObject, useLayoutEffect, useRef } from "react";
 
 /*
- * Rows that move, move: when the sidebar's lists change (a design settles or is reopened, the
+ * Rows that move, move: when the sidebar's lists change (a canvas settles or is reopened, the
  * order shifts, the settled section opens), each row and the settled header slides from where
  * it was to where it is, and a row that wasn't there fades in. First, last, invert, play, with
  * the browser's own animations and the panes' clock.
@@ -10,10 +10,10 @@ import { type RefObject, useLayoutEffect, useRef } from "react";
  * triggers in two lists, and all this needs is where each was before the lists changed.
  */
 
-/** What takes part: a design's row, or anything marked `data-moves="<key>"`. */
-const MOVES = "[data-design-row], [data-moves]";
+/** What takes part: a canvas's row, or anything marked `data-moves="<key>"`. */
+const MOVES = "[data-canvas-row], [data-moves]";
 
-const keyOf = (el: HTMLElement) => el.dataset.designRow ?? el.dataset.moves ?? "";
+const keyOf = (el: HTMLElement) => el.dataset.canvasRow ?? el.dataset.moves ?? "";
 
 /** Where something was at a commit: its box, and how far its scrolling list had scrolled. */
 interface Place {

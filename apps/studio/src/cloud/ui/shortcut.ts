@@ -109,7 +109,7 @@ export function useShortcut(
  * Whether a pane should stay as it is for now: a menu, popover or dialog is open over the window
  * (overlayOpen: a workspace menu anchored in the sidebar would float over nothing, a settings
  * sheet would hide the change), or a field in the pane that holds it (`data-holds-pane`: a
- * design's name being edited on its row) has focus. ⌘B, ⌥⌘B and the menu's commands check it
+ * canvas's name being edited on its row) has focus. ⌘B, ⌥⌘B and the menu's commands check it
  * before they toggle.
  */
 export function paneHeld(pane: "sidebar" | "thread"): boolean {
@@ -129,8 +129,8 @@ export function ranJustNow(key: string, ms = 250): boolean {
 }
 
 /*
- * The number shortcuts: ⌘1–9 open the sidebar's designs and ⌘0 the create page, as the 1.x
- * studio had them; ⌃1–9 open the open design's pages (1.x used ⌥, which types symbols on a
+ * The number shortcuts: ⌘1–9 open the sidebar's canvases and ⌘0 the create page, as the 1.x
+ * studio had them; ⌃1–9 open the open canvas's pages (1.x used ⌥, which types symbols on a
  * Mac). Off the Mac, Ctrl stands for ⌘ and Alt for ⌃. 9 is always the last, however many there
  * are. Holding the modifier a moment shows each target's number (ShortcutHint).
  */
@@ -140,12 +140,12 @@ const mac = typeof navigator !== "undefined" && navigator.userAgent.includes("Ma
 /** How long the modifier is held before the numbers show, as in 1.x: ⌘K never flashes them. */
 export const HINT_DELAY = 250;
 
-/** ⌘ jumps between designs; ⌃ between pages. */
-export type Jump = "design" | "page";
+/** ⌘ jumps between canvases; ⌃ between pages. */
+export type Jump = "canvas" | "page";
 
 /** The key each jump goes with, as its hints write it and as KeyboardEvent.key names it. */
 export const JUMP_KEY = {
-  design: { glyph: mac ? "⌘" : "Ctrl", key: mac ? "Meta" : "Control" },
+  canvas: { glyph: mac ? "⌘" : "Ctrl", key: mac ? "Meta" : "Control" },
   page: { glyph: mac ? "⌃" : "Alt", key: mac ? "Control" : "Alt" },
 } as const;
 
@@ -156,7 +156,7 @@ type KeyLike = Pick<
 
 /**
  * The digit a key press jumps to, or null. By `code`, since a modifier can change `key`. On a
- * Mac ⌘ takes 0–9 for designs and ⌃ takes 1–9 for pages; off it Ctrl takes the designs and Alt
+ * Mac ⌘ takes 0–9 for canvases and ⌃ takes 1–9 for pages; off it Ctrl takes the canvases and Alt
  * the pages. Nothing with ⇧, or with another modifier as well, so ⌘⌥1 and ⌘⇧1 stay free.
  */
 export function jumpDigit(e: KeyLike, jump: Jump, onMac = mac): number | null {
@@ -165,7 +165,7 @@ export function jumpDigit(e: KeyLike, jump: Jump, onMac = mac): number | null {
   if (!digit) return null;
   const only = (key: "metaKey" | "ctrlKey" | "altKey") =>
     e[key] && (["metaKey", "ctrlKey", "altKey"] as const).every((k) => k === key || !e[k]);
-  if (jump === "design") return only(onMac ? "metaKey" : "ctrlKey") ? Number(digit) : null;
+  if (jump === "canvas") return only(onMac ? "metaKey" : "ctrlKey") ? Number(digit) : null;
   return only(onMac ? "ctrlKey" : "altKey") && digit !== "0" ? Number(digit) : null;
 }
 

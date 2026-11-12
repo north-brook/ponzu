@@ -4,7 +4,7 @@ import type { AppPermissions, GithubTransport } from "./github.ts";
 import { answer, bearer, type GithubAnswer, graphql, repoParams, send } from "./github-octokit.ts";
 
 /*
- * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
+ * A canvas's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
  * writes its description, with a token for the one repository; the person (or the agent, as the
  * person its turn is for) opens it, merges it,
  * marks it ready, sets auto-merge, closes it and updates its branch with their own user token,
@@ -140,7 +140,7 @@ export interface GithubPullRequest {
   commits: { total: number; items: GithubCommit[] };
 }
 
-/** What one read finds about a design's branch and the pull request asked for. */
+/** What one read finds about a canvas's branch and the pull request asked for. */
 export interface GithubPullRequestRead {
   /** The ways the repo lets a pull request merge, the one to use first. */
   mergeMethods: MergeMethod[];

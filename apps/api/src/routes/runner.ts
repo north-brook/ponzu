@@ -32,7 +32,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { stableUuid } from "../analytics/analytics.ts";
-import { captureForDesign } from "../analytics/design.ts";
+import { captureForCanvas } from "../analytics/canvas.ts";
 import { access } from "../auth/access.ts";
 import type { LeasedRunner } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
@@ -68,7 +68,7 @@ import { completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
  * The API's side of the runner protocol (docs/cloud.md, "The runner protocol"). Every route is
- * a design's runner's, and acts on `actor.designId` and nothing else: no route takes a design
+ * a canvas's runner's, and acts on `actor.canvasId` and nothing else: no route takes a canvas
  * id. Every one but the session's carries the lease, which `access.runner` holds to, and every
  * one is safe to send again, as each says.
  */
@@ -85,7 +85,7 @@ const SavedView: z.ZodType<SavedPoint> = z.object({
 });
 const SessionView: z.ZodType<RunnerSession> = z.object({
   runnerId: z.string(),
-  design: z.object({ id: z.string(), name: z.string() }),
+  canvas: z.object({ id: z.string(), name: z.string() }),
   repo: z.object({ owner: z.string(), name: z.string(), defaultBranch: z.string() }).nullable(),
   branch: z.string().nullable(),
   claudeSessionId: z.string().nullable(),
@@ -168,10 +168,10 @@ const MAX_THREAD_BODY_BYTES = 4 * 1024 * 1024;
 /** A runner route's context, as far as these need it. */
 type RunnerCall = { var: { deps: Pick<Deps, "db">; actor: LeasedRunner } };
 
-/** The caller's design as its runner works with it. */
+/** The caller's canvas as its runner works with it. */
 async function contextOf(c: RunnerCall): Promise<RunnerContext> {
-  const context = await getRunnerContext(c.var.deps.db, c.var.actor.designId);
-  if (!context) throw new ApiError(404, "not_found", "There is no such design.");
+  const context = await getRunnerContext(c.var.deps.db, c.var.actor.canvasId);
+  if (!context) throw new ApiError(404, "not_found", "There is no such canvas.");
   return context;
 }
 
@@ -193,29 +193,29 @@ export const runner = new Hono<AppEnv>()
   })
 
   /**
-   * Takes the design's lease: a new runner id, which every later call carries, and whatever
+   * Takes the canvas's lease: a new runner id, which every later call carries, and whatever
    * held it before is refused from now on. Safe to repeat: the last one wins.
    */
   .post("/session", access.runnerStarting, async (c) => {
     const session = await startRunnerSession(
       c.var.deps,
-      c.var.actor.designId,
+      c.var.actor.canvasId,
       c.req.header(CLIENT_HEADER) ?? null,
     );
     return c.json(SessionView.parse(session));
   })
 
   /**
-   * The design's events this runner has not been handed, oldest first, and the design's head,
+   * The canvas's events this runner has not been handed, oldest first, and the canvas's head,
    * from one statement. An event goes to each runner once, so a new claim hands out only what
    * is new. Safe to repeat: the same claim id hands out again what it handed out.
    */
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
-    const { designId, runnerId } = c.var.actor;
+    const { canvasId, runnerId } = c.var.actor;
     const { claimId, limit } = c.req.valid("json");
     const now = new Date(c.var.deps.clock.now());
-    const claimed = await claimEvents(c.var.deps.db, { designId, runnerId, claimId, limit, now });
-    if (!claimed) throw new ApiError(404, "not_found", "There is no such design.");
+    const claimed = await claimEvents(c.var.deps.db, { canvasId, runnerId, claimId, limit, now });
+    if (!claimed) throw new ApiError(404, "not_found", "There is no such canvas.");
     const response: ClaimResponse = {
       events: claimed.events.map(
         (event) =>
@@ -238,13 +238,13 @@ export const runner = new Hono<AppEnv>()
 
   /**
    * Marks events delivered and keeps the Claude session they went into, in one statement.
-   * Those already marked, another design's, or never handed to this runner are left alone, and
+   * Those already marked, another canvas's, or never handed to this runner are left alone, and
    * the statement holds to the lease itself. Safe to repeat.
    */
   .post("/events/ack", access.runner, validate("json", Ack), async (c) => {
     const { ids, claudeSessionId } = c.req.valid("json");
     const acked = await markEventsDelivered(c.var.deps.db, {
-      designId: c.var.actor.designId,
+      canvasId: c.var.actor.canvasId,
       runnerId: c.var.actor.runnerId,
       ids,
       claudeSessionId,
@@ -262,7 +262,7 @@ export const runner = new Hono<AppEnv>()
     async (c) => {
       const written = await writeRunnerThread(
         c.var.deps,
-        c.var.actor.designId,
+        c.var.actor.canvasId,
         c.req.valid("json").items,
       );
       return c.json(ThreadView.parse(written));
@@ -270,32 +270,32 @@ export const runner = new Hono<AppEnv>()
   )
 
   /**
-   * What the agent is doing, as the design's head shows it, and the heartbeat. Answers the
-   * design's head. Safe to repeat: the last one wins.
+   * What the agent is doing, as the canvas's head shows it, and the heartbeat. Answers the
+   * canvas's head. Safe to repeat: the last one wins.
    */
   .put("/state", access.runner, validate("json", State), async (c) => {
     const { deps, actor } = c.var;
     const answer = await reportRunnerState(deps.db, {
-      designId: actor.designId,
+      canvasId: actor.canvasId,
       now: new Date(deps.clock.now()),
       ...c.req.valid("json"),
     });
-    if (answer === null) throw new ApiError(404, "not_found", "There is no such design.");
+    if (answer === null) throw new ApiError(404, "not_found", "There is no such canvas.");
     return c.json({ seq: answer.seq } satisfies StateResponse);
   })
 
   /**
    * Records a checkpoint whose archives were uploaded (purposes `session` and `workspace`), if
-   * its turn is above the design's last. Safe to repeat.
+   * its turn is above the canvas's last. Safe to repeat.
    */
   .post("/checkpoint", access.runner, validate("json", Checkpoint), async (c) => {
     const saved = await recordRunnerCheckpoint(c.var.deps, c.var.actor, c.req.valid("json"));
     return c.json({ saved: SavedView.parse(saved) } satisfies CheckpointResponse);
   })
 
-  /** The design's last checkpoint and addresses that read its archives back for ten minutes. */
+  /** The canvas's last checkpoint and addresses that read its archives back for ten minutes. */
   .post("/restore", access.runner, async (c) => {
-    const restored = await restoreFor(c.var.deps, c.var.actor.designId);
+    const restored = await restoreFor(c.var.deps, c.var.actor.canvasId);
     return c.json(RestoreView.parse(restored));
   })
 
@@ -303,14 +303,14 @@ export const runner = new Hono<AppEnv>()
   .post("/restored", access.runner, validate("json", Restored), async (c) => {
     const { deps, actor } = c.var;
     const report = c.req.valid("json");
-    await recordRestored(deps, actor.designId, report);
-    captureForDesign(deps, actor.designId, (workspaceId) =>
+    await recordRestored(deps, actor.canvasId, report);
+    captureForCanvas(deps, actor.canvasId, (workspaceId) =>
       deps.analytics.capture(
         "sandbox restored",
-        { design_id: actor.designId, kind: report.kind },
+        { canvas_id: actor.canvasId, kind: report.kind },
         {
           workspaceId,
-          uuid: stableUuid(`${actor.designId}/${report.bootId}/${report.saved.turn}/restored`),
+          uuid: stableUuid(`${actor.canvasId}/${report.bootId}/${report.saved.turn}/restored`),
         },
       ),
     );
@@ -321,7 +321,7 @@ export const runner = new Hono<AppEnv>()
   .post("/questions", access.runner, validate("json", Question), async (c) => {
     const { id, kind, payload } = c.req.valid("json");
     const question = await createQuestion(c.var.deps.db, {
-      designId: c.var.actor.designId,
+      canvasId: c.var.actor.canvasId,
       id,
       kind,
       payload: { ...payload },
@@ -329,10 +329,10 @@ export const runner = new Hono<AppEnv>()
     // Only when this raised it: one raised again after a lost answer was asked once.
     const { deps, actor } = c.var;
     if (question.raised) {
-      captureForDesign(deps, actor.designId, (workspaceId) =>
+      captureForCanvas(deps, actor.canvasId, (workspaceId) =>
         deps.analytics.capture(
           "question asked",
-          { design_id: actor.designId, question_id: question.id, kind },
+          { canvas_id: actor.canvasId, question_id: question.id, kind },
           { workspaceId },
         ),
       );
@@ -343,7 +343,7 @@ export const runner = new Hono<AppEnv>()
   /** The run moved on: closes those of these that are still open. Safe to repeat. */
   .post("/questions/withdraw", access.runner, validate("json", Withdraw), async (c) => {
     const withdrawn = await cancelQuestions(c.var.deps.db, {
-      designId: c.var.actor.designId,
+      canvasId: c.var.actor.canvasId,
       ids: c.req.valid("json").ids,
     });
     return c.json({ withdrawn } satisfies WithdrawResponse);
@@ -357,7 +357,7 @@ export const runner = new Hono<AppEnv>()
       .files.map(({ purpose, ...file }) => ({ ...file, kind: purpose }));
     const placed = await presignUploads(
       c.var.deps,
-      { designId: c.var.actor.designId, assetKey },
+      { canvasId: c.var.actor.canvasId, assetKey },
       files,
       null,
     );
@@ -366,11 +366,11 @@ export const runner = new Hono<AppEnv>()
 
   /** Records the files whose bytes arrived. Safe to repeat; 404 for bytes that never did. */
   .post("/uploads/complete", access.runner, validate("json", Complete), async (c) => {
-    const { assetKey, design } = await contextOf(c);
+    const { assetKey, canvas } = await contextOf(c);
     const { ids, seq } = c.req.valid("json");
     const files = await completeUploads(
       c.var.deps,
-      { designId: design.id, assetKey, seq: design.seq },
+      { canvasId: canvas.id, assetKey, seq: canvas.seq },
       ids,
       { userId: null, previewSeq: seq },
     );
@@ -378,7 +378,7 @@ export const runner = new Hono<AppEnv>()
   })
 
   /**
-   * A one-hour token for the design's repository and nothing else, for git. Reused while it
+   * A one-hour token for the canvas's repository and nothing else, for git. Reused while it
    * has ten minutes left. Safe to repeat.
    */
   .post("/git-credential", access.runner, validate("json", GitCredential), async (c) => {
@@ -386,7 +386,7 @@ export const runner = new Hono<AppEnv>()
     const target = gitTarget(await contextOf(c), c.req.valid("json"));
     const given = await deps.gitTokens.get(deps, target);
     // What went to git, so a push GitHub refuses can be traced to the token it was handed.
-    deps.log.info("git_credential", { designId: c.var.actor.designId, ...describeToken(given) });
+    deps.log.info("git_credential", { canvasId: c.var.actor.canvasId, ...describeToken(given) });
     return c.json(CredentialView.parse(credentialOf(given.token)));
   })
 
@@ -395,7 +395,7 @@ export const runner = new Hono<AppEnv>()
     const ask = c.req.valid("json");
     const forgotten = c.var.deps.gitTokens.forget(gitTarget(await contextOf(c), ask));
     c.var.deps.log.warn("git_credential_erased", {
-      designId: c.var.actor.designId,
+      canvasId: c.var.actor.canvasId,
       fingerprint: forgotten,
       reason: ask.reason ?? null,
     });
@@ -409,7 +409,7 @@ export const runner = new Hono<AppEnv>()
   .post("/git-report", access.runner, validate("json", GitReport), async (c) => {
     const { deps, actor } = c.var;
     const { name, fields } = c.req.valid("json");
-    const line = { ...fields, designId: actor.designId, from: "runner" };
+    const line = { ...fields, canvasId: actor.canvasId, from: "runner" };
     if (name === "git_push" && fields.ok === false) deps.log.warn(name, line);
     else deps.log.info(name, line);
     return c.body(null, 204);
@@ -421,7 +421,7 @@ export const runner = new Hono<AppEnv>()
    */
   .post("/pull-request-summary", access.runner, validate("json", PullRequestSummary), async (c) => {
     const { summary } = c.req.valid("json");
-    const saved = await savePullRequestSummary(c.var.deps, c.var.actor.designId, summary);
+    const saved = await savePullRequestSummary(c.var.deps, c.var.actor.canvasId, summary);
     return c.json(saved satisfies PullRequestSummaryResponse);
   })
 
@@ -430,14 +430,14 @@ export const runner = new Hono<AppEnv>()
    * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
    */
   .post("/models", access.runner, validate("json", Models), async (c) => {
-    const kept = await recordReportedModels(c.var.deps, c.var.actor.designId, c.req.valid("json"));
+    const kept = await recordReportedModels(c.var.deps, c.var.actor.canvasId, c.req.valid("json"));
     return c.json({ kept } satisfies ModelsResponse);
   })
 
   .post("/usage", access.runner, validate("json", Usage), async (c) => {
     const { turns } = c.req.valid("json");
     const recorded = await recordTurnUsage(c.var.deps.db, {
-      designId: c.var.actor.designId,
+      canvasId: c.var.actor.canvasId,
       turns: turns.map((turn) => ({
         id: turn.id,
         at: new Date(turn.at),
@@ -451,14 +451,14 @@ export const runner = new Hono<AppEnv>()
     // (docs/cloud.md, "A turn that never came"): nothing delivered before it is owed a turn.
     if (turns.some((turn) => turn.turn)) {
       await noteRunnerSaid(c.var.deps.db, {
-        designId: c.var.actor.designId,
+        canvasId: c.var.actor.canvasId,
         now: new Date(c.var.deps.clock.now()),
       });
     }
     // Off the runner's path: the row is what matters to it, and analytics never fails a call.
     c.var.deps.background(
       "turns_reported",
-      reportTurns(c.var.deps, c.var.actor.designId, turns, c.req.header(CLIENT_HEADER) ?? null),
+      reportTurns(c.var.deps, c.var.actor.canvasId, turns, c.req.header(CLIENT_HEADER) ?? null),
     );
     return c.json({ recorded } satisfies UsageResponse);
   });

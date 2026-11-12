@@ -55,9 +55,9 @@ export function isRunnerToken(token: string): boolean {
 }
 
 /**
- * The runner a runner token belongs to, with the one design it may act on, or a 401. This is
+ * The runner a runner token belongs to, with the one canvas it may act on, or a 401. This is
  * also the one place the lease is held to (docs/cloud.md, "The runner protocol"): `runnerId` is
- * the caller's `X-Ponzu-Runner`, and anything but the design's current runner is refused with
+ * the caller's `X-Ponzu-Runner`, and anything but the canvas's current runner is refused with
  * 409 `superseded`, so a process a newer one replaced stops at its next call. Pass `"taking"`
  * for the one call that takes the lease instead.
  */
@@ -78,10 +78,10 @@ export async function authenticateRunner(
 ): Promise<RunnerActor> {
   const found = isRunnerToken(token) ? await verifyRunnerToken(deps.db, token) : null;
   if (!found) throw new ApiError(401, "token_invalid", "This runner token is not valid.");
-  const actor = { kind: "runner", tokenId: found.id, designId: found.designId } as const;
+  const actor = { kind: "runner", tokenId: found.id, canvasId: found.canvasId } as const;
   if (runnerId === "taking") return { ...actor, runnerId: null };
   if (!runnerId || runnerId !== found.leaseRunnerId) {
-    throw new ApiError(409, "superseded", "A newer runner has started for this design.");
+    throw new ApiError(409, "superseded", "A newer runner has started for this canvas.");
   }
   return { ...actor, runnerId };
 }

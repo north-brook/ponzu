@@ -14,7 +14,7 @@ const SPEC: SandboxSpec = {
   vcpus: 2,
   snapshotExpirationMs: 30 * 24 * 3600_000,
 };
-const NAME = "pz-0123456789ab-design1";
+const NAME = "pz-0123456789ab-canvas1";
 const text = (bytes: Uint8Array | null | undefined) =>
   bytes ? new TextDecoder().decode(bytes) : null;
 

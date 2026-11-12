@@ -2,7 +2,7 @@
 import { emptyDoc } from "@ponzu/core";
 import type { Db } from "./client.ts";
 import { upsertRepos, upsertUser, upsertWorkspace } from "./queries/accounts.ts";
-import { createDesign } from "./queries/designs.ts";
+import { createCanvas } from "./queries/canvases.ts";
 import type { Actor, NewOp } from "./queries/ops.ts";
 
 // GitHub ids must be unique; tests in one database take the next.
@@ -52,10 +52,10 @@ export async function seedRepo(db: Db, workspaceId: string, fullName = "north-br
   return repo!;
 }
 
-/** A person, a workspace and a Scratch design of theirs in it. */
-export async function seedDesign(db: Db) {
+/** A person, a workspace and a Scratch canvas of theirs in it. */
+export async function seedCanvas(db: Db) {
   const [user, workspace] = await Promise.all([seedUser(db), seedWorkspace(db)]);
-  const design = await createDesign(db, {
+  const canvas = await createCanvas(db, {
     workspaceId: workspace.id,
     repoId: null,
     ownerId: user.id,
@@ -64,7 +64,7 @@ export async function seedDesign(db: Db) {
     branch: null,
     doc: emptyDoc("Lisbon"),
   });
-  return { user, workspace, design };
+  return { user, workspace, canvas };
 }
 
 export const actorFor = (user: { id: string; name: string | null }): Actor => ({

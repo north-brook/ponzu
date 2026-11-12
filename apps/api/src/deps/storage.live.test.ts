@@ -4,9 +4,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { emptyDoc } from "@ponzu/core";
-import { getDesignAssetKey } from "@ponzu/db";
+import { getCanvasAssetKey } from "@ponzu/db";
 import { systemClock } from "@ponzu/sandbox";
-import { call, designWithRunner, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasWithRunner, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp } from "../testing/index.ts";
 import { createR2Storage } from "./storage.ts";
 
@@ -39,8 +39,8 @@ describe.skipIf(!configured)("R2, for real", () => {
     const t = await createTestApp({ storage, assetsUrl });
     close = t.close;
     const ws = await workspaceWithRepo(t, { maya: "write" });
-    const { design, runner } = await designWithRunner(t, ws, "maya", emptyDoc("Live"));
-    const assetKey = (await getDesignAssetKey(t.db, design.id))!;
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", emptyDoc("Live"));
+    const assetKey = (await getCanvasAssetKey(t.db, canvas.id))!;
     const svg = new TextEncoder().encode(
       '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>',
     );
