@@ -14,6 +14,7 @@ import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
 import type { SandboxConfig } from "../env.ts";
+import { FEATURES_OFF, type Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
@@ -132,6 +133,11 @@ export async function createTestApp(
     posthog?: PosthogConfig;
     /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
     push?: boolean;
+    /**
+     * Feature switches over the defaults, which are every switch off as in an environment that
+     * sets none, except `push`, which follows the option above.
+     */
+    features?: Partial<Features>;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -191,6 +197,7 @@ export async function createTestApp(
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push,
+    features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},

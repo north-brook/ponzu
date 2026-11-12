@@ -4,15 +4,20 @@ The Mac app's main window for Ponzu Cloud, as components driven by props: no dat
 API, no Electron. The data layer maps the API and live queries onto the types in `model.ts` and
 passes them in. The local app's screens beside this folder are deleted at cutover.
 
+The product's pure rules live in `@ponzu/client/model` (packages/client/src/model/), so the
+phone shows the same ones; their tests are there too. Each file marked "shared" below is a
+one-line re-export of its module there, kept so the studio's imports did not have to move. A
+new rule with no React and no DOM goes in the shared module, not here.
+
 ```
-model.ts          the product's concepts as the UI takes them (export these to fakes)
-status.ts         a row's indicator and its precedence, the rail toggle's signal, ordering
-filter.ts         the sidebar filter
-search.ts         match highlighting, keyboard selection over results
-pull-request.ts   the next action and the pull request mark's state
-time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the clock they read
-gate.ts           what keeps someone from steering a canvas (read access, the owner's Claude), in words
-claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
+model.ts          shared: the product's concepts as the UI takes them (export these to fakes)
+status.ts         shared: a row's indicator and its precedence, the rail toggle's signal, ordering
+filter.ts         shared: the sidebar filter
+search.ts         shared: match highlighting, keyboard selection over results
+pull-request.ts   shared: the next action and the pull request mark's state
+time.ts           the clock components read (useNow); ages, durations and a time of day are shared
+gate.ts           shared: what keeps someone from steering a canvas (read access, the owner's Claude), in words
+claude.ts         shared: the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
                   popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
@@ -24,13 +29,14 @@ sidebar/          the sidebar: workspace menu, filter, rows, settled tray, searc
 create/           the create page: composer, model picker, repo picker, ideas; a send's travel
                   to the thread and its beat (flight.ts, landing.ts)
 thread/           the thread rail: its lines, a running turn's asides and the working line, and
-                  what leaves when it ends (thread.ts has the rules, thread-view.tsx the motion),
+                  what leaves when it ends (thread.ts, shared, has the rules; thread-view.tsx the motion),
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
+                  (answer.ts, shared)
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
-setup/            guided first run: the gates (setup.ts), sign in, where you build, Connect
+setup/            guided first run: the gates (setup.ts, shared), sign in, where you build, Connect
                   Claude and its card, the iPhone step
-settings/         the Settings modal and its sections, with their rules (billing, members,
+settings/         the Settings modal and its sections, with their rules (billing, shared; members,
                   environments)
 dialogs/          what a send can need first: a card, a higher cap, Claude again; and the
                   account's confirmations

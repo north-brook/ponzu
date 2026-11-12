@@ -1,4 +1,5 @@
 import { type Api, ApiError } from "@ponzu/client";
+import type { LocalPicture } from "@ponzu/client/model";
 import type { Doc, Op, Origin } from "@ponzu/core";
 
 /*
@@ -23,9 +24,7 @@ const ATTACH_WAIT_MS = 1_500;
 export type Theme = "light" | "dark";
 
 /** A comment of the viewer's, by its message id: its picture being drawn, or drawn. */
-export type LocalPicture =
-  | { state: "drawing"; doc: Doc; threadId: string }
-  | { state: "drawn"; light: string; dark: string };
+export type { LocalPicture };
 
 export interface CommentPicturesOptions {
   canvasId: string;
