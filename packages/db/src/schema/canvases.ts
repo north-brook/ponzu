@@ -99,6 +99,11 @@ export const canvases = pgTable(
     agentArtboards: text("agent_artboards").array().notNull().default(sql`'{}'::text[]`),
     /** Why the agent cannot run now, when something outside the canvas must change first. */
     agentBlocker: text("agent_blocker", { enum: AGENT_BLOCKERS }),
+    /**
+     * Until when the blocker holds, when a gate knows (a Claude plan's limit resets then).
+     * Written with `agent_blocker`, and null whenever it is.
+     */
+    agentBlockedUntil: instant("agent_blocked_until"),
     /** How many questions are open. Kept in step by the question queries. */
     needsYouCount: integer("needs_you_count").notNull().default(0),
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),

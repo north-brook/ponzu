@@ -1,0 +1,114 @@
+import type { AgentBlocker, EventKind, WakeContext } from "@ponzu/db";
+import type { JobDeps } from "../jobs/run.ts";
+import { claudeProblem } from "./environment.ts";
+
+/*
+ * What may keep a canvas's sandbox from waking, and its runner from taking up what is in its
+ * feed (docs/cloud.md, "The sandbox"). Each feature that can hold a canvas back fills its own
+ * gate here, and nothing else in the wake changes:
+ *
+ *   owner         its owner, whose Claude it runs on, left the workspace
+ *   claude        its Claude is not connected, or has expired
+ *   maintenance   Ponzu has paused wakes while it updates           (filled by W10 P4)
+ *   billing       the workspace is at a billing limit                (filled by W6 B2)
+ *   claudeLimit   its owner's Claude plan is at a limit until a time (filled by W8 sweep 6)
+ *
+ * `wakeCanvas` asks them in this order before it claims the sandbox's row. The first that
+ * answers decides: the canvas's head says what it waits on (`agent_blocker`) and until when
+ * (`agent_blocked_until`, the answer's `retryAt`), the rest are not asked, and the wake is
+ * tried again at `retryAt` when one is given. Otherwise the wake is over until something else
+ * starts one (`resumeBlocked`, or the next message). Only once every gate lets it through
+ * does the wake go on.
+ */
+
+/** A gate's refusal: what the canvas waits on, and when to try the wake again, if known. */
+export interface WakeRefusal {
+  blocker: AgentBlocker;
+  retryAt?: Date;
+}
+
+/** What a wake is, besides the canvas: what it may read, and why it was asked for. */
+export interface WakeAsk {
+  deps: JobDeps;
+  /** The wake's reason as it was recorded (`message`, `push`, `claude`, …); null if none. */
+  reason: string | null;
+}
+
+/** One gate: null lets the wake through. It reads only what it is given, and writes nothing. */
+export type WakeGate = (ctx: WakeContext, now: Date, ask: WakeAsk) => WakeRefusal | null;
+
+/**
+ * The owner left the workspace: someone who has left lends their Claude to nothing there.
+ * Asked before `claude`, so that a canvas whose owner has gone says so whatever their Claude's
+ * state, as the wake always has.
+ */
+export const ownerGate: WakeGate = (ctx) =>
+  ctx.ownerMember ? null : { blocker: "claude_owner_left" };
+
+/** The Claude it runs on is not connected, or has expired. */
+export const claudeGate: WakeGate = (ctx, now) => {
+  const blocker = claudeProblem(ctx.claude, now.getTime());
+  return blocker ? { blocker } : null;
+};
+
+export interface NamedWakeGate {
+  name: string;
+  gate: WakeGate;
+}
+
+export const WAKE_GATES: readonly NamedWakeGate[] = [
+  { name: "owner", gate: ownerGate },
+  { name: "claude", gate: claudeGate },
+  { name: "maintenance", gate: () => null },
+  { name: "billing", gate: () => null },
+  { name: "claudeLimit", gate: () => null },
+];
+
+/**
+ * What the wake gates make of a wake: the first refusal, with the gate that gave it, or null
+ * when every gate lets it through. The gates after a refusal are not asked.
+ */
+export function askWakeGates(
+  ctx: WakeContext,
+  now: Date,
+  ask: WakeAsk,
+  gates: readonly NamedWakeGate[] = WAKE_GATES,
+): (WakeRefusal & { gate: string }) | null {
+  for (const { name, gate } of gates) {
+    const refusal = gate(ctx, now, ask);
+    if (refusal) return { ...refusal, gate: name };
+  }
+  return null;
+}
+
+/**
+ * The blockers a gate gives that the canvas's head keeps after the gate has stopped giving it,
+ * until a wake that passes every gate (or `resumeBlocked`) lifts it. Claude's own are lifted
+ * where Claude is connected (`connectClaude`), and the sandbox's by the wake that starts it.
+ */
+export const LIFTED_BY_A_WAKE: ReadonlySet<AgentBlocker> = new Set([
+  "paused",
+  "credits_used_up",
+  "cap_reached",
+  "payment_failed",
+  "claude_limited",
+]);
+
+/** What a runner's claim is for: the one canvas it holds the lease of. */
+export interface ClaimContext {
+  canvasId: string;
+}
+
+/**
+ * Which kinds of event a runner's claim may hand out now: every kind, unless a feature holds
+ * some back (billing, at a limit, hands out only a stop, an answer and an edit, so the turn
+ * that is running finishes and no new one begins). What it holds back stays in the feed, not
+ * delivered, and so not owed. Asynchronous, unlike a wake gate, because what it reads is not
+ * in the claim's own statement; it is asked once per claim.
+ */
+export async function claimableKinds(
+  _deps: Pick<JobDeps, "db" | "clock">,
+  _ctx: ClaimContext,
+): Promise<readonly EventKind[] | "all"> {
+  return "all";
+}

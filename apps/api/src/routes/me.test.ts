@@ -37,7 +37,23 @@ test("someone who has only signed in: their profile, and nothing set up yet", as
     onboarding: { whereConfirmedAt: null, iphoneStepSeenAt: null },
     claudeAccount: null,
     workspaces: [],
+    // The test app sends pings (its push fake is on) and has every other switch off.
+    features: { billing: "off", push: true, email: false },
   });
+});
+
+test("the switches an app shows things by, and none of the API's own", async () => {
+  const switched = await createTestApp({
+    push: false,
+    features: { billing: "observe", email: true, maintenance: "wakes_paused", repoBases: true },
+  });
+  try {
+    const person = await switched.signInAs({ login: "switches" });
+    const body = await (await switched.app.request("/v1/me", { headers: person.headers })).json();
+    expect(body.features).toEqual({ billing: "observe", push: false, email: true });
+  } finally {
+    await switched.close();
+  }
 });
 
 test("someone set up: their workspaces with roles, and their Claude account without its credential", async () => {

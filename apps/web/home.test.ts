@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { renderToStaticMarkup } from "react-dom/server";
+import Home from "./app/page.tsx";
 import { scaleSizes } from "./components/hero-shot.tsx";
-import { creditPrice, HOME_RATE } from "./components/home-rate.ts";
+import { PRICES } from "./components/pricing.ts";
 
 /*
  * The home page (site slice S3): it no longer runs on Ponzu 1's local runtime, its product shots
@@ -65,22 +67,18 @@ test("every product shot the pages show is committed in light and dark", () => {
   }
 });
 
-test("the pricing band's numbers are rate card v1, the row the database seeds", () => {
-  const sql = readFileSync(
-    join(ROOT, "../../packages/db/migrations/0001_rate_card_v1.sql"),
-    "utf8",
-  );
-  const values = /VALUES \(1, '[^']+', (\d+), (\d+), (\d+),/.exec(sql);
-  expect(values).not.toBeNull();
-  expect<Record<string, number>>(HOME_RATE).toEqual({
-    creditMicrousd: Number(values![1]),
-    sandboxCreditsPerAwakeHour: Number(values![2]),
-    freeCreditsPerMember: Number(values![3]),
-  });
-  expect(creditPrice()).toBe("$0.10");
-  // No dollar amount is written into the page: each one is computed from the rate card.
+test("the pricing band reads rate card v1 through pricing.ts and says it exactly", () => {
   const page = readFileSync(join(ROOT, "app/page.tsx"), "utf8");
+  expect(page).toContain('import { PRICES } from "@/components/pricing";');
+  // No dollar amount is written into the page: each one comes from the rate card.
   expect(page.match(/\$\d/g)).toBeNull();
+  const html = renderToStaticMarkup(Home());
+  const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+  expect(text).toContain(
+    "$0.10 a credit. An awake canvas uses 5 credits an hour; asleep, nothing. 100 credits a month on us, per person.",
+  );
+  expect(text).toContain("Free to start: 100 credits a month.");
+  expect(PRICES.credit).toBe("$0.10");
 });
 
 test("a cropped shot asks the optimizer for the width it is really drawn at", () => {

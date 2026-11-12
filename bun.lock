@@ -208,6 +208,7 @@
         "@next/mdx": "16.4.2",
         "@ponzu/canvas": "workspace:*",
         "@ponzu/core": "workspace:*",
+        "@ponzu/db": "workspace:*",
         "next": "^16.4.2",
         "posthog-js": "^1.438.13",
         "react": "^19.3.1",
@@ -261,11 +262,11 @@
       "dependencies": {
         "@neon/realtime": "0.2.1",
         "@ponzu/core": "workspace:*",
+        "@ponzu/runner": "workspace:*",
         "hono": "^4.13.17",
       },
       "devDependencies": {
         "@ponzu/api": "workspace:*",
-        "@ponzu/runner": "workspace:*",
         "@tanstack/react-query": "^5.102.8",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",

@@ -47,6 +47,7 @@ import { EFFORTS } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
+import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
@@ -256,6 +257,14 @@ export const canvases = new Hono<AppEnv>()
         throw new ApiError(403, "forbidden", "Canvases need a repo you can push to.");
       }
     }
+    // Asked of every create, so that a rate limit counts them all; only one with a first
+    // message steers the agent, and the gates that care (billing) let the rest through.
+    await steer(c, {
+      action: "create",
+      workspaceId: workspace.id,
+      canvasId: null,
+      withMessage: message !== undefined,
+    });
     const { canvas, created } = await startCanvas(deps, {
       user: actor.user,
       workspaceId,

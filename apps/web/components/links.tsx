@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { btn } from "./button";
 import { GitHub } from "./icons";
+import { IPHONE_PATH } from "./platforms";
 
 export { TESTFLIGHT } from "./site";
 
@@ -11,8 +12,9 @@ export const DOWNLOAD = "/download";
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
-/** The iPhone tile on the home page. */
-export const IPHONE = "/#iphone";
+export const PRICING = "/pricing";
+/** Ponzu for iPhone: /iphone, which forwards to the beta or the App Store (next.config.ts). */
+export const IPHONE = IPHONE_PATH;
 
 /** A link in the header or the footer: what it says, and where it goes. */
 export interface SiteLink {
@@ -27,7 +29,10 @@ export interface SiteLink {
  */
 
 /** The header's links, after the lockup and before the Download button. GitHub gets its mark. */
-export const NAV: readonly SiteLink[] = [{ label: "GitHub", href: REPO }];
+export const NAV: readonly SiteLink[] = [
+  { label: "Pricing", href: PRICING },
+  { label: "GitHub", href: REPO },
+];
 
 /** The footer's columns, beside the lockup. */
 export const FOOTER: readonly { title: string; links: readonly SiteLink[] }[] = [
@@ -36,6 +41,7 @@ export const FOOTER: readonly { title: string; links: readonly SiteLink[] }[] = 
     links: [
       { label: "Download", href: DOWNLOAD },
       { label: "Ponzu for iPhone", href: IPHONE },
+      { label: "Pricing", href: PRICING },
       { label: "Releases", href: RELEASES },
     ],
   },

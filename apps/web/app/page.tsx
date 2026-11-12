@@ -5,10 +5,10 @@ import { Tree } from "@/components/code";
 import { CodeWell } from "@/components/code-well";
 import { DownloadSplit, PhonePlatforms } from "@/components/download-button";
 import { HeroShot } from "@/components/hero-shot";
-import { creditPrice, HOME_RATE } from "@/components/home-rate";
 import { Apple, GitHub, Slice } from "@/components/icons";
 import { IPhone } from "@/components/iphone";
-import { IPHONE, REPO, TESTFLIGHT } from "@/components/links";
+import { IPHONE, PRICING, REPO, TESTFLIGHT } from "@/components/links";
+import { PRICES } from "@/components/pricing";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { BILLING_LIVE } from "@/components/site";
 import { Steps } from "@/components/steps";
@@ -18,9 +18,6 @@ const well =
   "m-0 overflow-hidden whitespace-pre rounded-[14px] px-5 py-4 font-mono text-[12.5px]/[22px]";
 /** A code block: white on the light page, near-black on the dark one. */
 const codeWell = `${well} code bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
-
-/** The pricing band's numbers: rate card v1 (components/home-rate.ts). */
-const RATE = HOME_RATE;
 
 export const metadata: Metadata = share({
   path: "/",
@@ -54,7 +51,7 @@ export default function Home() {
         </div>
         <PhonePlatforms testflight={TESTFLIGHT} />
         <p className="m-0 text-sm text-faint">
-          Free to start: {RATE.freeCreditsPerMember} credits a month.
+          Free to start: {PRICES.freeCredits} credits a month.
         </p>
       </header>
 
@@ -194,14 +191,21 @@ export default function Home() {
       <section className="flex flex-col items-center gap-4 rounded-3xl bg-tile px-6 py-14 text-center sm:px-10">
         <SectionHeading>Pay for what runs.</SectionHeading>
         <p className="m-0 max-w-[620px] text-lg/[29px] text-balance text-muted">
-          {creditPrice()} a credit. An awake canvas uses {RATE.sandboxCreditsPerAwakeHour} credits
-          an hour; asleep, nothing. {RATE.freeCreditsPerMember} credits a month on us, per person.
+          {PRICES.credit} a credit. An awake canvas uses {PRICES.creditsPerHour} credits an hour;
+          asleep, nothing. {PRICES.freeCredits} credits a month on us, per person.
         </p>
         {BILLING_LIVE ? null : (
           <p className="m-0 text-sm text-faint">
             Ponzu is free while billing is being set up. We'll tell you before it starts.
           </p>
         )}
+        <a
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-cta px-6 py-[13px] text-base font-semibold text-cta-ink"
+          href={PRICING}
+        >
+          See pricing
+          <span aria-hidden="true">→</span>
+        </a>
       </section>
 
       <section className="flex flex-col items-center gap-7 pt-28 pb-14 text-center max-[720px]:pt-20">

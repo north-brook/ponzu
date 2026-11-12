@@ -5,8 +5,7 @@ import { Guide } from "../guide";
 import { WindowsSteps } from "../other-steps";
 
 const TITLE = "Download Ponzu for Windows";
-const DESCRIPTION =
-  "Install Ponzu for Windows (beta): run the installer, and ask your agent for a design.";
+const DESCRIPTION = "Install Ponzu for Windows (beta): run the installer, and sign in with GitHub.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -23,7 +22,7 @@ export default async function Page(props: PageProps<"/download/windows">) {
       os="windows"
       started={query.start === "1"}
       title="Ponzu for Windows."
-      lede="Run the installer, and ask your agent for a design."
+      lede="Run the installer, and sign in with GitHub."
       next={
         <>
           open <span className="text-ink">{INSTALLER}</span> from your downloads.

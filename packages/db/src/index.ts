@@ -136,6 +136,7 @@ export {
   saveGithubUserToken,
 } from "./queries/github-tokens.ts";
 export {
+  bringJobForward,
   claimJobs,
   completeJob,
   enqueueJob,
@@ -144,6 +145,7 @@ export {
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  recordOnce,
 } from "./queries/jobs.ts";
 export {
   countJoinedMembers,
@@ -278,6 +280,7 @@ export {
   getSandbox,
   getSandboxOwners,
   getWakeContext,
+  liftAgentBlockers,
   listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,
