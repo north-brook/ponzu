@@ -1,4 +1,5 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
+import { CANVAS_FILES_DELETE_JOB, runCanvasFilesDeleteJob } from "../canvases/files.ts";
 import type { Deps } from "../deps/index.ts";
 import { BASE_REBUILD_JOB, runBaseRebuildJob } from "../environments/rebuild.ts";
 import { PEOPLE_JOB, runPeopleJob } from "../github/people.ts";
@@ -47,6 +48,7 @@ const handlers = (): Record<
   [REFRESH_JOB]: runRefreshJob,
   [BASE_REBUILD_JOB]: runBaseRebuildJob,
   [PEOPLE_JOB]: runPeopleJob,
+  [CANVAS_FILES_DELETE_JOB]: runCanvasFilesDeleteJob,
 });
 
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */

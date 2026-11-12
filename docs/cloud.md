@@ -2260,6 +2260,14 @@ never completed. Previews replaced by later ones are deleted. A comment's pictur
 since it is uploaded before its comment is saved (and may never be): it is copied under
 `comments/` only when it is attached to a comment that exists and has no picture yet.
 
+A canvas's files can be deleted together: the job `canvas.files_delete`, keyed by the asset key,
+lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand keys at a time
+(DeleteObjects), up to 2,000 an attempt, coming back ten seconds later while more remain, for at
+most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
+any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
+anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
+bucket. Nothing records the job yet; deleting a canvas or an account will.
+
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
 ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
