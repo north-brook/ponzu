@@ -9,6 +9,8 @@ import {
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import type { JobDeps } from "../jobs/run.ts";
+import type { NotifyTrigger } from "../notifications/kinds.ts";
+import { notify } from "../notifications/notify.ts";
 import { withdrawPictures } from "../pull-requests/open.ts";
 import { type RefreshRequest, refreshSoon } from "../pull-requests/refresh.ts";
 import { queueWake } from "../sandboxes/wake.ts";
@@ -103,19 +105,25 @@ export interface GithubAuthor {
  * as a Ponzu person when they are one.
  */
 export async function tellCanvases(
-  deps: Pick<Deps, "db" | "github" | "clock" | "log">,
+  deps: JobDeps,
   {
     githubRepoId,
     pullRequests,
     kind,
     payload,
     author,
+    approval,
   }: {
     githubRepoId: number;
     pullRequests: PullRequestRef[];
     kind: "check" | "review";
     payload: (pullRequest: PullRequestRef) => Json;
     author?: GithubAuthor;
+    /**
+     * For a review that approved: its ping (`review_approved`), sent to each canvas that heard
+     * the review, so only for a reviewer GitHub says can push to the repo.
+     */
+    approval?: (canvasId: string, pullRequest: PullRequestRef) => NotifyTrigger | null;
   },
 ): Promise<void> {
   const { db, log } = deps;
@@ -138,6 +146,8 @@ export async function tellCanvases(
     });
     // `next` wakes a sleeping sandbox (docs/cloud.md, "Events").
     await queueWake(deps, canvas.id, kind);
+    const ping = approval?.(canvas.id, pullRequest);
+    if (ping) await notify(deps, ping);
     log.info("canvas_event_appended", { canvasId: canvas.id, kind });
   }
 }

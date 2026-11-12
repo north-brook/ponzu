@@ -120,6 +120,16 @@ export const BILLING_NOTICES = [
 ] as const;
 export type BillingNotice = (typeof BILLING_NOTICES)[number];
 
+/** `id` when it has an id's shape (the link grammar's), else null: for ids a client chose. */
+export function idOrNull(id: string | null | undefined): string | null {
+  return id && ID.test(id) ? id : null;
+}
+
+/** `login` when it has a GitHub login's shape, else null. */
+export function loginOrNull(login: string | null | undefined): string | null {
+  return login && Login.safeParse(login).success ? login : null;
+}
+
 export const NotifyTrigger = z.discriminatedUnion("kind", [
   /** The runner raised a question (`POST /v1/runner/questions` answered `raised`). */
   z.strictObject({
@@ -145,12 +155,18 @@ export const NotifyTrigger = z.discriminatedUnion("kind", [
     errorCode: z.enum(RUN_ERROR_CODES).nullable(),
     durationMs: z.number().int().min(0),
   }),
-  /** A person's comment was committed to the canvas. */
+  /**
+   * A person's comment was committed to the canvas: where its pin is (its thread, page and
+   * board), never what it says.
+   */
   z.strictObject({
     kind: z.literal("comment_posted"),
     canvasId: Id,
     messageId: Id,
     authorId: Id,
+    threadId: Id.nullable(),
+    pageId: Id.nullable(),
+    artboardId: Id.nullable(),
   }),
   /** `recordRead` found the pull request open, not a draft, checks passing and mergeable. */
   z.strictObject({

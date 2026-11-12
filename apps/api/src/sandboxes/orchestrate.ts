@@ -25,6 +25,7 @@ import {
 import type { WakeStart } from "../analytics/events.ts";
 import { RetryLater } from "../jobs/retry.ts";
 import type { JobDeps, RunningJob } from "../jobs/run.ts";
+import { notify } from "../notifications/notify.ts";
 import {
   SANDBOX_VCPUS,
   SESSION_TIMEOUT_MS,
@@ -191,6 +192,11 @@ export async function wakeCanvas(
     });
     await showAgentWaiting(db, { canvasId, waking: false, blocker: "sandbox_failed" });
     log.error("wake_failed", { canvasId, refusal: error.code, error });
+    await notify(deps, {
+      kind: "wake_failed",
+      canvasId,
+      failedAt: new Date(clock.now()).toISOString(),
+    });
   }
 }
 

@@ -9,6 +9,7 @@ import {
   listNotifyRecipients,
   markDeliveries,
   notifyCanvasFacts,
+  notifyWorkspaceFacts,
   resolveNeedsYou,
 } from "@ponzu/db";
 import { z } from "zod";
@@ -18,9 +19,10 @@ import { RetryLater } from "../jobs/retry.ts";
 import type { JobDeps, RunningJob } from "../jobs/run.ts";
 import { scheduleBadges } from "./badge.ts";
 import { canvasFactsOf, deviceFactsOf, pushNotificationOf, toggleOn } from "./facts.ts";
+import { isBillingKind } from "./kinds.ts";
 import { pushMessage } from "./payload.ts";
 import { type CancelReason, cancelReason } from "./plan.ts";
-import { canRead } from "./recipients.ts";
+import { billingRecipients, canRead } from "./recipients.ts";
 
 /*
  * One notification's pushes to its person's iPhones (docs/cloud.md, "Notifications"): the
@@ -103,6 +105,20 @@ async function closedAt(
   return now;
 }
 
+/**
+ * For a notification about no canvas: whether its person may still hear it. A billing ping goes
+ * only to whoever is still among the workspace's billing recipients; anything else with no
+ * canvas lost it.
+ */
+async function stillHearsBilling(
+  deps: JobDeps,
+  notification: NonNullable<Awaited<ReturnType<typeof getNotification>>>,
+): Promise<boolean> {
+  if (!isBillingKind(notification.kind) || !notification.workspaceId) return false;
+  const workspace = await notifyWorkspaceFacts(deps.db, notification.workspaceId);
+  return workspace !== null && billingRecipients(workspace).includes(notification.userId);
+}
+
 async function deliver(
   deps: JobDeps,
   notification: NonNullable<Awaited<ReturnType<typeof getNotification>>>,
@@ -117,11 +133,11 @@ async function deliver(
   const canvas = notification.canvasId
     ? await notifyCanvasFacts(db, { canvasId: notification.canvasId })
     : null;
-  // A billing ping is about a workspace, not a canvas; whether its person may still see it is
-  // checked by its own trigger's change.
+  // A billing ping is about a workspace, not a canvas: its person must still be one of its
+  // admins (or, for a personal workspace, its person).
   const readable = notification.canvasId
     ? canvas !== null && canRead(canvasFactsOf(canvas), notification.userId, now)
-    : true;
+    : await stillHearsBilling(deps, notification);
   // A question can close between the notify job's look at it and its row being written, and
   // then nothing resolved the row (the cron's sweep would, a minute on). Ask the question itself.
   const resolvedAt = notification.resolvedAt ?? (await closedAt(deps, notification, now));

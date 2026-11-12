@@ -2623,22 +2623,28 @@ unread rows past three days as `expired`, deletes rows past 30 days, and forgets
 90 days and Macs unseen 30.
 
 **What is worth a ping**, and who gets it. Each goes to the person's devices with `pings` on
-and not `blocked`, never to the person who caused it, and speaks as Ponzu. Built today: a
-question for you (the owner and whoever is driving the canvas at once, if they can steer it;
-five minutes on, if it is still open, everyone else who can steer it and has opened it), a
-reply (the commenter whose comment began the turn), a canvas finished (the person whose message
-or answer began a turn that worked more than a minute and left no question open), a turn that
-failed (that person, in words that say why), and a Claude plan limit (whoever's Claude account
-the canvas runs on, once a day). The rest of the table is still to be wired:
+and not `blocked`, never to the person who caused it, and speaks as Ponzu. Someone who can read
+or steer a canvas is judged from their kept access answers for its repo (write or admin to
+steer, read to read; one older than a day counts as no), and is checked again when the ping
+goes.
 
-| Event | Toggle | Who | When |
-|---|---|---|---|
-| A question for you | `needsYou` | everyone who can steer the canvas (write access), the canvas's owner first | a question row opens (`questions`, the runner's `POST /v1/runner/questions`): a question, a plan, a permission, a sign-in or a secret the agent waits on |
-| A reply | `replies` | everyone who commented on the canvas | the agent's `assistant` item finishes in a turn that a comment of theirs started |
-| A pull request is ready | `prReady` | the canvas's owner and whoever opened it (pressed Create PR, or whom the agent opened it as) | `recordRead` records the canvas's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
-| A canvas finished | `needsYou` | the canvas's owner | a turn the owner started ends with the agent `idle` and no question open, after more than a minute of work, and the owner is not looking at it (no presence row) |
-| A teammate comments | `teammateComments` | the canvas's owner | a person other than the owner comments on it |
-| The cap at 80%, the cap reached | always | the workspace's admins | once a period each, with billing |
+| Event | Kind | Toggle | Who | When |
+|---|---|---|---|---|
+| A question for you | `needs_you` | `needsYou` | the canvas's owner and whoever is driving it, at once, if they can steer it; five minutes on, if it is still open, everyone else who can steer it and has opened it | the runner raises a question (`POST /v1/runner/questions`): a question, a plan, a permission, details, a link to open or a secret |
+| A reply | `reply` | `replies` | the commenter whose comment began the turn | the runner reports the turn completed |
+| A canvas finished | `finished` | `needsYou` | the person whose message or answer began the turn | the turn completed after more than a minute of work and left no question open |
+| A turn that failed | `failed` | `needsYou` | that turn's person, in words that say why | the runner reports it failed (not at a Claude limit) |
+| A message that lapsed twice | `failed` | `needsYou` | the person who sent it | its copy went unanswered too, and the thread asks them to send it again |
+| A canvas that would not start | `failed` | `needsYou` | whoever's message, answer or comment waits on it, else its owner | a wake gave up (`sandbox_failed`), or its runner stopped answering too many times in a row |
+| A Claude plan limit | `claude_limit` | `needsYou` | whoever's Claude account the canvas runs on | once a day per account |
+| A pull request is ready | `pr_ready` | `prReady` | the canvas's owner, and the pull request's author when they are a member | `recordRead` records it open, not a draft, checks passing and mergeable; once per head commit, and at most once per canvas and person every 30 minutes |
+| A pull request approved | `pr_approved` | `prReady` | the canvas's owner and the pull request's author, never whoever approved it | a review that approved it, from someone GitHub says can push to the repo; once per review |
+| A teammate comments | `teammate_comment` | `teammateComments` | the canvas's owner | a person other than the owner comments on it. A comment within ten minutes of the owner's unread comment ping for the canvas folds into it ("Maya and Sam left 3 comments.") and the phone's ping is replaced, not added to |
+| Billing | `billing_free_used`, `billing_cap_warning`, `billing_cap_reached`, `billing_payment_failed` | always | the workspace's admins (its person, for a personal workspace), who must still be one when it goes | billing calls `notify({ kind: "billing", workspaceId, periodStart, notice, amountCents })` on a change of its gate; once a period each, in billing's words ("Northbrook has used 80% of this month's $100 cap.") |
+
+A failed check, changes asked for, a stop, a lapse being sent again and a stalled runner ping
+nobody: the agent takes the first two up by itself, and the rest recover on their own. Nothing
+calls the billing trigger yet; billing does once its gate is built.
 
 The email digest (`emailDigest`) is one email a day of the same events and nothing else.
 

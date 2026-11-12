@@ -14,6 +14,7 @@ import {
   forgetDevicesUnseenSince,
   insertDeliveries,
   insertNotifications,
+  lastNotifiedAt,
   listDevices,
   listRecentForDigest,
   MAX_DEVICES_PER_USER,
@@ -25,6 +26,7 @@ import {
   receiptsDue,
   recentPushes,
   registerDevice,
+  repushDeliveries,
   resolveClosedQuestions,
   resolveNeedsYou,
   setTimeZone,
@@ -750,6 +752,88 @@ describe("deliveries", () => {
         now: start,
       }),
     ).toEqual([]);
+  });
+
+  test("a push planned again waits again once settled, and is left alone while it goes", async () => {
+    const { notification, phones, rows } = await planned([start, start, start]);
+    const [sent, waiting, sending] = rows.map((r) => r.id) as [string, string, string];
+    await markDeliveries(db, [
+      { id: sent, state: "sending", sentAt: start },
+      { id: sending, state: "sending", sentAt: start },
+    ]);
+    await markDeliveries(db, [{ id: sent, state: "sent", sentAt: start, ticketId: "tk_1" }]);
+    const extra = await registered(phone(phones[0]!.device.userId));
+    const again = after(MINUTE);
+
+    const waits = await repushDeliveries(db, {
+      rows: [...phones.map(({ device }) => device), extra.device].map((device) => ({
+        notificationId: notification.id,
+        deviceId: device.id,
+        sendAt: again,
+      })),
+      now: again,
+    });
+
+    const all = (await run(db.select().from(notificationDeliveries))).filter(
+      (row) => row.notificationId === notification.id,
+    );
+    const byId = new Map(all.map((row) => [row.id, row]));
+    // The sent one waits again with its earlier send forgotten; the one waiting keeps its time,
+    // the one going is left to go; a phone added since gets its own.
+    expect(byId.get(sent)).toMatchObject({
+      state: "waiting",
+      sendAt: again,
+      sentAt: null,
+      ticketId: null,
+      outcome: null,
+    });
+    expect(byId.get(waiting)).toMatchObject({ state: "waiting", sendAt: start });
+    expect(byId.get(sending)).toMatchObject({ state: "sending" });
+    const added = all.find((row) => row.deviceId === extra.device.id)!;
+    expect(added).toMatchObject({ state: "waiting", sendAt: again });
+    expect(waits.sort()).toEqual([sent, added.id].sort());
+    // The database is shared by the tests below: settle the one left going.
+    await markDeliveries(db, [{ id: sending, state: "failed", outcome: "test" }]);
+  });
+
+  test("when each person was last told a kind about a canvas, one key aside", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const other = await seedUser(db);
+    const ready = (userId: string, sha: string, now: Date) =>
+      insertNotifications(db, {
+        rows: [
+          {
+            userId,
+            workspaceId: null,
+            canvasId: canvas.id,
+            kind: "pr_ready",
+            dedupeKey: `pr_ready:${canvas.id}:1:${sha}`,
+            title: "Lisbon",
+            body: "Pull request #1 is ready to merge.",
+            link: { open: "pull-request" },
+            muted: false,
+          },
+        ],
+        now,
+      });
+    await ready(user.id, "a", start);
+    await ready(user.id, "b", after(MINUTE));
+    const last = await lastNotifiedAt(db, {
+      canvasId: canvas.id,
+      kind: "pr_ready",
+      userIds: [user.id, other.id],
+    });
+    expect([...last]).toEqual([[user.id, after(MINUTE)]]);
+    const without = await lastNotifiedAt(db, {
+      canvasId: canvas.id,
+      kind: "pr_ready",
+      userIds: [user.id],
+      exceptDedupeKey: `pr_ready:${canvas.id}:1:b`,
+    });
+    expect(without.get(user.id)).toEqual(start);
+    expect(
+      await lastNotifiedAt(db, { canvasId: canvas.id, kind: "pr_approved", userIds: [user.id] }),
+    ).toEqual(new Map());
   });
 
   test("due ones come with their device, and the next one says when", async () => {

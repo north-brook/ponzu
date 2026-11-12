@@ -99,6 +99,9 @@ describe("triggers carry ids only", () => {
         canvasId: "cnv_a",
         messageId: "ti_a",
         authorId: "usr_a",
+        threadId: "th_a",
+        pageId: null,
+        artboardId: null,
         body: "Looks great",
       }).success,
     ).toBe(false);

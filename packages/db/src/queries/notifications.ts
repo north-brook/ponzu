@@ -6,14 +6,17 @@ import type {
   NotificationKind,
   NotificationReadVia,
   RepoPermission,
+  WorkspaceKind,
 } from "../enums.ts";
 import { newId } from "../ids.ts";
 import {
   devices,
+  memberships,
   type NotificationLink,
   notificationDeliveries,
   notifications,
   users,
+  workspaces,
 } from "../schema/index.ts";
 import type { User } from "./accounts.ts";
 import { queryJson, timeParam } from "./json.ts";
@@ -1232,9 +1235,130 @@ export function listNotificationsByIds(db: Db, ids: readonly string[]): Promise<
   );
 }
 
+/**
+ * Plan pushes again for notifications that changed after they were pushed: a teammate's comment
+ * folded into a row someone was already pinged about. One per notification and iPhone: a new
+ * pair is written, and one already settled (sent, delivered, failed, cancelled, unknown) waits
+ * again for `sendAt`, its earlier send forgotten. One still waiting or being sent is left as it
+ * is: it goes with the row's new words when it goes. Answers the ids that now wait.
+ */
+export async function repushDeliveries(
+  db: Db,
+  {
+    rows,
+    now,
+  }: { rows: readonly { notificationId: string; deviceId: string; sendAt: Date }[]; now: Date },
+): Promise<string[]> {
+  if (rows.length === 0) return [];
+  const changed = await run(
+    db
+      .insert(notificationDeliveries)
+      .values(
+        rows.map((row) => ({
+          id: newId("ndl"),
+          notificationId: row.notificationId,
+          deviceId: row.deviceId,
+          sendAt: row.sendAt,
+          createdAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [notificationDeliveries.notificationId, notificationDeliveries.deviceId],
+        set: {
+          state: "waiting",
+          sendAt: sql`excluded.send_at`,
+          sentAt: null,
+          ticketId: null,
+          receiptCheckedAt: null,
+          outcome: null,
+        },
+        setWhere: sql`${notificationDeliveries.state} not in ('waiting', 'sending')`,
+      })
+      .returning({ id: notificationDeliveries.id }),
+  );
+  return changed.map((row) => row.id);
+}
+
+/**
+ * When each of these people was last told `kind` about a canvas: for a kind that pings at most
+ * so often (a pull request ready). Someone never told is left out.
+ */
+export async function lastNotifiedAt(
+  db: Db,
+  {
+    canvasId,
+    kind,
+    userIds,
+    exceptDedupeKey,
+  }: {
+    canvasId: string;
+    kind: NotificationKind;
+    userIds: string[];
+    /** Leave out rows with this key: the one being told now, written by an earlier attempt. */
+    exceptDedupeKey?: string;
+  },
+): Promise<Map<string, Date>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await run(
+    db
+      .select({ userId: notifications.userId, at: sql<string>`max(${notifications.createdAt})` })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.canvasId, canvasId),
+          eq(notifications.kind, kind),
+          inArray(notifications.userId, userIds),
+          exceptDedupeKey ? sql`${notifications.dedupeKey} <> ${exceptDedupeKey}` : undefined,
+        ),
+      )
+      .groupBy(notifications.userId),
+  );
+  return new Map(rows.map((row) => [row.userId, new Date(row.at)]));
+}
+
+/** What a billing ping about a workspace needs: its name, its kind, its period and its members. */
+export interface NotifyWorkspaceFacts {
+  id: string;
+  name: string;
+  kind: WorkspaceKind;
+  billingPeriodAnchor: Date;
+  members: { userId: string; role: MemberRole }[];
+}
+
+/** A workspace's facts for a billing ping, or null when there is no such workspace. */
+export async function notifyWorkspaceFacts(
+  db: Db,
+  workspaceId: string,
+): Promise<NotifyWorkspaceFacts | null> {
+  const [workspace] = await run(
+    db
+      .select({
+        id: workspaces.id,
+        name: workspaces.name,
+        kind: workspaces.kind,
+        billingPeriodAnchor: workspaces.billingPeriodAnchor,
+      })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId)),
+  );
+  if (!workspace) return null;
+  const members = await run(
+    db
+      .select({ userId: memberships.userId, role: memberships.role })
+      .from(memberships)
+      .where(eq(memberships.workspaceId, workspaceId))
+      .orderBy(memberships.userId),
+  );
+  return { ...workspace, members };
+}
+
 /** One member of a canvas's workspace, and the kept answer for the canvas's repo. */
 export interface NotifyPerson {
   userId: string;
+  /** Their GitHub login, to match a pull request's author or reviewer to them. */
+  login: string;
+  /** `users.name`, for the most of them a ping may say (a first name). */
+  name: string | null;
   role: MemberRole;
   /** The kept `repo_access` answer for the canvas's repo, or null when there is none (or no repo). */
   permission: RepoPermission | null;
@@ -1255,6 +1379,11 @@ export interface NotifyCanvasFacts {
   event: { kind: string; userId: string | null } | null;
   /** The person behind the newest delivered message, answer or comment: who is driving it. */
   driverId: string | null;
+  /**
+   * The person behind the newest message, answer or comment, delivered or not: whose words wait
+   * when a wake gives up before any runner took them.
+   */
+  waitingFor: string | null;
   /** How many of its questions are open. */
   openQuestions: number;
   /** Everyone who has opened it (a `canvas_reads` row). */
@@ -1285,10 +1414,13 @@ export async function notifyCanvasFacts(
     } | null;
     event: { kind: string; user_id: string | null } | null;
     driver_id: string | null;
+    waiting_for: string | null;
     open_questions: number;
     opened_by: string[];
     people: {
       user_id: string;
+      login: string;
+      name: string | null;
       role: NotifyPerson["role"];
       permission: NotifyPerson["permission"];
       checked_at: string | null;
@@ -1315,6 +1447,12 @@ export async function notifyCanvasFacts(
              and e.delivered_at is not null and e.user_id is not null
            order by e.seq desc limit 1
         ),
+        'waiting_for', (
+          select e.user_id from events e
+           where e.canvas_id = ${canvasId} and e.kind in ('message', 'answer', 'comment')
+             and e.user_id is not null
+           order by e.seq desc limit 1
+        ),
         'open_questions', (
           select count(*) from questions where canvas_id = ${canvasId} and status = 'open'
         ),
@@ -1323,10 +1461,11 @@ export async function notifyCanvasFacts(
         ), '[]'::json),
         'people', coalesce((
           select json_agg(json_build_object(
-                   'user_id', m.user_id, 'role', m.role,
+                   'user_id', m.user_id, 'login', u.github_login, 'name', u.name, 'role', m.role,
                    'permission', ra.permission, 'checked_at', ra.checked_at))
             from canvases c
             join memberships m on m.workspace_id = c.workspace_id
+            join users u on u.id = m.user_id
             left join repo_access ra on ra.user_id = m.user_id and ra.repo_id = c.repo_id
            where c.id = ${canvasId}
         ), '[]'::json)
@@ -1345,10 +1484,13 @@ export async function notifyCanvasFacts(
     claudeUserId: canvas.claude_user_id,
     event: result.event ? { kind: result.event.kind, userId: result.event.user_id } : null,
     driverId: result.driver_id,
+    waitingFor: result.waiting_for,
     openQuestions: Number(result.open_questions),
     openedBy: result.opened_by,
     people: result.people.map((person) => ({
       userId: person.user_id,
+      login: person.login,
+      name: person.name,
       role: person.role,
       permission: person.permission,
       checkedAt: person.checked_at ? new Date(person.checked_at) : null,

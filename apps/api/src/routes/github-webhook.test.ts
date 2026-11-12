@@ -9,12 +9,14 @@ import {
   getWorkspaceByInstallation,
   jobs,
   listUserWorkspaces,
+  notifications,
   repos,
   threadItems,
   workspaces,
 } from "@ponzu/db";
 import { PEOPLE_WINDOW_MS } from "../github/people.ts";
 import { syncGithub } from "../github/sync.ts";
+import { PR_READY_EVERY_MS } from "../notifications/plan.ts";
 import { REFRESH_JOB, refreshSoon } from "../pull-requests/refresh.ts";
 import { refreshPullRequest } from "../pull-requests/sync.ts";
 import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
@@ -1125,5 +1127,99 @@ describe("pull requests, checks and reviews", () => {
     t.clock.advance(2 * 60_000);
     await cronRun();
     expect(await eventsOf(canvas.id)).toHaveLength(1);
+  });
+
+  /** The inbox rows of one kind about a canvas, oldest first. */
+  const pings = async (canvasId: string, kind: string) =>
+    (await t.db.select().from(notifications))
+      .filter((row) => row.canvasId === canvasId && row.kind === kind)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+  test("a pull request ready to merge pings its owner once a head, and at most every half hour", async () => {
+    const { repository, canvas, person } = await canvasInRepo("readyco");
+    const { repo, pull } = openOnGithub(repository);
+    const passing = () =>
+      t.github.pulls.setChecks(t.github.pulls.head(repo, "pz/checkout")!, [
+        { name: "test", state: "success" },
+      ]);
+    const read = async () => {
+      await refreshPullRequest(t.deps, canvas.id, { number: pull.number });
+      await t.backgroundDone();
+    };
+
+    // Checks still running: not yet.
+    t.github.pulls.setChecks(t.github.pulls.head(repo, "pz/checkout")!, [
+      { name: "test", state: "in_progress" },
+    ]);
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    await read();
+    expect(await pings(canvas.id, "pr_ready")).toEqual([]);
+
+    passing();
+    await read();
+    await read();
+    const ready = await pings(canvas.id, "pr_ready");
+    expect(ready).toHaveLength(1);
+    expect(ready[0]).toMatchObject({
+      userId: person.userId,
+      body: `Pull request #${pull.number} is ready to merge.`,
+      link: { open: "pull-request" },
+    });
+
+    // A new commit that is ready again within the half hour pings nobody.
+    t.clock.advance(60_000);
+    t.github.pulls.push(repo, "pz/checkout");
+    passing();
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    await read();
+    expect(await pings(canvas.id, "pr_ready")).toHaveLength(1);
+
+    // Half an hour after the last ping, the next head ready is told.
+    t.clock.advance(PR_READY_EVERY_MS);
+    t.github.pulls.push(repo, "pz/checkout");
+    passing();
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    await read();
+    expect(await pings(canvas.id, "pr_ready")).toHaveLength(2);
+  });
+
+  test("an approving review pings the owner, never whoever approved it, once a review", async () => {
+    const { repository, canvas, person } = await canvasInRepo("approvedco");
+    const { pull } = openOnGithub(repository);
+    const kim = reviewer("kim-approves", repository, "write");
+    const review = (user: { id: number; login: string }, state: string, id: number) => ({
+      action: "submitted",
+      repository: { id: repository.id },
+      review: {
+        id,
+        state,
+        body: "Ship the Nightjar launch",
+        html_url: "https://gh/r/5",
+        user,
+        author_association: "COLLABORATOR",
+      },
+      pull_request: {
+        ...pullRequest(repository.id, { number: pull.number }),
+        user: { login: "maya" },
+      },
+    });
+
+    await deliver("pull_request_review", review(kim, "CHANGES_REQUESTED", 501));
+    await deliver("pull_request_review", review(kim, "APPROVED", 502));
+    // The same review delivered again (a new delivery id) is the same ping.
+    await deliver("pull_request_review", review(kim, "APPROVED", 502));
+    const approved = await pings(canvas.id, "pr_approved");
+    expect(approved).toHaveLength(1);
+    expect(approved[0]).toMatchObject({
+      userId: person.userId,
+      dedupeKey: `pr_approved:${canvas.id}:502`,
+      body: `@kim-approves approved pull request #${pull.number}.`,
+      link: { open: "pull-request" },
+    });
+
+    // The owner approving it themselves is told to nobody.
+    await deliver("pull_request_review", review(person.github, "APPROVED", 503));
+    expect(await pings(canvas.id, "pr_approved")).toHaveLength(1);
+    expect(JSON.stringify(await t.db.select().from(notifications))).not.toContain("Nightjar");
   });
 });
