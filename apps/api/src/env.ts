@@ -14,6 +14,29 @@ import {
 } from "./features.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
 
+/** Where an API runs. Each has its own database, WorkOS environment, bucket and GitHub App. */
+export const ENVIRONMENTS = ["production", "dev", "preview", "local"] as const;
+export type Environment = (typeof ENVIRONMENTS)[number];
+
+/** Where a sandbox's runner reaches the API when PONZU_API_URL is unset, which only off Vercel is allowed. */
+export const DEFAULT_API_URL = "https://api.ponzu.design";
+
+/** What every Vercel deployment must set beyond the variables the API always needs. */
+const REQUIRED_ON_VERCEL = ["PONZU_ENVIRONMENT", "PONZU_API_URL"] as const;
+
+/**
+ * Names Vercel sets itself on every deployment. A person never sets them, so they are in neither
+ * REQUIRED_ENV nor OPTIONAL_ENV.
+ */
+export const SYSTEM_ENV = ["VERCEL", "VERCEL_GIT_COMMIT_SHA"] as const;
+
+/**
+ * Names that must never be set on a deployment. A token on Vercel is already refused at boot
+ * (sandboxes use OIDC there); the others are leftovers of earlier designs, which the production
+ * check (`scripts/prod/check.ts`) reports.
+ */
+export const FORBIDDEN_ENV = ["VERCEL_TOKEN", "BOAT_API_KEY", "PONZU_SANDBOX_SNAPSHOT"] as const;
+
 /**
  * Every environment variable the API reads, and the only place it reads them. `.env.example`
  * lists the same names; a variable added here is added there.
@@ -45,8 +68,18 @@ const schema = z.object({
   VERCEL_PROJECT_ID: z.string().optional(),
   /** Set to "1" by Vercel on every deployment. */
   VERCEL: z.string().optional(),
-  /** Where a sandbox's runner reaches this API. */
-  PONZU_API_URL: z.url().default("https://api.ponzu.design"),
+  /**
+   * Which environment this deployment is: production, dev, preview or local. Required on Vercel
+   * (`VERCEL=1`), so a deployment always says which one it is; `local` when unset off Vercel.
+   * `/v1/health` reports it.
+   */
+  PONZU_ENVIRONMENT: z.enum(ENVIRONMENTS).optional(),
+  /**
+   * Where a sandbox's runner reaches this API. Required on Vercel: a default there would be
+   * production's address, and a dev deployment's runners would call production. Off Vercel it is
+   * `DEFAULT_API_URL` when unset.
+   */
+  PONZU_API_URL: z.url().optional(),
   /** How long a sandbox stays awake after the last activity, in seconds. */
   PONZU_SANDBOX_IDLE_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   /** How many sandboxes may be waking or awake at once in one workspace, and for one owner. */
@@ -119,6 +152,30 @@ const schema = z.object({
   PONZU_MAINTENANCE: z.enum(MAINTENANCE_MODES).default("off"),
 });
 
+type Name = keyof typeof schema.shape;
+const NAMES = Object.keys(schema.shape) as Name[];
+const unsetIsFine = (name: Name) => schema.shape[name].safeParse(undefined).success;
+const system = new Set<string>(SYSTEM_ENV);
+const forbidden = new Set<string>(FORBIDDEN_ENV);
+const requiredOnVercel = new Set<string>(REQUIRED_ON_VERCEL);
+
+/**
+ * Every name a Vercel deployment must set: what the API always needs, plus PONZU_ENVIRONMENT
+ * and PONZU_API_URL. The production check compares a project's Production target with this.
+ */
+export const REQUIRED_ENV: readonly string[] = NAMES.filter(
+  (name) => !unsetIsFine(name) || requiredOnVercel.has(name),
+);
+
+/**
+ * Every other name a deployment may set: each has a default or turns its feature off when
+ * unset. Vercel's own names and the forbidden ones are not here.
+ */
+export const OPTIONAL_ENV: readonly string[] = NAMES.filter(
+  (name) =>
+    unsetIsFine(name) && !requiredOnVercel.has(name) && !system.has(name) && !forbidden.has(name),
+);
+
 /** How canvases' sandboxes are made and kept. */
 export interface SandboxConfig {
   /**
@@ -180,6 +237,8 @@ export interface Env {
   r2PrivateBucket: string | null;
   anthropicApiKey: string;
   minimumClientVersions: MinimumVersions;
+  /** Which environment this is (PONZU_ENVIRONMENT): `local` off Vercel when unset. */
+  environment: Environment;
   commit: string | null;
   /** PostHog, or null when PONZU_POSTHOG_KEY is unset and analytics is off. */
   posthog: PosthogConfig | null;
@@ -199,8 +258,17 @@ export function readEnv(source: Record<string, string | undefined>): Env {
   // An empty value is how a dashboard or a shell says "unset".
   const set = Object.fromEntries(Object.entries(source).filter(([, value]) => value !== ""));
   const parsed = schema.safeParse(set);
-  if (!parsed.success) {
-    const names = [...new Set(parsed.error.issues.map((issue) => String(issue.path[0])))];
+  // On Vercel these two have no fallback: a deployment that does not say where it is and where
+  // its runners reach it never starts, rather than guessing production's address.
+  const missingOnVercel =
+    set.VERCEL === "1" ? REQUIRED_ON_VERCEL.filter((name) => set[name] === undefined) : [];
+  if (!parsed.success || missingOnVercel.length > 0) {
+    const names = [
+      ...new Set([
+        ...(parsed.error?.issues.map((issue) => String(issue.path[0])) ?? []),
+        ...missingOnVercel,
+      ]),
+    ];
     throw new EnvError(
       names.map((name) => `${name} is ${set[name] === undefined ? "not set" : "malformed"}.`),
     );
@@ -229,7 +297,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     cronSecret: env.CRON_SECRET,
     sandbox: {
       image: current.image,
-      apiUrl: env.PONZU_API_URL.replace(/\/+$/, ""),
+      apiUrl: (env.PONZU_API_URL ?? DEFAULT_API_URL).replace(/\/+$/, ""),
       idleSeconds: env.PONZU_SANDBOX_IDLE_SECONDS,
       limits: {
         perWorkspace: env.PONZU_SANDBOX_MAX_PER_WORKSPACE,
@@ -253,6 +321,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     r2PrivateBucket: env.R2_PRIVATE_BUCKET || null,
     anthropicApiKey: env.PONZU_ANTHROPIC_API_KEY,
     minimumClientVersions,
+    environment: env.PONZU_ENVIRONMENT ?? "local",
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,
     posthog: env.PONZU_POSTHOG_KEY
       ? {

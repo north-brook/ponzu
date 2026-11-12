@@ -157,6 +157,7 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export { countAppliedMigrations, EXPECTED_MIGRATIONS } from "./queries/migrations.ts";
 export {
   type Device,
   type DeviceChanges,

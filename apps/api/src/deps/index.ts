@@ -5,7 +5,7 @@ import manifest from "../../package.json" with { type: "json" };
 import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
-import type { Env, SandboxConfig } from "../env.ts";
+import type { Env, Environment, SandboxConfig } from "../env.ts";
 import type { Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
@@ -89,8 +89,8 @@ export interface Deps {
 
 /** Settings a route may need, already read from the environment. */
 export interface Config {
-  /** What `/v1/health` reports about this build. */
-  build: { version: string; commit: string | null };
+  /** What `/v1/health` reports about this build, and which environment it runs in. */
+  build: { version: string; commit: string | null; environment: Environment };
   minimumClientVersions: MinimumVersions;
   /** Where canvases' files are served from; a canvas's are under `<assetsUrl>/<asset key>/`. */
   assetsUrl: string;
@@ -183,7 +183,7 @@ export function createDeps(env: Env): Deps {
     ),
     features: env.features,
     config: {
-      build: { version: VERSION, commit: env.commit },
+      build: { version: VERSION, commit: env.commit, environment: env.environment },
       minimumClientVersions: env.minimumClientVersions,
       assetsUrl: env.assetsUrl,
       posthog: env.posthog,

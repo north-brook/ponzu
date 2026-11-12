@@ -2891,9 +2891,21 @@ The sandbox image is built once, into dev's registry, and the production deploy 
 digest, so production runs exactly the bytes dev checked. Within a project, sandboxes sit
 beside the API's functions and the image's registry, kept apart by their names' scope ("The
 sandbox"): a deployment lists, stops and removes only the names its own database's scope
-begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
-deployment's runners call back; unset, it is production's address, so a dev deployment or a
-preview whose sandboxes must reach it sets it.
+begins. The scope is a second wall behind the project.
+
+Every deployment says which environment it is and where its runners call back:
+`PONZU_ENVIRONMENT` (`production`, `dev`, `preview` or `local`) and `PONZU_API_URL`. On Vercel
+both are required, and a deployment missing either stops at boot with an error that names it,
+so no deployment falls back to production's address. Off Vercel they default to `local` and
+`https://api.ponzu.design`. `GET /v1/health`, public and given three seconds, reports what is
+deployed and where: `status`, `version`, `commit`, `environment`, `image` (the runner image,
+`ponzu-runner@sha256:…`), `runnerBundle` (the first 12 hex of the runner bundle's SHA-256),
+`migrations: { applied, expected }` and `database`. `expected` is the journal's entry count,
+built in; `applied` is the count of drizzle's record of applied migrations, the number the
+migrator compares. The answer is `degraded` at 200 when the two differ, and 503 only when the
+database cannot be reached. `apps/api/src/env.ts` exports the names a deployment must set
+(`REQUIRED_ENV`), may set (`OPTIONAL_ENV`) and must never set (`FORBIDDEN_ENV`), which the
+production check compares with each project.
 
 A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
 the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
