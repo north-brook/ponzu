@@ -20,13 +20,14 @@ export const RUNNER_INSTRUCTIONS = [
 /**
  * What a turn on a repo design starts with, after the event: where the design's pull request
  * and branch stand as the app shows them, so the agent never speaks of a pull request that does
- * not exist and knows who opens one.
+ * not exist, and, for a turn GitHub began, that it may not land it.
  */
 export function turnContext({
   branch,
   pullRequest,
   unpushed,
   pushFailed,
+  fromGithub = false,
 }: {
   branch: string;
   /** Undefined when the API has not said (one older than this): then nothing is claimed of it. */
@@ -34,22 +35,27 @@ export function turnContext({
   unpushed: number;
   /** git's last words on the push that failed, if the last one did. */
   pushFailed: string | null;
+  /** The turn begins with a check or a review from GitHub, not a person in Ponzu. */
+  fromGithub?: boolean;
 }): string {
   const pr = pullRequest;
   const where =
     pr === undefined
-      ? `the person opens a pull request from ${branch} with Create PR once it has commits; Ponzu doesn't open one by itself. Check describe_pull_request's answer before saying whether one is open.`
+      ? `whether a pull request is open for ${branch} isn't known here: read_pull_request says.`
       : pr && (pr.state === "open" || pr.state === "draft")
-        ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, and describe_pull_request rewrites its description.`
+        ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, describe_pull_request rewrites its description, and read_pull_request says where its checks and reviews stand.`
         : pr?.state === "merged"
-          ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: for new commits the person opens another with Create PR.`
-          : `no pull request is open for ${branch}. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.`;
+          ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: new commits need a new one, which open_pull_request opens.`
+          : `no pull request is open for ${branch}. Open one with open_pull_request once the branch has work worth a reviewer's look.`;
   const commits = unpushed === 1 ? "1 commit" : `${unpushed} commits`;
   const pending =
     unpushed > 0
       ? ` ${commits} on ${branch} ${unpushed === 1 ? "isn't" : "aren't"} on GitHub yet${pushFailed ? ` (the last push failed: ${pushFailed})` : ""}; Ponzu pushes the branch when your turn ends.`
       : "";
-  return `(From Ponzu: ${where}${pending})`;
+  const github = fromGithub
+    ? " This turn began on GitHub, not with a person in Ponzu: fix and push what it needs, but Ponzu won't merge, mark ready or turn on auto-merge in it."
+    : "";
+  return `(From Ponzu: ${where}${pending}${github})`;
 }
 
 /**

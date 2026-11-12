@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { emptyDoc, parseHtml } from "@ponzu/core";
 import { cloudTools, tools } from "@ponzu/tools";
+import { PULL_REQUEST_TOOLS } from "./pull-request-tools.ts";
 import { commandStep, describeStep, looksSecret, shortPath } from "./steps.ts";
 
 const doc = emptyDoc("Fern");
@@ -42,6 +43,7 @@ describe("the canvas", () => {
       ...cloudTools.map((t) => t.name),
       ...tools.map((t) => t.name),
       "describe_pull_request",
+      ...Object.values(PULL_REQUEST_TOOLS),
     ]);
     for (const tool of names) {
       const step = describeStep(`mcp__ponzu__${tool}`, {}, ctx);

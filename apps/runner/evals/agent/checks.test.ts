@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { type FactInputs, factsText, pushAndNotices } from "./agent.eval.ts";
-import { checkMessages, describedAfterLastCommit, idsOf, parseDesignAddress } from "./checks.ts";
+import {
+  checkMessages,
+  describedAfterLastCommit,
+  idsOf,
+  parseDesignAddress,
+  pullRequestAsAsked,
+} from "./checks.ts";
 import { pricingDoc } from "./seeds.ts";
 
 // The agent suite's exact checks, without a model: what they pass and fail is code's to decide.
@@ -112,4 +118,55 @@ test("only the runner's own push failure is told to the judge as one; other noti
   const facts = factsText({ ...BASE_FACTS, notices: [other] });
   expect(facts).toContain(`Ponzu showed an error notice in the thread: ${other}`);
   expect(facts).not.toContain("Ponzu's own push");
+});
+
+test("the pull request moves only as asked: opened when ready, merged only when told", () => {
+  const open = { action: "open", outcome: "done" };
+  const merge = { action: "merge", outcome: "done" };
+  expect(pullRequestAsAsked([open], { opens: true, merges: false })).toEqual({
+    opened: true,
+    merged: true,
+    problems: [],
+  });
+  // A merge nobody asked for fails, even one the API refused: the agent tried.
+  const refused = pullRequestAsAsked([{ action: "merge", outcome: "turn_not_from_person" }], {
+    merges: false,
+  });
+  expect(refused.merged).toBe(false);
+  expect(refused.problems[0]).toContain("tried to land it, though nobody asked");
+  expect(
+    pullRequestAsAsked([{ action: "auto_merge", outcome: "done" }], { merges: false }).merged,
+  ).toBe(false);
+  // Told to ship it: only a merge GitHub took passes.
+  expect(pullRequestAsAsked([merge], { merges: true }).merged).toBe(true);
+  expect(
+    pullRequestAsAsked([{ action: "merge", outcome: "review_required" }], { merges: true }).merged,
+  ).toBe(false);
+  expect(pullRequestAsAsked([], { opens: true, merges: false }).problems).toEqual([
+    "did not open the pull request",
+  ]);
+  expect(pullRequestAsAsked([merge], undefined)).toEqual({
+    opened: null,
+    merged: null,
+    problems: [],
+  });
+});
+
+test("the judge hears what happened to the pull request, when the turn says", () => {
+  const before = factsText(BASE_FACTS);
+  // A row recorded before the agent drove its pull request reads as it did.
+  expect(before).toContain("No pull request is open.");
+  const facts = factsText({
+    ...BASE_FACTS,
+    summaries: 1,
+    pullRequestStart: { number: 4, state: "open" },
+    pullRequestCalls: [
+      { action: "read", outcome: "done" },
+      { action: "merge", outcome: "done" },
+    ],
+  });
+  expect(facts).toContain("When the turn began, pull request #4 was open.");
+  expect(facts).toContain("The agent's pull request tools: merge (done).");
+  expect(facts).not.toContain("No pull request is open.");
+  expect(facts).not.toContain("saved for the one the person opens");
 });

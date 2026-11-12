@@ -176,10 +176,10 @@ test("notices the agent missed come together, from Ponzu", () => {
   );
 });
 
-test("a turn starts with where the pull request stands, and who opens one", () => {
+test("a turn starts with where the pull request stands, and how the agent opens one", () => {
   const branch = "pz/onboarding";
   expect(turnContext({ branch, pullRequest: null, unpushed: 0, pushFailed: null })).toBe(
-    "(From Ponzu: no pull request is open for pz/onboarding. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.)",
+    "(From Ponzu: no pull request is open for pz/onboarding. Open one with open_pull_request once the branch has work worth a reviewer's look.)",
   );
   expect(
     turnContext({
@@ -189,7 +189,7 @@ test("a turn starts with where the pull request stands, and who opens one", () =
       pushFailed: null,
     }),
   ).toBe(
-    "(From Ponzu: pull request #12 is open as a draft from pz/onboarding: pushing to the branch updates it, and describe_pull_request rewrites its description.)",
+    "(From Ponzu: pull request #12 is open as a draft from pz/onboarding: pushing to the branch updates it, describe_pull_request rewrites its description, and read_pull_request says where its checks and reviews stand.)",
   );
   expect(
     turnContext({
@@ -217,5 +217,17 @@ test("a turn starts with where the pull request stands, and who opens one", () =
     }),
   ).toContain(
     "2 commits on pz/onboarding aren't on GitHub yet (the last push failed: fatal: repository 'https://github.com/o/r.git/' not found); Ponzu pushes the branch when your turn ends.",
+  );
+  // A turn GitHub began is told it may fix, not land.
+  expect(
+    turnContext({
+      branch,
+      pullRequest: { number: 12, state: "open" },
+      unpushed: 0,
+      pushFailed: null,
+      fromGithub: true,
+    }),
+  ).toEndWith(
+    " This turn began on GitHub, not with a person in Ponzu: fix and push what it needs, but Ponzu won't merge, mark ready or turn on auto-merge in it.)",
   );
 });
