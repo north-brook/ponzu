@@ -50,7 +50,7 @@ const { positionals, values } = parseArgs({
 const command = positionals[0];
 if (command !== "compare" && command !== "references" && command !== "shots") {
   console.error(
-    "usage: bun scripts/visual.ts compare --design <dir> | references | shots [--out <dir>]",
+    "usage: bun scripts/visual.ts compare --design <dir> | references | shots [--out <dir>] [--only <id>]",
   );
   process.exit(2);
 }
@@ -72,6 +72,7 @@ try {
     mkdirSync(out, { recursive: true });
     const sharp = await browser.newPage({ deviceScaleFactor: SITE_SCALE });
     const shots = SITE_SHOTS.filter((id) => !values.only || id === values.only);
+    if (shots.length === 0) throw new Error(`${values.only} isn't one of SITE_SHOTS.`);
     for (const id of shots) {
       const c = COMPOSITIONS.find((c) => c.id === id);
       if (!c) throw new Error(`SITE_SHOTS names ${id}, which isn't a composition.`);
