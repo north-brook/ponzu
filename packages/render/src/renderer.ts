@@ -76,7 +76,7 @@ export interface RenderRequest {
   assetBase?: string;
   /**
    * A small picture (a thumbnail, a preview, a canvas snapshot), not a
-   * screenshot: the design's big images load as copies sized to the render
+   * screenshot: the board's big images load as copies sized to the render
    * (see RENDITION_WIDTHS), which is much faster. Screenshots, exports and
    * agents' tools leave it out and get the originals.
    */

@@ -94,7 +94,7 @@ export interface RunnerSession {
   committer: { name: string; email: string };
   /** What `assets/<name>` resolves against, `https://assets.ponzu.cloud/<asset key>`. */
   assetBase: string;
-  /** Opens the design in Ponzu. */
+  /** Opens the canvas in Ponzu. */
   link: string;
   /** The theme of the canvas of the person the agent works for, once known. */
   theme: Theme | null;

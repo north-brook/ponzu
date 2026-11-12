@@ -1,6 +1,6 @@
 # The sandbox image
 
-Every design's Vercel Sandbox starts from one container image: Ubuntu 24.04 (by digest) with
+Every canvas's Vercel Sandbox starts from one container image: Ubuntu 24.04 (by digest) with
 what the runner needs of a machine. It is pushed to the **ponzu-api** project's Vercel Container
 Registry as `ponzu-runner` and named by digest in `current.json`, which the API imports
 (`@ponzu/runner/image/current.json`) and so ships with every API deploy. A VCR repository belongs
@@ -11,7 +11,7 @@ The image holds **no runner**. At every start of a sandbox the API runs `ponzu-s
 runner's environment; it fetches the runner bundle the API names (`GET /v1/runner/bundle`, the
 tgz `apps/runner/scripts/build.ts` makes), checks its SHA-256 and that it fits the image, and
 starts its supervisor. A runner change ships with the API alone; only an OS, font, Bun, Claude
-Code or headless-shell change makes a new image, and every design is then recreated at its next
+Code or headless-shell change makes a new image, and every canvas is then recreated at its next
 wake (the runner rebuilds from git and R2; gitignored files are lost).
 
 ```
@@ -23,7 +23,7 @@ image.ts         the inputs, their hash (the tag), current.json's shape
 build.ts         build, push, wait for Ready, check, record current.json
 checks.ts        the acceptance checks, in a pz-test-image-* sandbox
 e2e.ts           the runner for real: turns, sleeps and wakes, a repo checkout and push
-durability.ts    a sleep and a wake, then the sandbox removed and the design rebuilt
+durability.ts    a sleep and a wake, then the sandbox removed and the canvas rebuilt
 bump.ts          moves the Agent SDK and Claude Code pins together, for claude-code.yml
 live.ts          what those three do to a sandbox, on @ponzu/sandbox only
 sandbox/         what they run inside a sandbox: the fake API, a screenshot, the tools probe

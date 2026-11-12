@@ -5,9 +5,9 @@ import { googleFontLinks, googleFonts } from "./fonts.ts";
  * Shared base styles for an artboard, in the canvas and in screenshots.
  * Artboards are flex columns by default and clip what overflows. Plain CSS
  * makes display: flex a row, so lint flags a root that sets it with no direction.
- * Black on white unless the design says otherwise, in either theme: text left
+ * Black on white unless the board says otherwise, in either theme: text left
  * to the page's default would turn white in dark mode, on the white artboard.
- * Text at the size the design gives it: iOS WebKit's text autosizing enlarges
+ * Text at the size the board gives it: iOS WebKit's text autosizing enlarges
  * small text in a block wider than the screen (an 11px code block on a 1320px
  * board drew at 19px on the phone), which desktop never does. The property
  * inherits, so the root pins it for the whole board.
@@ -33,8 +33,8 @@ export interface PageOptions {
   imageScale?: number;
   /**
    * @font-face rules for the system fonts this machine draws in stand-ins
-   * (stand-ins.ts). They go first in the page, so a face the design declares
-   * under the same name wins, and lint can tell them from the design's own.
+   * (stand-ins.ts). They go first in the page, so a face the board declares
+   * under the same name wins, and lint can tell them from the board's own.
    */
   standInFaces?: string;
 }
@@ -65,7 +65,7 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const body = serializeArtboardElement(ab, {
     rewriteUrl: (u) => {
       const url = resolveAsset(u, base);
-      // Only the design's own assets: a thumbnail render doesn't proxy remote images.
+      // Only the canvas's assets: a thumbnail render doesn't proxy remote images.
       if (!step || !base || !url.startsWith(`${base.replace(/\/$/, "")}/assets/`)) return url;
       if (!isRasterUrl(url)) return url;
       return renditionUrl(url, step, base) ?? url;
@@ -150,8 +150,8 @@ export function originalUrl(url: string, assetBase: string): string {
 }
 
 /**
- * Whether the canvas could show a smaller copy of the image at `url` (already
- * resolved against `assetBase`): a raster asset of the design, or a remote
+ * Whether Ponzu could show a smaller copy of the image at `url` (already
+ * resolved against `assetBase`): one of the canvas's raster assets, or a remote
  * image. `ctx` says where the URL sits; a remote URL without an image file
  * extension only counts where it can only be an image.
  */

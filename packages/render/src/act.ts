@@ -8,7 +8,7 @@
  * CSS animation. The canvas plays it, screenshot shows its poster frame,
  * record films it beat by beat, and loop.ts films it for boards drawn small.
  *
- * States are the design's own CSS. The cursor hovering a button turns on its
+ * States are the board's own CSS. The cursor hovering a button turns on its
  * :hover rules, a press its :active ones, typing its :focus ones, and `set`
  * adds any attribute or class. Ponzu toggles each state for a moment while it
  * compiles, reads what changes and with which transition, and animates that.
@@ -507,7 +507,7 @@ export function actRuntime(core: ReturnType<typeof actCore>) {
     },
   };
 
-  /** The cursor's and its helpers' look. States are attributes, eased by transitions: the same engine as the design's own. */
+  /** The cursor's and its helpers' look. States are attributes, eased by transitions: the same engine as the board's own. */
   const LAYER_CSS = `
 [data-act-layer]{position:absolute;inset:0;pointer-events:none;z-index:2147483000;overflow:visible;color-scheme:light}
 [data-act-cursor]{position:absolute;left:0;top:0;width:0;height:0;--act-size:1;transition:opacity .25s ease}
@@ -1894,7 +1894,7 @@ ${Object.keys(GLYPHS)
   }
 
   /**
-   * The design's states, as tracks. Each moment a state changes, the board is
+   * The board's states, as tracks. Each moment a state changes, the board is
    * put in that state and read: every element a state rule could match, every
    * property those rules set, and the transition each property takes there.
    * Then everything goes back as it was.
@@ -2034,7 +2034,7 @@ ${Object.keys(GLYPHS)
       );
     }
     restore();
-    // Third pass: the values. A state change starts the design's transition, and a value
+    // Third pass: the values. A state change starts the board's transition, and a value
     // read then is its first frame, so transitions are off while reading.
     const still = document.createElement("style");
     still.textContent = "*,*::before,*::after{transition:none!important}";
@@ -2052,7 +2052,7 @@ ${Object.keys(GLYPHS)
     for (const e of moments[0]!.events) apply(e);
     void section.offsetHeight;
     still.remove();
-    // Toggling started the design's own transitions; the scene plays them instead.
+    // Toggling started the board's own transitions; the scene plays them instead.
     for (const a of scope.getAnimations ? scope.getAnimations() : document.getAnimations()) {
       if ("transitionProperty" in a) {
         const t = (a.effect as KeyframeEffect | null)?.target;

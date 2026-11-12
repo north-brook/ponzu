@@ -1,7 +1,7 @@
 /*
  * What the evals spend, and the cap they stop at. Every model call an eval makes is priced from
  * its token usage by the table below and added up here, and a call is refused before it is
- * sent when the most it could cost would take the total past the cap. The design agent's turns
+ * sent when the most it could cost would take the total past the cap. The agent's turns
  * run on a Claude sign-in, not this key, so they are counted in turns (`TurnBudget`), not here.
  */
 

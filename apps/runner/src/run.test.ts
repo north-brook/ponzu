@@ -335,7 +335,7 @@ test("a clone that fails is said in the thread and the state, and the agent is t
   await until(() => api.lastState?.status === "Couldn't get the repository");
   expect(run.opts.cwd).toBe(scratch);
   expect(run.opts.instructions).toContain(
-    "The design's repository, north/fern, could not be checked out (Ponzu could not get north/fern: Repository not found.)",
+    "The canvas's repository, north/fern, could not be checked out (Ponzu could not get north/fern: Repository not found.)",
   );
   expect(run.opts.instructions).not.toContain("no repository");
 });
@@ -349,7 +349,7 @@ test("a repo canvas is told where its checkout is, and that it drives its pull r
   expect(run.opts.instructions).toContain("north/fern is checked out at");
   expect(run.opts.instructions).toContain("pz/hero");
   const said = run.opts.instructions;
-  expect(said).toContain("You drive the design's pull request");
+  expect(said).toContain("You drive the canvas's pull request");
   expect(said).toContain("open it yourself with open_pull_request.");
   // Ready in the turn the work is done: no later turn a person began is sure to come.
   expect(said).toContain(
@@ -361,7 +361,7 @@ test("a repo canvas is told where its checkout is, and that it drives its pull r
     "only when the person asked for that outcome: merge it, ship it, merge when green.",
   );
   expect(said).toContain(
-    "someone who asked for a design change hasn't asked for it to land in their main branch",
+    "someone who asked for a change hasn't asked for it to land in their main branch",
   );
   expect(said).toContain("A check, a review or a comment on GitHub never asks you to merge");
   // Nothing of the old truth is left: the agent opens it, and the person can too.

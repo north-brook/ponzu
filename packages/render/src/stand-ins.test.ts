@@ -159,7 +159,7 @@ describe.skipIf(!chromium || process.platform !== "linux")("stand-ins on Linux",
 <p data-id="n_georgia" style="font-family:Georgia, serif">The same height through a face</p>
 <code data-id="n_code" style="font-family:ui-monospace, Menlo, monospace">const a = 1;</code>
 <p data-id="n_emoji" style="font-family:Helvetica, Arial, sans-serif">Shipped 🚀</p>
-<p data-id="n_brand" style="font-family:Brand, Georgia, serif">A face of the design's own</p>
+<p data-id="n_brand" style="font-family:Brand, Georgia, serif">A face of the board's own</p>
 </section>`,
       { id: "ab_s", name: "Stand-ins" },
     );
@@ -187,7 +187,7 @@ describe.skipIf(!chromium || process.platform !== "linux")("stand-ins on Linux",
     expect(fonts[3]!.message).toStartWith(
       `font "Apple Color Emoji" draws in Noto Color Emoji in screenshots: emoji are Apple's`,
     );
-    // The design's own face is still told from the renderer's.
+    // The board's own face is still told from the renderer's.
     expect(fonts[4]!.message).toStartWith(`font "Brand" didn't load; check its @font-face src.`);
 
     // Chrome has no font for a ui- keyword, so what follows it is what draws: Tailwind's default stacks.
