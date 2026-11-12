@@ -190,12 +190,16 @@ describe("deleting Rae", () => {
     expect((await call(t, rae.headers, "POST", "/v1/claude/api-key", { key: KEY })).status).toBe(
       200,
     );
-    await call(t, rae.headers, "POST", "/v1/me/devices", {
-      platform: "ios",
-      pushToken: "b".repeat(64),
-      pushEnvironment: "production",
-      installId: "rae-phone-install-0001",
-    });
+    expect(
+      (
+        await call(t, rae.headers, "POST", "/v1/me/devices", {
+          platform: "ios",
+          pushToken: "ExponentPushToken[rae-phone-token-0001]",
+          pushEnvironment: "production",
+          installId: "rae-phone-install-0001",
+        })
+      ).status,
+    ).toBe(201);
 
     // A canvas of the team's that she owns and has talked in, with its sandbox up.
     teamCanvas = (await canvasIn(t, ws, "rae", sampleDoc())).id;

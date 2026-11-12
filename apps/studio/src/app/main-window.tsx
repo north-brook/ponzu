@@ -49,6 +49,7 @@ import {
   usableWorkspaces,
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
+import { ThisDevice, useMacNotifications } from "./notifications.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { ASKED_AHEAD_MS } from "./pull-request-store.ts";
 import { SettingsView } from "./settings/settings-view.tsx";
@@ -70,7 +71,21 @@ interface Opening {
   canvasId: string;
   page?: string;
   artboard?: string;
+  /** A comment's thread, opened on its pin. */
+  thread?: string;
+  /** The pull request tab, open over the canvas. */
+  tab?: "pull-request";
+  /** When it was asked: the same link again is followed again. */
+  at: number;
 }
+
+/** What a link names in Settings, as its sections are called. */
+const SETTINGS_FOR_LINK: Record<SettingsLinkSection, SettingsSection> = {
+  usage: "plan",
+  notifications: "notifications",
+  account: "account",
+};
+type SettingsLinkSection = NonNullable<Extract<DeepLink, { kind: "settings" }>["section"]>;
 
 const RETURN_SYNC_MS = 60_000;
 const NOTICE_MS = 6000;
@@ -144,21 +159,35 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     return () => document.removeEventListener("visibilitychange", change);
   }, [host]);
 
-  // A canvas a link names, opened on its page or board: from the shell, or the thread.
+  // A canvas a link names, opened on its page or board: from the shell, or the thread. A
+  // notification's link may also open its thread, its pull request or a comment's pin.
   const openCanvas = useCallback(
-    (link: { canvasId: string; pageId?: string; artboardId?: string }) => {
+    (link: {
+      canvasId: string;
+      pageId?: string;
+      artboardId?: string;
+      commentThreadId?: string;
+      open?: string;
+    }) => {
       host.api.canvases.get(link.canvasId).then(
         (canvas) => {
           update((now) => ({
             ...now,
             workspaceId: canvas.workspaceId,
             canvases: { ...now.canvases, [canvas.workspaceId]: canvas.id },
+            // Its thread, where the question waits in the composer's place.
+            ...(link.open === "thread" ? { railOpen: true } : {}),
           }));
           openedVia.current = "link";
           setOpening({
             canvasId: canvas.id,
             ...(link.pageId ? { page: link.pageId } : {}),
             ...(link.artboardId ? { artboard: link.artboardId } : {}),
+            ...(link.open === "comment" && link.commentThreadId
+              ? { thread: link.commentThreadId }
+              : {}),
+            ...(link.open === "pull-request" ? { tab: "pull-request" as const } : {}),
+            at: Date.now(),
           });
         },
         () => tell("canvas_unavailable", "That canvas isn't there, or you can't open it."),
@@ -167,9 +196,36 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     [host, update, tell],
   );
 
+  const all = meAnswer.data?.workspaces ?? null;
+  // The same choice guided setup reads ahead before it hands the window over (setup/first-run).
+  const workspace = all ? shownWorkspace(all, ui.workspaceId) : null;
+  // The Mac's banners and dock badge from the person's inbox, and this Mac as a device.
+  const mac = useMacNotifications(host, workspace ? (ui.canvases[workspace.id] ?? null) : null);
+  const { opened: notificationOpened } = mac;
+  // A link to a section of Settings, for the window to open it on.
+  const [settingsLink, setSettingsLink] = useState<{ section: SettingsSection; at: number } | null>(
+    null,
+  );
+  const settingsLinkTaken = useCallback(() => setSettingsLink(null), []);
+
   useEffect(
     () =>
       host.onLink((link: DeepLink) => {
+        // A banner clicked: its notification is read, on this Mac.
+        if ((link.kind === "canvas" || link.kind === "settings") && link.notificationId) {
+          notificationOpened(link.notificationId);
+        }
+        if (link.kind === "settings") {
+          // A billing ping's link names its workspace: that one's plan is the one it means.
+          if (link.workspaceId) {
+            const workspaceId = link.workspaceId;
+            update((now) => ({ ...now, workspaceId }));
+          }
+          if (link.section) {
+            setSettingsLink({ section: SETTINGS_FOR_LINK[link.section], at: Date.now() });
+          }
+          return;
+        }
         if (link.kind === "github_setup") {
           void sync();
           if (link.workspaceId) {
@@ -186,11 +242,10 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        // A card setup's and a settings link have their own listeners, once billing and
-        // notifications add them.
+        // A card setup's link has its own listener, once billing adds it.
         if (link.kind === "canvas") openCanvas(link);
       }),
-    [host, sync, update, tell, openCanvas],
+    [host, sync, update, tell, openCanvas, notificationOpened],
   );
 
   // A repo chosen on the create page in another workspace: the window switches there, its
@@ -209,10 +264,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   );
   const handoffTaken = useCallback(() => setHandoff(null), []);
 
-  const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
-  // The same choice guided setup reads ahead before it hands the window over (setup/first-run).
-  const workspace = all ? shownWorkspace(all, ui.workspaceId) : null;
   // The workspace the window showed is suspended on GitHub: it opens another, and says why.
   // What was shown counts, not what was chosen: a window that took the first workspace too.
   const shownId = useRef<string | null>(null);
@@ -238,30 +290,36 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     );
   }
   return (
-    <WorkspaceWindow
-      key={workspace.id}
-      host={host}
-      me={me}
-      user={user}
-      workspace={workspace}
-      workspaces={usable}
-      everyWorkspace={all}
-      ui={ui}
-      update={update}
-      badge={badge}
-      opening={opening}
-      onOpenCanvas={openCanvas}
-      openedVia={openedVia}
-      notice={notice}
-      say={say}
-      handoff={handoff}
-      onHandoffTaken={handoffTaken}
-      onSwitchWithCreate={switchWithCreate}
-      onLostAccess={() => {
-        update((now) => ({ ...now, workspaceId: null }));
-        void sync();
-      }}
-    />
+    <ThisDevice.Provider value={mac.deviceId}>
+      <WorkspaceWindow
+        key={workspace.id}
+        host={host}
+        me={me}
+        user={user}
+        workspace={workspace}
+        workspaces={usable}
+        everyWorkspace={all}
+        ui={ui}
+        update={update}
+        badge={badge}
+        opening={opening}
+        onOpenCanvas={openCanvas}
+        openedVia={openedVia}
+        notice={notice}
+        say={say}
+        handoff={handoff}
+        onHandoffTaken={handoffTaken}
+        onSwitchWithCreate={switchWithCreate}
+        settingsLink={settingsLink}
+        onSettingsLinkTaken={settingsLinkTaken}
+        // This Mac is forgotten first, so it stops holding the person's phone pings back.
+        onSignOut={() => void mac.forget().finally(() => host.session.signOut())}
+        onLostAccess={() => {
+          update((now) => ({ ...now, workspaceId: null }));
+          void sync();
+        }}
+      />
+    </ThisDevice.Provider>
   );
 }
 
@@ -284,6 +342,9 @@ function WorkspaceWindow({
   handoff,
   onHandoffTaken,
   onSwitchWithCreate,
+  settingsLink,
+  onSettingsLinkTaken,
+  onSignOut,
   onLostAccess,
 }: {
   host: Host;
@@ -306,6 +367,10 @@ function WorkspaceWindow({
   handoff: CreateHandoff | null;
   onHandoffTaken: () => void;
   onSwitchWithCreate: (handoff: CreateHandoff) => void;
+  /** A link asked for a section of Settings (a billing banner: Plan and usage). */
+  settingsLink: { section: SettingsSection; at: number } | null;
+  onSettingsLinkTaken: () => void;
+  onSignOut: () => void;
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
@@ -366,6 +431,12 @@ function WorkspaceWindow({
     [],
   );
   const openSettings = useCallback(() => showSettings(true, "account"), [showSettings]);
+  // A link opens it on the section it names, once.
+  useEffect(() => {
+    if (!settingsLink) return;
+    onSettingsLinkTaken();
+    showSettings(true, settingsLink.section);
+  }, [settingsLink, showSettings, onSettingsLinkTaken]);
   const openPlan = useCallback(() => showSettings(true, "plan"), [showSettings]);
   const [gettingIphone, setGettingIphone] = useState(false);
   // Kept apart from whether it is open, so the dialog's words hold as it closes.
@@ -747,7 +818,7 @@ function WorkspaceWindow({
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
                   onPlan={openPlan}
-                  onSignOut={() => void host.session.signOut()}
+                  onSignOut={onSignOut}
                 />
               ),
             }

@@ -135,6 +135,24 @@ export interface ServerEvents {
   "question asked": { canvas_id: string; question_id: string; kind: string };
   "question answered": { canvas_id: string; question_id: string; kind: string };
 
+  // Notifications
+  /**
+   * Ponzu told a person something (a `notifications` row): `muted` when their toggle was off,
+   * `suppressed` why no push was planned, `pushes` how many phones it was planned for, and
+   * `deferred` when those wait for the person at their Mac. About the person told.
+   */
+  "notification created": {
+    kind: string;
+    muted: boolean;
+    suppressed: "pref_off" | "looking" | "rate" | "no_device" | null;
+    pushes: number;
+    deferred: boolean;
+  };
+  /** Expo took a push to one phone. About the person it is for. */
+  "push sent": { kind: string };
+  /** Expo refused a push, at once or by its receipt, with its code. */
+  "push failed": { kind: string; error: string };
+
   // Pull requests
   "pull request created": { canvas_id: string; number: number };
   "pull request merged": { canvas_id: string; number: number };

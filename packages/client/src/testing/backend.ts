@@ -138,7 +138,11 @@ export interface FakeCanvas {
   effort: string | null;
   thread: FakeThreadItem[];
   questions: FakeQuestion[];
-  presence: Map<string, { pageId: string | null; joinedAt: string; seenAt: string }>;
+  /** Who has it open; `focusedAt` while their window is focused and showing it. */
+  presence: Map<
+    string,
+    { pageId: string | null; joinedAt: string; seenAt: string; focusedAt: string | null }
+  >;
   reads: Map<string, { seq: number; threadSeq: number | null }>;
 }
 
@@ -451,7 +455,10 @@ export class FakeBackend {
       },
       withdraw: (questionId) => {
         const question = canvas.questions.find((q) => q.id === questionId);
-        if (question?.status === "open") question.status = "cancelled";
+        if (question?.status === "open") {
+          question.status = "cancelled";
+          this.settings.resolve(canvas.id, question.id);
+        }
         if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "idle";
         this.touch(canvas);
       },
@@ -994,7 +1001,7 @@ export class FakeBackend {
               ),
             };
           }),
-        presence: (id, pageId) =>
+        presence: (id, pageId, focused) =>
           call(() => {
             const canvas = readable(id);
             const now = this.now();
@@ -1003,6 +1010,7 @@ export class FakeBackend {
               pageId: pageId === undefined ? (was?.pageId ?? null) : pageId,
               joinedAt: was?.joinedAt ?? now,
               seenAt: now,
+              focusedAt: focused === undefined ? (was?.focusedAt ?? null) : focused ? now : null,
             });
             this.changed();
             return {
@@ -1013,7 +1021,9 @@ export class FakeBackend {
                   githubLogin: who.githubLogin,
                   name: who.name,
                   avatarUrl: who.avatarUrl,
-                  ...row,
+                  pageId: row.pageId,
+                  joinedAt: row.joinedAt,
+                  seenAt: row.seenAt,
                 };
               }),
             };
@@ -1031,6 +1041,14 @@ export class FakeBackend {
               seq: Math.max(was?.seq ?? 0, body.seq ?? canvas.sequencer.seq),
               threadSeq: body.threadSeq ?? was?.threadSeq ?? null,
             });
+            // Looking at it (focused within 75 seconds), what Ponzu told them about the canvas
+            // is read too, as the API does. A window open in the background reads nothing.
+            const here = canvas.presence.get(person.id);
+            const looking =
+              here?.focusedAt != null &&
+              this.clock.now() - Date.parse(here.focusedAt) <= 75_000 &&
+              this.clock.now() - Date.parse(here.seenAt) <= 75_000;
+            if (looking) this.settings.read(person.id, { canvasId: canvas.id });
             this.changed();
           }),
         sendMessage: (id, body) =>
@@ -1081,6 +1099,13 @@ export class FakeBackend {
             checkAnswer(question.body, body);
             question.status = "answered";
             question.answer = { userId: person.id, body };
+            // As the API: its needs-you rows resolve for everyone, and the one who answered
+            // has read theirs.
+            this.settings.resolve(canvas.id, question.id);
+            const own = this.settings
+              .inboxOf(person.id)
+              .filter((row) => row.kind === "needs_you" && row.link.questionId === question.id);
+            if (own.length) this.settings.read(person.id, { ids: own.map((row) => row.id) });
             // The runner takes the answer at once, and works again.
             if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
             this.touch(canvas);
@@ -1299,8 +1324,26 @@ export class FakeBackend {
         for (const workspace of this.workspaces.values()) workspace.members.delete(userId);
         this.people.delete(userId);
       },
+      email: (userId) => ({
+        address: this.people.get(userId)?.email ?? null,
+        available: this.features.email,
+      }),
+      changed: () => this.changed(),
       meChanged: () => this.changed(),
     };
+  }
+
+  /**
+   * Tell a person something, as the API's notification pipeline would: a row in their inbox,
+   * which `me.notifications` delivers. Answers the row.
+   */
+  notify(
+    userId: string,
+    row: Parameters<FakeSettings["notify"]>[1],
+  ): ReturnType<FakeSettings["notify"]> {
+    const notification = this.settings.notify(userId, row);
+    this.changed();
+    return notification;
   }
 
   /* ---------------------------------------------------------------- */
@@ -1311,7 +1354,7 @@ export class FakeBackend {
     if (!LIVE_NAMES.includes(name as LiveQueryName)) {
       throw new ApiError(404, "not_found", "There is no live query by that name.");
     }
-    if (name === "me") return;
+    if (name === "me" || name === "me.notifications") return;
     if (name === "workspace.canvases") {
       if (!this.workspaces.get(String(args.workspaceId))?.members.has(userId)) {
         throw new ApiError(404, "not_found", "There is no such workspace.");
@@ -1366,6 +1409,26 @@ export class FakeBackend {
         };
         return [row];
       }
+      case "me.notifications":
+        return this.settings.inboxOf(userId).map((notification) => {
+          const row: RawRow<"me.notifications"> = {
+            id: notification.id,
+            kind: notification.kind,
+            workspace_id: notification.workspaceId,
+            canvas_id: notification.canvasId,
+            title: notification.title,
+            subtitle: notification.subtitle,
+            body: notification.body,
+            link: notification.link,
+            count: notification.count,
+            muted: notification.muted,
+            read_at: notification.readAt,
+            resolved_at: notification.resolvedAt,
+            created_at: notification.createdAt,
+            updated_at: notification.updatedAt,
+          };
+          return row;
+        });
       case "workspace.canvases":
         return this.visibleCanvases(String(args.workspaceId), userId).map((visible) => {
           const read = visible.reads.get(userId);

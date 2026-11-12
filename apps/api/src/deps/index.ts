@@ -16,6 +16,7 @@ import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
+import { createResendMail, type Mail, noMail } from "./mail.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
@@ -84,6 +85,8 @@ export interface Deps {
   posthogAdmin: PosthogAdmin | null;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /** The daily email through Resend (deps/mail.ts). Off, as `noMail`, without RESEND_API_KEY. */
+  mail: Mail;
   /**
    * Per-caller rate limits through Vercel's firewall (deps/rate-limit.ts, http/rate-limits.ts).
    * Off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` on Vercel; fails open.
@@ -194,6 +197,7 @@ export function createDeps(env: Env): Deps {
       ? createPosthogAdmin({ config: env.posthogAdmin, fetch: outbound, clock })
       : null,
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    mail: env.mail ? createResendMail({ ...env.mail, clock, log }) : noMail,
     rateLimit: selectRateLimit(
       { mode: env.features.rateLimits, onVercel: env.onVercel },
       { clock, log },

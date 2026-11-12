@@ -211,6 +211,13 @@
       "when": 1794497351025,
       "tag": "0029_share_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794499110804,
+      "tag": "0030_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,7 @@ describe("the message", () => {
       sound: "default",
       badge: 3,
       threadId: canvasId,
+      collapseId: "ntf_7k2m9x4q0c8v5n1t",
       priority: "high",
       interruptionLevel: "active",
       ttl: 3600,
@@ -52,7 +53,7 @@ describe("the message", () => {
     });
   });
 
-  test("a teammate's comments replace one another; nothing else collapses", () => {
+  test("a teammate's comments replace one another; every other ping collapses by its own id", () => {
     const comment: PushNotification = {
       ...needsYou("Checkout"),
       kind: "teammate_comment",
@@ -71,7 +72,7 @@ describe("the message", () => {
       a: "ab_1",
       t: "ti_1",
     });
-    expect(pushMessage(token, needsYou("x"), 0).collapseId).toBeUndefined();
+    expect(pushMessage(token, needsYou("x"), 0).collapseId).toBe("ntf_7k2m9x4q0c8v5n1t");
   });
 
   test("a billing ping has no canvas, and groups by its workspace", () => {

@@ -484,13 +484,17 @@ it. Each op is stored with its inverse.
 
 - Clients never send SQL. They ask `POST /v1/live` for named queries with arguments
   (`workspace.canvases`, `canvas.head`, `canvas.thread`, `canvas.questions`,
-  `canvas.presence`, `me`).
+  `canvas.presence`, `me`, `me.notifications`).
   The API authorizes each one and returns it sealed, with a 60-second lifetime.
 - The endpoint takes a list, and clients renew all their subscriptions in one call.
 - Live queries are plain filters and joins over small rows. Sorting happens on the
   client. Every watched table has a primary key.
 - Presence is a row per person per open canvas, refreshed every 30 seconds and
-  treated as gone after 75.
+  treated as gone after 75. It also says whether the person's window is focused on the
+  canvas, which the API reads to hold back pings; `canvas.presence` does not carry that.
+- `me.notifications` is the person's inbox ("Notifications"). Its filter is the predicate
+  of the partial index `notifications_inbox_idx`, word for word, so Postgres reads it from
+  that index, and a row leaves once it is read and, for a needs-you, resolved.
 
 ## The sandbox
 
@@ -1239,6 +1243,9 @@ it in. Everything delivered before this was deployed counts as answered (the mig
 When Claude asks a question, wants a secret, or hands off a link, the runner writes
 a question row. Every client shows it in the composer, the canvas's row shows a
 count, and the phone gets a push. An answer is an event with priority `now`.
+
+Who hears of it, and when, is in "Notifications": the owner and whoever is driving the canvas at
+once, everyone else who can steer it and has opened it five minutes on if nobody has answered.
 
 A question outlives the sandbox's sleep. The API keeps a sandbox awake only while its
 runner is `working`, so one that waits on a person sleeps after five minutes; its question
@@ -2749,25 +2756,71 @@ state.
 
 ## Notifications
 
-Settings › Notifications chooses what pings a person and where. Nothing sends pushes yet; the
-API keeps what sending will need.
+Settings › Notifications chooses what pings a person and where. What Ponzu tells a person is
+a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
+delivery of that row (`notification_deliveries`), sent through Expo's push service. Every
+event in "What is worth a ping" below writes those rows and sends its pushes (see "Sending");
+billing's trigger is built and waits for billing to call it. Pushes stay off until
+`EXPO_ACCESS_TOKEN` is set: without it every planned push is cancelled as `push_off`, and the
+inbox, the Mac's banners and the badge work regardless.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
-| PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
-| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
+| GET | `/v1/me/notifications` | none | `{ prefs, devices, badge, email: { address, available }, timeZone }` |
+| PATCH | `/v1/me/notifications` | some of `prefs`, and `timeZone?` | as GET |
+| POST | `/v1/me/notifications/:id/read` | `{ via: "mac" \| "ios" }` | 204 |
+| POST | `/v1/me/devices` | `{ platform, pushToken?, pushEnvironment?, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
 | PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
+| PUT | `/v1/me/devices/:id/active` | none | 204, 404 for a device not theirs |
 | DELETE | `/v1/me/devices/:id` | none | 204 |
+
+`badge` is the number on the Mac's dock and the phone's icon: the person's needs-you
+notifications whose question is still open, across every workspace, read or not and whether
+or not pings are on. `email.address` is where the daily email would go and `email.available`
+says whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and
+Settings hides the Email row while it is). `timeZone` is the IANA zone the app last reported,
+null until one has; the app sends `timeZone` in a PATCH when its own differs, and a name the
+API's time zone data does not know, or a bare offset such as `+05`, is a 400. The daily email's 9:00 is in that zone.
+
+`PUT /v1/me/devices/:id/active` is a heartbeat: the person is at this install now (a Mac with a
+window focused and input in the last two minutes, a phone in the foreground). Apps send it every
+60 seconds while that holds. It moves `active_at` and `lastSeenAt`, and skips the write when the
+last one is under 30 seconds old. A phone's ping waits two minutes for a person at their Mac,
+which shows it at once. `POST /v1/me/notifications/:id/read` is the app that showed a
+notification saying it was read: a Mac's banner clicked or a phone's ping tapped. Reading again
+keeps the first reading, and an id that is not the person's changes nothing; the answer is 204
+either way, so it says nothing about whose an id is. Looking at a canvas reads the rest:
+`POST /v1/canvases/:id/seen`, sent while the person's presence on the canvas says it is focused
+(within the last 75 seconds), also marks every notification the person had about the canvas,
+made up to that moment, read (`via: seen`). Sent from a window left open in the background, it
+reads none of them, so a question raised there still reaches the person's phone. A needs-you
+stays on the badge until its question closes, read or not.
+
+The inbox is the live query `me.notifications` ("Realtime"): the person's unread notifications
+and every needs-you whose question is still open. A row carries ids, a kind, a title (the
+canvas's name, or the workspace's), Ponzu's own sentence as the body, a `link` (`open` is
+`thread`, `pull-request`, `comment` or `usage`, with page, artboard, comment thread and question
+ids), a `count` for a teammate's comments folded into one row, and `muted` when the person's
+toggle for the kind was off. Never anything a person or the agent wrote.
+
+Presence (`PUT /v1/canvases/:id/presence`) also takes `focused`: true while the person's window
+is focused and showing the canvas, false when it stops, left out to keep what it was. A
+presence row focused in the last 75 seconds means the person is looking, and nobody is pinged
+about what they are looking at. The client sends a change at once, not at the next beat.
 
 `prefs` is `{ needsYou, replies, prReady, teammateComments, emailDigest }`, on the person's row:
 the first three start on, the last two off, as the board draws them. A toggle saves as it is
-flipped and every device reads the same row. A device is an install of the app: `pushToken` is
-its APNs device token in hex (`ios`; `macos` is kept for the Mac's own notifications later) and
-`pushEnvironment` which APNs it is for. The iPhone registers after the person turns
-notifications on, and again at each launch, which updates the row in place and keeps
-`lastSeenAt`. `installId` is the app's own random id for the install (16 to 64 letters, digits
-or dashes), made once and kept in the Keychain, and never returned. A token another person
+flipped and every device reads the same row. A device is an install of the app, one row per
+person and install. An iPhone (`ios`) sends `pushToken`, its Expo push token exactly as
+`getExpoPushTokenAsync` gave it (`ExponentPushToken[…]` or `ExpoPushToken[…]`), and
+`pushEnvironment`, which APNs it is for; pushes go through Expo's push service, which holds the
+APNs key. A Mac (`macos`) sends neither, and a 400 refuses one that does: it shows its own
+notifications while the app runs. The database holds the same rule (an iPhone row has a token,
+a Mac row has none). The iPhone registers after the person turns notifications on, and again
+at each launch, which updates the row in place and keeps `lastSeenAt`; a new token from the
+same install replaces the old one on the same row. `installId` is the app's own random id for
+the install (16 to 64 letters, digits or dashes), made once and kept (in the Keychain on the
+phone), and never returned. A token another person
 registered moves to whoever registers it now, with pings on, only when the same install
 registers it (the phone signed in as someone else; logged `device_token_moved` with both
 people). From any other install it stays where it is and the answer is 409 `push_token_taken`
@@ -2777,20 +2830,137 @@ Settings shows as "Turned off in iOS Settings". A person keeps twenty devices; r
 21st forgets the one unseen longest. Signing out of the phone deletes its device. No answer
 carries a push token back.
 
-**What is worth a ping**, and who gets it, once sending is built. Each goes to the person's
-devices with `pings` on and not `blocked`, never to the person who caused it, and speaks as
-Ponzu:
+**Sending.** Product code calls `notify(trigger)` (apps/api/src/notifications/notify.ts) with
+ids only. It records a `notify` job keyed by the trigger and runs it at once, past the
+response; the minute's cron runs one whose request died. The job reads the facts, works out who
+hears of it, and writes one inbox row per person, each with a dedupe key (`needs_you:<canvas>:
+<question>`, `reply:<canvas>:<turn>`, …) that one person never gets twice, however often the
+trigger comes. Its words are Ponzu's own sentences in `copy.ts`: the title is the canvas's name,
+and the body never holds a question's, comment's or the agent's words, a repo, a branch or a
+path. Then the quiet rules (`plan.ts`) choose the pushes:
 
-| Event | Toggle | Who | When |
+1. A toggle that is off keeps the row, `muted`, and pushes nothing.
+2. Someone whose presence on the canvas was focused in the last 75 seconds is looking: the row
+   is read at once (`looking`) and nothing is pushed.
+3. More than 20 pushes to a person in an hour, needs-you and billing aside: the Mac only.
+4. Every iPhone with `pings` on, not `blocked`, with a token and seen in the last 90 days gets a
+   delivery. It goes now, or two minutes on when one of the person's Macs was active in the
+   last two minutes (the Mac shows it first).
+
+Each notification's pushes are a `notification.deliver` job, keyed by the notification, run
+when the first is due. At send time a delivery is cancelled, with its reason, when the row was
+read (`read`: a banner clicked, the canvas looked at, the question answered by this person), a
+needs-you was resolved (`resolved`), the toggle went off (`pref_off`), the phone is gone, off or
+blocked (`device_off`), the person can no longer read the canvas by their kept access answers
+(`access`), the row is more than 30 minutes old (`stale`), or push is off (`push_off`). The rest
+go in one request. A push is marked `sending` before the request and is never sent twice:
+Expo's 429 puts it back to wait 30 seconds; a 5xx or no answer may mean Expo took it, so it
+stays `sending` and the cron marks it `unknown` five minutes on. Every push carries a collapse
+id (its notification's, or `<canvas>:comments` for a teammate's comments), so one that arrives
+twice shows once. A ticket's `DeviceNotRegistered` forgets the phone if it still holds that
+token. The cron reads receipts from 15 minutes after a push: `delivered`, `failed` with Expo's
+code (a `DeviceNotRegistered` forgets a phone not seen since the push), or `unknown` after a
+day with none. A push's `data` is `@ponzu/core/push` version 1, ids only.
+
+When a question closes (answered, withdrawn, or found closed by the cron), its needs-you rows
+are resolved and whoever answered has theirs read. Each person whose badge went down gets one
+badge-only push 30 seconds on (`notification.badge`, keyed by the person, so a burst is one
+push); so does a person whose new needs-you pushed nothing. Every ten minutes the cron reads
+unread rows past three days as `expired`, deletes rows past 30 days, and forgets iPhones unseen
+90 days and Macs unseen 30.
+
+**On the Mac.** Nothing is pushed to a Mac. While Ponzu runs, the studio watches
+`me.notifications` and shows Electron's own notification for a row (`app/notifications.ts`,
+with its rules in `cloud/notify.ts`), and sets the dock's number to `badge`, counted from the
+same rows: needs-you rows whose question is still open, read or not, shown whether or not pings
+are on. A row shows a banner when it is unread, not `muted`, not a needs-you whose question has
+closed, not shown already this launch, made no more than 60 seconds before the app opened and
+no more than ten minutes ago (so opening the app to fifty old rows shows none), this Mac's
+`pings` is on, and the person is not looking at its canvas. A row about the canvas in front of
+the person (the window focused and visible, the canvas open) is read instead, `via: mac`. A
+teammate's comments folding into one row replace its banner rather than add one. A banner goes
+when its row is read, its question closes or the row leaves the inbox. Clicking one brings
+Ponzu forward and follows its link: the canvas with its thread open on the question, its pull
+request tab, or the comment on its pin; a billing ping opens Settings › Plan and usage. Then the
+row is read, `via: mac`, which also cancels the phone's push still waiting its two minutes. At
+each launch and sign-in the studio registers this install as a `macos` device (its install id,
+made once and kept in the app's data folder, and the computer's name as macOS shows it, or its
+host name without `.local`), trying again a minute later when the API could not be reached,
+sends the heartbeat every 60 seconds while the person is at it and at once when the window
+comes to the front, and sends its time zone once when it differs from the one kept. Signing out
+from the sidebar deletes this Mac's device first; signing out from the menu leaves it to be
+forgotten after 30 days unseen. Either way the main process takes every banner away, from the
+screen and Notification Center, and clears the dock's number, so whoever signs in next sees
+none of them. Settings › Notifications › Where lists the person's Macs and iPhones,
+this one first as "This Mac", and the Email row only while `email.available`. macOS shows an
+app's notifications only when the app is signed: Ponzu Local's are refused, which the studio
+logs once and goes on.
+
+**What is worth a ping**, and who gets it. Each goes to the person's devices with `pings` on
+and not `blocked`, never to the person who caused it, and speaks as Ponzu. Someone who can read
+or steer a canvas is judged from their kept access answers for its repo (write or admin to
+steer, read to read; one older than a day counts as no), and is checked again when the ping
+goes.
+
+| Event | Kind | Toggle | Who | When |
+|---|---|---|---|---|
+| A question for you | `needs_you` | `needsYou` | the canvas's owner and whoever is driving it, at once, if they can steer it; five minutes on, if it is still open, everyone else who can steer it and has opened it | the runner raises a question (`POST /v1/runner/questions`): a question, a plan, a permission, details, a link to open or a secret |
+| A reply | `reply` | `replies` | the commenter whose comment began the turn | the runner reports the turn completed |
+| A canvas finished | `finished` | `needsYou` | the person whose message or answer began the turn | the turn completed after more than a minute of work and left no question open |
+| A turn that failed | `failed` | `needsYou` | that turn's person, in words that say why | the runner reports it failed (not at a Claude limit) |
+| A message that lapsed twice | `failed` | `needsYou` | the person who sent it | its copy went unanswered too, and the thread asks them to send it again |
+| A canvas that would not start | `failed` | `needsYou` | whoever's message, answer or comment waits on it, else its owner | a wake gave up (`sandbox_failed`), or its runner stopped answering too many times in a row |
+| A Claude plan limit | `claude_limit` | `needsYou` | whoever's Claude account the canvas runs on | once a day per account |
+| A pull request is ready | `pr_ready` | `prReady` | the canvas's owner, and the pull request's author when they are a member | `recordRead` records it open, not a draft, checks passing and mergeable; once per head commit, and at most once per canvas and person every 30 minutes |
+| A pull request approved | `pr_approved` | `prReady` | the canvas's owner and the pull request's author, never whoever approved it | a review that approved it, from someone GitHub says can push to the repo; once per review |
+| A teammate comments | `teammate_comment` | `teammateComments` | the canvas's owner | a person other than the owner comments on it. A comment within ten minutes of the owner's unread comment ping for the canvas folds into it ("Maya and Sam left 3 comments.") and the phone's ping is replaced, not added to |
+| Billing | `billing_free_used`, `billing_cap_warning`, `billing_cap_reached`, `billing_payment_failed` | always | the workspace's admins (its person, for a personal workspace), who must still be one when it goes | billing calls `notify({ kind: "billing", workspaceId, periodStart, notice, amountCents })` on a change of its gate; once a period each, in billing's words ("Northbrook has used 80% of this month's $100 cap.") |
+
+A failed check, changes asked for, a stop, a lapse being sent again and a stalled runner ping
+nobody: the agent takes the first two up by itself, and the rest recover on their own. Nothing
+calls the billing trigger yet; billing does once its gate is built.
+
+**The daily email** (`emailDigest`, off until the person turns it on) is one email a day of
+the same events and nothing else, sent through Resend (`deps/mail.ts`, the official `resend`
+SDK). It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email row
+until then. `PONZU_EMAIL_FROM` is who it is from, `Ponzu <ping@ponzu.design>` unless set.
+
+| Method | Path | Request | Response |
 |---|---|---|---|
-| A question for you | `needsYou` | everyone who can steer the canvas (write access), the canvas's owner first | a question row opens (`questions`, the runner's `POST /v1/runner/questions`): a question, a plan, a permission, a sign-in or a secret the agent waits on |
-| A reply | `replies` | everyone who commented on the canvas | the agent's `assistant` item finishes in a turn that a comment of theirs started |
-| A pull request is ready | `prReady` | the canvas's owner and whoever opened it (pressed Create PR, or whom the agent opened it as) | `recordRead` records the canvas's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
-| A canvas finished | `needsYou` | the canvas's owner | a turn the owner started ends with the agent `idle` and no question open, after more than a minute of work, and the owner is not looking at it (no presence row) |
-| A teammate comments | `teammateComments` | the canvas's owner | a person other than the owner comments on it |
-| The cap at 80%, the cap reached | always | the workspace's admins | once a period each, with billing |
+| GET | `/v1/email/unsubscribe?t=` | none | a page saying the email is off; 400 and a page saying the link doesn't work |
+| POST | `/v1/email/unsubscribe?t=` | anything (a mail app's one-click unsubscribe) | 204; 400 `invalid_request` |
 
-The email digest (`emailDigest`) is one email a day of the same events and nothing else.
+Every five minutes the cron's `digests` step records an `email.digest` job, keyed
+`digest:<user>:<local date>`, for each of up to 20 people whose email is on, who has an
+address, for whom it is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
+one Postgres does not know), and whose `digest_sent_on` is before that local date. The job reads
+their notifications from the 24 hours before it was found due that are still unread (`muted` ones
+included: they were never pinged), leaves out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
+their workspace. A canvas whose person is no longer a member, or whose kept access answer has
+changed to less than read since its newest row, is left out (an answer that is only old is not:
+the email is for people who have been away); a billing row goes only to someone still among the
+workspace's billing recipients. With nothing left it only stamps `digest_sent_on`. Otherwise it
+sends one email and stamps the date. The step runs its batch itself, one email after another,
+rather than leaving it to the minute's `jobs` step, which takes ten jobs a minute of every kind:
+a busy 9:00 never holds pushes up, and Resend's rate is not met all at once.
+
+The subject counts what it holds ("Ponzu: 3 things on 2 canvases", "… and your plan" with
+billing rows). The body is each canvas's name (or the workspace's) and under it the rows' own
+sentences, at most ten a canvas and then "And 2 more.", each linking to
+`https://ponzu.design/canvases/<id>` with `open`, `page`, `artboard`, `question` and `comment`
+riding along, which the site's page hands to the app as a `ponzu://canvas/` link; a billing line
+has no link. There is a plain text part, and `List-Unsubscribe` with
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click`. The job's key is Resend's idempotency key,
+so a send retried within a day is not sent twice. Resend's 429, 5xx or no answer tries again five
+minutes on; a refusal (a bad address, an unverified sender) or a key already used is logged and
+the day is stamped. Logs carry the person's id and Resend's codes, never the address or the words.
+
+The unsubscribe link carries `t`: the person's id and that id sealed by the vault under
+`email-unsubscribe/<user id>`, so only the API can make one, one person's does not open as
+another's, and all it can do is turn that person's email off. It does not expire. Following it
+turns `emailDigest` off and answers a page ("You won't get Ponzu's daily email any more."); the
+POST does the same for a mail app and answers 204. Either is safe to repeat, and the person can
+turn the email on again in Settings.
 
 ## Repo environments
 
@@ -3000,7 +3170,13 @@ host ([analytics.md](analytics.md)). A canvas's images may come from any https h
 do in the runner's previews. The packaged app's Electron fuses refuse to run it as
 Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
-session and everything the studio kept: the canvases last opened and their asset keys.
+session and everything the studio kept: the canvases last opened and their asset keys,
+and clears the dock's number. The bridge's notification channels (`ponzu:notify:show`,
+`:remove`, `:badge` and `:failed`) show a banner, take banners away, set the dock's number
+and report a banner macOS refused; the main process checks what the studio sends as it would
+anything (ids, words of at most 200 characters, a link that is exactly one of ours), keeps up
+to 50 shown notifications so their clicks still arrive, and hands a click's link to the
+studio as it would a `ponzu://` link ("Notifications", "On the Mac").
 
 Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
 `@ponzu/core/links`):
@@ -3010,8 +3186,12 @@ ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usag
 ponzu://github/setup?result=installed&workspace=<workspace id>
 ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
 ponzu://billing/card?setup=<setup id>&result=added|cancelled
-ponzu://settings?section=usage|notifications|account
+ponzu://settings?section=usage|notifications|account&workspace=&n=
 ```
+
+`n` names the notification a link came from (a Mac's banner, a phone's ping), so opening it
+reads it; a billing ping's link is the settings one, to Plan and usage, and names its
+workspace, so the app shows that workspace's plan whichever one the window was showing.
 
 A link only asks to show something; one that doesn't parse is dropped, and an optional
 part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`

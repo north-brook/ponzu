@@ -48,6 +48,13 @@ export interface CloudSourceOptions {
   me: Actor;
   /** Shows the last copy of the canvas while the API cannot be reached. */
   cache?: DocCache;
+  /**
+   * Whether the person is looking at the canvas as it opens: its window focused and visible with
+   * this canvas showing. The host says so, and says again through `setFocused` when it changes;
+   * nobody is pinged about a canvas they are looking at. Left out, presence says nothing of
+   * focus until `setFocused` is called.
+   */
+  focused?: boolean;
   clock?: Clock;
 }
 
@@ -96,6 +103,8 @@ export class CloudSource implements CanvasSource {
   private failure: string | null = null;
   private people: readonly PresenceRow[] = [];
   private pageId: string | null = null;
+  /** Whether the host says the person is looking at it; undefined until it says. */
+  private focused: boolean | undefined;
   /** Undo and redo, one after another, each after the edits before it are in. */
   private reversing: Promise<void> = Promise.resolve();
   private cleanups: (() => void)[] = [];
@@ -109,6 +118,7 @@ export class CloudSource implements CanvasSource {
     this.opts = opts;
     this.api = opts.api;
     this.clock = opts.clock ?? systemClock;
+    this.focused = opts.focused;
     void this.showCached();
     this.watch();
     void this.open();
@@ -187,6 +197,17 @@ export class CloudSource implements CanvasSource {
   setPage(pageId: string | null): void {
     if (pageId === this.pageId) return;
     this.pageId = pageId;
+    if (this.replica && !this.failure) this.keepPresent();
+  }
+
+  /**
+   * Whether the person is looking at the canvas now: the window focused and visible, and this
+   * canvas showing in it. A change is said at once, not at the next beat, so a ping about what
+   * they are looking at is held back from the first moment.
+   */
+  setFocused(focused: boolean): void {
+    if (focused === this.focused) return;
+    this.focused = focused;
     if (this.replica && !this.failure) this.keepPresent();
   }
 
@@ -449,7 +470,9 @@ export class CloudSource implements CanvasSource {
   private keepPresent(): void {
     this.cancelPresence?.();
     const beat = () => {
-      void this.api.canvases.presence(this.opts.canvasId, this.pageId).catch(() => {});
+      void this.api.canvases
+        .presence(this.opts.canvasId, this.pageId, this.focused)
+        .catch(() => {});
       this.cancelPresence = this.clock.schedule(beat, PRESENCE_MS);
     };
     beat();

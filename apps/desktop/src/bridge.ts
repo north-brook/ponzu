@@ -19,8 +19,9 @@ export const STUDIO_ORIGIN = "ponzu-studio://app";
  *   ponzu://github/setup?result=installed&workspace=<workspace id>
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
  *   ponzu://billing/card?setup=<setup id>&result=added | cancelled
- *   ponzu://settings?section=usage | notifications | account
+ *   ponzu://settings?section=usage | notifications | account&n=
  *
+ * `n` names the notification a link came from (a banner clicked), so opening it reads it.
  * A canvas's link from before canvases had their name (`design/<id>`) opens the same way. A
  * sign-in's way back is the iPhone's, never the Mac's, so it is not among them.
  */
@@ -99,6 +100,24 @@ export interface UpdateState {
   installing: boolean;
 }
 
+/**
+ * A banner the studio asks the shell to show: a row of the person's inbox (`me.notifications`),
+ * in Ponzu's own words (a canvas's or workspace's name and a fixed sentence), never anything a
+ * person or the agent wrote. A click brings Ponzu forward and hands `link` back through
+ * `onLink`, as a `ponzu://` link would.
+ */
+export interface MacNotice {
+  /** The notification's id: showing the same id again replaces the banner. */
+  id: string;
+  /** What macOS groups it under: its canvas, or its workspace. */
+  groupId: string;
+  title: string;
+  subtitle?: string;
+  body: string;
+  /** A canvas link, or Settings for a workspace's billing ping; it carries the notification's id. */
+  link: DeepLink;
+}
+
 /** A menu item the studio carries out. */
 export type MenuCommand = "new-canvas" | "settings" | "toggle-sidebar" | "toggle-thread";
 
@@ -158,6 +177,29 @@ export interface PonzuDesktop {
    */
   comeForward(): void;
   /**
+   * The Mac's own notifications (docs/cloud.md, "Notifications"): banners from the running app's
+   * inbox and the dock's badge. Nothing is pushed to a Mac; the studio shows what it hears live.
+   */
+  notifications: {
+    /** Whether this system shows notifications at all. */
+    supported: boolean;
+    /**
+     * This install's own random id, made once and kept in the app's data folder: what the API
+     * knows this Mac by (`POST /v1/me/devices`). Ponzu, Ponzu Dev and Ponzu Local each have
+     * their own.
+     */
+    installId: string;
+    /** The computer's name, as Settings lists it ("Maya's MacBook Pro"); null when it has none. */
+    deviceName: string | null;
+    show(notice: MacNotice): void;
+    /** Take these banners away, from the screen and Notification Center. */
+    remove(ids: string[]): void;
+    /** The dock's number: open needs-you questions. 0 clears it. */
+    setBadge(count: number): void;
+    /** A banner the system wouldn't show (an unsigned build's are refused), by its id. */
+    onFailed(listener: (id: string) => void): () => void;
+  };
+  /**
    * Whether to show the welcome from Ponzu 1.x now (legacy.ts's `takeWelcome1x`): true once, on
    * a computer that had 1.x, and false from then on, this launch and every later one.
    */
@@ -191,6 +233,10 @@ export const CHANNELS = {
   updateInstall: "ponzu:update:install",
   openExternal: "ponzu:open-external",
   comeForward: "ponzu:come-forward",
+  notifyShow: "ponzu:notify:show",
+  notifyRemove: "ponzu:notify:remove",
+  notifyBadge: "ponzu:notify:badge",
+  notifyFailed: "ponzu:notify:failed",
   welcome1x: "ponzu:welcome-1x",
   usageSharing: "ponzu:usage-sharing",
 } as const;

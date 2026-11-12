@@ -1,8 +1,8 @@
 import type { Session, SessionState } from "@ponzu/client";
 import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/client/testing";
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
-import type { DeepLink, MenuCommand } from "@ponzu/desktop/bridge";
-import type { Host } from "./host.ts";
+import type { DeepLink, MacNotice, MenuCommand } from "@ponzu/desktop/bridge";
+import type { Host, HostNotifications } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
 
 /*
@@ -55,6 +55,22 @@ export interface FakeWorld {
   signInsEnded: number;
   /** The app's asks of the API: how many it has made, and how many it is still waiting on. */
   answers: { asked: number; waiting: number };
+  /**
+   * The Mac's notifications, played (with `?mac=1`; null otherwise): every banner the studio
+   * asked to show and take away, the dock's number, and a click on a banner.
+   */
+  mac: FakeMac | null;
+}
+
+export interface FakeMac {
+  shown: MacNotice[];
+  removed: string[];
+  /** The dock's number as last set; null until it is. */
+  badge: number | null;
+  /** Click a banner shown: the shell hands its link to the studio. */
+  click(id: string): void;
+  /** macOS refuses one, as it does an unsigned build's. */
+  fail(id: string): void;
 }
 
 declare global {
@@ -174,6 +190,10 @@ export function fakeHost(): Host {
 
   void seed(backend, client.api, workspace.id, workspace.repos[0]!.id, drawBoard, teammate);
   const teammateApi = backend.connect(teammate).api;
+  const sendLink = (link: DeepLink) => {
+    for (const listener of links) listener(link);
+  };
+  const mac = params.get("mac") === "1" ? fakeMac(sendLink) : null;
   /** Sign-ins out in the "browser", while a test holds them there. */
   let held: { promise: Promise<void>; resolve: () => void } | null = null;
 
@@ -192,9 +212,7 @@ export function fakeHost(): Host {
         { id: newOpId(), op: { op: "thread.message", id: threadId, message } },
       ]);
     },
-    link: (link) => {
-      for (const listener of links) listener(link);
-    },
+    link: sendLink,
     command: (command) => {
       for (const listener of commands) listener(command);
     },
@@ -213,6 +231,7 @@ export function fakeHost(): Host {
     signInsStarted: 0,
     signInsEnded: 0,
     answers,
+    mac: mac?.world ?? null,
   };
   const world = window.ponzuFake;
 
@@ -244,7 +263,44 @@ export function fakeHost(): Host {
     update: null,
     openExternal,
     docStorage: null,
+    notifications: mac?.host ?? null,
   };
+}
+
+/**
+ * The shell's notifications, played as the test's: banners kept in a list rather than shown, and
+ * a click handing the banner's link back as the shell does.
+ */
+function fakeMac(sendLink: (link: DeepLink) => void): { host: HostNotifications; world: FakeMac } {
+  const failed = new Set<(id: string) => void>();
+  const world: FakeMac = {
+    shown: [],
+    removed: [],
+    badge: null,
+    click(id) {
+      const notice = [...world.shown].reverse().find((n) => n.id === id);
+      if (notice) sendLink(notice.link);
+    },
+    fail(id) {
+      for (const listener of failed) listener(id);
+    },
+  };
+  const host: HostNotifications = {
+    supported: true,
+    installId: "fake-mac-install-0001",
+    deviceName: "Maya's MacBook Pro",
+    appVersion: "2.0.0",
+    show: (notice) => world.shown.push(notice),
+    remove: (ids) => world.removed.push(...ids),
+    setBadge: (count) => {
+      world.badge = count;
+    },
+    onFailed(listener) {
+      failed.add(listener);
+      return () => failed.delete(listener);
+    },
+  };
+  return { host, world };
 }
 
 /**

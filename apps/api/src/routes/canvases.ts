@@ -15,6 +15,7 @@ import {
   CANVAS_STATUSES,
   type Canvas,
   findCanvasByCreateKey,
+  focusedPresence,
   getCanvas,
   getCanvasAssetKey,
   getMemberWorkspace,
@@ -24,6 +25,7 @@ import {
   listRepoPeople,
   listWorkspacePeople,
   markCanvasSeen,
+  markNotificationsRead,
   PR_CHECKS,
   PR_STATES,
   randomString,
@@ -54,6 +56,7 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
+import { isLooking } from "../notifications/plan.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
 import { putToSleep } from "../sandboxes/stop.ts";
@@ -231,6 +234,11 @@ const ReversalView = z.object({ committed: z.custom<CommittedOp>(), seq: z.numbe
 const PresenceBody = z.object({
   /** The page they are on. Left out: only "still here". */
   pageId: Id.nullable().optional(),
+  /**
+   * Whether their window is focused and showing this canvas now. Nobody is pinged about a canvas
+   * they are looking at. Left out, it stays as it was.
+   */
+  focused: z.boolean().optional(),
 });
 const PresenceView = z.object({
   /** Who has the canvas open now, longest here first: the first paint of `canvas.presence`. */
@@ -630,8 +638,14 @@ export const canvases = new Hono<AppEnv>()
       const { deps, actor } = c.var;
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
       const now = new Date(deps.clock.now());
-      const { pageId } = c.req.valid("json");
-      await touchPresence(deps.db, { canvasId: canvas.id, userId: actor.user.id, pageId, now });
+      const { pageId, focused } = c.req.valid("json");
+      await touchPresence(deps.db, {
+        canvasId: canvas.id,
+        userId: actor.user.id,
+        pageId,
+        focused,
+        now,
+      });
       const present = await listPresence(deps.db, { canvasId: canvas.id, now });
       return c.json(PresenceView.parse({ present }));
     },
@@ -651,6 +665,11 @@ export const canvases = new Hono<AppEnv>()
   /**
    * Records how far the person has looked: the canvas's seq and the thread's, as they saw
    * them. Left out, the canvas's seq is now's. It never moves back, nor past what there is.
+   * When their presence says they are looking at it (focused within the last 75 seconds),
+   * whatever Ponzu told them about the canvas until now is read too (`via: seen`): no ping
+   * about it is still to come, and no banner stays. Without that, it reads nothing: an app sends
+   * this whenever the canvas or its thread moves on screen, even in a window left open in the
+   * background, and a question the agent raised then must still reach the person.
    */
   .post(
     "/:id/seen",
@@ -661,7 +680,15 @@ export const canvases = new Hono<AppEnv>()
       const { deps, actor } = c.var;
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
       const { seq = canvas.seq, threadSeq } = c.req.valid("json");
-      await markCanvasSeen(deps.db, { userId: actor.user.id, canvasId: canvas.id, seq, threadSeq });
+      const userId = actor.user.id;
+      const now = new Date(deps.clock.now());
+      const [, focused] = await Promise.all([
+        markCanvasSeen(deps.db, { userId, canvasId: canvas.id, seq, threadSeq }),
+        focusedPresence(deps.db, { canvasId: canvas.id, userIds: [userId], now }),
+      ]);
+      if (isLooking(focused.get(userId) ?? null, now)) {
+        await markNotificationsRead(deps.db, { userId, canvasId: canvas.id, now, via: "seen" });
+      }
       return c.body(null, 204);
     },
   );

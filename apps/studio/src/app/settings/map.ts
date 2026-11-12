@@ -90,18 +90,31 @@ type ApiEnvironment = Awaited<ReturnType<Api["environments"]["get"]>>["environme
 type ApiUsage = Awaited<ReturnType<Api["usage"]["get"]>>;
 
 /**
- * The iPhones pings can go to. A device names itself ("Maya's iPhone"); one that hasn't yet is
- * called what it is. The Mac doesn't take pings, so only phones are listed.
+ * The devices pings can go to: the person's Macs (their banners) and iPhones (their pushes),
+ * this one first, as "This Mac". A device names itself ("Maya's MacBook Pro"); one that hasn't
+ * is called what it is. Otherwise in the order the API lists them.
  */
-export function toPingDevices(answer: Notifications): PingDevice[] {
-  return answer.devices
-    .filter((device) => device.platform === "ios")
-    .map((device) => ({
-      id: device.id,
-      name: device.name?.trim() || "iPhone",
-      pings: device.pings,
-      blocked: device.blocked,
-    }));
+export function toPingDevices(
+  answer: Notifications,
+  thisDevice: string | null = null,
+): PingDevice[] {
+  const devices = answer.devices.flatMap((device): PingDevice[] => {
+    const mac = device.platform === "macos";
+    if (!mac && device.platform !== "ios") return [];
+    return [
+      {
+        id: device.id,
+        kind: mac ? "mac" : "iphone",
+        name:
+          device.id === thisDevice ? "This Mac" : device.name?.trim() || (mac ? "Mac" : "iPhone"),
+        pings: device.pings,
+        blocked: device.blocked,
+      },
+    ];
+  });
+  const here = devices.findIndex((device) => device.id === thisDevice);
+  if (here > 0) devices.unshift(...devices.splice(here, 1));
+  return devices;
 }
 
 /** Whether an iPhone is signed in as the person: the guided setup's last step is then done. */

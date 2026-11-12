@@ -54,6 +54,11 @@ export interface Host {
   /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
   /**
+   * The Mac's own banners and dock badge, and this install as the API knows it
+   * (app/notifications.ts); null where there are none (a browser, an older shell).
+   */
+  notifications: HostNotifications | null;
+  /**
    * Hear each error the API answers any request of the window's with, whoever sent it (a
    * mutation, the thread, a canvas's sync), such as the maintenance switch's 503. Returns the
    * unsubscribe. Left out where the host doesn't tell.
@@ -71,3 +76,6 @@ export interface Host {
    */
   setUsageSharing?(enabled: boolean): Promise<boolean>;
 }
+
+/** The shell's notifications, with the app's version for registering this install. */
+export type HostNotifications = PonzuDesktop["notifications"] & { appVersion: string | null };

@@ -19,6 +19,8 @@ time.ts           the clock components read (useNow); ages, durations and a time
 gate.ts           shared: what keeps someone from steering a canvas (read access, the owner's Claude), in words,
                   and each wake gate's blocker line (paused, billing, a Claude plan's limit)
 claude.ts         shared: the person's Claude: how it is connected, its plan's limits, a pasted code
+notify.ts         the Mac's banners and dock badge from the live inbox: which rows show, which go,
+                  which are read because the person is looking, and where a click goes (Mac only)
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
                   popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the

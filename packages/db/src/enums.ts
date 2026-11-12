@@ -103,6 +103,63 @@ export const LEDGER_REASONS = ["grant", "use", "topup", "refund", "adjustment"] 
 
 export const WEBHOOK_SOURCES = ["github", "stripe", "workos"] as const;
 
+/**
+ * What Ponzu pings a person about (docs/cloud.md, "Notifications"). Each is under one of the
+ * person's toggles, except the four billing kinds, which are always on and go to a workspace's
+ * admins. apps/api/src/notifications/kinds.ts gives each its toggle, where it opens and its
+ * dedupe key.
+ */
+export const NOTIFICATION_KINDS = [
+  "needs_you",
+  "reply",
+  "finished",
+  "failed",
+  "claude_limit",
+  "pr_ready",
+  "pr_approved",
+  "teammate_comment",
+  "billing_free_used",
+  "billing_cap_warning",
+  "billing_cap_reached",
+  "billing_payment_failed",
+] as const;
+/**
+ * Where a notification opens: the canvas's thread, its pull request, a comment's pin, or Plan
+ * and usage. The words are the link grammar's (`open` on a canvas link, @ponzu/core/links).
+ */
+export const NOTIFICATION_OPENS = ["thread", "pull-request", "comment", "usage"] as const;
+/**
+ * How a notification came to be read: on the Mac or the iPhone (a banner or a tap), by opening
+ * its canvas (`seen`), because the person was looking at the canvas when it was made
+ * (`looking`), or by the sweep, unread after three days (`expired`).
+ */
+export const NOTIFICATION_READ_VIA = ["mac", "ios", "seen", "looking", "expired"] as const;
+/**
+ * One push to one iPhone:
+ *
+ *   waiting     planned, to go at `send_at` (now, or later while the person is at a Mac)
+ *   sending     handed to Expo, whose answer has not come back. A send whose answer was lost
+ *               (a timeout, a 5xx) may have been accepted, so it is not sent again; the
+ *               receipts sweep settles it as `unknown`. One Expo plainly did not take (a 429)
+ *               goes back to waiting, to try again
+ *   sent        Expo took it and gave a ticket; its receipt is still to read
+ *   delivered   Expo's receipt says Apple took it
+ *   cancelled   not sent, and `outcome` says why
+ *   failed      Expo refused it, at the ticket or the receipt, and `outcome` has its code
+ *   unknown     no answer or receipt came within a day
+ */
+export const DELIVERY_STATES = [
+  "waiting",
+  "sending",
+  "sent",
+  "delivered",
+  "cancelled",
+  "failed",
+  "unknown",
+] as const;
+/** The states a delivery does not leave. */
+export const SETTLED_DELIVERY_STATES = ["delivered", "cancelled", "failed", "unknown"] as const;
+
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
@@ -124,3 +181,7 @@ export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
 export type SandboxState = (typeof SANDBOX_STATES)[number];
 export type AgentBlocker = (typeof AGENT_BLOCKERS)[number];
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+export type NotificationOpen = (typeof NOTIFICATION_OPENS)[number];
+export type NotificationReadVia = (typeof NOTIFICATION_READ_VIA)[number];
+export type DeliveryState = (typeof DELIVERY_STATES)[number];

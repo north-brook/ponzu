@@ -24,6 +24,7 @@ import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
+import { useWindowFocused } from "./notifications.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { chromeAction, offeredTab, prSummary, rowPullRequest } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
@@ -102,6 +103,12 @@ export function useOpenCanvas(
   saying.current = say;
   const made = useRef(fresh);
   made.current = fresh;
+  // Whether the person is looking at it: the window in front with this canvas open. Presence
+  // says so from the first beat, and at once when it changes, so nobody is pinged about the
+  // canvas in front of them, and opening it reads its notifications (docs/cloud.md, "Notifications").
+  const focused = useWindowFocused();
+  const focusedNow = useRef(focused);
+  focusedNow.current = focused;
   // Before the window paints: the create page gives way to the canvas in the same frame.
   useLayoutEffect(() => {
     if (!canvasId) {
@@ -114,6 +121,7 @@ export function useOpenCanvas(
       live,
       canvasId,
       me: actor,
+      focused: focusedNow.current,
       ...(cache ? { cache } : {}),
     });
     const thread = new ThreadStore({ ponzu, live, canvasId, meId: actor.id }).start();
@@ -146,6 +154,9 @@ export function useOpenCanvas(
       pullRequest.close();
     };
   }, [host, ponzu, actor, cache, canvasId]);
+  useEffect(() => {
+    open?.source.setFocused(focused);
+  }, [open, focused]);
   return open && open.id === canvasId ? open : null;
 }
 

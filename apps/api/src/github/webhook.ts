@@ -8,6 +8,7 @@ import {
 } from "@ponzu/db";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
+import { reviewApproved } from "../notifications/notify.ts";
 import { reconcileInstallation } from "./installations.ts";
 import { readPeopleSoon } from "./people.ts";
 import {
@@ -54,6 +55,8 @@ export type WebhookDeps = Pick<
   | "storage"
   | "config"
   | "analytics"
+  | "push"
+  | "mail"
   | "workos"
   | "posthogAdmin"
   | "features"
@@ -135,13 +138,16 @@ const ReviewEvent = z.object({
   action: z.string(),
   repository: Id,
   review: z.object({
+    // Optional only for deliveries recorded before it was kept: they ping nobody.
+    id: z.number().int().optional(),
     state: z.string(),
     body: z.string().nullable(),
     html_url: z.string(),
     user: z.object({ id: z.number().int(), login: z.string() }).nullable(),
     author_association: z.string(),
   }),
-  pull_request: PullRequest,
+  // Its author, for the approval's ping.
+  pull_request: PullRequest.extend({ user: z.object({ login: z.string() }).nullish() }),
 });
 
 const INSTALLATION_ACTIONS = [
@@ -380,6 +386,18 @@ export function planDelivery(event: string, payload: unknown): Plan {
               url: review.html_url,
               pullRequest: pr.number,
             }),
+            ...(review.state.toLowerCase() === "approved" && review.id !== undefined
+              ? {
+                  approval: (canvasId: string, pr: PullRequestRef, reviewerId: string | null) =>
+                    reviewApproved(canvasId, {
+                      number: pr.number,
+                      reviewId: review.id!,
+                      reviewerLogin: user.login,
+                      reviewerId,
+                      authorLogin: e.pull_request.user?.login ?? null,
+                    }),
+                }
+              : {}),
           });
         };
       });

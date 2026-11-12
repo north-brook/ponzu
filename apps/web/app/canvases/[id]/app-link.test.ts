@@ -41,3 +41,26 @@ test("a page or board rides along to the app, when it could be an id", () => {
     expect(canvasAppLink("cnv_1", undefined, { artboard: bad })).toBe("ponzu://canvas/cnv_1");
   }
 });
+
+test("what to open rides along too, when it is one of the link grammar's words", () => {
+  expect(canvasAppLink("cnv_1", undefined, { open: "thread", question: "q_1" })).toBe(
+    "ponzu://canvas/cnv_1?open=thread&question=q_1",
+  );
+  expect(
+    canvasAppLink("cnv_1", "ponzu-dev", {
+      page: "pg_1",
+      artboard: "ab_1",
+      open: "comment",
+      comment: "ct_1",
+    }),
+  ).toBe("ponzu-dev://canvas/cnv_1?page=pg_1&artboard=ab_1&open=comment&comment=ct_1");
+  expect(canvasAppLink("cnv_1", undefined, { open: "pull-request" })).toBe(
+    "ponzu://canvas/cnv_1?open=pull-request",
+  );
+  for (const open of ["files", "javascript:alert(1)", "", ["thread", "thread"]]) {
+    expect(canvasAppLink("cnv_1", undefined, { open })).toBe("ponzu://canvas/cnv_1");
+  }
+  expect(canvasAppLink("cnv_1", undefined, { open: "thread", question: "q 1" })).toBe(
+    "ponzu://canvas/cnv_1?open=thread",
+  );
+});
