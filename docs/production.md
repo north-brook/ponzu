@@ -376,6 +376,46 @@ read-only and never asks a vendor to decrypt a value.
   production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
 
+## Uptime
+
+`.github/workflows/uptime.yml` runs `bun scripts/ci/uptime.ts` every five minutes. GitHub runs a
+schedule only from the default branch, so it starts with the cutover; until then it checks
+nothing, and a dispatch from any branch but `main` checks nothing either.
+
+- Each run asks production's `/v1/health` up to three times, 15 seconds apart. Production is up
+  when one answer is a 200 with `status` ok, `database` true and `environment` production. The
+  commit, image and migration count are the deploy's own check, not this one, because a merged
+  commit waits for the founder's approval before it deploys.
+- A run that finds production down fails. The next run reads that conclusion back from the
+  Actions API, so the second failing run in a row opens one issue labelled `production-down`
+  (the label is made the first time it is needed). A single failing run opens nothing.
+- While production stays down, each run rewrites that issue's body with the count, when it
+  started and the last problem, rather than commenting, so a long outage is one notification.
+- The first run that finds production up comments on the issue and closes it.
+- A run that fails for another reason (GitHub's API, for one) also counts as a failure for the
+  next run, so the issue can open after one real failure instead of two. That errs towards
+  telling someone.
+
+There is no paid status vendor. The site's status page reads `/v1/health` itself.
+
+## Release holds
+
+Release Please opens a release pull request per app, and release.yml's auto-merge job turns on
+auto-merge for it after asking `bun scripts/release-hold.ts --app <ponzu|mobile> --title
+"<title>" --proposed <the PR's manifest>`. It holds the PR, which a person then merges, when:
+
+- the repository variable `RELEASES_HELD` (comma-separated, for example `ponzu,mobile`) names
+  the app, or names anything that is not an app, so a typo holds everything;
+- the version is a major bump over main's `.release-please-manifest.json`, so `2.0.0` is never
+  merged by itself;
+- the title is not exactly `chore(main): release X.Y.Z` (or `release mobile X.Y.Z`), the PR's
+  own manifest gives another version, or the version is not newer than the one released now.
+
+A held PR also loses auto-merge it already had, so a `1.81.0` PR that a later `feat!:` turns
+into `2.0.0` stops waiting to merge on the next push to `main`. The run writes a notice saying
+why. To release a held PR, merge it by hand; to stop holding an app, take it out of
+`RELEASES_HELD`.
+
 ## Rotating secrets
 
 | Secret | How |
