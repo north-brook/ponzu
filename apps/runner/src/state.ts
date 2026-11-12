@@ -25,6 +25,8 @@ export class StateReporter {
   private limits: ClaudeLimitReport[] = [];
   /** What each window last said that went to the API, so the same news is not sent twice. */
   private readonly saidLimits = new Map<string | null, string>();
+  /** The limit report on its way to the API, if any: what the API will hold once it lands. */
+  private sendingLimit: ClaudeLimitReport | null = null;
   private readonly pacer: Pacer;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -59,7 +61,14 @@ export class StateReporter {
    */
   limit(report: ClaudeLimitReport): void {
     const said = JSON.stringify(report);
-    if (this.saidLimits.get(report.window) === said) {
+    // Compared with what the API will hold: the report in flight for this window when there is
+    // one, so a change back while it travels is still said.
+    const sending = this.sendingLimit;
+    const last =
+      sending?.window === report.window
+        ? JSON.stringify(sending)
+        : this.saidLimits.get(report.window);
+    if (last === said) {
       this.limits = this.limits.filter((l) => l.window !== report.window);
       return;
     }
@@ -95,17 +104,26 @@ export class StateReporter {
       ...(branch !== undefined && branch !== this.sentBranch ? { branch } : {}),
       ...(limit ? { claudeLimit: limit } : {}),
     };
+    this.sendingLimit = limit ?? null;
     try {
       const { seq } = await this.api.putState(body);
       this.opts.onSeq(seq);
     } catch (err) {
-      if (retryable(err)) throw err;
+      if (retryable(err)) {
+        // Not taken: it goes again, unless newer news for its window has come meanwhile.
+        if (limit && !this.limits.some((l) => l.window === limit.window)) {
+          this.limits = [limit, ...this.limits.filter((l) => l !== limit)];
+        }
+        this.sendingLimit = null;
+        throw err;
+      }
       // Refused outright: the next change or heartbeat says it again.
       this.opts.onError?.(err);
     }
     this.sentBranch = branch;
     this.sent = JSON.stringify(state);
     if (limit) {
+      this.sendingLimit = null;
       this.saidLimits.set(limit.window, JSON.stringify(limit));
       this.limits = this.limits.filter((l) => l !== limit);
       if (this.limits.length) this.pacer.kick();
