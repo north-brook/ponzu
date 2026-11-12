@@ -43,7 +43,8 @@ export interface SweptRows {
 }
 
 /**
- * Delete what has outlived its retention at `now`, at most `limit` rows of each table: expired
+ * Delete what has outlived its retention at `now`, at most `limit` rows of each table (never
+ * more than `RETENTION_BATCH`, whatever is asked): expired
  * `auth_states` more than a day past expiry, `jobs` finished more than 30 days ago, and
  * `webhook_deliveries` received more than 30 days ago. One statement per table, so a failure
  * in one leaves the others done. Answers how many rows went from each.
@@ -57,8 +58,10 @@ export interface SweptRows {
 export async function sweepOldRows(
   db: Db,
   now: Date,
-  { limit = RETENTION_BATCH }: { limit?: number } = {},
+  { limit: asked = RETENTION_BATCH }: { limit?: number } = {},
 ): Promise<SweptRows> {
+  // A caller may ask for a smaller batch, never a larger one.
+  const limit = Math.max(0, Math.min(Math.floor(asked), RETENTION_BATCH));
   const at = now.getTime();
   const authCutoff = timeParam(new Date(at - AUTH_STATE_RETENTION_MS));
   const jobCutoff = timeParam(new Date(at - JOB_RETENTION_DAYS * DAY_MS));

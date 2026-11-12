@@ -171,7 +171,7 @@ test("the batch is 5,000 rows a run", async () => {
     select 'github', 'd' || n, 'push', ${ago(31 * DAY).toISOString()}::timestamptz
       from generate_series(1, 5001) as n`);
 
-  expect((await sweepOldRows(db, now)).webhookDeliveries).toBe(5_000);
+  expect((await sweepOldRows(db, now, { limit: 10_000 })).webhookDeliveries).toBe(5_000);
   expect((await sweepOldRows(db, now)).webhookDeliveries).toBe(1);
   expect(await db.$count(webhookDeliveries)).toBe(0);
 });
