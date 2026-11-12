@@ -314,6 +314,28 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
           queryClient.setQueryData(queryKeys.usage(workspaceId), usage),
       }),
     /**
+     * Settings › Account › Share usage data: shown flipped at once in `me`, put back if the API
+     * turns it down. The app stops or starts its own reporting beside this (the studio's
+     * PostHog, the Mac's telemetry.json), which is not the API's to do.
+     */
+    setShareUsage: () =>
+      mutationOptions({
+        mutationFn: (shareUsage: boolean) => api.privacy.setShareUsage(shareUsage),
+        onMutate: async (shareUsage) => {
+          await queryClient.cancelQueries({ queryKey: queryKeys.me() });
+          const was = queryClient.getQueryData<Me>(queryKeys.me());
+          if (was) {
+            queryClient.setQueryData<Me>(queryKeys.me(), { ...was, privacy: { shareUsage } });
+          }
+          return { was };
+        },
+        onError: (_error, _shareUsage, context) => {
+          if (context?.was) queryClient.setQueryData(queryKeys.me(), context.was);
+        },
+        onSuccess: (privacy) =>
+          queryClient.setQueryData<Me>(queryKeys.me(), (me) => (me ? { ...me, privacy } : me)),
+      }),
+    /**
      * Deletes the account, confirmed with the person's GitHub login. 409 `sole_admin` while
      * they are the only admin of a team others are in. The app signs out once it resolves.
      */

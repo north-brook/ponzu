@@ -95,6 +95,8 @@ const desktop: PonzuDesktop = {
     onFailed: (listener) => on<string>(CHANNELS.notifyFailed, listener),
   },
   welcome1x: () => ipcRenderer.invoke(CHANNELS.welcome1x) as Promise<boolean>,
+  setUsageSharing: (enabled) =>
+    ipcRenderer.invoke(CHANNELS.usageSharing, enabled === true) as Promise<boolean>,
 };
 
 /** The computer's name the main process passed, URI-encoded; null when it passed none. */

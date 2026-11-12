@@ -160,6 +160,26 @@ test("a ping toggle shows at once, and is put back when the API turns it down", 
   expect(shown).toEqual([true, false, true, false]);
 });
 
+test("Share usage data shows flipped in me at once, saves for the person, and is put back on a failure", async () => {
+  const { backend, maya, client, queryClient, queries, mutations, mutate } = device();
+  const sharing = () => queryClient.getQueryData(queries.me().queryKey)?.privacy.shareUsage;
+  await queryClient.fetchQuery(queries.me());
+  const shown: (boolean | undefined)[] = [sharing()];
+  queryClient.getQueryCache().subscribe(() => {
+    if (shown.at(-1) !== sharing()) shown.push(sharing());
+  });
+
+  await mutate(mutations.setShareUsage(), false);
+  expect(sharing()).toBe(false);
+  // Saved for the person: another device asking reads it.
+  expect((await backend.connect(maya).api.me()).privacy).toEqual({ shareUsage: false });
+  expect((await client.api.me()).privacy).toEqual({ shareUsage: false });
+
+  backend.online = false;
+  await expect(mutate(mutations.setShareUsage(), true)).rejects.toMatchObject({ code: "network" });
+  expect(shown).toEqual([true, false, true, false]);
+});
+
 test("a secret saved or a rebuild asked for shows in the workspace's environments at once", async () => {
   const { backend, maya, queryClient, queries, mutations, mutate } = device();
   const team = backend.addWorkspace({

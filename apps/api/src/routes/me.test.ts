@@ -35,6 +35,8 @@ test("someone who has only signed in: their profile, and nothing set up yet", as
       avatarUrl: "https://avatars.example/newcomer",
     },
     onboarding: { whereConfirmedAt: null, iphoneStepSeenAt: null },
+    // Share usage data starts on.
+    privacy: { shareUsage: true },
     claudeAccount: null,
     workspaces: [],
     // The test app sends pings (its push fake is on) and has every other switch off.
@@ -159,6 +161,48 @@ test("a guided setup step, once recorded, stays done as it was first done, on ev
     whereConfirmedAt: first.whereConfirmedAt,
     iphoneStepSeenAt: new Date(t.clock.now()).toISOString(),
   });
+});
+
+const setPrivacy = (headers: Record<string, string>, body: unknown) =>
+  t.app.request("/v1/me/privacy", {
+    method: "PATCH",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+test("Share usage data turns off and on for the person, and every device reads it from me", async () => {
+  const person = await t.signInAs({ login: "private" });
+  const other = await t.signInAs({ login: "public" });
+
+  const off = await setPrivacy(person.headers, { shareUsage: false });
+  expect(off.status).toBe(200);
+  expect(await off.json()).toEqual({ shareUsage: false });
+  const read = async (headers: Record<string, string>) =>
+    ((await (await t.app.request("/v1/me", { headers })).json()) as { privacy: unknown }).privacy;
+  expect(await read(person.headers)).toEqual({ shareUsage: false });
+  // Only theirs.
+  expect(await read(other.headers)).toEqual({ shareUsage: true });
+
+  // Saying it again changes nothing.
+  expect(await (await setPrivacy(person.headers, { shareUsage: false })).json()).toEqual({
+    shareUsage: false,
+  });
+  expect(await (await setPrivacy(person.headers, { shareUsage: true })).json()).toEqual({
+    shareUsage: true,
+  });
+  expect(await read(person.headers)).toEqual({ shareUsage: true });
+});
+
+test("the privacy switch takes exactly a boolean, and only from someone signed in", async () => {
+  const person = await t.signInAs({ login: "fussy" });
+  for (const body of [{}, { shareUsage: "false" }, { shareUsage: null }, { shareUsage: 0 }]) {
+    const response = await setPrivacy(person.headers, body);
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+      "invalid_request",
+    );
+  }
+  expect((await setPrivacy({}, { shareUsage: false })).status).toBe(401);
 });
 
 test("only the two steps that leave no other trace can be recorded", async () => {

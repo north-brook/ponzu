@@ -204,6 +204,14 @@ export interface PonzuDesktop {
    * a computer that had 1.x, and false from then on, this launch and every later one.
    */
   welcome1x(): Promise<boolean>;
+  /**
+   * Settings › Account › Share usage data, on this computer: writes ~/.ponzu/telemetry.json,
+   * which the shell reads at launch. Off also stops the main process's error reporting at once.
+   * On takes effect at the next launch: nothing of PostHog was loaded this time. Answers, once
+   * the file is written, whether the next launch will report (false when this build has no
+   * project, or the environment says no). Absent from an older shell.
+   */
+  setUsageSharing?(enabled: boolean): Promise<boolean>;
 }
 
 /** The IPC channels, by what they carry. `invoke` ones answer; `send` ones don't. */
@@ -230,4 +238,5 @@ export const CHANNELS = {
   notifyBadge: "ponzu:notify:badge",
   notifyFailed: "ponzu:notify:failed",
   welcome1x: "ponzu:welcome-1x",
+  usageSharing: "ponzu:usage-sharing",
 } as const;

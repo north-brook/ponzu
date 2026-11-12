@@ -33,6 +33,11 @@ export interface EventPerson {
 export interface ClaimedEvent extends Omit<FeedEvent, "userId"> {
   /** The person behind it. Null when GitHub was, or when they have since been deleted. */
   from: EventPerson | null;
+  /**
+   * Whether the turn it begins may be traced: false when the person behind it has turned Share
+   * usage data off, as their row says at the claim.
+   */
+  trace: boolean;
 }
 
 /**
@@ -231,7 +236,12 @@ export async function claimEvents(
           deliveredAt: claimed.deliveredAt,
           lapsedAt: claimed.lapsedAt,
         },
-        user: { id: users.id, name: users.name, githubLogin: users.githubLogin },
+        user: {
+          id: users.id,
+          name: users.name,
+          githubLogin: users.githubLogin,
+          shareUsage: users.shareUsage,
+        },
       })
       .from(canvases)
       .leftJoin(claimed, sql`true`)
@@ -241,7 +251,10 @@ export async function claimEvents(
   const [head] = rows;
   if (!head) return null;
   const claimedEvents = rows
-    .flatMap(({ event, user }) => (event ? [{ ...event, from: personOf(user) }] : []))
+    .flatMap(({ event, user }) =>
+      // An event about no person (GitHub's, or a deleted person's) is traced as anyone's is.
+      event ? [{ ...event, from: personOf(user), trace: user?.shareUsage ?? true }] : [],
+    )
     .sort((a, b) => a.seq - b.seq);
   const pullRequest =
     head.prNumber === null || head.prState === null

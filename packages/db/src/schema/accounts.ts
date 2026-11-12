@@ -88,6 +88,9 @@ export const users = pgTable("users", {
   timeZone: text("time_zone"),
   /** The local date of the last daily email, so it goes at most once a day. */
   digestSentOn: date("digest_sent_on", { mode: "string" }),
+  // Settings › Account › Share usage data: false stops the apps', the API's and the agent's
+  // analytics about this person (docs/analytics.md, "Turning it off").
+  shareUsage: boolean("share_usage").notNull().default(true),
   // Guided setup: when each step that has no other trace was finished.
   onboardingWhereAt: instant("onboarding_where_at"),
   onboardingIphoneAt: instant("onboarding_iphone_at"),

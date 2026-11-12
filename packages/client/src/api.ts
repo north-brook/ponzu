@@ -487,6 +487,15 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         ).json(),
     },
 
+    privacy: {
+      /**
+       * Settings › Account › Share usage data, for every device the person uses. `me` carries
+       * it, as `privacy.shareUsage` and the live row's `shareUsage`.
+       */
+      setShareUsage: async (shareUsage: boolean) =>
+        (await v1.me.privacy.$patch({ json: { shareUsage } })).json(),
+    },
+
     account: {
       /**
        * Deletes the account, confirmed with the person's GitHub login. 409 `sole_admin` while

@@ -8,9 +8,11 @@ runbook behind its "Environments" section.
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
 reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
 scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck` and the
-production deploy job are later pieces of work. (The API's `PONZU_ENVIRONMENT` variable and
-the environment, image, bundle and migration counts in `/v1/health` are built.) Each is
+`apply.ts`, `github-app.ts`, `restore-drill.ts`) and the API's `/v1/cron/selfcheck` are later
+pieces of work. (The API's `PONZU_ENVIRONMENT` variable, the environment, image, bundle and
+migration counts in `/v1/health`, and the production deploy job in
+[`deploy-api.yml`](../.github/workflows/deploy-api.yml), off until `API_DEPLOY_PRODUCTION` is
+set, are built.) Each is
 marked *(not built yet)* where it first appears, and nothing in production exists until the
 founder's steps below create it.
 
@@ -127,8 +129,10 @@ Scale-to-zero is off because a waking database eats the health check's 3 seconds
 outbound call's 10. The API's `DATABASE_URL` is the pooled URL; migrations use the direct URL.
 
 Because dev and production share a project, a Neon API key for dev also reaches production.
-`apps/api/scripts/neon.ts` refuses the default branch, and the production deploy job will be the
-only thing that sets the guard that lets it through.
+`apps/api/scripts/neon.ts` refuses the default branch, and the production deploy job is the
+only thing that sets the guard that lets it through (`PONZU_ALLOW_DEFAULT_BRANCH=production`,
+on its snapshot and migration steps; `scripts/ci/workflows.test.ts` fails if anything else sets
+it).
 
 ### Cloudflare R2 and the `ponzu.cloud` zone
 
@@ -330,8 +334,12 @@ Then production, when the program reports it is ready:
     required reviewer, holding the secrets `VERCEL_TOKEN` (for ponzu-api-prod) and
     `NEON_API_KEY`. Add the variables `VERCEL_API_PROD_PROJECT_ID` and
     `API_DEPLOY_PRODUCTION=true`, repoint the `PONZU_APP_POSTHOG_*` variables and the secret
-    `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add the Container Registry OIDC policy
-    on ponzu-api-prod for north-brook/ponzu. Run `bun scripts/prod/apply.ts github-rulesets
+    `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add a Container Registry OIDC policy
+    giving north-brook/ponzu's `production` environment read-write on ponzu-api-prod and read on
+    ponzu-api (the deploy copies the image from one to the other). Create the environment, with
+    its reviewer and `main` as its only branch, before you set `API_DEPLOY_PRODUCTION`: GitHub
+    creates an environment a job names that does not exist yet, with no reviewer, so the first
+    deploy would run without your approval. Run `bun scripts/prod/apply.ts github-rulesets
     --yes`. Check that `RELEASE_TOKEN` expires after the cutover.
 13. **D13. Releases and stores.** Set the repository variable `RELEASES_HELD=ponzu,mobile`.
     Check the Developer ID certificate's expiry. Set the EAS production env (the production API
@@ -367,6 +375,48 @@ read-only and never asks a vendor to decrypt a value.
 - `--deep` also creates and removes one `pz-test-check-` sandbox from the current image. On
   production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
+
+## Uptime
+
+`.github/workflows/uptime.yml` runs `bun scripts/ci/uptime.ts` every five minutes. GitHub runs a
+schedule only from the default branch, so it starts with the cutover; until then it checks
+nothing, and a dispatch from any branch but `main` checks nothing either.
+
+- Each run asks production's `/v1/health` up to three times, 15 seconds apart. Production is up
+  when one answer is a 200 with `status` ok, `database` true and `environment` production. The
+  commit, image and migration count are the deploy's own check, not this one, because a merged
+  commit waits for the founder's approval before it deploys.
+- A run that finds production down fails. The next run reads that conclusion back from the
+  Actions API, so the second failing run in a row opens one issue labelled `production-down`
+  (the label is made the first time it is needed). A single failing run opens nothing.
+- While production stays down, each run rewrites that issue's body with the count, when it
+  started and the last problem, rather than commenting, so a long outage is one notification.
+- The first run that finds production up comments on the issue and closes it.
+- A run that fails for another reason (GitHub's API, for one) also counts as a failure for the
+  next run, so the issue can open after one real failure instead of two. That errs towards
+  telling someone.
+
+There is no paid status vendor. The site's status page reads `/v1/health` itself.
+
+## Release holds
+
+Release Please opens a release pull request per app, and release.yml's auto-merge job turns on
+auto-merge for it after asking `bun scripts/release-hold.ts --app <ponzu|mobile> --title
+"<title>" --proposed <the PR's manifest>`. It holds the PR, which a person then merges, when:
+
+- the repository variable `RELEASES_HELD` (comma-separated, for example `ponzu,mobile`) names
+  the app, or names anything that is not an app, so a typo holds everything;
+- the version is a major bump over main's `.release-please-manifest.json`, so `2.0.0` is never
+  merged by itself;
+- the title is not exactly `chore(main): release X.Y.Z` (or `release mobile X.Y.Z`), the PR's
+  own manifest gives another version, or the version is not newer than the one released now.
+
+A held PR also loses auto-merge it already had, so a `1.81.0` PR that a later `feat!:` turns
+into `2.0.0` stops waiting to merge on the next push to `main`. The run writes a notice saying
+why. The job fails closed: it runs even when Release Please failed part way, one app's run never
+cancels the other's, and when the hold cannot be decided (the script or a GitHub call fails) its
+last step turns off any auto-merge the release PR already had. To release a held PR, merge it by hand; to stop holding an app, take it out of
+`RELEASES_HELD`.
 
 ## Rotating secrets
 

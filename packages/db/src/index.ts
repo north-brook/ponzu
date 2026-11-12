@@ -267,6 +267,7 @@ export {
   removePresence,
   touchPresence,
 } from "./queries/presence.ts";
+export { listUsageOptOuts, setShareUsage } from "./queries/privacy.ts";
 export {
   type BranchCanvas,
   findCanvasByBranch,

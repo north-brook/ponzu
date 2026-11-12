@@ -683,6 +683,7 @@ export class FakeBackend {
         call(() => ({
           user: person,
           onboarding: onboarding(),
+          privacy: { shareUsage: this.settings.sharing.get(person.id) ?? true },
           claudeAccount: this.claude.view(person.id),
           workspaces: mine().map(({ workspace, role }) => summary(workspace, role)),
           features: { ...this.features },
@@ -1328,6 +1329,7 @@ export class FakeBackend {
         available: this.features.email,
       }),
       changed: () => this.changed(),
+      meChanged: () => this.changed(),
     };
   }
 
@@ -1393,6 +1395,7 @@ export class FakeBackend {
           ping_pr_ready: true,
           ping_teammate_comments: true,
           email_digest: false,
+          share_usage: this.settings.sharing.get(userId) ?? true,
           onboarding_where_at: done?.whereAt ?? null,
           onboarding_iphone_at: done?.iphoneAt ?? null,
           claude_account_id: claude ? `cla_${userId}` : null,

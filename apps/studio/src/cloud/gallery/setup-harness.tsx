@@ -235,6 +235,8 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
         onSignOut={ignore}
         onCreateTeam={ignore}
         onDelete={ignore}
+        usage={{ on: true, onChange: ignore, resumesNextLaunch: false }}
+        onOpenLink={ignore}
       />
     ),
     agents: () => (

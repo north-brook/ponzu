@@ -3,7 +3,9 @@ name: Release
 # Release Please keeps one open release PR per app on main: the desktop app
 # ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
 # ("chore(main): release mobile X.Y.Z", tags mobile-vX.Y.Z). Every push to
-# main enables auto-merge on both, so once CI passes they land, and the next
+# main enables auto-merge on both unless scripts/release-hold.ts holds one (a
+# major version, or an app the repository variable RELEASES_HELD names), so
+# once CI passes they land, and the next
 # run of this workflow tags the version and opens a draft GitHub release with
 # its notes. For vX.Y.Z, the mac, windows and linux jobs build Ponzu into that
 # draft and launch what they built; the mac job signs and notarizes first.
@@ -69,32 +71,95 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
   # Auto-merge is idempotent: an updated release PR keeps it and merges once
-  # its new head is green. Each app's release PR has its own branch.
+  # its new head is green. Each app's release PR has its own branch. Each run
+  # first asks scripts/release-hold.ts whether the PR, as Release Please has
+  # just titled it, is held: a major version over .release-please-manifest.json,
+  # an app named in RELEASES_HELD, or a title it cannot read. A held PR gets no
+  # auto-merge, and loses any it had (a 1.81.0 PR that a `feat!:` turns into
+  # 2.0.0 keeps auto-merge otherwise), and the run says why. A person merges it.
+  # It fails closed: it runs even when Release Please failed part way (it may
+  # have retitled one PR before failing on the other), neither app's run
+  # cancels the other's, and when the hold cannot be decided the last step
+  # turns off auto-merge the PR already had.
   auto-merge:
     name: Auto-merge the ${{ matrix.app }} release PR
     needs: release-please
+    if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
+      fail-fast: false
       matrix:
         # The branch's component: the root package's name, or the phone's.
         app: [ponzu, mobile]
     steps:
-      - name: Enable squash auto-merge on the open release PR
+      # main's head: its manifest holds the versions released now.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Enable squash auto-merge on the open release PR, unless it is held
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
             --head "release-please--branches--main--components--$APP" \
             --label "autorelease: pending" \
-            --json number,autoMergeRequest --jq '.[0]')
+            --json number,title,headRefOid,autoMergeRequest --jq '.[0]')
           if [ -z "$pr" ] || [ "$pr" = "null" ]; then
             echo "no open $APP release PR"; exit 0
           fi
           number=$(jq -r .number <<<"$pr")
-          if [ "$(jq -r .autoMergeRequest <<<"$pr")" != "null" ]; then
+          title=$(jq -r .title <<<"$pr")
+          enabled=$(jq -r '.autoMergeRequest != null' <<<"$pr")
+          # The versions the PR itself would release, so a title that says
+          # otherwise holds it.
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/.release-please-manifest.json?ref=$(jq -r .headRefOid <<<"$pr")" \
+            >"$RUNNER_TEMP/proposed.json"
+          # Exits non-zero (and so does this step) when it cannot answer.
+          answer=$(bun scripts/release-hold.ts --app "$APP" --title "$title" \
+            --proposed "$RUNNER_TEMP/proposed.json")
+          case "$answer" in
+            merge) ;;
+            "hold: "*)
+              if [ "$enabled" = true ]; then
+                gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
+              fi
+              why=${answer#hold: }
+              why=${why//'%'/'%25'}
+              why=${why//$'\r'/'%0D'}
+              why=${why//$'\n'/'%0A'}
+              echo "::notice title=Release PR #$number is held for a person to merge::$why"
+              echo "Release PR #$number is held for a person to merge: $why" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            *) echo "release-hold.ts answered neither merge nor hold"; exit 1 ;;
+          esac
+          if [ "$enabled" = true ]; then
             echo "auto-merge already enabled on #$number"; exit 0
           fi
           gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash --auto
           echo "auto-merge enabled on #$number"
+        env:
+          APP: ${{ matrix.app }}
+          RELEASES_HELD: ${{ vars.RELEASES_HELD }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      # A step above failed, so whether the PR is held is unknown: a PR that
+      # had auto-merge from an earlier run (and may now be 2.0.0) loses it,
+      # and a person merges it or the next push to main decides again.
+      - name: Turn off auto-merge when the hold could not be decided
+        if: failure()
+        run: |
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
+            --label "autorelease: pending" \
+            --json number,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null) | .number')
+          for number in $numbers; do
+            gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
+            echo "::warning title=Auto-merge turned off on release PR #$number::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+          done
         env:
           APP: ${{ matrix.app }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -116,7 +181,9 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=false --jq '"published \(.tag_name) \(.html_url)"'
         env:
@@ -544,7 +611,9 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
         env:

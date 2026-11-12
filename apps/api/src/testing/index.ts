@@ -1,8 +1,8 @@
-import type { Db } from "@ponzu/db";
+import { type Db, listUsageOptOuts } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import type { RunnerBundle } from "@ponzu/runner/bundle";
 import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
-import { createAnalytics } from "../analytics/analytics.ts";
+import { cachedOptOuts, createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
 import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
@@ -191,7 +191,16 @@ export async function createTestApp(
   const background: Promise<void>[] = [];
   const keep = (work: Promise<void>) => background.push(work);
   const analytics = new MemoryAnalytics();
-  const tracked = createAnalytics({ sink: analytics, keep, log });
+  // As a deployment's: what is about someone who turned usage sharing off never reaches the sink.
+  // Read now, and again only once the switch changes (never by age), so a capture reaches the
+  // sink as it is made, as a test reads it, unless that person's switch has just changed.
+  const optOuts = cachedOptOuts(
+    () => listUsageOptOuts(db),
+    () => clock.now(),
+    Number.POSITIVE_INFINITY,
+  );
+  await optOuts.current();
+  const tracked = createAnalytics({ sink: analytics, keep, log, optOuts });
 
   const deps: Deps = {
     db,
