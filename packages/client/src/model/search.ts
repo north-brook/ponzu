@@ -10,7 +10,7 @@ export interface Segment {
 export function segments(text: string, matches: readonly Match[]): Segment[] {
   const out: Segment[] = [];
   let at = 0;
-  for (const [rawStart, rawEnd] of matches.toSorted((a, b) => a[0] - b[0])) {
+  for (const [rawStart, rawEnd] of matches.slice().sort((a, b) => a[0] - b[0])) {
     const start = Math.max(at, Math.min(rawStart, text.length));
     const end = Math.min(rawEnd, text.length);
     if (end <= start) continue;
