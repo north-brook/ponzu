@@ -43,7 +43,8 @@ name: comment-modes
 - tapOn:
     id: comment-input
 - inputText: "Half written"
-- hideKeyboard
+# Swiped away as a person does, keyboard and all: the field is multiline with no Done key, so
+# Maestro's hideKeyboard has no standard dismiss to press on iOS and fails.
 - swipe:
     from:
       id: comment-field
