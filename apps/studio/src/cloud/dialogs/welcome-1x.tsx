@@ -2,7 +2,7 @@ import { BlockingDialog, DialogActions, DialogButton } from "./blocking-dialog.t
 
 /*
  * The welcome a person coming from Ponzu 1.x sees once, over the sign-in screen (the production
- * design, "Someone on 1.x today"): Ponzu works in the cloud now, and the .design folders 1.x
+ * plan, "Someone on 1.x today"): Ponzu works in the cloud now, and the .design folders 1.x
  * made are still on the computer, which this version doesn't open. One button. The shell decides
  * whether to show it (apps/desktop/src/legacy.ts, `takeWelcome1x`); this only draws it.
  */

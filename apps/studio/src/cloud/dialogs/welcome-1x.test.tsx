@@ -13,7 +13,7 @@ function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return found;
 }
 
-test("the welcome from 1.x says the design's words, exactly, with one button", () => {
+test("the welcome from 1.x says the plan's words, exactly, with one button", () => {
   expect(WELCOME_1X_TITLE).toBe("Ponzu works in the cloud now");
   expect(WELCOME_1X_BODY).toBe(
     "Your canvases, threads and the agent now live in Ponzu Cloud, the same on every Mac and on your iPhone. The .design folders Ponzu 1 made are still on this computer, where you left them; this version doesn't open them.",

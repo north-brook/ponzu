@@ -11,7 +11,7 @@ import { scrubSecretsText } from "@ponzu/client";
 
 export const SUPPORT_EMAIL = "support@ponzu.design";
 
-/** The site's pages the Help menu opens. The status page is the site's (production design R12). */
+/** The site's pages the Help menu opens. The status page is the site's (production plan, R12). */
 export const HELP_LINKS = {
   status: "https://ponzu.design/status",
   privacy: "https://ponzu.design/privacy",
@@ -79,7 +79,7 @@ export function requestIdOf(headers: Record<string, string[] | string> | undefin
 }
 
 /*
- * What the build was stamped with. The production design's slice 3 bakes `PONZU_COMMIT` and
+ * What the build was stamped with. The production plan's slice 3 bakes `PONZU_COMMIT` and
  * `PONZU_ENVIRONMENT` into the main process (scripts/build.ts); until a build defines them, the
  * commit is unknown and the environment is the one config.ts hard-codes: dev for a packaged app,
  * local for a run from a checkout.
@@ -94,7 +94,7 @@ export function bakedCommit(): string | null {
 
 /** The environment this build talks to, by name. */
 export function bakedEnvironment(packaged: boolean): string {
-  // Its name, or the environment as an object with one (the design bakes "name and values").
+  // Its name, or the environment as an object with one (the plan bakes "name and values").
   const baked =
     typeof PONZU_ENVIRONMENT === "string"
       ? PONZU_ENVIRONMENT
