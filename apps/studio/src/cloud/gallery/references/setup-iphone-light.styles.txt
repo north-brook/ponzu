@@ -6,6 +6,7 @@ ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 ground div rgb(11, 11, 10) shadow rgba(40, 30, 0, 0.28) 0px 30px 80px -24px
 ground div rgb(244, 243, 239)
 text "6 Money" rgb(128, 124, 115) 400 10px Inter
+image img kettle-money.webp
 ground img shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
 text "+" rgb(17, 17, 16) 600 15px Inter
 ground span rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.12) 0px 0px 0px 1px, rgba(0, 0, 0, 0.18) 0px 2px 6px 0px

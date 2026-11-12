@@ -10,9 +10,9 @@
  *     on purpose (no lockup, the toggles at the window's edges).
  *
  *   bun scripts/visual.ts references
- *     Redraws what the gallery test compares against: a picture of each composition with its
- *     text hidden (so it holds on any machine's font rendering), and the styles it paints with
- *     (paintedStyles). Look at what changed before committing them.
+ *     Redraws what the gallery test compares against: a picture of each composition in light with
+ *     its text hidden (so it holds on any machine's font rendering), and the styles it paints with
+ *     in light and dark (paintedStyles). Look at what changed before committing them.
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -64,7 +64,10 @@ try {
         const shot = await shootComposition(page, server.url, c, theme, { hideText: true });
         if (!(await fontsLoaded(page)))
           throw new Error("The app's fonts didn't load; references would be wrong.");
-        await Bun.write(join(REFERENCES, `${c.id}-${theme}.png`), shot);
+        // The test compares a picture only in light, and not for a styles-only composition.
+        if (theme === "light" && c.reference === true) {
+          await Bun.write(join(REFERENCES, `${c.id}-${theme}.png`), shot);
+        }
         await Bun.write(join(REFERENCES, `${c.id}-${theme}.styles.txt`), await paintedStyles(page));
         console.log(`${c.id}-${theme}`);
       }

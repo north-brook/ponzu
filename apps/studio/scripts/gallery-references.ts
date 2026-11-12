@@ -1,6 +1,7 @@
 /*
- * The cloud gallery's compositions against their references, in a real Chromium: the picture
- * for layout, the painted styles for color and type. They run in seven files, one for each part
+ * The cloud gallery's compositions against their references, in a real Chromium: the light
+ * picture for layout, the painted styles in both themes for color, type, shadows and which
+ * picture each image shows. They run in seven files, one for each part
  * of the app (src/cloud/gallery/gallery.references.*.test.ts), so bun's workers draw them at
  * once; each composition is in exactly one. Skips where there is no Chrome or Chromium.
  */
@@ -51,7 +52,7 @@ export function areaOf(c: Composition): Area {
   return "window";
 }
 
-/** Registers, under "the cloud gallery", both comparisons for every composition in `area`. */
+/** Registers, under "the cloud gallery", the comparisons for every composition in `area`. */
 export function referenceTests(area: Area) {
   setDefaultTimeout(60_000);
 
@@ -76,28 +77,43 @@ export function referenceTests(area: Area) {
       built?.dispose();
     });
 
+    const styles = async (c: Composition, theme: "light" | "dark") =>
+      expect(await paintedStyles(page), `${c.id} in ${theme} paints with other styles`).toBe(
+        await Bun.file(join(REFERENCES, `${c.id}-${theme}.styles.txt`)).text(),
+      );
+
     for (const c of COMPOSITIONS.filter((c) => c.reference && areaOf(c) === area)) {
-      for (const theme of ["light", "dark"] as const) {
-        test(`${c.id} in ${theme} matches its reference`, async () => {
+      // Light is the one picture, read from the same load as its styles (hiding the text changes
+      // only its fill, which the styles don't read). Dark differs from light only in its colors,
+      // shadows and a theme's own pictures, all of which its styles hold exactly.
+      if (c.reference === "styles") {
+        test(`${c.id} in light paints with its reference's styles`, async () => {
+          await shootComposition(page, server.url, c, "light");
+          await styles(c, "light");
+        });
+      } else {
+        test(`${c.id} in light matches its reference`, async () => {
           // The fonts ship with the app (src/cloud/styles/fonts), so they always load; without them
           // every line measures differently and the comparison would mean nothing.
           expect(fonts, "the app's fonts didn't load").toBe(true);
-          const shot = await shootComposition(page, server.url, c, theme, { hideText: true });
+          const shot = await shootComposition(page, server.url, c, "light", { hideText: true });
+          await styles(c, "light");
           const reference = Buffer.from(
-            await Bun.file(join(REFERENCES, `${c.id}-${theme}.png`)).arrayBuffer(),
+            await Bun.file(join(REFERENCES, `${c.id}-light.png`)).arrayBuffer(),
           );
           const tool = await browser.newPage();
           const diff = await compare(tool, reference, shot);
           await tool.close();
-          expect(diff.changed).toBeLessThan(TOLERANCE);
-        });
-
-        test(`${c.id} in ${theme} paints with its reference's styles`, async () => {
-          await shootComposition(page, server.url, c, theme);
-          const expected = await Bun.file(join(REFERENCES, `${c.id}-${theme}.styles.txt`)).text();
-          expect(await paintedStyles(page)).toBe(expected);
+          expect(diff.changed, `${c.id}'s picture differs from its reference`).toBeLessThan(
+            TOLERANCE,
+          );
         });
       }
+
+      test(`${c.id} in dark paints with its reference's styles`, async () => {
+        await shootComposition(page, server.url, c, "dark");
+        await styles(c, "dark");
+      });
     }
   });
 }
