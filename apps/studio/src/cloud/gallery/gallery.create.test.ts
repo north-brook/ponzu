@@ -1485,4 +1485,39 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Tab");
     await focusOn(first!);
   });
+  test("the details' menu: Turn off auto-merge while it is on, Close for an open one, none once closed", async () => {
+    const more = 'button[aria-label="More actions"]';
+    const items = () => page.$$eval('[role="menuitem"]', (els) => els.map((e) => e.textContent));
+    const runs = () => page.evaluate(() => (window as { actionsRun?: string[] }).actionsRun ?? []);
+    await open("pull-request-menu");
+    await page.click(more);
+    await page.waitForSelector('[role="menu"]');
+    expect(await items()).toEqual(["Turn off auto-merge", "Close pull request"]);
+    await page.click('[role="menuitem"]:has-text("Close pull request")');
+    expect(await runs()).toEqual(["close"]);
+    // From the keyboard too: the menu opens on its first item.
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await page.focus(more);
+    await focusOn("More actions");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+    await page.keyboard.press("Enter");
+    expect(await runs()).toEqual(["close", "auto_merge_off"]);
+
+    // Auto-merge off: only Close.
+    await open("pull-request-tab");
+    await page.click(more);
+    await page.waitForSelector('[role="menu"]');
+    expect(await items()).toEqual(["Close pull request"]);
+    await page.keyboard.press("Escape");
+
+    // Closed, or merged: nothing to do to it, so no menu; the closed one says what it opens with.
+    await open("pull-request-summary");
+    expect(await page.$(more)).toBeNull();
+    expect(await page.$('section[aria-label="The description it opens with"]')).not.toBeNull();
+    await open("pull-request-closed");
+    expect(await page.$('section[aria-label="The description it opens with"]')).toBeNull();
+    await open("pull-request-merged");
+    expect(await page.$(more)).toBeNull();
+  });
 });

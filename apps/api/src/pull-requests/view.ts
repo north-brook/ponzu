@@ -165,6 +165,13 @@ export const PullRequestTabView = z.object({
   }),
   /** The canvas's newest pull request; null before one is opened. */
   pullRequest: PullRequestView.nullable(),
+  /**
+   * The agent's kept words on what the branch changes, while no pull request is open (none yet,
+   * or the newest closed or merged): the description Create PR opens the next one with. Null
+   * while one is open (its description on GitHub says them) or when the agent kept none.
+   * Untrusted markdown, as a description is: the agent writes it, and it may have read anything.
+   */
+  summary: z.string().nullable(),
   /** How Merge merges: the first of squash, merge and rebase the repo allows. */
   mergeMethod: MergeMethod.nullable(),
   autoMergeAllowed: z.boolean(),
@@ -192,6 +199,7 @@ export function toTab(
       ponzu: who.bot && (who.login === appSlug || who.login === `${appSlug}[bot]`),
     };
   const pr = read.pullRequest;
+  const open = pr !== null && (pr.state === "open" || pr.state === "draft");
   const pullRequest = pr && {
     ...pr,
     author: mark(pr.author),
@@ -214,6 +222,7 @@ export function toTab(
       ...pullRequest,
       head: { ref: pullRequest.head.ref, sha: pullRequest.head.sha },
     },
+    summary: !open && target.summary?.trim() ? target.summary : null,
     mergeMethod: read.mergeMethods[0] ?? null,
     autoMergeAllowed: read.autoMergeAllowed,
     nextAction: nextAction(read, target.sandbox?.unpushed ?? 0),

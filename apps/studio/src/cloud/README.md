@@ -34,7 +34,9 @@ thread/           the thread rail: its lines, a running turn's asides and the wo
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
                   (answer.ts, shared)
-pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
+pr-tab/           the pull request tab: details, checks, conversation, files and their diffs; the
+                  menu by the title (Turn off auto-merge, Close pull request) and the description
+                  the next one opens with
 setup/            guided first run: the gates (setup.ts, shared), sign in, where you build, Connect
                   Claude and its card, the iPhone step
 settings/         the Settings modal and its sections, with their rules (billing, shared; members,

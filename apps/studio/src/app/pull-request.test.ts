@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createFakeBackend, settle } from "@ponzu/client/testing";
 import { chromeAction } from "./pull-request-map.ts";
-import { PullRequestStore } from "./pull-request-store.ts";
+import { opensWith, PullRequestStore, tabMenu } from "./pull-request-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
 
 /*
@@ -331,6 +331,145 @@ test("a closed pull request offers to open another once the branch has changes",
   const closed = await w.read();
   expect(closed.tab?.pullRequest?.state).toBe("closed");
   expect(chromeAction(closed.tab!)).toBe("create_pr");
+});
+
+test("Close asks first, closes the one it asked about, and Create PR comes back", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  const draft = (await w.run("create_pr")).tab!.pullRequest!;
+  // A draft can be closed too; nothing is said to GitHub until the person confirms.
+  expect(tabMenu(w.store.getSnapshot(), w.store)).toMatchObject({ busy: false });
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.onTurnOffAutoMerge).toBeUndefined();
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toEqual({ number: draft.number });
+  w.store.cancelClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  expect((await w.read()).tab?.pullRequest?.state).toBe("draft");
+
+  w.store.askClose();
+  w.store.confirmClose();
+  expect(w.store.getSnapshot()).toMatchObject({ busy: "close", closing: null });
+  await settle();
+  const closed = w.store.getSnapshot();
+  expect(closed.busy).toBeNull();
+  expect(closed.tab?.pullRequest?.state).toBe("closed");
+  expect(chromeAction(closed.tab!)).toBe("create_pr");
+  // Nothing more to do to a closed one.
+  expect(tabMenu(closed, w.store)).toBeNull();
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  expect(w.said).toEqual([]);
+
+  // Create PR opens a new one from the same branch.
+  const again = (await w.run("create_pr")).tab!.pullRequest!;
+  expect(again.state).toBe("draft");
+  expect(again.number).not.toBe(draft.number);
+});
+
+test("a Close asked before an auto-merge landed closes nothing, read or not", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.setChecks([{ name: "ci / test", state: "running", required: true }]);
+  await w.read();
+  await w.run("auto_merge");
+
+  // The read shows it merged while the dialog is open: the question closes, and so does nothing.
+  w.store.askClose();
+  w.github.setChecks([{ name: "ci / test", state: "passed", required: true }]);
+  await w.client.api.canvases.pullRequest.merge(w.canvas.id, {
+    headSha: w.store.getSnapshot().tab!.pullRequest!.head.sha,
+  });
+  expect((await w.read()).closing).toBeNull();
+  w.store.confirmClose();
+  await settle();
+  expect(w.store.getSnapshot().tab?.pullRequest?.state).toBe("merged");
+  expect(w.said).toEqual([]);
+});
+
+test("a Close confirmed after a merge the store hasn't read is refused by the API, and says so", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  const number = w.store.getSnapshot().tab!.pullRequest!.number;
+  w.store.askClose();
+  await w.client.api.canvases.pullRequest.merge(w.canvas.id, {
+    headSha: w.store.getSnapshot().tab!.pullRequest!.head.sha,
+  });
+  w.store.confirmClose();
+  await settle();
+  expect(w.said).toEqual([`#${number} is merged.`]);
+  // The refusal reads it again: the tab shows it merged.
+  expect(w.store.getSnapshot()).toMatchObject({
+    busy: null,
+    tab: { pullRequest: { state: "merged" } },
+  });
+});
+
+test("Turn off auto-merge, from the menu while it is on; the button offers it again", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.setChecks([{ name: "ci / test", state: "running", required: true }]);
+  await w.read();
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.onTurnOffAutoMerge).toBeUndefined();
+  // Off already: nothing goes to the API.
+  w.store.turnOffAutoMerge();
+  expect(w.store.getSnapshot().busy).toBeNull();
+
+  expect(chromeAction((await w.run("auto_merge")).tab!)).toBe("auto_merge_on");
+  const menu = tabMenu(w.store.getSnapshot(), w.store)!;
+  menu.onTurnOffAutoMerge!();
+  expect(w.store.getSnapshot().busy).toBe("auto_merge_off");
+  // One thing at a time: Close waits while it is on its way.
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.busy).toBe(true);
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  await settle();
+  const off = w.store.getSnapshot();
+  expect(off.busy).toBeNull();
+  expect(off.tab?.pullRequest?.autoMerge).toBeNull();
+  expect(chromeAction(off.tab!)).toBe("auto_merge");
+  expect((await w.client.api.canvases.get(w.canvas.id)).prState).toBe("open");
+  expect(w.said).toEqual([]);
+});
+
+test("the description it opens with: the agent's kept words while Create PR is offered", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  w.github.describe(
+    "<!-- ponzu:summary -->\nShortens **pricing** to one table.\n<!-- /ponzu:summary -->",
+  );
+  const before = (await w.read()).tab!;
+  expect(before.pullRequest).toBeNull();
+  expect(opensWith(before)).toBe("Shortens **pricing** to one table.");
+
+  // Open, its description says them: the tab doesn't say them twice.
+  const opened = (await w.run("create_pr")).tab!;
+  expect(opened.summary).toBeNull();
+  expect(opensWith(opened)).toBeNull();
+
+  // Closed with the branch still ahead: what Create PR opens the next one with.
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
+  const closed = (await w.read()).tab!;
+  expect(chromeAction(closed)).toBe("create_pr");
+  expect(opensWith(closed)).toBe("Shortens **pricing** to one table.");
+
+  // Merged with nothing since: nothing to open, so nothing it opens with.
+  await w.run("create_pr");
+  await w.run("ready");
+  const merged = (await w.run("merge")).tab!;
+  expect(merged.summary).not.toBeNull();
+  expect(opensWith(merged)).toBeNull();
+  // An API older than the field.
+  expect(opensWith({ ...closed, summary: undefined as unknown as null })).toBeNull();
 });
 
 test("a file's diff is asked for when its card opens, with where a renamed one was", async () => {

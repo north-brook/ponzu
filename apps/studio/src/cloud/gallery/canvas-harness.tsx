@@ -17,7 +17,11 @@ import type {
   SteerGate,
   ThreadItem,
 } from "../model.ts";
-import { type PullRequestTabState, PullRequestView } from "../pr-tab/pull-request-view.tsx";
+import {
+  type PullRequestMenu,
+  type PullRequestTabState,
+  PullRequestView,
+} from "../pr-tab/pull-request-view.tsx";
 import { actionBlock, type NextAction, nextAction } from "../pull-request.ts";
 import { railSignal } from "../status.ts";
 import { ThreadRail } from "../thread/rail.tsx";
@@ -27,6 +31,30 @@ import { Harness } from "./harness.tsx";
 import { notice, reply as replyFixture, said } from "./thread-fixtures.ts";
 
 const ignore = () => {};
+
+/** What was pressed, for the browser tests to read (`window.actionsRun`). */
+const ran = (kind: string) => {
+  const w = window as { actionsRun?: string[] };
+  w.actionsRun = [...(w.actionsRun ?? []), kind];
+};
+
+/**
+ * The tab's menu as the app gives it (app/pull-request-store.ts, `tabMenu`): for an open or draft
+ * pull request, to anyone who can steer the canvas.
+ */
+function tabMenu(
+  state: PullRequestTabState,
+  autoMerge: boolean,
+  gate: SteerGate | null,
+): PullRequestMenu | null {
+  if (state.kind !== "ready" || gate?.kind === "read_only") return null;
+  if (state.pr.state !== "open" && state.pr.state !== "draft") return null;
+  return {
+    ...(autoMerge ? { onTurnOffAutoMerge: () => ran("auto_merge_off") } : {}),
+    onClose: () => ran("close"),
+    busy: false,
+  };
+}
 
 /** What the agent says to any message, a word at a time. */
 const REPLY = "On it. Keeping the green, and letting the photo do the talking in B.";
@@ -51,6 +79,8 @@ export function CanvasHarness({
   sidebar = "open",
   changes = true,
   action: forcedAction,
+  opensWith = null,
+  autoMerge = false,
 }: {
   canvases: CanvasSummary[];
   canvas: CanvasSummary;
@@ -73,6 +103,10 @@ export function CanvasHarness({
   changes?: boolean;
   /** The next action, when it is one the summary can't give (Update branch). */
   action?: NextAction;
+  /** The agent's kept words the next pull request opens with, shown on the tab. */
+  opensWith?: string | null;
+  /** The tab's pull request has auto-merge on: its menu offers to turn it off. */
+  autoMerge?: boolean;
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
@@ -243,11 +277,7 @@ export function CanvasHarness({
               ? {
                   kind: action,
                   blocked: actionBlock(action, gate, f.ada.id),
-                  // What was pressed, for the browser tests to read (`window.actionsRun`).
-                  onRun: (kind: NextAction) => {
-                    const w = window as { actionsRun?: string[] };
-                    w.actionsRun = [...(w.actionsRun ?? []), kind];
-                  },
+                  onRun: ran,
                 }
               : null
           }
@@ -265,6 +295,8 @@ export function CanvasHarness({
           viewerLogin={f.ada.login}
           onOpenLink={ignore}
           onRetry={ignore}
+          summary={opensWith}
+          menu={tabMenu(pullRequest, autoMerge, gate)}
         />
       ) : null}
     </Harness>

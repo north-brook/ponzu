@@ -86,6 +86,7 @@ text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono
 icon svg[Canvases] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 text "Quieter hero, editorial take" rgb(244, 243, 239) 600 26px Funnel Display
+icon svg[More actions] 16×16 rgb(142, 138, 130) stroke 1.7px
 text "#412" rgb(183, 179, 169) 400 12px IBM Plex Mono
 icon svg 12×12 rgb(95, 179, 107) stroke 2px
 icon svg[Open on GitHub] 11×11 rgb(142, 138, 130) stroke 2.2px

@@ -1956,7 +1956,10 @@ last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
 hundred comments and reviews) with line comments, each saying whether its thread is resolved, the first hundred changed files with their
-counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+counts, the last hundred commits), `summary` (the agent's kept words on what the branch changes,
+"Pull request summary", while no pull request is open: none yet, or the newest closed or merged;
+null while one is open, since its description says them, or when the agent kept none), the merge
+method Merge would use, whether the repo allows
 auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the canvas
 has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
 commits since its pull request merged), `ready` (a
@@ -1968,7 +1971,17 @@ running in a repo without auto-merge, or GitHub still working out whether it can
 a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/canvases/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
-the person (which failing checks, or which base to merge in), once for a commit. A file's diff
+the person (which failing checks, or which base to merge in), once for a commit. Beside the
+button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
+canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
+is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
+branch and its commits stay. Create PR opens a new one later.") and sent only while the pull
+request it named is still the open one; one that auto-merge merged meanwhile is answered
+`pull_request_closed` ("#N is merged."), never reopened. A closed pull request shows its closed
+mark in muted and offers Create PR once the branch has commits its base lacks, and the tab shows
+`summary` under "The description it opens with" whenever Create PR is offered. The tab is
+reached from the chrome's pull request mark, so before the first pull request there is no tab to
+show it on. A file's diff
 is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
 are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,

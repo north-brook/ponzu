@@ -253,6 +253,47 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       tab="pull-request"
     />
   ),
+  // Closed without merging: the closed glyph, muted; the branch is still ahead, so Create PR.
+  "pull-request-closed": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "closed" } }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.closedPullRequest }}
+      tab="pull-request"
+    />
+  ),
+  // The same, with the agent's kept words: what Create PR opens the next one with.
+  "pull-request-summary": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "closed" } }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.closedPullRequest }}
+      opensWith={t.keptSummary}
+      tab="pull-request"
+    />
+  ),
+  // Checks running with auto-merge on: the details' menu, open, offers to turn it off or close.
+  "pull-request-menu": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{
+        ...quieter(f.soloCanvases),
+        pullRequest: { ...f.pr412, checks: "running", autoMerge: true },
+      }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.runningPullRequest }}
+      autoMerge
+      tab="pull-request"
+    />
+  ),
   "pull-request-error": () => (
     <CanvasHarness
       canvases={f.soloCanvases}

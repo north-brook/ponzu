@@ -76,6 +76,8 @@ export class FakePullRequests {
   /** How many times Create PR asked the sandbox to push. */
   pushesAsked = 0;
   autoMergeAllowed = true;
+  /** The agent's kept words on what the branch changes (`describe`). */
+  private summary: string | null = null;
 
   constructor(
     private readonly repo: string,
@@ -108,6 +110,14 @@ export class FakePullRequests {
   /** The runner's push failed, and it said why. */
   failPush(error: string): void {
     this.pushError = error;
+    this.events.changed();
+  }
+
+  /** The agent keeps its words on what the branch changes, as `describe_pull_request` does. */
+  describe(summary: string): void {
+    this.summary = summary;
+    const pull = this.pull;
+    if (pull && (pull.state === "open" || pull.state === "draft")) pull.body = summary;
     this.events.changed();
   }
 
@@ -205,6 +215,7 @@ export class FakePullRequests {
   tab(): Tab {
     const exists = this.commits.length > 0;
     const pull = this.pull;
+    const open = pull?.state === "open" || pull?.state === "draft";
     return {
       branch: {
         name: this.branch,
@@ -216,6 +227,8 @@ export class FakePullRequests {
         pushError: this.pushError,
       },
       pullRequest: pull && this.view(pull),
+      // As the API answers it: the kept words, while no pull request is open.
+      summary: open || !this.summary?.trim() ? null : this.summary,
       mergeMethod: "squash",
       autoMergeAllowed: this.autoMergeAllowed,
       nextAction: this.nextAction(),
@@ -271,7 +284,7 @@ export class FakePullRequests {
     this.pull = {
       number: ++pullNumbers,
       title,
-      body: "",
+      body: this.summary ?? "",
       state: "draft",
       headSha: this.commits.at(-1)!,
       author: who(author),
