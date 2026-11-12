@@ -163,8 +163,9 @@ export async function shootBoard(
 const ARTBOARD_BASE = `[data-artboard]{display:flex;flex-direction:column;position:relative;overflow:hidden;box-sizing:border-box;background:#fff;color:#000}[data-artboard] *,[data-artboard] *::before,[data-artboard] *::after{box-sizing:border-box}`;
 
 /**
- * The canvas's boards (gallery `&boards`) drawn and still: each board's shadow root has its
- * content and the pictures in it, and nothing on the canvas has moved for ten frames running.
+ * The canvas's boards (gallery `&boards`) drawn and still: every labelled board has its host,
+ * each host's shadow root holds the board's markup and the pictures in it, and nothing on the
+ * canvas has moved for ten frames running.
  * Fails after five seconds, rather than taking a half-drawn picture.
  */
 async function boardsDrawn(page: Page) {
@@ -184,8 +185,15 @@ async function boardsDrawn(page: Page) {
     while (performance.now() < deadline) {
       await frame();
       const drawn = hosts();
+      // Every board the page labels has its host, and each host holds its board's markup (a
+      // `[data-artboard]` with elements in it), not only the stylesheet that comes first.
+      const boards = root.querySelectorAll("[data-board-name]").length;
       const ready =
-        drawn.length > 0 && drawn.every((el) => (el.shadowRoot?.childNodes.length ?? 0) > 0);
+        boards > 0 &&
+        drawn.length >= boards &&
+        drawn.every(
+          (el) => (el.shadowRoot?.querySelector("[data-artboard]")?.childElementCount ?? 0) > 0,
+        );
       const now = ready ? pose() : "";
       same = ready && now === last ? same + 1 : 0;
       last = now;
