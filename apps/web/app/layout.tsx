@@ -16,16 +16,7 @@ export const metadata: Metadata = {
   authors: [{ name: "Northbrook PBC", url: "https://github.com/north-brook" }],
   creator: "Northbrook PBC",
   publisher: "Northbrook PBC",
-  keywords: [
-    "design canvas",
-    "coding agent",
-    "Claude Code",
-    "Codex",
-    "Cursor",
-    "MCP",
-    "HTML and CSS",
-    "open source",
-  ],
+  keywords: ["canvas", "Claude Code", "pull requests", "AI agent", "cloud sandbox", "open source"],
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],

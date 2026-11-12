@@ -108,9 +108,7 @@ function internalLinks(): { href: string; where: string }[] {
     ...walk(APP),
     ...walk(join(ROOT, "components")),
     join(ROOT, "mdx-components.tsx"),
-  ]
-    .filter((p) => /\.(tsx|ts|mdx)$/.test(p) && !/\.test\.tsx?$/.test(p))
-    .filter((p) => !rel(p, ROOT).startsWith("components/demo/"));
+  ].filter((p) => /\.(tsx|ts|mdx)$/.test(p) && !/\.test\.tsx?$/.test(p));
   const found = sources.flatMap((p) => {
     const text = readFileSync(p, "utf8");
     const hrefs = [

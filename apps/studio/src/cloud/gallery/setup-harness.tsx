@@ -185,9 +185,9 @@ export interface SettingsData {
 }
 
 export const TEAM_SETTINGS: SettingsData = {
-  workspace: f.northbrook,
+  workspace: f.thistlewick,
   workspaces: f.workspaces,
-  teams: [{ workspace: f.northbrook, role: "admin" }],
+  teams: [{ workspace: f.thistlewick, role: "admin" }],
   connection: s.claudeMax,
   entry: null,
   limits: s.limits,
@@ -391,7 +391,7 @@ export function SettingsWindow({
   return (
     <>
       <Harness
-        workspace={data.workspace.kind === "personal" ? f.personal : f.northbrook}
+        workspace={data.workspace.kind === "personal" ? f.personal : f.thistlewick}
         canvases={f.soloCanvases}
         openId={quieter.id}
         rail
