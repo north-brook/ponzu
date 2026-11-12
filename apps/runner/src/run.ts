@@ -14,6 +14,7 @@ import {
   type ToolCaller,
   type ToolDef,
   ToolError,
+  type Telemetry as ToolTelemetry,
   tool,
 } from "@ponzu/tools";
 import { z } from "zod";
@@ -468,6 +469,7 @@ export class Runner {
       renderer: this.opts.renderer,
       ...(this.opts.files ? { files: this.opts.files } : {}),
       host: this.host(),
+      telemetry: this.toolTelemetry(),
     });
     if (this.opts.renderer) {
       this.previews = new Previews({
@@ -602,6 +604,34 @@ export class Runner {
       this.log(`analytics could not start: ${said(err)}`);
       return null;
     }
+  }
+
+  /**
+   * What the canvas tools may send the Ponzu team: the agent's send_feedback, through the same
+   * PostHog client as the turns' traces, so it is sent only when the session says analytics is
+   * on and answers false (the tool's "Not sent") otherwise. The tools' own usage counts ("tool
+   * called", "host call failed") have no event in the cloud, so they are not sent.
+   */
+  private toolTelemetry(): ToolTelemetry {
+    return {
+      capture: () => {},
+      feedback: async (feedback) => {
+        const telemetry = this.telemetry;
+        if (!telemetry) return false;
+        try {
+          telemetry.feedback({
+            ...feedback,
+            canvasId: this.session.canvas.id,
+            workspaceId: this.session.workspaceId ?? null,
+          });
+          return true;
+        } catch {
+          // Never the feedback's words: they may hold what the agent saw.
+          this.log("the agent's feedback could not be queued");
+          return false;
+        }
+      },
+    };
   }
 
   /** The API has let this process go: stop at once, and for good. */
