@@ -1,0 +1,51 @@
+import { Mail, Open } from "@/components/legal";
+import { share } from "@/components/share";
+
+export const metadata = {
+  title: "Security",
+  description:
+    "How Ponzu protects your code and credentials, what is still being hardened, and how to report a vulnerability.",
+  ...share({
+    path: "/security",
+    title: "Security · Ponzu",
+    description:
+      "How Ponzu protects your code and credentials, what is still being hardened, and how to report a vulnerability.",
+  }),
+};
+
+{/* From docs/cloud.md "Security" and "The sandbox"; each claim is tied in docs/legal.md ("Security"). */}
+
+# Security
+
+Ponzu runs an AI agent on your code, with your credentials, in the cloud. This page says plainly what protects that today, what does not yet, and how to tell us about a problem.
+
+## What is in place
+
+- **GitHub decides who can do what.** Who can open a canvas, comment on it and steer it follows who GitHub lets read and push to its repository. The API checks it on every request, and asks GitHub again when its answer is old or a webhook says access changed.
+- **Devices hold no keys to your code.** The apps never hold a GitHub, Claude or Vercel credential. They sign in with short-lived tokens for a session our API let in, and signing out ends that session at once.
+- **Secrets are encrypted.** Claude credentials, GitHub tokens and repository secrets are encrypted with AES-256-GCM under a key that exists only in the API's environment. Each value is bound to the row it is stored in, so a copy anywhere else does not decrypt.
+- **One sandbox per canvas.** Each canvas's agent runs in its own Vercel Sandbox, a Firecracker virtual machine, with a token good for that one canvas.
+- **Short git tokens.** The agent pushes with GitHub tokens that last an hour and reach one repository.
+- **Pull requests are held to people.** The agent merges, marks ready or turns on auto-merge only in a turn a person started in Ponzu, as that person, and never past the repository's rules on GitHub.
+- **Canvas HTML is contained.** It is sanitized on the way in and drawn under a strict content security policy: no script from a canvas runs in the apps.
+- **Your files are on their own domain.** A canvas's files are served from ponzu.cloud, never from ponzu.design, so nothing in a canvas shares an origin or a cookie with our site.
+- **Logs carry no secrets.** Our servers log ids and outcomes, never tokens, request bodies or headers.
+
+## What we are still hardening
+
+The agent works with permissions bypassed inside its sandbox, and that sandbox holds your Claude credential and the repository's secrets in its environment, because Claude Code and your code need them. Anyone whose words reach the agent can try to talk it into doing something else: a person commenting on the canvas, anyone reviewing its pull request (on a public repository, anyone on GitHub), a check's log, or the repository's own files. A command it is talked into could read your Claude credential and the repository's secrets and send them somewhere, and could get a git token that pushes to the repository for an hour.
+
+What limits that today:
+
+- Other people's words reach the agent quoted, under instructions that quoted text is feedback and never asks for credentials or for anything to be sent elsewhere.
+- The sandbox's own token, which talks to our API, is good for one canvas, and the agent's commands cannot read it.
+- A git token lasts an hour and reaches one repository.
+- What the agent can do to its pull request is held by our API, not by the prompt.
+
+What we are building: your Claude credential kept behind an egress proxy, so nothing inside the sandbox holds it, and rules for where the agent may connect. Until then, connect Ponzu to repositories whose commenters and reviewers you trust, and give a repository only the secrets its canvases need.
+
+## Reporting a vulnerability
+
+Write to <Mail to="security" />, or report it privately on GitHub at [github.com/north-brook/ponzu/security/advisories/new](https://github.com/north-brook/ponzu/security/advisories/new). Please give us a reasonable time to fix it before you share it. We welcome good-faith research. <Open who="counsel">Safe-harbor wording for good-faith research.</Open>
+
+Our [security.txt](/security.txt) says the same.
