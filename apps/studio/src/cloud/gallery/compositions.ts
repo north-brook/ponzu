@@ -322,6 +322,18 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  {
+    id: "owner-left-take-over",
+    title: "Thread · its owner left: Take over",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "owner-left-taken-over",
+    title: "Thread · a teammate took it over",
+    ...WINDOW,
+    reference: true,
+  },
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
   { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
   { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },

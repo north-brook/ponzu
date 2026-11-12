@@ -584,7 +584,12 @@ export type Notice =
       url: string;
       title: string;
       as: Person | null;
-    };
+    }
+  /**
+   * Written by the API: `by` took the canvas over once its owner had left the workspace or
+   * deleted their account. It runs on their Claude from then on.
+   */
+  | { type: "owner_changed"; by: Person };
 
 /** What the agent did to its pull request, as its thread's line says. */
 export type AgentPullRequestDone = "opened" | "ready" | "updated_branch" | "auto_merge" | "merged";

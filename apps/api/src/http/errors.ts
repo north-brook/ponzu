@@ -164,6 +164,13 @@ export type ErrorCode =
   | "sole_admin"
   /** The confirmation typed to delete the account is not the person's GitHub login. */
   | "confirmation_mismatch"
+  /**
+   * A take-over of a canvas whose owner is in its workspace: only one whose owner left, or
+   * deleted their account, can be taken over. The owner came back, or a teammate took it first.
+   */
+  | "not_ownerless"
+  /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
+  | "claude_not_connected"
   | "internal";
 
 /**

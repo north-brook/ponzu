@@ -89,6 +89,7 @@ Every event about a workspace also carries `workspace_id`.
 | `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
 | `canvas deleted` | `canvas_id`, `by_owner` | |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
+| `canvas taken over` | `canvas_id`, `woke` | A teammate took over a canvas whose owner left the workspace or deleted their account; it runs on their Claude from then on. `woke`: its feed held work no runner took, so it was woken. About the person who took it. |
 | `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
 | `comment posted` | `canvas_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
 | `turn stopped` | `canvas_id` | A person asked the agent to stop. |

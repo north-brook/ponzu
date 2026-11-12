@@ -150,6 +150,17 @@ export const setUpThread: ThreadItem[] = [
 ];
 export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding Welcome · Picks" };
 
+/**
+ * A canvas whose owner left: what was said before, then Maya taking it over (the sweep plan, §8),
+ * and the run going on on her Claude.
+ */
+export const takenOverThread: ThreadItem[] = [
+  said(ada, "I'd like to iterate on the onboarding flow"),
+  reply("Rebuilding onboarding from the app's code. Light and Water are in."),
+  notice({ type: "owner_changed", by: maya }),
+  said(maya, "Carry on with the picks screen, please."),
+];
+
 /** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
   said(ada, ASK),

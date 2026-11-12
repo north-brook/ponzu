@@ -273,3 +273,13 @@ export const ERROR_DETAIL: ReadonlySet<RunErrorCode> = new Set([
 export function who(person: Person, meId: string): string {
   return person.id === meId ? "You" : firstName(person);
 }
+
+/**
+ * The thread's line once someone took over a canvas whose owner left, word for word from the
+ * the sweep plan, §8, and said to the taker as "you".
+ */
+export function ownerChangedLine(by: Person, meId: string): string {
+  return by.id === meId
+    ? "You took this canvas over. It runs on your Claude from now on."
+    : `${who(by, meId)} took this canvas over. It runs on their Claude from now on.`;
+}

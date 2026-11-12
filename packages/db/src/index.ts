@@ -307,6 +307,7 @@ export {
   endUserSessions,
   getSessionUser,
 } from "./queries/sessions.ts";
+export { type TakeOver, takeOverCanvas } from "./queries/take-over.ts";
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,

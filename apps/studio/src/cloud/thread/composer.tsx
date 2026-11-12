@@ -19,7 +19,8 @@ const images = (files: FileList | null | undefined) =>
  * breaks the line; the field grows to six lines, then scrolls. Images come in by the "+", a
  * paste or a drop. While the run waits on its owner's Claude a strip above the field says so
  * and nothing sends; typing still keeps a draft. Once its owner has left the workspace nothing
- * will run it again, so the strip is all there is: no field to write in for nobody.
+ * runs it until a teammate takes it over, so the strip is all there is, with "Take over" for
+ * someone who can: no field to write in for nobody.
  */
 export function RailComposer({
   text,
@@ -34,6 +35,8 @@ export function RailComposer({
   onSend,
   onStop,
   onConnectClaude,
+  onTakeOver,
+  takingOver = false,
 }: {
   text: string;
   onTextChange: (text: string) => void;
@@ -49,6 +52,13 @@ export function RailComposer({
   onStop: () => void;
   /** Offered when the wait is the viewer's own Claude, disconnected or run out. */
   onConnectClaude?: () => void;
+  /**
+   * Takes over a canvas whose owner left, onto the viewer's Claude: offered when they can
+   * (`canTakeOver`). Once it is theirs the gate goes, and the field with it comes back.
+   */
+  onTakeOver?: () => void;
+  /** A take-over is on its way: the button waits for it. */
+  takingOver?: boolean;
 }) {
   const button = composerButton({ working, text, attachments, gate });
   const ended = gate?.kind === "claude_owner_left";
@@ -114,6 +124,16 @@ export function RailComposer({
           onConnectClaude ? (
             <Button variant="quiet" onClick={onConnectClaude} className="-my-1 px-2 text-ink">
               Connect
+            </Button>
+          ) : null}
+          {gate.kind === "claude_owner_left" && gate.canTakeOver && onTakeOver ? (
+            <Button
+              variant="quiet"
+              onClick={onTakeOver}
+              disabled={takingOver}
+              className="-my-1 px-2 text-ink"
+            >
+              Take over
             </Button>
           ) : null}
         </div>
