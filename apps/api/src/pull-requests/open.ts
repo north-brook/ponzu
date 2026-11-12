@@ -135,7 +135,7 @@ export async function openPullRequest(
  * Keep the agent's words on what the branch changes, and write them into the open pull
  * request's description in place of what it said before. Answers the number of the pull request
  * that now carries them, or null with why they were only kept: no pull request is open (they
- * become the description of the one the person opens with Create PR), or the open one's
+ * become the description of the one that opens next, by Create PR or the agent), or the open one's
  * description no longer has Ponzu's part because someone rewrote it on GitHub (theirs to keep),
  * or GitHub could not be read. `open` is the design's pull request as the app shows it, either way.
  */

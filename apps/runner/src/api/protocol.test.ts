@@ -231,3 +231,25 @@ test("the state answer carries the design's head, and the pull request summary g
   });
   expect(fake.summaries).toEqual(["What the branch does."]);
 });
+
+test("the agent's pull request goes through: read with the turn, each action at its address", async () => {
+  const { fake, connected } = served(new FakeRunnerApi({ session: { branch: "pz/hero" } }));
+  const http = await connected();
+  expect((await http.readPullRequest("evt_0001")).pullRequest).toBeNull();
+  expect(await http.actOnPullRequest("open", { turn: "evt_0001" })).toMatchObject({
+    did: true,
+    pullRequest: { number: 1, state: "draft" },
+  });
+  const sha = "c".repeat(40);
+  await http.actOnPullRequest("update_branch", { turn: "evt_0001", headSha: sha });
+  await http.actOnPullRequest("auto_merge", { turn: "evt_0001" });
+  expect(fake.prCalls).toEqual([
+    { action: "read", turn: "evt_0001" },
+    { action: "open", turn: "evt_0001" },
+    { action: "update_branch", turn: "evt_0001", headSha: sha },
+    { action: "auto_merge", turn: "evt_0001" },
+  ]);
+  // A refusal comes back as the API's error, which a tool says: here, a turn no person began.
+  const err = await http.actOnPullRequest("merge", { turn: null, headSha: sha }).catch((e) => e);
+  expect(err).toMatchObject({ status: 403, code: "turn_not_from_person" });
+});

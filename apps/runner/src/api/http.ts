@@ -3,6 +3,9 @@ import { CommitRefusedError, type SyncTransport } from "@ponzu/core";
 import type { Checkpoint, Restored, RunnerApi, Uploaded, UploadFile } from "./api.ts";
 import {
   type AckRequest,
+  type AgentPullRequestAction,
+  type AgentPullRequestAnswer,
+  type AgentPullRequestRequest,
   ARCHIVE_TYPE,
   type CheckpointRequest,
   type CheckpointResponse,
@@ -12,6 +15,7 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   type GitReport,
+  type PullRequestStanding,
   type PullRequestSummaryRequest,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -181,6 +185,22 @@ export class HttpRunnerApi implements RunnerApi {
     return this.call<PullRequestSummaryResponse>("POST", "/v1/runner/pull-request-summary", {
       summary,
     } satisfies PullRequestSummaryRequest);
+  }
+
+  readPullRequest(turn: string | null): Promise<PullRequestStanding> {
+    const query = turn ? `?turn=${encodeURIComponent(turn)}` : "";
+    return this.call<PullRequestStanding>("GET", `/v1/runner/pull-request${query}`);
+  }
+
+  actOnPullRequest(
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ): Promise<AgentPullRequestAnswer> {
+    return this.call<AgentPullRequestAnswer>(
+      "POST",
+      `/v1/runner/pull-request/${action.replace("_", "-")}`,
+      request,
+    );
   }
 
   /** The existing document routes, as core's `Replica` asks for them. */

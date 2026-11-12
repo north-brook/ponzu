@@ -1,10 +1,14 @@
 import type { SyncTransport } from "@ponzu/core";
 import type {
+  AgentPullRequestAction,
+  AgentPullRequestAnswer,
+  AgentPullRequestRequest,
   ClaimRequest,
   ClaimResponse,
   GitCredentialRequest,
   GitCredentialResponse,
   GitReport,
+  PullRequestStanding,
   PullRequestSummaryResponse,
   QuestionRequest,
   RestoredReport,
@@ -87,10 +91,24 @@ export interface RunnerApi {
   /**
    * The agent's words on what its branch changes, for the pull request's description. Answers
    * the number of the open pull request they were written into, or null with why they were only
-   * kept (none is open: the API keeps them for the one the person opens), and the design's pull
+   * kept (none is open: the API keeps them for the one that opens next), and the design's pull
    * request as the app shows it. Safe to repeat: the last one sent wins.
    */
   pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse>;
+  /**
+   * Where the design's pull request stands, read from GitHub now, and who the API acts as for the
+   * agent in the turn `turn` began. Safe to repeat.
+   */
+  readPullRequest(turn: string | null): Promise<PullRequestStanding>;
+  /**
+   * Has the API do `action` to the design's pull request for the agent, as the person the turn
+   * is for (docs/cloud.md, "The agent's pull request"). Rejects with what the API refused it
+   * with. Safe to repeat: what is done already is answered with `did` false.
+   */
+  actOnPullRequest(
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ): Promise<AgentPullRequestAnswer>;
 }
 
 /** A checkpoint to save: its turn marker and what is kept with it. */
@@ -164,5 +182,7 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     restore: watch(api.restore.bind(api)),
     reportRestored: watch(api.reportRestored.bind(api)),
     pullRequestSummary: watch(api.pullRequestSummary.bind(api)),
+    readPullRequest: watch(api.readPullRequest.bind(api)),
+    actOnPullRequest: watch(api.actOnPullRequest.bind(api)),
   };
 }

@@ -140,6 +140,16 @@ export function fakeApiHandler(
           return new Response(null, { status: 204 });
         case "POST /v1/runner/pull-request-summary":
           return Response.json(await fake.pullRequestSummary(runner, body.summary));
+        case "GET /v1/runner/pull-request":
+          return Response.json(await fake.readPullRequest(runner, url.searchParams.get("turn")));
+        case "POST /v1/runner/pull-request/open":
+        case "POST /v1/runner/pull-request/ready":
+        case "POST /v1/runner/pull-request/auto-merge":
+        case "POST /v1/runner/pull-request/update-branch":
+        case "POST /v1/runner/pull-request/merge": {
+          const action = url.pathname.slice("/v1/runner/pull-request/".length).replace("-", "_");
+          return Response.json(await fake.actOnPullRequest(runner, action as never, body));
+        }
         case `POST ${design}/ops`:
           return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
         case `GET ${design}/ops`: {

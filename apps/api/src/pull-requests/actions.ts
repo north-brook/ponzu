@@ -1,5 +1,6 @@
 import type { PullRequestContext, User } from "@ponzu/db";
 import type {
+  GithubCheck,
   GithubPullRequest,
   MergeRefusal,
   PersonResult,
@@ -61,10 +62,25 @@ export async function actOnPullRequest(
   user: User,
   action: PullRequestAction,
 ): Promise<PullRequestTab> {
+  return (await actAndSay(deps, context, user, action)).tab;
+}
+
+/**
+ * `actOnPullRequest`, saying too whether this call is what did it (`did`): false when there was
+ * nothing to do (already ready, already merged, auto-merge already on), as when someone else did
+ * it a moment before. The agent's routes say so in its thread only when it did.
+ */
+export async function actAndSay(
+  deps: ActDeps,
+  context: PullRequestContext,
+  user: User,
+  action: PullRequestAction,
+): Promise<{ tab: PullRequestTab; did: boolean }> {
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
-  const read = await act(deps, target, user, action);
-  return toTab(target, read.read, deps.config.githubApp.slug);
+  const done = { did: false };
+  const read = await act(deps, target, user, action, done);
+  return { tab: toTab(target, read.read, deps.config.githubApp.slug), did: done.did };
 }
 
 async function act(
@@ -72,6 +88,7 @@ async function act(
   target: PullRequestTarget,
   user: User,
   action: PullRequestAction,
+  done: { did: boolean },
 ): Promise<Read> {
   const { github } = deps;
   let current = await readAndRecord(deps, target);
@@ -86,6 +103,7 @@ async function act(
       if (pr.state === "open") return current;
       if (pr.state !== "draft") throw closed(pr);
       expectDone(await github.markReady(await personToken(), pr.id), pr);
+      done.did = true;
       break;
     }
 
@@ -107,6 +125,7 @@ async function act(
         sha: ready.head.sha,
       });
       if (result === "done") {
+        done.did = true;
         const merged = await untilMerged(deps, target, number);
         // The branch is done with once merged, as GitHub's own button leaves it to be deleted:
         // only while it is still where it merged, so nothing pushed since is lost.
@@ -121,9 +140,13 @@ async function act(
         }
         return merged;
       }
+      // Someone else (a person pressing Merge, the agent, auto-merge) merged it first: what
+      // GitHub has now is the answer, and this call did nothing.
+      const now = await readAndRecord(deps, target, number);
+      if (now.read.pullRequest?.state === "merged") return now;
       if (result === "not_mergeable") {
         // GitHub does not say why, but the pull request as it is now does.
-        throw blockedBy((await readAndRecord(deps, target)).read.pullRequest ?? ready);
+        throw blockedBy(now.read.pullRequest ?? ready);
       }
       if (isRefusal(result)) throw refusalError(result, ready);
       expectDone(result, ready);
@@ -135,6 +158,7 @@ async function act(
       if (!action.enabled) {
         if (!pr.autoMerge) return current;
         expectDone(await github.disableAutoMerge(await personToken(), pr.id), pr);
+        done.did = true;
         break;
       }
       if (pr.autoMerge) return current;
@@ -153,6 +177,7 @@ async function act(
       const method = current.read.mergeMethods[0];
       if (!method) throw refused();
       expectDone(await github.enableAutoMerge(await personToken(), pr.id, method), pr);
+      done.did = true;
       break;
     }
 
@@ -160,6 +185,7 @@ async function act(
       if (pr.state === "closed") return current;
       if (pr.state === "merged") throw closed(pr);
       expectDone(await github.closePullRequest(await personToken(), { fullName, number }), pr);
+      done.did = true;
       break;
     }
 
@@ -181,6 +207,7 @@ async function act(
       });
       if (result === "refused" && pr.mergeable === false) throw conflicts(pr);
       expectDone(result, pr);
+      done.did = true;
       // GitHub makes the merge commit a moment later, and then works out mergeability again.
       deps.background(
         "pull_request_refresh",
@@ -268,8 +295,34 @@ function expectDone(result: PersonResult, pr: GithubPullRequest): void {
   }
 }
 
+/**
+ * What holds an open pull request back from merging now, in the words and code Merge would
+ * refuse with; null when Merge would ask GitHub (clean, unstable or with hooks). A draft is held
+ * back by being one.
+ */
+export function mergeHold(pr: Holdable): { code: string; message: string } | null {
+  if (pr.state === "draft") {
+    const error = draft();
+    return { code: error.code, message: error.message };
+  }
+  if (pr.state !== "open") return null;
+  if (pr.mergeable !== false && MERGEABLE_NOW.includes(pr.mergeState)) return null;
+  const error = pr.mergeable === null ? mergeabilityUnknown() : blockedBy(pr);
+  return { code: error.code, message: error.message };
+}
+
+/** What saying why a pull request is held back reads of it: GitHub's, or the tab's. */
+type Holdable = Pick<
+  GithubPullRequest,
+  "number" | "state" | "mergeable" | "mergeState" | "reviewDecision"
+> & {
+  head: { ref: string };
+  base: { ref: string };
+  checks: { items: Pick<GithubCheck, "required" | "state">[] };
+};
+
 /** Why the repo's rules do not let it merge now, as far as the pull request says. */
-function blockedBy(pr: GithubPullRequest): ApiError {
+function blockedBy(pr: Holdable): ApiError {
   if (pr.mergeable === false) return conflicts(pr);
   if (pr.mergeState === "behind") return refusalError("branch_behind", pr);
   if (pr.reviewDecision === "changes_requested") return refusalError("changes_requested", pr);
@@ -304,7 +357,7 @@ function isRefusal(result: PersonResult | MergeRefusal): result is (typeof REFUS
 }
 
 /** What GitHub's reason for not merging means for the person. */
-function refusalError(refusal: (typeof REFUSALS)[number], pr: GithubPullRequest): ApiError {
+function refusalError(refusal: (typeof REFUSALS)[number], pr: Holdable): ApiError {
   switch (refusal) {
     case "review_required":
       return new ApiError(409, refusal, "The repo's rules want an approving review first.");
@@ -331,7 +384,7 @@ const closed = (pr: GithubPullRequest) =>
 const draft = () =>
   new ApiError(409, "pull_request_draft", "This pull request is a draft. Mark it ready first.");
 
-const conflicts = (pr: GithubPullRequest) =>
+const conflicts = (pr: Holdable) =>
   new ApiError(409, "merge_conflicts", `${pr.head.ref} conflicts with ${pr.base.ref}.`);
 
 const headMoved = () =>

@@ -15,6 +15,7 @@ import { me } from "./me.ts";
 import { notifications } from "./notifications.ts";
 import { repoIdeas } from "./repo-ideas.ts";
 import { runner } from "./runner.ts";
+import { runnerPullRequest } from "./runner-pull-request.ts";
 import { usage } from "./usage.ts";
 import { workspaces } from "./workspaces.ts";
 
@@ -38,5 +39,6 @@ export const v1 = new Hono<AppEnv>()
   .route("/", environments)
   .route("/", usage)
   .route("/runner", runner)
+  .route("/runner", runnerPullRequest)
   .route("/live", live)
   .route("/cron", cron);

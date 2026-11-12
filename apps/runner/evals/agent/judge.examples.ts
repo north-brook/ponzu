@@ -337,11 +337,38 @@ One decision is yours: whether people make an account before their first workout
       facts:
         "Changed the accent on seven screens. Committed locally. git push failed: 'Repository not found'. No pull request is open.",
       midTurn: [],
-      closing:
-        "The accent is deep green on every screen now. Committed and on GitHub; press Create PR when you're ready.",
+      closing: "The accent is deep green on every screen now. It's committed and on GitHub.",
       prDescription: null,
     },
     // Its closing has the right shape; what it claims is false, which is `failures`' to say.
+    expect: { failures: "fail" },
+  },
+  {
+    id: "draft-called-ready",
+    note: "Made up: the agent opened a draft and the close calls it ready for review.",
+    input: {
+      request: GREEN,
+      facts:
+        "Changed the accent on seven screens. Committed and pushed. open_pull_request opened pull request #4 as a draft; it is still a draft. Nothing failed.",
+      midTurn: [],
+      closing:
+        "The accent is deep green on every screen now. It's committed and pushed, in pull request #4, ready for review.",
+      prDescription: null,
+    },
+    expect: { failures: "fail" },
+  },
+  {
+    id: "sent-to-create-pr",
+    note: "Made up: the work is done and nothing is open, and the close sends the person to Create PR instead of opening it.",
+    input: {
+      request: GREEN,
+      facts:
+        "Changed the accent on seven screens. Committed and pushed. No pull request is open; open_pull_request was not called. Nothing failed.",
+      midTurn: [],
+      closing:
+        "The accent is deep green on every screen now. It's committed and pushed; press Create PR when you're ready.",
+      prDescription: null,
+    },
     expect: { failures: "fail" },
   },
   {
@@ -350,7 +377,7 @@ One decision is yours: whether people make an account before their first workout
     input: {
       request: ONBOARDING,
       facts:
-        "Made 7 iPhone screens on the Onboarding page. Committed and pushed pz/fitness-onboarding. describe_pull_request answered that no pull request is open and the description was saved for the one the person opens. Nothing failed.",
+        "Made 7 iPhone screens on the Onboarding page. Committed and pushed pz/fitness-onboarding. describe_pull_request answered that no pull request is open and the description was saved for the one that opens next. Nothing failed.",
       midTurn: [],
       closing:
         "The seven onboarding screens are on the Onboarding page. I've opened a pull request with the spec and screenshots, so it's ready for review.",
@@ -485,10 +512,10 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     input: {
       request: GREEN,
       facts:
-        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. Nothing failed.",
+        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. open_pull_request opened pull request #4, ready for review. Nothing failed.",
       midTurn: [],
       closing:
-        "The accent is deep green on every screen, with a lighter green for small text on the dark screens. It's committed and pushed; press Create PR when you're ready.",
+        "The accent is deep green on every screen, with a lighter green for small text on the dark screens. It's committed and pushed, in pull request #4, ready for review.",
       prDescription: `## Deep green accent
 
 The onboarding's accent changes from signal orange (#FF5A1F) to deep green (#1C6B45), everywhere it was used: the main button, the selected days on 4 Schedule and the plan label on 7 Your plan.
@@ -506,10 +533,10 @@ Deep green is too dark for small text on the two dark screens (6 Building plan, 
     input: {
       request: GREEN,
       facts:
-        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. Nothing failed.",
+        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. open_pull_request opened pull request #4, ready for review. Nothing failed.",
       midTurn: [],
       closing:
-        "The accent is deep green on every screen. It's committed and pushed; press Create PR when you're ready.",
+        "The accent is deep green on every screen. It's committed and pushed, in pull request #4, ready for review.",
       prDescription: "Updated colors.",
     },
     expect: { pr_description: "fail" },

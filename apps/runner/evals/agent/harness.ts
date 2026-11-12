@@ -14,7 +14,15 @@ import type { Doc } from "@ponzu/core";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "../../src/agent/sdk.ts";
 import { FakeRunnerApi } from "../../src/api/fake.ts";
-import type { EventBody, GitReport, ThreadItem, TurnUsage } from "../../src/api/protocol.ts";
+import type {
+  AgentPullRequestAction,
+  EventBody,
+  GitReport,
+  Person,
+  PullRequestState,
+  ThreadItem,
+  TurnUsage,
+} from "../../src/api/protocol.ts";
 import { checkout } from "../../src/repo.ts";
 import { Runner } from "../../src/run.ts";
 import { agentShell } from "../../src/save/shell.ts";
@@ -51,8 +59,12 @@ export interface TurnSetup {
   repo: boolean;
   /** Every push is refused, as GitHub refused a token it had just minted. */
   refusePush?: boolean;
-  /** What begins the turn: a message, or a comment on the canvas. */
+  /** What begins the turn: a message, a comment on the canvas, or a review from GitHub. */
   event: EventBody;
+  /** Who it is from: Ada unless said, null for GitHub. */
+  from?: Person | null;
+  /** The design's pull request when the turn begins, as the app shows it; none unless said. */
+  pullRequest?: PullRequestState | null;
 }
 
 export interface TurnOutcome {
@@ -75,6 +87,8 @@ export interface TurnOutcome {
   errors: string[];
   /** Every `describe_pull_request`, when it came, as unix milliseconds. */
   summaries: { at: number; text: string }[];
+  /** What the agent asked of its pull request, in order, and whether the API did it. */
+  pullRequestCalls: { action: AgentPullRequestAction; outcome: "done" | "nothing" | string }[];
   usage: TurnUsage[];
   /** Questions the agent raised, answered "Your call". */
   questions: number;
@@ -151,6 +165,19 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
       link: `https://ponzu.design/designs/${setup.designId}`,
     },
   });
+  api.pullRequest = setup.pullRequest ?? null;
+  const pullRequestCalls: TurnOutcome["pullRequestCalls"] = [];
+  const act = api.actOnPullRequest.bind(api);
+  api.actOnPullRequest = async (runner, action, request) => {
+    try {
+      const answer = await act(runner, action, request);
+      pullRequestCalls.push({ action, outcome: answer.did ? "done" : "nothing" });
+      return answer;
+    } catch (error) {
+      pullRequestCalls.push({ action, outcome: (error as { code?: string }).code ?? "failed" });
+      throw error;
+    }
+  };
   const summaries: { at: number; text: string }[] = [];
   const summarize = api.pullRequestSummary.bind(api);
   api.pullRequestSummary = async (runner, text) => {
@@ -183,7 +210,12 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
   let questions = 0;
   try {
     await runner.start();
-    const event = api.push(setup.event);
+    const event = api.push(
+      setup.event,
+      setup.from === undefined
+        ? {}
+        : { from: setup.from, priority: setup.event.kind === "review" ? "next" : "now" },
+    );
     runner.poke();
     const deadline = started + (opts.timeoutMs ?? 40 * 60_000);
     let ended: ThreadItem | undefined;
@@ -251,6 +283,7 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
           : [],
       ),
       summaries,
+      pullRequestCalls,
       usage: [...api.usage.values()],
       questions,
       durationMs: Date.now() - started,

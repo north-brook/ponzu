@@ -535,7 +535,19 @@ export type Notice =
       url: string;
       title: string;
       state: "draft" | "open" | "merged" | "closed";
+    }
+  /** Written by the API: the agent did this to the pull request, as `as` on GitHub. */
+  | {
+      type: "pull_request_agent";
+      action: AgentPullRequestDone;
+      number: number;
+      url: string;
+      title: string;
+      as: Person | null;
     };
+
+/** What the agent did to its pull request, as its thread's line says. */
+export type AgentPullRequestDone = "opened" | "ready" | "updated_branch" | "auto_merge" | "merged";
 
 /**
  * The notices a runner may write. The API refuses any other type with 400: what only the API
@@ -818,6 +830,78 @@ export interface PullRequestSummaryResponse {
    * be read (`unreadable`). Null when it was written in.
    */
   kept?: "none_open" | "rewritten" | "unreadable" | null;
+}
+
+/**
+ * What the agent does to its design's pull request through the API, which acts as a person
+ * (docs/cloud.md, "The agent's pull request"): `POST /v1/runner/pull-request/<action>`.
+ */
+export type AgentPullRequestAction = "open" | "ready" | "update_branch" | "auto_merge" | "merge";
+
+export const AGENT_PULL_REQUEST_ACTIONS: readonly AgentPullRequestAction[] = [
+  "open",
+  "ready",
+  "update_branch",
+  "auto_merge",
+  "merge",
+];
+
+export interface AgentPullRequestRequest {
+  /**
+   * The event of the turn the agent is in: the last one the runner put into the session (not an
+   * edit). The API decides from it who the agent acts as, and whether it may merge.
+   */
+  turn: string | null;
+  /** For `merge` and `update_branch`: the commit the agent's checkout is at. */
+  headSha?: string;
+}
+
+/** Where the design's pull request stands, for the agent: `GET /v1/runner/pull-request?turn=`. */
+export interface PullRequestStanding {
+  branch: { name: string; base: string; exists: boolean; aheadBy: number; behindBy: number };
+  pullRequest: {
+    number: number;
+    url: string;
+    /** Untrusted: what someone on GitHub may have written. */
+    title: string;
+    state: "draft" | "open" | "merged" | "closed";
+    headSha: string;
+    author: string | null;
+    mergedBy: string | null;
+    /** False when it conflicts with its base; null while GitHub works it out. */
+    mergeable: boolean | null;
+    mergeState: string;
+    reviewDecision: "approved" | "changes_requested" | "review_required" | null;
+    autoMerge: { enabledBy: string | null } | null;
+    checks: {
+      state: "none" | "running" | "passing" | "failing";
+      complete: boolean;
+      /** Untrusted names: whoever posts a check chooses its name. */
+      items: { name: string; state: string; required: boolean; url: string | null }[];
+    };
+    reviews: { author: string | null; state: "approved" | "changes_requested" | "dismissed" }[];
+    /** Line comments whose threads are not resolved. Untrusted text. */
+    unresolved: { author: string | null; path: string; line: number | null; body: string }[];
+    /** Why Merge would not ask GitHub now, as the API would refuse it; null when it would. */
+    mergeHold: { code: string; message: string } | null;
+  } | null;
+  mergeMethod: "squash" | "merge" | "rebase" | null;
+  autoMergeAllowed: boolean;
+  /** The one thing the app's action button offers. */
+  nextAction: string;
+  /** Who Ponzu acts as on GitHub for the agent in this turn. */
+  actingAs: { name: string; login: string };
+  /** A person in Ponzu began this turn, so it may merge, mark ready and turn on auto-merge. */
+  personTurn: boolean;
+  /** Why not, when it is not. */
+  notPersonTurn: string | null;
+}
+
+export interface AgentPullRequestAnswer extends PullRequestStanding {
+  /** This call is what did it; false when there was nothing to do, or someone did it first. */
+  did: boolean;
+  /** `open` only: GitHub has nothing to open it from yet, and the runner was asked to push. */
+  pushing: boolean;
 }
 
 /* ------------------------------------------------------------------ */
