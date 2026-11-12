@@ -147,4 +147,22 @@ test("a changelog.json the site couldn't read holds the release back", () => {
     "changelog.json's iphone release 1 isn't a version, date and notes",
     "changelog.json's iphone release 2 isn't a version, date and notes",
   ]);
+  // Dates the site's zod check refuses (a bare day, no offset) hold it back here too.
+  expect(
+    changelogProblems(
+      JSON.stringify({
+        mac: [
+          { version: "2.1.0", date: "2026-11-20", notes: ["ok"] },
+          { version: "2.0.0", date: "2026-11-18T09:00:00", notes: ["ok"] },
+          { version: "1.9.0", date: "2026-11-17T09:00:00.5+01:00", notes: ["ok"] },
+        ],
+        iphone: [],
+        incomplete: false,
+      }),
+    ),
+  ).toEqual([
+    "changelog.json's incomplete is neither true nor left out",
+    "changelog.json's mac release 1 isn't a version, date and notes",
+    "changelog.json's mac release 2 isn't a version, date and notes",
+  ]);
 });

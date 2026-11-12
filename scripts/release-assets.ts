@@ -31,6 +31,8 @@ export const NOTES = "release-notes.json";
 export const CHANGELOG = "changelog.json";
 
 const VERSION = /^\d+\.\d+\.\d+$/;
+/** `git log --format=%cI`'s date with its offset, the only date the site accepts (zod's iso.datetime). */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** What's wrong with a changelog.json's text: nothing when the site can read it. */
 export function changelogProblems(text: string): string[] {
@@ -42,6 +44,9 @@ export function changelogProblems(text: string): string[] {
   }
   if (!data || typeof data !== "object") return [`${CHANGELOG} isn't an object`];
   const out: string[] = [];
+  const { incomplete } = data as { incomplete?: unknown };
+  if (incomplete !== undefined && incomplete !== true)
+    out.push(`${CHANGELOG}'s incomplete is neither true nor left out`);
   for (const app of ["mac", "iphone"] as const) {
     const list = (data as Record<string, unknown>)[app];
     if (!Array.isArray(list)) {
@@ -54,6 +59,7 @@ export function changelogProblems(text: string): string[] {
         typeof r.version === "string" &&
         VERSION.test(r.version) &&
         typeof r.date === "string" &&
+        ISO_DATE.test(r.date) &&
         !Number.isNaN(Date.parse(r.date)) &&
         Array.isArray(r.notes) &&
         r.notes.every((n) => typeof n === "string");

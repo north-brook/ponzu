@@ -79,8 +79,10 @@ function Release({ entry }: { entry: Entry }) {
         </span>
       </H2>
       <Ul>
-        {entry.notes.map((note) => (
-          <li key={note}>
+        {entry.notes.map((note, n) => (
+          // Two pull requests can write the same note, so its place in the release is its key.
+          // biome-ignore lint/suspicious/noArrayIndexKey: a release's notes never reorder
+          <li key={n}>
             {noteParts(note).map((part, i) =>
               // The parts of one note never reorder, so their place is their key.
               // biome-ignore lint/suspicious/noArrayIndexKey: a fixed sequence
