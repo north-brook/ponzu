@@ -64,7 +64,25 @@ test("a complete environment is read into one typed value", () => {
     commit: null,
     // Without a PostHog key, analytics is off.
     posthog: null,
+    // Without an Expo access token, push is off.
+    push: null,
   });
+});
+
+test("an Expo access token switches push on, and a malformed one is named and never quoted", () => {
+  const token = "expo-token-for-a-test-0123456789";
+  expect(readEnv({ ...complete, EXPO_ACCESS_TOKEN: token }).push).toEqual({ accessToken: token });
+  // Empty is how a dashboard says unset: push stays off, and the API still starts.
+  expect(readEnv({ ...complete, EXPO_ACCESS_TOKEN: "" }).push).toBeNull();
+  const short = "too-short-secret";
+  let message = "";
+  try {
+    readEnv({ ...complete, EXPO_ACCESS_TOKEN: short });
+  } catch (thrown) {
+    message = (thrown as Error).message;
+  }
+  expect(message).toBe("The API cannot start. EXPO_ACCESS_TOKEN is malformed.");
+  expect(message).not.toContain(short);
 });
 
 test("a PostHog key switches analytics on, with prompts and answers off unless asked for", () => {
@@ -195,6 +213,7 @@ test(".env.example lists exactly the variables the API reads, with no values", (
   const required = names.filter((name) => name in complete);
   expect(required.sort()).toEqual(Object.keys(complete).sort());
   expect(names.filter((name) => !(name in complete)).sort()).toEqual([
+    "EXPO_ACCESS_TOKEN",
     "PONZU_API_URL",
     "PONZU_MIN_CLIENT_VERSIONS",
     "PONZU_POSTHOG_AI_CONTENT",

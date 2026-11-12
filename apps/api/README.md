@@ -175,7 +175,7 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
    `sandboxes`, `runnerBundle`, `storage`, `poke`, `realtime`, `model`, `docs`, `gitTokens`,
-   `background`, `log`, `config`). Never import a client,
+   `background`, `log`, `push`, `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
    interface in `deps/`, a real implementation that takes `fetch` and `clock`, a line in
@@ -228,7 +228,9 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    signed addresses and refuses other bytes, headers, sizes or a late PUT, and serves a signed
    GET), `t.poke` (the pokes, recorded with the port token each carried),
    `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
-   from `reply(…)`), `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
+   from `reply(…)`), `t.push` (`FakePush`: every ping sent, answered with scripted tickets,
+   failures and receipts; `createTestApp({ push: false })` runs with push off), `t.clock`,
+   `t.logs` and `t.db`. `signInAs` goes through the real exchange;
    `startSignIn` stops before it. Give GitHub installations and repositories with
    `t.github.installations.push(…)`. `await t.backgroundDone()` waits for what routes handed
    to `deps.background`. Nothing in it can reach the network.
@@ -260,7 +262,13 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    skipped unless `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and
    `PONZU_ASSETS_URL` (the bucket's public URL) are set. `pull-requests/pull-requests.live.test.ts`
    opens, reads and merges a pull request in the real test repository; the top of the file says
-   what it needs.
+   what it needs. `deps/push.live.test.ts` sends one ping to a real phone through Expo and reads
+   its receipt: it is skipped unless `PONZU_LIVE_PUSH=1`, `EXPO_ACCESS_TOKEN` and
+   `PONZU_LIVE_PUSH_TOKEN` (that phone's Expo push token) are set.
+
+   Push (`deps/push.ts`) is the one seam that cannot take our `fetch`: Expo's server SDK calls
+   the global one. Its tests stub the global `fetch` for the length of each test, and
+   `push.surface.test.ts` holds that nothing else imports the SDK.
 
 ## Live queries
 

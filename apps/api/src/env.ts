@@ -82,6 +82,13 @@ const schema = z.object({
   PONZU_POSTHOG_HOST: z.url().default("https://us.i.posthog.com"),
   /** "1": model calls and agent turns are traced with their prompts and answers. Off otherwise. */
   PONZU_POSTHOG_AI_CONTENT: z.enum(["0", "1"]).default("0"),
+
+  // Notifications: pings to phones (deps/push.ts).
+  /**
+   * An access token for Ponzu's Expo project, which has Enhanced Security for push turned on.
+   * Unset, push is off: nothing is sent to a phone, and the Mac and the inbox work regardless.
+   */
+  EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
 });
 
 /** How designs' sandboxes are made and kept. */
@@ -148,6 +155,8 @@ export interface Env {
   commit: string | null;
   /** PostHog, or null when PONZU_POSTHOG_KEY is unset and analytics is off. */
   posthog: PosthogConfig | null;
+  /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
+  push: { accessToken: string } | null;
 }
 
 /**
@@ -220,6 +229,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
           aiContent: env.PONZU_POSTHOG_AI_CONTENT === "1",
         }
       : null,
+    push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
   };
 }
 

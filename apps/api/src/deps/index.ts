@@ -16,6 +16,7 @@ import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
+import { createExpoPush, noPush, type Push } from "./push.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
@@ -72,6 +73,8 @@ export interface Deps {
   gitTokens: GitTokens;
   /** PostHog: product events, error tracking and model-call traces. A no-op without a key. */
   analytics: Analytics;
+  /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
+  push: Push;
   config: Config;
 }
 
@@ -164,6 +167,7 @@ export function createDeps(env: Env): Deps {
     }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
