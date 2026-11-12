@@ -26,6 +26,11 @@ type UploadDeps = Pick<
 
 /** How long a signed address takes its bytes. */
 export const UPLOAD_SECONDS = 600;
+/**
+ * How long after the last address is signed for an asset key its bytes may still land:
+ * `UPLOAD_SECONDS`, with five minutes over for the upload's completion.
+ */
+export const UPLOADS_SETTLED_MS = UPLOAD_SECONDS * 1000 + 5 * 60_000;
 
 export interface UploadTarget {
   canvasId: string;

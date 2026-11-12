@@ -12,10 +12,10 @@ import { disconnectClaude } from "../claude/accounts.ts";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
 import { ApiError, UpstreamError } from "../http/errors.ts";
-import { type RunNowDeps, runNow } from "../jobs/run.ts";
+import { type RunNowDeps, runJob } from "../jobs/run.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire } from "../sandboxes/retire.ts";
-import { accountForgetJob } from "./forget.ts";
+import { ACCOUNT_FORGET_ATTEMPTS, ACCOUNT_FORGET_JOB } from "./forget.ts";
 
 /*
  * Deleting a person's account (docs/cloud.md, "Deleting an account"). In this order, each step
@@ -33,7 +33,8 @@ import { accountForgetJob } from "./forget.ts";
  *   their row deleted, and with it their sessions (ended at once), GitHub token, memberships,
  *     repo access, Claude account, devices and sign-ins; refused, as the first step, if
  *     another admin's deletion has meanwhile left them the only one
- *   a job recorded that forgets them outside Ponzu, tried again until it is done: their WorkOS
+ *   in the same statement, a job recorded that forgets them outside Ponzu, run at once and
+ *     tried again until it is done: their WorkOS
  *     user deleted (their next sign-in is someone new), then their PostHog person, events and
  *     recordings (account/forget.ts)
  *
@@ -70,14 +71,22 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   }
   // While their token is still stored: the row's deletion takes it with it.
   await revokeGithubGrant(deps, user.id);
-  // Checked again as the row goes: another admin may have deleted themselves meanwhile.
-  const deleted = await deleteUser(db, user.id);
+  // Checked again as the row goes: another admin may have deleted themselves meanwhile. The
+  // forget job is recorded in the same statement, so the row never goes without it.
+  const worker = `${ACCOUNT_FORGET_JOB}:${crypto.randomUUID()}`;
+  const deleted = await deleteUser(db, user.id, {
+    kind: ACCOUNT_FORGET_JOB,
+    maxAttempts: ACCOUNT_FORGET_ATTEMPTS,
+    runAt: new Date(deps.clock.now()),
+    lockedBy: worker,
+  });
   if (deleted.status === "sole_admin") {
     throw soleAdmin((await planAccountDeletion(db, user.id)).soleAdminOf);
   }
-  const workosUserId = deleted.status === "deleted" ? deleted.workosUserId : null;
-  // Recorded before anything else is said about them, so only a failed insert can lose it.
-  await runNow(deps, accountForgetJob({ userId: user.id, workosUserId }));
+  // "gone": an earlier request deleted the row, and recorded its job with it.
+  if (deleted.status === "deleted" && deleted.job) {
+    deps.background(ACCOUNT_FORGET_JOB, runJob(deps, deleted.job, worker));
+  }
   log.info("account_deleted", {
     userId: user.id,
     deletedCanvases: plan.deleted.length,

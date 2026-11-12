@@ -185,10 +185,11 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       kept: [],
     });
     expect(await anonymiseUser(db, user.id)).toBeGreaterThan(0);
-    expect(await deleteUser(db, user.id)).toEqual({
+    const forgetJob = { kind: "account.forget", maxAttempts: 10, runAt: new Date() };
+    expect(await deleteUser(db, user.id, forgetJob)).toMatchObject({
       status: "deleted",
       workosUserId: user.workosUserId,
     });
-    expect(await deleteUser(db, user.id)).toEqual({ status: "gone" });
+    expect(await deleteUser(db, user.id, forgetJob)).toEqual({ status: "gone" });
   });
 });

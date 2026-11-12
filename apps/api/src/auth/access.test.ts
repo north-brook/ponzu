@@ -262,6 +262,8 @@ describe("a route for a runner", () => {
     expect(await ask(older.runnerId)).toEqual([409, "superseded"]);
     expect(await ask()).toEqual([409, "superseded"]);
     expect(await ask(newer.runnerId)).toEqual([200, undefined]);
+    // "taking" is how the one route that takes the lease asks, never a header value.
+    expect(await ask("taking")).toEqual([409, "superseded"]);
   });
 
   test("refuses no token, a made-up one, a revoked one and a person's", async () => {
@@ -310,6 +312,7 @@ describe("a route for a person or a runner", () => {
     expect(await ask(person.headers.authorization)).toEqual({ user: person.userId });
     expect(await ask(`Bearer ${token}`, runnerId)).toEqual({ canvas: canvasId });
     expect(await ask(`Bearer ${token}`)).toEqual([409, "superseded"]);
+    expect(await ask(`Bearer ${token}`, "taking")).toEqual([409, "superseded"]);
   });
 
   test("refuses anyone who is neither, each as its own kind of token would be", async () => {

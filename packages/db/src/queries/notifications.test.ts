@@ -39,6 +39,7 @@ import { answerQuestion, cancelQuestions, createQuestion } from "./questions.ts"
 import { run as runQuery } from "./run.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
+const forgetJob = { kind: "account.forget", maxAttempts: 10, runAt: new Date() };
 beforeAll(async () => {
   db = await createTestDb();
 });
@@ -709,7 +710,7 @@ describe("notifications", () => {
       rows: [{ notificationId: row!.id, deviceId: device.id, sendAt: start }],
       now: start,
     });
-    expect(await deleteUser(db, leaving.id)).toMatchObject({ status: "deleted" });
+    expect(await deleteUser(db, leaving.id, forgetJob)).toMatchObject({ status: "deleted" });
     const where = await run(
       db
         .select({ id: notifications.id })
