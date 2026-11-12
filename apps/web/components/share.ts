@@ -5,8 +5,9 @@ import type { Metadata } from "next";
  * outright rather than merging, so each page builds its own from these, and none silently loses
  * the card type, site name or image.
  *
- * The image is app/opengraph-image.jpg (and twitter-image.jpg), rendered from /share by
- * scripts/share-image.ts, unless a page brings its own (a design in the viewer does).
+ * The image is app/opengraph-image.jpg (and twitter-image.jpg), unless a page brings its own. Ponzu
+ * 1's /share page and its screenshot script drew them; both are retired, and the home page's
+ * rewrite brings new ones.
  */
 
 /** The site's name and line, used by the layout and the home page. */

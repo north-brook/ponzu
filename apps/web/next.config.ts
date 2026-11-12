@@ -1,3 +1,4 @@
+import createMDX from "@next/mdx";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -7,8 +8,9 @@ const nextConfig: NextConfig = {
   // is on GitHub anyway). It fetches them itself, but only once the Vercel project's Protected Source
   // Maps is off; until then .map files need a Vercel login and traces stay minified.
   productionBrowserSourceMaps: true,
-  // The share cards read their fonts from disk (app/gh/og.tsx).
-  outputFileTracingIncludes: { "/og/gh/[...slug]": ["./assets/og/*.ttf"] },
+  // .mdx files are pages too (the legal pages and the docs), through @next/mdx and
+  // mdx-components.tsx.
+  pageExtensions: ["ts", "tsx", "mdx"],
   async rewrites() {
     return [
       {
@@ -27,6 +29,10 @@ const nextConfig: NextConfig = {
       // threads already written keep those links for good, so they still open. The query
       // (?page=, ?artboard=, ?app=) carries over.
       { source: "/designs/:id", destination: "/canvases/:id", permanent: true },
+      // Ponzu 1's GitHub viewer drew a share card for each of its pages here. The viewer has
+      // retired (app/gh is a landing), so a card still linked from a chat or a post falls back to
+      // the site's own. A 302 says so without telling caches the old address is gone for good.
+      { source: "/og/gh/:path*", destination: "/opengraph-image.jpg", statusCode: 302 },
       // /download was the Mac's install steps, and every Download button sent ?start=1 there.
       // Those links (in apps and agents' messages) still mean the Mac. The query carries over.
       {
@@ -47,4 +53,6 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// GitHub-flavoured Markdown, for the tables the legal pages and docs use. Named as a string, as
+// Turbopack (the default bundler) requires of MDX plugins.
+export default createMDX({ options: { remarkPlugins: ["remark-gfm"] } })(nextConfig);
