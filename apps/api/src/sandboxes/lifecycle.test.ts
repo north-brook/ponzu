@@ -496,6 +496,14 @@ describe("a dead runner", () => {
       expect((await row(design.id)).state).toBe("awake");
     }
     expect(starts(design.id)).toHaveLength(4);
+    // A message no runner took waits in the feed: the failure is not woken straight back up.
+    await appendEvent(t.db, {
+      designId: design.id,
+      kind: "message",
+      priority: "now",
+      payload: { text: "Hello?" },
+      userId: ws.people.maya!.userId,
+    });
     t.clock.advance(2 * MINUTE);
     await cron();
     expect(await row(design.id)).toMatchObject({
@@ -504,6 +512,10 @@ describe("a dead runner", () => {
     });
     expect((await head(design.id)).agentBlocker).toBe("sandbox_failed");
     expect(await status(design.id)).toBe("stopped");
+    t.clock.advance(2 * MINUTE);
+    await cron();
+    expect(starts(design.id)).toHaveLength(4);
+    expect((await row(design.id)).state).toBe("asleep");
   });
 });
 
@@ -981,6 +993,30 @@ describe("nothing left running", () => {
     expect(await getSandbox(t.db, design.id)).toBeNull();
     expect(await t.sandboxes.status(name)).toBeNull();
     expect(logged("wake_let_go", design.id)).toBeDefined();
+  });
+
+  test("a second retire of a settled design leaves the first's hold alone", async () => {
+    const { design } = await awakeDesign();
+    await rows(
+      `update designs set status = 'settled', settled_at = now() where id = '${design.id}'`,
+    );
+    const first = await holdForRetire(t.deps, design.id, { whileSettled: true });
+    await retire(t.deps, design.id);
+    expect((await row(design.id)).wakingBy).toBe(first as string);
+    expect(await status(design.id)).not.toBeNull();
+    await finishRetire(t.deps, design.id, first as string);
+    expect(await getSandbox(t.db, design.id)).toBeNull();
+    expect(await t.sandboxes.status(nameOf(design.id))).toBeNull();
+  });
+
+  test("a retire that lost its hold deletes nothing at Vercel", async () => {
+    const { design } = await awakeDesign();
+    const by = await holdForRetire(t.deps, design.id);
+    // Taken over (a delete's retire, or the sweep after the lease).
+    await rows(`update sandboxes set waking_by = 'retire:other' where design_id = '${design.id}'`);
+    await finishRetire(t.deps, design.id, by);
+    expect(await t.sandboxes.status(nameOf(design.id))).not.toBeNull();
+    expect((await row(design.id)).wakingBy).toBe("retire:other");
   });
 
   test("a retire that comes after the design was reopened leaves it be", async () => {

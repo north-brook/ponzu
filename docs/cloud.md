@@ -633,8 +633,9 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   meanwhile finds its row `stopping` and its wake waits or tries again, so a late delete can
   never hit its new sandbox. A settle's retire, and the sweep's, take the row only while the
   design is still settled, so one that comes late (a sweep that listed the design before it was
-  reopened) leaves the reopened design alone. A retire that dies leaves the row held, and the
-  sweep runs it again.
+  reopened) leaves the reopened design alone, and never from another retire inside its lease, so
+  two never overlap; a retire that finds the row no longer its own deletes nothing at Vercel. A
+  retire that dies leaves the row held, and the sweep runs it again once the lease is over.
 - **The sweep**, every minute, never resumes anything: every call it makes reads or is pinned to
   the row's session. Each row gets the first step that applies, in this order:
 
@@ -642,7 +643,7 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   |---|---|---|
   | retire | the design is settled | retire |
   | stop | its Claude can no longer run it, or its owner left the workspace | sleep (`claude_owner_left` shown for the second) |
-  | restart | awake, and its runner unheard for 90 seconds | a session Vercel already stopped: `asleep` and the pending rule; otherwise sleep, then wake at once; after three in a row, sleep with `sandbox_failed` |
+  | restart | awake, and its runner unheard for 90 seconds | a session Vercel already stopped: `asleep` and the pending rule; otherwise sleep, then wake at once; after three in a row, sleep with `sandbox_failed`, not woken by the pending rule (the next message tries again) |
   | lapse | a turn it owes is past waiting for ("A turn that never came") | the thread says so and the event goes in again; an idle runner is poked, one that says it works is let go (its token revoked, so it writes no notice of its own) and slept and woken |
   | stalled | its runner says it works and has written nothing for an hour | the thread says so; the runner is let go, slept and woken |
   | sleep | idle for `PONZU_SANDBOX_IDLE_SECONDS` (300), owing no turn | sleep |

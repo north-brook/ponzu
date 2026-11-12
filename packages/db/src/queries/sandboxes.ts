@@ -190,6 +190,8 @@ export interface Move {
   sessionId?: string;
   /** Only while the design is settled: a retire never takes the row of a design reopened. */
   whileSettled?: boolean;
+  /** Not from another retire still inside its lease: two retires of one design never overlap. */
+  unlessRetiring?: boolean;
   changes?: SandboxChanges;
 }
 
@@ -228,6 +230,7 @@ async function move(
     idleBefore,
     sessionId,
     whileSettled,
+    unlessRetiring,
     changes = {},
     limits,
   }: Move & { limits?: SandboxLimits },
@@ -285,6 +288,13 @@ async function move(
   if (whileSettled) {
     conditions.push(
       sql`exists (select 1 from designs d where d.id = s.design_id and d.status = 'settled')`,
+    );
+  }
+  if (unlessRetiring) {
+    const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
+    conditions.push(
+      sql`not (s.state = 'stopping' and s.waking_by like 'retire:%'
+               and s.state_at >= ${leaseOver}::timestamptz)`,
     );
   }
   if (limits) conditions.push(roomFor(sql`s.design_id`, limits));

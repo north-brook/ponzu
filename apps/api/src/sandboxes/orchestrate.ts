@@ -317,11 +317,15 @@ async function bringUp(
       image,
     };
   } catch (error) {
-    if (environment) await revokeRunnerToken(db, environment.runnerTokenId);
     // `up()` resumed or created a session that serves nothing now: stopped, whatever the
-    // refusal, so a wake that is tried again (or gives up) leaves no VM running behind a row
-    // that is not awake. The next attempt's `up()` resumes it in a couple of seconds.
-    await stopQuietly(deps, at);
+    // refusal (and whatever the database does meanwhile), so a wake that is tried again (or
+    // gives up) leaves no VM running behind a row that is not awake. The next attempt's `up()`
+    // resumes it in a couple of seconds.
+    try {
+      if (environment) await revokeRunnerToken(db, environment.runnerTokenId);
+    } finally {
+      await stopQuietly(deps, at);
+    }
     throw error;
   }
 }

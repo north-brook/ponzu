@@ -109,7 +109,9 @@ export async function putToSleep(
   if (!asleep) return true;
   await captureSlept(deps, designId, why, awakeMs);
   if (options.wake) await startWake(deps, designId, options.wake);
-  else await wakeIfPending(deps, designId);
+  // A sandbox put down as failed waits for the person's next message: the pending rule would
+  // wake it straight back into whatever failed, over and over.
+  else if (!options.failure) await wakeIfPending(deps, designId);
   return true;
 }
 
