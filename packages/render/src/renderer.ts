@@ -209,6 +209,11 @@ const ARTBOARD_FIT = `((root) => {
 /** In-page: rendered boxes of these ids relative to the artboard, and its content height. */
 export function measureScript(ids: string[]): string {
   return `(() => {
+  // Measured on the videos themselves, not the stills a seek stood in for them (motion.ts).
+  const motion = window.__ponzuMotion;
+  const stood = motion && motion.live ? motion.live() : false;
+  try { return measure(); } finally { if (stood) motion.still(); }
+  function measure() {
   const root = document.querySelector('[data-artboard]');
   if (!root) return null;
   const rb = root.getBoundingClientRect();
@@ -225,6 +230,7 @@ export function measureScript(ids: string[]): string {
   }
   const { needed } = ${ARTBOARD_FIT}(root);
   return { boxes, contentHeight: needed === null ? null : Math.ceil(needed - 0.01) };
+  }
 })()`;
 }
 
