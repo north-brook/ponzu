@@ -141,6 +141,8 @@ describe("planDelivery", () => {
     expect(only({ ...phone, lastSeenAt: ago(90 * DAY) }).suppressed).toBeNull();
     expect(only({ ...phone, lastSeenAt: ago(90 * DAY + 1) }).suppressed).toBe("no_device");
     expect(only(mac).suppressed).toBe("no_device");
+    // A Mac is never pushed to, even one that somehow has a token.
+    expect(only({ ...mac, hasToken: true, lastSeenAt: now }).suppressed).toBe("no_device");
   });
 
   test("every phone that takes pings gets one", () => {

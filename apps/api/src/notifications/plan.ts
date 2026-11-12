@@ -162,6 +162,10 @@ export function cancelReason(
     toggleOn: boolean;
     /** The phone as it is now, or null when it is gone. */
     device: DeviceFacts | null;
+    /**
+     * Whether the person may still see it: for a canvas's ping, `canRead` by kept answers; for a
+     * billing ping, whether they are still an admin of the workspace (or its person).
+     */
     canRead: boolean;
   },
   now: Date,

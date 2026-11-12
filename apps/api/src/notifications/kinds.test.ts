@@ -154,6 +154,21 @@ describe("triggers carry ids only", () => {
     expect(triggerKey(trigger)).toBe("billing:cap_warning:ws_a:2026-11-09T00:00:00.000Z");
   });
 
+  test("a billing amount comes with every notice but free credits used", () => {
+    const billing = {
+      kind: "billing",
+      workspaceId: "ws_a",
+      periodStart: "2026-11-09T00:00:00.000Z",
+    };
+    const ok = (notice: string, amountCents: number | null) =>
+      NotifyTrigger.safeParse({ ...billing, notice, amountCents }).success;
+    expect(ok("free_used", null)).toBe(true);
+    expect(ok("free_used", 0)).toBe(false);
+    expect(ok("cap_reached", null)).toBe(false);
+    expect(ok("payment_failed", null)).toBe(false);
+    expect(ok("payment_failed", 15_000)).toBe(true);
+  });
+
   test("each trigger's job key", () => {
     expect(triggerKey(NotifyTrigger.parse(raised))).toBe(
       "question_raised:des_7k2m9x4q0c8v5n1t:q_7k2m9x4q0c8v5n1t",

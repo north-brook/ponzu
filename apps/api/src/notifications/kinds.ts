@@ -119,6 +119,10 @@ const RUN_ERROR_CODES = [
   "question_failed",
   "push_failed",
 ] as const satisfies RunErrorCode[];
+// And every code the protocol has is listed: a new one fails the typecheck here rather than
+// making `notify` refuse a turn that failed with it.
+const everyRunErrorCode: readonly (typeof RUN_ERROR_CODES)[number][] = [] as RunErrorCode[];
+void everyRunErrorCode;
 
 export const BILLING_NOTICES = [
   "free_used",
@@ -183,15 +187,21 @@ export const NotifyTrigger = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("wake_failed"), canvasId: Id, failedAt: Instant }),
   /**
    * A billing gate transition (`refreshBillingGate`). `amountCents` is the cap for the two cap
-   * notices, the invoice's total for a failed payment, and null for free credits used.
+   * notices, the invoice's total for a failed payment, and null for free credits used; any
+   * other pairing is refused, so a ping never reads "$0".
    */
-  z.strictObject({
-    kind: z.literal("billing"),
-    workspaceId: Id,
-    periodStart: Instant,
-    notice: z.enum(BILLING_NOTICES),
-    amountCents: z.number().int().min(0).nullable(),
-  }),
+  z
+    .strictObject({
+      kind: z.literal("billing"),
+      workspaceId: Id,
+      periodStart: Instant,
+      notice: z.enum(BILLING_NOTICES),
+      amountCents: z.number().int().min(0).nullable(),
+    })
+    .refine((trigger) => (trigger.notice === "free_used") === (trigger.amountCents === null), {
+      message: "amountCents is null for free_used and set for every other notice",
+      path: ["amountCents"],
+    }),
 ]);
 export type NotifyTrigger = z.infer<typeof NotifyTrigger>;
 

@@ -107,11 +107,19 @@ export function prApprovedBody(number: number, approver: Named): string {
 /**
  * A teammate's comments on a canvas, collapsed into one ping: "Maya commented.", "Maya left 2
  * comments.", "Maya and Sam left 3 comments.", "Maya, Sam and Lee left 3 comments.", "Maya, Sam
- * and 2 others left 5 comments." `people` are the commenters, newest first, each once; `count`
- * is how many comments, never fewer than the people.
+ * and 2 others left 5 comments." `people` are the commenters, newest first; someone listed
+ * twice (the same name and login) is counted once. `count` is how many comments, never fewer
+ * than the people.
  */
 export function commentBody(people: readonly Named[], count: number): string {
-  const names = people.map(firstName);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const person of people) {
+    const key = `${person.name ?? ""}\u0000${person.login ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(firstName(person));
+  }
   if (names.length === 0) names.push("Someone");
   const comments = Math.max(count, names.length, 1);
   const [a, b, c] = names;

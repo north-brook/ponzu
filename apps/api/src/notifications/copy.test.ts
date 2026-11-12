@@ -222,8 +222,15 @@ describe("a teammate's comments, collapsed", () => {
 
   test("four or more: two named and the others counted", () => {
     expect(commentBody([maya, sam, lee, kai], 5)).toBe("Maya, Sam and 2 others left 5 comments.");
-    expect(commentBody([maya, sam, lee, kai, maya], 9)).toBe(
+    expect(commentBody([maya, sam, lee, kai, { name: "Ana", login: "ana" }], 9)).toBe(
       "Maya, Sam and 3 others left 9 comments.",
+    );
+  });
+
+  test("someone listed twice is counted once", () => {
+    expect(commentBody([maya, maya], 2)).toBe("Maya left 2 comments.");
+    expect(commentBody([maya, sam, lee, kai, maya], 9)).toBe(
+      "Maya, Sam and 2 others left 9 comments.",
     );
   });
 
