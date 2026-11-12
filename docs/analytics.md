@@ -346,7 +346,12 @@ or `"enabled": false` in `~/.ponzu/telemetry.json` (what `ponzu telemetry off` w
 the switch writes).
 
 What is not built: turning the switch on from another device does not turn a Mac back on whose
-file says off; turn it on there. The website's own analytics are cookieless and anonymous, and
+file says off; turn it on there. On a Mac that has never been told (no file, and no opt-out kept
+in the studio's PostHog storage), a launch reports from the moment it opens until `GET /v1/me`
+answers, usually a second or less: the app opened event, the first page view and the start of
+a recording may go before the studio learns the switch is off, and from then on nothing does.
+An API instance other than the one that took the `PATCH` keeps sending about the person for up
+to a minute, until its copy of who is out is read again. The website's own analytics are cookieless and anonymous, and
 are not tied to the account.
 
 ## What the Mac app never sends

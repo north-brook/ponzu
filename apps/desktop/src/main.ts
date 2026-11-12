@@ -416,13 +416,14 @@ function registerIpc(session: MainSession, updater: Updates) {
  * reporting stopped now. The studio stops its own PostHog itself.
  */
 async function setUsageSharing(enabled: boolean): Promise<boolean> {
-  writeUsageSharing(homedir(), enabled);
+  // Off stops reporting first, so a file that can't be written never leaves it running.
   if (!enabled && telemetry && !telemetryStopped) {
     telemetryStopped = true;
     // No error after this is reported; what was queued before the person said no is sent.
     telemetry.stop();
     await telemetry.shutdown();
   }
+  writeUsageSharing(homedir(), enabled);
   // Whether the next launch reports: this build has a project, and nothing else says no.
   return (
     enabled && Boolean(config.posthog) && !smoke && !telemetryOffBecause(process.env, homedir())

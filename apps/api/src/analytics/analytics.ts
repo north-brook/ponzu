@@ -143,9 +143,15 @@ export interface OptOuts {
   current(): Promise<ReadonlySet<string>>;
   /** The copy held while it is fresh, without reading anything; null otherwise. */
   fresh(): ReadonlySet<string> | null;
-  /** The copy held, fresh or not, without reading anything: null before the first read. */
+  /**
+   * The copy held, however old, without reading anything: null before the first read, and
+   * after `forget` until a read begun since then has answered.
+   */
   known(): ReadonlySet<string> | null;
-  /** Lets go of the copy held, so the next `current` reads it again. */
+  /**
+   * Someone's switch changed here: lets go of the copy held, and of any read already under way,
+   * so the next `current` reads again.
+   */
   forget(): void;
 }
 
@@ -155,31 +161,44 @@ export function cachedOptOuts(
   now: () => number,
   ttlMs = OPT_OUTS_TTL_MS,
 ): OptOuts {
-  let held: { ids: ReadonlySet<string>; at: number } | null = null;
-  let stale = false;
-  let reading: Promise<ReadonlySet<string>> | null = null;
-  const fresh = () => (held && !stale && now() - held.at < ttlMs ? held.ids : null);
+  // `generation` counts `forget`s. A copy, or a read, from before the latest one is not fresh: a
+  // read that began before someone's switch changed may not have seen it, so a `current` asked
+  // after the change never shares it and starts its own.
+  let generation = 0;
+  let held: { ids: ReadonlySet<string>; at: number; generation: number } | null = null;
+  let reading: {
+    promise: Promise<ReadonlySet<string>>;
+    generation: number;
+    token: symbol;
+  } | null = null;
+  const fresh = () =>
+    held && held.generation === generation && now() - held.at < ttlMs ? held.ids : null;
   return {
     fresh,
     current() {
       const ids = fresh();
       if (ids) return Promise.resolve(ids);
-      reading ??= (async () => {
+      if (reading && reading.generation === generation) return reading.promise;
+      const started = generation;
+      const at = now();
+      const mine = Symbol("read");
+      const promise: Promise<ReadonlySet<string>> = (async () => {
         try {
-          const at = now();
-          stale = false;
-          const ids = new Set(await load());
-          held = { ids, at };
+          // Awaited first, so a `load` that throws at once still settles after `reading` is set.
+          const ids = new Set(await Promise.resolve().then(load));
+          // An older read that ends after a newer one never puts its copy over the newer's.
+          if (!held || held.generation <= started) held = { ids, at, generation: started };
           return ids;
         } finally {
-          reading = null;
+          if (reading?.token === mine) reading = null;
         }
       })();
-      return reading;
+      reading = { promise, generation: started, token: mine };
+      return promise;
     },
-    known: () => held?.ids ?? null,
+    known: () => (held && held.generation === generation ? held.ids : null),
     forget: () => {
-      stale = true;
+      generation += 1;
     },
   };
 }
@@ -193,9 +212,9 @@ export function cachedOptOuts(
  * background, never on the request path. A capture is checked against the copy this instance
  * holds while that copy is fresh; otherwise it is held here (at most `HELD_MAX`, the oldest
  * dropped first, each with the time it was captured) and handed to `sink` only once the send
- * has read the set again. If that read fails, the last copy decides, however old; with none
- * yet, everything waits for the next send. Nothing about an opted-out person is ever sent on a
- * guess.
+ * has read the set again, by a read begun after it was held. If that read fails, the last copy
+ * decides, however old, unless a switch changed here since it was read; with none, everything
+ * waits for the next send. Nothing about an opted-out person is ever sent on a guess.
  */
 export function withoutOptedOut(
   sink: AnalyticsSink,
@@ -232,6 +251,9 @@ export function withoutOptedOut(
       decide(distinctId, () => sink.exception(error, distinctId, properties)),
     async flush() {
       if (held.length > 0 || !optOuts.fresh()) {
+        // Only what was held before this read began is its to decide: what is captured while it
+        // is out (perhaps after a switch here) waits for the next send's read.
+        const waiting = held.splice(0);
         let out: ReadonlySet<string> | null;
         try {
           out = await optOuts.current();
@@ -240,9 +262,12 @@ export function withoutOptedOut(
           out = optOuts.known();
         }
         if (out) {
-          for (const { about, send } of held.splice(0)) {
+          for (const { about, send } of waiting) {
             if (!out.has(about)) send();
           }
+        } else {
+          held.unshift(...waiting);
+          if (held.length > HELD_MAX) held.splice(0, held.length - HELD_MAX);
         }
       }
       await sink.flush();

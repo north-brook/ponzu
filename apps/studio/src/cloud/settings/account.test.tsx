@@ -9,7 +9,7 @@ import { ACCOUNT_LINKS, AccountSection, type AccountSectionProps } from "./accou
 import { Row, Section } from "./parts.tsx";
 
 /*
- * Settings › Account's Usage data row (site design §9): its words, its toggle, the line it shows
+ * Settings › Account's Usage data row (the site spec, §9): its words, its toggle, the line it shows
  * once turned on in a window that loaded nothing to report with, and the Privacy · Terms foot.
  * Then what flipping it does in the window and to the shell, on fakes.
  */
@@ -45,7 +45,7 @@ function elements(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return found;
 }
 
-test("Usage data sits between Teams and the Danger zone, with the design's words and a toggle", () => {
+test("Usage data sits between Teams and the Danger zone, with the spec's words and a toggle", () => {
   const page = html();
   const order = ["Teams", "Usage data", "Danger zone"].map((label) =>
     page.indexOf(`aria-label="${label}"`),

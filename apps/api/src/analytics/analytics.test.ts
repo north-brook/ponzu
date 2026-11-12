@@ -326,6 +326,46 @@ test("at most HELD_MAX captures wait for a read, the oldest dropped first", asyn
   expect(s.sink.events[0]!.distinctId).toBe("usr_5");
 });
 
+test("a read that began before a switch here is not trusted for what comes after it", async () => {
+  // The read the send starts is held open until the test lets it answer, with what it saw then.
+  const answers: ((ids: string[]) => void)[] = [];
+  const optOuts = cachedOptOuts(
+    () => new Promise<string[]>((resolve) => answers.push(resolve)),
+    () => 0,
+  );
+  const sink = new MemoryAnalytics();
+  const kept: Promise<void>[] = [];
+  const tracked = createAnalytics({
+    sink,
+    keep: (work) => kept.push(work),
+    log: createLogger(() => {}),
+    optOuts,
+  });
+  // Lets queued work run until `count` reads have begun, or a bounded number of turns pass.
+  const readsBegun = async (count: number) => {
+    for (let turn = 0; turn < 1_000 && answers.length < count; turn++) await Promise.resolve();
+    expect(answers).toHaveLength(count);
+  };
+  tracked.capture("user signed out", {}, { distinctId: "usr_ada" });
+  await readsBegun(1);
+
+  // Ada turns sharing off through this instance while that read is still out.
+  tracked.sharingChanged();
+  expect(optOuts.known()).toBeNull();
+  tracked.capture("user signed out", {}, { distinctId: "usr_ada" });
+  answers[0]!([]);
+  await readsBegun(2);
+  answers[1]!(["usr_ada"]);
+  while (kept.length) await kept.shift();
+
+  // The read from before the switch decided only what came before it; the one after it decided
+  // what came after.
+  expect(answers).toHaveLength(2);
+  expect(sink.events).toHaveLength(1);
+  expect(optOuts.fresh()).toEqual(new Set(["usr_ada"]));
+  expect(optOuts.known()).toEqual(new Set(["usr_ada"]));
+});
+
 test("two sends at once read who is out once", async () => {
   const o = optOutsOf([]);
   const [a, b] = await Promise.all([o.optOuts.current(), o.optOuts.current()]);
