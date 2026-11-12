@@ -110,7 +110,10 @@ handled in the background can read it) and never restored to another device
   `<key>.<gen>.<i>`, then a head at `<key>` naming the generation, then the
   old generation's chunks are deleted. A crash anywhere leaves the head naming
   chunks that are all there, so the value read is the old one or the new one,
-  whole. Calls run one at a time.
+  whole. The generation takes turns between 1 and 2, so whatever a crashed
+  write left is always in the generation the head doesn't name, and the next
+  write or delete sweeps it: no piece of a token outlives signing out. Calls
+  run one at a time.
 - **Reinstalls.** A Keychain item outlives deleting the app. The first launch
   without `Documents/.ponzu-installed` deletes the session, keeps the install
   id, and writes the marker, so a reinstalled phone starts signed out.
@@ -118,8 +121,10 @@ handled in the background can read it) and never restored to another device
   dashes) at `ponzu.installId`, made once and kept across reinstalls. It goes
   only to `POST /v1/me/devices`.
 
-That all of this holds on a real Keychain is proven only on the simulator
-runs (spare), not by the unit tests, which use a Map.
+The unit tests prove these rules over a Map standing in for the Keychain.
+Nothing yet proves them on a real Keychain: the simulator runs use the fake
+backend, which never reads or writes the Keychain. That needs a real sign-in
+in Ponzu Dev, or a device test of its own.
 
 ### The cache and offline
 
@@ -130,7 +135,9 @@ for a new version or another person). Only what `persist.ts` names goes to
 disk: `me`, a workspace, its canvases, a canvas's view, a pull request,
 Claude's defaults, usage and notifications. Never a thread page or a
 question; live queries cover those. The providers stay mounted whoever is
-signed in, so a sign-in never remounts the screens under them.
+signed in, so a sign-in never remounts the screens under them. Signing out
+shuts that person's persister before it removes the copy on disk, so a save
+the 2-second throttle held back can't write their answers back afterwards.
 
 `Live` is made for each signed-in person, paused when the app goes to the
 background and resumed in front. Offline, it keeps the last rows.

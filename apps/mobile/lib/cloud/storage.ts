@@ -37,6 +37,8 @@ export const INSTALL_ID_KEY = "ponzu.installId";
 /** Every stored value starts with one of these, so a head is never mistaken for a value. */
 const WHOLE = "=";
 const HEAD = "#";
+/** The two generations a chunked value's pieces alternate between. */
+const GENERATIONS = [1, 2] as const;
 
 interface Head {
   gen: number;
@@ -95,16 +97,17 @@ export function chunkedStorage(store: SecureStoreLike): KeyValueStorage {
     const raw = await store.getItemAsync(key);
     return raw === null ? null : readHead(raw);
   };
-  const dropChunks = async (key: string, head: Head | null) => {
-    if (!head) return;
-    for (let i = 0; i < head.n; i++) await store.deleteItemAsync(chunkKey(key, head.gen, i));
-  };
   /**
-   * The chunks a write that never got to its head may have left: they are the generation after
-   * the head's, from `from` on. Swept so no stray piece of a token outlives the value.
+   * Every chunk of generation `gen`, from `from` on. Generations take turns (1, then 2, then 1),
+   * so whatever a crashed write left (chunks a head never named, or an old generation's chunks
+   * after the new head went down) is always in a generation the key doesn't name now, and is
+   * swept by the next write or delete. No stray piece of a token outlives the value.
    */
   const sweep = async (key: string, gen: number, from = 0) => {
     for (let i = from; i < MAX_CHUNKS; i++) await store.deleteItemAsync(chunkKey(key, gen, i));
+  };
+  const sweepAll = async (key: string, except?: number) => {
+    for (const gen of GENERATIONS) if (gen !== except) await sweep(key, gen);
   };
 
   return {
@@ -126,30 +129,27 @@ export function chunkedStorage(store: SecureStoreLike): KeyValueStorage {
       }),
     set: (key, value) =>
       serial(async () => {
-        const old = await headOf(key);
         if (bytes(value) <= CHUNK_BYTES) {
           await store.setItemAsync(key, WHOLE + value);
-          await dropChunks(key, old);
-          await sweep(key, (old?.gen ?? 0) + 1);
+          await sweepAll(key);
           return;
         }
         const pieces = chunk(value);
         if (pieces.length > MAX_CHUNKS) throw new Error(`Too large for the Keychain: ${key}`);
-        const gen = (old?.gen ?? 0) + 1;
+        const old = await headOf(key);
+        const gen = old?.gen === 1 ? 2 : 1;
         await sweep(key, gen, pieces.length);
         for (const [i, piece] of pieces.entries()) {
           await store.setItemAsync(chunkKey(key, gen, i), piece);
         }
         // Only now does the key stand for the new value.
         await store.setItemAsync(key, HEAD + JSON.stringify({ gen, n: pieces.length }));
-        await dropChunks(key, old);
+        await sweepAll(key, gen);
       }),
     delete: (key) =>
       serial(async () => {
-        const old = await headOf(key);
         await store.deleteItemAsync(key);
-        await dropChunks(key, old);
-        await sweep(key, (old?.gen ?? 0) + 1);
+        await sweepAll(key);
       }),
   };
 }

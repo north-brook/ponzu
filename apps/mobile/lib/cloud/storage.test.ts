@@ -35,9 +35,21 @@ class FakeKeychain implements SecureStoreLike {
     this.largest = Math.max(this.largest, new TextEncoder().encode(value).length);
     this.writes.push(key);
     this.items.set(key, value);
+    if (key === this.killAfterWriting) {
+      this.killAfterWriting = null;
+      this.armed = true;
+    }
   }
 
+  /** Once `key` is written, the next delete throws: the app killed just after that write. */
+  killAfterWriting: string | null = null;
+  private armed = false;
+
   async deleteItemAsync(key: string) {
+    if (this.armed) {
+      this.armed = false;
+      throw new Error("killed");
+    }
     this.items.delete(key);
   }
 }
@@ -123,6 +135,23 @@ describe("chunks", () => {
     expect(keychain.items.has("ponzu.session.2.0")).toBe(true);
     await storage.delete(SESSION_KEY);
     expect(keychain.items.size).toBe(0);
+  });
+
+  test("a crash after the new head, before the old chunks go, leaves nothing once deleted", async () => {
+    for (const next of [session("new"), "short"]) {
+      const keychain = new FakeKeychain();
+      const storage = chunkedStorage(keychain);
+      await storage.set(SESSION_KEY, session("old"));
+      await storage.set(SESSION_KEY, session("older"));
+      // The new value is down; the old generation's chunks are not yet deleted.
+      keychain.killAfterWriting = SESSION_KEY;
+      await expect(storage.set(SESSION_KEY, next)).rejects.toThrow("killed");
+      const again = chunkedStorage(keychain);
+      expect(await again.get(SESSION_KEY)).toBe(next);
+      // Signing out, or the reinstall wipe: no piece of either token stays.
+      await again.delete(SESSION_KEY);
+      expect([...keychain.items.keys()]).toEqual([]);
+    }
   });
 
   test("a head whose chunks are gone reads as nothing", async () => {
