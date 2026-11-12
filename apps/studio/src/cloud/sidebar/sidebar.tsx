@@ -153,13 +153,14 @@ export function Sidebar(props: SidebarProps) {
             onPlan={props.onPlan}
             onSignOut={props.onSignOut}
           />
-          <span className="flex-1" />
+          {/* The name's room ends 8 before the buttons, which keep theirs whatever its length. */}
+          <span className="min-w-2 flex-1" />
           <IconButton
             ref={searchButton}
             label="Search"
             keys={["⌘", "K"]}
             onClick={openSearch}
-            className="h-[26px] w-6"
+            className="h-[26px] w-6 shrink-0"
           >
             <Icon icon={Search01Icon} step="control" />
           </IconButton>
@@ -174,7 +175,7 @@ export function Sidebar(props: SidebarProps) {
             label="New design"
             keys={["⌘", "N"]}
             onClick={props.onNewDesign}
-            className="h-[26px] w-6"
+            className="h-[26px] w-6 shrink-0"
           >
             <Icon icon={PencilEdit02Icon} step="control" />
           </IconButton>
