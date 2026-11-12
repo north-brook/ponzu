@@ -4,6 +4,7 @@ import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
 import { type Actor, newId } from "@ponzu/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { ResetFileLinksDialog } from "../cloud/dialogs/reset-file-links.tsx";
 import type {
   Attachment,
   CanvasMember,
@@ -185,6 +186,8 @@ export function CanvasChromeSlot({
   prTab,
   seenThreadSeq,
   onOpenRepo,
+  resetLinks = null,
+  say,
 }: {
   open: OpenCanvas;
   /** Its sidebar row, once the list has it. */
@@ -203,8 +206,31 @@ export function CanvasChromeSlot({
   /** How far the viewer has read the thread, for the rail toggle's dot. */
   seenThreadSeq: number | null;
   onOpenRepo: (fullName: string) => void;
+  /**
+   * Resets the canvas's file links, for Share's foot: only for its owner and the workspace's
+   * admins, who are the only ones the API lets; null for everyone else, and the foot is not shown.
+   */
+  resetLinks?: (() => Promise<unknown>) | null;
+  /** A sentence over the window: whether the reset went. */
+  say: (notice: string) => void;
 }) {
   const state = useSourceState(open.source);
+  // Share's "Reset file links" asks first; busy while the API copies the files across.
+  const [resetting, setResetting] = useState<"asking" | "busy" | null>(null);
+  const confirmReset = () => {
+    if (!resetLinks || resetting === "busy") return;
+    setResetting("busy");
+    resetLinks().then(
+      () => {
+        setResetting(null);
+        say("This canvas's file links are reset.");
+      },
+      () => {
+        setResetting(null);
+        say("The file links couldn't be reset. Try again.");
+      },
+    );
+  };
   const head = useLiveQuery("canvas.head", { canvasId: open.id }).rows?.[0];
   const presence = useLiveQuery("canvas.presence", { canvasId: open.id }).rows ?? [];
   const meRow = useLiveQuery("me", {}).rows?.[0];
@@ -253,53 +279,62 @@ export function CanvasChromeSlot({
     unseen,
   );
   return (
-    <CanvasChrome
-      name={head?.name ?? summary?.name ?? doc?.name ?? open.fresh?.name ?? ""}
-      sidebarOpen={sidebarOpen}
-      pages={pages}
-      activePageId={prTab.open ? null : (page ?? pages[0]?.id ?? null)}
-      onSelectPage={(id) => {
-        if (prTab.open) prTab.onToggle();
-        onPage(id);
-      }}
-      onAddPage={
-        doc && access === "write"
-          ? () => {
-              const id = newId("pg");
-              open.source.apply({
-                op: "page.create",
-                index: doc.pages.length,
-                page: { id, name: `Page ${doc.pages.length + 1}` },
-              });
-              onPage(id);
-            }
-          : null
-      }
-      team={
-        workspaceKind === "org" && project?.kind === "repo"
-          ? {
-              meId: me.id,
-              contributors: contributors(presentNow(presence, now), me, worked),
-              repo: project.repo,
-              members,
-              onOpenRepo: () => onOpenRepo(`${project.repo.owner}/${project.repo.name}`),
-            }
-          : null
-      }
-      pullRequest={repo && pr ? { pr, tabOpen: prTab.open, onToggleTab: prTab.onToggle } : null}
-      action={
-        kind
-          ? {
-              kind,
-              busy: pull.busy !== null,
-              blocked: actionBlock(kind, gate, me.id) ?? (pull.asked === kind ? ASKED : null),
-              onRun: (action) => open.pullRequest.run(action),
-            }
-          : null
-      }
-      rail={{ open: rail.open, signal, onToggle: rail.onToggle }}
-      actionExpected={expected}
-    />
+    <>
+      <CanvasChrome
+        name={head?.name ?? summary?.name ?? doc?.name ?? open.fresh?.name ?? ""}
+        sidebarOpen={sidebarOpen}
+        pages={pages}
+        activePageId={prTab.open ? null : (page ?? pages[0]?.id ?? null)}
+        onSelectPage={(id) => {
+          if (prTab.open) prTab.onToggle();
+          onPage(id);
+        }}
+        onAddPage={
+          doc && access === "write"
+            ? () => {
+                const id = newId("pg");
+                open.source.apply({
+                  op: "page.create",
+                  index: doc.pages.length,
+                  page: { id, name: `Page ${doc.pages.length + 1}` },
+                });
+                onPage(id);
+              }
+            : null
+        }
+        team={
+          workspaceKind === "org" && project?.kind === "repo"
+            ? {
+                meId: me.id,
+                contributors: contributors(presentNow(presence, now), me, worked),
+                repo: project.repo,
+                members,
+                onOpenRepo: () => onOpenRepo(`${project.repo.owner}/${project.repo.name}`),
+                onResetLinks: resetLinks ? () => setResetting("asking") : null,
+              }
+            : null
+        }
+        pullRequest={repo && pr ? { pr, tabOpen: prTab.open, onToggleTab: prTab.onToggle } : null}
+        action={
+          kind
+            ? {
+                kind,
+                busy: pull.busy !== null,
+                blocked: actionBlock(kind, gate, me.id) ?? (pull.asked === kind ? ASKED : null),
+                onRun: (action) => open.pullRequest.run(action),
+              }
+            : null
+        }
+        rail={{ open: rail.open, signal, onToggle: rail.onToggle }}
+        actionExpected={expected}
+      />
+      <ResetFileLinksDialog
+        open={resetting !== null}
+        busy={resetting === "busy"}
+        onCancel={() => setResetting(null)}
+        onConfirm={confirmReset}
+      />
+    </>
   );
 }
 

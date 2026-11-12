@@ -42,6 +42,7 @@ test("a row as Realtime sends it becomes one the apps read", () => {
     pr_mergeable: true,
     pr_auto_merge: false,
     last_activity_at: new Date("2026-11-10T12:00:00Z"),
+    asset_key_rotated_at: null,
     agent_blocker: "claude_limited",
     agent_blocked_until: "2026-11-10 16:00:00+00",
     sandbox_state: "awake",

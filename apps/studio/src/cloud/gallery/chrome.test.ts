@@ -517,4 +517,58 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     );
     expect(await rings()).toEqual([]);
   });
+
+  test("Share's foot offers Reset file links only to its owner and admins, and asks first", async () => {
+    const share = 'header button[aria-label="Share"]';
+    const popover = "[data-radix-popper-content-wrapper]";
+    const foot = () =>
+      page.evaluate(
+        (popover) =>
+          [...document.querySelectorAll(`${popover} button`)]
+            .map((b) => b.textContent?.trim())
+            .filter((text) => text === "Reset file links"),
+        popover,
+      );
+    const dialog = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('[role="alertdialog"], [role="dialog"]');
+        if (!el) return null;
+        return {
+          title: el.querySelector("h2")?.textContent?.trim() ?? null,
+          text: el.textContent ?? "",
+          buttons: [...el.querySelectorAll("button")].map((b) => b.textContent?.trim()),
+        };
+      });
+
+    // Anyone else: Share has no foot.
+    await open("share");
+    await page.click(share);
+    await page.waitForSelector(popover);
+    expect(await foot()).toEqual([]);
+
+    // Its owner or an admin: a quiet foot, which closes Share and asks.
+    await open("share-reset-links");
+    await page.click(share);
+    await page.waitForSelector(popover);
+    expect(await foot()).toEqual(["Reset file links"]);
+    await page.click(`${popover} button:has-text("Reset file links")`);
+    await page.waitForFunction(
+      () => !!document.querySelector('[role="alertdialog"], [role="dialog"]'),
+    );
+    await page.waitForFunction((popover) => !document.querySelector(popover), popover);
+    const asked = await dialog();
+    expect(asked?.title).toBe("Reset this canvas's file links?");
+    expect(asked?.text).toContain(
+      "Links to its images and exports stop working, including any you've copied or pasted elsewhere. Everyone who can open the canvas gets the new ones.",
+    );
+    expect(asked?.buttons).toEqual(["Cancel", "Reset links"]);
+
+    // Cancel changes nothing, and the dialog goes.
+    await page.click(
+      '[role="alertdialog"] button:has-text("Cancel"), [role="dialog"] button:has-text("Cancel")',
+    );
+    await page.waitForFunction(
+      () => !document.querySelector('[role="alertdialog"], [role="dialog"]'),
+    );
+  });
 });
