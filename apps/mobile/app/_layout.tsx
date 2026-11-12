@@ -78,6 +78,11 @@ export default function RootLayout() {
                     contentStyle: { backgroundColor: color.bg },
                   }}
                 />
+                {/* A canvas, pushed over the list; its own chrome floats over the boards. */}
+                <Stack.Screen
+                  name="canvas/[id]"
+                  options={{ contentStyle: { backgroundColor: color.canvas } }}
+                />
                 <Stack.Screen name="dev" options={{ animation: "none" }} />
                 <Stack.Screen name="+not-found" options={{ animation: "none" }} />
               </Stack>

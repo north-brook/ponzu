@@ -1,7 +1,7 @@
 /*
  * What the app has told the canvas, kept outside React so a message that lands before the first
- * render isn't lost. The app applies nothing: it relays the socket, and ops are applied here on a
- * fresh copy of the doc, as the desktop's SocketSource does.
+ * render isn't lost. The app relays its replica: each op it hears is applied here on a fresh copy
+ * of the doc, and whatever an op can't say comes as a whole doc (lib/canvas/bridge.ts).
  */
 import { applyOp, type Doc, type Presence } from "@ponzu/core";
 import { Arrivals } from "../../../packages/canvas/src/arrive.ts";
@@ -17,12 +17,16 @@ import {
 export interface CanvasState {
   doc: Doc | null;
   assetBase?: string;
-  /** The design's key: presence from other designs doesn't ring this one's boards. */
+  /** The canvas's id: presence from other canvases doesn't ring this one's boards. */
   file?: string;
   theme: Theme;
   pageId: string | null;
   presence: Presence[];
+  /** The boards the agent works on, as the app said; null until it says (presence rings until then). */
+  working: string[] | null;
   pending: PendingPin | null;
+  /** The Comment button was pressed: the next tap off a pin drops a comment's pin. */
+  commenting: boolean;
   unsent: (PendingPin & { key: string })[];
   /** Threads with a reply left unsent. */
   writing: string[];
@@ -52,7 +56,9 @@ export let state: CanvasState = {
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   pageId: null,
   presence: [],
+  working: null,
   pending: null,
+  commenting: false,
   unsent: [],
   writing: [],
   moving: null,
@@ -105,7 +111,7 @@ export function setPage(pageId: string) {
 export function receive(msg: ToCanvas) {
   switch (msg.t) {
     case "doc": {
-      // The page asked for opens a design; the doc sent again (a reconnect) keeps the person's.
+      // The page asked for opens a canvas; the doc sent again (a remount, a resync) keeps the person's.
       const fresh = !state.doc || msg.file !== state.file;
       const keep = (fresh ? msg.page : undefined) ?? state.pageId;
       const pageId = msg.doc.pages.some((p) => p.id === keep) ? keep : null;
@@ -120,7 +126,7 @@ export function receive(msg: ToCanvas) {
       try {
         applyOp(next, msg.op);
       } catch {
-        // The app sends the doc again after a reconnect; an op that doesn't fit is dropped.
+        // An op that doesn't fit is dropped: the app sends the whole doc when the two part ways.
         return;
       }
       // An agent's work, and files saved straight into the design, develop; only what's new to
@@ -138,8 +144,14 @@ export function receive(msg: ToCanvas) {
     case "presence":
       set({ presence: msg.presence });
       break;
+    case "working":
+      set({ working: msg.artboards });
+      break;
     case "pending":
       set({ pending: msg.pin });
+      break;
+    case "commenting":
+      set({ commenting: msg.on });
       break;
     case "unsent":
       set({ unsent: msg.pins, writing: msg.threads ?? [] });

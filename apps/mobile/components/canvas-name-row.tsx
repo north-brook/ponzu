@@ -1,28 +1,31 @@
 import type { CanvasListRow } from "@ponzu/client";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
+import { openCanvas } from "../lib/canvas/open";
 import { useTheme } from "../lib/theme";
 import { Folder, Repo } from "./icons";
 
 /**
- * A canvas in a plain list: its name, and its repo or Scratch. The list's own row (preview,
- * status and the shared indicator, components/canvas-row.tsx) replaces this with the canvases
- * list's slice; opening a canvas arrives with the canvas's.
+ * A canvas in a plain list: its name, and its repo or Scratch; a press opens it. The list's own
+ * row (preview, status and the shared indicator, components/canvas-row.tsx) replaces this with
+ * the canvases list's slice, and opens the canvas the same way (`openCanvas`).
  */
 export function CanvasNameRow({ canvas, margin }: { canvas: CanvasListRow; margin: number }) {
   const { color } = useTheme();
   const where = canvas.repoFullName ?? "Scratch";
   return (
-    <View
+    <Pressable
       testID={`canvas-${canvas.id}`}
-      accessible
+      accessibilityRole="button"
       accessibilityLabel={`${canvas.name}, ${where}`}
-      style={{
+      onPress={() => openCanvas(canvas.id)}
+      style={({ pressed }) => ({
         paddingHorizontal: margin,
         paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: color.hairline,
         gap: 3,
-      }}
+        backgroundColor: pressed ? color.chip : undefined,
+      })}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
         {canvas.repoFullName ? (
@@ -49,6 +52,6 @@ export function CanvasNameRow({ canvas, margin }: { canvas: CanvasListRow; margi
       >
         {canvas.name}
       </Text>
-    </View>
+    </Pressable>
   );
 }

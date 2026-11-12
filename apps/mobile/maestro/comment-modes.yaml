@@ -1,0 +1,62 @@
+appId: design.ponzu.app.dev
+name: comment-modes
+---
+# The comment field's two ways in, and words left unsent: a hold on the FAQ
+# board brings the field up in voice, which says it can't hear (the microphone
+# is refused in shared/start.yaml); Type instead and Speak instead switch;
+# typed words swiped away stay as an unsent pin, and a tap on it brings the
+# field back with them.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=signed-in
+- extendedWaitUntil:
+    visible: "Pricing page, acme/site"
+    timeout: 30000
+- tapOn: "Pricing page, acme/site"
+- extendedWaitUntil:
+    visible: "FAQ"
+    timeout: 30000
+- longPressOn: "FAQ"
+- extendedWaitUntil:
+    visible:
+      id: comment-sheet
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - assertVisible: "Ponzu can't hear you.*"
+      - tapOn:
+          id: to-type
+- extendedWaitUntil:
+    visible:
+      id: comment-input
+    timeout: 5000
+- tapOn:
+    id: to-voice
+- extendedWaitUntil:
+    visible:
+      id: to-type
+    timeout: 5000
+- tapOn:
+    id: to-type
+- tapOn:
+    id: comment-input
+- inputText: "Half written"
+- hideKeyboard
+- swipe:
+    from:
+      id: comment-field
+    direction: DOWN
+- extendedWaitUntil:
+    notVisible:
+      id: comment-sheet
+    timeout: 10000
+# The unsent pin is where the hold was.
+- tapOn: "FAQ"
+- extendedWaitUntil:
+    visible:
+      id: comment-sheet
+    timeout: 10000
+- assertVisible: "Half written"
+- assertNotVisible: ".*Cannot update a component.*"

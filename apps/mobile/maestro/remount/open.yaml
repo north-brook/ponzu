@@ -1,0 +1,19 @@
+appId: design.ponzu.app.dev
+name: remount, before
+---
+# The WebContent-kill remount, its first half (run.sh runs it after the other
+# flows): the fake's Pricing page open and drawn, left open while run.sh ends
+# this simulator's WebContent process.
+- runFlow: ../shared/start.yaml
+- openLink: ponzu-dev://dev?seed=signed-in
+- extendedWaitUntil:
+    visible: "Pricing page, acme/site"
+    timeout: 30000
+- tapOn: "Pricing page, acme/site"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Plans"
+    timeout: 30000

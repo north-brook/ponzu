@@ -6,3 +6,6 @@ executionOrder:
   flowsOrder:
     - launch
     - sign-in
+    - canvas
+    - comment
+    - comment-modes

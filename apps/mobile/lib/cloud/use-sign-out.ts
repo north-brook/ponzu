@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback } from "react";
+import { drafts } from "../drafts";
 import { backend } from "./backend";
 import { DOC_CACHE_PATH, fileStorage } from "./files";
 import { useCloud } from "./query";
@@ -20,6 +21,8 @@ export function useSignOut(): () => Promise<void> {
         closeLive: () => cloud.live.close(),
         clearFiles: async () => {
           fileStorage(...DOC_CACHE_PATH).clear();
+          // Unsent words: on disk they're `ponzu.drafts.*` keys, which go below.
+          drafts.clear();
           await AsyncStorage.multiRemove(keysToClear(await AsyncStorage.getAllKeys()));
           await Image.clearDiskCache();
           await Image.clearMemoryCache();

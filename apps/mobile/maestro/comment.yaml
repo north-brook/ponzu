@@ -1,0 +1,60 @@
+appId: design.ponzu.app.dev
+name: comment
+---
+# Leaving a comment where it's about, and reading it there: on the fake's
+# Pricing page, Comment, a tap on the Plans board, typed words, Send. The field
+# leaves at once and the pin stays; tapping the pin opens its thread under
+# Maya's name; Resolve closes it.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=signed-in
+- extendedWaitUntil:
+    visible: "Pricing page, acme/site"
+    timeout: 30000
+- tapOn: "Pricing page, acme/site"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Plans"
+    timeout: 30000
+- tapOn:
+    id: stack-comment
+- assertVisible: "Tap where your comment goes"
+- tapOn: "Plans"
+- extendedWaitUntil:
+    visible:
+      id: comment-sheet
+    timeout: 10000
+# Voice comes first and is refused here (shared/start.yaml): type instead.
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- tapOn:
+    id: comment-input
+- inputText: "Bigger prices from the phone"
+- tapOn:
+    id: send
+- extendedWaitUntil:
+    notVisible:
+      id: comment-sheet
+    timeout: 10000
+# The pin is where the tap was: it opens the thread.
+- tapOn: "Plans"
+- extendedWaitUntil:
+    visible:
+      id: thread-sheet
+    timeout: 10000
+- assertVisible: "Bigger prices from the phone"
+- assertVisible: "Maya Lin"
+- tapOn:
+    id: resolve
+- extendedWaitUntil:
+    notVisible:
+      id: thread-sheet
+    timeout: 10000
+- assertNotVisible: ".*Cannot update a component.*"

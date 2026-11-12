@@ -25,3 +25,11 @@ test("a link's page opens the design, and the doc sent again keeps the person's"
   sent("pg_flow", "/d/b.design");
   expect(getState().pageId).toBe("pg_flow");
 });
+
+test("the Comment button's tap mode comes and goes as the app says", () => {
+  expect(getState().commenting).toBe(false);
+  receive({ t: "commenting", on: true });
+  expect(getState().commenting).toBe(true);
+  receive({ t: "commenting", on: false });
+  expect(getState().commenting).toBe(false);
+});
