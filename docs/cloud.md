@@ -543,6 +543,15 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
 one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
+Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), one module per
+area. Other work that must outlive its request and start at once records its job held and runs
+it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
+(`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
+sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+others still run. A step runs every minute, once in every few minutes, or once an hour at a
+given minute. One on a slot runs once in it however many runs overlap, and catches up within
+five minutes when the run it was due in never came.
+
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
 
@@ -2773,6 +2782,13 @@ sandbox"): a deployment lists, stops and removes only the names its own database
 begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
 deployment's runners call back; unset, it is production's address, so a dev deployment or a
 preview whose sandboxes must reach it sets it.
+
+A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
+the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
+`observe` or `on`), push (on when `EXPO_ACCESS_TOKEN` is set), email (on when `RESEND_API_KEY`
+is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
+and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
+push and email, so an app shows only what can work.
 
 ### Checking a deploy's sandboxes
 

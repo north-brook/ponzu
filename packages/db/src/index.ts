@@ -136,6 +136,7 @@ export {
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  recordOnce,
 } from "./queries/jobs.ts";
 export {
   countJoinedMembers,
