@@ -1,6 +1,7 @@
-import type { CanvasSource, CanvasState } from "@ponzu/canvas";
 import {
   type Actor,
+  type CanvasSource,
+  type CanvasState,
   CommitRefusedError,
   type Doc,
   type Op,
