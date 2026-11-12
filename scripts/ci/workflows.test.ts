@@ -281,5 +281,12 @@ describe("every workflow", () => {
     const checks = (ci.jobs.checks as Job).steps.map((s) => s.run ?? "").join("\n");
     expect(checks).toContain("check migrations bun scripts/ci/migrations.ts");
     expect(checks).toMatch(/for name in [^;]*\bmigrations;/);
+    // Main's required check passes only when the workflows' lint did.
+    const required = ci.jobs.test as Job & { needs: string[] };
+    expect(required.name).toBe("Check, typecheck, test");
+    expect(required.needs).toContain("workflows");
+    expect(required.steps.map((s) => s.run ?? "").join("\n")).toContain(
+      '[ "$WORKFLOWS" = success ]',
+    );
   });
 });

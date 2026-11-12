@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
-import { GRANDFATHERED, lintMigration, lintMigrations, statements } from "./migrations.ts";
+import {
+  GRANDFATHERED,
+  GRANDFATHERED_SHA256,
+  lintMigration,
+  lintMigrations,
+  statements,
+} from "./migrations.ts";
 
 const DIR = join(import.meta.dir, "../../packages/db/migrations");
 const BREAK = "--> statement-breakpoint";
@@ -107,6 +113,44 @@ describe("the migration lint", () => {
     expect(lintMigration("f.sql", tagged).map((f) => f.rule)).toEqual(["DROP TABLE"]);
   });
 
+  test("without the word COLUMN, as Postgres allows, it is still caught", () => {
+    const rule = (sql: string) => lintMigration("f.sql", sql).map((f) => f.rule);
+    expect(rule(`ALTER TABLE "a" DROP "b";`)).toEqual(["DROP COLUMN"]);
+    expect(rule(`ALTER TABLE "a" DROP IF EXISTS "b" CASCADE;`)).toEqual(["DROP COLUMN"]);
+    expect(rule(`ALTER TABLE "a" ADD "c" text, DROP "b";`)).toEqual(["DROP COLUMN"]);
+    expect(rule(`ALTER TABLE "a" ALTER "b" TYPE bigint;`)).toEqual(["ALTER COLUMN … TYPE"]);
+    expect(rule(`ALTER TABLE "a" ADD "b" integer NOT NULL;`)).toEqual([
+      "ADD COLUMN … NOT NULL without a DEFAULT",
+    ]);
+    expect(rule(`ALTER TABLE "a" ALTER "b" DROP NOT NULL, ALTER "c" DROP DEFAULT;`)).toEqual([]);
+    expect(rule(`ALTER TABLE "a" ADD CONSTRAINT "k" CHECK ("b" IS NOT NULL);`)).toEqual([]);
+    expect(rule(`TRUNCATE "a";`)).toEqual(["TRUNCATE"]);
+    expect(rule(`DROP MATERIALIZED VIEW "v";`)).toEqual(["DROP SCHEMA or VIEW"]);
+  });
+
+  test("a comment hidden by an escaped string or a dollar tag with a digit does not hide code", () => {
+    const rule = (sql: string) => lintMigration("f.sql", sql).map((f) => f.rule);
+    // Postgres: E'\' /* ' is a string, then DROP TABLE runs, then `-- */'` is a comment.
+    expect(rule(`SELECT E'\\' /* '; DROP TABLE "x"; -- */'`)).toContain("DROP TABLE");
+    // Postgres: two dollar-quoted strings around a DROP TABLE that runs.
+    expect(rule(`SELECT $x1$ /* $x1$; DROP TABLE "x"; SELECT $x1$ */ $x1$;`)).toContain(
+      "DROP TABLE",
+    );
+    // A name with a dollar in it opens no quote.
+    expect(statements(`SELECT a$b$ FROM t; SELECT 1;`).length).toBe(2);
+  });
+
+  test("a grandfathered migration that changes is linted again", () => {
+    const dir = mkdtempSync(join(tmpdir(), "migrations-lint-"));
+    const file = "0025_canvases.sql";
+    const original = readFileSync(join(DIR, file), "utf8");
+    writeFileSync(join(dir, file), original);
+    expect(lintMigrations(dir)).toEqual([]);
+    writeFileSync(join(dir, file), `${original}\nALTER TABLE "x" DROP COLUMN "y";\n`);
+    expect(lintMigrations(dir).length).toBeGreaterThan(0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("a semicolon inside a string or a dollar quote does not end the statement", () => {
     const sql = `INSERT INTO "a" VALUES ('x;y');\nDO $$ BEGIN PERFORM 1; PERFORM 2; END $$;\nSELECT 'it''s';`;
     expect(statements(sql).map((s) => s.line)).toEqual([1, 2, 3]);
@@ -122,6 +166,7 @@ describe("the migration lint", () => {
       expect(lintMigration(file, readFileSync(join(DIR, file), "utf8")).length).toBeGreaterThan(0);
       expect(reason.length).toBeGreaterThan(40);
     }
+    expect(Object.keys(GRANDFATHERED_SHA256)).toEqual(Object.keys(GRANDFATHERED));
     expect(Object.keys(GRANDFATHERED)).toEqual([
       "0007_runner_protocol.sql",
       "0023_vercel_sandboxes.sql",

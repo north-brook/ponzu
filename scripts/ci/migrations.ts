@@ -10,9 +10,11 @@
  *   ALTER TABLE "x" DROP COLUMN "y";--> statement-breakpoint
  *
  * What counts as taking something away: DROP TABLE, DROP COLUMN, any RENAME, a column's type
- * changed (ALTER COLUMN … TYPE), SET NOT NULL, and ADD COLUMN … NOT NULL with no DEFAULT (an
- * older API's inserts leave it out). Words inside string literals count too, so dynamic SQL in
- * a DO block (`EXECUTE format('… RENAME …')`) is caught; comments do not.
+ * changed (ALTER COLUMN … TYPE), SET NOT NULL, ADD COLUMN … NOT NULL with no DEFAULT (an
+ * older API's inserts leave it out), TRUNCATE, and DROP SCHEMA or VIEW. In an ALTER TABLE the
+ * word COLUMN is optional, as it is to Postgres. Words inside string literals count too, so
+ * dynamic SQL in a DO block (`EXECUTE format('… RENAME …')`) is caught; comments do not, and
+ * comments are found the way Postgres finds them (E'…' escapes, `$tag1$` dollar quotes).
  *
  * Narrowing a check constraint (DROP CONSTRAINT then ADD) is not caught: telling a widening from
  * a narrowing needs the reviewer.
@@ -36,6 +38,20 @@ export const GRANDFATHERED: Record<string, string> = {
     "The rename to canvases, program.md section 4's one documented exception: run with every sandbox asleep, paired with the deploy that reads the new names, and never rolled back past (docs/production.md).",
 };
 
+/**
+ * Each grandfathered file's SHA-256 as it was applied. A grandfathered file that changes is
+ * linted again, so a statement added to it later cannot ride on its exception.
+ */
+export const GRANDFATHERED_SHA256: Record<string, string> = {
+  "0007_runner_protocol.sql": "95378625840432b1dfa62555d3d4f8e80ce9b549f94951a8fb534d7316a53566",
+  "0023_vercel_sandboxes.sql": "9647c4bf2d6e3f579efe02fc81a9d89b683ec60eafea11493612a1e5287dbd74",
+  "0025_canvases.sql": "a28c1d1389c1807fd6a2ab8cd6c068bbd0451f80a7fe1470f56b73bae09ad6cb",
+};
+
+function sha256(text: string): string {
+  return new Bun.CryptoHasher("sha256").update(text).digest("hex");
+}
+
 export interface Finding {
   file: string;
   line: number;
@@ -43,23 +59,44 @@ export interface Finding {
   statement: string;
 }
 
+/** In an ALTER TABLE, the word COLUMN is optional: `DROP "b"` drops the column b. */
+const NOT_A_COLUMN_DROP = /^(?:TABLE|CONSTRAINT|DEFAULT|NOT\s+NULL|EXPRESSION|IDENTITY)\b/;
+const NOT_A_COLUMN_ADD = /^(?:CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK|EXCLUDE|VALUE)\b/;
+
+/** Each `verb` action of an ALTER TABLE statement, from the word after the verb to its end. */
+function actions(code: string, verb: "ADD" | "DROP"): string[] {
+  if (!/\bALTER\s+TABLE\b/.test(code)) return [];
+  return code
+    .split(new RegExp(`\\b${verb}\\s+`))
+    .slice(1)
+    .map((part) => part.split(/,\s*(?:ADD|ALTER|DROP)\b/)[0] ?? "");
+}
+
 const RULES: { rule: string; test: (code: string) => boolean }[] = [
   { rule: "DROP TABLE", test: (c) => /\bDROP\s+TABLE\b/.test(c) },
-  { rule: "DROP COLUMN", test: (c) => /\bDROP\s+COLUMN\b/.test(c) },
+  {
+    rule: "DROP COLUMN",
+    test: (c) =>
+      /\bDROP\s+COLUMN\b/.test(c) ||
+      actions(c, "DROP").some((action) => !NOT_A_COLUMN_DROP.test(action)),
+  },
   { rule: "RENAME", test: (c) => /\bRENAME\b/.test(c) },
   {
     rule: "ALTER COLUMN … TYPE",
-    test: (c) => /\bALTER\s+COLUMN\s+(?:"[^"]*"|%I|\S+)\s+(?:SET\s+DATA\s+)?TYPE\b/.test(c),
+    test: (c) => /\bALTER\s+(?:COLUMN\s+)?(?:"[^"]*"|%I|\S+)\s+(?:SET\s+DATA\s+)?TYPE\b/.test(c),
   },
   { rule: "SET NOT NULL", test: (c) => /\bSET\s+NOT\s+NULL\b/.test(c) },
   {
     rule: "ADD COLUMN … NOT NULL without a DEFAULT",
     test: (c) =>
-      c
-        .split(/(?=\bADD\s+COLUMN\b)/)
-        .filter((part) => /^ADD\s+COLUMN\b/.test(part))
-        .map((part) => part.split(/,\s*(?:ADD|ALTER|DROP)\b/)[0] ?? "")
+      actions(c, "ADD")
+        .filter((action) => !NOT_A_COLUMN_ADD.test(action))
         .some((clause) => /\bNOT\s+NULL\b/.test(clause) && !/\b(DEFAULT|GENERATED)\b/.test(clause)),
+  },
+  { rule: "TRUNCATE", test: (c) => /\bTRUNCATE\b/.test(c) },
+  {
+    rule: "DROP SCHEMA or VIEW",
+    test: (c) => /\bDROP\s+(?:SCHEMA|VIEW|MATERIALIZED\s+VIEW)\b/.test(c),
   },
 ];
 
@@ -69,6 +106,11 @@ interface Statement {
   /** Its code with comments taken out and string literals kept, upper-cased, spaces collapsed. */
   code: string;
 }
+
+/** A character that may continue an unquoted name in Postgres. */
+const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/;
+/** A dollar-quote delimiter: `$$` or `$tag$`. */
+const DOLLAR_TAG = /^\$(?:[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*)?\$/;
 
 /**
  * Splits SQL into statements at top-level semicolons, knowing single-quoted strings, quoted
@@ -107,7 +149,10 @@ export function statements(sql: string): Statement[] {
       i += comment.length;
       continue;
     }
-    const dollar = /^\$[A-Za-z_]*\$/.exec(rest)?.[0];
+    // As Postgres reads it: `$tag$` opens a dollar quote (a tag may hold digits after its
+    // first character), unless the `$` continues a name, as in `a$b$`.
+    const inName = i > 0 && NAME_CHAR.test(sql[i - 1] as string);
+    const dollar = inName ? undefined : DOLLAR_TAG.exec(rest)?.[0];
     if (dollar) {
       const end = rest.indexOf(dollar, dollar.length);
       const body = end < 0 ? rest : rest.slice(0, end + dollar.length);
@@ -117,9 +162,15 @@ export function statements(sql: string): Statement[] {
     }
     const quote = rest[0];
     if (quote === "'" || quote === '"') {
+      // E'…' takes backslash escapes, so in `E'\''` the middle quote does not end the string.
+      const escapes =
+        quote === "'" &&
+        /[Ee]/.test(sql[i - 1] ?? "") &&
+        !(i > 1 && NAME_CHAR.test(sql[i - 2] as string));
       let j = 1;
       while (j < rest.length) {
-        if (rest[j] === quote && rest[j + 1] === quote) j += 2;
+        if (escapes && rest[j] === "\\") j += 2;
+        else if (rest[j] === quote && rest[j + 1] === quote) j += 2;
         else if (rest[j] === quote) break;
         else j++;
       }
@@ -161,12 +212,16 @@ export function lintMigration(file: string, sql: string): Finding[] {
   return findings;
 }
 
-/** Every migration in `dir` but the grandfathered ones. */
+/** Every migration in `dir`, but a grandfathered one only if it changed since it was listed. */
 export function lintMigrations(dir: string): Finding[] {
   return readdirSync(dir)
-    .filter((name) => name.endsWith(".sql") && !(name in GRANDFATHERED))
+    .filter((name) => name.endsWith(".sql"))
     .sort()
-    .flatMap((name) => lintMigration(name, readFileSync(join(dir, name), "utf8")));
+    .flatMap((name) => {
+      const sql = readFileSync(join(dir, name), "utf8");
+      if (name in GRANDFATHERED && sha256(sql) === GRANDFATHERED_SHA256[name]) return [];
+      return lintMigration(name, sql);
+    });
 }
 
 if (import.meta.main) {

@@ -275,9 +275,10 @@ jobs:
   test:
     # Main's ruleset requires this check by its name. It used to run the lint, typecheck,
     # builds and tests in one job; they now run beside each other in the two above, and this
-    # passes only when both did, so the required check still fails when any of them does.
+    # passes only when both did, so the required check still fails when any of them does. The
+    # workflows' lint is held to it too, so a workflow actionlint rejects cannot merge.
     name: Check, typecheck, test
-    needs: [checks, tests]
+    needs: [checks, tests, workflows]
     if: ${{ !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -285,9 +286,10 @@ jobs:
       - env:
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.tests.result }}
+          WORKFLOWS: ${{ needs.workflows.result }}
         run: |
-          echo "lint, typecheck, build: $CHECKS; tests: $TESTS"
-          [ "$CHECKS" = success ] && [ "$TESTS" = success ]
+          echo "lint, typecheck, build: $CHECKS; tests: $TESTS; workflows: $WORKFLOWS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ] && [ "$WORKFLOWS" = success ]
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every

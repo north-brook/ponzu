@@ -346,8 +346,9 @@ push to `cloud`, [deploy-api.yml](../../.github/workflows/deploy-api.yml)'s `dev
 the pending migrations to the Neon `dev` branch, deploys to the ponzu-api project's Production
 target, and checks that `/v1/health` answers `dev` with the commit, its image and every
 migration applied. Its `production` job does the same for ponzu-api-prod and the Neon default
-branch, only on a push to `main`, with the founder's approval (docs/production.md). Nobody runs `vercel deploy --prod` from a checkout: the API the apps
-are built against would become whichever branch deployed last. And nobody applies a migration
+branch, only on a push to `main`, with the founder's approval (docs/production.md). Nobody
+runs `vercel deploy --prod` from a checkout: the API the apps are built against would become
+whichever branch deployed last. And nobody applies a migration
 by hand: it reaches the shared database when it merges, so write it to work with the code
 that is already deployed.
 

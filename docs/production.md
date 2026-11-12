@@ -336,7 +336,10 @@ Then production, when the program reports it is ready:
     `API_DEPLOY_PRODUCTION=true`, repoint the `PONZU_APP_POSTHOG_*` variables and the secret
     `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add a Container Registry OIDC policy
     giving north-brook/ponzu's `production` environment read-write on ponzu-api-prod and read on
-    ponzu-api (the deploy copies the image from one to the other). Run `bun scripts/prod/apply.ts github-rulesets
+    ponzu-api (the deploy copies the image from one to the other). Create the environment, with
+    its reviewer and `main` as its only branch, before you set `API_DEPLOY_PRODUCTION`: GitHub
+    creates an environment a job names that does not exist yet, with no reviewer, so the first
+    deploy would run without your approval. Run `bun scripts/prod/apply.ts github-rulesets
     --yes`. Check that `RELEASE_TOKEN` expires after the cutover.
 13. **D13. Releases and stores.** Set the repository variable `RELEASES_HELD=ponzu,mobile`.
     Check the Developer ID certificate's expiry. Set the EAS production env (the production API

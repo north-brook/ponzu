@@ -23,10 +23,12 @@ Migrations are expand first, contract later. A deploy migrates before its code g
 Vercel's instant rollback runs older code on the newer schema, so a migration never takes away
 what a deployed API reads or writes. `bun scripts/ci/migrations.ts` (a step in CI's "Lint,
 typecheck, build") fails on a DROP TABLE, DROP COLUMN, RENAME, ALTER COLUMN … TYPE, SET NOT
-NULL, or ADD COLUMN … NOT NULL without a DEFAULT, unless the line right before it is
-`-- contract: <why nothing deployed uses it any more>`. Contract in a later pull request than
-the one that stopped using the thing, after that one is deployed. The three migrations from
-before the rule are listed in the script with their reasons.
+NULL, ADD COLUMN … NOT NULL without a DEFAULT, TRUNCATE, or DROP SCHEMA or VIEW, unless the
+line right before it is `-- contract: <why nothing deployed uses it any more>`. Contract in a
+later pull request than the one that stopped using the thing, after that one is deployed. The
+three migrations from before the rule are listed in the script with their reasons and
+checksums, so an edit to one of them is linted again. A rename below is a contract too: it
+needs its `-- contract:` line, and the old name kept working until no deployed API reads it.
 
 A rename is written by hand. Run `bunx drizzle-kit generate --custom --name <name>`, write the
 SQL, and replace the body of the snapshot it wrote (a copy of the one before) with
