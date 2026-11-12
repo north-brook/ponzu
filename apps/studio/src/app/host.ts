@@ -1,4 +1,4 @@
-import type { Api, KeyValueStorage, Live, Session } from "@ponzu/client";
+import type { Api, ApiError, KeyValueStorage, Live, Session } from "@ponzu/client";
 import type {
   DeepLink,
   MenuCommand,
@@ -53,4 +53,10 @@ export interface Host {
   openExternal(url: string): void;
   /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
+  /**
+   * Hear each error the API answers any request of the window's with, whoever sent it (a
+   * mutation, the thread, a canvas's sync), such as the maintenance switch's 503. Returns the
+   * unsubscribe. Left out where the host doesn't tell.
+   */
+  onApiError?(listener: (error: ApiError) => void): () => void;
 }

@@ -230,13 +230,14 @@ describe("a wake a gate refuses", () => {
   test("with a time to try again is put off to then, once, and wakes when the gate lets it", async () => {
     const canvas = await fresh();
     const retryAt = new Date(t.clock.now() + 10 * MINUTE);
+    // Claude's limit, not maintenance: the cron lifts `paused` whenever the switch is off.
     await filling(
-      "maintenance",
-      () => ({ blocker: "paused", retryAt }),
+      "claudeLimit",
+      () => ({ blocker: "claude_limited", retryAt }),
       async () => {
         await say(canvas.id);
         expect(await head(canvas.id)).toMatchObject({
-          agentBlocker: "paused",
+          agentBlocker: "claude_limited",
           agentBlockedUntil: retryAt,
         });
         const [job, ...more] = await wakeJobs(canvas.id);

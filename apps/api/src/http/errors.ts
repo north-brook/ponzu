@@ -173,6 +173,11 @@ export type ErrorCode =
   | "not_ownerless"
   /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
   | "claude_not_connected"
+  /**
+   * Ponzu is read-only while it updates (`PONZU_MAINTENANCE=read_only`): nothing was written.
+   * Reads still work; send it again in a few minutes.
+   */
+  | "maintenance"
   | "internal";
 
 /**

@@ -3,7 +3,7 @@ import { ApiError, type CanvasHeadRow, type MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import { gateMessage } from "../cloud/gate.ts";
 import type { Person } from "../cloud/model.ts";
-import { ownerChangedLine } from "../cloud/thread/thread.ts";
+import { ownerChangedLine, sandboxLine } from "../cloud/thread/thread.ts";
 import { AskStore } from "./ask-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
 import { takeOverRefusal } from "./take-over.ts";
@@ -606,6 +606,15 @@ test("each blocker is what keeps the canvas from running, in the composer or the
   expect(gate("sandbox_busy")).toBeNull();
   expect(agentActivity(head("sandbox_busy")).sandbox).toBe("busy");
   expect(agentActivity(head("sandbox_failed")).sandbox).toBe("failed");
+  // Wakes paused while Ponzu updates: messages are still taken, and the foot says so.
+  expect(gate("paused")).toBeNull();
+  expect(agentActivity(head("paused")).sandbox).toBe("paused");
+  expect(sandboxLine(agentActivity(head("paused")))).toEqual({
+    text: "The agent is paused while Ponzu updates. Your message is kept and goes through when it's back.",
+    failed: false,
+  });
+  // A turn already running when wakes were paused finishes, its working line in place.
+  expect(sandboxLine({ ...agentActivity(head("paused")), state: "working" })).toBeNull();
 
   // The viewer's own plan at its limit, from their `me` row.
   const limitedUntil = new Date(10_000).toISOString();

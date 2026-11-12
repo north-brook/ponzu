@@ -6,6 +6,7 @@ import { clientVersionGate } from "./http/client-version.ts";
 import type { AppEnv } from "./http/context.ts";
 import { cors } from "./http/cors.ts";
 import { ApiError, toApiError } from "./http/errors.ts";
+import { readOnlyGate } from "./http/maintenance.ts";
 import { requestContext } from "./http/request.ts";
 import { v1 } from "./routes/index.ts";
 
@@ -17,8 +18,8 @@ const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
  *
  * Order matters. Every request gets its id and log line first, then its analytics scope (who
  * and what a capture during it is about: `analytics/scope.ts`), then CORS (which answers a
- * preflight by itself), then the client-version gate, then the check that the route says who
- * may call it. Errors are turned into the one error body here and nowhere else: no sub-app
+ * preflight by itself), then the client-version gate, then the maintenance switch's read-only
+ * gate (`http/maintenance.ts`), then the check that the route says who may call it. Errors are turned into the one error body here and nowhere else: no sub-app
  * sets its own `onError`.
  */
 export function createApp(deps: Deps) {
@@ -27,6 +28,7 @@ export function createApp(deps: Deps) {
     analyticsScope,
     cors,
     clientVersionGate(deps.config.minimumClientVersions),
+    readOnlyGate,
   ];
   const app = new Hono<AppEnv>();
   for (const middleware of infrastructure) app.use(middleware);
@@ -52,9 +54,10 @@ export function createApp(deps: Deps) {
   app.onError((thrown, c) => {
     const error = toApiError(thrown);
     const fields = { status: error.status, errorCode: error.code, error: error.cause };
-    if (error.status >= 500) {
+    // A refusal (validation, not found, signed out) is the API working, and so is the 503 of
+    // the maintenance switch, which someone turned on; any other 5xx is not.
+    if (error.status >= 500 && error.code !== "maintenance") {
       c.var.log.error("request_failed", fields);
-      // A refusal (validation, not found, signed out) is the API working; this is not.
       c.var.deps.analytics.exception(error.cause ?? thrown, {
         status: error.status,
         error_code: error.code,

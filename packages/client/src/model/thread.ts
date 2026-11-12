@@ -1,3 +1,4 @@
+import { blockerWords } from "./gate.ts";
 import {
   type AgentActivity,
   firstName,
@@ -234,7 +235,9 @@ export function workingLine(
 
 /**
  * What the thread's foot says while the canvas's sandbox can't run, in place of the working
- * line: a quiet wait for a machine, or a start that failed. Messages are kept either way.
+ * line: a quiet wait for a machine, a pause while Ponzu updates, or a start that failed.
+ * Messages are kept either way. A turn that was running when wakes were paused finishes, and
+ * its working line shows until it does.
  */
 export function sandboxLine(agent: AgentActivity): { text: string; failed: boolean } | null {
   if (agent.sandbox === "busy") {
@@ -242,6 +245,10 @@ export function sandboxLine(agent: AgentActivity): { text: string; failed: boole
       text: "Waiting for a free machine. Your messages go in as soon as one starts.",
       failed: false,
     };
+  }
+  if (agent.sandbox === "paused") {
+    if (agent.state === "working") return null;
+    return { text: blockerWords({ blocker: "paused" }).line, failed: false };
   }
   if (agent.sandbox === "failed") {
     return {

@@ -256,9 +256,11 @@ export function agentActivity(head: Head | undefined): AgentActivity {
   const sandbox =
     head.agentBlocker === "sandbox_busy"
       ? "busy"
-      : head.agentBlocker === "sandbox_failed"
-        ? "failed"
-        : null;
+      : head.agentBlocker === "paused"
+        ? "paused"
+        : head.agentBlocker === "sandbox_failed"
+          ? "failed"
+          : null;
   return { state: head.agentState, status: head.agentStatus, sandbox };
 }
 

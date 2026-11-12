@@ -35,6 +35,7 @@ import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
+import { FEATURES_OFF } from "../features.ts";
 import { createLogger } from "../http/log.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { createVault } from "../vault/vault.ts";
@@ -80,6 +81,7 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     }),
     // No sandbox here holds commits GitHub lacks, so Create PR never asks one to push.
     ...({} as Pick<JobDeps, "sandboxes" | "runnerBundle" | "poke">),
+    features: FEATURES_OFF,
   });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;
