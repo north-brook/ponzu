@@ -407,6 +407,15 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
         expect(none.status).toBe(400);
         const badCode = await globalThis.fetch(`${callback}?code=../x&state=${state}`);
         expect(badCode.status).toBe(400);
+        // A page that points its own name at 127.0.0.1 gets neither the form nor the callback.
+        const { origin, port } = new URL(callback);
+        for (const path of ["/", `/callback?code=${CODE}&state=${state}`]) {
+          const rebound = await globalThis.fetch(`${origin}${path}`, {
+            headers: { host: `rebound.example:${port}` },
+          });
+          expect(rebound.status).toBe(404);
+          expect(await rebound.text()).not.toContain(state);
+        }
       },
     });
     const out = io(net.fetch, { VERCEL_TOKEN: TOKEN }, browser);
@@ -541,6 +550,32 @@ describe("create, against a fake GitHub and a fake Vercel", () => {
     // WorkOS still gets its secret, and the file is still deleted.
     expect(out.secretFiles.map((f) => f.text)).toEqual([CLIENT_SECRET]);
     expect(fs.readdirSync(scratch)).toEqual([]);
+  });
+
+  test("Vercel taking the request but refusing a secret in it says how to finish by hand", async () => {
+    const envs: Record<string, unknown>[] = [];
+    const net = fakeNetwork(
+      world({
+        envs,
+        vercelPost: (s: { body: Record<string, unknown>[] }) => {
+          const created = s.body.filter((e) => e.key !== "GITHUB_APP_PRIVATE_KEY");
+          for (const e of created) envs.push({ ...e, id: `env_${envs.length}`, value: "" });
+          return new Reply(201, {
+            created: created.map(({ value: _value, ...e }) => e),
+            failed: [{ error: { code: "ENV_CONFLICT", key: "GITHUB_APP_PRIVATE_KEY" } }],
+          });
+        },
+      }),
+    );
+    const out = io(net.fetch, { VERCEL_TOKEN: TOKEN }, founder());
+    expect(await main(ARGS, out, infra)).toBe(1);
+    await Promise.all(out.visits);
+    expect(out.lines).toContain("fail    GITHUB_APP_PRIVATE_KEY is not on the Production target");
+    expect(out.lines).toContain(
+      "The App ponzu exists, but its secrets are not all on ponzu-api-prod. To finish by hand:",
+    );
+    const printed = out.lines.join("\n");
+    for (const secret of SECRETS) expect(printed).not.toContain(secret);
   });
 
   test("a slug GitHub chose differently is stored as it is, and infra is named as behind", async () => {

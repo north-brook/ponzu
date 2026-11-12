@@ -241,7 +241,9 @@ What the script does, in order:
 2. It serves one page on `127.0.0.1`, on a port the system picks, and opens it in the browser.
    The page posts GitHub's manifest form to
    `https://github.com/organizations/north-brook/settings/apps/new?state=<random>`, carrying
-   the file plus `redirect_url` (back to the page) and `callback_urls` (the WorkOS URL).
+   the file plus `redirect_url` (back to the page) and `callback_urls` (the WorkOS URL). It
+   answers only requests addressed to `127.0.0.1` and its port, so a web page that points its
+   own name at the loopback cannot read the form's state.
 3. GitHub sends the browser back with a code. A request without this run's `state` is answered
    400 and the page keeps waiting, for up to 30 minutes. The code is exchanged through
    `POST /app-manifests/{code}/conversions`; every secret in the answer is handed to the
@@ -256,9 +258,9 @@ What the script does, in order:
 
 If GitHub names the App differently (the slug was taken by a private App), the script stores
 the real slug and says that `environments.json` and the manifest's file name must follow. If
-Vercel refuses the write, it prints Vercel's status and how to finish by hand; the App then
-needs a new private key and client secret from its settings page, because the script never
-writes them anywhere else.
+Vercel refuses the write, or takes it but leaves a secret out, it prints what is missing (for a
+refusal, only Vercel's status) and how to finish by hand; the App then needs a new private key
+and client secret from its settings page, because the script never writes them anywhere else.
 
 `bun scripts/prod/github-app.ts create --env dev --dry-run` prints the form for an environment's
 manifest and makes no request at all. It is what an agent may run.

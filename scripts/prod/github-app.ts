@@ -174,7 +174,8 @@ export interface Loopback {
 /**
  * Serves the form at `/` and waits at `/callback` on 127.0.0.1, on a port the system picks. A
  * callback with another state, or without a well-formed code, is answered 400 and does not end
- * the wait, so a stray request cannot make the run give up.
+ * the wait, so a stray request cannot make the run give up. A request that names another host
+ * (a web page that has pointed its own name at 127.0.0.1, to read the state) is answered 404.
  */
 export function startLoopback(
   state: string,
@@ -182,6 +183,7 @@ export function startLoopback(
   onRefused: () => void,
 ): Loopback {
   let html = "";
+  let host = "";
   let done = false;
   let resolve: (code: string) => void = () => {};
   const code = new Promise<string>((r) => {
@@ -192,7 +194,9 @@ export function startLoopback(
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (request.method !== "GET") return new Response("Not found", { status: 404 });
+      if (request.method !== "GET" || request.headers.get("host") !== host) {
+        return new Response("Not found", { status: 404 });
+      }
       if (url.pathname === "/") return new Response(html, { headers: PAGE_HEADERS });
       if (url.pathname !== "/callback") return new Response("Not found", { status: 404 });
       const got = url.searchParams.get("code") ?? "";
@@ -217,7 +221,8 @@ export function startLoopback(
       );
     },
   });
-  const origin = `http://127.0.0.1:${server.port}`;
+  host = `127.0.0.1:${server.port}`;
+  const origin = `http://${host}`;
   const redirectUrl = `${origin}/callback`;
   html = page(redirectUrl);
   // Not forced: the browser still gets the "created" page it is being answered with.
@@ -579,8 +584,11 @@ export async function main(
     for (const line of recovery(app.slug, owner, project)) print(line);
   }
 
-  // Read back: names and types only; Vercel never hands a sensitive value back.
+  // Read back: names and types only; Vercel never hands a sensitive value back. Vercel can
+  // accept the request and still refuse some of its variables (its answer's `failed` list), so
+  // a secret missing here needs the same hand finish as a refused request.
   let ok = stored;
+  let secretMissing = false;
   if (stored) {
     try {
       const live = (await readEnv(ctx, project)).filter((e) => e.targets.includes("production"));
@@ -590,6 +598,7 @@ export async function main(
           print(`ok      ${key} is on ${project}'s Production target, stored as ${type}`);
         } else {
           ok = false;
+          if (type === "sensitive") secretMissing = true;
           print(
             `fail    ${key} ${entry ? `is stored as ${entry.type}, not ${type}` : "is not on the Production target"}`,
           );
@@ -599,6 +608,7 @@ export async function main(
       ok = false;
       print(`fail    the variables could not be read back: ${describeError(error)}`);
     }
+    if (secretMissing) for (const line of recovery(app.slug, owner, project)) print(line);
   }
   for (const line of failures) {
     ok = false;
@@ -615,11 +625,13 @@ export async function main(
   const dir = mkdtempSync(join(io.tmpdir(), "ponzu-github-app-"));
   const secretFile = join(dir, "client-secret");
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
+  // Ctrl-C, a closed terminal or a kill: the file goes either way.
+  const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
   const onSignal = () => {
     cleanup();
     process.exit(130);
   };
-  process.once("SIGINT", onSignal);
+  for (const signal of SIGNALS) process.once(signal, onSignal);
   try {
     writeFileSync(secretFile, app.client_secret, { mode: 0o600, flag: "wx" });
     print(
@@ -628,7 +640,7 @@ export async function main(
     print("Press Enter once it is in WorkOS, and the file is deleted.");
     await io.waitForEnter();
   } finally {
-    process.removeListener("SIGINT", onSignal);
+    for (const signal of SIGNALS) process.removeListener(signal, onSignal);
     cleanup();
   }
   print(`deleted ${secretFile}`);
