@@ -28,6 +28,11 @@ export interface PullRequestState {
   tab: PullRequestTab | null;
   /** The last read failed, or none has been made. */
   status: "loading" | "ready" | "error";
+  /**
+   * False while `tab` is only the answer kept from an earlier opening, not yet confirmed by a
+   * read since (or just before) this one: what it says may have moved meanwhile.
+   */
+  confirmed: boolean;
   /** The action on its way. */
   busy: NextAction | null;
   /** Merging past what the rules still want at `headSha`, waiting on the person to say so. */
@@ -53,6 +58,7 @@ export class PullRequestStore {
   private state: PullRequestState = {
     tab: null,
     status: "loading",
+    confirmed: false,
     busy: null,
     bypass: null,
     asked: null,
@@ -90,11 +96,25 @@ export class PullRequestStore {
     // A design opened before has its last answer in the cache: shown at once, from the first
     // frame (the chrome's mark and action, the tab), while the read on opening confirms it.
     // Keyed by the design, so one design never shows another's.
-    const known = query.getCurrentResult().data;
-    if (known) this.state = { ...this.state, tab: known, status: "ready" };
-    this.stopQuery = query.subscribe(({ data, isError, fetchStatus }) => {
-      if (data && data !== this.state.tab) this.set({ tab: data, status: "ready" });
-      else if (isError && fetchStatus === "idle") this.set({ status: "error" });
+    // Until a read confirms it, it is offered only where it agrees with what the design's row
+    // and head say now (design.tsx): asked ahead a moment ago, it is as good as confirmed.
+    const known = query.getCurrentResult();
+    const keptAt = known.data ? known.dataUpdatedAt : 0;
+    if (known.data) {
+      this.state = {
+        ...this.state,
+        tab: known.data,
+        status: "ready",
+        confirmed: Date.now() - keptAt < ASKED_AHEAD_MS,
+      };
+    }
+    this.stopQuery = query.subscribe(({ data, dataUpdatedAt, isError, fetchStatus }) => {
+      // A read that answers the same as was kept leaves the same object (structural sharing):
+      // nothing on screen changes, it is only confirmed.
+      const confirmed = this.state.confirmed || (data !== undefined && dataUpdatedAt > keptAt);
+      if (data && (data !== this.state.tab || confirmed !== this.state.confirmed)) {
+        this.set({ tab: data, status: "ready", confirmed });
+      } else if (isError && fetchStatus === "idle") this.set({ status: "error" });
     });
   }
 

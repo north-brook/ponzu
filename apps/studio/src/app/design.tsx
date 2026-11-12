@@ -1,22 +1,10 @@
 import { Canvas, type CanvasProps } from "@ponzu/canvas";
-import {
-  type DesignHeadRow,
-  DocCache,
-  type LiveRows,
-  type PullRequestTab,
-  presentNow,
-} from "@ponzu/client";
+import { type DesignHeadRow, DocCache, type LiveRows, presentNow } from "@ponzu/client";
 import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
 import { type Actor, newId } from "@ponzu/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type {
-  DesignMember,
-  DesignSummary,
-  Person,
-  PullRequestSummary,
-  WorkspaceKind,
-} from "../cloud/model.ts";
+import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import { actionBlock, nextAction } from "../cloud/pull-request.ts";
 import { railSignal } from "../cloud/status.ts";
 import { useNow } from "../cloud/time.ts";
@@ -30,7 +18,7 @@ import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
-import { chromeAction, prSummary } from "./pull-request-map.ts";
+import { chromeAction, offeredTab, prSummary, rowPullRequest } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
 import { branchMoment, steerGate } from "./thread-map.ts";
 import { ThreadStore } from "./thread-store.ts";
@@ -226,12 +214,16 @@ export function DesignChromeSlot({
   // already says (the same columns), with what the last read of GitHub said of whether it can
   // merge. So a design opens with its mark at once, and the head confirms it without a change.
   const pr = head ? prSummary(head) : rowPullRequest(summary, pull.tab);
-  const kind = repo && pull.tab ? chromeAction(pull.tab) : null;
+  // The last answer kept from an earlier opening is offered only while it agrees with what the
+  // row and the head say now: a pull request merged, closed or pushed to since doesn't offer
+  // what it did (Merge on one already merged) before the read on opening says.
+  const tab = offeredTab(pull, pr);
+  const kind = repo && tab ? chromeAction(tab) : null;
   // Until its own answer, the action its row's pull request most likely offers: its room is
   // held, unseen, so the mark beside it doesn't move when it comes. Not for one that is merged
   // or closed, or with no pull request, which as often offer nothing.
   const expected =
-    repo && !pull.tab && pr && (pr.state === "open" || pr.state === "draft")
+    repo && !tab && pr && (pr.state === "open" || pr.state === "draft")
       ? nextAction(pr, false)
       : null;
   const gate = steerGate({ access, repo, head, owner, me: meRow, now });
@@ -301,17 +293,6 @@ export function DesignChromeSlot({
       actionExpected={expected}
     />
   );
-}
-
-/** The pull request as the sidebar's row has it, before the head has come. */
-function rowPullRequest(
-  summary: DesignSummary | null,
-  tab: PullRequestTab | null,
-): PullRequestSummary | null {
-  const pr = summary?.pullRequest;
-  if (!pr) return null;
-  const read = tab?.pullRequest?.number === pr.number ? tab.pullRequest : null;
-  return { ...pr, mergeable: read?.mergeable ?? null, autoMerge: Boolean(read?.autoMerge) };
 }
 
 /**

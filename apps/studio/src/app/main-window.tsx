@@ -446,7 +446,7 @@ function WorkspaceWindow({
   }, [host, say]);
 
   const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
-  // About to open a design on a repo (the pointer resting on its row, or the keyboard on it):
+  // About to open a design on a repo (the pointer or the keyboard resting on its row):
   // its pull request is asked for ahead, into the cache its chrome reads from the first frame,
   // so its action is there as it opens. Asked at most once in ASKED_AHEAD_MS, which the read on
   // opening then stands on.

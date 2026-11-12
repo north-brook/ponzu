@@ -1,6 +1,7 @@
 import { ApiError, type DesignHeadRow, type PullRequestTab } from "@ponzu/client";
 import type {
   CheckRun,
+  DesignSummary,
   GithubAuthor,
   PrFile,
   PullRequestDetail,
@@ -137,6 +138,40 @@ export function prSummary(head: HeadPr | undefined): PullRequestSummary | null {
     mergeable: head.prMergeable,
     autoMerge: head.prAutoMerge,
   };
+}
+
+/**
+ * The pull request as the sidebar's row has it, before the design's head has come: the same
+ * columns, with what the last read of GitHub said of whether it can merge, where that read is of
+ * the same pull request as it stands.
+ */
+export function rowPullRequest(
+  summary: DesignSummary | null,
+  tab: PullRequestTab | null,
+): PullRequestSummary | null {
+  const pr = summary?.pullRequest;
+  if (!pr) return null;
+  const read = tab && agrees(tab, pr) ? tab.pullRequest : null;
+  return { ...pr, mergeable: read?.mergeable ?? null, autoMerge: Boolean(read?.autoMerge) };
+}
+
+/** Whether a read of GitHub says what the row or the head says now of the same pull request. */
+export function agrees(tab: PullRequestTab, pr: PullRequestSummary | null): boolean {
+  const read = tab.pullRequest;
+  if (!read || !pr) return !read && !pr;
+  return read.number === pr.number && read.state === pr.state && read.checks.state === pr.checks;
+}
+
+/**
+ * The read whose action the chrome offers: the last one, unless it is only the answer kept from
+ * an earlier opening and the row or the head now says otherwise (merged, closed or pushed to
+ * since). Merge isn't offered on a pull request already merged before the read on opening says.
+ */
+export function offeredTab(
+  pull: { tab: PullRequestTab | null; confirmed: boolean },
+  pr: PullRequestSummary | null,
+): PullRequestTab | null {
+  return pull.tab && (pull.confirmed || agrees(pull.tab, pr)) ? pull.tab : null;
 }
 
 /** The chrome's button for the API's next action: none for `none`, and auto-merge once on. */

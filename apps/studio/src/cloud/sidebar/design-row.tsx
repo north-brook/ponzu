@@ -42,7 +42,7 @@ export interface RowHandlers {
   onIntent?: (design: DesignSummary) => void;
 }
 
-/** How long the pointer rests on a row before it counts as about to open it: sweeping past doesn't. */
+/** How long the pointer or the keyboard rests on a row before it counts as about to open it. */
 export const INTENT_MS = 80;
 
 /**
@@ -84,7 +84,19 @@ export const DesignRow = memo(function DesignRow({
     if (resting.current) clearTimeout(resting.current);
     resting.current = null;
   };
+  const intend = () => {
+    rest();
+    if (!onIntent || open) return;
+    resting.current = setTimeout(() => onIntent(design), INTENT_MS);
+  };
   useEffect(() => rest, []);
+  // Opened: what it would have asked ahead, opening asks itself.
+  useEffect(() => {
+    if (open && resting.current) {
+      clearTimeout(resting.current);
+      resting.current = null;
+    }
+  }, [open]);
   // Back on the row once the name is done, so the keyboard carries on from where it was.
   useEffect(() => {
     if (renaming || !renamed.current) return;
@@ -170,15 +182,12 @@ export const DesignRow = memo(function DesignRow({
           aria-keyshortcuts={shortcut ? `${JUMP_KEY.design.key}+${shortcut}` : undefined}
           tabIndex={tabIndex}
           onClick={() => onOpen(design)}
-          onPointerEnter={() => {
-            if (!onIntent || open) return;
-            rest();
-            resting.current = setTimeout(() => onIntent(design), INTENT_MS);
-          }}
+          // Resting there, not passing over or through it (a sweep of the pointer, the arrow
+          // keys down the list): only a row the person stops on is asked about ahead.
+          onPointerEnter={intend}
           onPointerLeave={rest}
-          onFocus={() => {
-            if (onIntent && !open) onIntent(design);
-          }}
+          onFocus={intend}
+          onBlur={rest}
           className={cn(
             rowClass,
             "cursor-default select-none focus-ring active:bg-press",
