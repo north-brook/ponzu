@@ -2,7 +2,7 @@
 
 ## ideas: 87/87 labels right, passed
 
-`claude-opus-5-5`, version `ccd7f3e8414b`, 2026-11-11T19:45:54.627Z at e615e839995c, $0.4152.
+`claude-opus-5-5`, version `d8abc9bdf8d9`, 2026-11-12T09:35:49.785Z at 398914845a6f, $0.4210.
 
 | Example | Labels | Misses |
 |---|---|---|
@@ -24,7 +24,7 @@
 
 ## repo_ideas_gate: 52/52 labels right, passed
 
-`claude-sonnet-5-5`, version `1549d169cead`, 2026-11-11T20:48:38.720Z at 023582d4b025, $0.0489.
+`claude-sonnet-5-5`, version `2f9ba23e7a25`, 2026-11-12T09:36:05.331Z at 398914845a6f, $0.0498.
 
 | Example | Labels | Misses |
 |---|---|---|
