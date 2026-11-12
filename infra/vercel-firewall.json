@@ -123,6 +123,166 @@
           }
         }
       }
+    },
+    {
+      "name": "user-writes per caller",
+      "description": "@vercel/firewall rate-limit id user-writes: 300 a minute per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "user-writes" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 300,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "canvas-creates per caller",
+      "description": "@vercel/firewall rate-limit id canvas-creates: 30 an hour per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "canvas-creates" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 3600,
+            "limit": 30,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "messages per caller",
+      "description": "@vercel/firewall rate-limit id messages: 60 a minute per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "messages" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 60,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "uploads per caller",
+      "description": "@vercel/firewall rate-limit id uploads: 120 an hour per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "uploads" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 3600,
+            "limit": 120,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "live per caller",
+      "description": "@vercel/firewall rate-limit id live: 120 a minute per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "live" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 120,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "github-sync per caller",
+      "description": "@vercel/firewall rate-limit id github-sync: 30 an hour per person, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "github-sync" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 3600,
+            "limit": 30,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "runner per caller",
+      "description": "@vercel/firewall rate-limit id runner: 3,000 a minute per canvas, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "runner" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 3000,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "runner-git per caller",
+      "description": "@vercel/firewall rate-limit id runner-git: 240 an hour per canvas, keyed in code.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "rate_limit_api_id", "op": "eq", "value": "runner-git" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 3600,
+            "limit": 240,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
     }
   ]
 }

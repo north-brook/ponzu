@@ -2847,7 +2847,9 @@ other call by a runner, counts against a catch-all. A read by a person is not co
 firewall's per-address rules cover reads and the public routes. Over the limit is 429
 `rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
 behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
-everywhere today, until its rules are applied. It fails open: a check that takes more than
+everywhere today, until its rules are applied. Each id's window and limit are a rule in
+`infra/vercel-firewall.json` (docs/production.md, "The WAF"), and a test pairs the rules with the
+ids the code names, both ways, and with their numbers. It fails open: a check that takes more than
 500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
 count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
 steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.

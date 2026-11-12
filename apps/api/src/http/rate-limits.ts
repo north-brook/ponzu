@@ -34,7 +34,8 @@ export interface RateLimitRule {
   key: "user" | "canvas";
   /**
    * What the firewall rule for this id says, and the fake counts to. The firewall's rule is
-   * what holds in a deployment (infra/vercel-firewall.json); a test pairs the two.
+   * what holds in a deployment (infra/vercel-firewall.json); rate-limits.firewall.test.ts
+   * pairs the two, id for id and number for number.
    */
   limit: number;
   windowSeconds: number;

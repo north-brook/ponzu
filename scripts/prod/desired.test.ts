@@ -253,7 +253,13 @@ describe("vercel-firewall.json", () => {
     const fw = loadInfraFile("vercel-firewall.json");
     const limits = Object.fromEntries(
       fw.rules
-        .filter((r) => r.action.mitigate.rateLimit)
+        // The per-caller rules (a `@vercel/firewall` id) are paired with the code's table by
+        // apps/api/src/http/rate-limits.firewall.test.ts.
+        .filter(
+          (r) =>
+            r.action.mitigate.rateLimit &&
+            !r.conditionGroup.some((g) => g.conditions.some((c) => c.type === "rate_limit_api_id")),
+        )
         .map((r) => {
           const rl = r.action.mitigate.rateLimit as { window: number; limit: number; algo: string };
           return [r.name, `${rl.limit}/${rl.window}s ${rl.algo}`];

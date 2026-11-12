@@ -156,12 +156,39 @@ only thing that sets the guard that lets it through.
 The OWASP core ruleset runs in log mode for every category, because canvas HTML in ops matches
 its XSS rules; the schema refuses `deny` on xss and sqli. Bot protection logs. Nothing on the API
 host ever challenges, because the apps cannot solve a challenge, and Attack Challenge Mode is
-never turned on for it. The per-caller limits in code (`@vercel/firewall`) are added to the same
-file by the rate-limit work; they stay off until the founder applies the rules, and fail open.
+never turned on for it.
 
-The rule JSON follows Vercel's documented REST shape. The exact shape of a rate-limit action is
-confirmed against a dashboard-made rule (`vercel firewall rules inspect --json`) when the apply
-and check scripts are built; until then it is not proven.
+The same file holds one rule for each per-caller limit the API checks in code through
+`@vercel/firewall`. Each rule's only condition is its rate-limit id (`rate_limit_api_id`); the API
+says which id a request counts against and passes the person's or the canvas's id as the key, so
+the rule counts per caller, not per address.
+
+| Rate-limit id | Limit | Counted per |
+|---|---|---|
+| `user-writes` | 300 a minute | person (every other POST, PATCH or DELETE) |
+| `canvas-creates` | 30 an hour | person |
+| `messages` | 60 a minute | person |
+| `uploads` | 120 an hour | person |
+| `live` | 120 a minute | person |
+| `github-sync` | 30 an hour | person |
+| `runner` | 3,000 a minute | canvas (every other runner call) |
+| `runner-git` | 240 an hour | canvas |
+
+`apps/api/src/http/rate-limits.ts` names the ids and the routes; the numbers live in the rules.
+`rate-limits.firewall.test.ts` fails when the code names an id the file has no rule for, when the
+file has a rule for an id the code never names, or when a rule's numbers differ from the code's
+table (which the test fake counts to). `/v1/runner/models` has no rule: the runner protocol
+throttles it. These limits stay off (`PONZU_RATE_LIMITS=off`) until the rules are applied, and
+they fail open: a check that takes over 500 ms, fails or finds no rule lets the request through.
+
+The rule JSON follows Vercel's documented REST shape and `@vercel/sdk`'s firewall config types.
+Two things are not proven until a person compares them with a rule made in the dashboard
+(`vercel firewall rules inspect --json`), which the apply and check scripts need anyway: the exact
+condition of a `@vercel/firewall` rule (pinned in
+`apps/api/src/deps/fixtures/firewall-rate-limit-rule.json`), and what its `keys` must be when the key comes from code (the
+file says `ip`, the dashboard's default; the SDK's own key replaces it). Nor is the SDK proven
+inside the bundled API on Vercel: after the rules are applied on dev, one id with a 2-a-minute
+rule is hit three times and the third must answer 429.
 
 ### DNS
 
