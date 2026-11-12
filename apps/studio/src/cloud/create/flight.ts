@@ -217,6 +217,16 @@ export function fly(origin: FlightOrigin, target: HTMLElement): Flight {
       easing: "linear",
     }),
   ];
+  // The model's choice sits by the send button, and the card narrows from its right: it goes
+  // first, before the button's corner closes over it.
+  before.querySelectorAll<HTMLElement>('[aria-label^="Model:"]').forEach((el) => {
+    moves.push(
+      el.animate([{ opacity: 1 }, { opacity: 0, offset: 0.12 }, { opacity: 0 }], {
+        ...timing,
+        easing: "linear",
+      }),
+    );
+  });
 
   // The + and the send button keep their corners all the way.
   if (origin.attachButton && origin.attach && toAttach) {
@@ -237,14 +247,16 @@ export function fly(origin: FlightOrigin, target: HTMLElement): Flight {
     layer.append(holder);
     moves.push(
       holder.animate([box(origin.send), box(toSend)], timing),
-      from.animate([{ opacity: 1 }, { opacity: 1, offset: 0.3 }, { opacity: 0, offset: 0.7 }], {
-        ...timing,
-        easing: "linear",
-      }),
-      into.animate([{ opacity: 0 }, { opacity: 0, offset: 0.3 }, { opacity: 1, offset: 0.7 }], {
-        ...timing,
-        easing: "linear",
-      }),
+      // Each holds its end to the landing: an animation without a last keyframe eases back to
+      // the element's own opacity, and the arrow would come back just before Stop shows.
+      from.animate(
+        [{ opacity: 1 }, { opacity: 1, offset: 0.3 }, { opacity: 0, offset: 0.7 }, { opacity: 0 }],
+        { ...timing, easing: "linear" },
+      ),
+      into.animate(
+        [{ opacity: 0 }, { opacity: 0, offset: 0.3 }, { opacity: 1, offset: 0.7 }, { opacity: 1 }],
+        { ...timing, easing: "linear" },
+      ),
     );
   }
 
