@@ -208,6 +208,15 @@ export class FakeBackend {
   readonly onboarding = new Map<string, { whereAt: string | null; iphoneAt: string | null }>();
   /** Canvases by the person's create key: a create sent again makes nothing new. */
   private readonly createKeys = new Map<string, string>();
+  /**
+   * The switches `GET /v1/me` reports, as an API with none of them set: billing off, and no
+   * pings or email. A test sets them to act out an API that has them.
+   */
+  features: Awaited<ReturnType<Api["me"]>>["features"] = {
+    billing: "off",
+    push: false,
+    email: false,
+  };
   /** While false, every call fails as if there were no network. */
   online = true;
   /** How long every call takes to answer, in real time, as a network would: none by default. */
@@ -664,6 +673,7 @@ export class FakeBackend {
           onboarding: onboarding(),
           claudeAccount: this.claude.view(person.id),
           workspaces: mine().map(({ workspace, role }) => summary(workspace, role)),
+          features: { ...this.features },
         })),
       onboarding: (step) =>
         call(() => {
@@ -1332,6 +1342,7 @@ export class FakeBackend {
           pr_auto_merge: head.prAutoMerge,
           last_activity_at: head.lastActivityAt,
           agent_blocker: head.agentBlocker,
+          agent_blocked_until: null,
           sandbox_state: null,
         };
         return [row];

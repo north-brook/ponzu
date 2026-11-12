@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { Footer, Nav } from "@/components/chrome";
 import { REPO } from "@/components/links";
+import { Code, Link, Prose, Section } from "@/components/prose";
 import { share } from "@/components/share";
 
 const TITLE = "Privacy · Ponzu";
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const ISSUES = `${REPO}/issues`;
 
-// Keep this in step with the code: README.md's Telemetry section, apps/cli/src/telemetry.ts,
-// apps/mobile/lib/telemetry.ts and apps/web/instrumentation-client.ts.
+// Keep this in step with the code: README.md's Telemetry section, 1.x's CLI telemetry.ts (on
+// main), apps/mobile/lib/telemetry.ts and apps/web/instrumentation-client.ts.
 export default function Page() {
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
@@ -32,7 +32,7 @@ export default function Page() {
         </p>
       </header>
 
-      <article className="mx-auto flex max-w-[640px] flex-col gap-12 text-[16px]/[27px] text-pretty text-muted">
+      <Prose>
         <Section title="Who we are">
           <p>
             Ponzu is made by Northbrook PBC (“we”). This policy covers the Ponzu desktop app (Mac,
@@ -133,35 +133,9 @@ export default function Page() {
           </p>
           <p className="text-[13px]/[19px] text-faint">Last updated October 27, 2026.</p>
         </Section>
-      </article>
+      </Prose>
 
       <Footer />
     </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-4 [&_p]:m-0">
-      <h2 className="m-0 text-[22px]/[30px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Link({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a
-      className="text-ink underline decoration-outline underline-offset-4 hover:decoration-ink"
-      href={href}
-    >
-      {children}
-    </a>
-  );
-}
-
-function Code({ children }: { children: ReactNode }) {
-  return (
-    <code className="rounded bg-chip px-1.5 py-0.5 font-mono text-[14px] text-ink">{children}</code>
   );
 }

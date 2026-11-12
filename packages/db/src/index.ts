@@ -1,6 +1,14 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
 export { CANVAS_HEAD_COLUMNS, type CanvasHead, type LiveCanvasHead, toCanvasHead } from "./head.ts";
-export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
+export {
+  ASSET_KEY_LENGTH,
+  type IdPrefix,
+  isAssetKey,
+  isId,
+  newAssetKey,
+  newId,
+  randomString,
+} from "./ids.ts";
 export {
   type AccountDeletionPlan,
   anonymiseUser,
@@ -128,6 +136,7 @@ export {
   saveGithubUserToken,
 } from "./queries/github-tokens.ts";
 export {
+  bringJobForward,
   claimJobs,
   completeJob,
   enqueueJob,
@@ -136,6 +145,7 @@ export {
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  recordOnce,
 } from "./queries/jobs.ts";
 export {
   countJoinedMembers,
@@ -270,6 +280,7 @@ export {
   getSandbox,
   getSandboxOwners,
   getWakeContext,
+  liftAgentBlockers,
   listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,

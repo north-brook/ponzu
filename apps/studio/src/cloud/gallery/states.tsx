@@ -133,7 +133,7 @@ function FilterDemo() {
     <FilterMenu
       filter={filter}
       onChange={setFilter}
-      me={f.bryce}
+      me={f.ada}
       teammates={f.teammates}
       projects={projectCounts(f.teamCanvases)}
     />
@@ -349,7 +349,7 @@ export function States() {
             <FilterMenu
               filter={NO_FILTER}
               onChange={ignore}
-              me={f.bryce}
+              me={f.ada}
               teammates={null}
               projects={projectCounts(f.soloCanvases)}
             />

@@ -127,8 +127,8 @@ icon svg 26×26 rgb(244, 243, 239) stroke 1px
 text "Visa ending 8831 · Northbrook" rgb(244, 243, 239) 500 13px Inter
 icon svg[Manage in Stripe] 16×16 rgb(142, 138, 130) stroke 1.7px
 text "By person · only admins see this" rgb(118, 115, 105) 600 11px Inter
-image img[By person · only admins see this] bryce.svg
-text "Bryce Bjork" rgb(244, 243, 239) 500 13px Inter
+image img[By person · only admins see this] ada.svg
+text "Ada Park" rgb(244, 243, 239) 500 13px Inter
 text "admin" rgb(118, 115, 105) 400 11px Inter
 text "$70.50" rgb(183, 179, 169) 500 12px IBM Plex Mono
 image img[By person · only admins see this] sam.svg

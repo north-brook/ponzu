@@ -5,7 +5,6 @@
     "apps/api/src",
     "apps/api/scripts",
     "apps/api/evals",
-    "apps/cli/src",
     "apps/runner/src",
     "apps/runner/scripts",
     "apps/runner/evals",

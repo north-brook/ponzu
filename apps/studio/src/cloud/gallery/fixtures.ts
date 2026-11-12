@@ -17,8 +17,8 @@ import type {
   SearchResults,
   Workspace,
 } from "../model.ts";
+import adaAvatar from "./assets/ada.svg";
 import alexAvatar from "./assets/alex.svg";
-import bryceAvatar from "./assets/bryce.svg";
 import jordanAvatar from "./assets/jordan.svg";
 import mayaAvatar from "./assets/maya.svg";
 import northbrookLogo from "./assets/northbrook.png";
@@ -35,11 +35,11 @@ import surveyPreview from "./previews/survey.png";
 export const NOW = Date.parse("2026-11-10T16:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 
-export const bryce: Person = {
-  id: "usr_bryce",
-  name: "Bryce Bjork",
-  login: "brycedbjork",
-  avatarUrl: bryceAvatar,
+export const ada: Person = {
+  id: "usr_ada",
+  name: "Ada Park",
+  login: "adapark",
+  avatarUrl: adaAvatar,
 };
 export const sam: Person = {
   id: "usr_sam",
@@ -95,11 +95,11 @@ export const fablefuel: Workspace = {
   avatarUrl: null,
 };
 export const personal: Workspace = {
-  id: "ws_bryce",
+  id: "ws_ada",
   kind: "personal",
-  name: "Bryce Bjork",
-  login: "brycedbjork",
-  avatarUrl: bryceAvatar,
+  name: "Ada Park",
+  login: "adapark",
+  avatarUrl: adaAvatar,
 };
 export const workspaces = [northbrook, fablefuel, personal];
 
@@ -152,7 +152,7 @@ export const shelves: Record<string, Repo[]> = {
 };
 /** The person's own repos, in their personal workspace. */
 export const personalRepos: Repo[] = [
-  { id: "repo_brycedbjork_dotfiles", owner: "brycedbjork", name: "dotfiles" },
+  { id: "repo_adapark_dotfiles", owner: "adapark", name: "dotfiles" },
 ];
 /** And in their personal workspace too, the switcher's third. */
 export const threeShelves: Record<string, Repo[]> = {
@@ -193,7 +193,7 @@ function canvas(
     unseen: false,
     pullRequest: null,
     hereNow: [],
-    owner: bryce,
+    owner: ada,
     lastActivityAt: minutesAgo(60),
     settledAt: null,
     ...partial,
@@ -331,17 +331,17 @@ export const onboardingPages: PageTab[] = [
 ];
 
 export const contributors: Contributor[] = [
-  { person: bryce, here: true, lastHereAt: null },
+  { person: ada, here: true, lastHereAt: null },
   { person: sam, here: true, lastHereAt: null },
   { person: maya, here: true, lastHereAt: null },
   { person: jordan, here: false, lastHereAt: minutesAgo(60 * 24 * 2) },
 ];
 
 /** A canvas only you have worked on: the spec's default still shows you and the "+". */
-export const justYou: Contributor[] = [{ person: bryce, here: true, lastHereAt: null }];
+export const justYou: Contributor[] = [{ person: ada, here: true, lastHereAt: null }];
 
 export const members: CanvasMember[] = [
-  { person: bryce, access: "owner", joined: true },
+  { person: ada, access: "owner", joined: true },
   { person: sam, access: "edit", joined: true },
   { person: maya, access: "edit", joined: true },
   { person: jordan, access: "edit", joined: true },

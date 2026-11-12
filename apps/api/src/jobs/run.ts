@@ -1,10 +1,14 @@
-import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
+import {
+  claimJobs,
+  completeJob,
+  enqueueJob,
+  failAbandonedJobs,
+  failJob,
+  type Job,
+  type NewJob,
+} from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
-import { BASE_REBUILD_JOB, runBaseRebuildJob } from "../environments/rebuild.ts";
-import { PEOPLE_JOB, runPeopleJob } from "../github/people.ts";
-import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
-import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
-import { runWakeJob, WAKE_JOB } from "../sandboxes/orchestrate.ts";
+import { jobHandlers } from "./registry.ts";
 import { RetryLater } from "./retry.ts";
 
 /*
@@ -12,7 +16,7 @@ import { RetryLater } from "./retry.ts";
  * sandbox"). A request records a job and runs it at once, holding it; the one-minute cron
  * (`routes/cron.ts`) runs whatever is due and nobody holds, which is a job whose attempt
  * failed, or whose request died. Every job is run at least once and may be run more than
- * once, so each kind's work is safe to repeat.
+ * once, so each kind's work is safe to repeat. What runs each kind is in `registry.ts`.
  */
 
 export type JobDeps = Pick<
@@ -33,22 +37,6 @@ export type JobDeps = Pick<
 /** A job as its handler sees it: which attempt this is, out of how many. */
 export type RunningJob = Pick<Job, "id" | "kind" | "payload" | "attempts" | "maxAttempts">;
 
-/**
- * What runs a job of each kind. A kind is added here by the module whose work it is. Made when
- * asked, not when this module loads: a module that runs its own jobs imports this one, and may
- * be loaded first.
- */
-const handlers = (): Record<
-  string,
-  (deps: JobDeps, payload: Job["payload"], job: RunningJob) => Promise<void>
-> => ({
-  [WEBHOOK_JOB]: runWebhookJob,
-  [WAKE_JOB]: runWakeJob,
-  [REFRESH_JOB]: runRefreshJob,
-  [BASE_REBUILD_JOB]: runBaseRebuildJob,
-  [PEOPLE_JOB]: runPeopleJob,
-});
-
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */
 const RETRY_BASE_MS = 60_000;
 const RETRY_MAX_MS = 3600_000;
@@ -63,7 +51,7 @@ const CLAIM_LIMIT = 10;
  */
 export async function runJob(deps: JobDeps, job: RunningJob, worker: string): Promise<void> {
   await runHeldJob(deps, job, worker, async () => {
-    const handler = handlers()[job.kind];
+    const handler = jobHandlers()[job.kind];
     if (!handler) throw new Error(`Nothing runs jobs of kind ${job.kind}.`);
     await handler(deps, job.payload, job);
   });
@@ -104,6 +92,36 @@ export async function runHeldJob(
     return;
   }
   await completeJob(db, { id: job.id, worker });
+}
+
+/** What `runNow` takes: a job's deps, and somewhere to run it past the response. */
+export type RunNowDeps = JobDeps & Pick<Deps, "background">;
+
+/**
+ * Record a job and run it at once, held, without waiting for it: the request's own instance
+ * runs it through `deps.background`, and if that instance dies the lock runs out and the
+ * minute's cron runs it instead. This is what `requestWake` does for a wake, for every other
+ * kind: `notify`, a canvas's files purge and the like.
+ *
+ * A job of the same kind and key already waiting is left to do the work, and nothing new is
+ * recorded or run: null. With `runAt` later than now the job is only recorded, for the cron to
+ * run when it is due. Throws only when the job could not be recorded; the run itself never
+ * rejects (`runJob`).
+ */
+export async function runNow(
+  deps: RunNowDeps,
+  job: Pick<NewJob, "kind" | "key" | "payload" | "runAt" | "maxAttempts">,
+): Promise<Job | null> {
+  const now = deps.clock.now();
+  if (job.runAt && job.runAt.getTime() > now) return enqueueJob(deps.db, job);
+  const worker = `${job.kind}:${crypto.randomUUID()}`;
+  const recorded = await enqueueJob(deps.db, {
+    ...job,
+    runAt: job.runAt ?? new Date(now),
+    lockedBy: worker,
+  });
+  if (recorded) deps.background(job.kind, runJob(deps, recorded, worker));
+  return recorded;
 }
 
 /** What the cron does each minute: close what ran out of attempts, then run what is due. */

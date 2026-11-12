@@ -1,4 +1,11 @@
-import { enqueueJob, getAwakeSandboxAddress, touchSandbox } from "@ponzu/db";
+import {
+  type AgentBlocker,
+  bringJobForward,
+  enqueueJob,
+  getAwakeSandboxAddress,
+  liftAgentBlockers,
+  touchSandbox,
+} from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { type JobDeps, runJob } from "../jobs/run.ts";
 import { runnerTarget } from "./environment.ts";
@@ -93,6 +100,50 @@ export async function queueWake(
     runAt: new Date(deps.clock.now()),
     maxAttempts: WAKE_ATTEMPTS,
   });
+}
+
+/** How many wakes `resumeBlocked` starts at once; the minute's cron runs the rest. */
+export const RESUME_AT_ONCE = 20;
+
+/**
+ * What a wake gate waited on has changed (a card added, the cap raised, wakes no longer
+ * paused, a Claude plan's limit reset): lift `blockers` from the canvases they hold, in a
+ * workspace, on a Claude account (`accountId`), or everywhere when neither is given, and wake
+ * those whose feed holds something their agent must take up. The most recently active
+ * `RESUME_AT_ONCE` are started now and the rest queued for the minute's cron; a wake a gate put
+ * off to later is made due now instead, and the cron runs it. A canvas with nothing owed is
+ * only lifted: it wakes at its next message. A gate that still holds one back says so again at
+ * its wake.
+ */
+export async function resumeBlocked(
+  deps: WakeDeps,
+  {
+    workspaceId,
+    accountId,
+    blockers,
+  }: { workspaceId?: string; accountId?: string; blockers: readonly AgentBlocker[] },
+): Promise<{ lifted: number; started: number; queued: number }> {
+  const lifted = await liftAgentBlockers(deps.db, {
+    blockers,
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    ...(accountId === undefined ? {} : { claudeAccountId: accountId }),
+  });
+  const owed = lifted.filter((canvas) => canvas.pending);
+  const now = new Date(deps.clock.now());
+  let started = 0;
+  for (const [index, canvas] of owed.entries()) {
+    const key = canvas.id;
+    if (await bringJobForward(deps.db, { kind: WAKE_JOB, key, now })) continue;
+    if (index < RESUME_AT_ONCE) {
+      deps.background("wake", startWake(deps, canvas.id, "resume"));
+      started++;
+    } else {
+      await queueWake(deps, canvas.id, "resume");
+    }
+  }
+  const counts = { lifted: lifted.length, started, queued: owed.length - started };
+  deps.log.info("blocked_resumed", { blockers, workspaceId, accountId, ...counts });
+  return counts;
 }
 
 /** A wake for the canvas held by a new worker, or null when one is already waiting. */

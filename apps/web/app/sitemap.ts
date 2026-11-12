@@ -1,5 +1,9 @@
 import type { MetadataRoute } from "next";
 
+/*
+ * Every page meant for search, and nothing else: a page set to noindex stays out. routes.test.ts
+ * holds this list to the pages in app/, so a slice that adds a page adds its line here.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: "https://ponzu.design/", changeFrequency: "weekly", priority: 1 },
@@ -7,6 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: "https://ponzu.design/download/mac", changeFrequency: "weekly", priority: 0.7 },
     { url: "https://ponzu.design/download/windows", changeFrequency: "weekly", priority: 0.7 },
     { url: "https://ponzu.design/download/linux", changeFrequency: "weekly", priority: 0.7 },
+    { url: "https://ponzu.design/pricing", changeFrequency: "monthly", priority: 0.8 },
     { url: "https://ponzu.design/privacy", changeFrequency: "yearly", priority: 0.2 },
   ];
 }

@@ -51,9 +51,10 @@ packages/
   client/    typed API client, live queries, the cloud canvas source
 ```
 
-Deleted at cutover: `apps/cli`, `packages/server`, `packages/mcp`, `packages/store`,
-`plugin/`, the marketplace manifests, and the `/gh`, `/local`, `/open`, `/share`
-and badge routes in `apps/web`.
+Deleted at cutover: `packages/store`, `packages/tools/src/local`, core's 1.x modules,
+`examples/`, and the `/gh`, `/local`, `/open`, `/share` and badge routes in `apps/web`.
+The 1.x command line, its local server and MCP packages, the agent plugin and the
+marketplace manifests are already gone from this branch.
 
 Where things run:
 
@@ -543,6 +544,15 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
 one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
+Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), one module per
+area. Other work that must outlive its request and start at once records its job held and runs
+it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
+(`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
+sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+others still run. A step runs every minute, once in every few minutes, or once an hour at a
+given minute. One on a slot runs once in it however many runs overlap, and catches up within
+five minutes when the run it was due in never came.
+
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
 
@@ -561,7 +571,27 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   with. The canvas's head shows `waking` at once, and `agent_blocker` says why a canvas waits:
   `claude_not_connected`, `claude_expired`, `claude_owner_left` (whose Claude it runs on is no
   longer in the workspace), `sandbox_busy` (Vercel limiting the pace, or past the limits below)
-  or `sandbox_failed`.
+  or `sandbox_failed`; and, from the wake gates below, `paused` (wakes paused while Ponzu
+  updates), `credits_used_up`, `cap_reached`, `payment_failed` (the workspace at a billing
+  limit) and `claude_limited` (the owner's plan at its limit). `agent_blocked_until` says until
+  when, when a gate knows; the `canvas.head` live query sends both.
+- **The wake gates** (`sandboxes/gates.ts`) are asked in order before the claim: `owner`,
+  `claude`, `maintenance`, `billing`, `claudeLimit`. The first that refuses sets `agent_blocker`
+  (and `agent_blocked_until` to the time it gave, if any), the rest are not asked, and the wake
+  is over, or, when the gate gave a time, the same wake job is tried again then. A turn already
+  running when `maintenance`, `billing` or `claudeLimit` refuses is left to finish, and the head
+  still says the agent works. A wake that
+  passes every gate lifts a gate's blocker the head still shows. When what a gate waited on
+  changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
+  everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
+  event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
+  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
+  until their features fill them. The runner's claim hands out only the kinds
+  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  neither claimed nor delivered. A person's message, answer or create asks the request gates
+  (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
+  be allowed and before anything is written; each lets everything through until its feature
+  fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -2260,6 +2290,14 @@ never completed. Previews replaced by later ones are deleted. A comment's pictur
 since it is uploaded before its comment is saved (and may never be): it is copied under
 `comments/` only when it is attached to a comment that exists and has no picture yet.
 
+A canvas's files can be deleted together: the job `canvas.files_delete`, keyed by the asset key,
+lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand keys at a time
+(DeleteObjects), up to 2,000 an attempt, coming back ten seconds later while more remain, for at
+most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
+any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
+anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
+bucket. Nothing records the job yet; deleting a canvas or an account will.
+
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
 ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
@@ -2662,15 +2700,22 @@ Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
 session and everything the studio kept: the canvases last opened and their asset keys.
 
-Links into the app (`apps/desktop/README.md`):
+Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
+`@ponzu/core/links`):
 
 ```
-ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
+ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usage&question=&comment=&message=&n=
 ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
+ponzu://billing/card?setup=<setup id>&result=added|cancelled
+ponzu://settings?section=usage|notifications|account
 ```
 
-A link only asks to show something; one that doesn't parse is dropped. A development
-build takes `ponzu-dev://` instead, so it never takes an installed app's links.
+A link only asks to show something; one that doesn't parse is dropped, and an optional
+part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`
+is read as the canvas link, for good. A development build takes `ponzu-dev://` instead,
+so it never takes an installed app's links. A ping carries ids only, as `PushData` v1
+(`@ponzu/core/push`), and a tap goes where `linkOfPush` says, through the same grammar.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
@@ -2740,7 +2785,9 @@ firewall's per-address rules cover reads and the public routes. Over the limit i
 `rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
 behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
 everywhere today, until its rules are applied. It fails open: a check that takes more than
-500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`.
+500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
+count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
+steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
 
 ## Analytics
 
@@ -2784,6 +2831,13 @@ sandbox"): a deployment lists, stops and removes only the names its own database
 begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
 deployment's runners call back; unset, it is production's address, so a dev deployment or a
 preview whose sandboxes must reach it sets it.
+
+A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
+the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
+`observe` or `on`), push (on when `EXPO_ACCESS_TOKEN` is set), email (on when `RESEND_API_KEY`
+is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
+and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
+push and email, so an app shows only what can work.
 
 ### Checking a deploy's sandboxes
 

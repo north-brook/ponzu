@@ -20,7 +20,7 @@ ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
-image img[Workspace: Personal] bryce.svg
+image img[Workspace: Personal] ada.svg
 text "Personal" rgb(244, 243, 239) 600 13px Inter
 icon svg[Workspace: Personal] 11×11 rgb(142, 138, 130) stroke 2.2px
 icon svg[Search] 16×16 rgb(183, 179, 169) stroke 1.7px

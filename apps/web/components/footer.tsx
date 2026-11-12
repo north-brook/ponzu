@@ -1,41 +1,26 @@
 import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import { Heart, Lockup } from "./icons";
-import { CONTRIBUTING, DOWNLOAD, IPHONE, LICENSE, PRIVACY, RELEASES, REPO, SDK } from "./links";
+import { FOOTER, type SiteLink } from "./links";
 
 /**
- * The site footer. Its sign-off is a sunrise drawn in the mark: a field of tiny slices with a huge
- * one rising from the bottom edge in yuzu. The field fades in from the top and holds still. The
- * legal line sits on clearings of the page's ground that feather into it (`.field-clear`). See
- * `.field` in globals.css.
+ * The site footer: the lockup, then the link columns (FOOTER in links.tsx). Its sign-off is a
+ * sunrise drawn in the mark: a field of tiny slices with a huge one rising from the bottom edge in
+ * yuzu. The field fades in from the top and holds still. The legal line sits on clearings of the
+ * page's ground that feather into it (`.field-clear`). See `.field` in globals.css.
  */
 export function Footer() {
   return (
     <footer className="mt-24 border-t border-rule pt-14">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-20 gap-y-10 max-md:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-x-20 gap-y-10 max-lg:gap-x-12 max-md:grid-cols-2">
         <div className="flex flex-col gap-4 max-md:col-span-2">
           <Lockup size={22} />
           <p className="m-0 max-w-[300px] text-[15px]/[25px] text-pretty text-muted">
             The open source canvas for your agent.
           </p>
         </div>
-        <FooterLinks
-          title="Product"
-          links={[
-            ["Download", DOWNLOAD],
-            ["Ponzu for iPhone", IPHONE],
-            ["Releases", RELEASES],
-            ["GitHub", REPO],
-            ["Privacy", PRIVACY],
-          ]}
-        />
-        <FooterLinks
-          title="Build"
-          links={[
-            ["React SDK", SDK],
-            ["Contributing", CONTRIBUTING],
-            ["MIT License", LICENSE],
-          ]}
-        />
+        {FOOTER.map(({ title, links }) => (
+          <FooterLinks key={title} title={title} links={links} />
+        ))}
       </div>
 
       <div className="relative -mx-16 mt-16 max-[720px]:-mx-5">
@@ -56,11 +41,11 @@ export function Footer() {
   );
 }
 
-function FooterLinks({ title, links }: { title: string; links: [string, string][] }) {
+function FooterLinks({ title, links }: { title: string; links: readonly SiteLink[] }) {
   return (
     <div className="flex flex-col gap-3 text-[15px]">
       <h3 className="m-0 text-[13px] font-medium text-faint">{title}</h3>
-      {links.map(([label, href]) => (
+      {links.map(({ label, href }) => (
         <a key={label} className="footer-link w-fit text-muted hover:text-ink" href={href}>
           {label}
         </a>

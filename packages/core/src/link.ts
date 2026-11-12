@@ -16,7 +16,7 @@
  * other Macs too, through Ponzu's relay. Without Tailscale there's no name and the link opens the
  * path on whichever Mac clicks it.
  *
- * The Mac app also takes `ponzu://open?repo=…` for a design on GitHub (@ponzu/server/clone).
+ * The Mac app also takes `ponzu://open?repo=…` for a design on GitHub (1.x's local server, its clone.ts).
  */
 
 import { type Doc, findArtboard } from "./doc.ts";

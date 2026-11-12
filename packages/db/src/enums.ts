@@ -63,6 +63,11 @@ export const SANDBOX_STATES = ["asleep", "waking", "awake", "stopping"] as const
  * owner's Claude is not connected, or has expired; its owner, whose Claude it runs on, is no
  * longer in its workspace; no machine can be started for now, so the wake is waiting (and
  * retrying by itself); or the sandbox failed to start for good.
+ *
+ * The wake gates (apps/api/src/sandboxes/gates.ts) add the rest: Ponzu has paused wakes while
+ * it updates (`paused`); the workspace has used its free credits with no card, reached its
+ * spend cap, or has a payment that didn't go through; or the owner's Claude plan is at its
+ * limit until `agent_blocked_until` (`claude_limited`).
  */
 export const AGENT_BLOCKERS = [
   "claude_not_connected",
@@ -70,6 +75,11 @@ export const AGENT_BLOCKERS = [
   "claude_owner_left",
   "sandbox_busy",
   "sandbox_failed",
+  "paused",
+  "credits_used_up",
+  "cap_reached",
+  "payment_failed",
+  "claude_limited",
 ] as const;
 /**
  * What uploaded bytes are for: a file of the canvas, a file a link reaches, the sidebar's

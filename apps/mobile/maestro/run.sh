@@ -9,6 +9,10 @@
 # SKIP_BUILD=1, then runs every flow (a JUnit report to MAESTRO_OUTPUT and
 # each flow's screenshots to MAESTRO_TEST_OUTPUT, if set). Fails if the
 # examples aren't left as they were found.
+#
+# The server is Ponzu 1.x, whose command line is no longer on this branch:
+# `bunx ponzu` (the package published from main) unless PONZU_CLI names
+# another command, such as the one in a checkout of main.
 set -euo pipefail
 
 UDID=${1:?simulator udid}
@@ -16,6 +20,7 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 MOBILE="$ROOT/apps/mobile"
 PONZU_PORT=${PONZU_PORT:-}
 METRO_PORT=${METRO_PORT:-}
+PONZU_CLI=${PONZU_CLI:-bunx ponzu}
 pids=()
 SCRATCH=$(mktemp -d -t ponzu-maestro)
 EXAMPLES="$ROOT/examples"
@@ -41,7 +46,7 @@ if [ -z "$PONZU_PORT" ]; then
   mkdir -p "$EXAMPLES"
   for design in halon kettle weft; do cp -R "$ROOT/examples/$design.design" "$EXAMPLES/"; done
   (cd "$SCRATCH" && PONZU_HOME="$SCRATCH/home" PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 \
-    exec bun "$ROOT/apps/cli/src/index.ts" serve \
+    exec $PONZU_CLI serve \
     "$EXAMPLES/halon.design" "$EXAMPLES/kettle.design" "$EXAMPLES/weft.design" --port "$PONZU_PORT") &
   pids+=($!)
 fi
