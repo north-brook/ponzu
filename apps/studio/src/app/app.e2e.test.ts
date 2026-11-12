@@ -20,6 +20,7 @@ import {
 } from "../../scripts/visual-lib.ts";
 import { nameFor } from "./create.tsx";
 import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
+import { KETTLE_IDEAS } from "./fake-host.ts";
 
 setDefaultTimeout(60_000);
 
@@ -211,13 +212,12 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // with the team Ready, the switcher is how they reach it.
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
     expect(await page.getByRole("button", { name: "Project: kettle" }).count()).toBe(1);
-    const idea = page.getByRole("button", { name: /Make checkout one page/ });
-    await idea.waitFor();
+    // Its ideas take turns as the composer's placeholder: Tab takes the one showing.
+    await page.locator("[data-suggestion]").waitFor();
     await shoot("5-fresh-start");
-    await idea.click();
-    expect(await page.getByPlaceholder(/Describe a screen/).inputValue()).toBe(
-      "Make checkout one page, with the order summary on the right",
-    );
+    const field = page.getByPlaceholder(/Describe a screen/);
+    await field.press("Tab");
+    expect(KETTLE_IDEAS).toContain(await field.inputValue());
   });
 
   test("Fresh start makes one design however often send is pressed, and opens it", async () => {

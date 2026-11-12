@@ -410,6 +410,43 @@
   animation: rise var(--dur-pop) var(--ease-out);
 }
 
+/* A suggestion taking its turn as the create composer's placeholder: it rises into place as the
+   one before it lifts away. Under reduced motion one is simply there after the other. */
+@keyframes suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+}
+
+@keyframes suggestion-out {
+  to {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+}
+
+@utility suggestion-in {
+  animation: suggestion-in calc(var(--dur-pane) * 2) var(--ease-out) both;
+}
+
+@utility suggestion-out {
+  animation: suggestion-out var(--dur-pane) var(--ease-out) both;
+}
+
+/* The canvas's ground at rest: faint dots a step apart, as design tools draw one. The canvas
+   draws its own under the boards, moving with its camera (the canvas package, --pz-dot); this
+   is the same ground where a canvas starts, on the create page. */
+@utility canvas-dots {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--c-canvas-dot) 0.9px,
+    transparent 1.15px
+  );
+  background-size: 24px 24px;
+  background-attachment: local;
+}
+
 /*
  * A line leaving the thread (a finished turn's asides, the working line): the room it held
  * closes and it fades, so what stays settles into place rather than jumping. Fully faded a

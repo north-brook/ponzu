@@ -14,11 +14,11 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { type Browser, chromiumPath, launch, type Page } from "../../scripts/visual-lib.ts";
 import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
+import { KETTLE_IDEAS } from "./fake-host.ts";
 
 setDefaultTimeout(240_000);
 
 const SHOTS = process.env.PONZU_SHOTS;
-const IDEA = "Make checkout one page, with the order summary on the right";
 
 describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", () => {
   let dir: string;
@@ -73,11 +73,13 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await page.getByText("What do you want to design?").waitFor();
     await page.getByRole("button", { name: "Workspace: Northbrook" }).click();
     await page.getByRole("menuitemradio", { name: "Personal" }).click();
-    const idea = page.getByRole("button", { name: new RegExp(IDEA.slice(0, 24)) });
-    await idea.waitFor();
+    // They take turns as the composer's placeholder; Tab takes the one showing.
+    await page.locator("[data-suggestion]").waitFor();
     await shoot("fresh-start", { dark: true });
-    await idea.click();
-    expect(await page.getByPlaceholder(/Describe a screen/).inputValue()).toBe(IDEA);
+    const field = page.getByPlaceholder(/Describe a screen/);
+    await field.press("Tab");
+    const IDEA = await field.inputValue();
+    expect(KETTLE_IDEAS).toContain(IDEA);
 
     // Send: the design opens straight into its thread, the message there and the agent waking,
     // never an empty design on the way.

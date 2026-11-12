@@ -227,6 +227,7 @@ export function CreateHarness({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [project, setProject] = useState(initialProject);
   const [model, setModel] = useState({ model: f.models[0]!.id, effort: "high" as Effort });
+  const dwell = Number(new URLSearchParams(location.search).get("dwell")) || 0;
   return (
     <CreatePage
       prompt={prompt}
@@ -245,6 +246,8 @@ export function CreateHarness({
       onProjectChange={setProject}
       onAllowMore={ignore}
       ideas={ideas}
+      // `?dwell=<ms>`: how long each suggestion shows, so a test needn't wait out the real one.
+      {...(dwell ? { suggestionDwellMs: dwell } : {})}
     />
   );
 }

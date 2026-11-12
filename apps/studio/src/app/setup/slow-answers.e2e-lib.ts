@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { rmSync } from "node:fs";
 import { type Browser, chromiumPath, launch, type Page } from "../../../scripts/visual-lib.ts";
 import { buildApp, serve, waitUntil } from "../e2e-lib.ts";
+import { KETTLE_IDEAS } from "../fake-host.ts";
 
 /** Every answer takes this long: slow enough that any wait in between would be drawn. */
 const LATENCY = 400;
@@ -71,8 +72,15 @@ function record() {
   requestAnimationFrame(look);
 }
 
+/**
+ * The screens seen so far, read on the next frame: what a wait just found in the page is drawn
+ * then, and the recorder, asked for that frame first, has seen it.
+ */
 const screens = (page: Page) =>
-  page.evaluate(() => (window as unknown as { screens: Screen[] }).screens.slice());
+  page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return (window as unknown as { screens: Screen[] }).screens.slice();
+  });
 
 /** Clears what was seen so far, keeping the screen on now as the first. */
 const mark = (page: Page) =>
@@ -240,8 +248,8 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
       });
       await page.getByRole("button", { name: "Start designing" }).click();
       await page.getByText("What do you want to design?").waitFor();
-      const idea = page.getByRole("list", { name: "Ideas" }).getByRole("button").first();
-      await idea.waitFor();
+      // The ideas, taking turns as the composer's placeholder.
+      await page.locator("[data-suggestion]").waitFor();
       await settle();
       expect(await screens(page)).toEqual(["iphone", "create"]);
       await actionsHeld(page);
@@ -249,9 +257,9 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         ...new Set((window as unknown as { composer: number[] }).composer),
       ]);
       expect(tops).toHaveLength(1);
-      const picked = await idea.textContent();
-      await idea.click();
-      expect(await page.getByPlaceholder(/Describe a screen/).inputValue()).toBe(picked!);
+      const field = page.getByPlaceholder(/Describe a screen/);
+      await field.press("Tab");
+      expect(KETTLE_IDEAS).toContain(await field.inputValue());
 
       // The title and the line under it stood still on every step.
       expect(await places(page)).toHaveLength(1);
