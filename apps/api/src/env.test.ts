@@ -383,9 +383,16 @@ test("a deployment that says both starts, and reports them", () => {
   expect(env.environment).toBe("dev");
   expect(env.sandbox.apiUrl).toBe("https://api-dev.ponzu.design");
   expect([...ENVIRONMENTS]).toEqual(["production", "dev", "preview", "local"]);
-  for (const name of ENVIRONMENTS) {
+  for (const name of ["production", "dev", "preview"] as const) {
     expect(readEnv({ ...complete, ...deployed, PONZU_ENVIRONMENT: name }).environment).toBe(name);
   }
+});
+
+test("on Vercel, a deployment never calls itself local", () => {
+  expect(problem({ ...complete, ...deployed, PONZU_ENVIRONMENT: "local" })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is local on Vercel, where it must be production, dev or preview.",
+  );
+  expect(readEnv({ ...complete, PONZU_ENVIRONMENT: "local" }).environment).toBe("local");
 });
 
 test("an environment it does not know is named and never quoted", () => {

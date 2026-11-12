@@ -274,6 +274,13 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     );
   }
   const env = parsed.data;
+  // `local` is a computer's: a deployment that calls itself local would be read as one by
+  // everything that reports or checks the environment.
+  if (env.VERCEL === "1" && env.PONZU_ENVIRONMENT === "local") {
+    throw new EnvError([
+      "PONZU_ENVIRONMENT is local on Vercel, where it must be production, dev or preview.",
+    ]);
+  }
   const vercel = vercelCredentials(env);
 
   let minimumClientVersions: MinimumVersions;

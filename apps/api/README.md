@@ -350,7 +350,10 @@ bunx vercel@latest deploy --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEA
 On Vercel, `PONZU_ENVIRONMENT` and `PONZU_API_URL` are required: a deployment without either
 stops at boot naming it (`EnvError`), rather than letting its runners call production's
 address. The project's Production target sets them (`dev` and its own address); a preview
-takes them from the Preview target, or from the command above. `/v1/health` answers which
+takes them from the Preview target, or from the command above. A preview shares dev's database,
+so its runners call dev's address: `https://api.ponzu.design` today, and
+`https://api-dev.ponzu.design` once production takes that domain, when the command above
+changes with it. `/v1/health` answers which
 environment a deployment is, its commit, the runner image and bundle it ships, and whether the
 database's applied migrations equal the journal it was built with (`degraded` at 200 when they
 do not).

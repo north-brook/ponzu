@@ -2896,7 +2896,7 @@ begins. The scope is a second wall behind the project.
 Every deployment says which environment it is and where its runners call back:
 `PONZU_ENVIRONMENT` (`production`, `dev`, `preview` or `local`) and `PONZU_API_URL`. On Vercel
 both are required, and a deployment missing either stops at boot with an error that names it,
-so no deployment falls back to production's address. Off Vercel they default to `local` and
+so no deployment falls back to production's address; one that says `local` stops too. Off Vercel they default to `local` and
 `https://api.ponzu.design`. `GET /v1/health`, public and given three seconds, reports what is
 deployed and where: `status`, `version`, `commit`, `environment`, `image` (the runner image,
 `ponzu-runner@sha256:…`), `runnerBundle` (the first 12 hex of the runner bundle's SHA-256),
