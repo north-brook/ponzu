@@ -16,6 +16,12 @@ export interface ShortcutOptions {
   /** ⇧ as well (⌘⇧↵); without it, a press with ⇧ is another shortcut's. */
   shift?: boolean;
   /**
+   * ⌥ as well (⌥⌘B); without it, a press with ⌥ is another shortcut's. The key is then read
+   * from where it sits on the keyboard, since ⌥ with a letter types a symbol on a Mac (⌥B is
+   * "∫").
+   */
+  alt?: boolean;
+  /**
    * Whether it may run now, asked at each press: when not, the key is left alone (not taken,
    * not counted), as if the shortcut weren't there.
    */
@@ -29,8 +35,12 @@ export interface ShortcutOptions {
 
 type Press = Pick<
   KeyboardEvent,
-  "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "isComposing" | "repeat"
+  "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "isComposing" | "repeat"
 >;
+
+/** The key a press is by its place on the keyboard: "KeyB" is "b", "Digit1" is "1". */
+const placed = (e: Press) =>
+  /^Key[A-Z]$/.test(e.code) || /^Digit[0-9]$/.test(e.code) ? e.code.slice(-1).toLowerCase() : null;
 
 /**
  * What a key press is to the shortcut on ⌘ (Ctrl off the Mac) plus `key`: not its own (null:
@@ -41,11 +51,12 @@ type Press = Pick<
 export function shortcutPress(
   e: Press,
   key: string,
-  { shift = false, when, once = false }: ShortcutOptions = {},
+  { shift = false, alt = false, when, once = false }: ShortcutOptions = {},
   seen: WeakSet<object> = pressed,
 ): "run" | "taken" | null {
-  if (!(e.metaKey || e.ctrlKey) || e.shiftKey !== shift || e.altKey) return null;
-  if (e.key.toLowerCase() !== key || e.isComposing) return null;
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey !== shift || e.altKey !== alt) return null;
+  const pressedKey = (alt ? placed(e) : null) ?? e.key.toLowerCase();
+  if (pressedKey !== key || e.isComposing) return null;
   if (when && !when()) return null;
   if (!once) return "run";
   if (e.repeat || seen.has(e)) return "taken";
@@ -53,20 +64,24 @@ export function shortcutPress(
   return "run";
 }
 
-/** A shortcut as `hotkey used` names it: "mod+p", "mod+shift+enter". */
-export const hotkeyName = (key: string, shift = false) => `mod+${shift ? "shift+" : ""}${key}`;
+/** A shortcut as `hotkey used` names it: "mod+p", "mod+shift+enter", "mod+alt+b". */
+export const hotkeyName = (key: string, shift = false, alt = false) =>
+  `mod+${alt ? "alt+" : ""}${shift ? "shift+" : ""}${key}`;
+
+/** A shortcut as `ranJustNow` knows it: its key, with "alt+" before it when ⌥ is part of it. */
+const ranName = (key: string, alt: boolean) => (alt ? `alt+${key}` : key);
 
 /**
  * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window, text fields
  * included: none of the app's take rich text, so no shortcut here shadows one of theirs. `key`
- * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",", "p", "enter". Each use is
+ * is the KeyboardEvent key, lowercase: "k", "n", "b", ",", "p", "enter". Each use is
  * counted (`hotkey used`, hotkeyName), and a press it takes does nothing else in the page.
  */
 export function useShortcut(
   key: string,
   handler: () => void,
   enabled = true,
-  { shift = false, when, once = false }: ShortcutOptions = {},
+  { shift = false, alt = false, when, once = false }: ShortcutOptions = {},
 ): void {
   const latest = useRef({ handler, when });
   latest.current = { handler, when };
@@ -74,27 +89,27 @@ export function useShortcut(
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      const press = shortcutPress(e, key, { shift, once, when: latest.current.when });
+      const press = shortcutPress(e, key, { shift, alt, once, when: latest.current.when });
       if (!press) return;
       e.preventDefault();
       if (press === "taken") return;
-      ran.set(key, performance.now());
+      ran.set(ranName(key, alt), performance.now());
       if (!counted.has(e)) {
         counted.add(e);
-        analytics.capture("hotkey used", { hotkey: hotkeyName(key, shift) });
+        analytics.capture("hotkey used", { hotkey: hotkeyName(key, shift, alt) });
       }
       latest.current.handler();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [key, enabled, analytics, shift, once]);
+  }, [key, enabled, analytics, shift, alt, once]);
 }
 
 /**
  * Whether a pane should stay as it is for now: a menu, popover or dialog is open over the window
  * (overlayOpen: a workspace menu anchored in the sidebar would float over nothing, a settings
  * sheet would hide the change), or a field in the pane that holds it (`data-holds-pane`: a
- * design's name being edited on its row) has focus. ⌘B, ⌘J and the menu's commands check it
+ * design's name being edited on its row) has focus. ⌘B, ⌥⌘B and the menu's commands check it
  * before they toggle.
  */
 export function paneHeld(pane: "sidebar" | "thread"): boolean {
@@ -104,7 +119,7 @@ export function paneHeld(pane: "sidebar" | "thread"): boolean {
 }
 
 /**
- * Whether the shortcut on `key` just ran. The desktop's menu carries the same accelerators; the
+ * Whether the shortcut on `key` just ran (`"alt+b"` for one with ⌥). The desktop's menu carries the same accelerators; the
  * page takes the key first and the shell's menu only what it leaves, but a menu command that
  * toggles something checks this, so one press can never toggle it twice.
  */

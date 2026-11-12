@@ -4,8 +4,10 @@ import { hotkeyName, jumpDigit, jumpNumber, jumpTarget, shortcutPress } from "./
 const press = (
   key: string,
   mods: Partial<Record<"meta" | "ctrl" | "alt" | "shift" | "repeat" | "composing", boolean>> = {},
+  code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key,
 ) => ({
   key,
+  code,
   metaKey: mods.meta ?? false,
   ctrlKey: mods.ctrl ?? false,
   altKey: mods.alt ?? false,
@@ -45,8 +47,24 @@ test("a shortcut that can't run now leaves the key alone; one that runs once run
   // Held down, the key repeats: taken, not run.
   const held = press("Enter", { meta: true, shift: true, repeat: true });
   expect(shortcutPress(held, "enter", once, seen)).toBe("taken");
-  // Without `once`, a held ⌘J toggles as it always did.
-  expect(shortcutPress(press("j", { meta: true, repeat: true }), "j")).toBe("run");
+  // Without `once`, a held ⌘B toggles as it always did.
+  expect(shortcutPress(press("b", { meta: true, repeat: true }), "b")).toBe("run");
+});
+
+test("⌥⌘B is the thread's and ⌘B the sidebar's: ⌥ tells them apart, whatever ⌥ makes the key type", () => {
+  const thread = { alt: true };
+  // On a Mac ⌥B types "∫": the key is read from its place on the keyboard.
+  expect(shortcutPress(press("∫", { meta: true, alt: true }, "KeyB"), "b", thread)).toBe("run");
+  expect(shortcutPress(press("b", { ctrl: true, alt: true }), "b", thread)).toBe("run");
+  // Each leaves the other's press alone.
+  expect(shortcutPress(press("b", { meta: true }), "b", thread)).toBeNull();
+  expect(shortcutPress(press("∫", { meta: true, alt: true }, "KeyB"), "b")).toBeNull();
+  // ⇧ as well, or another key in that place, is neither.
+  expect(
+    shortcutPress(press("ı", { meta: true, alt: true, shift: true }, "KeyB"), "b", thread),
+  ).toBeNull();
+  expect(shortcutPress(press("√", { meta: true, alt: true }, "KeyV"), "b", thread)).toBeNull();
+  expect(hotkeyName("b", false, true)).toBe("mod+alt+b");
 });
 
 const key = (

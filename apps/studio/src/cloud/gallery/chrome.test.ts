@@ -1,6 +1,6 @@
 /*
  * The window's chrome and panes in a real Chromium, frame by frame: the sidebar and the rail
- * open and close on one clock, the chrome over them moves on it too, ⌘B and ⌘J work from
+ * open and close on one clock, the chrome over them moves on it too, ⌘B and ⌥⌘B work from
  * anywhere, and a click never leaves a ring. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
@@ -273,7 +273,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     }
   });
 
-  test("⌘B toggles the sidebar from the window and from a composer, ⌘J the rail", async () => {
+  test("⌘B toggles the sidebar from the window and from a composer, ⌥⌘B the rail", async () => {
     await open("thread-in-the-right-rail");
     const expanded = (s: string) => page.getAttribute(s, "aria-expanded");
     expect(await expanded(SIDEBAR)).toBe("true");
@@ -286,19 +286,19 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     expect(await page.inputValue("#thread textarea")).toBe("Make it");
     await page.keyboard.press("Control+b");
     expect(await expanded(SIDEBAR)).toBe("false");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(THREAD)).toBe("false");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(THREAD)).toBe("true");
   });
 
-  test("⌘B and ⌘J leave the panes alone under a menu, and while a row's name is edited", async () => {
+  test("⌘B and ⌥⌘B leave the panes alone under a menu, and while a row's name is edited", async () => {
     await open("team-sidebar");
     const expanded = (s: string) => page.getAttribute(s, "aria-expanded");
     await page.click('#sidebar button[aria-label^="Workspace:"]');
     await page.waitForSelector("[role=menu]");
     await page.keyboard.press("Meta+b");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(SIDEBAR)).toBe("true");
     expect(await expanded(THREAD)).toBe("true");
     expect(await page.$("[role=menu]")).not.toBeNull();
@@ -410,7 +410,16 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     // A click on a control that keeps its focus (a design's row), then shortcuts, Return and
     // the modifiers: quiet throughout, and no tip.
     await page.click('#sidebar [data-design-row="dsn_pricing"]');
-    for (const key of ["Meta", "Alt", "Meta+j", "Meta+j", "Meta+b", "Meta+b", "Enter", "Space"]) {
+    for (const key of [
+      "Meta",
+      "Alt",
+      "Meta+Alt+b",
+      "Meta+Alt+b",
+      "Meta+b",
+      "Meta+b",
+      "Enter",
+      "Space",
+    ]) {
       await page.keyboard.press(key);
       expect(await rings()).toEqual([]);
     }

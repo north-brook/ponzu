@@ -610,13 +610,13 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // into the thread to take back the draft.
     await page.keyboard.press("Meta+z");
     expect(await draft.inputValue()).toBe("Half typed");
-    // ⌘J closes and opens the thread on this tab as on any other, and the draft survives.
+    // ⌥⌘B closes and opens the thread on this tab as on any other, and the draft survives.
     const threadShown = () =>
       page.locator('button[aria-controls="thread"]').getAttribute("aria-expanded");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await waitUntil(async () => (await threadShown()) === "false");
     expect(await page.getByRole("heading", { name: NAME }).count()).toBe(1);
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await waitUntil(async () => (await threadShown()) === "true");
     await rail().getByPlaceholder("Steer, or ask more").waitFor();
     expect(await rail().getByPlaceholder("Steer, or ask more").inputValue()).toBe("Half typed");

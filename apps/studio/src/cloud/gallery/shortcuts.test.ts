@@ -309,10 +309,12 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
 
   test("⌘ tapped for another shortcut never shows them, and another key hides them at once", async () => {
     await open("shortcuts");
-    // ⌘J and ⌘K, the way people press them: ⌘ down, the letter within the delay.
-    for (const letter of ["j", "KeyK"]) {
+    // ⌥⌘B and ⌘K, the way people press them: ⌘ down, then (⌥ and) the letter within the delay.
+    for (const keys of [["Alt", "KeyB"], ["KeyK"]]) {
       const frames = await recordHold(mod, 120, async () => {
-        await page.keyboard.press(letter);
+        for (const key of keys.slice(0, -1)) await page.keyboard.down(key);
+        await page.keyboard.press(keys.at(-1)!);
+        for (const key of keys.slice(0, -1)) await page.keyboard.up(key);
         await wait(400);
         await page.keyboard.up(mod);
       });
