@@ -11,6 +11,7 @@ import {
   workspaceWithRepo,
 } from "../../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../../testing/index.ts";
+import { UPLOAD_SECONDS } from "../../uploads/uploads.ts";
 import { CRON_STEPS, runCronSteps } from "../steps.ts";
 import {
   ARCHIVES_HOUR,
@@ -262,11 +263,15 @@ describe("the orphan archive sweep", () => {
   test("an archive uploaded too long ago is not recorded, so the sweep can never race a checkpoint", async () => {
     const { runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const late = await archive(runner, "session", "kept back");
-    // Its address lasted ten minutes; twelve hours after that, it is refused.
-    t.clock.advance(10 * 60_000 + ARCHIVE_RECORD_HOURS * HOUR + 1);
+    // Its address lasted its upload's lifetime; twelve hours after that, it is refused.
+    const lifetime = UPLOAD_SECONDS * 1000;
+    t.clock.advance(lifetime + ARCHIVE_RECORD_HOURS * HOUR + 1);
     const refused = await checkpoint(runner, 1, { session: late.id });
     expect(refused.status).toBe(404);
-    expect(ARCHIVE_RECORD_HOURS * HOUR + 10 * 60_000).toBeLessThan(ORPHAN_AGE_MS);
+    // The latest an archive can be recorded, counted from when its bytes were written, is
+    // inside the age the sweep waits for, with hours to spare for clock drift: if the upload
+    // lifetime, the window or the age moves, this says so.
+    expect(lifetime + ARCHIVE_RECORD_HOURS * HOUR + 6 * HOUR).toBeLessThan(ORPHAN_AGE_MS);
     // One just inside the window is recorded.
     const fresh = await archive(runner, "session", "on time");
     t.clock.advance(ARCHIVE_RECORD_HOURS * HOUR);
