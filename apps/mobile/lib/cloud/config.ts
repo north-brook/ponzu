@@ -37,7 +37,8 @@ export const DEV_API_URL = "https://api-dev.ponzu.design";
 export function apiUrlOf(cfg: Pick<CloudConfig, "apiUrl" | "variant">): string {
   if (!cfg.apiUrl) {
     throw new Error(
-      `EXPO_PUBLIC_PONZU_API_URL is empty: a ${cfg.variant} build must name its API.`,
+      `EXPO_PUBLIC_PONZU_API_URL is empty: a ${cfg.variant} build must name its API. ` +
+        "For Ponzu Dev, build or serve with APP_VARIANT=dev.",
     );
   }
   return cfg.apiUrl;

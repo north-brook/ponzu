@@ -422,8 +422,9 @@ and read where a screen sends the app from its calls.
 
 A development client of Ponzu Dev for a registered phone comes from EAS
 (`APP_VARIANT=dev eas build --profile development --platform ios`), signed
-with the team's certificates; then `bunx expo start --dev-client` from
-`apps/mobile`. Rebuild after any native change: a native dependency, a config
+with the team's certificates; then `APP_VARIANT=dev bunx expo start
+--dev-client` from `apps/mobile`. Without `APP_VARIANT=dev` the dev server
+serves the production variant, which names no API and stops at launch. Rebuild after any native change: a native dependency, a config
 plugin, `app.json`'s `ios` section, a font. Every native change ships in one
 batch (the fingerprint decides between an update and a build); this one added
 expo-secure-store, expo-web-browser, expo-crypto, expo-clipboard,
