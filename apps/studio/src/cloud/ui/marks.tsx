@@ -3,6 +3,7 @@
  * canvas's AgentMark.
  */
 import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
+import { LOCKUP, WORDMARK } from "@ponzu/core/wordmark";
 import { cn } from "./cn.ts";
 
 export { AgentMark } from "@ponzu/canvas/icons";
@@ -42,6 +43,47 @@ export function Slice({
           <path key={d} d={d} />
         ))}
       </g>
+    </svg>
+  );
+}
+
+/**
+ * Ponzu's lockup in `currentColor`: the slice beside the lowercase word, as the site draws it.
+ * `size` is the word's font size; the drawing is 1.18 of it tall. The word is a path, since the
+ * app ships its display face at 600 and the lockup's is bold.
+ */
+export function Lockup({
+  size,
+  label,
+  className,
+}: {
+  size: number;
+  label?: string;
+  className?: string;
+}) {
+  const { slice, word } = LOCKUP;
+  return (
+    <svg
+      width={(LOCKUP.width * size) / 100}
+      height={(LOCKUP.height * size) / 100}
+      viewBox={LOCKUP.viewBox}
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      className={cn("shrink-0", className)}
+    >
+      <g
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={SLICE_STROKE}
+        strokeLinejoin="round"
+        transform={`translate(${slice.x} ${slice.y}) scale(${slice.scale})`}
+      >
+        {SLICE.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </g>
+      <path fill="currentColor" transform={`translate(${word.x} 0)`} d={WORDMARK} />
     </svg>
   );
 }
