@@ -2,7 +2,14 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { jobs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { claimJobs, completeJob, enqueueJob, failAbandonedJobs, failJob } from "./jobs.ts";
+import {
+  claimJobs,
+  completeJob,
+  enqueueJob,
+  failAbandonedJobs,
+  failJob,
+  recordOnce,
+} from "./jobs.ts";
 
 // Claiming takes whatever is due, so each test gets a queue of its own.
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -182,4 +189,18 @@ test("a job whose worker died on its last attempt is closed by the sweep", async
   expect(await enqueueJob(db, { kind: "wake", key: "cnv_1" })).not.toBeNull();
   // The worker that died comes back and cannot finish what was closed without it.
   expect(await completeJob(db, { id: job!.id, worker: "w1" })).toBe(false);
+});
+
+test("something recorded once is refused after, at once or later, and is never claimed", async () => {
+  const slot = { kind: "cron.step", key: "selfcheck@2026-11-12T10:00:00.000Z" };
+  const [first, second] = await Promise.all([recordOnce(db, slot), recordOnce(db, slot)]);
+  expect([first, second].sort()).toEqual([false, true]);
+  expect(await recordOnce(db, slot)).toBe(false);
+  // Another window, or another kind, is its own.
+  expect(await recordOnce(db, { ...slot, key: "selfcheck@2026-11-12T11:00:00.000Z" })).toBe(true);
+  expect(await recordOnce(db, { ...slot, kind: "other" })).toBe(true);
+  // Recorded as done: nothing runs it, and it does not stand in the way of a job of that key.
+  expect(await claimJobs(db, { worker: "cron" })).toEqual([]);
+  expect(await failAbandonedJobs(db)).toEqual([]);
+  expect(await enqueueJob(db, slot)).not.toBeNull();
 });
