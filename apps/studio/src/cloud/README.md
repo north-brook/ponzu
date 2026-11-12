@@ -406,21 +406,34 @@ repaint something or say what isn't so. The usual swaps:
   skeleton, never saying Scratch before it knows.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics, each titled `owner/name` with the owner quieter (no owner heading, no line under
-  Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's dashed-folder icon
-  from `ui/project-icons.ts`, the one place both projects' icons are set. It lists every repo
-  the person can push to in every usable workspace: the window's first (pushed-to lately
-  first), then each other workspace's in the switcher's order, as their answers arrive (the
-  same workspace query, one per workspace, through `useQueries` in `app/main-window.tsx`; one
-  that fails is left out). They join at the list's foot, so the rows under the pointer stay;
-  whether the picker has a search is settled as it opens, and it has one while repos are still
-  to come. Search matches anywhere in `owner/name`. Choosing another workspace's repo switches
-  the window to that workspace with its create page open and the repo chosen, handing the
-  words, images and picked idea over (`CreateHandoff` in `app/create.tsx`) in the same render.
-  Allow more on GitHub acts for the window's workspace. Its composition masks the picker and
-  says so in `compare`. The picker never moves the page: its list shows five and a half rows and
-  scrolls, and in a window too short even for that the list gives up height and the picker
-  stays under its selector. A name cut short shows whole in a tip past the picker's right edge,
-  or its left where the window has no room on the right.
+  Scratch), and Scratch's dashed-folder icon from `ui/project-icons.ts`, the one place both
+  projects' icons are set. With one workspace it is Scratch, then the repos the person can push
+  to, pushed-to lately first, with no heading. With several (at the founder's direction: Scratch
+  in any of them), it is a group for each usable workspace, the window's first and then the
+  others in the switcher's order: the workspace's name as a menu's section label (shadcn's
+  command group, `CommandGroup` in `ui/command.tsx`, whose heading is `menuLabelClass`, the
+  menus' rule between groups), its own Scratch, then its repos (`pickerGroups` in
+  `create/create.ts`). The headings and Scratch rows come with `me`, so they show at once; a
+  workspace's repos come from the same workspace query, one per workspace, through `useQueries`
+  in `app/main-window.tsx`, and join its group when they arrive. One that fails still offers its
+  Scratch. An open list never moves under the pointer: only the last group's repos join while
+  it is open, at the foot (a placeholder row keeps their place); any other group keeps what it
+  had as the picker opened, and repos that arrive meanwhile show the next time it opens
+  (`heldWhileOpen`). The list has a search whenever it would scroll, counting headings and the
+  rules between groups (`listHeight`, `searchAtOpening`), or while the last group's repos are
+  still to come, settled as it opens. Search matches anywhere in `owner/name`, "scratch" finds
+  every Scratch, and with several workspaces a workspace's name finds its Scratch and its repos;
+  a heading shows only over a group with a match. The arrows move over the rows and pass the
+  headings by, which name their groups for assistive tech. Choosing another workspace's Scratch
+  or repo switches the window to that workspace with its create page open and that project
+  chosen, handing the words, images and picked idea over (`CreateHandoff` in `app/create.tsx`)
+  in the same render. The selector then reads Scratch (the sidebar says whose) and its label
+  says it, `Project: Scratch in Lenny Learning`. Allow more on GitHub acts for the window's
+  workspace. Its composition masks the picker and says so in `compare`. The picker never moves
+  the page: its list shows five and a half rows and scrolls, and in a window too short even for
+  that the list gives up height and the picker stays under its selector. A name cut short shows
+  whole in a tip past the picker's right edge, or its left where the window has no room on the
+  right.
 
 ### When you need
 

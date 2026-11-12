@@ -325,37 +325,53 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByText("What do you want to design?").waitFor();
   });
 
-  test("the create page's picker lists both workspaces' repos; one of the other's switches the window there in one step", async () => {
+  test("the create page's picker groups both workspaces; the other's repo or Scratch switches the window there in one step", async () => {
     const selector = page.locator("[data-project-selector]");
     await selector.click();
     const options = page.getByRole("option");
-    // Northbrook's first, then Personal's, each by its full name.
-    await waitUntil(async () => (await options.count()) === 4);
+    // Northbrook's group first, then Personal's, each its Scratch and its repos by full name.
+    await waitUntil(async () => (await options.count()) === 5);
+    // Each group is named by its heading, which is not an option.
     expect(await options.allTextContents()).toEqual([
       "Scratch",
       "north-brook/ponzu",
       "north-brook/site",
+      "Scratch",
       "maya/kettle",
     ]);
+    for (const [name, rows] of [
+      ["Northbrook", ["Scratch", "north-brook/ponzu", "north-brook/site"]],
+      ["Personal", ["Scratch", "maya/kettle"]],
+    ] as const) {
+      const group = page.getByRole("group", { name, exact: true });
+      expect(await group.getByRole("option").allTextContents()).toEqual([...rows]);
+    }
     await page.keyboard.press("Escape");
     const field = page.getByPlaceholder(/Describe a screen/);
-    await field.fill("A kettle that whistles");
-    // Every name the selector shows from here on: no other repo, nor Scratch, on the way.
-    await page.evaluate(() => {
-      const seen: string[] = [];
-      (window as { selectorSaid?: string[] }).selectorSaid = seen;
-      const note = () => {
-        const label = document.querySelector("[data-project-selector]")?.getAttribute("aria-label");
-        if (label && seen.at(-1) !== label) seen.push(label);
-      };
-      note();
-      new MutationObserver(note).observe(document.body, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ["aria-label"],
+    // Every name the selector shows from here on: no other project on the way to the one chosen.
+    const watchSelector = () =>
+      page.evaluate(() => {
+        const seen: string[] = [];
+        (window as { selectorSaid?: string[] }).selectorSaid = seen;
+        const note = () => {
+          const label = document
+            .querySelector("[data-project-selector]")
+            ?.getAttribute("aria-label");
+          if (label && seen.at(-1) !== label) seen.push(label);
+        };
+        note();
+        new MutationObserver(note).observe(document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["aria-label"],
+        });
       });
-    });
+    const selectorSaid = () =>
+      page.evaluate(() => (window as { selectorSaid?: string[] }).selectorSaid);
+
+    await field.fill("A kettle that whistles");
+    await watchSelector();
     await selector.click();
     await page.getByRole("option", { name: "maya/kettle" }).click();
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
@@ -363,8 +379,26 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await field.inputValue()).toBe("A kettle that whistles");
     // The create page, not the design last open there.
     await page.getByText("What do you want to design?").waitFor();
-    const said = await page.evaluate(() => (window as { selectorSaid?: string[] }).selectorSaid);
-    expect(said?.slice(1)).toEqual(["Project: maya/kettle"]);
+    expect((await selectorSaid())?.slice(1)).toEqual(["Project: maya/kettle"]);
+
+    // Back to the team, and from there Personal's Scratch: the window switches with Scratch
+    // chosen, never showing a repo or Northbrook's choice on the way.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page.getByRole("button", { name: "Project: north-brook/ponzu" }).waitFor();
+    await field.fill("A kettle in the dark");
+    await watchSelector();
+    await selector.click();
+    await page
+      .getByRole("group", { name: "Personal" })
+      .getByRole("option", { name: "Scratch" })
+      .click();
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
+    await page.getByRole("button", { name: "Project: Scratch in Personal" }).waitFor();
+    expect(await selector.textContent()).toBe("Scratch");
+    expect(await field.inputValue()).toBe("A kettle in the dark");
+    await page.getByText("What do you want to design?").waitFor();
+    expect((await selectorSaid())?.slice(1)).toEqual(["Project: Scratch in Personal"]);
 
     // Back to the team for what follows.
     await page.getByRole("button", { name: "Workspace: Personal" }).click();

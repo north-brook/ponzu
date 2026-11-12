@@ -184,6 +184,20 @@ export const BOARDS: Record<string, () => ReactNode> = {
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} />
     </Harness>
   ),
+  "pick-a-project-workspaces-loading": () => (
+    <Harness designs={f.soloDesigns} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} later />
+    </Harness>
+  ),
+  "pick-a-project-three-workspaces": () => (
+    <Harness
+      designs={f.soloDesigns}
+      openId={null}
+      workspaces={[f.northbrook, f.lennyLearning, f.personal]}
+    >
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.threeShelves} />
+    </Harness>
+  ),
   "fresh-start-long-name": () => (
     <Harness designs={f.soloDesigns} openId={null}>
       <CreateHarness

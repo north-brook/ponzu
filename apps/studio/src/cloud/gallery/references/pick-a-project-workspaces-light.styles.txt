@@ -88,6 +88,7 @@ ground div[Choose a repo] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 
 text "Choose a repo" rgb(17, 17, 16) 400 13px Inter
 icon svg[Choose a repo] 14×14 rgb(128, 124, 115) stroke 1.9px
 ground div[Choose a repo] rgb(232, 230, 224)
+text "Northbrook" rgb(169, 165, 155) 600 11px Inter
 icon svg[Scratch] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Scratch" rgb(17, 17, 16) 400 13px Inter
 ground div[north-brook/fernwood] rgba(17, 17, 16, 0.05)
@@ -108,6 +109,10 @@ icon svg[north-brook/fablefuel] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "north-brook" rgb(169, 165, 155) 400 13px Inter
 text "/" rgb(169, 165, 155) 400 13px Inter
 text "fablefuel" rgb(17, 17, 16) 400 13px Inter
+ground div[Repositories] rgb(232, 230, 224)
+text "Lenny Learning" rgb(169, 165, 155) 600 11px Inter
+icon svg[Scratch] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "Scratch" rgb(17, 17, 16) 400 13px Inter
 icon svg[lennylearning/app] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "lennylearning" rgb(169, 165, 155) 400 13px Inter
 text "/" rgb(169, 165, 155) 400 13px Inter

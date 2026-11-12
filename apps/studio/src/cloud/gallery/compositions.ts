@@ -140,7 +140,7 @@ export const COMPOSITIONS: Composition[] = [
     // The board's picker (under the composer) and ours (under the header's selector).
     masks: [{ x: 530, y: 380, width: 700, height: 420 }],
     differs:
-      "the project selector is in the header beside the logo, not a chip under the composer; the picker's rows are one line titled owner/name (no note under them, no owner heading) across every workspace, the search shows from five repos over a list of five and a half rows, and Scratch has the dashed-folder icon",
+      "the project selector is in the header beside the logo, not a chip under the composer; the picker's rows are one line titled owner/name (no note under them, no owner heading), grouped under each workspace's name with its own Scratch when there are several, the search shows whenever the list of five and a half rows would scroll, and Scratch has the dashed-folder icon",
     reference: true,
   },
   {
@@ -169,6 +169,23 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
     open: 'button[aria-label^="Project"]',
     reference: true,
+  },
+  {
+    // Lenny Learning's heading and Scratch are there at once; its repos haven't arrived. Its
+    // group is under the fold, so the picture would be pick-a-project-workspaces': the styles
+    // hold its heading, its Scratch and the place kept for its repos.
+    id: "pick-a-project-workspaces-loading",
+    title: "Pick a project · two workspaces, the second's repos still coming",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+    reference: "styles",
+  },
+  {
+    // For the tests: which workspace's late repos join an open list (`?later`).
+    id: "pick-a-project-three-workspaces",
+    title: "Pick a project · three workspaces",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
   },
   {
     id: "fresh-start-long-name",
