@@ -1,30 +1,29 @@
-appId: design.ponzu.app
+appId: design.ponzu.app.dev
 ---
 # The development client, onto this checkout's JavaScript from Metro
 # (DEV_CLIENT: exp+ponzu://expo-development-client/?url=<Metro, encoded>).
-# Its menu shows on a first open; close it. Then Designs, once a Mac answers.
-# The microphone and speech recognition are refused up front, so a comment
-# sheet in voice says so and offers typing, with no system prompt in the way.
+# Its menu shows on a first open; close it. The microphone and speech
+# recognition are refused up front, so no system prompt gets in the way.
 - launchApp:
     permissions:
       microphone: deny
       speech: deny
-# A fresh simulator confirms the first link into an app ("Open in “Ponzu”?",
-# curly quotes, so `.` matches them); the alert outlives the app and blocks
-# every later flow. The launcher can miss a link that lands while it starts,
-# so a link that loads nothing is sent again.
+# A fresh simulator confirms the first link into an app ("Open in “Ponzu
+# Dev”?", curly quotes, so `.` matches them); the alert outlives the app and
+# blocks every later flow. The launcher can miss a link that lands while it
+# starts, so a link that loads nothing is sent again.
 - retry:
     maxRetries: 2
     commands:
       - openLink: ${DEV_CLIENT}
       - runFlow:
           when:
-            visible: "Open in .Ponzu.\\?"
+            visible: "Open in .Ponzu Dev.\\?"
           commands:
             - tapOn: Open
       - extendedWaitUntil:
           visible:
-            id: "(launch|designs|xmark)"
+            id: "(launch|sign-in|canvases|xmark)"
           timeout: 60000
 - runFlow:
     when:
@@ -33,14 +32,3 @@ appId: design.ponzu.app
     commands:
       - tapOn:
           id: xmark
-- openLink: ponzu://designs
-# iOS asks again for each scheme: this one is ponzu://.
-- runFlow:
-    when:
-      visible: "Open in .Ponzu.\\?"
-    commands:
-      - tapOn: Open
-- extendedWaitUntil:
-    visible:
-      id: designs
-    timeout: 60000

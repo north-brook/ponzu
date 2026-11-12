@@ -1,8 +1,8 @@
 name: Shared code
 
-# The phone bundles code from outside apps/mobile: packages/core, and the
-# canvas and icons import packages/canvas's and packages/render's source by
-# path. Release Please releases the phone only for changes under
+# The phone bundles code from outside apps/mobile: packages/core and
+# packages/client, and the canvas and icons import packages/canvas's and
+# packages/render's source by path. Release Please releases the phone only for changes under
 # apps/mobile, so a fix in those packages alone would wait for the next
 # phone release. This publishes main as an over-the-air update on the
 # production channel whenever they change. It never builds: an update whose
@@ -14,6 +14,7 @@ on:
     branches: [main]
     paths:
       - packages/core/**
+      - packages/client/**
       - packages/canvas/**
       - packages/render/**
       # Bun's patches to the phone's native dependencies.

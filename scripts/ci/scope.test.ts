@@ -72,6 +72,12 @@ test("it still runs neither once the apps take its route types through the clien
   });
 });
 
+test("the client and core the phone runs run the phone", () => {
+  for (const file of ["packages/client/src/session.ts", "packages/core/src/replica.ts"]) {
+    expect(suites(file).mobile).toBe(true);
+  }
+});
+
 test("the 1.x packages kept until cutover run neither", () => {
   // Nothing either app bundles depends on them now that the CLI and its npm package are gone,
   // and "Tests" runs their tests on every pull request.
