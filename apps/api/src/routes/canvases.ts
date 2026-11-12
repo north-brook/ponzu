@@ -35,8 +35,9 @@ import {
   touchPresence,
 } from "@ponzu/db";
 import { MAX_TEXT, type Notice } from "@ponzu/runner/protocol";
-import { Hono } from "hono";
+import { Hono, type TypedResponse } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { stream } from "hono/streaming";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type CanvasGrant, requireCanvas, requireWorkspace } from "../auth/authorize.ts";
@@ -190,7 +191,15 @@ const MAX_COMMIT_BODY_BYTES = MAX_COMMIT_BYTES + 4096;
  */
 const OPS_PAGE_BYTES = MAX_COMMIT_BYTES;
 
-const DocView = z.object({ doc: z.custom<Doc>(), seq: z.number() });
+/**
+ * What `GET /doc` answers. It is not parsed on the way out: the document is the API's own,
+ * built by applyOp from checkpoints and ops it wrote, and parsing a canvas of many MB on every
+ * read buys nothing. The route test parses the answer instead.
+ */
+type DocView = { doc: Doc; seq: number };
+
+/** How much of `GET /doc`'s JSON text each write of its stream carries. */
+export const DOC_SLICE_BYTES = 256 * 1024;
 const OpsView = z.object({ ops: z.array(z.custom<CommittedOp>()), seq: z.number() });
 const CommitView = z.object({
   committed: z.array(z.custom<CommittedOp>()),
@@ -484,12 +493,28 @@ export const canvases = new Hono<AppEnv>()
     return c.json(await viewOf(deps, { ...grant, canvas: taken }));
   })
 
-  /** The whole document, as of `seq`. */
+  /**
+   * The whole document, as of `seq`, streamed: the JSON text of `{ doc, seq }` in slices of
+   * `DOC_SLICE_BYTES`. A Vercel function may send at most 4.5 MB in one answer, but the limit
+   * does not apply to a streamed one, so a canvas of any size can be read. A client reads it
+   * with `response.json()` as before. Whatever can refuse (access, a missing canvas) is
+   * decided before the first byte, so a refusal is still the one error body.
+   */
   .get("/:id/doc", access.userOrRunner, validate("param", Params), async (c) => {
     const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
     const current = await readCurrentDoc(c.var.deps, canvas.id);
     if (!current) throw new ApiError(404, "not_found", "There is no such canvas.");
-    return c.json(DocView.parse({ doc: current.doc, seq: current.seq }));
+    const view: DocView = { doc: current.doc, seq: current.seq };
+    const body = new TextEncoder().encode(JSON.stringify(view));
+    c.header("content-type", "application/json; charset=UTF-8");
+    const streamed = stream(c, async (out) => {
+      for (let at = 0; at < body.byteLength && !out.aborted; at += DOC_SLICE_BYTES) {
+        await out.write(body.subarray(at, at + DOC_SLICE_BYTES));
+      }
+    });
+    // A stream is untyped to Hono's client; this one is the JSON of a DocView, so say so, and
+    // `api.canvases.doc` keeps its type.
+    return streamed as typeof streamed & TypedResponse<DocView, 200, "json">;
   })
 
   /**

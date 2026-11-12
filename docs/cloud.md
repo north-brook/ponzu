@@ -410,8 +410,13 @@ checkpoint after every 64 ops or 256 KB of op payload.
 
 A page of ops holds at most 500 ops and 3 MB of them (always at least one), so the
 answer fits in what a Vercel function may send; when the last op is below `seq`, ask
-again from there. `GET /doc` has no such bound yet: before canvases grow past a few
-MB it must stream, or hand out a checkpoint served from R2.
+again from there. `GET /doc` streams instead: it writes the JSON text of `{ doc, seq }`
+in 256 KB slices, and Vercel's 4.5 MB limit does not apply to a streamed answer, so a
+canvas of any size can be read in one request. A client reads it with `response.json()`
+like any other answer. A refusal (no access, no such canvas) is decided before the first
+byte and is the usual error body. The function still builds the whole document in memory
+first, so its memory, not the answer's size, is what bounds a canvas; handing out a
+checkpoint served from R2 is the way past that if canvases ever grow that large.
 
 ### The replica
 
