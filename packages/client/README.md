@@ -10,7 +10,7 @@ a browser and Hermes.
 | `@ponzu/client` | `createSession`, sign-in, `createApi`, `createLive`, the row types and sorting |
 | `@ponzu/client/react` | `LiveProvider`, `useLiveQuery`, `useSessionState`, `useRepoIdeas` |
 | `@ponzu/client/query` | TanStack Query for what is asked by request: `createQueryClient`, `ponzuQueries`, `ponzuMutations`, `invalidateFromLive` |
-| `@ponzu/client/canvas` | `CloudSource`, wherever `@ponzu/canvas` runs (the studio, the phone's canvas web view) |
+| `@ponzu/client/canvas` | `CloudSource`, the canvas's source: in the studio, and on the phone's React Native side |
 | `@ponzu/client/testing` | `createFakeBackend`, `FakeClock`, `FakeRealtime`: all of the above in memory |
 
 ## Signing in
@@ -29,6 +29,11 @@ const started = await startSignIn({ workosClientId, redirectUri });   // { url, 
 const { code } = readRedirect(redirectUrl, started.state);
 await session.completeSignIn({ code, codeVerifier: started.codeVerifier });
 ```
+
+`startSignIn` goes to WorkOS's authorize page unless it is given an `authorizeUrl`. With a fake
+backend, point it at a local page that redirects straight back to
+`<scheme>://auth/callback?code=fake&state=…`, so the app's own browser and redirect handling
+run without an account.
 
 `session.getState()` is `loading`, `signed_out`, `signed_in` (with the user), `github_reauth`
 (sign in again to re-grant GitHub) or `too_old` (the API answered 426: offer the update);
@@ -135,11 +140,23 @@ it storage meant for size (a file), not the keychain.
 
 ## On the phone
 
+Everything networked runs on the React Native side, `CloudSource` included: the session, the
+API, live queries, TanStack Query and the canvas's replica. The canvas web view only draws what
+`CloudSource` hands it, so it holds no token and makes no API call, and pending edits survive
+iOS ending the web view's process in the background. `@ponzu/client/canvas` therefore imports
+`@ponzu/core` and never `@ponzu/canvas` or `@ponzu/render` (the `CanvasSource` and `CanvasState`
+interfaces are core's, and `@ponzu/canvas` re-exports them). `bundle.test.ts` fails if any entry
+reaches those packages, a type-only import included.
+
 Hermes has less than a browser. The app provides, before this package runs:
-`crypto.getRandomValues` (expo-crypto, for op ids), and passes `expo-crypto` to
-`startSignIn({ crypto })` and `createApi(session, { crypto })` for SHA-256. React Native already
-has `fetch`, `Headers`, `URLSearchParams`, `TextEncoder`, `queueMicrotask` and `WebSocket`.
-`structuredClone`, which the replica uses, is the canvas web view's, not Hermes's.
+`crypto.getRandomValues` (expo-crypto, for op ids) and `structuredClone` (which the replica and
+`CloudSource` use; Hermes lacks it, so the app installs a polyfill such as
+`@ungap/structured-clone`), and passes `expo-crypto` to `startSignIn({ crypto })` and
+`createApi(session, { crypto })` for SHA-256. React Native already has `fetch`, `Headers`,
+`URLSearchParams`, `TextEncoder`, `queueMicrotask` and `WebSocket`.
+
+That this package runs in Hermes is proven only by the bundle test so far, not by running it on
+a phone.
 
 ## Testing
 

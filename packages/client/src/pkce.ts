@@ -31,11 +31,16 @@ export interface SignInStart {
  * A new sign-in: its verifier, state and the WorkOS URL that goes straight to GitHub.
  * `redirectUri` is `http://127.0.0.1:<port>/auth/callback` on the Mac and
  * `ponzu://auth/callback` on the phone; WorkOS matches it exactly.
+ *
+ * `authorizeUrl` is WorkOS's unless given. A fake backend points it at a local page that
+ * redirects straight back with a code, so the app's real browser and redirect handling run
+ * with no account. The query is the same either way.
  */
 export async function startSignIn(opts: {
   workosClientId: string;
   redirectUri: string;
   crypto?: Randomness;
+  authorizeUrl?: string;
 }): Promise<SignInStart> {
   const crypto = opts.crypto ?? (globalThis.crypto as unknown as Randomness);
   const codeVerifier = encodeBase64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -50,7 +55,9 @@ export async function startSignIn(opts: {
     code_challenge: encodeBase64url(new Uint8Array(digest)),
     code_challenge_method: "S256",
   });
-  return { codeVerifier, state, url: `${WORKOS_AUTHORIZE}?${query}` };
+  // React Native's URL cannot edit a query, so the sign-in's is joined on as text.
+  const base = opts.authorizeUrl ?? WORKOS_AUTHORIZE;
+  return { codeVerifier, state, url: `${base}${base.includes("?") ? "&" : "?"}${query}` };
 }
 
 /** Why a redirect did not finish a sign-in. */

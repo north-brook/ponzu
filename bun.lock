@@ -278,7 +278,6 @@
       },
       "devDependencies": {
         "@ponzu/api": "workspace:*",
-        "@ponzu/canvas": "workspace:*",
         "@ponzu/runner": "workspace:*",
         "@tanstack/react-query": "^5.102.8",
         "@types/react": "^19.3.0",
