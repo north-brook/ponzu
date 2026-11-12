@@ -370,6 +370,34 @@ test("an answer in the wrong shape is rejected, not retried as unavailable", asy
   expect(thrown.status).toBeNull();
 });
 
+test("a ticket in the wrong shape is rejected and logged, not read as a success or a failed ping", async () => {
+  const malformed = [
+    { status: "ok" },
+    { status: "ok", id: 7 },
+    { status: "ok", id: `${DEVICE} quoted` },
+    { status: "queued", id: "r1" },
+    null,
+  ];
+  for (const ticket of malformed) {
+    logs = [];
+    answers.push(json(200, { data: [ticket] }));
+    const thrown = (await failure(make().send([ping(DEVICE)]))) as PushError;
+    expect(thrown).toBeInstanceOf(PushError);
+    expect(thrown.code).toBe("rejected");
+    expect(exposed(thrown)).not.toContain("xxxx");
+    expect(logs).toEqual([
+      {
+        level: "warn",
+        event: "push_request_failed",
+        call: "send",
+        failure: "rejected",
+        status: null,
+        expoCode: null,
+      },
+    ]);
+  }
+});
+
 test("receipts come back as a map, a missing id is not yet settled, and error words are dropped", async () => {
   answers.push(
     json(200, {

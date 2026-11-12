@@ -164,10 +164,10 @@ export function createExpoPush({ accessToken, clock, log, retryMinTimeout }: Exp
         throw new RangeError(`Push sends at most ${PUSH_SEND_LIMIT} messages at once.`);
       }
       if (messages.length === 0) return [];
-      const tickets = await call("send", () =>
-        expo.sendPushNotificationsAsync(messages.map(toExpo)),
+      // Read inside `call`, so a ticket in the wrong shape fails as `rejected` and is logged.
+      return call("send", async () =>
+        (await expo.sendPushNotificationsAsync(messages.map(toExpo))).map(fromTicket),
       );
-      return tickets.map(fromTicket);
     },
     async receipts(ids) {
       if (ids.length > PUSH_RECEIPTS_LIMIT) {
@@ -208,9 +208,22 @@ function toExpo(message: PushMessage): ExpoPushMessage {
   return out;
 }
 
-function fromTicket(ticket: ExpoPushTicket): PushTicket {
-  if (ticket.status === "ok") return { ok: true, id: ticket.id };
-  return { ok: false, error: codeOf(ticket.details?.error) };
+/**
+ * One ticket, or `rejected` when it is in the wrong shape. The SDK checks only the ticket
+ * count, and a ticket with no receipt id or an unknown status cannot be read or sent again
+ * safely: Expo may have sent that ping already.
+ */
+function fromTicket(ticket: ExpoPushTicket | null): PushTicket {
+  if (typeof ticket !== "object" || ticket === null) throw new PushError("rejected");
+  if (ticket.status === "ok") {
+    const id: unknown = ticket.id;
+    if (typeof id !== "string" || !/^[A-Za-z0-9-]{1,128}$/.test(id)) {
+      throw new PushError("rejected");
+    }
+    return { ok: true, id };
+  }
+  if (ticket.status === "error") return { ok: false, error: codeOf(ticket.details?.error) };
+  throw new PushError("rejected");
 }
 
 function fromReceipt(receipt: ExpoPushReceipt | null): PushReceipt | null {
