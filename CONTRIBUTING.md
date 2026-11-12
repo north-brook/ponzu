@@ -51,8 +51,11 @@ components, each with its own release PR:
   ships over the air or builds for TestFlight; see
   [docs/mobile.md](docs/mobile.md#releases).
 
-The release workflow turns on auto-merge for both. Once a release PR's checks
-pass it merges, and for the desktop app
+The release workflow turns on auto-merge for both, unless
+`scripts/release-hold.ts` holds one: a major version, or an app named in the
+repository variable `RELEASES_HELD` (see
+[docs/production.md](docs/production.md#release-holds)). A person merges a held
+release PR. Once a release PR's checks pass it merges, and for the desktop app
 [`release.yml`](.github/workflows/release.yml):
 
 1. Tags `vX.Y.Z` and opens a draft GitHub release with the changelog.
