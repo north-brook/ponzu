@@ -446,15 +446,30 @@ function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
         const mo = new MutationObserver(catchClocks);
         mo.observe(win, { subtree: true, attributes: true, childList: true });
         const ro = new ResizeObserver(() => measure());
+        // Whether the press has marked the window as easing yet. React renders the press in a
+        // microtask after the click, so the mark comes after it, however briefly it stays.
+        let marked = win.hasAttribute("data-pane-motion");
+        const mark = new MutationObserver(() => {
+          if (win.hasAttribute("data-pane-motion")) marked = true;
+        });
+        mark.observe(win, { attributes: true, attributeFilter: ["data-pane-motion"] });
 
         const rest = (end: number | null) => {
           const since = performance.now();
           const wait = () => {
-            if (win.hasAttribute("data-pane-motion")) {
+            // Rested: the mark has come and gone again.
+            if (!marked || win.hasAttribute("data-pane-motion")) {
               if (performance.now() - since > 10_000) {
                 mo.disconnect();
                 ro.disconnect();
-                reject(new Error("The window still wears data-pane-motion 10s on."));
+                mark.disconnect();
+                reject(
+                  new Error(
+                    marked
+                      ? "The window still wears data-pane-motion 10s on."
+                      : "The press never marked the window with data-pane-motion.",
+                  ),
+                );
               } else setTimeout(wait, 16);
               return;
             }
@@ -462,6 +477,7 @@ function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
               requestAnimationFrame(() => {
                 mo.disconnect();
                 ro.disconnect();
+                mark.disconnect();
                 measure(end ?? performance.now());
                 resolve({ frames, clocks: [...clocks.values()] });
               }),
