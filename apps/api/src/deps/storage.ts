@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
-import { type Credentials, encodePath, presign, signHeaders } from "./sigv4.ts";
+import { type Credentials, canonicalQuery, encodePath, presign, signHeaders } from "./sigv4.ts";
 
 /**
  * Where bytes live: a canvas's assets, previews and exports, in Cloudflare R2 under the canvas's
@@ -104,6 +104,8 @@ export function createR2Storage({
     headers: Record<string, string> = {},
     body?: string,
   ): Promise<Response> {
+    // Sent exactly as it is signed, so a listed key with a space in it reads back the same.
+    if (url.search) url.search = canonicalQuery(url.searchParams);
     const signed = await signHeaders(credentials, { method, url, headers, now: clock.now() });
     try {
       return await fetch(url.toString(), {

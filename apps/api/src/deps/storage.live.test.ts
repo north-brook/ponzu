@@ -1,6 +1,7 @@
 // The real bucket, through the API's own routes: presign, PUT, complete, GET through the public
-// URL, then delete; and a list and bulk delete under a fresh asset key. Skipped unless R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-// R2_BUCKET and PONZU_ASSETS_URL (the bucket's public URL) are set.
+// URL, then delete; and a list and bulk delete under a fresh asset key. Skipped unless
+// R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and PONZU_ASSETS_URL (the
+// bucket's public URL) are set.
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { emptyDoc } from "@ponzu/core";

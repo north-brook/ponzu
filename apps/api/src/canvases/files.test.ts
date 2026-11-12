@@ -188,6 +188,26 @@ describe("the job", () => {
     expect(done.completed_at).not.toBeNull();
   });
 
+  test("files left after the last attempt fail the job loudly, not as a wait", async () => {
+    const key = newAssetKey();
+    fill(t.storage, key, FILES_PER_ATTEMPT + 1);
+    await enqueueJob(t.db, {
+      ...canvasFilesDeleteJob(key),
+      maxAttempts: 1,
+      runAt: new Date(t.clock.now()),
+    });
+
+    await runDueJobs(t.deps, "files-test");
+    expect(under(t.storage, `${key}/`)).toHaveLength(1);
+    const row = await jobRow(key);
+    expect(row.attempts).toBe(1);
+    expect(row.failed_at).not.toBeNull();
+    expect(t.logs.findLast((line) => line.event === "job_failed")).toMatchObject({
+      kind: CANVAS_FILES_DELETE_JOB,
+    });
+    expect(JSON.stringify(t.logs)).not.toContain(key);
+  });
+
   test("one job waits per asset key, however often it is recorded", async () => {
     const key = newAssetKey();
     fill(t.storage, key, 1);

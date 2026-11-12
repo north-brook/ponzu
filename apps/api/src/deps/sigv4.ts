@@ -89,6 +89,20 @@ export function encodePath(path: string): string {
   return path.split("/").map(encodeStrict).join("/");
 }
 
+/**
+ * A query string as SigV4 signs it: every name and value encoded strictly, sorted by name. A
+ * request whose query carries text of its own (a listed key, say) should be sent with exactly
+ * this, so that storage reads back what was signed: `URLSearchParams` writes a space as `+`,
+ * which S3 need not read as a space.
+ */
+export function canonicalQuery(query: URLSearchParams): string {
+  return [...query]
+    .map(([key, value]) => [encodeStrict(key), encodeStrict(value)] as const)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
 async function sign(
   credentials: Credentials,
   date: string,
@@ -101,11 +115,7 @@ async function sign(
     signed: { names: string; block: string };
   },
 ): Promise<string> {
-  const query = [...request.query]
-    .map(([key, value]) => [encodeStrict(key), encodeStrict(value)] as const)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("&");
+  const query = canonicalQuery(request.query);
   const canonical = [
     request.method,
     // `URL` keeps a path as given once it is encoded, so this is the path as it is sent.

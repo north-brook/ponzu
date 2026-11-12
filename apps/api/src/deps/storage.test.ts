@@ -95,6 +95,14 @@ test("a list asks ListObjectsV2 for one prefix after a key, and reads R2's answe
   expect(seen[0]!.request.headers.get("authorization")).toStartWith("AWS4-HMAC-SHA256 ");
 });
 
+test("a list sends its query exactly as it signs it, a space as %20 and never +", async () => {
+  const { r2, seen } = answering(() => new Response(fixture("r2-list.xml"), { status: 200 }));
+  await r2.list(`${KEY}/`, { after: `${KEY}/assets/b & c*.txt` });
+  expect(new URL(seen[0]!.request.url).search).toBe(
+    `?list-type=2&max-keys=1000&prefix=${KEY}%2F&start-after=${KEY}%2Fassets%2Fb%20%26%20c%2A.txt`,
+  );
+});
+
 test("a list with nothing under the prefix is empty and whole", () => {
   const empty =
     '<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>canvases</Name>' +

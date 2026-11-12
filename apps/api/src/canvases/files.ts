@@ -2,7 +2,7 @@ import { isAssetKey, type NewJob } from "@ponzu/db";
 import { z } from "zod";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { RetryLater } from "../jobs/retry.ts";
-import type { JobDeps } from "../jobs/run.ts";
+import type { JobDeps, RunningJob } from "../jobs/run.ts";
 
 /*
  * A canvas's files, deleted with it (docs/cloud.md, "Assets and previews"). Everything a canvas
@@ -78,15 +78,22 @@ export function canvasFilesDeleteJob(assetKey: string): NewJob {
 
 /**
  * The job's handler: delete a page of the files, and come back in `FILES_RETRY_MS` while more
- * remain. A key storage could not remove fails the attempt, which is tried again as usual.
+ * remain. A key storage could not remove fails the attempt, which is tried again as usual. On
+ * the last attempt, files left over are a failure, not a wait: they are still served to whoever
+ * holds the key, so the job ends as `job_failed` (logged and reported) rather than quietly.
  */
 export async function runCanvasFilesDeleteJob(
   deps: Pick<JobDeps, "storage" | "log">,
   payload: unknown,
+  job?: Pick<RunningJob, "attempts" | "maxAttempts">,
 ): Promise<void> {
   const { assetKey } = Payload.parse(payload);
   const { deleted, done } = await deleteUnder(deps.storage, `${assetKey}/`);
   // Ids only: the asset key is the capability to the files, so it is never logged.
   deps.log.info("canvas_files_deleted", { deleted, done });
-  if (!done) throw new RetryLater(FILES_RETRY_MS, `Deleted ${deleted} files; more remain.`);
+  if (done) return;
+  if (job && job.attempts >= job.maxAttempts) {
+    throw new Error(`Deleted ${deleted} files on the last attempt; more remain.`);
+  }
+  throw new RetryLater(FILES_RETRY_MS, `Deleted ${deleted} files; more remain.`);
 }
