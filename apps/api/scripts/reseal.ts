@@ -18,8 +18,8 @@
 //
 // It prints counts per column and key id, and the rows it could not seal again (their ids and
 // secret names), never a value or a key. It exits 1 while any stored value is still under
-// another key: one it could not open, a GitHub token that was mid-refresh, or one an older
-// deployment wrote meanwhile.
+// another key or any value would not open: one it could not open, a GitHub token that was
+// mid-refresh, or one an older deployment wrote meanwhile.
 import { createDb } from "@ponzu/db";
 import { type ResealReport, resealAll } from "../src/vault/reseal.ts";
 import { createVault } from "../src/vault/vault.ts";
@@ -44,8 +44,10 @@ const report = await resealAll(
   { dryRun: args.includes("--dry-run") },
 );
 console.log(args.includes("--json") ? JSON.stringify(report, null, 2) : describe(report));
-// A dry run fails only on what a real run could not mend; a real run, on anything still old.
-if (report.dryRun ? report.failures.length > 0 : report.remaining > 0) process.exitCode = 1;
+// A dry run fails only on what a real run could not mend; a real run, on that or anything still
+// old. A value that will not open counts even when the key-id count misses it (text that only
+// looks like it carries the current key's id).
+if (report.failures.length > 0 || (!report.dryRun && report.remaining > 0)) process.exitCode = 1;
 
 function describe({ currentKeyId, dryRun, counts, failures, remaining }: ResealReport): string {
   const lines = [
@@ -63,8 +65,11 @@ function describe({ currentKeyId, dryRun, counts, failures, remaining }: ResealR
   }
   const values = `${remaining} ${remaining === 1 ? "value is" : "values are"}`;
   if (dryRun) lines.push(`${values} under another key now.`);
-  else if (remaining === 0) lines.push("Nothing is left under another key: the old key can go.");
-  else {
+  else if (remaining === 0 && failures.length === 0) {
+    lines.push("Nothing is left under another key: the old key can go.");
+  } else if (remaining === 0) {
+    lines.push("Some values could not be opened (above). Keep the old key until they are mended.");
+  } else {
     const again = failures.length < remaining ? " and run this again" : "";
     lines.push(`${values} still under another key. Keep the old key${again}.`);
   }

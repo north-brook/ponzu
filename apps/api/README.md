@@ -321,7 +321,7 @@ what it read, so it can be stopped and run again. A GitHub token whose refresh i
 left for the next run, because the refresh stores its new pair only over the sealed text it
 read. It prints counts per column and key id, the rows it could not seal again (ids and secret
 names, never a value), and how many values are still under another key, and exits 1 while that
-is more than 0. When it reports nothing left, drop the old key and deploy. Running it before the
+is more than 0 or any value would not open. When it reports nothing left, drop the old key and deploy. Running it before the
 deployment with the new key is live would seal values the API cannot open yet.
 
 For a person's GitHub token call `githubUserToken(deps, userId)` each time one is needed. It
