@@ -196,8 +196,11 @@ and the composer's "Describe what you want to make". The rules are pure, in
   tap while one is on its way does nothing, so a double tap makes one canvas.
   With photos the canvas is made first, they go up, then the message says
   them; if that fails the canvas stays, the line says so, and sending again
-  goes to the same canvas.
-- **What stops a send**, read from `me`: a Claude never connected, run out or
+  goes to the same canvas. A key once sent without its message always says
+  the message itself afterwards, so a canvas made whose answer was lost still
+  hears it. A new project gets a new key.
+- **What stops a send**, read from `me` (Send waits for it, unless it can't be
+  had, when the API answers the send itself): a Claude never connected, run out or
   signed out opens the Claude card as a sheet, titled and worded as the Mac's
   dialog, and the kept prompt goes once Claude is connected; Cancel sends
   nothing. A plan at its limit asks first, "Your Claude plan resets at

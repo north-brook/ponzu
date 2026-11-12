@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
+import { ApiError } from "@ponzu/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { router } from "expo-router";
@@ -190,7 +191,7 @@ describe("new canvas", () => {
       await type("A hero like this photo");
       await send();
       expect(await screen.findByTestId("new-canvas-error")).toHaveTextContent(
-        "That canvas couldn't be made. Try again.",
+        "The canvas is made, but your message didn't go with it. Send it again.",
       );
       expect(canvasesIn(acme.id)).toHaveLength(before + 1);
       expect(screen.getByTestId("new-canvas-prompt").props.value).toBe("A hero like this photo");
@@ -204,6 +205,47 @@ describe("new canvas", () => {
       const said = canvas.thread.map(({ item }) => item).find((item) => item.kind === "message");
       expect(said?.payload).toMatchObject({ text: "A hero like this photo" });
     } finally {
+      (global as { picked?: unknown }).picked = undefined;
+    }
+  });
+
+  test("a canvas made whose answer was lost still gets its message when sent again", async () => {
+    (global as { picked?: unknown }).picked = [
+      { uri: "file:///a.jpg", fileName: "a.jpg", mimeType: "image/jpeg", assetId: "a" },
+    ];
+    const canvases = backend.api.canvases;
+    const create = canvases.create;
+    // The API makes the canvas, but its answer never reaches the phone.
+    const lost = jest
+      .spyOn(canvases, "create")
+      .mockImplementationOnce(async (body: Parameters<typeof create>[0]) => {
+        await create(body);
+        throw new ApiError(0, "network", "No answer.");
+      });
+    try {
+      backend.seed("signed-in");
+      const { acme } = backend.world;
+      const before = canvasesIn(acme.id).length;
+      await show();
+      await fireEvent.press(screen.getByRole("button", { name: "Attach" }));
+      await type("A hero like this photo");
+      await send();
+      expect(await screen.findByTestId("new-canvas-error")).toHaveTextContent(
+        "Ponzu can't be reached. Check your connection and send it again.",
+      );
+      expect(canvasesIn(acme.id)).toHaveLength(before + 1);
+      // Sent again without the photo: the same key answers the canvas made, which then hears
+      // the message, rather than the message being lost to the key.
+      await fireEvent.press(screen.getByRole("button", { name: "Remove a.jpg" }));
+      await send();
+      await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+      expect(canvasesIn(acme.id)).toHaveLength(before + 1);
+      const canvas = canvasesIn(acme.id).at(-1)!;
+      const said = canvas.thread.map(({ item }) => item).filter((item) => item.kind === "message");
+      expect(said).toHaveLength(1);
+      expect(said[0]?.payload).toMatchObject({ text: "A hero like this photo" });
+    } finally {
+      lost.mockRestore();
       (global as { picked?: unknown }).picked = undefined;
     }
   });

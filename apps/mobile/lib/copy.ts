@@ -100,6 +100,8 @@ export const PICKER = {
   scratchLine: "no repo, kept in Ponzu",
   newCanvas: "New canvas",
   back: "Back",
+  /** VoiceOver's name for the cross on a picture waiting to go with the prompt. */
+  remove: (name: string) => `Remove ${name}`,
 } as const;
 
 /** The phone's own: the Mac signs out from its window's menu, the phone from under setup. */

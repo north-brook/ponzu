@@ -193,9 +193,15 @@ interface MeClaude {
   claudeAccount: { status: string; limitedUntil?: string | Date | null } | null;
 }
 
-/** What stops a send now, or null when it can go. */
+/**
+ * What stops a send now, or null when it can go. Before `me` has come (still on its way, or the
+ * phone offline with no copy of it) nothing is known to stop it: the send goes, and the API
+ * answers for itself, so someone offline reads that Ponzu can't be reached rather than being
+ * asked to connect a Claude they already have.
+ */
 export function blockedOnSend(me: MeClaude | undefined, now: number): Blocked | null {
-  const account = me?.claudeAccount ?? null;
+  if (me === undefined) return null;
+  const account = me.claudeAccount ?? null;
   if (!account || account.status !== "connected") {
     return { kind: "claude", connected: account !== null, expired: account?.status === "expired" };
   }
@@ -232,8 +238,12 @@ export function firstSentence(message: string): string {
   return (match ? match[0] : message).trim();
 }
 
-/** The line a send that didn't make a canvas leaves under the composer, the Mac's words. */
-export function sendFailure(error: unknown): string {
+/**
+ * The line a failed send leaves under the composer, the Mac's words. `made` is true when the
+ * canvas was made and only its pictures or first message didn't go: sent again, they go to that
+ * canvas, so the line must not say it wasn't made.
+ */
+export function sendFailure(error: unknown, made = false): string {
   if (error instanceof ApiError) {
     if (error.code === "network") {
       return "Ponzu can't be reached. Check your connection and send it again.";
@@ -245,5 +255,6 @@ export function sendFailure(error: unknown): string {
     // the rest of the phone's words).
     if (error.status === 402 && error.message) return firstSentence(error.message);
   }
+  if (made) return "The canvas is made, but your message didn't go with it. Send it again.";
   return "That canvas couldn't be made. Try again.";
 }

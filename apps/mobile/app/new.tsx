@@ -84,6 +84,12 @@ export default function NewCanvas() {
   const createKey = useRef(newCreateKey());
   /** The canvas this composition's key made, while its first message has yet to go. */
   const made = useRef<{ key: string; id: string } | null>(null);
+  /**
+   * The create key last sent without its message (the message was to follow with pictures).
+   * Sent again, that key answers the canvas it may have made without making it again or saying
+   * anything, so every later send with it says the message itself.
+   */
+  const bareKey = useRef<string | null>(null);
   const going = useRef(false);
 
   // The last model and effort picked on this phone.
@@ -107,17 +113,22 @@ export default function NewCanvas() {
   const choice = modelChoice(saved, defaults.data);
   // Another project is another canvas: a canvas made for the last one keeps what it has.
   const where = project && workspaceId ? choiceKey(project, workspaceId) : null;
+  // A new key whether or not this screen heard back: a create whose answer was lost may still
+  // have made a canvas in the last project, and its key would answer with that one.
   useEffect(() => {
-    if (!where || !made.current) return;
+    if (!where) return;
     made.current = null;
     createKey.current = newCreateKey();
   }, [where]);
-  const ready = workspaceId !== null && project !== null && canSend(prompt, sending);
+  // Whether Claude stops a send is known once `me` has come, or couldn't be had (offline, when
+  // the API answers the send for itself).
+  const meKnown = me.data !== undefined || me.isError;
+  const ready = workspaceId !== null && project !== null && meKnown && canSend(prompt, sending);
   const said = statement(project);
 
   const send = async (despiteLimit = false) => {
     const text = prompt.trim();
-    if (!workspaceId || !project || !canSend(text, false) || going.current) return;
+    if (!workspaceId || !project || !meKnown || !canSend(text, false) || going.current) return;
     const blocked = blockedOnSend(me.data, Date.now());
     if (blocked?.kind === "claude") {
       select();
@@ -143,6 +154,10 @@ export default function NewCanvas() {
       // goes to that canvas, rather than ask the API for one its key already answers.
       const kept = made.current;
       const already = kept && kept.key === createKey.current ? kept.id : null;
+      // With images, the message waits until they are files of the canvas; and so it does for
+      // a key once sent that way, whose answer may be a canvas made before with nothing said.
+      const bare = images.length > 0 || bareKey.current === createKey.current;
+      if (bare) bareKey.current = createKey.current;
       const id =
         already ??
         (
@@ -153,13 +168,12 @@ export default function NewCanvas() {
             // Without an answer about the defaults, the API starts the canvas on them itself.
             ...(choice ? { model: choice.model, effort: choice.effort } : {}),
             createKey: createKey.current,
-            // With images, the message waits until they are files of the canvas.
-            ...(images.length ? {} : { message: { text } }),
+            ...(bare ? {} : { message: { text } }),
           })
         ).id;
       made.current = { key: createKey.current, id };
       if (images.length) await sayWithImages(backend.api, id, text, images);
-      else if (already) await backend.api.canvases.sendMessage(id, { text, attachments: [] });
+      else if (bare) await backend.api.canvases.sendMessage(id, { text, attachments: [] });
       made.current = null;
       createKey.current = newCreateKey();
       keepDraft("");
@@ -169,7 +183,7 @@ export default function NewCanvas() {
       router.replace(canvasPath(id));
     } catch (failure) {
       fail();
-      setError(sendFailure(failure));
+      setError(sendFailure(failure, made.current?.key === createKey.current));
     } finally {
       going.current = false;
       setSending(false);
@@ -198,14 +212,19 @@ export default function NewCanvas() {
         ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
     }).catch(() => null);
     if (!result || result.canceled || !result.assets) return;
-    const more = result.assets.map(
-      (asset, i): Picked => ({
-        id: `${asset.assetId ?? asset.uri}-${i}`,
+    const more = result.assets.map((asset, i): Picked => {
+      const type = asset.mimeType ?? "image/jpeg";
+      const name = asset.fileName ?? `image-${picked.length + i + 1}.jpg`;
+      return {
+        // Unique even when the same photo is attached twice, in one pick or two.
+        id: `${asset.assetId ?? asset.uri}-${Crypto.randomUUID()}`,
         uri: asset.uri,
-        name: asset.fileName ?? `image-${picked.length + i + 1}.jpg`,
-        type: asset.mimeType ?? "image/jpeg",
-      }),
-    );
+        // The library keeps a photo's own name ("IMG_0001.HEIC") on the JPEG it hands over: the
+        // file goes up named for what it is, so the agent reads it as a JPEG.
+        name: type === "image/jpeg" ? name.replace(/\.(heic|heif)$/i, ".jpg") : name,
+        type,
+      };
+    });
     setPicked((now) => [...now, ...more]);
   };
 
@@ -357,7 +376,7 @@ export default function NewCanvas() {
                     <Pressable
                       testID={`new-canvas-remove-${image.id}`}
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove ${image.name}`}
+                      accessibilityLabel={PICKER.remove(image.name)}
                       hitSlop={10}
                       onPress={() => setPicked((now) => now.filter((p) => p.id !== image.id))}
                       style={{

@@ -187,7 +187,10 @@ describe("what stops a send", () => {
       connected: true,
       expired: true,
     });
-    expect(blockedOnSend(undefined, now)).toMatchObject({ kind: "claude" });
+  });
+
+  test("nothing known to stop it before `me` has come: the API answers for itself", () => {
+    expect(blockedOnSend(undefined, now)).toBeNull();
   });
 
   test("a plan at its limit until later, and not once that has passed", () => {
@@ -220,6 +223,12 @@ describe("a send that didn't make a canvas", () => {
       "Your Claude account doesn't offer that model any more. Check the model and send it again.",
     );
     expect(sendFailure(new Error("boom"))).toBe("That canvas couldn't be made. Try again.");
+  });
+
+  test("a canvas made whose message didn't go says so, not that it wasn't made", () => {
+    expect(sendFailure(new Error("upload refused"), true)).toBe(
+      "The canvas is made, but your message didn't go with it. Send it again.",
+    );
   });
 
   test("at a billing limit, only the first, neutral sentence", () => {
