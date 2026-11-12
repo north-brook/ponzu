@@ -11,8 +11,8 @@ This is being rebuilt from the 1.x app, which talked to paired Macs over
 Tailscale. That data layer, pairing, Tailscale and the camera are gone. What
 is built so far: the native modules the cloud app needs, the two app
 variants, the cloud seams (`lib/cloud/`), launch, sign-in, the update screen,
-a plain list of canvases, and a settings sheet that signs out. Setup, the
-canvas, comments and the rest arrive slice by slice.
+a plain list of canvases, a settings sheet that signs out, and a canvas, live
+and read only. Setup, comments and the rest arrive slice by slice.
 
 ## Layout
 
@@ -20,6 +20,7 @@ canvas, comments and the rest arrive slice by slice.
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root; `+native-intent.tsx` reads every incoming link. |
 | `lib/cloud/` | Everything that talks to Ponzu Cloud (below). |
+| `lib/canvas/` | A canvas on the phone: its replica, the bridge to the page, how the page loads, and what the screen shows (below, "The canvas"). |
 | `lib/links.ts` | The one reader of links (below). |
 | `lib/` | The rest: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `polyfills.ts`, `first-launch.ts`, `duo-layout.ts`, `dictation.ts`, `drafts.ts`, `haptics.ts`. |
 | `components/` | Shared views: the canvas web view (`canvas-view.tsx`), the comment composer and sheets, the launch handoff, and `glass.tsx`, the floating controls' Liquid Glass. |
@@ -190,6 +191,55 @@ fake build takes that link.
 cd apps/mobile
 APP_VARIANT=dev PONZU_BACKEND=fake bunx expo start --dev-client
 ```
+
+In the fake, Maya's "Pricing page" has two boards, so the canvas has
+something to draw.
+
+## The canvas
+
+A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
+and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
+`message`. Read only for now: comments, the chat sheet and the pull request
+sheet come with their own slices.
+
+- **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
+  opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
+  with the offline `DocCache` in `Documents/cache/docs`, and closes it when
+  the screen goes. The web view only draws: it holds no token and calls no
+  API. iOS ends a web view's process in the background, and a replica there
+  would lose what it hadn't sent.
+- **The bridge** (`lib/canvas/bridge.ts`) tells the page each op the replica
+  hears, so an agent's work develops in as on the Mac, and sends the whole
+  doc whenever an op can't say what changed: the first load, the cached copy,
+  a resync, a refused op rolled back, or someone else's op landing under one
+  of the person's own before the API answered it. When the page loads again
+  after iOS ended it, it says `ready` and gets everything.
+- **Where the page loads from.** Its base URL is the canvas's `assetsUrl`, so
+  every file a board loads is same-origin. A content security policy in the
+  page runs only its own script, pinned by hash; the app fills in the asset
+  origin before it loads the page (`lib/canvas/page.ts`), and the web view
+  never navigates. `apps/mobile/canvas/README.md` has the details.
+- **What the screen shows** (`lib/canvas/status.ts`), from the canvas's live
+  head row and the replica's state: waking (the title shimmers, "Waking up"
+  under it), working (the agent's boards ringed, the title shimmering),
+  needs you (a count on Chat), asleep (quiet), offline ("You're offline.
+  This is the last copy Ponzu had.") and gone ("That canvas isn't available to
+  you." with Back). A board being worked on gets the yuzu ring alone, on a
+  pure white or pure black ground.
+- **Chrome.** Back, the canvas's name in a glass pill, the page button with
+  the pages' native menu, and the floating stack bottom right: the pull
+  request (once there is one), Comment, and Chat (the shared `railSignal`: the
+  needs-you count, else the turning slice while the agent wakes or works).
+  Their sheets aren't built yet, so the three are shown and unavailable. A
+  double-tapped board has the screen and the chrome steps aside.
+- **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
+  `CloudSource` and the client's fake backend, with a stand-in page that
+  applies what it's sent as the real one does. `canvas/page.webkit.test.ts`
+  loads the built page in Playwright's WebKit from a local origin standing in
+  for R2: it draws, applies ops, loads files same-origin, rings a working
+  board and refuses an injected script. `rntests/canvas-stack.rntest.tsx`
+  covers the stack's states. A WebContent kill on a simulator, and the canvas
+  on a phone, are proven only on the job runner or a device.
 
 ## Variants
 

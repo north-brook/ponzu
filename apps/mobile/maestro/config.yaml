@@ -6,3 +6,4 @@ executionOrder:
   flowsOrder:
     - launch
     - sign-in
+    - canvas

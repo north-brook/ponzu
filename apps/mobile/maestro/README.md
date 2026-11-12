@@ -10,6 +10,7 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | --- | --- |
 | `launch.yaml` | A clean install: the slice and wordmark on yuzu, then Sign in, since nobody is. A link the build doesn't take opens nothing. |
 | `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
+| `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
 
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
@@ -20,7 +21,9 @@ too-old); only a fake build takes it. Every flow checks no development warning
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `sign-in`, `sign-in-github`, `sign-in-error`, `canvases`, `lockup`,
 `canvas-<id>`, `tab-canvases`, `tab-search`, `search`, `settings`,
-`settings-sign-out`, `update`. Give a new screen a `testID` named after it.
+`settings-sign-out`, `update`, `canvas`, `canvas-web`, `canvas-placeholder`,
+`canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`, `stack-comment`,
+`stack-chat`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 
 ## Run them

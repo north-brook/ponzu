@@ -30,7 +30,7 @@ import {
   ringDelay,
 } from "../../../packages/canvas/src/arrive.ts";
 import { useWindowStill } from "../../../packages/canvas/src/still.ts";
-import { Rain, useLingering } from "../../../packages/canvas/src/working.tsx";
+import { useLingering } from "../../../packages/canvas/src/working.tsx";
 import {
   BOARD_RADIUS,
   type Box,
@@ -72,8 +72,6 @@ const MOVE_MS = 420;
 const LET_GO = 0.85;
 /** A tap this close to a pin opens it: a 24px pin, a 44px target. */
 const PIN_TARGET = 22;
-/** A column of rain and its gap, in em of the label's 12px. */
-const RAIN_PITCH = 0.42 * 12;
 
 /** The board radius in page px for a zoom: the same few px on screen, to a quarter octave. */
 function boardRadius(zoom: number) {
@@ -375,17 +373,22 @@ export function PhoneCanvas() {
       setMeasured((m) => ({ ...m, ...next }));
   });
 
-  // Which boards agents are working on, and who. A board stays ringed a moment after its agent
-  // leaves, so the ring can fade.
+  // Which boards agents are working on, and who: as the app says from the canvas's head, or, before
+  // it has said, from presence. A board stays ringed a moment after its agent leaves, so the ring
+  // can fade.
   const working = useMemo(() => {
     const map = new Map<string, Worker[]>();
+    if (s.working) {
+      for (const id of s.working) map.set(id, [{ id: "agent", client: "claude" }]);
+      return map;
+    }
     for (const p of s.presence) {
       if (p.kind !== "agent" || (p.file && s.file && p.file !== s.file)) continue;
       for (const id of p.working)
         map.set(id, [...(map.get(id) ?? []), { id: p.id, client: p.client }]);
     }
     return map;
-  }, [s.presence, s.file]);
+  }, [s.presence, s.file, s.working]);
   const ringed = useLingering(working, RING_OUT_MS);
 
   // Resolved threads leave the board.
@@ -996,7 +999,6 @@ function Overlay({
             y={p.y}
             w={w}
             h={h}
-            who={who}
             ring={ringed.get(b.id)}
             arrivedAt={arrivals.boardAt(b.id)}
             label={showLabel && b.id !== focused && !standby}
@@ -1055,9 +1057,9 @@ function Overlay({
 }
 
 /**
- * A board's hairline, its title above it (with yuzu rain on the right while an agent works on
- * it), and the ring: yuzu, a few px off its edge, breathing slowly, fading out once the agent
- * leaves. Where the board reaches the screen's edges, the ring follows them, inset so none of it
+ * A board's hairline, its title above it, and, while the agent works on it, the ring and nothing
+ * else (no rain, the founder's 11 Nov direction): yuzu, a few px off its edge, breathing slowly,
+ * fading out once the agent leaves. A board being worked on keeps its title in view. Where the board reaches the screen's edges, the ring follows them, inset so none of it
  * is lost, and rounds with the screen's corners where it reaches those (`ringAround`). A new board's
  * frame draws itself where the ring will be, and its name develops with it. As desktop's.
  */
@@ -1067,7 +1069,6 @@ function BoardChrome({
   y,
   w,
   h,
-  who,
   ring,
   arrivedAt,
   label,
@@ -1079,7 +1080,6 @@ function BoardChrome({
   y: number;
   w: number;
   h: number;
-  who?: Worker[];
   /** Ringed: false while an agent works on it, true as the ring fades. */
   ring?: boolean;
   /** When the board landed, while it's still arriving. */
@@ -1097,9 +1097,6 @@ function BoardChrome({
     if (title.current && arrivedAt !== undefined) arriveName(title.current, arrivedAt);
   }, [arrivedAt, label]);
   const around = ringAround({ x, y, w, h }, screen, radius);
-  // The rain takes at most half the board's width, so the name still reads on a narrow one; on
-  // a board too narrow for a column, the ring alone says it's being worked on.
-  const rain = Math.min(24, Math.floor(w / 2 / RAIN_PITCH));
   const ringBox = {
     transform: `translate(${around.x}px, ${around.y}px)`,
     width: around.w,
@@ -1117,14 +1114,12 @@ function BoardChrome({
           className="label"
           style={{
             transform: `translate(${x}px, ${y - LABEL}px)`,
-            // Spans the board so the rain can sit on the right.
-            ...(who ? { width: Math.max(0, w) } : { maxWidth: Math.max(0, w) }),
+            maxWidth: Math.max(0, w),
           }}
         >
           <span ref={title} className="name">
             {name}
           </span>
-          {who && rain > 0 && <Rain columns={rain} label="Working" />}
         </div>
       )}
       {ring !== undefined && (

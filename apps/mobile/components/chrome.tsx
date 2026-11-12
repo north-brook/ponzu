@@ -19,12 +19,15 @@ export function BarButton({
   label,
   held = false,
   shown = true,
+  disabled = false,
   style,
   testID,
 }: {
   onPress?: () => void;
   children: ReactNode;
   label: string;
+  /** Not available now: it takes no touch, and VoiceOver says so. */
+  disabled?: boolean;
   /** Held open: the glass a step darker. */
   held?: boolean;
   /** The glass is there; false dissolves it (components/glass.tsx). */
@@ -35,13 +38,15 @@ export function BarButton({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled }}
       hitSlop={6}
       testID={testID}
     >
       <Glass
-        interactive
+        interactive={!disabled}
         held={held}
         shown={shown}
         style={[{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }, style]}

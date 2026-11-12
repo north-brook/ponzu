@@ -14,9 +14,11 @@ import {
   FolderGitIcon,
   GitBranchIcon,
   GithubIcon,
+  GitPullRequestIcon,
   InboxIcon,
   KeyboardIcon,
   LaptopIcon,
+  MessageMultiple02Icon,
   Mic01Icon,
   MicOff01Icon,
   Moon02Icon,
@@ -70,6 +72,10 @@ export const ICONS = {
   send: ArrowUp02Icon,
   file: File01Icon,
   comment: Comment01Icon,
+  /** pullRequest */
+  pullRequest: GitPullRequestIcon,
+  /** The canvas's thread, Ponzu's chat. */
+  chat: MessageMultiple02Icon,
   move: MoveIcon,
   trash: Delete02Icon,
   /** resolved */
@@ -110,6 +116,8 @@ export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
 export const CommentIcon = icon(ICONS.comment, 20, 1.8);
+export const PullRequestIcon = icon(ICONS.pullRequest, 20, 1.8);
+export const ChatIcon = icon(ICONS.chat, 20, 1.8);
 export const Move = icon(ICONS.move, 20, 1.8);
 export const Trash = icon(ICONS.trash, 20, 1.8);
 export const Done = icon(ICONS.done, 28, 1.6);
