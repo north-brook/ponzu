@@ -3099,7 +3099,8 @@ redirects never have to move at cutover.
 The API is deployed by a workflow, which applies the pending migrations to the database first;
 nobody deploys a branch to production or migrates a shared database by hand. Dev deploys from
 the head of `cloud`. Production deploys only from `main`, through the GitHub Environment
-`production`, which needs the founder's approval. The production deploy job is not built yet.
+`production`, which needs the founder's approval: `deploy-api.yml`'s production job, off until
+the repository variable `API_DEPLOY_PRODUCTION` is set.
 Every deployment holds its environment's secrets, so only each project's own domains are
 public: previews and the unique URL of each deployment open only for the team.
 

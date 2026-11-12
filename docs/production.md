@@ -8,9 +8,11 @@ runbook behind its "Environments" section.
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
 reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
 scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck` and the
-production deploy job are later pieces of work. (The API's `PONZU_ENVIRONMENT` variable and
-the environment, image, bundle and migration counts in `/v1/health` are built.) Each is
+`apply.ts`, `github-app.ts`, `restore-drill.ts`) and the API's `/v1/cron/selfcheck` are later
+pieces of work. (The API's `PONZU_ENVIRONMENT` variable, the environment, image, bundle and
+migration counts in `/v1/health`, and the production deploy job in
+[`deploy-api.yml`](../.github/workflows/deploy-api.yml), off until `API_DEPLOY_PRODUCTION` is
+set, are built.) Each is
 marked *(not built yet)* where it first appears, and nothing in production exists until the
 founder's steps below create it.
 
@@ -127,8 +129,10 @@ Scale-to-zero is off because a waking database eats the health check's 3 seconds
 outbound call's 10. The API's `DATABASE_URL` is the pooled URL; migrations use the direct URL.
 
 Because dev and production share a project, a Neon API key for dev also reaches production.
-`apps/api/scripts/neon.ts` refuses the default branch, and the production deploy job will be the
-only thing that sets the guard that lets it through.
+`apps/api/scripts/neon.ts` refuses the default branch, and the production deploy job is the
+only thing that sets the guard that lets it through (`PONZU_ALLOW_DEFAULT_BRANCH=production`,
+on its snapshot and migration steps; `scripts/ci/workflows.test.ts` fails if anything else sets
+it).
 
 ### Cloudflare R2 and the `ponzu.cloud` zone
 
@@ -330,8 +334,9 @@ Then production, when the program reports it is ready:
     required reviewer, holding the secrets `VERCEL_TOKEN` (for ponzu-api-prod) and
     `NEON_API_KEY`. Add the variables `VERCEL_API_PROD_PROJECT_ID` and
     `API_DEPLOY_PRODUCTION=true`, repoint the `PONZU_APP_POSTHOG_*` variables and the secret
-    `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add the Container Registry OIDC policy
-    on ponzu-api-prod for north-brook/ponzu. Run `bun scripts/prod/apply.ts github-rulesets
+    `PONZU_APP_POSTHOG_CLI_API_KEY` to the new project, and add a Container Registry OIDC policy
+    giving north-brook/ponzu's `production` environment read-write on ponzu-api-prod and read on
+    ponzu-api (the deploy copies the image from one to the other). Run `bun scripts/prod/apply.ts github-rulesets
     --yes`. Check that `RELEASE_TOKEN` expires after the cutover.
 13. **D13. Releases and stores.** Set the repository variable `RELEASES_HELD=ponzu,mobile`.
     Check the Developer ID certificate's expiry. Set the EAS production env (the production API

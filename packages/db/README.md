@@ -19,6 +19,15 @@ every migration in the journal is recorded as applied, and fails if one was pass
 (Drizzle skips a migration that is older than the newest one applied, which is what a
 migration written on one branch and merged after another is).
 
+Migrations are expand first, contract later. A deploy migrates before its code goes live, and
+Vercel's instant rollback runs older code on the newer schema, so a migration never takes away
+what a deployed API reads or writes. `bun scripts/ci/migrations.ts` (a step in CI's "Lint,
+typecheck, build") fails on a DROP TABLE, DROP COLUMN, RENAME, ALTER COLUMN … TYPE, SET NOT
+NULL, or ADD COLUMN … NOT NULL without a DEFAULT, unless the line right before it is
+`-- contract: <why nothing deployed uses it any more>`. Contract in a later pull request than
+the one that stopped using the thing, after that one is deployed. The three migrations from
+before the rule are listed in the script with their reasons.
+
 A rename is written by hand. Run `bunx drizzle-kit generate --custom --name <name>`, write the
 SQL, and replace the body of the snapshot it wrote (a copy of the one before) with
 `generateDrizzleJson(schema, prevId)` from `drizzle-kit/api`, keeping its `id` and `prevId`; a
