@@ -41,10 +41,11 @@ export function loadUi(personId: string, store: Store | null = safeLocalStorage(
     saved = JSON.parse(store?.getItem(key(personId)) ?? "null");
   } catch {}
   if (!saved || typeof saved !== "object") return DEFAULT_UI;
-  const s = saved as Partial<Record<keyof UiState, unknown>>;
+  const s = saved as Partial<Record<keyof UiState | "designs", unknown>>;
   return {
     workspaceId: typeof s.workspaceId === "string" ? s.workspaceId : null,
-    canvases: stringRecord(s.canvases),
+    // Saved before the rename under its old key: read once, then saved under the new one.
+    canvases: stringRecord(s.canvases ?? s.designs),
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULT_UI.sidebarOpen,
     railOpen: typeof s.railOpen === "boolean" ? s.railOpen : DEFAULT_UI.railOpen,
     sidebarWidth: paneWidth("sidebar", s.sidebarWidth),

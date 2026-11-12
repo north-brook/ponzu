@@ -69,4 +69,14 @@ export const KEEP_APPS: Keep[] = [
     has: "as design tools draw one",
     why: "third-party design tools and how they draw a ground (plan 6.1)",
   },
+  {
+    path: "apps/studio/src/app/ui-state.ts",
+    has: "designs",
+    why: "the window state's key from before the rename, still read so the open canvas comes back",
+  },
+  {
+    path: "apps/studio/src/app/ui-state.test.ts",
+    has: "designs",
+    why: "the window state saved before the rename, still read",
+  },
 ];

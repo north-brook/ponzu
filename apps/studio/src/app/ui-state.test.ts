@@ -51,6 +51,24 @@ test("what storage holds is checked, field by field: anything else counts as not
   expect(loadUi("usr_maya", store)).toEqual(DEFAULT_UI);
 });
 
+test("the canvas open in each workspace, saved before the rename, comes back", () => {
+  const store = memory();
+  store.values.set(
+    "ponzu.ui.usr_maya",
+    JSON.stringify({ workspaceId: "ws_1", designs: { ws_1: "cnv_old" } }),
+  );
+  const ui = loadUi("usr_maya", store);
+  expect(ui.canvases).toEqual({ ws_1: "cnv_old" });
+  // Saved again, it is under the new key only, and the new key wins from then on.
+  saveUi("usr_maya", ui, store);
+  expect(JSON.parse(store.values.get("ponzu.ui.usr_maya") ?? "{}")).not.toHaveProperty("designs");
+  store.values.set(
+    "ponzu.ui.usr_maya",
+    JSON.stringify({ canvases: { ws_1: "cnv_2" }, designs: { ws_1: "cnv_old" } }),
+  );
+  expect(loadUi("usr_maya", store).canvases).toEqual({ ws_1: "cnv_2" });
+});
+
 test("a pane's width comes back within its limits, in whole pixels", () => {
   const store = memory();
   const widths = (sidebarWidth: unknown, railWidth: unknown) => {
