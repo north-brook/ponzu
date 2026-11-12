@@ -101,8 +101,10 @@ export function CreatePage({
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el || !launched) return;
+    // Measured while both its edges still hold it: freed of its right one, it would shrink to fit.
+    const width = el.offsetWidth;
+    el.style.width = `${width}px`;
     el.style.right = "auto";
-    el.style.width = `${el.offsetWidth}px`;
     return () => {
       el.style.right = "";
       el.style.width = "";

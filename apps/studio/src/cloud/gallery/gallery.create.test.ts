@@ -576,6 +576,12 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   test("a send: the composer travels as one from its box to the thread composer's, which has the words as its first line", async () => {
     await openSend("&beat=600000");
     const from = await sendCard();
+    const heroBox = () =>
+      page.$eval("[data-create-hero]", (el) => {
+        const { x, width } = el.getBoundingClientRect();
+        return { x, width };
+      });
+    const hero = await heroBox();
     const length = await holdSend(page, () => page.keyboard.press("Enter"));
     // On a relative of the panes' clock: longer, so it lands once the pane has opened.
     expect(length).toBeGreaterThan(220);
@@ -583,6 +589,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     const start = await sendFrame(page);
     expect(start.surfaces).toBe(1);
     expect(near(start.surface, from)).toBe(true);
+    // The hero fades where it stood: the thread's pane opening beside it doesn't move it.
+    await seekSend(page, 0.5);
+    const mid = await heroBox();
+    expect(Math.abs(mid.x - hero.x)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(mid.width - hero.width)).toBeLessThanOrEqual(0.5);
     // Where it rests, it rests: the thread's composer once the pane has opened.
     let last = start;
     for (let i = 1; i <= 20; i++) {
@@ -674,6 +685,17 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     });
   }
 
+  test("the first move of the pointer after a send, into the pane, keeps it open", async () => {
+    await openSend("&beat=600000");
+    await page.mouse.move(700, 300);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.mouse.move(1300, 600, { steps: 1 });
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
   test("the thread's toggle used during the beat: the pane is as the person left it, and the beat is over", async () => {
     await page.mouse.move(700, 300);
     await openSend("&beat=600000");
@@ -728,6 +750,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await seekSend(page, 0.3);
     await focusOn("Message");
     await page.keyboard.type("and the");
+    // Going to the pane ends the beat, not the travel: the card is still on its way.
+    expect((await sendFrame(page)).surfaces).toBe(1);
+    expect(await gallery<string | undefined>("gallerySettled")).toBeUndefined();
     await releaseSend(page);
     await page.waitForFunction(() => !document.querySelector("[data-flight]"));
     expect(await page.inputValue("#thread textarea")).toBe("and the");

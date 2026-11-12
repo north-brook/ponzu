@@ -45,17 +45,28 @@ export function useLanding(
     let over = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let flight: Flight | null = null;
+    /** Whether the composer has landed: until it has, the person's going to the pane waits. */
+    let down = false;
+    /** The person went to the pane while the composer travelled: it settles open on landing. */
+    let gone = false;
     /** Focus our own code gives: not the person going to the pane. */
     let ours = false;
     const end = (open: boolean) => {
-      if (over) return;
+      if (over || gone) return;
+      if (!down) {
+        // The travel finishes as it began; only the beat is off. Settling now would end the
+        // send, and with it the travel: the card would snap home.
+        gone = true;
+        unlisten();
+        return;
+      }
       stop();
       settleRef.current(open);
     };
 
-    // Where the pointer was last seen to be: the pane sliding in under a still pointer is no
-    // move of the person's.
-    let at: { x: number; y: number } | null = null;
+    // Where the pointer was last seen to be, from before the send too: the pane sliding in
+    // under a still pointer is no move of the person's.
+    let at = lastPointer;
     const inPane = (e: Event) => e.target instanceof Node && !!threadPane()?.contains(e.target);
     const onMove = (e: PointerEvent) => {
       const moved = at !== null && (at.x !== e.clientX || at.y !== e.clientY);
@@ -76,6 +87,9 @@ export function useLanding(
       ["focusin", onFocus],
     ];
     for (const [type, fn] of listening) document.addEventListener(type, fn, true);
+    function unlisten() {
+      for (const [type, fn] of listening) document.removeEventListener(type, fn, true);
+    }
 
     // Empty and ready: the caret in it, as it was in the composer that sent. Given at take-off,
     // not on landing, so keys pressed while it travels land there and not on the page's body.
@@ -89,6 +103,12 @@ export function useLanding(
     };
     const landed = () => {
       if (over) return;
+      down = true;
+      if (gone) {
+        stop();
+        settleRef.current(true);
+        return;
+      }
       caret();
       timer = setTimeout(() => end(false), beatMs);
     };
@@ -105,10 +125,25 @@ export function useLanding(
       over = true;
       clearTimeout(timer);
       flight?.land();
-      for (const [type, fn] of listening) document.removeEventListener(type, fn, true);
+      unlisten();
     }
     return stop;
   }, [key, beatMs]);
+}
+
+/**
+ * Where the pointer last was in this window, kept from before any send, so the first move after
+ * one is told from the pane sliding under a still pointer by where the pointer was before.
+ */
+let lastPointer: { x: number; y: number } | null = null;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "pointermove",
+    (e) => {
+      lastPointer = { x: e.clientX, y: e.clientY };
+    },
+    { capture: true, passive: true },
+  );
 }
 
 function threadPane(): HTMLElement | null {
