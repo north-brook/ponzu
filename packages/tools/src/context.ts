@@ -54,7 +54,7 @@ export interface Workspace {
   link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
   /**
    * The link to one page or artboard of this canvas, for the agent to paste into what it writes
-   * to the person: where they read it, a click takes their canvas there. Tools that tell the
+   * to the person: where they read it, a click takes their view there. Tools that tell the
    * agent of a page or board give it beside the id, so it never builds one from parts. Absent
    * where nothing follows such a link in place (the local server).
    */

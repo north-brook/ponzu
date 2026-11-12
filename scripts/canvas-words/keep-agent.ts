@@ -55,9 +55,4 @@ export const KEEP_AGENT: Keep[] = [
     has: "the way a product designer builds a launch page",
     why: "the product guide casts the agent as a designer judging a launch-page shot: the honest role for visual craft",
   },
-  {
-    path: "packages/tools/src/tools.test.ts",
-    has: "/code/shop/design/app.design",
-    why: "a .design file in a repo's design/ folder (the format); the allowance masks app.design first, then misses the folder",
-  },
 ];

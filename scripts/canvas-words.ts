@@ -160,7 +160,8 @@ export const PROTECT: Protect[] = [
   },
   { re: /\bPonzu\.Design\b/g, why: "the 1.x Windows ProgID" },
   // The .design file format: a file or folder name, never `identifier.design` member access.
-  { re: /\bdesign\/(?=[\w-]+\.design)/g, why: "the repo's design/ folder" },
+  // The folder only, not its slash: the .design path after it is masked by the slash before it.
+  { re: /\bdesign(?=\/[\w-]+\.design)/g, why: "the repo's design/ folder" },
   { re: /(?<=[/\\]|%2F)[\w.-]*\.design\b/g, why: "a .design path" },
   { re: /(?<=["'`])[\w-]+\.design(?=["'`/])/g, why: "a quoted .design file name" },
   { re: /\b[\w-]+\.design(?=\/)/g, why: "a .design folder in a path (name.design/pages)" },
