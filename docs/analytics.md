@@ -86,16 +86,16 @@ Every event about a workspace also carries `workspace_id`.
 | `repo access changed` | `workspace_id`, `repos` | GitHub said the repos the App reaches changed. About no one. |
 | `claude connected` | `kind` (`subscription`, `api_key`), `woke_canvases` | |
 | `claude disconnected` | | |
-| `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a design with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
+| `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
 | `canvas deleted` | `canvas_id`, `by_owner` | |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
-| `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a design began with, sent by its create. |
+| `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
 | `comment posted` | `canvas_id`, `reply` | A person's comment on the canvas, or a reply in one of its threads. |
 | `turn stopped` | `canvas_id` | A person asked the agent to stop. |
 | `turn started` | `canvas_id`, `turn_id` | Timed when the turn began. Captured when the runner reports the turn. About the person whose message began it. |
 | `turn finished` | `canvas_id`, `turn_id`, `outcome` (`completed`, `failed`, `stopped`), `error_code`, `duration_ms`, `tool_calls`, `models`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd`, `runner`, `bundle` | As above. `turn_id` is also the turn's trace id in LLM analytics. A report sent twice is the same event (its id is made from the turn's). `runner` is what the runner said it is (`runner/0.1.0+<bundle>`), `bundle` the first twelve hex of the runner bundle's SHA-256 it said it runs, null for a runner started outside a sandbox. |
-| `turn lapsed` | `canvas_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the design's owner. |
-| `turn stalled` | `canvas_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the design's owner. |
+| `turn lapsed` | `canvas_id`, `kinds`, `sent_again`, `agent_state`, `waited_ms` | The sweep gave up waiting for a turn a delivered event was owed (docs/cloud.md, "A turn that never came"). `sent_again`: a copy went into the feed. About the canvas's owner. |
+| `turn stalled` | `canvas_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the canvas's owner. |
 | `question asked` | `canvas_id`, `question_id`, `kind` | The agent asked; about no one. |
 | `question answered` | `canvas_id`, `question_id`, `kind` | |
 | `pull request created` / `merged` / `closed` | `canvas_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
@@ -200,7 +200,7 @@ a canvas is its `canvas_id`.
 | `setup step reached` | `step`: `where`, `claude`, `iphone` | a first-run step shows |
 | `setup step completed` | `step` | it gives way to the next, or to the window |
 | `idea chosen` | `position` | an idea on the create page is picked into the composer |
-| `create prompt sent` | `source`: `idea`, `idea_edited`, `typed`; `project`: `repo`, `scratch`; `images` | the create page made its design |
+| `create prompt sent` | `source`: `idea`, `idea_edited`, `typed`; `project`: `repo`, `scratch`; `images` | the create page made its canvas |
 | `canvas opened` | `canvas_id`, `via`: `sidebar`, `search`, `link`, `created`, `restored` | |
 | `page switched` | `canvas_id` | |
 | `pane toggled` | `pane`: `sidebar`, `thread`, `pull_request`; `open`; `canvas_id` | |
@@ -208,7 +208,7 @@ a canvas is its `canvas_id`.
 | `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+j` | the window's ⌘ shortcuts |
 | `settings section viewed` | `section` | |
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
-| `$pageview` | `canvas_id` on a design | the view changes |
+| `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 
 Autocapture records clicks, changes and submits for heatmaps, dead clicks and paths, with no
@@ -247,8 +247,8 @@ secret's field in Needs you, and a repo's secrets in Settings. What else shows i
 
 | Mode | Shows |
 |---|---|
-| `private` (the default) | the chrome, the layout and every interaction. A design's boards are blocked wherever they are drawn (the canvas's live boards and pictures, the thread's miniatures and attachments, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab, and the sidebar's canvas names and search results are masked. |
-| `full` (Ponzu Dev) | everything a person sees, boards and thread included. The recording keeps the addresses of a design's pictures so the player can show them, and with them the design's asset key: anyone who can watch a `full` recording can read that design's files. |
+| `private` (the default) | the chrome, the layout and every interaction. A canvas's boards are blocked wherever they are drawn (its live boards and pictures, the thread's miniatures and attachments, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab, and the sidebar's canvas names and search results are masked. |
+| `full` (Ponzu Dev) | everything a person sees, boards and thread included. The recording keeps the addresses of a canvas's pictures so the player can show them, and with them the canvas's asset key: anyone who can watch a `full` recording can read that canvas's files. |
 
 The rules are `apps/studio/src/app/analytics/privacy.ts`; `analytics.e2e.test.ts` records a
 canvas in each mode against a local sink and checks what the recording holds.

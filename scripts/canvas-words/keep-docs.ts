@@ -27,4 +27,14 @@ export const KEEP_DOCS: Keep[] = [
     why: "1.x Windows cleanup",
   },
   { path: "scripts/release-notes.test.ts", has: "esign", why: "release-note fixtures" },
+  {
+    path: "docs/cloud.md",
+    has: "the site sends `https://ponzu.design/designs/<id>` on to `/canvases/<id>`",
+    why: "the old web address, which the spec says still opens (the web redirect reads it)",
+  },
+  {
+    path: "docs/cloud.md",
+    has: "the app reads `ponzu://design/<id>` as `ponzu://canvas/<id>`",
+    why: "the old app link, which the spec says still opens (the desktop's deep-link parser reads it)",
+  },
 ];
