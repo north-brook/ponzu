@@ -17,6 +17,7 @@ import { dirname, resolve } from "node:path";
 const NODE = new RegExp(`^(node:|(${builtinModules.join("|")})(/|$))`);
 const ENTRIES = ["index.ts", "react.ts", "testing/index.ts", "canvas/index.ts"];
 const PACKAGES = resolve(import.meta.dir, "../..");
+const ROOT = resolve(PACKAGES, "..");
 /** The packages the phone must never take in, by name and by where their source is. */
 const BARRED = /^@ponzu\/(canvas|render|server)(\/|$)/;
 const BARRED_DIR = new RegExp(
@@ -84,8 +85,10 @@ function specifiers(source: string): string[] {
 }
 
 /**
- * Walks the source this package and core ship (the files Metro compiles for the phone) from
- * `entry`, and lists each import of a barred package, as "specifier from file".
+ * Walks every workspace file the phone's typecheck reaches from `entry` (this package and core,
+ * and the types it takes from the API and the runner, such as `AppType`), and lists each import
+ * of a barred package, as "specifier from file". A specifier it follows but cannot resolve is
+ * listed too, so the walk can never pass by quietly stopping short.
  */
 function barredImports(entry: string): string[] {
   const seen = new Set<string>();
@@ -96,7 +99,7 @@ function barredImports(entry: string): string[] {
     if (seen.has(file)) continue;
     seen.add(file);
     for (const spec of specifiers(readFileSync(file, "utf8"))) {
-      const from = `${spec} from ${file.slice(PACKAGES.length + 1)}`;
+      const from = `${spec} from ${file.slice(ROOT.length + 1)}`;
       if (BARRED.test(spec)) {
         found.push(from);
         continue;
@@ -106,10 +109,11 @@ function barredImports(entry: string): string[] {
       try {
         path = Bun.resolveSync(spec, dirname(file));
       } catch {
+        found.push(`${from} (unresolved)`);
         continue;
       }
       if (BARRED_DIR.test(path)) found.push(from);
-      else if (/^(client|core)\/src\//.test(path.slice(PACKAGES.length + 1))) queue.push(path);
+      else if (path.startsWith(`${ROOT}/`) && !path.includes("/node_modules/")) queue.push(path);
     }
   }
   return found;
