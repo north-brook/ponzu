@@ -144,9 +144,11 @@ jobs:
           # Builds the runner and starts it, which must refuse an empty environment. Its own
           # outdir, so it never overwrites the dist/ the API build reads.
           check runner bun apps/runner/scripts/build.ts --smoke --outdir "$RUNNER_TEMP/runner"
+          # Migrations are expand-only: a destructive statement needs a `-- contract:` line.
+          check migrations bun scripts/ci/migrations.ts
           wait
           failed=0
-          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner; do
+          for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner migrations; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
             echo "::endgroup::"
@@ -166,6 +168,28 @@ jobs:
         with:
           path: apps/web/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+
+  workflows:
+    # Every workflow, linted by actionlint with .github/actionlint.yaml (and the runner's
+    # shellcheck, for each `run:`). Pinned by version and checksum: it reads only this checkout.
+    name: Workflows
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl --silent --show-error --fail --location --max-time 60 --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
 
   tests:
     # The tests alone; "Lint, typecheck, build" runs the rest, and "Check, typecheck, test"
@@ -251,9 +275,10 @@ jobs:
   test:
     # Main's ruleset requires this check by its name. It used to run the lint, typecheck,
     # builds and tests in one job; they now run beside each other in the two above, and this
-    # passes only when both did, so the required check still fails when any of them does.
+    # passes only when both did, so the required check still fails when any of them does. The
+    # workflows' lint is held to it too, so a workflow actionlint rejects cannot merge.
     name: Check, typecheck, test
-    needs: [checks, tests]
+    needs: [checks, tests, workflows]
     if: ${{ !cancelled() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -261,9 +286,10 @@ jobs:
       - env:
           CHECKS: ${{ needs.checks.result }}
           TESTS: ${{ needs.tests.result }}
+          WORKFLOWS: ${{ needs.workflows.result }}
         run: |
-          echo "lint, typecheck, build: $CHECKS; tests: $TESTS"
-          [ "$CHECKS" = success ] && [ "$TESTS" = success ]
+          echo "lint, typecheck, build: $CHECKS; tests: $TESTS; workflows: $WORKFLOWS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ] && [ "$WORKFLOWS" = success ]
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every
