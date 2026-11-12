@@ -63,10 +63,11 @@ export function posthogTelemetry(
     client?: string;
   } = {},
 ): Telemetry {
-  const known = knownSecrets(options.secrets);
   // What a secret looks like, and every value known to be one, out of the content before it goes.
+  // The list is read as each event goes: a secret given mid-turn joins it.
   const scrub = (properties: Record<string, unknown>) => {
     if (!config.content) return properties;
+    const known = knownSecrets(options.secrets);
     const out = { ...properties };
     for (const name of CONTENT) {
       if (out[name] != null) out[name] = redact(out[name], { known, maxDepth: CONTENT_DEPTH });

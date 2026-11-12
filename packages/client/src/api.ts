@@ -205,6 +205,19 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
           })
         ).json(),
       /**
+       * Gives the secret a `secret` question asks for. The API keeps the value sealed with the
+       * repo's secrets and never sends it back; the question and the thread carry only its name.
+       * 409 `question_closed` once answered, `no_repository` on Scratch, `secrets_full` when the
+       * repo has no room; 400 `secret_name_reserved`.
+       */
+      answerSecret: async (id: string, questionId: string, value: string) =>
+        (
+          await v1.canvases[":id"].questions[":questionId"].secret.$post({
+            param: { id, questionId },
+            json: { value },
+          })
+        ).json(),
+      /**
        * One of the agent's questions as it stands: once answered, the answer that won and who
        * gave it. `canvas.questions` holds the open ones alone; this says how one closed.
        */

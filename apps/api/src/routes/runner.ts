@@ -8,6 +8,7 @@ import {
   type RunnerContext,
   recordTurnUsage,
   reportRunnerState,
+  takeSecretAnswer,
 } from "@ponzu/db";
 import type {
   AckResponse,
@@ -28,6 +29,12 @@ import type {
   UsageResponse,
   WithdrawResponse,
 } from "@ponzu/runner/protocol";
+import {
+  checkSecretName,
+  reservedSecretReason,
+  SECRET_DELIVERY_MS,
+  type SecretResponse,
+} from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -36,6 +43,7 @@ import { captureForCanvas } from "../analytics/canvas.ts";
 import { access } from "../auth/access.ts";
 import type { LeasedRunner } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
+import { secretBinding } from "../environments/secrets.ts";
 import { CLIENT_HEADER } from "../http/client-version.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
@@ -55,6 +63,7 @@ import {
   PullRequestSummary,
   Question,
   Restored,
+  SecretAsk,
   State,
   Thread,
   Upload,
@@ -321,9 +330,25 @@ export const runner = new Hono<AppEnv>()
     return c.body(null, 204);
   })
 
-  /** Raises a question under the id the runner chose. Safe to repeat. */
+  /**
+   * Raises a question under the id the runner chose. Safe to repeat. A `secret` is asked only
+   * for a canvas with a repository (409 `no_repository`), and only under a name a secret may
+   * have (400 `secret_name_reserved`).
+   */
   .post("/questions", access.runner, validate("json", Question), async (c) => {
     const { id, kind, payload } = c.req.valid("json");
+    if (kind === "secret") {
+      if (checkSecretName(payload.name) === "reserved") {
+        throw new ApiError(400, "secret_name_reserved", reservedSecretReason(payload.name));
+      }
+      if (!(await contextOf(c)).canvas.repoId) {
+        throw new ApiError(
+          409,
+          "no_repository",
+          "A Scratch canvas has no repository to keep a secret.",
+        );
+      }
+    }
     const question = await createQuestion(c.var.deps.db, {
       canvasId: c.var.actor.canvasId,
       id,
@@ -342,6 +367,33 @@ export const runner = new Hono<AppEnv>()
       );
     }
     return c.json({ id: question.id, status: question.status } satisfies QuestionResponse);
+  })
+
+  /**
+   * The value a person gave for a `secret` question this canvas's runner raised, for the turn
+   * that asked: once, within `SECRET_DELIVERY_MS` of the answer, and only to the runner holding
+   * the lease (`access.runner`). 404 `not_found` for anything else, alike, so a caller learns
+   * nothing of a question it may not have. The same privilege a start's environment gives
+   * (`PONZU_REPO_SECRETS`), for one value. Never logged, never in analytics. Not safe to repeat:
+   * a second call answers 404, and the next start's environment carries the secret.
+   */
+  .post("/secret", access.runner, validate("json", SecretAsk), async (c) => {
+    const { deps, actor } = c.var;
+    const { questionId } = c.req.valid("json");
+    const taken = await takeSecretAnswer(deps.db, {
+      canvasId: actor.canvasId,
+      id: questionId,
+      withinMs: SECRET_DELIVERY_MS,
+    });
+    if (!taken) throw new ApiError(404, "not_found", "There is no secret to hand over.");
+    const value = await deps.vault.open(
+      taken.encryptedValue,
+      secretBinding(taken.repoId, taken.name),
+    );
+    // Which secret went, never what it is.
+    deps.log.info("runner_secret_delivered", { canvasId: actor.canvasId, questionId });
+    c.header("cache-control", "no-store");
+    return c.json({ name: taken.name, value } satisfies SecretResponse);
   })
 
   /** The run moved on: closes those of these that are still open. Safe to repeat. */

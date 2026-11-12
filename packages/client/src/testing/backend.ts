@@ -197,6 +197,8 @@ export class FakeBackend {
   readonly people = new Map<string, FakePerson>();
   readonly workspaces = new Map<string, FakeWorkspace>();
   readonly canvases = new Map<string, FakeCanvas>();
+  /** Secrets people gave for `secret` questions, as the API keeps them: apart from the question. */
+  readonly secretsGiven: { canvasId: string; name: string; value: string }[] = [];
   /**
    * What `GET /v1/repos/:id/ideas` answers for each repo, in turn: each ask takes the next
    * answer and the last one stays. A repo with none set has `none`.
@@ -1036,6 +1038,34 @@ export class FakeBackend {
             question.status = "answered";
             question.answer = { userId: person.id, body };
             // The runner takes the answer at once, and works again.
+            if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
+            this.touch(canvas);
+            return { id: question.id, status: question.status };
+          }),
+        answerSecret: (id, questionId, value) =>
+          call(() => {
+            const canvas = writable(id);
+            const question = canvas.questions.find((q) => q.id === questionId);
+            if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+            if (question.status !== "open" || question.body.kind !== "secret") {
+              const by = question.answer ? this.people.get(question.answer.userId) : undefined;
+              throw new ApiError(
+                409,
+                "question_closed",
+                "This question is no longer open.",
+                by ? { answeredBy: personOf(by) } : undefined,
+              );
+            }
+            if (!canvas.repoId) {
+              throw new ApiError(409, "no_repository", "A Scratch canvas has no repository.");
+            }
+            if (!value || value.includes("\u0000")) {
+              throw new ApiError(400, "invalid_request", "A secret needs a value.");
+            }
+            // As the API: the value is kept apart, never on the question.
+            this.secretsGiven.push({ canvasId: id, name: question.body.payload.name, value });
+            question.status = "answered";
+            question.answer = { userId: person.id, body: {} };
             if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
             this.touch(canvas);
             return { id: question.id, status: question.status };

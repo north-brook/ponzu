@@ -13,6 +13,7 @@ import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
+import { SECRETS_FOLDER } from "./api/protocol.ts";
 import { agentEnv, EnvError, readEnv, secretValues } from "./env.ts";
 import { agentFiles } from "./files.ts";
 import { receivePackProbe } from "./git-token.ts";
@@ -21,6 +22,7 @@ import { Runner } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
 import { Transcripts } from "./save/transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
+import { agentSecretWriter, localSecretWriter } from "./secret-tool.ts";
 import { serve, serveCredentials } from "./server.ts";
 import { posthogTelemetry } from "./telemetry.ts";
 import { runnerClient } from "./version.ts";
@@ -35,13 +37,19 @@ const EXIT_CONFIG = 78;
  * Every line the runner writes (Claude Code's stderr among them) goes to its log file on the
  * persistent disk, so into every snapshot: the known secret values are taken out first.
  */
-const logSecrets = (() => {
+const startSecrets = (() => {
   try {
-    return knownSecrets(secretValues(process.env));
+    return secretValues(process.env);
   } catch {
     return [];
   }
 })();
+/**
+ * The repo's secrets and the Claude credential, and every secret a person gives mid-turn as it
+ * is given (`keepSecret`): one list, read where it is used, by the log, checkpoints and traces.
+ */
+const scrubbed: string[] = [...startSecrets];
+let logSecrets = knownSecrets(scrubbed);
 const log = (message: string) => console.error(`[runner] ${redactText(message, logSecrets)}`);
 
 /** Claude Code's config folder, where its transcripts are: the image sets it for both users. */
@@ -108,6 +116,14 @@ const runner = new Runner({
   stateDir: env.stateDir,
   // What the working state and the thread's steps never say, whatever the agent typed.
   secrets: [env.token, env.portToken, ...secretValues(process.env)],
+  // A secret the agent asks for, given mid-turn, goes to its folder as the agent.
+  secretWriter: env.asAgent
+    ? agentSecretWriter(env.asAgent, agentEnv(process.env))
+    : localSecretWriter(join(homedir(), SECRETS_FOLDER)),
+  keepSecret: (value) => {
+    scrubbed.push(value);
+    logSecrets = knownSecrets(scrubbed);
+  },
   // Every filesystem, so the agent's files are flushed with the runner's own.
   flush: () =>
     new Promise<void>((resolve) => {
@@ -128,8 +144,8 @@ const runner = new Runner({
     });
     if (session.repo && !checkedOut) return { transcripts, work: null };
     // What a checkpoint never carries: the repo's secrets and the Claude credential, which the
-    // next sandbox's environment brings back.
-    const secrets = secretValues(process.env);
+    // next sandbox's environment brings back, and any given since (read at each save).
+    const secrets = scrubbed;
     const work =
       session.repo && session.branch
         ? new GitWork({
@@ -153,8 +169,7 @@ const runner = new Runner({
   log,
   // Each turn's trace, to PostHog, when the API's session says analytics is on.
   // With content on, what the agent saw and said is scrubbed of every secret its environment holds.
-  telemetry: (config) =>
-    posthogTelemetry(config, { log, secrets: secretValues(process.env), client }),
+  telemetry: (config) => posthogTelemetry(config, { log, secrets: scrubbed, client }),
   event: (name, fields) => log(JSON.stringify({ event: name, canvasId: env.canvasId, ...fields })),
   onFatal: () => {
     server.stop();

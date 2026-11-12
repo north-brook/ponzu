@@ -152,6 +152,16 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
         mutationFn: (vars: { canvasId: string; questionId: string; body: AnswerBody }) =>
           api.canvases.answer(vars.canvasId, vars.questionId, vars.body),
       }),
+    /**
+     * Gives the secret the agent asked for. Never cached: the value is gone from memory once the
+     * mutation settles.
+     */
+    answerSecret: () =>
+      mutationOptions({
+        mutationFn: (vars: { canvasId: string; questionId: string; value: string }) =>
+          api.canvases.answerSecret(vars.canvasId, vars.questionId, vars.value),
+        gcTime: 0,
+      }),
     /** Says something to the agent; answers the message's thread item. */
     sendMessage: () =>
       mutationOptions({

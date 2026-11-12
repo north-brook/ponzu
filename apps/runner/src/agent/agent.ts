@@ -23,7 +23,8 @@ export interface AgentTool {
   input: z.ZodRawShape;
   readOnly?: boolean;
   destructive?: boolean;
-  run(args: unknown): Promise<ToolResult>;
+  /** `call.id` is the tool call's id when Claude Code says it (an MCP request's `_meta`). */
+  run(args: unknown, call?: { id?: string }): Promise<ToolResult>;
 }
 
 export interface AgentOptions {
@@ -62,13 +63,18 @@ export interface AgentInput {
 export type Ask =
   | { kind: "question"; questions: AskedQuestion[] }
   | { kind: "plan"; plan: string }
-  | { kind: "permission"; tool: string; title: string; description: string | null };
+  | { kind: "permission"; tool: string; title: string; description: string | null }
+  /**
+   * An MCP server wants the person at a web address (a sign-in): opened in their browser, then
+   * done there, or not now. The address is http or https.
+   */
+  | { kind: "handoff"; title: string; url: string; description: string | null };
 
 /** A person's reply to an `Ask`. */
 export interface Reply {
   /** For a question: each question's text to the answer. */
   answers?: Record<string, string>;
-  /** For a plan or a permission. */
+  /** For a plan or a permission; for a hand-off, done there. */
   approved?: boolean;
   note?: string;
 }
@@ -92,6 +98,11 @@ export type AgentEvent =
   | { type: "tool-done"; id: string; error: boolean }
   /** The agent waits on a person; answer with `reply` or take it back with `withdraw`. */
   | { type: "ask"; id: string; ask: Ask }
+  /**
+   * An MCP server asked for something Ponzu can't show anyone (a form of fields), so it was
+   * declined and Claude went on without it.
+   */
+  | { type: "declined"; server: string }
   /**
    * The turn ended. `usage` is the session's running total, by model; `turn` is when it began,
    * how many tools it called and which event began it, when the agent knows.

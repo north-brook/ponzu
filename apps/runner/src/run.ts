@@ -33,6 +33,7 @@ import type { Origin, TraceOptions, TurnSummary } from "./agent/trace.ts";
 import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
 import {
   type AgentState,
+  type AnswerEvent,
   CLAIM_LIMIT,
   GIT_REPORTS,
   type GitCredentialRequest,
@@ -74,6 +75,7 @@ import { BranchPush, type PushOutcome, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
 import type { Git, WorkSaver } from "./save/work.ts";
+import { REQUEST_SECRET, requestSecretTool, type SecretWriter } from "./secret-tool.ts";
 import { StateReporter } from "./state.ts";
 import { describeStep } from "./steps.ts";
 import type { Telemetry } from "./telemetry.ts";
@@ -192,6 +194,17 @@ export interface RunnerOptions {
    * credential): a step whose phrase would hold one is said in plain words instead.
    */
   secrets?: readonly string[];
+  /**
+   * Where a secret the agent asked for and a person gave mid-turn goes (`~/.ponzu/secrets`, as
+   * the agent). Without one the runner offers no `request_secret`.
+   */
+  secretWriter?: SecretWriter;
+  /**
+   * A secret's value the runner was given mid-turn: from now on everything that scrubs the
+   * start's secrets (the log, checkpoints, traces) must scrub this one too. The runner scrubs its
+   * own thread and state of it whether or not this is given.
+   */
+  keepSecret?(value: string): void;
   /**
    * The checkout's git, as the agent, for a repo canvas checked out at `cwd`: what the runner
    * pushes the canvas's branch with (push.ts). Without it the runner never pushes.
@@ -313,6 +326,17 @@ export class Runner {
   private asks = new Map<string, string | null>();
   /** Answers handed to the agent: ask id to the answer's event, until the tool result is in. */
   private answering = new Map<string, string>();
+  /**
+   * Asks the runner's own tools wait on (`request_secret`), not Claude Code: ask id to what
+   * settles the wait, with the answer, or with none and why.
+   */
+  private waits = new Map<string, (answer: AnswerEvent | null, reason: string) => void>();
+  /** What each open ask is, by ask id: a hand-off has no tool result to wait for. */
+  private askKinds = new Map<string, Ask["kind"] | "secret">();
+  /** `request_secret` calls the agent has made, oldest first, until their tool runs. */
+  private secretCalls: string[] = [];
+  /** Secret values given mid-turn: scrubbed from the thread and the state like the start's. */
+  private given: string[] = [];
 
   /** Claude Code is in a turn: from what it took in until its result. */
   private inTurn = false;
@@ -452,6 +476,11 @@ export class Runner {
     for (const id of this.session.openQuestions) this.asks.set(id, null);
 
     this.cwd = await this.prepare();
+    // Secrets an earlier start was given mid-turn: this start's environment has the repo's
+    // secrets as they are now, one removed since among them no longer.
+    await this.opts.secretWriter
+      ?.clear()
+      .catch((err) => this.log(`clearing the secrets folder failed: ${said(err)}`));
     // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
     await this.recover();
     if (this.stopping) return;
@@ -885,7 +914,59 @@ export class Runner {
         this.pullRequest = pr;
       },
     });
-    return [...cloudTools, describe, ...drive];
+    // Asking for a secret takes a repository to keep it with, and somewhere to put it.
+    const secret = this.opts.secretWriter ? [this.secretTool()] : [];
+    return [...cloudTools, describe, ...drive, ...secret];
+  }
+
+  /** `request_secret`, for the tool call `callId` when Claude Code says which it is. */
+  private secretTool(callId?: string): ToolDef<any> {
+    return requestSecretTool((asked) => this.askSecret(asked, callId));
+  }
+
+  /**
+   * `request_secret`: raise a `secret` question under the tool call's id, wait for a person to
+   * give it, then fetch the value once and put it in the agent's secrets folder. The value is
+   * scrubbed from everything the runner says from before it is written anywhere.
+   */
+  private async askSecret(
+    asked: { name: string; description: string | null },
+    callId: string | undefined,
+  ): Promise<{ value: string } | { refused: string }> {
+    // The call's id, from Claude Code, or else the oldest call to this tool not yet running.
+    const askId = callId ?? this.secretCalls.shift() ?? randomId("toolu");
+    this.secretCalls = this.secretCalls.filter((id) => id !== askId);
+    const id = derivedId("q", askId);
+    const { answer, reason } = await new Promise<{ answer: AnswerEvent | null; reason: string }>(
+      (resolve) => {
+        this.waits.set(askId, (answer, reason) => resolve({ answer, reason }));
+        this.raiseQuestion(askId, "secret", { kind: "secret", payload: asked }, [
+          "Secret",
+          `Claude needs ${asked.name} to go on.`,
+        ]);
+      },
+    );
+    if (!answer) return { refused: reason };
+    const later = `${asked.name} is saved to this repository's secrets in Ponzu, but couldn't be handed over now. It's in the environment of every command from the sandbox's next start. Never print it.`;
+    let given: { name: string; value: string };
+    try {
+      given = await this.api.secret(id);
+    } catch (err) {
+      this.log(`fetching the secret for ${id} failed: ${said(err)}`);
+      return { refused: later };
+    }
+    if (given.name !== asked.name) return { refused: later };
+    // Scrubbed before it is anywhere: the state, the thread's steps, the log, traces, checkpoints.
+    this.given.push(given.value);
+    this.opts.keepSecret?.(given.value);
+    try {
+      await this.opts.secretWriter!.write(given.name, given.value);
+    } catch (err) {
+      this.log(`writing ${given.name} to the secrets folder failed: ${said(err)}`);
+      return { refused: later };
+    }
+    this.event("secret_given", { questionId: id, name: given.name });
+    return { value: given.value };
   }
 
   private tool(def: ToolDef<any>): AgentTool {
@@ -896,8 +977,9 @@ export class Runner {
       input: def.input,
       readOnly: def.readOnly,
       destructive: def.destructive,
-      run: async (args) => {
-        const result = await runTool(def, args, ctx);
+      run: async (args, call) => {
+        const run = def.name === REQUEST_SECRET ? this.secretTool(call?.id) : def;
+        const result = await runTool(run, args, ctx);
         // The agent is at the canvas: what people did to it is next for it to read.
         this.deliverLater("next");
         return result;
@@ -1035,9 +1117,21 @@ export class Runner {
       const askId = this.asks.get(questionId);
       this.asks.delete(questionId);
       if (askId) {
-        this.answering.set(askId, event.id);
-        const { answers, approved, note } = event.payload;
-        this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        const kind = this.askKinds.get(askId);
+        this.askKinds.delete(askId);
+        const wait = this.waits.get(askId);
+        this.waits.delete(askId);
+        if (kind === "handoff") {
+          // No tool result follows a hand-off: the session holds nothing to wait for.
+          this.ack(event.id, false);
+        } else {
+          this.answering.set(askId, event.id);
+        }
+        if (wait) wait(event.payload, "");
+        else {
+          const { answers, approved, note } = event.payload;
+          this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        }
         this.refreshState();
         return;
       }
@@ -1223,6 +1317,13 @@ export class Runner {
       case "ask":
         this.raise(event.id, event.ask);
         break;
+      case "declined":
+        this.notice(randomId("ti"), {
+          type: "error",
+          code: "elicitation_unsupported",
+          message: `${event.server} asked for details Ponzu can't show yet, so Claude went on without them.`,
+        });
+        break;
       case "result":
         this.result(event.id, event.error, event.usage, event.turn ?? null);
         break;
@@ -1339,7 +1440,11 @@ export class Runner {
   }
 
   private stepContext() {
-    return { doc: this.replica.doc, cwd: this.cwd, secrets: this.opts.secrets };
+    return {
+      doc: this.replica.doc,
+      cwd: this.cwd,
+      secrets: [...(this.opts.secrets ?? []), ...this.given],
+    };
   }
 
   /**
@@ -1380,6 +1485,9 @@ export class Runner {
   }
 
   private step(id: string, name: string, input: Record<string, unknown>): void {
+    // Which call a `request_secret` that runs without its id is, in the order they were made.
+    if (name === `mcp__ponzu__${REQUEST_SECRET}` && !this.secretCalls.includes(id))
+      this.secretCalls.push(id);
     const turn = this.openTurn();
     this.began(id);
     this.callNames.delete(id);
@@ -1428,19 +1536,44 @@ export class Runner {
   }
 
   private raise(askId: string, ask: Ask): void {
-    const id = derivedId("q", askId);
-    // Opened first, so the question is in the turn it was asked in.
-    this.openTurn();
-    this.asks.set(id, askId);
-    this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
-    const [header, text] =
+    const said: [string, string] =
       ask.kind === "question"
         ? [ask.questions[0]?.header ?? "Question", ask.questions[0]?.question ?? ""]
         : ask.kind === "plan"
           ? ["Plan", "Claude has a plan for you to approve."]
-          : ["Permission", ask.title];
+          : ask.kind === "handoff"
+            ? ["Over to you", ask.title]
+            : ["Permission", ask.title];
+    this.raiseQuestion(askId, ask.kind, questionBody(ask), said);
+  }
+
+  /** Raise a question for the ask `askId`, and say so in the thread. */
+  private raiseQuestion(
+    askId: string,
+    kind: Ask["kind"] | "secret",
+    body: QuestionBody,
+    [header, text]: [string, string],
+  ): void {
+    const id = derivedId("q", askId);
+    // Opened first, so the question is in the turn it was asked in.
+    this.openTurn();
+    this.asks.set(id, askId);
+    this.askKinds.set(askId, kind);
+    this.questions.put(`ask:${id}`, { ask: { id, ...body } });
     this.notice(derivedId("ti", askId), { type: "question", questionId: id, header, text });
     this.refreshState();
+  }
+
+  /** Nobody will answer the ask `askId`: the runner's own tool hears why, or Claude Code does. */
+  private withdrawAsk(askId: string, reason: string): void {
+    this.askKinds.delete(askId);
+    const wait = this.waits.get(askId);
+    if (wait) {
+      this.waits.delete(askId);
+      wait(null, reason);
+    } else {
+      this.run?.withdraw(askId, reason);
+    }
   }
 
   /**
@@ -1449,7 +1582,7 @@ export class Runner {
    */
   private dropAsks(reason: string): void {
     for (const [id, askId] of this.asks) {
-      if (askId) this.run?.withdraw(askId, reason);
+      if (askId) this.withdrawAsk(askId, reason);
       if (this.stopping) {
         this.asks.set(id, null);
         continue;
@@ -1490,7 +1623,7 @@ export class Runner {
     const askId = this.asks.get(id);
     this.asks.delete(id);
     if (askId)
-      this.run?.withdraw(
+      this.withdrawAsk(
         askId,
         "Ponzu could not show this question to anyone. Go on without an answer.",
       );
@@ -1622,7 +1755,11 @@ export class Runner {
     this.log(`Claude Code stopped${error ? `: ${error}` : ""}`);
     this.closeStreams("failed");
     // The process that asked is gone; the questions stay for people to answer as messages.
-    for (const id of this.asks.keys()) this.asks.set(id, null);
+    for (const [id, askId] of this.asks) {
+      if (askId) this.withdrawAsk(askId, "Claude Code stopped before anyone answered.");
+      this.asks.set(id, null);
+    }
+    this.secretCalls = [];
     this.answering.clear();
     this.sent.clear();
     this.asides.clear();
@@ -1867,6 +2004,11 @@ function questionBody(ask: Ask): QuestionBody {
       return {
         kind: "permission",
         payload: { tool: ask.tool, title: ask.title, description: ask.description },
+      };
+    case "handoff":
+      return {
+        kind: "handoff",
+        payload: { title: ask.title, url: ask.url, description: ask.description },
       };
   }
 }

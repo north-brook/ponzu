@@ -137,9 +137,17 @@ export class ScriptedRun implements AgentRun {
     if (!def) throw new Error(`No tool ${name}`);
     const id = `toolu_${++this.calls}`;
     this.emit({ type: "tool", id, name: `mcp__ponzu__${name}`, input: args });
-    const result = await def.run(args);
+    const result = await def.run(args, { id });
     this.emit({ type: "tool-done", id, error: !!result.isError });
     return result;
+  }
+
+  /** An MCP server's elicitation that became an ask (no tool call); resolves as `ask` does. */
+  elicit(id: string, ask: Ask): Promise<Reply | null> {
+    return new Promise((resolve) => {
+      this.asked.set(id, resolve);
+      this.emit({ type: "ask", id, ask });
+    });
   }
 
   /** Ask a person something; resolves to their reply, or null if it was withdrawn. */
