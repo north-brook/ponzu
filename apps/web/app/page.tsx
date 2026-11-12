@@ -144,7 +144,7 @@ export default function Home() {
               {TESTFLIGHT ? (
                 <a
                   className="inline-flex items-baseline gap-1.5 font-semibold whitespace-nowrap text-ink hover:underline"
-                  href={TESTFLIGHT}
+                  href={IPHONE}
                 >
                   <Apple className="size-[0.95em] shrink-0 translate-y-[0.08em] fill-current" />
                   Join the beta
