@@ -414,16 +414,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
 
     expect(
       await reportRunnerState(db, { designId: design.id, now: new Date(), ...report }),
-    ).toEqual({
-      seq: 0,
-      sleep: null,
-    });
+    ).toEqual({ seq: 0 });
     expect(
       await reportRunnerState(db, { designId: design.id, now: new Date(), ...report }),
-    ).toEqual({
-      seq: 0,
-      sleep: null,
-    });
+    ).toEqual({ seq: 0 });
     expect(await getDesignHead(db, design.id)).toMatchObject({
       agentState: "working",
       agentStatus: report.status,

@@ -272,36 +272,6 @@ function fromJson(row: SavedJson): SavedPoint | null {
 }
 
 /**
- * Count a rollback on the design's live sandbox: its runner found the disk behind the design's
- * last checkpoint. Answers the sandbox with its new count, or null when the design has none.
- */
-export async function countSandboxRollback(
-  db: Db,
-  designId: string,
-): Promise<{
-  id: string;
-  providerId: string | null;
-  generation: number;
-  rollbacks: number;
-  state: string;
-} | null> {
-  const [row] = await run(
-    db
-      .update(sandboxes)
-      .set({ rollbacks: sql`${sandboxes.rollbacks} + 1` })
-      .where(and(eq(sandboxes.designId, designId), sql`${sandboxes.state} <> 'gone'`))
-      .returning({
-        id: sandboxes.id,
-        providerId: sandboxes.providerId,
-        generation: sandboxes.generation,
-        rollbacks: sandboxes.rollbacks,
-        state: sandboxes.state,
-      }),
-  );
-  return row ?? null;
-}
-
-/**
  * Create PR asked the design's runner to push what only its sandbox holds: the `push` event that
  * asks it, and the reason the last push failed forgotten, since this one is a new try. The
  * runner says how it went with its next state report.
@@ -359,25 +329,12 @@ export async function runnerHeardSince(
   return result?.heard ?? false;
 }
 
-/** The sleep the design's runner last said it was ready for, or null. */
-export async function getQuiescedFor(db: Db, designId: string): Promise<Date | null> {
-  const [row] = await run(
-    db
-      .select({ quiescedFor: designRunners.quiescedFor })
-      .from(designRunners)
-      .where(eq(designRunners.designId, designId)),
-  );
-  return row?.quiescedFor ?? null;
-}
-
 export interface RunnerState {
   state: Extract<AgentState, "working" | "needs_you" | "idle">;
   status: string | null;
   artboards: string[];
   /** Stored for the next resume when not null. */
   claudeSessionId: string | null;
-  /** The sleep the runner is ready for (a stop's `state_at`), when it says so. */
-  quiesced?: Date | null;
   /**
    * The design's branch in the sandbox against GitHub: commits GitHub lacks, and why the last
    * push of them failed. Undefined leaves what was said before; null clears it.
@@ -385,22 +342,20 @@ export interface RunnerState {
   branch?: { unpushed: number; error: string | null } | null;
 }
 
-/** What a state report answers: the design's head, and the sleep its sandbox is going into. */
+/** What a state report answers: the design's head. */
 export interface StateAnswer {
   seq: number;
-  /** The `state_at` of the stop under way, while the design's sandbox is `stopping`. */
-  sleep: Date | null;
 }
 
 /**
  * Record what the design's runner says it is doing, as of `now`, and answer the design's head
- * `seq` and the stop its sandbox is getting ready for, if any. The design's row, which clients
+ * `seq`. The design's row, which clients
  * watch, is written only when what it shows changed, so a heartbeat that says the same again
  * touches only `design_runners`. Null when there is no such design or it has no runner.
  */
 export async function reportRunnerState(
   db: Db,
-  { designId, now, quiesced, branch, ...report }: RunnerState & { designId: string; now: Date },
+  { designId, now, branch, ...report }: RunnerState & { designId: string; now: Date },
 ): Promise<StateAnswer | null> {
   const heard = db.$with("heard").as(
     db
@@ -408,7 +363,6 @@ export async function reportRunnerState(
       .set({
         heardAt: sql`${timeParam(now)}::timestamptz`,
         claudeSessionId: sql`coalesce(${report.claudeSessionId}::text, ${designRunners.claudeSessionId})`,
-        ...(quiesced ? { quiescedFor: sql`${timeParam(quiesced)}::timestamptz` } : {}),
         ...(branch !== undefined
           ? { unpushed: branch?.unpushed ?? 0, pushError: branch?.error ?? null }
           : {}),
@@ -438,7 +392,7 @@ export async function reportRunnerState(
           working ? undefined : sql`${sandboxes.restarts} <> 0`,
         ),
       )
-      .returning({ id: sandboxes.id }),
+      .returning({ designId: sandboxes.designId }),
   );
   const artboards = sql`${sql.param(report.artboards, designs.agentArtboards)}::text[]`;
   const shown = db.$with("shown").as(
@@ -458,14 +412,10 @@ export async function reportRunnerState(
   const [row] = await run(
     db
       .with(heard, kept, shown)
-      .select({
-        seq: designs.seq,
-        sleep: sql<string | null>`(select ${sandboxes.stateAt} from ${sandboxes}
-          where ${sandboxes.designId} = ${designId} and ${sandboxes.state} = 'stopping')`,
-      })
+      .select({ seq: designs.seq })
       .from(designs)
       .where(and(eq(designs.id, designId), sql`exists (select 1 from ${heard})`)),
   );
   if (!row) return null;
-  return { seq: row.seq, sleep: row.sleep === null ? null : new Date(row.sleep) };
+  return { seq: row.seq };
 }

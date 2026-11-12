@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
-import { sweepSignIns } from "../claude/sign-in.ts";
 import { sweepInstallations } from "../github/installations.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
@@ -17,7 +16,6 @@ const CronRun = z.object({
   abandoned: z.number(),
   swept: z.number(),
   sandboxes: z.record(z.string(), z.number()),
-  signIns: z.number(),
 });
 
 /** Whether `header` is `Bearer <secret>`, compared in constant time. */
@@ -39,15 +37,12 @@ export const cron = new Hono<AppEnv>()
     }
     const run = { ...deps, log: c.var.log };
     const jobs = await runDueJobs(run, `cron:${c.var.requestId}`);
-    const [swept, sandboxes, signIns] = await Promise.all([
+    // The sandbox sweep's reconcile also removes the sandboxes of sign-ins that are over.
+    const [swept, sandboxes] = await Promise.all([
       sweepInstallations(run, { limit: SWEEP_LIMIT }),
       sweepSandboxes(run),
-      sweepSignIns(run).catch((error: unknown) => {
-        c.var.log.warn("sweep_failed", { step: "sign_ins", error });
-        return 0;
-      }),
     ]);
-    const ran = { ...jobs, swept, sandboxes, signIns };
+    const ran = { ...jobs, swept, sandboxes };
     c.var.log.info("cron_ran", ran);
     return c.json(CronRun.parse(ran));
   });

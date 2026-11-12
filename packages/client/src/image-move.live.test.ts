@@ -8,23 +8,24 @@ import { createSession } from "./session.ts";
 import { sessionFile } from "./testing/session-file.ts";
 
 /*
- * A design moving onto a new sandbox image, for real, opt in, in two runs with a deploy between
+ * A design recreated on a new sandbox image, for real, opt in, in two runs with a deploy between
  * (docs/cloud.md, "How images roll out"). Observed through the API alone, like
  * lifecycle.live.test.ts, whose environment it takes.
  *
  * Before: a design in the test repository is asked to remember a code word and to write a line to
  * a file it does not commit; the agent goes idle and the idle stop puts the sandbox to sleep.
  * What the second run needs is written to PONZU_IMAGE_MOVE_STATE (a file in the temp folder by
- * default). Between: set PONZU_SANDBOX_SNAPSHOT to another image and deploy (or restart
- * `bun run dev`). After: a message wakes it, which should move it; the agent must answer with the
- * code word without a tool and find the line in the file, uncommitted: the conversation and the
- * work in progress came over. Then the design is deleted with its sandbox. The API's log says
- * `sandbox_moved` (or `sandbox_move_held` with why it did not).
+ * default). Between: deploy the API with another image in apps/runner/image/current.json (or
+ * restart `bun run dev` with it). After: a message wakes it, which recreates its sandbox on that
+ * image; the agent must answer with the code word without a tool and find the line in the file,
+ * uncommitted: the conversation and the work in progress came over from the checkpoint. Then the
+ * design is deleted with its sandbox. The API captures `sandbox woke` with `recreated: true` (or
+ * logs `sandbox_move_held` with why it waited).
  *
  *   PONZU_IMAGE_MOVE_LIVE=before PONZU_API_URL=… PONZU_SESSION_FILE=… WORKOS_CLIENT_ID=… \
  *   ANTHROPIC_API_KEY=… GITHUB_TEST_REPO=owner/name CRON_SECRET=… \
  *     bun test packages/client/src/image-move.live.test.ts
- *   # set a new PONZU_SANDBOX_SNAPSHOT on that API and deploy it, then:
+ *   # deploy that API with another image in current.json, then:
  *   PONZU_IMAGE_MOVE_LIVE=after … bun test packages/client/src/image-move.live.test.ts
  *
  * The API must run with a short idle window (PONZU_SANDBOX_IDLE_SECONDS=60), and the developer's
@@ -62,7 +63,7 @@ interface Item {
   payload: Record<string, unknown>;
 }
 
-describe.skipIf(!ready)("a design moving onto a new image, for real", () => {
+describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
   test(
     `${phase}: the conversation and the work in progress come over to the new sandbox`,
     async () => {
@@ -153,7 +154,7 @@ describe.skipIf(!ready)("a design moving onto a new image, for real", () => {
           live.close();
         }
         console.log(
-          "Asleep. Now set a new PONZU_SANDBOX_SNAPSHOT, deploy, and run the after phase.",
+          "Asleep. Now deploy the API with another image in current.json, and run the after phase.",
         );
         return;
       }
@@ -177,7 +178,7 @@ describe.skipIf(!ready)("a design moving onto a new image, for real", () => {
       } finally {
         await call("DELETE", `designs/${designId}`);
         await call("DELETE", "claude");
-        console.log("Design deleted. The API's log should hold sandbox_moved for it.");
+        console.log("Design deleted. Its `sandbox woke` should say recreated: true.");
       }
     },
     20 * MINUTE,

@@ -35,7 +35,6 @@ const environment = {
   GITHUB_APP_SLUG: "placeholder",
   GITHUB_WEBHOOK_SECRET: "placeholder".repeat(4),
   CRON_SECRET: "placeholder".repeat(4),
-  BOAT_API_KEY: "placeholder",
   PONZU_VAULT_KEY: Buffer.alloc(32, 1).toString("base64url"),
   NEON_REALTIME_URL: "https://realtime.invalid/",
   // Shaped as Neon issues one: its prefix, then an AES-256 key in base64url.

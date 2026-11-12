@@ -1,5 +1,6 @@
 import { createDb, type Db } from "@ponzu/db";
-import { BoatProvider, type Clock, type SandboxProvider, systemClock } from "@ponzu/sandbox";
+import { type RunnerBundle, runnerBundle } from "@ponzu/runner/bundle";
+import { type Clock, type Sandboxes, systemClock, vercelSandboxes } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
 import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
@@ -14,7 +15,7 @@ import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
-import { createPoke, createRunnerPort, type Poke, type RunnerPort } from "./poke.ts";
+import { createPoke, type Poke } from "./poke.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
@@ -38,7 +39,13 @@ export interface Deps {
   vault: Vault;
   workos: Workos;
   github: Github;
-  sandbox: SandboxProvider;
+  /**
+   * Vercel Sandbox (packages/sandbox). Only `up()` resumes; every other call is pinned to a
+   * session. With OIDC it may be called only inside a request, or in work kept by one.
+   */
+  sandboxes: Sandboxes;
+  /** The runner bundle this build serves and names at every start (`@ponzu/runner/bundle`). */
+  runnerBundle: () => RunnerBundle;
   /** Checks a person's Anthropic API key. */
   anthropic: Anthropic;
   /** Cloudflare R2: the bytes of designs' files, previews and exports. */
@@ -51,8 +58,6 @@ export interface Deps {
   archives: ObjectStorage;
   /** Tells an awake runner there may be events to claim. */
   poke: Poke;
-  /** Asks an awake runner for a state report now, and whether it answers at all. */
-  runnerPort: RunnerPort;
   realtime: RealtimeSealer;
   /** Claude Haiku, through the AI SDK on Ponzu's own key, for what the API asks itself (repo ideas). */
   model: Model;
@@ -134,14 +139,18 @@ export function createDeps(env: Env): Deps {
       fetch: outbound,
       clock,
     }),
-    sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
+    // Makes no call yet: under OIDC the first one must come from inside a request.
+    sandboxes: vercelSandboxes({
+      clock,
+      ...(env.sandbox.vercel ? { credentials: env.sandbox.vercel } : {}),
+    }),
+    runnerBundle,
     anthropic: createAnthropic({ fetch: outbound, clock }),
     storage,
     archives: env.r2PrivateBucket
       ? createR2Storage({ ...env.r2, bucket: env.r2PrivateBucket, fetch: outbound, clock })
       : storage,
     poke: createPoke({ fetch: outbound, clock }),
-    runnerPort: createRunnerPort({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),

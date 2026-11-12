@@ -6,7 +6,9 @@
   "license": "MIT",
   "exports": {
     "./protocol": "./src/api/protocol.ts",
-    "./turn": "./src/turn.ts"
+    "./turn": "./src/turn.ts",
+    "./bundle": "./src/bundle.ts",
+    "./image/current.json": "./image/current.json"
   },
   "scripts": {
     "build": "bun scripts/build.ts",

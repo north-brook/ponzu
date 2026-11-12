@@ -6,15 +6,12 @@ import { createTestDb } from "../testing.ts";
 import { getDesignHead } from "./designs.ts";
 import { markEventsDelivered } from "./events.ts";
 import {
-  countSandboxRollback,
-  getQuiescedFor,
   getSavedPoint,
   recordCheckpoint,
   reportRunnerState,
   type SavedPoint,
   takeRunnerLease,
 } from "./runners.ts";
-import { beginSandbox, moveSandbox } from "./sandboxes.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -68,7 +65,7 @@ test("a state report shows on the design's head and answers its seq", async () =
     ...working,
   });
 
-  expect(answer).toEqual({ seq: 0, sleep: null });
+  expect(answer).toEqual({ seq: 0 });
   expect(await getDesignHead(db, design.id)).toMatchObject({
     agentState: "working",
     agentStatus: 'Drawing "Pricing"',
@@ -166,34 +163,5 @@ describe("checkpoints", () => {
     await takeRunnerLease(db, { designId: design.id, now: new Date(6_000) });
     expect(await recordCheckpoint(db, { ...at(7_000), ...point(9) })).toBeNull();
     expect((await getSavedPoint(db, design.id))!.turn).toBe(4);
-  });
-
-  test("a state report answers the stop under way and records the sleep the runner is ready for", async () => {
-    const { design } = await seedDesign(db);
-    await takeRunnerLease(db, { designId: design.id, now: new Date(1_000) });
-    const begun = await beginSandbox(db, {
-      designId: design.id,
-      provider: "boat",
-      now: new Date(1_000),
-      by: "job",
-      limits: { perWorkspace: 100, perOwner: 100 },
-    });
-    if (!begun || "full" in begun) throw new Error("no sandbox was begun");
-    const { id } = begun.sandbox;
-    await moveSandbox(db, { id, from: ["waking"], to: "awake", now: new Date(2_000), by: "job" });
-    const idle = { state: "idle" as const, status: null, artboards: [], claudeSessionId: null };
-    const report = (ms: number, quiesced?: Date) =>
-      reportRunnerState(db, { designId: design.id, now: new Date(ms), ...idle, quiesced });
-    expect((await report(3_000))!.sleep).toBeNull();
-
-    await moveSandbox(db, { id, from: ["awake"], to: "stopping", now: new Date(4_000) });
-    expect((await report(5_000))!.sleep).toEqual(new Date(4_000));
-    expect(await getQuiescedFor(db, design.id)).toBeNull();
-
-    await report(6_000, new Date(4_000));
-    expect(await getQuiescedFor(db, design.id)).toEqual(new Date(4_000));
-
-    expect((await countSandboxRollback(db, design.id))!.rollbacks).toBe(1);
-    expect((await countSandboxRollback(db, design.id))!.rollbacks).toBe(2);
   });
 });

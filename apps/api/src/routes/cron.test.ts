@@ -25,7 +25,7 @@ test("only the scheduler's secret runs it", async () => {
   }
   const response = await run(`Bearer ${TEST_CRON_SECRET}`);
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ ran: 0, abandoned: 0, swept: 0, signIns: 0 });
+  expect(await response.json()).toMatchObject({ ran: 0, abandoned: 0, swept: 0 });
 });
 
 test("installations nobody has read for hours are read again, which catches a lost uninstall", async () => {

@@ -29,6 +29,7 @@ import {
   createTestApp,
   TEST_ASSETS_URL,
   TEST_BOT_USER_ID,
+  TEST_BUNDLE,
   type TestApp,
 } from "../testing/index.ts";
 
@@ -442,6 +443,28 @@ describe("the thread", () => {
   });
 });
 
+describe("the bundle", () => {
+  test("is served to a runner token before the lease, as the tgz with its hash", async () => {
+    const design = await designIn(t, ws, "maya", sampleDoc());
+    const { token } = await createRunnerToken(t.db, { designId: design.id, ttlSeconds: 3600 });
+    const response = await t.app.request("/v1/runner/bundle", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/gzip");
+    expect(response.headers.get("x-ponzu-bundle-sha256")).toBe(TEST_BUNDLE.sha256);
+    expect(Buffer.from(await response.arrayBuffer()).toString("base64")).toBe(TEST_BUNDLE.tgz);
+  });
+
+  test("is nobody else's", async () => {
+    expect((await t.app.request("/v1/runner/bundle")).status).toBe(401);
+    const revoked = await t.app.request("/v1/runner/bundle", {
+      headers: { authorization: "Bearer pzr_not-a-token" },
+    });
+    expect(revoked.status).toBe(401);
+  });
+});
+
 describe("state", () => {
   test("shows on the design's head, answers its seq, and keeps the session", async () => {
     const { design, runner } = await sample();
@@ -455,10 +478,7 @@ describe("state", () => {
     const first = await send(runner, "PUT", "/state", state);
     const again = await send(runner, "PUT", "/state", state);
 
-    expect([first.body, again.body]).toEqual([
-      { seq: 0, sleep: null },
-      { seq: 0, sleep: null },
-    ]);
+    expect([first.body, again.body]).toEqual([{ seq: 0 }, { seq: 0 }]);
     expect(await getDesignHead(t.db, design.id)).toMatchObject({
       agentState: "working",
       agentStatus: 'Drawing "Home"',

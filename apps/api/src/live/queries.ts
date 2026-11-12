@@ -112,7 +112,7 @@ export const LIVE_QUERIES = {
     sql: `select ${DESIGN_HEAD_COLUMNS.map((column) => `d.${column}`).join(", ")},
                  d.agent_blocker, s.state as sandbox_state
             from designs d
-            left join sandboxes s on s.id = d.sandbox_id
+            left join sandboxes s on s.design_id = d.id
            where d.id = $1`,
   }),
 

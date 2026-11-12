@@ -199,21 +199,13 @@ describe("constraints", () => {
     await expect(onBranch(two.design.id)).rejects.toThrow();
   });
 
-  test("one design, one sandbox that is not gone", async () => {
+  test("one design, one sandbox", async () => {
     const { design } = await seedDesign(db);
-    const sandbox = (id: string, generation: number, state: "asleep" | "gone") =>
-      run(
-        db
-          .insert(schema.sandboxes)
-          .values({ id, designId: design.id, generation, provider: "boat", providerId: id, state }),
-      );
+    const sandbox = (state: "asleep" | "waking") =>
+      run(db.insert(schema.sandboxes).values({ designId: design.id, state }));
 
-    await sandbox("sbx_lost", 1, "gone");
-    await sandbox("sbx_now", 2, "asleep");
-
-    await expect(sandbox("sbx_second", 3, "asleep")).rejects.toThrow();
-    // And each generation once, so a create's idempotency key names one sandbox.
-    await expect(sandbox("sbx_again", 1, "gone")).rejects.toThrow();
+    await sandbox("asleep");
+    await expect(sandbox("waking")).rejects.toThrow();
   });
 
   test("a value outside an enum is refused by the database, not only by the types", async () => {

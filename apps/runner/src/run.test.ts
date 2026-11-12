@@ -1161,20 +1161,21 @@ async function brokenOff(opts: { pickups?: number } = {}) {
   const input = await first.run.input();
   first.run.take(input);
   await until(() => first.api.delivered.includes(message.id));
-  if (opts.pickups) {
-    writeFileSync(
-      join(stateDir, "turn.json"),
-      JSON.stringify({ uuid: input.uuid, event: message.id, pickups: opts.pickups }),
-    );
-  }
-  // Cut off: no result ever comes.
+  // Cut off: no result ever comes, and the runner dies under the turn. A stop shuts down in
+  // order and clears what is in flight, so the disk is put back as a kill would leave it.
   await first.runner.stop();
+  writeFileSync(
+    join(stateDir, "turn.json"),
+    JSON.stringify({ uuid: input.uuid, event: message.id, pickups: opts.pickups ?? 0 }),
+  );
+  // What the thread said before the next runner starts (the stop's own notice).
+  const said = notices(first.api, "error").length;
 
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_1", { messages: new Set([input.uuid]), toolResults: new Set() });
   first.api.sessionInfo.claudeSessionId = "sess_1";
   const second = await setup({ api: first.api, agent, stateDir });
-  return { api: first.api, message, second };
+  return { api: first.api, message, second, said };
 }
 
 test("a turn cut off after the session took its message is picked up by the next runner, and said", async () => {
@@ -1199,8 +1200,8 @@ test("a turn cut off after the session took its message is picked up by the next
 });
 
 test("a turn picked up twice already asks the person to send it again", async () => {
-  const { api, second } = await brokenOff({ pickups: 2 });
-  await until(() => notices(api, "error").length > 0);
+  const { api, second, said } = await brokenOff({ pickups: 2 });
+  await until(() => notices(api, "error").length > said);
   expect(notices(api, "error").at(-1)?.payload).toMatchObject({
     code: "turn_failed",
     message: "Claude was cut off again before it finished. Send your message again to retry.",
@@ -2079,41 +2080,36 @@ test("with analytics off the agent traces nothing, and the runner never makes a 
   expect(s.run.opts.trace).toBeUndefined();
 });
 
-test("the traces are flushed as the sandbox gets ready to sleep, and sent off as the runner stops", async () => {
+test("the traces are sent off as the runner stops, once Claude Code has closed", async () => {
   const t = recordingTelemetry();
   const s = await setup({ session: { analytics: ANALYTICS }, telemetry: t.telemetry });
   s.run.ready("sess_1");
-  s.api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => s.api.quiesced.length === 1);
-  expect(t.calls).toEqual(["flush"]);
+  expect(t.calls).toEqual([]);
   await s.runner.stop();
-  expect(t.calls).toEqual(["flush", "shutdown"]);
+  expect(s.run.closed).toBe(true);
+  expect(t.calls).toEqual(["shutdown"]);
 });
 
-test("a PostHog that fails to send does not cut short the wait for the thread before sleep", async () => {
+test("a PostHog that fails to send does not cut short the wait for the thread before a stop", async () => {
   const s = await setup({
     session: { analytics: ANALYTICS },
     telemetry: () => ({
       capture: () => {},
-      flush: () => Promise.reject(new Error("PostHog is down")),
-      shutdown: async () => {},
+      flush: async () => {},
+      shutdown: () => Promise.reject(new Error("PostHog is down")),
     }),
   });
   s.run.ready("sess_1");
   await turn(s);
-  // The API is slow to take the thread: the reply is still on its way when the sleep comes.
+  // The API is slow to take the thread: the reply is still on its way when the stop comes.
   s.api.delays.set("writeThread", 150);
   s.run.say("m1", "Drawn.");
   s.run.end();
-  s.api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => s.api.quiesced.length === 1);
+  await s.runner.stop();
   expect(s.api.items().find((i) => i.kind === "assistant")).toMatchObject({
     streaming: false,
     payload: { text: "Drawn." },
   });
-  expect(s.logs).toContain("sending the turns' traces failed: PostHog is down");
 });
 
 test("telemetry that cannot start leaves the runner running, untraced", async () => {

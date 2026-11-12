@@ -47,7 +47,7 @@ test("the cloud API and the packages only it uses run neither", () => {
     "apps/api/src/routes/me.ts",
     "apps/api/vercel.json",
     "packages/db/src/queries/accounts.ts",
-    "packages/sandbox/src/boat.ts",
+    "packages/sandbox/src/vercel.ts",
   ]) {
     expect(suites(file)).toEqual({ desktop: false, mobile: false });
   }

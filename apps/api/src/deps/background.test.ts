@@ -34,7 +34,7 @@ test("what is kept never rejects: a failure becomes a log line with the work's n
     (work) => kept.push(work),
   );
 
-  background("wake", Promise.reject(new Error("boat.dev is down")));
+  background("wake", Promise.reject(new Error("Vercel is down")));
   background("sync", Promise.resolve("done"));
 
   expect(await Promise.all(kept)).toEqual([undefined, undefined]);
@@ -43,7 +43,7 @@ test("what is kept never rejects: a failure becomes a log line with the work's n
       level: "error",
       event: "background_failed",
       name: "wake",
-      error: { message: "boat.dev is down" },
+      error: { message: "Vercel is down" },
     },
   ]);
 });

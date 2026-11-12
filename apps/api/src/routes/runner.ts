@@ -159,6 +159,22 @@ async function contextOf(c: RunnerCall): Promise<RunnerContext> {
 
 export const runner = new Hono<AppEnv>()
   /**
+   * The runner bundle this API serves, which `ponzu-start` fetches when the hash it was started
+   * with (`PONZU_RUNNER_BUNDLE`) is not on the sandbox's disk yet, and checks. Before the lease:
+   * the runner is not running yet. The same bytes for every runner of this build.
+   */
+  .get("/bundle", access.runnerStarting, (c) => {
+    const bundle = c.var.deps.runnerBundle();
+    const body = Buffer.from(bundle.tgz, "base64");
+    return c.body(body, 200, {
+      "content-type": "application/gzip",
+      "content-length": String(body.byteLength),
+      "x-ponzu-bundle-sha256": bundle.sha256,
+      "cache-control": "private, max-age=31536000, immutable",
+    });
+  })
+
+  /**
    * Takes the design's lease: a new runner id, which every later call carries, and whatever
    * held it before is refused from now on. Safe to repeat: the last one wins.
    */
@@ -241,19 +257,13 @@ export const runner = new Hono<AppEnv>()
    */
   .put("/state", access.runner, validate("json", State), async (c) => {
     const { deps, actor } = c.var;
-    const { quiesced, ...report } = c.req.valid("json");
     const answer = await reportRunnerState(deps.db, {
       designId: actor.designId,
       now: new Date(deps.clock.now()),
-      ...report,
-      quiesced: quiesced ? new Date(quiesced) : null,
+      ...c.req.valid("json"),
     });
     if (answer === null) throw new ApiError(404, "not_found", "There is no such design.");
-    // While the sandbox is being stopped, which stop: the runner gets ready and says so.
-    return c.json({
-      seq: answer.seq,
-      sleep: answer.sleep?.toISOString() ?? null,
-    } satisfies StateResponse);
+    return c.json({ seq: answer.seq } satisfies StateResponse);
   })
 
   /**

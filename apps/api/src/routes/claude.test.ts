@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { getClaudeAccount } from "@ponzu/db";
-import { SandboxError } from "@ponzu/sandbox";
+import { SandboxError, signInSandboxName } from "@ponzu/sandbox";
 import { lifetime } from "../claude/sign-in.ts";
 import { call } from "../testing/designs.ts";
-import { createTestApp, TEST_CRON_SECRET, type TestApp } from "../testing/index.ts";
+import { createTestApp, TEST_CRON_SECRET, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 let t: TestApp;
 beforeAll(async () => {
@@ -15,32 +15,40 @@ const KEY = "sk-ant-api03-a-real-looking-key-4f2a";
 const TOKEN = `sk-ant-oat01-${"T".repeat(80)}`;
 const CODE = "k7Hq2Rw9xTpL4mZ#state-from-claude";
 const URL = "https://claude.com/cai/oauth/authorize?code=true&client_id=c&state=s";
+const HOME = "/vercel/.st";
 
 /** A fresh sign-in, as the test clock can run past an access token's five minutes. */
 const as = async (login: string) => (await t.signInAs({ login })).headers;
+const nameOf = (id: string) => signInSandboxName(TEST_SCOPE, id);
 
 /**
- * `claude setup-token` in the utility sandbox, acted out by the fake provider: `start` prints
- * the address, and `code` takes the code the API wrote into the sandbox and, if it is the one
- * claude.ai would take, leaves the token in its file.
+ * The driver in the utility sandbox, acted out over the fake sandboxes: `start` leaves the
+ * address in its out file, and `code` takes the code the API wrote into the sandbox and, if it
+ * is the one claude.ai would take, leaves the token in its file. Neither ever prints anything.
  */
 const codes: string[] = [];
 beforeAll(() => {
-  const write = t.sandbox.writeFile.bind(t.sandbox);
-  t.sandbox.writeFile = async (id, path, content) => {
-    if (path === ".st/code") codes.push(String(content));
-    return write(id, path, content);
+  const sandboxes = t.sandboxes;
+  const write = sandboxes.writeFile.bind(sandboxes);
+  sandboxes.writeFile = async (at, path, content, options) => {
+    if (path === `${HOME}/code`) codes.push(String(content));
+    return write(at, path, content, options);
   };
-  t.sandbox.onExec = (command) => {
-    if (command.command.endsWith("driver.sh start")) return { stdout: `URL=${URL}\n` };
-    if (command.command.endsWith("driver.sh code")) {
+  const exec = sandboxes.exec.bind(sandboxes);
+  sandboxes.exec = async (at, command, options) => {
+    const result = await exec(at, command, options);
+    if (command.cmd !== "bash") return result;
+    if (command.args?.[1] === "start") {
+      await write(at, `${HOME}/start.out`, `URL=${URL}\n`);
+    } else if (command.args?.[1] === "code") {
       if (codes.at(-1) !== CODE) {
-        return { stdout: "NO_TOKEN\nOAuth error: That code wasn't accepted.\n", exitCode: 1 };
+        await write(at, `${HOME}/code.out`, "NO_TOKEN\nOAuth error: That code wasn't accepted.\n");
+        return { ...result, exitCode: 1 };
       }
-      void t.sandbox.writeFile(command.id, ".st/token", TOKEN);
-      return { stdout: "TOKEN_SAVED valid for 1 year\n" };
+      await write(at, `${HOME}/token`, TOKEN);
+      await write(at, `${HOME}/code.out`, "TOKEN_SAVED valid for 1 year\n");
     }
-    return undefined;
+    return result;
   };
 });
 
@@ -102,8 +110,7 @@ describe("a subscription sign-in", () => {
     expect(started.status).toBe(201);
     return started.body as { id: string; authorizeUrl: string; expiresAt: string };
   };
-  const machine = async () =>
-    (await t.sandbox.list({ labels: { ponzu: "claude-sign-in" } })).at(-1)!;
+  const exists = async (id: string) => (await t.sandboxes.status(nameOf(id))) !== null;
 
   test("runs Claude Code's own sign-in in a sandbox with no credential, and takes the code back as a file", async () => {
     const headers = await as("bea");
@@ -115,8 +122,16 @@ describe("a subscription sign-in", () => {
       // Ten minutes from the ask; the sandbox taking a few seconds to start does not shorten it.
       expiresAt: new Date(asked + 10 * 60_000).toISOString(),
     });
-    const sandbox = await machine();
-    expect(t.sandbox.env(sandbox.id)).toEqual({});
+    const name = nameOf(started.id);
+    // Made for this alone: not kept, no port, and no command carries any environment.
+    expect(t.sandboxes.config(name).spec).toMatchObject({ persistent: false, ports: [] });
+    expect(t.sandboxes.commands(name)).toEqual([
+      {
+        sessionId: expect.any(String),
+        kind: "exec",
+        command: { cmd: "bash", args: [`${HOME}/driver.sh`, "start"] },
+      },
+    ]);
 
     const finished = await call(t, headers, "POST", `/v1/claude/sign-ins/${started.id}/code`, {
       code: CODE,
@@ -133,8 +148,8 @@ describe("a subscription sign-in", () => {
       t.clock.now() + 365 * 24 * 3600_000,
     );
     // The utility sandbox is gone, and neither the code nor the token went into a command or a log.
-    expect((await t.sandbox.get(sandbox.id)).state).toBe("gone");
-    const commands = JSON.stringify(t.sandbox.commands);
+    expect(await exists(started.id)).toBe(false);
+    const commands = JSON.stringify(t.sandboxes.commands(name));
     for (const secret of [CODE, TOKEN]) {
       expect(commands).not.toContain(secret);
       expect(JSON.stringify(t.logs)).not.toContain(secret);
@@ -189,25 +204,36 @@ describe("a subscription sign-in", () => {
     expect(await getClaudeAccount(t.db, (await t.signInAs({ login: "dee" })).userId)).toBeNull();
   });
 
-  test("abandoned sign-ins lose their sandboxes to the minute's sweep", async () => {
+  test("abandoned sign-ins lose their sandboxes to the sweep's reconcile", async () => {
     const headers = await as("fay");
-    await start(headers);
-    const sandbox = await machine();
+    const { id } = await start(headers);
+    const cron = async () =>
+      t.app.request("/v1/cron/minute", {
+        headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+      });
+    /** On to the next tenth minute, when reconcile runs. */
+    const toReconcile = () => {
+      const minute = new Date(t.clock.now()).getUTCMinutes();
+      t.clock.advance(((10 - (minute % 10)) % 10) * 60_000 + 1000);
+    };
     t.clock.advance(11 * 60_000);
-    const cron = await t.app.request("/v1/cron/minute", {
-      headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
-    });
-    expect((await cron.json()).signIns).toBeGreaterThanOrEqual(1);
-    expect((await t.sandbox.get(sandbox.id)).state).toBe("gone");
+    toReconcile();
+    await cron();
+    // Under an hour old and never finished: it may still be coming back.
+    expect(await exists(id)).toBe(true);
+    t.clock.advance(50 * 60_000);
+    toReconcile();
+    expect((await cron()).status).toBe(200);
+    expect(await exists(id)).toBe(false);
   });
 
-  test("giving one up destroys its sandbox at once", async () => {
+  test("giving one up removes its sandbox at once", async () => {
     const headers = await as("gus");
     const { id } = await start(headers);
-    const sandbox = await machine();
+    expect(await exists(id)).toBe(true);
     expect((await call(t, headers, "DELETE", `/v1/claude/sign-ins/${id}`)).status).toBe(204);
     await t.backgroundDone();
-    expect((await t.sandbox.get(sandbox.id)).state).toBe("gone");
+    expect(await exists(id)).toBe(false);
     const used = await call(t, headers, "POST", `/v1/claude/sign-ins/${id}/code`, { code: CODE });
     expect(used.body.error.code).toBe("claude_sign_in_used");
   });
@@ -215,10 +241,9 @@ describe("a subscription sign-in", () => {
   test("a person has one open at a time: a new one replaces the last, and its sandbox goes", async () => {
     const headers = await as("ivy");
     const first = await start(headers);
-    const firstSandbox = await machine();
     await start(headers);
     await t.backgroundDone();
-    expect((await t.sandbox.get(firstSandbox.id)).state).toBe("gone");
+    expect(await exists(first.id)).toBe(false);
     const replaced = await call(t, headers, "POST", `/v1/claude/sign-ins/${first.id}/code`, {
       code: CODE,
     });
@@ -230,8 +255,8 @@ describe("a subscription sign-in", () => {
     for (let i = 0; i < 5; i++) await start(headers);
     await t.backgroundDone();
     const live = async () =>
-      (await t.sandbox.list({ labels: { ponzu: "claude-sign-in" } })).filter(
-        (sandbox) => sandbox.state !== "gone",
+      (await t.sandboxes.list(`pz-${TEST_SCOPE}-signin-`)).filter(
+        (sandbox) => sandbox.status === "running",
       ).length;
     const before = await live();
     const sixth = await call(t, headers, "POST", "/v1/claude/sign-ins");
@@ -243,8 +268,12 @@ describe("a subscription sign-in", () => {
     await start(await as("jo"));
   });
 
-  test("a provider that cannot start the sandbox is Claude being out of reach", async () => {
-    t.sandbox.failNext("create", new SandboxError("rate_limited", "429", { retryAfterSeconds: 9 }));
+  test("a sandbox that cannot be started is Claude being out of reach", async () => {
+    const up = t.sandboxes.up.bind(t.sandboxes);
+    t.sandboxes.up = async () => {
+      t.sandboxes.up = up;
+      throw new SandboxError("rate_limited", "429", { retryAfterSeconds: 9 });
+    };
     const failed = await call(t, await as("hal"), "POST", "/v1/claude/sign-ins");
     expect(failed.status).toBe(502);
     expect(failed.body.error.message).toContain("Claude");

@@ -47,7 +47,7 @@ packages/
   tools/     the agent's canvas tools
   render/    headless Chromium: screenshots, layout, lint, recordings
   db/        Drizzle schema, migrations, queries
-  sandbox/   sandbox provider interface; boat.dev is the one implementation
+  sandbox/   design sandboxes on Vercel Sandbox, and a fake of it for tests
   client/    typed API client, live queries, the cloud canvas source
 ```
 
@@ -62,7 +62,7 @@ Where things run:
 | Clients | the person's device | a session token, a cache |
 | API | Vercel functions | every credential, all authorization |
 | Store | Neon Postgres, Cloudflare R2 | the system of record; R2 holds bytes |
-| Sandbox | one boat.dev VM per design | a checkout and a Claude session |
+| Sandbox | one Vercel Sandbox per design, in iad1 | a checkout and a Claude session |
 
 ## Identity and access
 
@@ -487,136 +487,184 @@ it. Each op is stored with its inverse.
 
 ## The sandbox
 
-One design owns one sandbox, one Claude session, one branch and at most one pull
-request. The provider sits behind `SandboxProvider` in `packages/sandbox`:
-`create`, `get`, `list`, `ensureAwake`, `resume`, `stop`, `extend`, `destroy`,
-`exec`, `execStream`, `spawn`, `process`, `kill`, `readFile`, `writeFile`,
-`address`, `saveSnapshot`, `getSnapshot`, `listSnapshots`, `deleteSnapshot`,
-`usage`. A sandbox is `awake`, `asleep` or `gone`, or `starting` or `stopping` on
-the way. `BoatProvider` is the real one; `FakeProvider` runs in memory with a clock
-the test controls.
+One design owns one sandbox, one Claude session, one branch and at most one pull request. A
+sandbox is a [Vercel Sandbox](https://vercel.com/docs/sandbox): a Firecracker VM, 2 vCPUs and
+4 GB, in `iad1` beside the API's functions, booted from Ponzu's own image ("The image"), with one
+public `https://<sub>.vercel.run` address for the runner's port. It is **persistent**: a stop
+snapshots its disk (2 to 3 seconds for the image's 550 MB), and the next start boots a new VM
+from that snapshot, so files survive a sleep and processes do not. Vercel has no idle detection
+and no wake-on-request, so the API owns the lifecycle.
 
-Three rules of that interface shape the API's jobs:
+`packages/sandbox` is the one seam between Ponzu and Vercel: the `Sandboxes` type,
+`vercelSandboxes` (on `@vercel/sandbox`, pinned exactly) and `FakeSandboxes`, which models
+Vercel in memory with a clock the test controls. Nothing else imports the SDK
+(`surface.test.ts` holds that).
 
-- `ensureAwake` has a deadline (90 seconds unless told otherwise) and ends with a
-  typed error when it passes, so a wake never outlives its function unannounced.
-- A wake that is given a new environment either starts the sandbox on it or fails
-  with `conflict`. It never returns a sandbox that is running on the old one.
-- The idempotency key on `create` guards one job's retries, not a design. The
-  provider forgets it after a day and when the sandbox is destroyed. The design's
-  row holds the sandbox id; a label finds a sandbox the row lost.
-
-boat.dev gives each sandbox a full VM (Ubuntu 24.04 with Node, Bun, git, Docker,
-Chrome and Claude Code) and a token-gated public address per port. It has no idle
-detection and no wake-on-request, so the API owns the lifecycle.
+- **One named sandbox per design.** A design's is `pz-<scope>-<design id>`, a Claude sign-in's
+  `pz-<scope>-signin-<auth state id>`, and the live suites' and image checks' `pz-test-<tag>-<random>`.
+  `scope` is the first 12 hex of a hash of the database URL, so every deployment sharing the
+  Vercel project (dev, previews, production) acts only on its own names. Names are unique in the
+  project, so the name is the idempotency key and the only handle the API keeps.
+- **Only `up()` resumes.** The SDK resumes a stopped sandbox on almost any call that needs a
+  VM. So `up(name, spec)` is the one call that may, and every other call is pinned to one
+  session (`At = { name, sessionId }`) and fails as `not_running` rather than wake anything:
+  `start` (a detached command), `exec` (a waited one), `writeFile`, `readFile`, `extend` and
+  `stop`. They go to Vercel's session endpoints, which never resume. `status` and `list` read
+  without resuming, and `remove` deletes the sandbox and its snapshots.
+- **`up()`** reads the sandbox without resuming it. Missing, it creates it. On another image
+  digest it deletes it without booting it and creates it again (`recreated`). Its other settings
+  (persistence, timeout, size, ports, snapshot expiry and count) are brought to the spec with
+  `update`, which applies from the next session. Running, it answers that session
+  (`wasRunning`); otherwise it resumes, which also absorbs a snapshot that expired (a fresh
+  create). It answers the session's id, start and deadline, the port's address, and `fresh`
+  when the disk is empty.
+- **Errors** are five codes: `rate_limited` (a 429 the SDK did not wait out, with
+  `Retry-After`), `busy` (from `up()` only: a create on a name a racing wake just took, or an
+  image not ready), `not_running` (a pinned call on a session that is not the current one, or
+  has stopped), `unavailable` (the network, or a 5xx after the SDK's retries) and `rejected`.
+- **Credentials.** On Vercel the API uses its function's OIDC token, and refuses a
+  `VERCEL_TOKEN` there. Scripts, CI and the live suites use `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and
+  `VERCEL_PROJECT_ID` (the ponzu-api project), all three or none. **The OIDC token is read from
+  the request**, so the SDK is called only inside a request or in work handed to `waitUntil` from
+  one (`deps.background`), never at module load or from a timer started outside a request. The
+  cron is a request, so the sweep qualifies.
 
 | Step | What happens |
 |---|---|
-| Create | On the first message, which `POST /v1/designs` takes with the design (and a create key, so a double tap makes one). The API names the branch `pz/<topic>` from the message's first words that say something, numbered when taken, and never renames it; it creates the sandbox from Ponzu's image (a repo's base snapshot later; credits are not checked yet), and the runner checks out the branch from the default branch. |
-| First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
+| Create | On the first message, which `POST /v1/designs` takes with the design (and a create key, so a double tap makes one). The API names the branch `pz/<topic>` from the message's first words that say something, numbered when taken, and never renames it. The first wake creates the sandbox from the image; the runner finds an empty disk, checks out the branch from the default branch (or makes Scratch's folder) and starts. |
+| First run in a repo | Claude sets the checkout up itself. |
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen, and at the end of each turn the runner pushes whatever the agent left unpushed ("Git"). After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
-| Sleep | Five minutes after the last activity the API stops the sandbox: it asks the runner to get ready (finish the turn, settle, checkpoint, `sync`), waits up to 30 seconds for it, runs `sync` itself, then stops. A stop keeps the disk; memory survives for about ten minutes. |
-| Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health`, and whether the runner has called in since the thaw, and starts the unit again only if neither says it is up. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session, picks up a turn the last process left unfinished, and takes its pending events. |
-| Settle | On merge the design settles and its sandbox is destroyed. |
-| Lost | A sandbox that cannot be resumed is recreated from the branch and the base, and its runner restores the last checkpoint: the conversation and the uncommitted work come back. |
+| Sleep | Five minutes after the last activity the API runs `ponzu-stop` (the runner finishes the turn's notice, flushes, reports, checkpoints and closes Claude Code; then `sync`), then stops the session, which snapshots the disk. |
+| Wake | A message, answer or comment wakes it: `up()` resumes the snapshot on a new VM (wake to the runner's `/health` in 2 to 3 seconds) and the API runs `ponzu-start` with the runner's environment. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session, picks up a turn the last process left unfinished, and takes its pending events. |
+| Settle | On merge the design settles and its sandbox is retired: stopped, deleted at Vercel with its snapshots, and its row deleted. |
+| Fresh disk | A snapshot that expired (30 days after its last use; Vercel removes the sandbox 14 days after that), a new image, or a sandbox deleted at Vercel: the next wake boots an empty disk, and the runner rebuilds from the branch and restores the last checkpoint. The conversation and the uncommitted work come back; gitignored files do not. |
 
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
 one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
-- **The database decides.** A design has at most one `sandboxes` row that is not `gone`
-  (`waking`, `awake`, `stopping`, `asleep` or `failed`, with when it got there and why it
-  failed), and each move holds to the states it moves from, so of two function instances
-  racing only one makes it. A wake claims the row before it creates or starts anything: `waking`
-  records the wake job that holds it (`waking_by`), only that job moves it on, and another may
-  take it over only once it has sat unmoved for six minutes. A wake that loses the claim does
-  nothing, and when the sandbox is awake every runner token of the design but the one its
-  environment carries is revoked. A row of the next generation replaces a lost one; the design
-  and the generation are the provider's idempotency key, so a create sent again after a crash
-  finds the sandbox the first made. A wake that finds the sandbox `stopping` waits for the stop
-  to land before it resumes it (Known constraints). The design's head shows `waking` at once,
-  and `agent_blocker` says why a design waits: `claude_not_connected`, `claude_expired`,
-  `claude_owner_left` (whose Claude it runs on is no longer in the workspace), `sandbox_busy`
-  (out of starts: the job waits as long as the provider says, or past the limits below) or
-  `sandbox_failed`.
+- **The database decides.** A design has at most one `sandboxes` row, keyed by the design, in
+  one of four states:
+
+  | State | Means |
+  |---|---|
+  | `asleep` | No session the row holds is running. `failure` says why the last wake gave up, when it did. |
+  | `waking` | A wake job holds the row (`waking_by`): a create, a resume, or a restart in place. |
+  | `awake` | A session is running, `ponzu-start` was sent with the row's runner token, and the row is metered (`awake_since`). |
+  | `stopping` | A sleep is shutting the runner down and stopping the session, or a retire holds the row until its sandbox is deleted (`waking_by = 'retire:<job>'`). |
+
+  Every move holds to the states it moves from and to the job holding the row, so of two
+  function instances racing only one makes it, and another may take a held row over only once
+  it has sat unmoved for six minutes. The row keeps the session it holds (`session_id`, and
+  `session_started_at`, which a restart in place keeps), the port's address and its sealed
+  bearer, the session's deadline, the runner token and which Claude credential it was started
+  with. The design's head shows `waking` at once, and `agent_blocker` says why a design waits:
+  `claude_not_connected`, `claude_expired`, `claude_owner_left` (whose Claude it runs on is no
+  longer in the workspace), `sandbox_busy` (Vercel limiting the pace, or past the limits below)
+  or `sandbox_failed`.
+- **A wake** (`orchestrate.ts`) claims the row first:
+
+  | Row | The wake |
+  |---|---|
+  | none | inserts it `waking`, under the limits |
+  | `asleep` | moves it to `waking` |
+  | `stopping` | waits for the stop to land (polling every second, up to 30 seconds), then as `asleep`; still held (a retire, a slow stop), it tries again later |
+  | `awake`, started with the owner's current credential | nothing: the request's poke reached it |
+  | `awake`, an older credential | moves it to `waking`: a restart in place |
+  | `waking`, held by another wake | nothing |
+
+  Then one path covers a create, a resume and a restart in place: `up()` on the design's image;
+  if the session was already running (a restart, a session left running, a supervisor of an older
+  runner), `ponzu-stop` in it; then `ponzu-start`, detached, with a new environment. The row moves
+  to `awake` once the start is sent, and every runner token of the design but the new one is
+  revoked; the runner claims by itself as soon as it is up, so the wake neither waits for
+  `/health` nor pokes. Vercel limiting the pace, being busy or away, or the session ending between
+  `up()` and the start, is waited out: the token is revoked, the session `up()` returned is
+  stopped (so nothing runs between tries, which a resume of about two seconds undoes), and the job
+  is tried again, from 15 seconds doubling to five minutes, or when Vercel said. Anything else, or
+  about three hours of tries, stops the session the same way, moves the row to `asleep` with its
+  `failure`, and shows `sandbox_failed`; the next message tries again. A wake whose row was taken
+  from it after its `up()` (a retire, a repair) stops the session it started unless the row's
+  holder now runs on it, and removes the sandbox when the design is settled or gone, since a
+  retire that finished in between could not see what this wake made after it.
 - **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
   design's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
   (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
   `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
   designs landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
-- **The environment** is `PONZU_API_URL`, `PONZU_DESIGN_ID`, a runner token issued for it
-  (hashed; good for 30 days and renewed with a day left) and exactly one Claude credential,
-  the one the design runs on, opened from the vault. It goes only into the provider's `env`.
-  The row records which token and which credential (the account and when it was connected),
-  and a wake whose credential changed resumes on a new environment, which is a cold start;
-  the old token is revoked. Beside them go the design's repo's secrets, opened from the vault
-  when the environment is made ("Repo environments"), so a secret changed later reaches a
-  sandbox at its next cold start, not when it wakes from sleep.
-- **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
-  a wake fails saying so. A sandbox made from another image is moved onto this one at its next
-  wake ("How images roll out").
-- **Sleep.** The runner's heartbeat while `working` (which it is from the moment it puts a message
-  in, "Waking up" included), a turn the design is owed ("A turn that never came"), and anything a
-  person does to the design keep the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
-  an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
-  safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
-  a new environment, and after three restarts in a row with nothing heard it is `failed`.
-- **Getting ready to sleep** (`sandboxes/quiesce.ts`). Every stop the API makes of an awake
-  sandbox (idle, a disconnected credential, a new environment) moves the row to `stopping`
-  first, and while it is there every state answer the runner gets says so (`sleep`: when the
-  stop began). The API asks for a report at once (`POST /report` on the runner's port), so the
-  runner hears it in a second rather than at its next heartbeat. That request carries nothing
-  and the runner trusts nothing about it: the agent can reach the port on localhost too, and all
-  it can do is make the runner ask the API, with its own token, whether it is going to sleep.
-  So the decision is a state the API holds, not a command anyone can send. On it the runner
-  claims nothing new (events wait in the feed), waits for a claim it already had out and puts
-  nothing that claim brought into the run (left unacknowledged, the same claim id hands them out
-  again after a warm wake, and the next runner gets them after a cold one), lets a running turn
-  finish for up to 15 seconds and interrupts one that has not (the thread says the sandbox went
-  to sleep before Claude finished, and to send a message to pick it up), settles the replica and
-  its outboxes, saves a checkpoint, runs `sync` and reports `quiesced` with the stop's time. The
-  stop waits up to 30 seconds for that, then runs `sync` through the provider (10 seconds)
-  whatever happened, then stops. A runner that does not answer its port is not waited for; one
-  that is being restarted for going quiet is not asked. Once an idle stop has landed, a design
-  whose current runner holds events it claimed and never put into its session (`now` or `next`)
-  is woken again for them. When a warm resume thaws the same process, the API only pokes it: a
-  poke or claim while the runner still thinks it is going to sleep asks for a state report at
-  once, and the answer, with no `sleep`, sets it claiming again, so the first claim comes with
-  the poke rather than at the next heartbeat.
-- **A warm resume and a stopped runner.** A warm resume thaws the boot as it was, so a runner
-  that had exited stays exited. After every warm resume the API asks `/health` through the
-  stored address (3 seconds). A runner is up when it answers, or when it has called the API since
-  the resume began (a state report, a claim or an ack, `runnerHeardSince`): a health check can
-  fail for the address alone, with the runner working, and that is logged
-  (`runner_health_unreachable`, with the address's host and what each look got: a status, or
-  the error, and how long) and nothing more is done. When neither, it reads the design again
-  and, unless it was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner`
-  through the provider and looks again for 15 seconds, still counting a call from the runner as
-  up. If that fails (`runner_revive_failed`, with the looks) it runs `sync`, stops the sandbox
-  and resumes it on a new environment, which is always a cold start, and revokes the token it
-  had. The same check runs after a resume that found the machine already running. On
-  2026-11-11 the thawed runner claimed and acknowledged a message within three seconds while its
-  address answered no `/health` for eighteen; the wake, going by the health check alone, stopped
-  the machine under the turn that had just begun, and the cold start's runner, finding the
-  message in the session, had nothing to deliver. Why the address did not answer is not known:
-  the looks are logged now for the next time. One attempt of a wake keeps to 260
-  of its function's 300 seconds (`quiesce.ts` adds the waits up): with too little left for the
-  unit's start and a cold start after it, it goes cold at once; with too little for the cold
-  start, the job tries again. A runner that
-  exited 78 on purpose stays down: a deleted or settled design is never woken (its token was
-  revoked for that reason), and a revoked token always means a new environment, never the old
-  one started again. A design settled between the resume and the check is left for the sweep,
-  which destroys its sandbox.
-- **The rest of the sweep.** A settled design's sandbox is destroyed and its runner tokens
-  revoked, and so is any sandbox, asleep or awake, whose environment holds a Claude credential
-  that was disconnected or whose owner has left the workspace. A design sandbox at the provider
-  that no row knows is destroyed; a row left in `waking` or `stopping` for six minutes is set to
-  what the provider says, and woken if its feed still has work. One left `waking` before the
-  provider answered its create is failed, and whatever the provider made for it, found by its
-  labels, destroyed.
-- **Whose sandboxes.** Every deployment shares the boat.dev account, so every sandbox carries
-  `scope=<a hash of the database it belongs to>` beside `ponzu=design` (with `design=<id>` and
-  `generation=<n>`) or `ponzu=claude-sign-in`, and a sweep lists and destroys only its own
-  scope's. A sandbox with another scope, or none, is never touched.
+- **The environment** is made new at every start (`environment.ts`): `PONZU_API_URL`,
+  `PONZU_DESIGN_ID`, a runner token issued for it (hashed; good for 25 hours, longer than any
+  session), `PONZU_PORT_TOKEN` (32 random bytes, the bearer of the runner's port, kept sealed on
+  the row so the API can poke), `PONZU_RUNNER_BUNDLE` (the SHA-256 of the runner bundle this API
+  serves, "The runner bundle") and exactly one Claude credential, the one the design runs on,
+  opened from the vault. Beside them go the design's repo's secrets ("Repo environments"). It goes
+  only into the env of the one `ponzu-start` command: never the sandbox's own env, which Vercel
+  keeps and every command inherits, never a file. So a stopped sandbox holds no secret, and a
+  secret changed later reaches a design at its next wake.
+- **The image** is `apps/runner/image/current.json`'s `ponzu-runner@sha256:…`, which the API
+  imports, so an image ships with an API deploy. A sandbox on another image is recreated on this
+  one at its next wake ("How images roll out").
+- **Sleep** (`stop.ts`, `putToSleep`). The runner's heartbeat while `working` (which it is from
+  the moment it puts a message in, "Waking up" included), a turn the design is owed ("A turn that
+  never came"), and anything a person does to the design keep the sandbox awake. Every sleep
+  moves the row from `awake` to `stopping` (an idle one only if nobody kept it awake since it went
+  idle, so a fresh message wins), runs `ponzu-stop` in the row's session (root, waited, 30
+  seconds: the supervisor passes SIGTERM to the runner, which interrupts a running turn and says
+  so in the thread, flushes its outboxes, reports its final state, saves a checkpoint and closes
+  Claude Code, in 20 seconds at most; then `sync`), stops the session, revokes the design's runner
+  tokens and moves the row to `asleep`, which meters the awake time. Then **the pending rule**:
+  if the feed holds events no runner took, the design is woken again for them. Vercel's own stop
+  sends SIGTERM too, with a grace it does not document (about 20 seconds measured), which is why
+  the API runs the shutdown itself. A sleep that cannot stop the session leaves it running: the
+  next wake's `up()` finds it running and shuts it down before it starts, and reconcile stops a
+  session no awake row holds.
+- **The session's own timeout** is the backstop: 30 minutes from its start, so a sandbox the API
+  forgets stops by itself. The sweep extends an awake one by 20 minutes once its deadline is
+  less than 10 minutes off, clamped so the session's whole timeout stays five minutes inside
+  Vercel's 24-hour cap, and puts a session 23.5 hours old to sleep first (`cycle`, then the pending
+  rule); while a turn is under way or owed it waits for the turn until the session is 23 hours 45
+  minutes old, since a sleep cuts the turn. When the extend, or a restart's look at a runner
+  unheard for 90 seconds, finds Vercel already stopped the session (its timeout), the row goes to
+  `asleep`, its tokens are revoked and the pending rule applies: it is woken only for work.
+- **Retire** (`retire.ts`) runs when a design settles, when a design is deleted while its
+  account is kept, and when an account is deleted. It moves the row to `stopping` with
+  `waking_by = 'retire:<job>'` whatever its state, which meters what was awake and turns away a
+  wake that held it; revokes the design's runner tokens; stops the session if one runs; deletes
+  the sandbox at Vercel with its snapshots; and only then deletes the row. A design reopened
+  meanwhile finds its row `stopping` and its wake waits or tries again, so a late delete can
+  never hit its new sandbox. A settle's retire, and the sweep's, take the row only while the
+  design is still settled, so one that comes late (a sweep that listed the design before it was
+  reopened) leaves the reopened design alone, and never from another retire inside its lease, so
+  two never overlap; a retire that finds the row no longer its own deletes nothing at Vercel. A
+  retire that dies leaves the row held, and the sweep runs it again once the lease is over.
+- **The sweep**, every minute, never resumes anything: every call it makes reads or is pinned to
+  the row's session. Each row gets the first step that applies, in this order:
+
+  | Step | When | Does |
+  |---|---|---|
+  | retire | the design is settled | retire |
+  | stop | its Claude can no longer run it, or its owner left the workspace | sleep (`claude_owner_left` shown for the second) |
+  | restart | awake, and its runner unheard for 90 seconds | a session Vercel already stopped: `asleep` and the pending rule; otherwise sleep, then wake at once; after three in a row, sleep with `sandbox_failed`, not woken by the pending rule (the next message tries again) |
+  | lapse | a turn it owes is past waiting for ("A turn that never came") | the thread says so and the event goes in again; an idle runner is poked, one that says it works is let go (its token revoked, so it writes no notice of its own) and slept and woken |
+  | stalled | its runner says it works and has written nothing for an hour | the thread says so; the runner is let go, slept and woken |
+  | sleep | idle for `PONZU_SANDBOX_IDLE_SECONDS` (300), owing no turn | sleep |
+  | cycle | its session is 23.5 hours old (23.75 with a turn under way or owed) | sleep, then the pending rule |
+  | extend | its session's deadline is less than 10 minutes off | extend, clamped |
+  | repair | `waking` or `stopping` past its six-minute lease | take the row (only if nothing moved it since the sweep looked), stop a running session pinned to its own id, revoke its tokens; `asleep`; the pending rule |
+
+- **Reconcile**, on minutes divisible by ten, lists this scope's names at Vercel and compares
+  them with the rows, at most ten actions a run. A row waking or stopping inside its lease is
+  left alone. A running sandbox is stopped, pinned to its own session, when its row is missing,
+  asleep, or awake on another session (`sandbox_leak`), looked at again just before the stop so a
+  wake that claimed it since the list keeps it; a name whose design was deleted is removed
+  (an id never comes back); a settled design's is retire's. A sign-in's sandbox is removed once
+  its sign-in is over or an hour old.
+- **Disconnecting Claude** puts every awake sandbox started with that credential to sleep at
+  once; an asleep one holds nothing and is left alone. One waking at that moment is put to sleep
+  by the sweep's `stop` within the minute.
+- **Logs.** `sandbox_awake` (with `start`, `fresh` and how long), `sandbox_stopped` (why, the
+  snapshot's size, how long), `wake_failed`, `wake_let_go`, `sandbox_expired`, `sandbox_repaired`,
+  `sandbox_retired`, `sandbox_retire_skipped`, `sandbox_leak`, `sandbox_orphan_removed`,
+  `runner_dead`.
 
 ### The runner
 
@@ -633,8 +681,8 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 - reports state: working, what it is working on, needs you, idle.
 
 The runner dials the API with a token that is valid for one design. The API reaches
-the runner through the sandbox's token-gated address to say there are events to claim
-("The runner protocol" below).
+the runner through the sandbox's public address for its port, with that port's bearer, to say
+there are events to claim ("The runner protocol" below).
 
 How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
 
@@ -646,14 +694,14 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   is gone from both starts over. The SDK is pinned to the version
   released with the image's Claude Code (0.3.322 with 2.1.322), and runs the image's
   `/opt/ponzu/claude/<version>/claude` (checked against the SDK manifest's hash), never a copy
-  of its own and never boat's `/usr/local/bin/claude`.
+  of its own.
 - **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
   AskUserQuestion, plan approval and any other prompt still reach `canUseTool`, and become
   questions ("Needs you"). The result message is the only success signal: an API failure
   arrives as `subtype: "success"` with `is_error: true`.
 - **The repo's own Claude Code.** `settingSources: ["project"]` loads the repo's CLAUDE.md,
   `.claude/settings.json` (hooks, permission rules), skills, commands and agents; the sandbox
-  user's own settings, where boat puts a skill and an MCP server, do not load.
+  user's own settings do not load.
   `strictMcpConfig` is on and the runner passes the repo's `.mcp.json` servers itself, beside
   `ponzu`, so they start without an approval prompt nobody could answer. A hostile repo can
   therefore do anything as `agent` that its code could: reach the Claude credential, a token
@@ -712,10 +760,9 @@ measurement and lint, inside the runner's process.
 
 - **The browser is ours, not the image's.** The runner launches the Chrome Headless
   Shell that `playwright-core` is pinned to (`channel: "chromium-headless-shell"`),
-  which the sandbox image installs with `playwright-core install --only-shell
-  chromium`. Its version moves with our lockfile instead of with boat.dev's image,
-  and on a small sandbox it idles at 140 MB and draws a landing page in 0.4 s, where
-  the image's Google Chrome takes 290 MB and 0.9 s.
+  which the sandbox image installs from where playwright-core's installer would
+  fetch it, by hash. Its version moves with our lockfile, and on a small sandbox it idles at 140 MB and draws a landing page in 0.4 s, where
+  a full Google Chrome takes 290 MB and 0.9 s.
 - **Chromium's sandbox stays on.** The runner is not root, and the VM allows user
   namespaces. A design can load remote images in the same machine that holds the
   owner's Claude credential. Where the kernel refuses (a container without user
@@ -751,141 +798,134 @@ measurement and lint, inside the runner's process.
   Chrome then loads them itself. A request that needs a CORS header a dev server
   doesn't send (every font, a mask image) is fetched by the renderer instead, which
   holds the file whole on its way to Chrome and so refuses one over 25 MB.
-- **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
-  image (1.3.14) the renderer's own tests hung.
+- **Bun.** The runner runs on the Bun this repo pins, which the image installs.
 
 ### The image
 
-Every sandbox is created from one saved snapshot, baked from `apps/runner/image` (its README
-has what is in it and the measurements): boat's base with the Bun the repo pins, the runner's
-build, the Claude Code the Agent SDK pin speaks to (checked by the binary's hash), the Chrome
-Headless Shell playwright-core pins (checked by the zip's hash), exactly `packages/render`'s
-fonts at the versions it pins, a second Linux user, `agent`, and the runner's unit, enabled.
-The snapshot is named for a hash of all of that, of the checks it passed and of boat's base as
-read before the recipe ran, so the same inputs make the same name, and the API creates
-sandboxes `from` the name in its `PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json`
-records the last bake and when it passed the checks from the snapshot, which is what says it
-may be used. About 810 MiB over boat's base.
+Every sandbox boots from one container image, built from `apps/runner/image` (its README has
+what is in it and how it is checked): `ubuntu:24.04` by digest, the Bun this repo pins, the
+Claude Code the Agent SDK pin speaks to (checked by the binary's hash), the Chrome Headless Shell
+playwright-core pins (checked by the zip's hash) and `playwright-core` itself, exactly
+`packages/render`'s fonts at the versions it pins, `tmux` for the Claude sign-in, the three
+users, and the two commands the API runs, `ponzu-start` and `ponzu-stop`. It holds no runner:
+the runner comes from the API at a start ("The runner bundle"). Vercel runs nothing of the image
+at boot (no ENTRYPOINT, no CMD, no init).
+
+`apps/runner/image/build.ts` builds it for `linux/amd64`, pushes it to the **ponzu-api project's
+Vercel Container Registry** as `ponzu-runner:<the first 12 hex of its inputs' hash>`, waits for
+the registry to say it is ready, runs `checks.ts` in a `pz-test-image-*` sandbox from its digest,
+and records it in `current.json`. The inputs are the Dockerfile, `provision.sh`, `pins.json` (the
+one source of every pin), the font manifest and `libexec/`; a tag the registry has is not built
+again. `.github/workflows/image.yml` does the same for pushes that touch them and opens a pull
+request with `current.json`. A registry repository belongs to one project, so the short
+`ponzu-runner@sha256:…` resolves for the API's OIDC token and for scripts using the ponzu-api
+triple. `image.test.ts` fails when `current.json` is stale for the inputs, when its pins are not
+`pins.json`'s, or when the runner bundle needs another Claude Code or playwright-core than the
+image has. About 550 MB.
+
+**The image commands**, root-owned and run as root (`runCommand({ sudo: true })`):
+
+- `ponzu-start`, detached, at every start: when the disk does not have the bundle
+  `PONZU_RUNNER_BUNDLE` names, fetches it from `GET /v1/runner/bundle` (the runner token on curl's
+  stdin, never an argv), checks its SHA-256 and that its `manifest.json` fits the image's
+  `image.json`, and unpacks it into `/opt/ponzu/runners/<sha256>/`, keeping the newest three; a
+  wrong hash or a bundle that does not fit exits 78. Then
+  `flock -n /run/ponzu-supervisor.lock bun supervise.js`, so a start sent twice runs one
+  supervisor. Its output, and the runner's, goes to `/var/log/ponzu/runner.log` (0640
+  `root:ponzu`), so **Vercel's command log for the start holds only the script's own lines**:
+  Vercel keeps a command's output, and nothing of the runner's belongs there.
+- `ponzu-stop`, waited, before every stop: SIGTERM the supervisor, wait up to 25 seconds for its
+  lock, `sync`. With no supervisor running it only syncs.
+
+**The supervisor** (`apps/runner/src/supervise.ts`) is what keeps the runner running in a VM
+with no service manager. It reads `/opt/ponzu/runner.json` (where things are, and the runner's
+variables that are not secret), makes `/run/ponzu` for the git credential socket, and starts
+`runner.js` as `ponzu` (group `agent`, umask 002, `CAP_DAC_READ_SEARCH` to read Claude Code's
+0600 transcripts). It restarts a runner that fails, after 1, 2, 4 … up to 30 seconds (reset after
+a minute up), and stops for good when it exits 0 or 78: the environment is wrong, the token was
+revoked (the design was deleted or settled), or a newer runner took the design's lease; only a
+new start mends that. It passes SIGTERM, SIGINT and SIGHUP to the runner, and kills what is left
+of its group once it has exited or after 20 seconds.
+
+**Three users.** `ubuntu` is the user Vercel's commands run as, with sudo
+(`Defaults:ubuntu always_set_home, !env_reset`, without which sudo drops a command's env and the
+runner would start without its environment). The runner runs as `ponzu`, whose only sudo is to
+become `agent`. Claude Code, its tools, the repo's hooks and the checkout's git run as `agent`,
+which has no sudo and no way into `/home/ponzu`, `/var/log/ponzu` or the supervisor's and
+runner's `/proc`, so nothing the repo or the agent runs can read the runner token or the port's
+bearer (`as-agent` unsets both whatever its caller passed). git asks the runner for credentials
+over a socket ("Git"). The canvas tools run in the runner's process, so a file the agent names
+to one (an HTML file by path, an asset, an export) is read and written as `agent`
+(`PONZU_AS_AGENT`): a path, or a link a repo committed, reaches only what the agent could reach
+itself, not the runner's environment or home. The Claude credential is still in the agent's
+environment: Claude Code needs it.
+
+### The runner bundle
+
+`apps/runner/scripts/build.ts` builds `dist/`: `runner.js` (everything but playwright-core,
+which the image has), `supervise.js`, `git-credential.js` and `manifest.json` (the Claude Code
+and playwright-core it needs, from its own dependencies), packed into `runner.tgz` the same way
+every time (sorted entries, fixed times), and `bundle.json` with the tgz's SHA-256. The API's
+build (`apps/api/scripts/build.ts`) runs it and inlines the bundle into the function
+(`@ponzu/runner/bundle`), so **a runner change ships with an API deploy**, with no image change.
+`GET /v1/runner/bundle` (runner token) answers the tgz with `x-ponzu-bundle-sha256`, and the API
+names it in every start's `PONZU_RUNNER_BUNDLE`. A local API needs `bun apps/runner/scripts/build.ts`
+once; without `apps/runner/dist` a wake fails saying there is no runner bundle.
 
 ### How images roll out
 
-The runner, the canvas tools and the agent's instructions ship in the image, and a design's
-sandbox, once made, sleeps and wakes on its own disk. Until this, a sandbox kept the image it was
-made from for as long as it lived, so a design made in the morning ran the morning's runner
-through every bake after it. Now a design moves onto the image the API has set the next time it
-wakes after that image is set (`sandboxes/orchestrate.ts`, `moveOnto`), with no one doing
-anything.
+A design's sandbox, once made, sleeps and wakes on its own disk. A design moves onto the image
+the API ships the next time it wakes after that deploy (`imageFor` in `orchestrate.ts`), with no
+one doing anything: `up()` sees another digest, deletes the sandbox without booting it, and
+creates it on the new one. The runner finds an empty disk and rebuilds, restoring the last
+checkpoint ("Saving the sandbox": the transcript, the work in progress and its unpushed commits),
+and resumes the same Claude session, with the message that woke it waiting in the feed. The head
+says `waking` throughout and the thread says `resumed` as after any wake; `sandbox woke` says
+`recreated`. What it costs: a create and a rebuild in place of a resume, a few seconds, and the
+gitignored files (`node_modules`, a build), which a build makes again. Only an OS, font, Bun,
+Claude Code or headless-shell change makes a new image; the runner itself ships in the bundle.
 
-**What is recorded.** `sandboxes.image` is the `PONZU_SANDBOX_SNAPSHOT` a sandbox was created
-from (null for one made before this was recorded, which counts as another image).
-`design_runners.client` is what the runner holding the lease said it is as it took it, with the
-image it reads from `/opt/ponzu/image.json`. The API logs `runner_started` with both, and
-`runner_image_mismatch` when a runner says another image than its sandbox was made from. `sandbox
-woke` carries the image, `turn finished` the runner and its image, and the runner puts
-`ponzu_runner` on each of its traces, so analytics can say which image a turn ran on.
+**What is recorded.** `sandboxes.image` is the image the row's sandbox runs. `design_runners.client`
+is what the runner holding the lease said it is as it took it (`runner/<version>+<bundle>`), and
+the API logs `runner_started` with both. `sandbox woke` carries the image, `turn finished` the
+runner and its bundle, and the runner puts `ponzu_runner` on each of its traces.
 
-**A move is the restore of a lost sandbox, chosen on purpose.** The wake claims the sandbox as
-always (asleep or failed), then, when it was made from another image:
-
-1. takes one of the deployment's move slots (`PONZU_SANDBOX_MAX_MOVES`, 3);
-2. creates a sandbox of the next generation from the current image on a new environment and
-   waits, within 100 seconds, for it to be up and for its runner to answer `/health`;
-3. in one statement marks the old row `gone` ("Moved onto <image>.") and inserts the new one,
-   `waking` for the same wake, which the design now points at; destroys the old machine;
-4. finishes as any wake does: awake, every runner token but the new one revoked, and a poke,
-   since the new runner is already listening and a message sent during the move found no awake
-   sandbox to poke.
-
-The new runner finds no disk, restores the last checkpoint ("Saving the sandbox": the transcript,
-the work in progress and its unpushed commits) and resumes the same Claude session, and the
-message that woke it is waiting in the feed. The head says `waking` throughout, as for any start;
-the thread says `resumed` as after any wake. Nothing new is shown, because nothing new is
-happening to the person: the wake takes a little longer.
-
-**When it does not happen**, the wake resumes the old sandbox as it would have, logs
-`sandbox_move_held` with why, and the design moves at a later wake:
+**When it waits.** A recreate loses the disk, so it happens only when the last checkpoint holds
+everything that went into the session. Otherwise the wake resumes the sandbox on its own image,
+logs `sandbox_move_held` with why, and the design moves at a later wake:
 
 | Why (`reason`) | What happens next |
 |---|---|
-| it is awake or getting there | nothing: an awake sandbox is never moved, so no turn is ever cut. It moves at the first wake after it next sleeps. |
-| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | the old one wakes, its runner saves after its next turn, and the wake after the next sleep moves it |
-| `no_checkpoint`: its runner never saved one (a runner from before checkpoints) | it stays: a move would lose its conversation and what is only on its disk. `scripts/images.ts` lists these; moving one anyway is destroying its sandbox at the provider, which the next wake replaces from the branch, losing exactly that |
-| `image_failed`: a move onto this image failed for this design | it stays until another image is set: one failed start per design per image, never a loop |
-| `moves_at_once`: the slots are taken | it moves at a later wake |
-| `no_time`: too little of the attempt is left for the move and a resume after it (a stop it waited out first) | it moves at a later wake |
-| `moving_off`: `PONZU_SANDBOX_MAX_MOVES=0` | it stays |
+| it is awake or getting there | nothing: an awake sandbox is never recreated, so no turn is ever cut. It moves at the first wake after it next sleeps. |
+| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | it wakes on its own image, its runner saves after its next turn and at the sleep, and the wake after that moves it |
+| `no_checkpoint`: its runner never saved one | it stays: a recreate would lose its conversation and what is only on its disk |
 
-**A move that fails is undone in the same attempt.** A create the provider refuses for want of
-starts, or because it is away, before anything was made, is not the image's fault: the job waits
-and tries again, as for any wake. Anything else (the snapshot missing, a machine that does not
-start, a runner that does not answer `/health`) destroys what the move made, revokes its token,
-records `sandboxes.image_failed`, logs `sandbox_move_failed`, and resumes the old sandbox: the
-person's message is answered by the old runner, a little later. The old machine is destroyed only
-after the new runner has answered. A move cut off by a crash leaves the old row `waking`, which the
-sweep sets back to what the provider says after six minutes; the machine the move made is no
-row's then, and the orphan sweep destroys it (while the move holds its slot, a machine of the
-design's labels is not an orphan).
+**When: at the wake, not ahead of it.** A sweep that recreated sleeping sandboxes as soon as an
+image ships would start every sleeping design's runner on its owner's Claude credential while
+nobody asked, including designs nobody opens again; at the wake the person sees the same waking
+state either way.
 
-**When: at the wake, not ahead of it.** We decided against a sweep that moves sleeping sandboxes
-as soon as an image is set:
-
-- What a move costs the person, from the image's measurements (`apps/runner/image/README.md`): a
-  create answers `/health` in 7 to 31 s (median about 10), where a warm wake answers in 0.6 s and a
-  cold one in 5 to 16 s. Restoring the checkpoint takes 0.1 to 0.3 s more. A sandbox asleep for
-  over ten minutes would have woken cold anyway, so for most wakes a move costs a few seconds; only
-  a design woken within ten minutes of its sleep, just after a deploy, pays the full difference
-  (about 10 s), once.
-- What a sweep would cost: a start, a boot, a restore and a stop for every sleeping design at every
-  bake, including designs nobody opens again. There were five bakes in one day; boat rations
-  starts (12 a minute, a daily cap by plan), and an awake sandbox is billed. A sweep would also run
-  each design's runner with its owner's Claude credential while nobody asked for it.
-- What the person sees either way is the same waking state.
-
-If the cold start on the first message after a deploy ever matters, a sweep can move a design that
-was active in the last hour, inside the same slots; the move itself would be the same.
-
-**How long an old runner can be out there, and refusing one.** A runner of an older image talks
-to the API only while its sandbox is awake. With moves, that is until its sandbox next sleeps and
-wakes; longer only for a design held back (a checkpoint behind: one more wake; a runner without
-checkpoints: until it is destroyed; a failed image: until the next image). A sandbox that never
-wakes runs nothing, and boat deletes a stopped sandbox's disk after 14 days, after which the next
-wake makes one from the current image. So the rule stands, the deployed API must work with the
-runner of the previous image, and `scripts/images.ts` says when an older one is still out there.
-The API does not refuse a runner for being old: the runner's version stays `0.1.0` (it is not
-released), so `PONZU_MIN_CLIENT_VERSIONS` cannot tell one image from another; a refusal (426)
-would make the runner exit and leave its design unreachable, where the move already replaces it at
-the next wake; and the one thing a refusal could buy, a protocol change that drops an old field,
-can wait until the report shows no runner needs it.
-
-**Rolling out an image**: bake (`bun apps/runner/image/bake.ts`), set `PONZU_SANDBOX_SNAPSHOT` to
-the name it prints, deploy the API. Each design moves the next time it wakes. Where they stand:
+**How long an older runner can be out there.** A runner talks to the API only while its sandbox
+is awake, and every start runs the bundle the API serves now. So the API must work with the
+runner of the deploy before it only until the sandboxes awake across that deploy next sleep.
 
 ```sh
-PONZU_SANDBOX_SNAPSHOT=<the name> bun apps/api/scripts/images.ts   # DATABASE_URL, or NEON_* for dev
+bun apps/api/scripts/images.ts   # where each design stands against current.json; DATABASE_URL, or NEON_* for dev
 ```
 
-`packages/client/src/image-move.live.test.ts` checks a move end to end, by hand, across a deploy.
-
-**Two users.** The runner runs as `user`; Claude Code, its tools, the repo's hooks and the
-checkout's git run as `agent`, which has no sudo, no docker and no way into `/home/user`, the
-runner's `/proc` or boat's environment file, so nothing the repo or the agent runs can read the
-runner token. git asks the runner for credentials over a socket ("Git"). The canvas tools run
-in the runner's process, so a file the agent names to one (an HTML file by path, an asset, an
-export) is read and written as `agent` (`PONZU_AS_AGENT`): a path, or a link a repo committed,
-reaches only what the agent could reach itself, not the runner's environment or home. The
-runner reads Claude Code's transcripts (0600 `agent`) through `CAP_DAC_READ_SEARCH`. The
-Claude credential is still in the agent's environment: Claude Code needs it.
+`packages/client/src/image-move.live.test.ts` checks a recreate end to end, by hand, across a
+deploy.
 
 ### Saving the sandbox
 
 Two things used to live only on a sandbox's disk: the checkout's uncommitted work and Claude
-Code's transcript of the session, which is the conversation's memory. And the disk is not
-reliable: a file written just before a stop and not flushed is gone after a cold start, and
-boat.dev has brought a disk back as it was at an earlier cold stop (Known constraints). So the
-runner checkpoints both, the API keeps the checkpoint, and a runner that finds its disk behind
+Code's transcript of the session, which is the conversation's memory. And the disk is a cache:
+its snapshot expires after 30 days unused, a new image recreates it, a sandbox can be deleted at
+Vercel, and a host can be lost under a running one. So the runner checkpoints both, the API keeps the checkpoint, and a runner that finds its disk behind
 it restores before Claude Code resumes (`apps/runner/src/save/`).
 
-**A checkpoint** is saved after each turn has settled, before a sleep (above), and on SIGTERM:
+**A checkpoint** is saved after each turn has settled, and in the runner's shutdown before every
+stop (`ponzu-stop`, above):
 
 - **The transcript.** What makes a session resumable is `projects/<cwd, every other character a
   dash>/<session id>.jsonl` under Claude Code's config folder (`CLAUDE_CONFIG_DIR`,
@@ -950,8 +990,9 @@ Changes the disk has of its own are put in `git stash` first, never thrown away.
 left as HEAD has it, so what was uncommitted is uncommitted again and what was untracked is
 untracked. Then the session resumes, and the thread says `resumed` as after any wake. The runner
 logs `sandbox_rollback` (or `sandbox_rebuilt`) with both markers, the boot ids and how long the
-restore took, and tells the API (`POST /v1/runner/restored`), which logs it with the sandbox, its
-provider id and generation, and counts it in `sandboxes.rollbacks`: what to show boat.dev.
+restore took, and tells the API (`POST /v1/runner/restored`), which logs it with the sandbox's session and image.
+With one snapshot kept per sandbox a rollback should not happen; the check is the same one that
+finds a disk lost with its host.
 
 **Where it is stored.** A transcript holds the whole conversation and every tool's output, and a
 bundle the person's unpublished work, so neither goes under a design's asset key, which people
@@ -992,9 +1033,8 @@ as turns instead, and `wait_for_activity` is gone.
 
 An event is acknowledged once the Claude session holds it, and from then on no claim hands it
 out again. That leaves one way to lose it: the session holds the message and the turn it began
-never finishes, because the process was killed under it (2026-11-11: a wake stopped a thawed
-sandbox whose runner had just taken a message, "A warm resume and a stopped runner"), or Claude
-Code died, or the turn hung. A resumed Claude Code whose transcript ends on a message it never
+never finishes, because the process was killed under it (a sandbox stopped under a turn that had
+just begun), or Claude Code died, or the turn hung. A resumed Claude Code whose transcript ends on a message it never
 answered waits for another; the next runner finds the message in the session and has nothing to
 deliver. The person was left looking at their own message, with no working line and no error,
 and the sweep put the sandbox to sleep on top of it. Two things now see to it, and either alone is
@@ -1027,7 +1067,7 @@ by the API's clock, which `delivered_at` and `claimed_at` are now kept by too, u
 stop came after it: a turn stopped while it was starting writes nothing, and is not sent again. While a design owes a turn its sandbox is not
 put to sleep. The owed events lapse when the runner says it is not working for two minutes, or
 says it is but has written nothing for fifteen, both counted from the newest delivery or from when
-the runner that holds the lease started, whichever is later, so a cold start or a long session's
+the runner that holds the lease started, whichever is later, so a fresh start or a long session's
 resume has its own time. Two minutes is many times what a runner takes to write a turn's first
 item once the model's first token is in, which comes before it would report idle; fifteen is
 past the slowest first output of a model on a long session. A lapse marks the events
@@ -1037,9 +1077,9 @@ again."), and puts each in the feed again as a copy under a new id with `payload
 naming it, which the next claim hands out and every runner, old or new, puts into the session as
 a message it has not seen. A copy that lapses too is not copied again: the thread says to send it
 again. The sweep then pokes an idle runner, or, for one that said it was working all along,
-stops the sandbox and starts it cold, since a warm resume would thaw the same stuck process. A
-runner that says it is working and has written nothing of the turn for an hour is stuck the same
-way: the thread says so (`ti_stalled-<runner>`) and the sandbox starts cold. Each lapse is logged
+puts the sandbox to sleep and wakes it again, so a new runner and a new Claude Code take the
+copy. A runner that says it is working and has written nothing of the turn for an hour is stuck
+the same way: the thread says so (`ti_stalled-<runner>`) and the sandbox is slept and woken. Each lapse is logged
 (`turn_lapsed`: the events, the copies, the agent's state, how long since the delivery, the
 runner's start, its last word and its last report) and captured (`turn lapsed`, `turn
 stalled`). A runner that is picking up a turn acknowledges the API's copy of it without putting
@@ -1079,25 +1119,31 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   post `/v1/runner/pull-request…`. Once a merge has gone through, the API deletes the
   branch as the person, while it is still at the commit that merged.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
-  an API key) is passed as an environment variable when the sandbox starts or
-  resumes. It is never written to disk or baked into a snapshot. Moving it behind
+  an API key) is passed in the env of the runner's start command at every start of the
+  sandbox. It is never written to disk, never in the sandbox's own env, and never in a
+  snapshot. Moving it behind
   an egress proxy is hardening work, tracked below. A design runs on its owner's account from
   start to finish (`designs.claude_account_id`). `/v1/claude` connects one: an API key once
   Anthropic takes it (a free `GET /v1/models`), or a subscription by `claude setup-token`, run
-  in a utility sandbox created with no environment and no command history: `POST
-  /v1/claude/sign-ins` answers the claude.ai address, and `POST /v1/claude/sign-ins/:id/code`
-  writes the pasted code into the sandbox as a file, reads the token back as one, seals it and
-  destroys the sandbox. A sign-in is good for ten minutes and one code (`claude_code_invalid`,
+  in a utility sandbox made from the design image with no credential at all
+  (`pz-<scope>-signin-<id>`, not persistent, a 15-minute session, its session id kept in the
+  sign-in's auth state): `POST /v1/claude/sign-ins` writes a driver into the sandbox, starts it
+  (it runs `/opt/ponzu/bin/claude setup-token` in tmux) and reads the claude.ai address back from
+  the file it writes, and `POST /v1/claude/sign-ins/:id/code` writes the pasted code into the
+  sandbox as a file, reads the token back as one, seals it and removes the sandbox. The driver
+  writes what it says to 0600 files (`~/.st/start.out`, `~/.st/code.out`), never to its output,
+  because Vercel keeps a command's output; the code and the token are never in a command line,
+  a command's output, a log or an answer. A sign-in is good for ten minutes and one code (`claude_code_invalid`,
   `claude_sign_in_expired`, `claude_sign_in_used`). Each sign-in is a machine Ponzu pays for, so a
-  person has one open at a time (a new one replaces the last, and its sandbox is destroyed) and
-  starts at most five an hour (429 `rate_limited`). Disconnecting destroys the credential, keeps
-  the row (`revoked`), and destroys every sandbox whose environment may hold it, asleep or awake:
-  a stopped sandbox keeps its environment at the provider until its disk goes. The next wake
-  starts the design over from its branch. A design whose owner leaves the workspace stops
-  running on their Claude the same way: it does not wake (`claude_owner_left`), and the sweep
-  destroys its sandbox.
-- **Repo secrets** are stored encrypted per repo and injected as environment
-  variables when a sandbox starts on a new environment ("Repo environments").
+  person has one open at a time (a new one replaces the last, and its sandbox is removed) and
+  starts at most five an hour (429 `rate_limited`); reconcile removes the sandbox of one left
+  open. Disconnecting destroys the credential, keeps the row (`revoked`), and puts every awake
+  sandbox whose runner was started with it to sleep at once ("The sandbox"): the credential
+  lived only in that runner's memory, so an asleep sandbox holds nothing of it. A design whose
+  owner leaves the workspace stops running on their Claude the same way: it does not wake
+  (`claude_owner_left`), and the sweep puts an awake one to sleep.
+- **Repo secrets** are stored encrypted per repo and passed in the runner's start command
+  at every start of the sandbox ("Repo environments").
 
 ## The runner protocol
 
@@ -1114,9 +1160,9 @@ behind these routes, and is the reference for what each answers.
   the token's design answers 404 `not_found`. A token that is unknown, expired or revoked
   answers 401 `token_invalid` everywhere. The API revokes a design's runner tokens when the
   design is deleted or settled, so that is also how a runner hears its design is gone. The
-  runner names itself: `X-Ponzu-Client: runner/<version>+<image>`, the image as semver build
-  metadata read from the image's record (`runner/0.1.0+ponzu-runner-2de5aff8d903`), or
-  `runner/<version>` outside an image and from runners older than that ("How images roll out").
+  runner names itself: `X-Ponzu-Client: runner/<version>+<bundle>`, the first 12 hex of the
+  bundle's SHA-256 it was started with as semver build metadata (`runner/0.1.0+2de5aff8d903`), or
+  `runner/<version>` outside a sandbox.
 - **One runner at a time: the lease.** `POST /v1/runner/session` mints a runner id (`rnr_…`)
   and records it as the design's runner, replacing any before it. Every other call, the
   document routes and git's credential helper included, carries it as `X-Ponzu-Runner`, and
@@ -1124,13 +1170,13 @@ behind these routes, and is the reference for what each answers.
   design (a botched restart, a second sandbox) would otherwise resume the same Claude session
   and act on the same events twice; with the lease the older one is refused at its next call.
 - **Stopping for good.** On 401 `token_invalid` or 409 `superseded`, from any call, the
-  runner interrupts the turn, writes nothing more, closes Claude Code and exits 78, which
-  systemd does not restart (`RestartPreventExitStatus`). Only a cold start of the sandbox (a
-  resume with a new environment is always one) or an explicit `systemctl start ponzu-runner`
-  through `exec` brings a runner back: a warm resume thaws the same boot, so after one the API
-  checks `/health` and does the second, then the first ("A warm resume and a stopped runner").
-- **Batch, never chat.** The sandbox is in the EU and the API in US East, about 100 ms each
-  way, so each route takes many things at once and the runner sends what piled up: thread
+  runner interrupts the turn, writes nothing more, closes Claude Code and exits 78, which its
+  supervisor does not restart. Only a new `ponzu-start`, with a new environment, brings a runner
+  back: the next wake runs one, and the sweep's `restart` step wakes a sandbox whose runner went
+  quiet for 90 seconds.
+- **Batch, never chat.** The sandbox and the API are both in `iad1`, but a call is still a
+  round trip through Vercel's edge, so each route takes many things at once and the runner sends
+  what piled up: thread
   writes at most about three a second, state when it changes and on a heartbeat, acks,
   questions and usage in batches. Nothing on the runner waits on a call except its start and
   an upload.
@@ -1157,7 +1203,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/events/claim` | `{ claimId, limit?: number }` | `{ events: RunnerEvent[], seq, pullRequest }` |
 | POST | `/v1/runner/events/ack` | `{ ids: string[], claudeSessionId: string \| null }` | `{ acked: number }` |
 | POST | `/v1/runner/thread` | `{ items: ThreadWrite[] }` | `{ items: [{ id, seq, streaming }] }` |
-| PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId, quiesced?, branch? }` | `{ seq, sleep }` |
+| PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId, branch? }` | `{ seq }` |
 | POST | `/v1/runner/questions` | `{ id, kind, payload }` | `{ id, status }` |
 | POST | `/v1/runner/questions/withdraw` | `{ ids: string[] }` | `{ withdrawn: number }` |
 | POST | `/v1/runner/uploads` | `{ files: [{ purpose, name, contentType, size, sha256 }] }` | `{ files: [{ id, put: { url, headers }, expiresAt }] }` |
@@ -1174,14 +1220,14 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/checkpoint` | `{ turn, claudeSessionId, wipCommit, session, workspace }` | `{ saved: SavedPoint }` |
 | POST | `/v1/runner/restore` | `{}` | `{ saved, session, workspace }`, each archive `{ url, size, sha256 }` or null |
 | POST | `/v1/runner/restored` | `RestoredReport` | 204 |
+| GET | `/v1/runner/bundle` | none | the runner bundle's tgz, `x-ponzu-bundle-sha256` |
 | POST | `/v1/designs/:id/ops` | `{ ops: [{ id, op }] }` | `{ committed, rejected, seq }` (Committing) |
 | GET | `/v1/designs/:id/ops?after=N` | none | `{ ops, seq }`, 410 when N is too old (Reading) |
 | GET | `/v1/designs/:id/doc` | none | `{ doc, seq }` (Reading) |
 | POST | runner `/poke` | none | 204 |
-| POST | runner `/report` | none | 204 |
-| GET | runner `/health` | none | `{ ok: true, state }` |
+| GET | runner `/health` | none | `{ started, state }` |
 
-Every route but the session's, the upload `PUT` and the runner's own two answers 409
+Every route but the session's, the bundle, the upload `PUT` and the runner's own two answers 409
 `superseded` without the current `X-Ponzu-Runner`.
 
 ### Session
@@ -1441,12 +1487,9 @@ failed on Claude's credential or limit, until a turn works. The runner sends it 
 changes, at most twice a second, and every 30 seconds whatever happens: the **heartbeat**.
 The API stores the session id, when not null, for the next resume, keeps a sandbox awake while
 its runner reports `working`, and takes one it has not heard from in 90 seconds as dead. The
-answer is the design's head `seq`, and `sleep`: null while the sandbox is awake, and while the
-API is stopping it the time that stop began. On a `sleep` the runner gets ready (it claims
-nothing more, finishes its turn, settles, checkpoints and flushes) and then reports again with
-`quiesced` set to that time; the API's stop waits a while for it ("Getting ready to sleep"). A
-`sleep` of null after one ends it: a warm resume thawed the same runner. Safe to repeat: the
-last one wins.
+answer is the design's head `seq`. A sleep does not go through the state: the API runs
+`ponzu-stop`, and the runner's SIGTERM shutdown reports its final state on the way out. Safe to
+repeat: the last one wins.
 
 ### Questions
 
@@ -1505,8 +1548,8 @@ for ten minutes, and its size and SHA-256, which the runner checks. `POST /v1/ru
 says the runner found its disk behind the checkpoint and restored from it: `kind` (`rollback` when
 the disk had an older marker, `rebuilt` when it had none), the disk's marker and the boot that
 wrote it, the checkpoint's, this boot's id and start, and what was restored. The API logs it
-(`sandbox_rollback` as a warning, `sandbox_rebuilt`) with the sandbox's id, provider id and
-generation, and counts rollbacks on the sandbox's row. Safe to repeat.
+(`sandbox_rollback` as a warning, `sandbox_rebuilt`) with the sandbox's session and image, and
+captures `sandbox restored`. Safe to repeat.
 
 ### Git
 
@@ -1636,31 +1679,33 @@ waiting on a sandbox to start.
 
 ### The other way: poke and health
 
-The runner listens on one port (4600), which the API reaches through the sandbox's
-token-gated address. `POST /poke` carries nothing, and the runner trusts nothing about it: it
-only claims, from the API, with its own token. The API pokes when it adds an event to an awake
-design's feed and when a person's op moves an awake design's head, and does not retry a poke
-that fails: the runner also claims once a minute, and each claim and state answer carries the
-head. A wake that has just made the sandbox does not poke it: its runner is still booting and
-claims by itself once it is up. `POST /report` carries nothing either: the runner sends its state
-report now, and only the API's answer to that report can say the sandbox is going to sleep. The
-API asks for one when it starts a stop. While the runner holds a sleep, a poke makes it ask for a
-report too, which is how a warm wake (which only pokes) reaches it. `GET /health` answers
-`{ "ok": true, "state": "working" | "needs_you" | "idle" }`, and the API reads it after a warm
-resume, with what each look got (a status, or the error) for its log; it is not the only sign
-of a runner that is up ("A warm resume and a stopped runner").
+The runner listens on one port (4600), which Vercel serves at the sandbox's public
+`https://<sub>.vercel.run` address. Anyone with the address can reach it, so every request must
+carry `authorization: Bearer <PONZU_PORT_TOKEN>`, compared in constant time; without it every
+route, an unknown one included, answers 401. The bearer is new at every start, only the runner's
+process holds it (the agent's environment never does), and the API keeps it sealed on the row.
+`POST /poke` (204) carries nothing, and the runner trusts nothing about it: it only claims, from
+the API, with its own token. The API pokes when it adds an event to an awake design's feed and
+when a person's op moves an awake design's head, tries a 502 or 503 again for up to a second
+(the port can answer those for a moment just after a start), and does not retry a poke that
+fails otherwise: the runner also claims once a minute, and each claim and state answer carries
+the head. A wake does not poke: its runner claims by itself once it is up. `GET /health` answers
+`{ started, state }`, `started` once the design is open, Claude Code is up and the claims run;
+the image's checks read it, and the API does not need to.
 
 ### Environment
 
-The sandbox starts the runner (a systemd service that sources boat's
-`/run/ascii-secrets/env.sh`) with `PONZU_API_URL`, `PONZU_DESIGN_ID`, `PONZU_RUNNER_TOKEN` and
-exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to
-start: Claude Code would use the key without a word and bill its account. The repo's secrets
-come packed in one more variable, `PONZU_REPO_SECRETS`, which the runner unpacks only into the
-environment of what it starts, never its own ("Repo environments"). The rest is optional and in
-`apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
-the agent's edits to reach the API, saves a checkpoint, reports its final state (`needs_you`
-when a question stays open) and exits.
+`ponzu-start` hands the supervisor its own environment, and the supervisor gives it to the
+runner with `runner.json`'s variables (where the image keeps things) over it: `PONZU_API_URL`,
+`PONZU_DESIGN_ID`, `PONZU_RUNNER_TOKEN`, `PONZU_PORT_TOKEN`, `PONZU_RUNNER_BUNDLE` and exactly one
+of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to start: Claude Code
+would use the key without a word and bill its account. The repo's secrets come packed in one
+more variable, `PONZU_REPO_SECRETS`, which the runner unpacks only into the environment of what
+it starts, never its own ("Repo environments"). The rest is optional and in
+`apps/runner/README.md`. On SIGTERM it stops the turn and says so in the thread, waits a few
+seconds for the agent's edits to reach the API, reports its final state (`needs_you` when a
+question stays open), saves a checkpoint, closes Claude Code, pushes what GitHub lacks if it can
+in time, and exits.
 
 ### Pull request summary
 
@@ -1700,8 +1745,8 @@ and how many commits GitHub still lacks, with why the last push failed; a turn a
 review began adds that Ponzu won't merge, mark ready or turn on auto-merge in it. Against an API
 whose claim does not say `pullRequest` (older than this), the line claims nothing about whether
 one is open and points at read_pull_request, and the description tool's answer says only that no
-open pull request took the words. So the API ships before the image with this runner is baked:
-an older API answers the new tools 404, which they say as a refusal.
+open pull request took the words. The runner ships with the API ("The runner bundle"), so the
+tools always find their routes; an API that answers one 404 is said as a refusal.
 
 ## Pull requests
 
@@ -2336,12 +2381,13 @@ Designs that have a sandbox keep it.
 
 **Secrets.** A name is capitals, digits and underscores, starting with a letter, at most 64
 characters; a value is 1 byte to 16 KiB with no NUL; a repo holds at most 50, 44 KiB of names
-and values in all, because they all go into one sandbox's environment (boat.dev takes 64 KB)
-in base64, which is a third larger, beside Ponzu's own (409 `secrets_full`). A name that would
+and values in all, because they all go into one start command's environment, which Ponzu caps at 64 KB (Linux
+refuses one variable of 128 KiB), in base64, which is a third larger, beside Ponzu's own (409
+`secrets_full`). A name that would
 replace or steer what Ponzu puts there, or change how a program loads code or checks TLS, is
 refused (400 `secret_name_reserved`): anything starting `PONZU_`, `CLAUDE_`, `ANTHROPIC_` (a
-second credential, or `ANTHROPIC_BASE_URL` sending the owner's to someone else), `ASCII_` or
-`BOAT_` (the provider's), `GIT_` (the credential helper is Ponzu's), `LD_` or `DYLD_` (the
+second credential, or `ANTHROPIC_BASE_URL` sending the owner's to someone else), `ASCII_` (an
+old sandbox provider's), `GIT_` (the credential helper is Ponzu's), `LD_` or `DYLD_` (the
 loader's), `BUN_` (`BUN_OPTIONS` is flags, `--preload` among them), `NODE_` or `NPM_CONFIG_`
 (but `NODE_ENV` and `NODE_AUTH_TOKEN`, which only say how the repo's own code runs and
 installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `USER`, `LOGNAME`,
@@ -2356,23 +2402,19 @@ keeps only its name; that name comes from the sandbox, so the route that wires i
 as these routes do, and the sandbox's environment checks it again either way.
 
 **Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the design's repo's
-secrets, read in one statement, and packs them into one variable of the provider's `env`,
+secrets, read in one statement, and packs them into one variable of the start command's `env`,
 `PONZU_REPO_SECRETS`: `NAME:base64(value)`, comma-separated (`encodeRepoSecrets` in
 `@ponzu/runner/protocol`). They never become variables of the runner's own: the runner is a Bun
 process that holds the runner token and the Claude credential, and a variable like
 `BUN_OPTIONS` would load code into it before it starts. The runner unpacks them only into the
 environment of what it starts for the agent (`agentEnv`), under its own variables, so none can
-stand in for those either, and without the runner token. Base64 also means boat's
-`/run/ascii-secrets/env.sh`, which the runner's unit sources with bash, holds nothing a shell
-could read as a command whatever an admin typed (a quote, `$(…)`, a newline in a PEM). A
-Scratch design has none. It never fails a
+stand in for those either, and without the runner token. Base64 also means the variable holds
+nothing a shell could read as a command whatever an admin typed (a quote, `$(…)`, a newline in
+a PEM). A Scratch design has none. It never fails a
 wake: a name that is reserved now (one stored before it was) and a value the vault cannot open
-are left out, and anything past the provider's limits is too, each logged by count only. A
-changed secret takes effect at the sandbox's next cold start: a new design, a sandbox replaced
-or rebuilt, a new Claude credential, or a runner token near its end. A sandbox that only went to
-sleep wakes on the values it had. Settings says so under the secrets, in the words "New values
-reach a design the next time its sandbox starts fresh. Designs running now keep the ones they
-started with."
+are left out, and anything past the 64 KB is too, each logged by count only. A changed secret
+reaches a design at its sandbox's next wake, since every start makes its environment anew; a
+runner running now keeps the values it started with.
 
 ## Deleting an account
 
@@ -2391,11 +2433,11 @@ and change there, coming through at their next sign-in.
 
 In this order, each step safe to repeat, so a request that fails partway can be sent again:
 
-1. Their Claude credential is destroyed, and with it every sandbox that held it (as
-   disconnecting does).
+1. Their Claude credential is destroyed, and every awake sandbox started with it is put to
+   sleep (as disconnecting does).
 2. Every sandbox of a design they own is retired, its awake time metered and its runner tokens
-   revoked; the provider destroys the machines in the background, and the sweep catches what
-   that misses.
+   revoked: its row is held, the sandbox is deleted at Vercel in the background, and the sweep's
+   reconcile removes what that misses.
 3. Their designs that are theirs alone are deleted with everything under them: their Scratch
    designs, and their designs in a workspace nobody else is in.
 4. Their name is taken out of what stays: in every design of a workspace they are in, or that
@@ -2490,7 +2532,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 
 | Boundary | Rule |
 |---|---|
-| Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or provider credential. |
+| Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or Vercel credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
 | Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the design's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the design was opened. The preload bridge exposes the minimum. |
@@ -2524,7 +2566,7 @@ event: only one handed to the runner holding the lease counts. Scrubbing the cre
 anything running as `agent` reads Claude Code's environment from `/proc` anyway. What closes
 this is in Hardening: the Claude credential behind an egress proxy, so nothing in the sandbox
 holds it, and egress rules for `agent`. The list of what remains is in
-`apps/runner/image/README.md` ("Two users").
+`apps/runner/image/README.md` ("Users").
 
 Every route says who may call it (anyone, a signed-in person, a design's
 runner, or either of those two), and a route that does not is refused. A whole
@@ -2555,6 +2597,44 @@ production or migrates the shared database by hand. Every deployment holds the
 environment's secrets, so only production's own domains are public: previews
 and the unique URL of each deployment open only for the team.
 
+Every environment's sandboxes live in the one Vercel project, `ponzu-api`, beside the API's
+functions and the image's registry, kept apart by their names' scope ("The sandbox"): a
+deployment lists, stops and removes only the names its own database's scope begins. A preview
+reaches no sandbox of production's, and the reverse. `PONZU_API_URL` says where a deployment's
+runners call back; unset, it is production's address, so a preview meant to run designs sets
+it.
+
+### Checking a deploy's sandboxes
+
+After a deploy that changes the sandbox lifecycle, the image or the runner, on the deployed API:
+
+1. Message an existing Scratch design and an existing repo design. Each logs `sandbox_awake`,
+   and a design whose disk was empty logs `sandbox_rebuilt`; the repo design restores from its
+   checkpoint and checks out its branch.
+2. After the idle sleep, a second message wakes it with `sandbox woke` `start: "resume"` and
+   `fresh: false`.
+3. The Vercel dashboard's sandboxes for ponzu-api show only `pz-<scope>-` names (and
+   `pz-test-` ones a live run is using), and none of this deployment's is running five minutes
+   after the last activity.
+4. No `sandbox_leak` in the logs.
+5. The command log of a `ponzu-start` holds only that script's own lines (none of the runner's,
+   and no secret).
+6. `sandbox woke` `duration_ms` runs from the wake job's start to `ponzu-start` being accepted
+   (not to the runner answering): 1.0 to 1.6 seconds for a create or a resume and 0.4 seconds
+   for a restart in place were measured from a local API on real sandboxes. A resume's runner
+   answers `/health` about a second after that (1.8 to 2.9 seconds from the message in the
+   spike).
+7. Nothing at Vercel holds `VERCEL_TOKEN` for Preview or Production: the API refuses it there
+   and runs on OIDC.
+8. With a person's session against the deployed API, run the client's live suites:
+   `packages/client/src/lifecycle.live.test.ts` (it prints `wake to answer`, the time from a
+   message to the runner's first answer, the number the speed claim rests on) and
+   `packages/client/src/image-move.live.test.ts`.
+9. Dispatch the Image workflow (`image.yml`) once: it builds, pushes to the registry through
+   the OIDC policy, checks the image in a sandbox and opens a pull request with
+   `current.json`. That pull request is opened with `GITHUB_TOKEN`, so no CI runs on it until a
+   person closes and reopens it.
+
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of
 statement once, on a Postgres 18 beside the job. Migrations are generated by
@@ -2568,7 +2648,7 @@ what they ship today and nothing has to be paused. Cutover is one pull request
 from `cloud` into `main`, released as the next major version.
 
 1. **Foundation.** Core (validation, sanitizing, the replica), the database, the
-   sandbox provider, the API, the client package.
+   sandbox module, the API, the client package.
 2. **The loop.** The runner, the sandbox lifecycle, the thread, events, GitHub.
    Ends with a design made by Claude in a sandbox, shown live in a client.
 3. **The apps.** Desktop shell, studio, mobile.
@@ -2580,27 +2660,37 @@ from `cloud` into `main`, released as the next major version.
 
 ## Known constraints
 
-- boat.dev hosts in the EU only. The sandbox is far from the API and the database,
-  which is why tools work on a local replica and post ops in the background.
-- After a long sleep (a cold resume) the runner answers `/health` in 5 to 16 seconds and the
-  first words of a reply come 8 to 25 seconds after the resume call; after a short one (warm)
-  in under a second and about 2 seconds. A create from the image answers `/health` in 4 to 31
-  seconds (`apps/runner/image/README.md` has the runs). The thread shows a waking state.
-- A cold start can bring the disk back older than it was. A file written a moment before a stop
-  and not flushed was lost in the image's earlier runs, so the runner flushes after each turn and
-  before a sleep, and the API runs `sync` before every stop (with that, a file written just
-  before the stop and never flushed by its writer came back in every cold wake recorded here). Worse, in two of three end-to-end runs of the earlier image the second cold start in a
-  row came back with the disk as it was at the first. Unexplained, and worth raising with boat;
-  the runner now logs `sandbox_rollback` with the boot ids and markers when it happens, and the
-  API logs it with the sandbox and counts it (`sandboxes.rollbacks`). Since the stop began
-  asking the runner to get ready and flushing first, the double cold start has not rolled a
-  disk back in the runs recorded in `apps/runner/image/README.md`. Either way the disk is now a
-  cache in fact (principle 2): a checkpoint after each turn holds the transcript and the work in
-  progress, and a disk behind it is restored. **What can still be lost, at worst:**
-  - what a turn did after its last checkpoint, when the sandbox is lost or rolled back before the
-    next (a turn's end, a sleep and SIGTERM each save one, so this is a turn cut off by a crash or
-    a machine lost while it ran, or one longer than the sleep's 15 seconds, which is interrupted
-    and saved as far as it got);
+- **Times, measured on Vercel from the image** (the spike, 2026-11-11, from a Mac): a create
+  answers its first command in about 1 second and shows the first artboard 6 to 7 seconds after
+  the message; a wake from the snapshot answers `/health` in 1.8 to 3 seconds and shows the first
+  artboard 4 to 6.5 seconds after the message. Every wake boots a new VM from the snapshot, so
+  memory never survives a sleep. The thread shows a waking state.
+- **Secrets in a command's env.** The runner's environment goes in the one `ponzu-start`
+  command's env. Vercel's command record has no env field, and the runner's output goes to a
+  file, not to Vercel's command log; whether Vercel stores a command's request body, and what its
+  command logs keep, is not documented, and has been asked in writing. If it does, the Claude
+  credential and the repo's secrets move into the runner's session answer.
+- **OIDC lives in a request.** A sandbox call made outside a request or the work it keeps (at
+  module load, from a stray timer) fails with Vercel's OIDC context error, and so would every
+  wake. The rule is in "The sandbox"; a preview deploy that wakes a design proves it.
+- **A sleep cut off.** If the API dies between moving a row to `stopping` and stopping the
+  session, the VM runs until its session timeout (30 minutes at most) or until the sweep's repair
+  or reconcile stops it.
+- **A new image recreates every design at its next wake** and loses its gitignored files. If
+  Claude Code bumps prove frequent, Claude Code can move into the runner bundle too
+  (`bundle-fits` already checks its version).
+- **Not yet seen on Vercel:** a host lost under a running sandbox, a resume after days idle,
+  creates racing on one name in production, failover regions, and a detached command running
+  for many hours. The checkpoint marker handles a disk that comes back old or empty.
+- **Vercel is the only vendor** for the API, the cron, the sandboxes and the image registry,
+  with no fallback, by choice. `@vercel/sandbox` is pinned exactly; before a bump, the live suite
+  (`PONZU_LIVE_VERCEL=1 bun test packages/sandbox/src/vercel.live.test.ts`) and
+  `surface.test.ts` run again, since a newer SDK may create through another API version with
+  other snapshot defaults, and resume on more calls.
+- **What can still be lost, at worst,** now that the disk is a cache in fact (principle 2):
+  - what a turn did after its last checkpoint, when the sandbox's disk is lost before the next
+    (a turn's end and every sleep save one, so this is a turn cut off by a crash or a host lost
+    while it ran);
   - files never in a checkpoint: ignored by the repo (`dist/`, `node_modules`, a `.env.local`),
     over 5 MB or past 50 MB in all, or holding a secret (above); the secrets come back with the
     environment, built files with a build;
@@ -2608,27 +2698,26 @@ from `cloud` into `main`, released as the next major version.
     transcript stored is the last that fit, and the thread said so;
   - uncommitted work that cannot go back on a pushed branch that moved on: it is on
     `ponzu-wip/turn-<n>` in the sandbox, and the thread says so, but nothing merges it;
-  - a turn's usage counted twice after a rollback, since the usage totals are not in the
-    checkpoint.
-- A runner that is answered 409 `superseded` while it starts exits 78 and, on a cold boot, stays
-  down until the dead-runner sweep (90 seconds unheard) stops it and starts it on a new
-  environment. The end-to-end runs found one way in and it is closed: a `POST /report` that came
-  while the runner was still getting its session sent a state report with no lease, so the
-  runner superseded itself; a report is now ignored until the runner has started. A session
-  call retried after a lost answer, with the first landing after the retry, would still do it;
-  a session call that names the starting process would close that.
-- A move onto a new image goes by whether the last checkpoint holds every event delivered into
-  the session, and the API counts as held what had been delivered when the checkpoint was
+  - a turn's usage counted twice after a disk came back old, since the usage totals are not in
+    the checkpoint.
+- A runner that is answered 409 `superseded` while it starts exits 78 and stays down until the
+  dead-runner sweep (90 seconds unheard) puts the sandbox to sleep and wakes it on a new
+  environment. A session call retried after a lost answer, with the first landing after the
+  retry, would do it; a session call that names the starting process would close that.
+- A recreate onto a new image goes by whether the last checkpoint holds every event delivered
+  into the session, and the API counts as held what had been delivered when the checkpoint was
   recorded. An event the runner took into a new turn while it was still uploading the checkpoint
   of the last is counted as held though it is not. The turn's own checkpoint, or the one the sleep
-  saves, records it soon after; only when both of those fail and the design moves before another
-  is saved is that turn missing from the conversation after the move (the thread still has it).
+  saves, records it soon after; only when both of those fail and the design is recreated before
+  another is saved is that turn missing from the conversation after it (the thread still has it).
   The runner naming, with each checkpoint, the newest event it holds would close it.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<design>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.
-- A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
-  resume until it has. A message that arrives in that window waits for the stop.
+- A sleep takes a few seconds (`ponzu-stop`, then the snapshot: `putToSleep` took 1.3 seconds
+  with a 549 MiB snapshot from a local API on a real sandbox; a runner mid-turn takes longer, up
+  to `ponzu-stop`'s 30 seconds). A message that arrives meanwhile finds the row `stopping` and its wake waits for the
+  sleep to land, up to 30 seconds, then resumes.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
   signed commits on the pushed branch need the API commit path.

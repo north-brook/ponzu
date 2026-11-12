@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import { listThreadItems } from "@ponzu/db";
+import { FakeClock } from "@ponzu/sandbox";
+import { createPoke } from "../deps/poke.ts";
 import { call, designIn, workspaceWithRepo } from "../testing/designs.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 import { requestWake } from "./wake.ts";
@@ -60,4 +62,39 @@ test("only a message, an answer or a comment records a wake, and it runs at once
   expect(ran!.failed_at).toBeNull();
   // Without an awake sandbox there is nobody to poke.
   expect(t.poke.pokes).toEqual([]);
+});
+
+test("a poke carries the port's bearer, and a 502 or 503 just after a start is tried again for a second", async () => {
+  const clock = new FakeClock();
+  const seen: { url: string; authorization: string | null; method: string }[] = [];
+  let answers = [502, 503, 204];
+  const poke = createPoke({
+    clock,
+    fetch: async (url, init) => {
+      const headers = new Headers(init?.headers);
+      seen.push({
+        url: String(url),
+        authorization: headers.get("authorization"),
+        method: init!.method!,
+      });
+      return new Response(null, { status: answers.shift() ?? 204 });
+    },
+  });
+  await poke({ url: "https://sb-1.vercel.run", token: "port-token" });
+  expect(seen).toHaveLength(3);
+  expect(seen[0]).toEqual({
+    url: "https://sb-1.vercel.run/poke",
+    authorization: "Bearer port-token",
+    method: "POST",
+  });
+
+  // Past a second it gives up; and a 401 is not tried again at all.
+  answers = Array(20).fill(502);
+  await expect(poke({ url: "https://sb-1.vercel.run", token: "port-token" })).rejects.toThrow(
+    "502",
+  );
+  seen.length = 0;
+  answers = [401];
+  await expect(poke({ url: "https://sb-1.vercel.run", token: "wrong" })).rejects.toThrow("401");
+  expect(seen).toHaveLength(1);
 });

@@ -1,0 +1,80 @@
+# Builds the sandbox image (apps/runner/image) on an amd64 runner, pushes it to the ponzu-api
+# project's Vercel Container Registry as ponzu-runner, checks it in a Vercel Sandbox and opens a
+# pull request recording it in current.json, which ships with the next API deploy.
+#
+# Needs, set up by a person (docs: container-registry/github-actions):
+#   - a VCR OIDC policy giving this repository read-write on ponzu-api's registry, for the push;
+#   - repository secrets VERCEL_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID (a token scoped to
+#     the team and ponzu-api) for build.ts's registry reads, the Ready wait and checks.ts's
+#     sandbox: the login action only logs docker in;
+#   - optionally ANTHROPIC_API_KEY (the development key), for a real Haiku turn in the checks.
+# The pull request it opens is made with GITHUB_TOKEN, which starts no workflows: a person closes
+# and reopens it (or pushes to it) so CI and the title check run before it is merged.
+name: Image
+
+on:
+  push:
+    branches: [main, cloud]
+    paths:
+      - apps/runner/image/Dockerfile
+      - apps/runner/image/provision.sh
+      - apps/runner/image/pins.json
+      - apps/runner/image/libexec/**
+      - packages/render/sandbox-fonts.json
+      - .github/workflows/image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The secrets are given only to the step that needs them, never to the actions or installs.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      # 57.0.0: build.ts uses `vercel vcr add`, which later CLIs (deploy-api.yml's 65.14.0) call
+      # `create`. No install scripts run.
+      - run: npm install --global --ignore-scripts vercel@57.0.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to VCR
+        uses: vercel/vcr-action/login@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
+        with:
+          team: ${{ secrets.VERCEL_TEAM_ID }}
+      - name: Build, push, check and record
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bun apps/runner/image/build.ts
+      - name: Open a pull request with current.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- apps/runner/image/current.json; then
+            echo "current.json already records this image"; exit 0
+          fi
+          tag=$(jq -r .tag apps/runner/image/current.json)
+          branch="image/ponzu-runner-$tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add apps/runner/image/current.json
+          git commit -m "chore(runner): record sandbox image $tag"
+          git push --force origin "$branch"
+          gh pr create --base "$GITHUB_REF_NAME" --head "$branch" \
+            --title "chore(runner): record sandbox image $tag" \
+            --body "build.ts built ponzu-runner:$tag, VCR has it Ready, and checks.ts passed in a Vercel Sandbox made from it. Merging ships it with the next API deploy." \
+            || echo "a pull request for $branch is already open"

@@ -1,7 +1,7 @@
 /*
  * The canvas tools as the runner hosts them, run in a sandbox made from the image with the
- * runner's own user, group and capability (checks.ts starts it under systemd-run with the
- * unit's settings), against links and paths the agent's user could plant: does a tool hand the
+ * runner's own user, group and capability (checks.ts starts it through setpriv, as the
+ * supervisor starts the runner), against links and paths the agent's user could plant: does a tool hand the
  * agent anything the agent could not read itself, or write where it could not write?
  *
  *   bun tool-probe.js <dir the agent planted links in>
@@ -18,7 +18,7 @@ import { agentFiles } from "../../src/files.ts";
 const [dir] = process.argv.slice(2);
 if (!dir) throw new Error("say where the links are");
 
-// As main.ts does: the image's unit names the wrapper, and without one the runner's access is used.
+// As main.ts does: the image's runner.json names the wrapper, and without one the runner's access is used.
 const asAgent = process.env.PONZU_AS_AGENT;
 const files = asAgent ? agentFiles(asAgent, { PATH: process.env.PATH }) : localFiles;
 const renderer: Renderer = {
@@ -39,7 +39,7 @@ const board = await call("create_artboard", { name: "Probe", html: "<p>probe</p>
 const { id } = board.data as { id: string };
 
 const reads: Record<string, { taken: boolean; leaked: boolean; said: string }> = {};
-for (const name of ["env-file", "runner-environ", "shadow", "runner-home"]) {
+for (const name of ["runner-log", "runner-environ", "shadow", "runner-home"]) {
   const before = JSON.stringify(cloud.replica.doc);
   const r = await call("write_html", { target: id, path: `${dir}/${name}.html` });
   const after = JSON.stringify(cloud.replica.doc);
@@ -50,11 +50,11 @@ for (const name of ["env-file", "runner-environ", "shadow", "runner-home"]) {
     said: r.text.slice(0, 160),
   };
 }
-const asset = await call("add_asset", { path: `${dir}/env-file.html`, name: "env.png" });
+const asset = await call("add_asset", { path: `${dir}/runner-log.html`, name: "log.png" });
 const writes: Record<string, { taken: boolean; said: string }> = {};
 for (const [name, path] of [
   ["through-link", `${dir}/deputy.png`],
-  ["runner-home", "/home/user/ponzu-probe-direct.png"],
+  ["runner-home", "/home/ponzu/ponzu-probe-direct.png"],
 ]) {
   const r = await call("export", { id, path });
   writes[name!] = { taken: !r.isError, said: r.text.slice(0, 160) };

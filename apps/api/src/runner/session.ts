@@ -1,15 +1,14 @@
 import {
-  getLiveSandbox,
   getRunnerContext,
+  getSandbox,
   listOpenQuestions,
-  type Sandbox,
+  type SandboxRow,
   takeRunnerLease,
 } from "@ponzu/db";
 import type { Effort, RunnerSession } from "@ponzu/runner/protocol";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import { savedView } from "./checkpoint.ts";
-import { runnerImage } from "./client.ts";
 
 /*
  * The runner's first call (docs/cloud.md, "The runner protocol", "Session"): it takes the
@@ -36,7 +35,7 @@ export async function startRunnerSession(
   const [context, open, sandbox] = await Promise.all([
     getRunnerContext(deps.db, designId),
     listOpenQuestions(deps.db, designId),
-    getLiveSandbox(deps.db, designId),
+    getSandbox(deps.db, designId),
   ]);
   if (!context) throw new ApiError(404, "not_found", "There is no such design.");
   logStart(deps, designId, client, sandbox);
@@ -82,34 +81,19 @@ export async function startRunnerSession(
   };
 }
 
-/**
- * Which runner started, in which image, against the image its sandbox was made from. A runner
- * that says another image than its sandbox's is logged as a mismatch: a sandbox recorded wrong,
- * or an image that was changed under its name. One that says none is older than saying so.
- * While a move is under way the design's row is still the old sandbox's, so a runner starting
- * in the new one is not a mismatch.
- */
+/** Which runner started, in which session, on which image, and what it says it is. */
 function logStart(
   deps: Pick<Deps, "log">,
   designId: string,
   client: string | null,
-  sandbox: Sandbox | null,
+  sandbox: SandboxRow | null,
 ) {
-  const reported = runnerImage(client);
-  const fields = {
+  deps.log.info("runner_started", {
     designId,
-    sandboxId: sandbox?.id ?? null,
-    generation: sandbox?.generation ?? null,
+    sessionId: sandbox?.sessionId ?? null,
+    image: sandbox?.image ?? null,
     client,
-    runnerImage: reported,
-    sandboxImage: sandbox?.image ?? null,
-  };
-  const moving = sandbox?.movingSince != null;
-  if (reported && sandbox?.image && reported !== sandbox.image && !moving) {
-    deps.log.warn("runner_image_mismatch", fields);
-  } else {
-    deps.log.info("runner_started", fields);
-  }
+  });
 }
 
 function splitName(fullName: string): [string, string] {

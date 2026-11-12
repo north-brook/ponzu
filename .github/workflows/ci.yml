@@ -137,8 +137,9 @@ jobs:
           check web bun run --filter @ponzu/web build
           # Builds the API the way Vercel does and loads the bundle in Node.
           check api bun scripts/ci/api-bundle.ts
-          # Builds the runner and starts it, which must refuse an empty environment.
-          check runner bun apps/runner/scripts/build.ts --smoke
+          # Builds the runner and starts it, which must refuse an empty environment. Its own
+          # outdir, so it never overwrites the dist/ the API build reads.
+          check runner bun apps/runner/scripts/build.ts --smoke --outdir "$RUNNER_TEMP/runner"
           wait
           failed=0
           for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner; do

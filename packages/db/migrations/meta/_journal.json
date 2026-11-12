@@ -162,6 +162,13 @@
       "when": 1794435835920,
       "tag": "0022_turn_owed",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794438544518,
+      "tag": "0023_vercel_sandboxes",
+      "breakpoints": true
     }
   ]
 }

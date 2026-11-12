@@ -1,6 +1,7 @@
 import { enqueueJob, getAwakeSandboxAddress, touchSandbox } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { type JobDeps, runJob } from "../jobs/run.ts";
+import { runnerTarget } from "./environment.ts";
 import { WAKE_ATTEMPTS, WAKE_JOB } from "./orchestrate.ts";
 
 /*
@@ -45,7 +46,8 @@ const WAKES: Record<WakeReason, boolean> = {
 
 /**
  * Something happened to `designId` that its runner should hear of: keep its sandbox awake,
- * wake it when the reason calls for one, and poke the runner when it is awake. Call it after
+ * wake it when the reason calls for one, and poke the runner when it is awake (`POST /poke` on
+ * its port, with the port's bearer; a 502 or 503 just after a start is tried again for a second). Call it after
  * the event or op is written.
  *
  * It never fails: what the caller wrote is written, and a request that answered 5xx for it
@@ -120,13 +122,8 @@ async function wake(deps: WakeDeps, designId: string, reason: WakeReason): Promi
   deps.background(
     "poke",
     (async () => {
-      const token = sandbox.encryptedAddressToken
-        ? await deps.vault.open(sandbox.encryptedAddressToken, {
-            column: "sandboxes.encrypted_address_token",
-            row: sandbox.sandboxId,
-          })
-        : null;
-      await deps.poke({ url: sandbox.address, token });
+      const target = await runnerTarget(deps, sandbox);
+      if (target) await deps.poke(target);
     })(),
   );
 }

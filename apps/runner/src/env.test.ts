@@ -7,6 +7,7 @@ const base = {
   PONZU_API_URL: "https://api.ponzu.design",
   PONZU_DESIGN_ID: "des_1",
   PONZU_RUNNER_TOKEN: "pzr_x",
+  PONZU_PORT_TOKEN: "pzp_x",
 };
 
 test("the runner starts with its three variables and one Claude credential", () => {
@@ -15,6 +16,7 @@ test("the runner starts with its three variables and one Claude credential", () 
     designId: "des_1",
     token: "pzr_x",
     port: 4600,
+    portToken: "pzp_x",
     workRoot: "/home/user/work",
     stateDir: "/home/user/.ponzu",
     gitSocket: "/home/user/.ponzu/git.sock",
@@ -56,9 +58,9 @@ test("a missing variable or a bad port is said by name", () => {
   );
 });
 
-test("the agent's side gets everything but the runner token", () => {
+test("the agent's side gets everything but the runner token and the port token", () => {
   const env = { ...base, ANTHROPIC_API_KEY: "k", STRIPE_KEY: "repo secret" };
-  const { PONZU_RUNNER_TOKEN: _, ...rest } = env;
+  const { PONZU_RUNNER_TOKEN: _, PONZU_PORT_TOKEN: __, ...rest } = env;
   expect(agentEnv(env)).toEqual(rest);
   // The runner's own is left as it was.
   expect(env.PONZU_RUNNER_TOKEN).toBe("pzr_x");

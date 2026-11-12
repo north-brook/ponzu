@@ -1,19 +1,22 @@
+import { timingSafeEqual } from "node:crypto";
 import { chmodSync, rmSync } from "node:fs";
 import { ApiError } from "./api/api.ts";
 import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
 
 /**
- * The runner's one port, which the API reaches through the sandbox's token-gated address (and
- * anything in the sandbox on localhost, the agent included). Nothing that arrives is trusted:
- * `POST /poke` says there may be something to claim, and the runner only claims, from the API,
- * with its own token; `POST /report` asks for a state report now, and only the API's answer to
- * that report can tell the runner to get ready for sleep. `GET /health` says it is up.
+ * The runner's one port. Vercel gives it a public `https://<sub>.vercel.run` address that anyone
+ * with the URL can reach, so the runner checks the caller itself: every request carries
+ * `authorization: Bearer <portToken>`, which the API handed this start of the runner (and only
+ * this process holds; the agent's environment never has it). Even then nothing that arrives is
+ * trusted: `POST /poke` says there may be something to claim, and the runner only claims, from
+ * the API, with its own token. `GET /health` says it is up, and whether it has started.
  */
 export function serve(opts: {
   port: number;
+  /** The bearer every request must carry. */
+  portToken: string;
   hostname?: string;
   poke(): void;
-  report?(): void;
   health(): unknown;
 }): {
   port: number;
@@ -23,15 +26,12 @@ export function serve(opts: {
     port: opts.port,
     hostname: opts.hostname ?? "0.0.0.0",
     fetch(request) {
+      if (!bearerIs(request.headers.get("authorization"), opts.portToken))
+        return new Response(null, { status: 401 });
       const { pathname } = new URL(request.url);
       if (pathname === "/poke") {
         if (request.method !== "POST") return new Response(null, { status: 405 });
         opts.poke();
-        return new Response(null, { status: 204 });
-      }
-      if (pathname === "/report") {
-        if (request.method !== "POST") return new Response(null, { status: 405 });
-        opts.report?.();
         return new Response(null, { status: 204 });
       }
       if (pathname === "/health") {
@@ -79,6 +79,14 @@ export function serveCredentials(opts: {
   // Owner and group: the runner and, in the image, the agent's user (the service's group).
   chmodSync(opts.path, 0o660);
   return { stop: () => void server.stop(true) };
+}
+
+/** Whether `header` is `Bearer <token>`, compared in constant time. */
+function bearerIs(header: string | null, token: string): boolean {
+  if (!header || !token) return false;
+  const given = Buffer.from(header);
+  const wanted = Buffer.from(`Bearer ${token}`);
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
 function said(err: unknown): string {

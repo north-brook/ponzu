@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { getLiveSandbox, upsertRepos } from "@ponzu/db";
+import { upsertRepos } from "@ponzu/db";
 import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "@ponzu/runner/protocol";
+import { designSandboxName } from "@ponzu/sandbox";
 import { secretBinding } from "../environments/secrets.ts";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
-import { createTestApp, TEST_VAULT_KEY, type TestApp } from "../testing/index.ts";
+import { createTestApp, TEST_SCOPE, TEST_VAULT_KEY, type TestApp } from "../testing/index.ts";
 import { createVault } from "../vault/vault.ts";
 
 /*
@@ -305,7 +306,7 @@ describe("a sandbox's environment", () => {
     await t.backgroundDone();
   });
 
-  /** What the provider was given, and the secrets the runner unpacks from it for the agent. */
+  /** What the runner was started with, and the secrets it unpacks from it for the agent. */
   async function started(scratch = false) {
     const design = await designIn(t, ws, "ada", sampleDoc(), scratch ? "scratch" : "repo");
     const said = await call(t, await as("ada"), "POST", `/v1/designs/${design.id}/messages`, {
@@ -313,8 +314,10 @@ describe("a sandbox's environment", () => {
     });
     expect(said.status).toBe(201);
     await t.backgroundDone();
-    const sandbox = await getLiveSandbox(t.db, design.id);
-    const given = t.sandbox.env(sandbox!.providerId!);
+    const start = t.sandboxes
+      .commands(designSandboxName(TEST_SCOPE, design.id))
+      .findLast((command) => command.kind === "start");
+    const given = start!.command.env!;
     return { given, secrets: decodeRepoSecrets(given[REPO_SECRETS_VARIABLE]) };
   }
 
@@ -329,7 +332,9 @@ describe("a sandbox's environment", () => {
       "ANTHROPIC_API_KEY",
       "PONZU_API_URL",
       "PONZU_DESIGN_ID",
+      "PONZU_PORT_TOKEN",
       REPO_SECRETS_VARIABLE,
+      "PONZU_RUNNER_BUNDLE",
       "PONZU_RUNNER_TOKEN",
     ]);
   });

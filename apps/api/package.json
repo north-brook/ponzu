@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "bun --watch scripts/dev.ts",
     "dev:signin": "bun scripts/dev-signin.ts",
-    "build": "bun build src/index.ts --target=node --format=esm --outdir=dist --external hono --external 'hono/*' --sourcemap=linked",
+    "build": "bun scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

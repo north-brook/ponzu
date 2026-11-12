@@ -27,11 +27,6 @@ export class StateReporter {
       heartbeatMs: number;
       /** The design's head, from each answer. */
       onSeq(seq: number): void;
-      /**
-       * The stop the API is putting the sandbox through, from each answer: null when it is
-       * awake. Not called by an API that does not say.
-       */
-      onSleep?(sleep: string | null): void;
       onError?(err: unknown): void;
       backoff?: (failures: number) => number;
     },
@@ -56,12 +51,6 @@ export class StateReporter {
     this.heartbeat.unref?.();
   }
 
-  /** Report now, changed or not: the answer is what says whether the sandbox is going to sleep. */
-  now(): void {
-    // Only once reporting has started: before that the runner has no lease to report under.
-    if (this.heartbeat) this.pacer.kick();
-  }
-
   /** Send the state as it is now and stop the heartbeat. */
   async stop(): Promise<void> {
     if (this.heartbeat) clearInterval(this.heartbeat);
@@ -79,9 +68,8 @@ export class StateReporter {
     const { branch, ...rest } = state;
     const body: StateRequest = branch !== undefined && branch !== this.sentBranch ? state : rest;
     try {
-      const { seq, sleep } = await this.api.putState(body);
+      const { seq } = await this.api.putState(body);
       this.opts.onSeq(seq);
-      if (sleep !== undefined) this.opts.onSleep?.(sleep);
     } catch (err) {
       if (retryable(err)) throw err;
       // Refused outright: the next change or heartbeat says it again.

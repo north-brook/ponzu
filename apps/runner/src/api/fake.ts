@@ -135,13 +135,6 @@ export class FakeRunnerApi {
   readonly checkpoints: Omit<Checkpoint, "session" | "workspace">[] = [];
   /** What runners reported restoring. */
   readonly restored: RestoredReport[] = [];
-  /**
-   * The stop the API is putting the sandbox through, which every state answer names; null while
-   * it is awake. Set it to ask the runner to get ready to sleep.
-   */
-  sleep: string | null = null;
-  /** The sleeps the runner said it was ready for, in order. */
-  readonly quiesced: string[] = [];
   /** How long each call of a kind takes before the fake looks at it: a slow API. */
   readonly delays = new Map<Call, number>();
 
@@ -386,9 +379,7 @@ export class FakeRunnerApi {
     // As the API's row: kept until the next report of it.
     if (state.branch !== undefined) this.branch = structuredClone(state.branch);
     if (state.claudeSessionId) this.sessionInfo.claudeSessionId = state.claudeSessionId;
-    if (state.quiesced && state.quiesced !== this.quiesced.at(-1))
-      this.quiesced.push(state.quiesced);
-    return { seq: this.doc.seq, sleep: this.sleep };
+    return { seq: this.doc.seq };
   }
 
   async ask(runner: string, question: QuestionRequest): Promise<void> {

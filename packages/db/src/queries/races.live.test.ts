@@ -294,20 +294,14 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const { design } = await seedDesign(db);
     const now = new Date();
     const limits = { perWorkspace: 100, perOwner: 100 };
-    const begun = await beginSandbox(db, {
-      designId: design.id,
-      provider: "boat",
-      now,
-      by: "job_first",
-      limits,
-    });
+    const begun = await beginSandbox(db, { designId: design.id, now, by: "job_first", limits });
     if (!begun || "full" in begun) throw new Error("expected a sandbox");
-    await moveSandbox(db, { id: begun.sandbox.id, from: ["waking"], to: "asleep", now });
+    await moveSandbox(db, { designId: design.id, from: ["waking"], to: "asleep", now });
 
     const claims = await Promise.all(
       times(8, (racer) =>
         claimSandbox(db, {
-          id: begun.sandbox.id,
+          designId: design.id,
           from: ["asleep", "waking"],
           now,
           by: `job_${racer}`,

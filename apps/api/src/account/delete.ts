@@ -12,7 +12,7 @@ import { disconnectClaude } from "../claude/accounts.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
-import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
+import { finishRetire, holdForRetire } from "../sandboxes/retire.ts";
 
 /*
  * Deleting a person's account (docs/cloud.md, "Deleting an account"). In this order, each step
@@ -42,9 +42,10 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   if (plan.soleAdminOf.length > 0) throw soleAdmin(plan.soleAdminOf);
 
   await disconnectClaude(deps, user.id);
-  const machines: string[] = [];
+  // Held first, which meters what was awake while the design's row still says whose it is.
+  const retiring: { designId: string; by: string | null }[] = [];
   for (const designId of [...plan.kept, ...plan.deleted]) {
-    machines.push(...(await retireSandboxes(deps, designId)));
+    retiring.push({ designId, by: await holdForRetire(deps, designId) });
   }
   const forgotten: (() => Promise<void>)[] = [];
   for (const designId of plan.deleted) {
@@ -73,7 +74,9 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
     { distinctId: user.id },
   );
 
-  deps.background("account_deleted", destroySandboxes(deps, machines));
+  for (const { designId, by } of retiring) {
+    deps.background("account_deleted", finishRetire(deps, designId, by));
+  }
   // The transcripts and work in progress of the designs that went with them.
   for (const forget of forgotten) deps.background("account_deleted", forget());
   if (workosUserId) deps.background("account_deleted", deps.workos.deleteUser(workosUserId));

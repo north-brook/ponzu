@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import { EnvError, readEnv, sandboxScope } from "./env.ts";
 
 const complete = {
@@ -12,7 +13,6 @@ const complete = {
   GITHUB_APP_SLUG: "ponzu-dev",
   GITHUB_WEBHOOK_SECRET: "a-webhook-secret-of-at-least-32-characters",
   CRON_SECRET: "a-cron-secret-of-at-least-32-characters",
-  BOAT_API_KEY: "boat-key",
   PONZU_VAULT_KEY: "vault-key",
   NEON_REALTIME_URL: "https://ep-example.rt.c-1.us-east-1.aws.neon.tech/",
   NEON_REALTIME_SECRET: "nrt_live_1example",
@@ -38,15 +38,14 @@ test("a complete environment is read into one typed value", () => {
       botUserId: 354938669,
     },
     cronSecret: complete.CRON_SECRET,
-    boatApiKey: "boat-key",
-    // Unset, a wake says the snapshot is missing; the API itself starts.
+    // The image is the one this build ships; without the Vercel triple, sandboxes use OIDC.
     sandbox: {
-      snapshot: null,
+      image: current.image,
       apiUrl: "https://api.ponzu.design",
       idleSeconds: 300,
       limits: { perWorkspace: 5, perOwner: 3 },
-      maxMoves: 3,
       scope: sandboxScope(complete.DATABASE_URL),
+      vercel: null,
     },
     vault: { key: "vault-key", oldKeys: [] },
     realtime: { url: complete.NEON_REALTIME_URL, secret: "nrt_live_1example" },
@@ -94,24 +93,44 @@ test("the optional ones are read when set", () => {
     PONZU_VAULT_OLD_KEYS: "older,oldest",
     PONZU_MIN_CLIENT_VERSIONS: "macos=2.1.0",
     VERCEL_GIT_COMMIT_SHA: "abc1234",
-    PONZU_SANDBOX_SNAPSHOT: "ponzu-runner-0123456789ab",
+    VERCEL_TOKEN: "vercel-token",
+    VERCEL_TEAM_ID: "team_example",
+    VERCEL_PROJECT_ID: "prj_example",
     PONZU_API_URL: "https://ponzu-dev.example/",
     PONZU_SANDBOX_IDLE_SECONDS: "60",
     PONZU_SANDBOX_MAX_PER_WORKSPACE: "20",
     PONZU_SANDBOX_MAX_PER_OWNER: "4",
-    PONZU_SANDBOX_MAX_MOVES: "1",
   });
   expect(env.sandbox).toEqual({
-    snapshot: "ponzu-runner-0123456789ab",
+    image: current.image,
     apiUrl: "https://ponzu-dev.example",
     idleSeconds: 60,
     limits: { perWorkspace: 20, perOwner: 4 },
-    maxMoves: 1,
     scope: sandboxScope(complete.DATABASE_URL),
+    vercel: { token: "vercel-token", teamId: "team_example", projectId: "prj_example" },
   });
   expect(env.vault.oldKeys).toEqual(["older", "oldest"]);
   expect(env.minimumClientVersions).toEqual({ macos: "2.1.0" });
   expect(env.commit).toBe("abc1234");
+});
+
+test("the Vercel triple is all or nothing, and never a token on Vercel itself", () => {
+  const triple = { VERCEL_TOKEN: "t", VERCEL_TEAM_ID: "team_x", VERCEL_PROJECT_ID: "prj_x" };
+  expect(() => readEnv({ ...complete, VERCEL_TOKEN: "t" })).toThrow(
+    "VERCEL_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID are all set or none of them.",
+  );
+  expect(() => readEnv({ ...complete, ...triple, VERCEL_TEAM_ID: "" })).toThrow(EnvError);
+  expect(() => readEnv({ ...complete, ...triple, VERCEL: "1" })).toThrow(
+    "VERCEL_TOKEN is set on Vercel",
+  );
+  // A deployment's own ids, without a token: OIDC.
+  const deployed = readEnv({
+    ...complete,
+    VERCEL: "1",
+    VERCEL_TEAM_ID: "team_x",
+    VERCEL_PROJECT_ID: "prj_x",
+  });
+  expect(deployed.sandbox.vercel).toBeNull();
 });
 
 test("a sandbox's scope is the database's, through whichever of its hosts", () => {
@@ -126,7 +145,7 @@ test("a sandbox's scope is the database's, through whichever of its hosts", () =
 });
 
 test("everything missing is named at once, and an empty value counts as missing", () => {
-  const { DATABASE_URL: _url, BOAT_API_KEY: _boat, ...rest } = complete;
+  const { DATABASE_URL: _url, CRON_SECRET: _cron, ...rest } = complete;
   const error = (() => {
     try {
       readEnv({ ...rest, WORKOS_API_KEY: "" });
@@ -136,7 +155,7 @@ test("everything missing is named at once, and an empty value counts as missing"
   })();
   expect(error).toBeInstanceOf(EnvError);
   expect((error as Error).message).toBe(
-    "The API cannot start. DATABASE_URL is not set. WORKOS_API_KEY is not set. BOAT_API_KEY is not set.",
+    "The API cannot start. DATABASE_URL is not set. WORKOS_API_KEY is not set. CRON_SECRET is not set.",
   );
 });
 
@@ -182,10 +201,11 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
     "PONZU_SANDBOX_IDLE_SECONDS",
-    "PONZU_SANDBOX_MAX_MOVES",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",
-    "PONZU_SANDBOX_SNAPSHOT",
     "PONZU_VAULT_OLD_KEYS",
+    "VERCEL_PROJECT_ID",
+    "VERCEL_TEAM_ID",
+    "VERCEL_TOKEN",
   ]);
 });

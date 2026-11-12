@@ -2,9 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { filesWithSecrets, secretsIn, secretValues } from "./harness.ts";
+import { filesWithSecrets, secretsIn, secretValues } from "./live.ts";
 
-const dir = mkdtempSync(join(tmpdir(), "ponzu-harness-"));
+const dir = mkdtempSync(join(tmpdir(), "ponzu-live-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 // Made up for the test: none is a real credential.
@@ -35,16 +35,19 @@ test("a command holding a secret's value or a key's shape is caught; the scan's 
   expect(secretsIn(`curl -H 'x: sk-ant-api03-${"a".repeat(20)}'`, secrets)).toEqual([
     "a key's shape",
   ]);
-  expect(secretsIn("rg -e 'sk-ant-[a-z]{3,5}[0-9]{2}-[A-Za-z0-9_-]{80,}' /", secrets)).toEqual([]);
-  expect(secretsIn("sudo systemctl restart ponzu-runner", secrets)).toEqual([]);
+  expect(secretsIn("grep -e 'sk-ant-[a-z]{3,5}[0-9]{2}-[A-Za-z0-9_-]{80,}' /", secrets)).toEqual(
+    [],
+  );
+  expect(secretsIn("grep -e 'pzr_[A-Za-z0-9_-]{20,}' /", secrets)).toEqual([]);
+  expect(secretsIn("/opt/ponzu/bin/ponzu-stop", secrets)).toEqual([]);
 });
 
 test("a staged file holding a secret's value is found, by name only", () => {
   const staged = join(dir, "staged");
-  mkdirSync(join(staged, "runner"), { recursive: true });
-  writeFileSync(join(staged, "runner", "runner.js"), `const k = "${vault}";`);
+  mkdirSync(join(staged, "libexec"), { recursive: true });
+  writeFileSync(join(staged, "libexec", "ponzu-start"), `token=${vault}`);
   writeFileSync(join(staged, "provision.sh"), "echo hello");
   expect(filesWithSecrets(staged, secretValues(env))).toEqual([
-    `${join(staged, "runner", "runner.js")} (PONZU_VAULT_KEY)`,
+    `${join(staged, "libexec", "ponzu-start")} (PONZU_VAULT_KEY)`,
   ]);
 });

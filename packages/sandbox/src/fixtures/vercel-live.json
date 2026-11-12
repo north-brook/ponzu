@@ -1,0 +1,1127 @@
+{
+  "recordedAt": "2026-11-11T22:28:24.053Z",
+  "found": {
+    "sdk": "3.9.1",
+    "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+    "unknownTag": {
+      "ok": false,
+      "error": {
+        "status": 404,
+        "json": {
+          "error": {
+            "code": "not_found",
+            "message": "Image not found."
+          }
+        },
+        "message": "Status code 404 is not ok: Image not found."
+      }
+    },
+    "createdUp": {
+      "name": "pz-test-live-qwim32ko",
+      "sessionId": "sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k",
+      "startedAt": 1794436062081,
+      "expiresAt": 1794436362081,
+      "image": "northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+      "urls": ["4600"],
+      "fresh": true,
+      "recreated": false,
+      "wasRunning": false
+    },
+    "noDriftAfterCreate": true,
+    "port": {
+      "withBearer": {
+        "status": 200,
+        "attempts": 2
+      },
+      "withoutBearer": {
+        "status": 401,
+        "attempts": 1
+      }
+    },
+    "sudoUid": "0",
+    "env64k": {
+      "accepted": true,
+      "bytes": "65536"
+    },
+    "env128k": {
+      "sandboxError": "rejected",
+      "retryAfterSeconds": null,
+      "message": "exec: 400 command_failed: Status code 400 is not ok: [internal] failed to start command: failed to receive started event: invalid_argument: failed to start process: fork/exec /usr/bin/sh: argument list too long",
+      "status": 400,
+      "json": {
+        "error": {
+          "code": "command_failed",
+          "message": "[internal] failed to start command: failed to receive started event: invalid_argument: failed to start process: fork/exec /usr/bin/sh: argument list too long"
+        }
+      }
+    },
+    "extendPastCap": {
+      "ok": false,
+      "error": {
+        "sandboxError": "rejected",
+        "retryAfterSeconds": null,
+        "message": "extend: 400 sandbox_timeout_invalid: Status code 400 is not ok: Failed to extend timeout: extension would exceed maximum execution timeout",
+        "status": 400,
+        "json": {
+          "error": {
+            "code": "sandbox_timeout_invalid",
+            "message": "Failed to extend timeout: extension would exceed maximum execution timeout"
+          }
+        }
+      }
+    },
+    "duplicateCreate": {
+      "ok": false,
+      "error": {
+        "status": 400,
+        "json": {
+          "error": {
+            "code": "bad_request",
+            "message": "A sandbox with the name 'pz-test-live-qwim32ko' already exists for this project. Use GET /sandboxes/:name to resume it or delete it first."
+          }
+        },
+        "message": "Status code 400 is not ok: A sandbox with the name 'pz-test-live-qwim32ko' already exists for this project. Use GET /sandboxes/:name to resume it or delete it first."
+      }
+    },
+    "stop": {
+      "stopped": true,
+      "snapshotBytes": 577969151
+    },
+    "execCutByStop": {
+      "ok": true,
+      "value": {
+        "exitCode": 143,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "execAfterStopCached": {
+      "ok": false,
+      "error": {
+        "sandboxError": "not_running",
+        "retryAfterSeconds": null,
+        "message": "exec: 410 sandbox_stopped: Status code 410 is not ok: Sandbox has stopped execution and is no longer available",
+        "status": 410,
+        "json": {
+          "error": {
+            "code": "sandbox_stopped",
+            "message": "Sandbox has stopped execution and is no longer available"
+          }
+        }
+      }
+    },
+    "execAfterStopUncached": {
+      "ok": false,
+      "error": {
+        "sandboxError": "not_running",
+        "retryAfterSeconds": null,
+        "message": "sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k is stopped",
+        "causeName": null
+      }
+    },
+    "stopAgain": {
+      "ok": true,
+      "value": {
+        "stopped": false,
+        "snapshotBytes": null
+      }
+    },
+    "rawStopAgain": {
+      "ok": true,
+      "value": "stopped"
+    },
+    "extendAfterStop": {
+      "ok": true,
+      "value": null
+    },
+    "statusAfterUpdate": "stopped",
+    "resumedUp": {
+      "name": "pz-test-live-qwim32ko",
+      "sessionId": "sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR",
+      "startedAt": 1794436099650,
+      "expiresAt": 1794436459650,
+      "image": "northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+      "urls": ["4600"],
+      "fresh": false,
+      "recreated": false,
+      "wasRunning": false
+    },
+    "sigtermGraceMs": 19996,
+    "sigtermToStopAnswerNote": "grace = last write after SIGTERM minus SIGTERM time, written and synced every 50 ms",
+    "upUnknownDigest": {
+      "ok": false,
+      "error": {
+        "sandboxError": "rejected",
+        "retryAfterSeconds": null,
+        "message": "up: 404 not_found: Status code 404 is not ok: Image not found.",
+        "status": 404,
+        "json": {
+          "error": {
+            "code": "not_found",
+            "message": "Image not found."
+          }
+        }
+      }
+    },
+    "statusAfterUnknownDigest": null,
+    "nameReuseAfterDelete": [
+      {
+        "ok": true,
+        "afterMs": 628
+      }
+    ],
+    "ephemeralUp": {
+      "name": "pz-test-live-ov9u2pq8",
+      "sessionId": "sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa",
+      "startedAt": 1794436102647,
+      "expiresAt": 1794436402647,
+      "image": "northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+      "urls": [],
+      "fresh": true,
+      "recreated": false,
+      "wasRunning": false
+    },
+    "listed": [
+      {
+        "name": "pz-test-live-*",
+        "status": "running",
+        "sessionId": "sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa",
+        "image": "northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "createdAt": 1794436102681
+      },
+      {
+        "name": "pz-test-live-*",
+        "status": "running",
+        "sessionId": "sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn",
+        "image": "northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "createdAt": 1794436101989
+      }
+    ],
+    "remove_0": {
+      "ok": true
+    },
+    "remove_1": {
+      "ok": true
+    },
+    "remove_2": {
+      "ok": true
+    },
+    "remove_3": {
+      "ok": true
+    },
+    "leftAfterCleanup": [],
+    "timings": {
+      "up_create": 4359,
+      "up_running": 70,
+      "write_server": 87,
+      "start_server": 63,
+      "port_bearer": 431,
+      "exec": 58,
+      "env_64k": 86,
+      "env_128k": 2654,
+      "extend": 51,
+      "extend_past_cap": 37,
+      "duplicate_create": 74,
+      "stop": 21455,
+      "up_drift_resume": 674,
+      "reuse_create": 1219,
+      "up_ephemeral": 717
+    },
+    "imageNotReadyAttempt": {
+      "recordedAt": "2026-11-11T22:22:13.124Z",
+      "note": "an image pushed to a fresh VCR repository (410.8 MB) and created from within a second of the push: the create succeeded at once, so image_not_ready was never answered",
+      "up": {
+        "ok": true,
+        "value": {
+          "name": "pz-test-live-dssl74px",
+          "sessionId": "sbx_1yn8lNHjwxZzvCYB4b5aHmwLpv3H",
+          "startedAt": 1794435694328,
+          "expiresAt": 1794435994328,
+          "image": "northbrook/ponzu-api/pz-test-unready@sha256:8ef830689cd20141a3e1156955db09013eec48070ca01fda8cb761114ca290b6",
+          "urls": {},
+          "fresh": true,
+          "recreated": false,
+          "wasRunning": false
+        }
+      }
+    }
+  },
+  "exchanges": [
+    {
+      "step": "unknown_tag",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [],
+        "image": "ponzu-runner-spike:pz-test-none",
+        "name": "pz-test-live-9b8gm3o0",
+        "persistent": false,
+        "region": "iad1"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Image not found.\"}}",
+      "ms": 74
+    },
+    {
+      "step": "up_create",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Named sandbox 'pz-test-live-qwim32ko' not found for this project.\"}}",
+      "ms": 38
+    },
+    {
+      "step": "up_create",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [4600],
+        "timeout": 300000,
+        "resources": {
+          "vcpus": 2
+        },
+        "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "name": "pz-test-live-qwim32ko",
+        "persistent": true,
+        "snapshotExpiration": 86400000,
+        "keepLastSnapshots": {
+          "count": 1,
+          "deleteEvicted": true
+        },
+        "region": "iad1"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"running\",\"statusUpdatedAt\":1794436062116,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436062116},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}]}",
+      "ms": 4318
+    },
+    {
+      "step": "up_running",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"running\",\"statusUpdatedAt\":1794436062116,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436062116,\"expiresAt\":1794436362081},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 70
+    },
+    {
+      "step": "write_server",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/fs/write",
+      "query": {},
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{}",
+      "ms": 82
+    },
+    {
+      "step": "start_server",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "/opt/ponzu/bin/bun",
+        "args": ["/vercel/live-server.ts"],
+        "env": {
+          "PORT_TOKEN": "<15 chars>"
+        },
+        "sudo": false
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_31a0654621da4a7da2bf2fc5d0f6\",\"name\":\"/opt/ponzu/bin/bun\",\"args\":[\"/vercel/live-server.ts\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436066522,\"exitCode\":null}}",
+      "ms": 61
+    },
+    {
+      "step": "exec",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "sh",
+        "args": ["-c", "echo out; echo err >&2; exit 3"],
+        "env": {},
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 30000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/x-ndjson"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_e3fffaee59d04602abe9d11686ad\",\"name\":\"sh\",\"args\":[\"-c\",\"echo out; echo err >&2; exit 3\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067024,\"exitCode\":null}}\n{\"data\":\"err\\n\",\"stream\":\"stderr\"}\n{\"data\":\"out\\n\",\"stream\":\"stdout\"}\n{\"command\":{\"id\":\"cmd_e3fffaee59d04602abe9d11686ad\",\"name\":\"sh\",\"args\":[\"-c\",\"echo out; echo err >&2; exit 3\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067024,\"exitCode\":3,\"durationMs\":0}}\n",
+      "ms": 56
+    },
+    {
+      "step": "exec",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "id",
+        "args": ["-u"],
+        "env": {},
+        "sudo": true,
+        "wait": true,
+        "logs": true,
+        "timeout": 30000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/x-ndjson"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_24e9b970254f45f3b3457026c7d4\",\"name\":\"id\",\"args\":[\"-u\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067084,\"exitCode\":null}}\n{\"data\":\"0\\n\",\"stream\":\"stdout\"}\n{\"command\":{\"id\":\"cmd_24e9b970254f45f3b3457026c7d4\",\"name\":\"id\",\"args\":[\"-u\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067084,\"exitCode\":0,\"durationMs\":8}}\n",
+      "ms": 67
+    },
+    {
+      "step": "env_64k",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "sh",
+        "args": ["-c", "printf %s \"$BIG\" | wc -c"],
+        "env": {
+          "BIG": "<65536 chars>"
+        },
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 30000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/x-ndjson"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_69aa252652ce4450afba802f3538\",\"name\":\"sh\",\"args\":[\"-c\",\"printf %s \\\"$BIG\\\" | wc -c\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067179,\"exitCode\":null}}\n{\"data\":\"65536\\n\",\"stream\":\"stdout\"}\n{\"command\":{\"id\":\"cmd_69aa252652ce4450afba802f3538\",\"name\":\"sh\",\"args\":[\"-c\",\"printf %s \\\"$BIG\\\" | wc -c\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436067179,\"exitCode\":0,\"durationMs\":0}}\n",
+      "ms": 86
+    },
+    {
+      "step": "env_128k",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "sh",
+        "args": ["-c", "printf %s \"$BIG\" | wc -c"],
+        "env": {
+          "BIG": "<131072 chars>"
+        },
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 30000
+      },
+      "status": 400,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"command_failed\",\"message\":\"[internal] failed to start command: failed to receive started event: invalid_argument: failed to start process: fork/exec /usr/bin/sh: argument list too long\"}}",
+      "ms": 2653
+    },
+    {
+      "step": "env_128k",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/fs/write",
+      "query": {},
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{}",
+      "ms": 70
+    },
+    {
+      "step": "env_128k",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/fs/read",
+      "query": {},
+      "request": {
+        "path": "/vercel/kept.txt"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/octet-stream"
+      },
+      "body": "kept across a stop",
+      "ms": 84
+    },
+    {
+      "step": "env_128k",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/fs/read",
+      "query": {},
+      "request": {
+        "path": "/vercel/missing.txt"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"File not found.\"}}",
+      "ms": 53
+    },
+    {
+      "step": "extend",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/extend-timeout",
+      "query": {},
+      "request": {
+        "duration": 60000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"}}",
+      "ms": 50
+    },
+    {
+      "step": "extend_past_cap",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/extend-timeout",
+      "query": {},
+      "request": {
+        "duration": 90000000
+      },
+      "status": 400,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"sandbox_timeout_invalid\",\"message\":\"Failed to extend timeout: extension would exceed maximum execution timeout\"}}",
+      "ms": 37
+    },
+    {
+      "step": "duplicate_create",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [4600],
+        "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "name": "pz-test-live-qwim32ko",
+        "persistent": true,
+        "region": "iad1"
+      },
+      "status": 400,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"bad_request\",\"message\":\"A sandbox with the name 'pz-test-live-qwim32ko' already exists for this project. Use GET /sandboxes/:name to resume it or delete it first.\"}}",
+      "ms": 73
+    },
+    {
+      "step": "duplicate_create",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "bash",
+        "args": [
+          "-c",
+          "mkdir -p /vercel/grace\ntrap 'date +%s%3N > /vercel/grace/term; sync; while :; do date +%s%3N > /vercel/grace/last; sync; sleep 0.05; done' TERM\nwhile :; do sleep 0.05; done"
+        ],
+        "env": {},
+        "sudo": false
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_e5af8adc5fb147a3828ed883466d\",\"name\":\"bash\",\"args\":[\"-c\",\"mkdir -p /vercel/grace\\ntrap 'date +%s%3N > /vercel/grace/term; sync; while :; do date +%s%3N > /vercel/grace/last; sync; sleep 0.05; done' TERM\\nwhile :; do sleep 0.05; done\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436070283,\"exitCode\":null}}",
+      "ms": 74
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"running\",\"statusUpdatedAt\":1794436062116,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436062116,\"expiresAt\":1794436422081},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 114
+    },
+    {
+      "step": "stop",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "sleep",
+        "args": ["60"],
+        "env": {},
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 120000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/x-ndjson"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_9be69f23a8294228aa093de284cd\",\"name\":\"sleep\",\"args\":[\"60\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436071377,\"exitCode\":null}}\n{\"command\":{\"id\":\"cmd_9be69f23a8294228aa093de284cd\",\"name\":\"sleep\",\"args\":[\"60\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"startedAt\":1794436071377,\"exitCode\":143,\"durationMs\":1139}}\n",
+      "ms": 1231
+    },
+    {
+      "step": "stop",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/stop",
+      "query": {},
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"snapshot\":{\"id\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"sourceSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"workloadType\":\"sandbox\",\"architecture\":\"amd64\",\"region\":\"iad1\",\"regions\":[\"iad1\"],\"status\":\"created\",\"sizeBytes\":577969151,\"expiresAt\":1794522493163,\"createdAt\":1794436093168,\"updatedAt\":1794436093169,\"lastUsedAt\":1794436093168,\"creationMethod\":\"automatic\"}}",
+      "ms": 21339
+    },
+    {
+      "step": "stop",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 89
+    },
+    {
+      "step": "pinned_after_stop_cached",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/cmd",
+      "query": {},
+      "request": {
+        "command": "true",
+        "args": [],
+        "env": {},
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 10000
+      },
+      "status": 410,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"sandbox_stopped\",\"message\":\"Sandbox has stopped execution and is no longer available\"}}",
+      "ms": 46
+    },
+    {
+      "step": "pinned_after_stop_uncached",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 75
+    },
+    {
+      "step": "stop_again",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 66
+    },
+    {
+      "step": "raw_stop_again",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 59
+    },
+    {
+      "step": "raw_stop_again",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/stop",
+      "query": {},
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"snapshot\":{\"id\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"sourceSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"workloadType\":\"sandbox\",\"architecture\":\"amd64\",\"region\":\"iad1\",\"regions\":[\"iad1\"],\"status\":\"created\",\"sizeBytes\":577969151,\"expiresAt\":1794522493163,\"createdAt\":1794436093168,\"updatedAt\":1794436093169,\"lastUsedAt\":1794436093168,\"creationMethod\":\"automatic\"}}",
+      "ms": 97
+    },
+    {
+      "step": "raw_stop_again",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k/extend-timeout",
+      "query": {},
+      "request": {
+        "duration": 60000
+      },
+      "status": 410,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"sandbox_stopped\",\"message\":\"Sandbox has stopped execution and is no longer available\"}}",
+      "ms": 42
+    },
+    {
+      "step": "raw_stop_again",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 68
+    },
+    {
+      "step": "up_drift_resume",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436093369},\"session\":{\"id\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436062053,\"startedAt\":1794436062081,\"requestedStopAt\":1794436072462,\"stoppedAt\":1794436093110,\"status\":\"stopped\",\"duration\":31029,\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436062053,\"updatedAt\":1794436062088,\"interactivePort\":26661,\"activeCpuDurationMs\":5241,\"networkTransfer\":{\"ingress\":216478,\"egress\":13575},\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 71
+    },
+    {
+      "step": "up_drift_resume",
+      "method": "PATCH",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {},
+      "request": {
+        "timeout": 360000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_GUijMkyHXNukBfx8efUWgZ6Y8X3k\",\"status\":\"stopped\",\"statusUpdatedAt\":1794436093368,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":360000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436099452}}",
+      "ms": 122
+    },
+    {
+      "step": "up_drift_resume",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "true"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"status\":\"running\",\"statusUpdatedAt\":1794436099944,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":360000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436099944,\"expiresAt\":1794436459650},\"session\":{\"id\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436099616,\"startedAt\":1794436099650,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"sourceSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"workloadType\":\"sandbox\",\"createdAt\":1794436099616,\"updatedAt\":1794436099658,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600},{\"url\":\"https://sb-2mx13pq60roa.vercel.run\",\"subdomain\":\"sb-2mx13pq60roa\",\"port\":26661,\"system\":true}],\"resumed\":true}",
+      "ms": 480
+    },
+    {
+      "step": "up_resumed_running",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"status\":\"running\",\"statusUpdatedAt\":1794436099944,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":360000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436099955,\"expiresAt\":1794436459650},\"session\":{\"id\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436099616,\"startedAt\":1794436099650,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"sourceSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"workloadType\":\"sandbox\",\"createdAt\":1794436099616,\"updatedAt\":1794436099658,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 63
+    },
+    {
+      "step": "up_resumed_running",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR/fs/read",
+      "query": {},
+      "request": {
+        "path": "/vercel/kept.txt"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/octet-stream"
+      },
+      "body": "kept across a stop",
+      "ms": 58
+    },
+    {
+      "step": "up_resumed_running",
+      "method": "POST",
+      "path": "/api/v2/sandboxes/sessions/sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR/cmd",
+      "query": {},
+      "request": {
+        "command": "sh",
+        "args": [
+          "-c",
+          "ps -eo args | grep -c '^/opt/ponzu/bin/bun /vercel/live-server' || true; cat /vercel/grace/term /vercel/grace/last"
+        ],
+        "env": {},
+        "sudo": false,
+        "wait": true,
+        "logs": true,
+        "timeout": 30000
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/x-ndjson"
+      },
+      "body": "{\"command\":{\"id\":\"cmd_e7565f60f060496e99a9f405d5ea\",\"name\":\"sh\",\"args\":[\"-c\",\"ps -eo args | grep -c '^/opt/ponzu/bin/bun /vercel/live-server' || true; cat /vercel/grace/term /vercel/grace/last\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"startedAt\":1794436100175,\"exitCode\":null}}\n{\"data\":\"0\\n\",\"stream\":\"stdout\"}\n{\"data\":\"1794436072514\\n\",\"stream\":\"stdout\"}\n{\"data\":\"1794436092510\\n\",\"stream\":\"stdout\"}\n{\"command\":{\"id\":\"cmd_e7565f60f060496e99a9f405d5ea\",\"name\":\"sh\",\"args\":[\"-c\",\"ps -eo args | grep -c '^/opt/ponzu/bin/bun /vercel/live-server' || true; cat /vercel/grace/term /vercel/grace/last\"],\"cwd\":\"/vercel\",\"sessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"startedAt\":1794436100175,\"exitCode\":0,\"durationMs\":16}}\n",
+      "ms": 113
+    },
+    {
+      "step": "up_other_digest",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"status\":\"running\",\"statusUpdatedAt\":1794436099944,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":360000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436099955,\"expiresAt\":1794436459650},\"session\":{\"id\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436099616,\"startedAt\":1794436099650,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":360000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"sourceSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"workloadType\":\"sandbox\",\"createdAt\":1794436099616,\"updatedAt\":1794436099658,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-qwim32ko\",\"projectId\":\"<id>\"},\"routes\":[{\"url\":\"https://sb-4boqfrouibm1.vercel.run\",\"subdomain\":\"sb-4boqfrouibm1\",\"port\":4600}],\"resumed\":false}",
+      "ms": 67
+    },
+    {
+      "step": "up_other_digest",
+      "method": "DELETE",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "deleteOrphanSnapshots": "true"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-qwim32ko\",\"currentSnapshotId\":\"snap_ceplQDQA5psImKPSgqMqyq2wdHQ8\",\"currentSessionId\":\"sbx_wvA76OZM4HcpOD81NWAhR0QYxJxR\",\"status\":\"running\",\"statusUpdatedAt\":1794436099944,\"persistent\":true,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":360000,\"snapshotExpiration\":86400000,\"keepLastSnapshots\":{\"count\":1,\"expiration\":86400000,\"deleteEvicted\":true},\"totalEgressBytes\":13575,\"totalIngressBytes\":216478,\"totalActiveCpuDurationMs\":5241,\"totalDurationMs\":31029,\"cwd\":\"/vercel\",\"createdAt\":1794436062116,\"updatedAt\":1794436099955}}",
+      "ms": 90
+    },
+    {
+      "step": "up_other_digest",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [4600],
+        "timeout": 300000,
+        "resources": {
+          "vcpus": 2
+        },
+        "image": "ponzu-runner-spike@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "name": "pz-test-live-qwim32ko",
+        "persistent": true,
+        "snapshotExpiration": 86400000,
+        "keepLastSnapshots": {
+          "count": 1,
+          "deleteEvicted": true
+        },
+        "region": "iad1"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Image not found.\"}}",
+      "ms": 40
+    },
+    {
+      "step": "up_other_digest",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Named sandbox 'pz-test-live-qwim32ko' not found for this project.\"}}",
+      "ms": 42
+    },
+    {
+      "step": "reuse_create",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [],
+        "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "name": "pz-test-live-8v76xrd6",
+        "persistent": false,
+        "region": "iad1"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_ZTAqJi0wewlviiXvO0VCPdJH3Cng\",\"status\":\"running\",\"statusUpdatedAt\":1794436100584,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"cwd\":\"/vercel\",\"createdAt\":1794436100585,\"updatedAt\":1794436100585},\"session\":{\"id\":\"sbx_ZTAqJi0wewlviiXvO0VCPdJH3Cng\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436100524,\"startedAt\":1794436100551,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436100524,\"updatedAt\":1794436100559,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-8v76xrd6\",\"projectId\":\"<id>\"},\"routes\":[]}",
+      "ms": 1219
+    },
+    {
+      "step": "reuse_delete_create",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-8v76xrd6",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_ZTAqJi0wewlviiXvO0VCPdJH3Cng\",\"status\":\"running\",\"statusUpdatedAt\":1794436100584,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436100585,\"updatedAt\":1794436100585,\"expiresAt\":1794436400551},\"session\":{\"id\":\"sbx_ZTAqJi0wewlviiXvO0VCPdJH3Cng\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436100524,\"startedAt\":1794436100551,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436100524,\"updatedAt\":1794436100559,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-8v76xrd6\",\"projectId\":\"<id>\"},\"routes\":[],\"resumed\":false}",
+      "ms": 93
+    },
+    {
+      "step": "reuse_delete_create",
+      "method": "DELETE",
+      "path": "/api/v2/sandboxes/pz-test-live-8v76xrd6",
+      "query": {
+        "deleteOrphanSnapshots": "true"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_ZTAqJi0wewlviiXvO0VCPdJH3Cng\",\"status\":\"running\",\"statusUpdatedAt\":1794436100584,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436100585,\"updatedAt\":1794436100585}}",
+      "ms": 115
+    },
+    {
+      "step": "reuse_delete_create",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [],
+        "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "name": "pz-test-live-8v76xrd6",
+        "persistent": false,
+        "region": "iad1"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"status\":\"running\",\"statusUpdatedAt\":1794436101989,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"cwd\":\"/vercel\",\"createdAt\":1794436101989,\"updatedAt\":1794436101990},\"session\":{\"id\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436101925,\"startedAt\":1794436101952,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436101925,\"updatedAt\":1794436101960,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-8v76xrd6\",\"projectId\":\"<id>\"},\"routes\":[]}",
+      "ms": 628
+    },
+    {
+      "step": "up_ephemeral",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-ov9u2pq8",
+      "query": {
+        "resume": "false"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Named sandbox 'pz-test-live-ov9u2pq8' not found for this project.\"}}",
+      "ms": 48
+    },
+    {
+      "step": "up_ephemeral",
+      "method": "POST",
+      "path": "/api/v3/sandboxes",
+      "query": {},
+      "request": {
+        "projectId": "<id>",
+        "ports": [],
+        "timeout": 300000,
+        "resources": {
+          "vcpus": 2
+        },
+        "image": "ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0",
+        "name": "pz-test-live-ov9u2pq8",
+        "persistent": false,
+        "region": "iad1"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-ov9u2pq8\",\"currentSessionId\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"status\":\"running\",\"statusUpdatedAt\":1794436102681,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"cwd\":\"/vercel\",\"createdAt\":1794436102681,\"updatedAt\":1794436102681},\"session\":{\"id\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436102621,\"startedAt\":1794436102647,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436102621,\"updatedAt\":1794436102657,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-ov9u2pq8\",\"projectId\":\"<id>\"},\"routes\":[]}",
+      "ms": 669
+    },
+    {
+      "step": "up_ephemeral_again",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-ov9u2pq8",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-ov9u2pq8\",\"currentSessionId\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"status\":\"running\",\"statusUpdatedAt\":1794436102681,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436102681,\"updatedAt\":1794436102681,\"expiresAt\":1794436402647},\"session\":{\"id\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436102621,\"startedAt\":1794436102647,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436102621,\"updatedAt\":1794436102657,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-ov9u2pq8\",\"projectId\":\"<id>\"},\"routes\":[],\"resumed\":false}",
+      "ms": 267
+    },
+    {
+      "step": "list",
+      "method": "GET",
+      "path": "/api/v2/sandboxes",
+      "query": {
+        "sortBy": "name",
+        "namePrefix": "pz-test-live-"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandboxes\":[{\"name\":\"pz-test-live-ov9u2pq8\",\"currentSessionId\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"status\":\"running\",\"statusUpdatedAt\":1794436102681,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436102681,\"updatedAt\":1794436102681,\"expiresAt\":1794436402647},{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"status\":\"running\",\"statusUpdatedAt\":1794436101989,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436101989,\"updatedAt\":1794436101990,\"expiresAt\":1794436401952}],\"pagination\":{\"count\":2,\"next\":null}}",
+      "ms": 57
+    },
+    {
+      "step": "cleanup",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-qwim32ko",
+      "query": {
+        "resume": "false"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Named sandbox 'pz-test-live-qwim32ko' not found for this project.\"}}",
+      "ms": 39
+    },
+    {
+      "step": "cleanup",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-9b8gm3o0",
+      "query": {
+        "resume": "false"
+      },
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Named sandbox 'pz-test-live-9b8gm3o0' not found for this project.\"}}",
+      "ms": 33
+    },
+    {
+      "step": "cleanup",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-8v76xrd6",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"status\":\"running\",\"statusUpdatedAt\":1794436101989,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436101989,\"updatedAt\":1794436101990,\"expiresAt\":1794436401952},\"session\":{\"id\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436101925,\"startedAt\":1794436101952,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436101925,\"updatedAt\":1794436101960,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-8v76xrd6\",\"projectId\":\"<id>\"},\"routes\":[],\"resumed\":false}",
+      "ms": 79
+    },
+    {
+      "step": "cleanup",
+      "method": "DELETE",
+      "path": "/api/v2/sandboxes/pz-test-live-8v76xrd6",
+      "query": {
+        "deleteOrphanSnapshots": "true"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-8v76xrd6\",\"currentSessionId\":\"sbx_vGaSoCmA6ZhrYWLTpIhHVh29DeQn\",\"status\":\"running\",\"statusUpdatedAt\":1794436101989,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436101989,\"updatedAt\":1794436101990}}",
+      "ms": 104
+    },
+    {
+      "step": "cleanup",
+      "method": "GET",
+      "path": "/api/v2/sandboxes/pz-test-live-ov9u2pq8",
+      "query": {
+        "resume": "false"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-ov9u2pq8\",\"currentSessionId\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"status\":\"running\",\"statusUpdatedAt\":1794436102681,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436102681,\"updatedAt\":1794436102681,\"expiresAt\":1794436402647},\"session\":{\"id\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"runtime\":\"node22\",\"architecture\":\"amd64\",\"requestedAt\":1794436102621,\"startedAt\":1794436102647,\"status\":\"running\",\"vcpus\":2,\"memory\":4096,\"timeout\":300000,\"region\":\"iad1\",\"cwd\":\"/vercel\",\"workloadType\":\"sandbox\",\"createdAt\":1794436102621,\"updatedAt\":1794436102657,\"interactivePort\":26661,\"sourceSandboxName\":\"pz-test-live-ov9u2pq8\",\"projectId\":\"<id>\"},\"routes\":[],\"resumed\":false}",
+      "ms": 70
+    },
+    {
+      "step": "cleanup",
+      "method": "DELETE",
+      "path": "/api/v2/sandboxes/pz-test-live-ov9u2pq8",
+      "query": {
+        "deleteOrphanSnapshots": "true"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandbox\":{\"name\":\"pz-test-live-ov9u2pq8\",\"currentSessionId\":\"sbx_YuyyxjHSfkMoT1dVaNaM1ta8uIwa\",\"status\":\"running\",\"statusUpdatedAt\":1794436102681,\"persistent\":false,\"workloadType\":\"sandbox\",\"region\":\"iad1\",\"failoverRegions\":[],\"vcpus\":2,\"memory\":4096,\"runtime\":\"node22\",\"architecture\":\"amd64\",\"image\":\"northbrook/ponzu-api/ponzu-runner-spike@sha256:e3c77ef4f023a25f1c0afcdaca177786a32cfbc31190ea19948fc21babe146e0\",\"timeout\":300000,\"totalEgressBytes\":0,\"totalIngressBytes\":0,\"totalActiveCpuDurationMs\":0,\"totalDurationMs\":0,\"cwd\":\"/vercel\",\"createdAt\":1794436102681,\"updatedAt\":1794436102681}}",
+      "ms": 141
+    },
+    {
+      "step": "cleanup_list",
+      "method": "GET",
+      "path": "/api/v2/sandboxes",
+      "query": {
+        "sortBy": "name",
+        "namePrefix": "pz-test-live-"
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "body": "{\"sandboxes\":[],\"pagination\":{\"count\":0,\"next\":null}}",
+      "ms": 36
+    }
+  ]
+}

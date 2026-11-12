@@ -1,593 +1,440 @@
 /*
- * A SandboxProvider that lives in memory, for testing the API and the runner lifecycle without
- * a network. It keeps the rules that shape that code: starts and stops take time, an explicit
- * stop stays warm for ten minutes and an auto-stop does not, a cold start loses processes and
- * /tmp, a new environment forces one, a call sent during a start is held until it lands, an
- * idempotency key is forgotten after a day, and awake time is metered.
+ * Sandboxes in memory, modelling Vercel as the live suite recorded it, for testing the API's
+ * lifecycle without a network:
  *
- * Time is a FakeClock. Sleeping moves it forward at once, so code that polls finishes
- * immediately and the test decides how long things took.
+ * - names are unique;
+ * - up() on a stopped sandbox starts a new session: files kept (persistent), processes and
+ *   their commands gone;
+ * - up() on a running sandbox returns that session with wasRunning;
+ * - a session stops by itself at its deadline;
+ * - a pinned call on any other session, or on one that stopped, is not_running;
+ * - an image digest change empties the disk and counts as a recreate;
+ * - config drift is recorded as an update, applying from the next session;
+ * - it counts the sessions started (resumes).
+ *
+ * Time is a FakeClock: the options say how long creates, resumes and stops take.
  */
 
-import type { Clock } from "./clock.ts";
-import { SandboxError } from "./errors.ts";
-import type {
-  Created,
-  CreateOptions,
-  ExecEvent,
-  ExecOptions,
-  ExecResult,
-  ProcessStatus,
-  Resumed,
-  ResumeOptions,
-  Sandbox,
-  SandboxAddress,
-  SandboxProvider,
-  SandboxSize,
-  Snapshot,
-  Usage,
-  Wake,
-  WakeOptions,
-} from "./provider.ts";
-import { ensureAwake } from "./wake.ts";
+import type { FakeClock } from "./clock.ts";
+import { SandboxError, type SandboxErrorCode } from "./errors.ts";
+import {
+  type At,
+  type CallOptions,
+  type Command,
+  type ExecResult,
+  imageDigest,
+  type Sandboxes,
+  type SandboxInfo,
+  type SandboxSpec,
+  type Up,
+  type VercelStatus,
+} from "./sandboxes.ts";
 
-export class FakeClock implements Clock {
-  #ms: number;
-  #timeouts: Array<{ at: number; controller: AbortController }> = [];
-
-  constructor(startAt = Date.UTC(2026, 0, 1)) {
-    this.#ms = startAt;
-  }
-
-  now(): number {
-    return this.#ms;
-  }
-
-  /** Moves time forward, aborting every `timeout` signal that comes due. */
-  advance(ms: number): void {
-    this.#ms += ms;
-    const due = this.#timeouts.filter((timeout) => timeout.at <= this.#ms);
-    this.#timeouts = this.#timeouts.filter((timeout) => timeout.at > this.#ms);
-    for (const { controller } of due) {
-      controller.abort(new DOMException("The operation timed out.", "TimeoutError"));
-    }
-  }
-
-  async sleep(ms: number): Promise<void> {
-    this.advance(ms);
-  }
-
-  timeout(ms: number): AbortSignal {
-    const controller = new AbortController();
-    this.#timeouts.push({ at: this.#ms + ms, controller });
-    return controller.signal;
-  }
+export interface FakeOptions {
+  stopMs?: number;
+  resumeMs?: number;
+  createMs?: number;
 }
 
-export interface FakeCommand {
+/** Vercel's plan cap on one session (Pro): extending past it is refused. */
+const MAX_SESSION_MS = 24 * 3600_000;
+
+type Config = Omit<SandboxSpec, "image">;
+type Files = Map<string, Uint8Array>;
+
+interface FakeSession {
   id: string;
-  command: string;
-  cwd: string | undefined;
-  /** The sandbox's environment when the command ran. */
-  env: Record<string, string>;
-  /** Started with `spawn` rather than `exec`. */
-  detached: boolean;
+  startedAt: number;
+  timeoutMs: number;
+  status: "running" | "stopped" | "failed";
+  /** Booted from a snapshot (false: an empty disk). */
+  fromSnapshot: boolean;
+  /** Settles once the session stops: what cuts its waited commands off. */
+  halted: Promise<void>;
+  halt: () => void;
 }
 
-interface Machine {
-  id: string;
-  size: SandboxSize;
-  labels: Record<string, string>;
-  env: Record<string, string>;
-  state: "awake" | "asleep";
-  /** A start or stop under way, and when it lands. */
-  moving: { to: "awake"; at: number; cold: boolean } | { to: "asleep"; at: number } | null;
-  /** A stop holds the machine until then: a resume before it is `busy`. */
-  busyUntil: number;
-  /** Why the last start failed, until the next one is accepted. */
-  reason: string | null;
-  /** Set by `failNextStart`: what the start under way, or the next one, fails with. */
-  startFails: string | null;
-  autoStopSeconds: number;
-  autoStopAt: number | null;
-  /** An explicit stop keeps memory until then; a resume before it is warm. */
-  warmUntil: number;
-  awakeMs: number;
-  awakeSince: number | null;
-  expired: boolean;
-  files: Map<string, Uint8Array>;
-  /** pid to whether it still runs. A pid that is missing is one the sandbox lost. */
-  processes: Map<number, boolean>;
-}
-
-interface SavedSnapshot {
-  sandboxId: string;
-  files: Map<string, Uint8Array>;
+interface Box {
+  name: string;
+  image: string;
+  config: Config;
+  updates: number;
   createdAt: number;
-  readyAt: number;
-  /** The save this one replaces, which goes on serving `create` until this one is ready. */
-  before: Map<string, Uint8Array> | null;
+  session: FakeSession;
+  /** The disk as the running session sees it, or as the last stop left it. */
+  files: Files;
+  /** Snapshots, newest last: what a resume boots from. */
+  snapshots: Files[];
 }
 
-const USD_PER_AWAKE_HOUR: Record<SandboxSize, number> = {
-  small: 0.018,
-  medium: 0.036,
-  large: 0.072,
-  xlarge: 0.2,
-};
+interface Recorded {
+  sessionId: string;
+  kind: "start" | "exec";
+  command: Command;
+}
 
-/** How long a provider remembers an idempotency key. */
-const KEY_MEMORY_MS = 24 * 60 * 60_000;
-/** How long a provider holds a call sent during a start before refusing it. */
-const HELD_WHILE_STARTING_MS = 60_000;
-const DEFAULT_COMMAND_SECONDS = 30;
-const MAX_COMMAND_SECONDS = 600;
+const encoder = new TextEncoder();
+const copy = (files: Files): Files => new Map(files);
 
-export class FakeProvider implements SandboxProvider {
-  readonly clock: FakeClock;
-  /** How long a start takes. Raise `cold` past a wake's timeout to act out a start that hangs. */
-  startMs = { cold: 3_000, warm: 1_000 };
-  stopMs = 2_000;
-  /**
-   * How long past the end of a stop a resume is still refused as `busy`. A real provider has
-   * held a machine for a moment after the sandbox read asleep; raise this to act that out.
-   */
-  stopLingerMs = 0;
-  snapshotMs = 4_000;
-  warmWindowMs = 10 * 60_000;
-  /** Every command run or spawned, oldest first. */
-  readonly commands: FakeCommand[] = [];
-  /** What `exec` and `execStream` answer. Unset, every command exits 0 with no output. */
-  onExec: ((command: FakeCommand) => Partial<ExecResult> | undefined) | null = null;
+export class FakeSandboxes implements Sandboxes {
+  readonly #clock: FakeClock;
+  readonly #options: Required<FakeOptions>;
+  readonly #boxes = new Map<string, Box>();
+  /** Command history per name, kept across sessions and removals. */
+  readonly #commands = new Map<string, Recorded[]>();
+  /** Resumes per name, kept across removals (a recreate counts on). */
+  readonly #resumes = new Map<string, number>();
+  readonly #failures: Array<{
+    op: keyof Sandboxes;
+    name: string;
+    code: SandboxErrorCode;
+    retryAfterSeconds?: number;
+  }> = [];
+  readonly #handlers = new Map<string, (command: Command) => ExecResult | Promise<ExecResult>>();
+  #ids = 0;
 
-  readonly #machines = new Map<string, Machine>();
-  readonly #snapshots = new Map<string, SavedSnapshot>();
-  readonly #created = new Map<string, { id: string; options: string; at: number }>();
-  readonly #failures = new Map<keyof SandboxProvider, Error[]>();
-  #nextId = 1;
-  #nextPid = 1000;
-
-  constructor(clock = new FakeClock()) {
-    this.clock = clock;
-  }
-
-  /** Makes the next call to `method` fail with `error`, or the next `times` of them. Calls queue up. */
-  failNext(method: keyof SandboxProvider, error: Error, times = 1): void {
-    const queued = this.#failures.get(method) ?? [];
-    this.#failures.set(method, [...queued, ...Array<Error>(times).fill(error)]);
-  }
-
-  /**
-   * Makes the start under way, or else the next one, fail: the sandbox ends up asleep with
-   * `reason`, as when a provider loses the machine it was starting.
-   */
-  failNextStart(id: string, reason: string): void {
-    this.#machine(id).startFails = reason;
-  }
-
-  /** Deletes a sleeping sandbox's disk, as a provider does after long enough: resume then fails. */
-  expire(id: string): void {
-    this.#machine(id).expired = true;
-  }
-
-  /** A snapshot that is ready at once, as a bake leaves one, for sandboxes to be created from. */
-  seedSnapshot(name: string, files: Record<string, string> = {}): void {
-    const now = this.clock.now();
-    const bytes = Object.entries(files).map(
-      ([path, text]) => [absolute(path), new TextEncoder().encode(text)] as const,
-    );
-    this.#snapshots.set(name, {
-      sandboxId: "sb_seed",
-      files: new Map(bytes),
-      createdAt: now,
-      readyAt: now,
-      before: null,
-    });
-  }
-
-  /** The sandbox's current environment. */
-  env(id: string): Record<string, string> {
-    return { ...this.#machine(id).env };
-  }
-
-  async create(options: CreateOptions): Promise<Created> {
-    this.#fail("create");
-    const now = this.clock.now();
-    const sent = canonical(options);
-    const before = this.#created.get(options.idempotencyKey);
-    // A key is forgotten after a day, and with its sandbox: then it makes a new one.
-    if (before && this.#machines.has(before.id) && now - before.at < KEY_MEMORY_MS) {
-      if (before.options !== sent) {
-        throw new SandboxError(
-          "conflict",
-          `idempotency key ${options.idempotencyKey} was used with different options`,
-        );
-      }
-      return this.#createdAs(this.#machine(before.id), options.ports);
-    }
-
-    let files = new Map<string, Uint8Array>();
-    if (options.from) {
-      const base = this.#snapshots.get(options.from);
-      const served = base && (base.readyAt <= now ? base.files : base.before);
-      if (!served) throw new SandboxError("not_found", `no snapshot ${options.from}`);
-      files = new Map(served);
-    }
-    const machine: Machine = {
-      id: `sb_${this.#nextId++}`,
-      size: options.size ?? "small",
-      labels: { ...options.labels },
-      env: { ...options.env },
-      state: "asleep",
-      moving: { to: "awake", at: now + this.startMs.cold, cold: true },
-      busyUntil: 0,
-      reason: null,
-      startFails: null,
-      autoStopSeconds: options.autoStopSeconds,
-      autoStopAt: now + options.autoStopSeconds * 1000,
-      warmUntil: 0,
-      awakeMs: 0,
-      awakeSince: null,
-      expired: false,
-      files,
-      processes: new Map(),
-    };
-    this.#machines.set(machine.id, machine);
-    this.#created.set(options.idempotencyKey, { id: machine.id, options: sent, at: now });
-    return this.#createdAs(machine, options.ports);
-  }
-
-  async get(id: string): Promise<Sandbox> {
-    this.#fail("get");
-    const machine = this.#settle(id);
-    return machine
-      ? toSandbox(machine)
-      : { id, state: "gone", labels: {}, autoStopAt: null, reason: null };
-  }
-
-  async list(filter: { labels?: Record<string, string> } = {}): Promise<Sandbox[]> {
-    this.#fail("list");
-    const wanted = Object.entries(filter.labels ?? {});
-    return [...this.#machines.keys()]
-      .map((id) => toSandbox(this.#machine(id)))
-      .filter((sandbox) => wanted.every(([key, value]) => sandbox.labels[key] === value));
-  }
-
-  async ensureAwake(id: string, options?: WakeOptions): Promise<Wake> {
-    this.#fail("ensureAwake");
-    return ensureAwake(this, this.clock, id, options);
-  }
-
-  async resume(id: string, options: ResumeOptions = {}): Promise<Resumed> {
-    this.#fail("resume");
-    const machine = this.#machine(id);
-    const now = this.clock.now();
-    if (now < machine.busyUntil) {
-      throw new SandboxError("busy", `a stop still holds sandbox ${id}`, {
-        retryAfterSeconds: Math.ceil((machine.busyUntil - now) / 1000),
-      });
-    }
-    if (machine.moving?.to === "awake") {
-      // A start someone else began. It can be joined, but not given another environment.
-      if (options.env) {
-        throw new SandboxError("busy", `a start of sandbox ${id} is already under way`, {
-          retryAfterSeconds: Math.ceil((machine.moving.at - now) / 1000),
-        });
-      }
-      return { sandbox: toSandbox(machine), coldStart: machine.moving.cold };
-    }
-    if (machine.state === "awake") {
-      if (options.env) {
-        throw new SandboxError(
-          "conflict",
-          `sandbox ${id} is awake, so its environment was not replaced; stop it first`,
-        );
-      }
-      return { sandbox: toSandbox(machine), coldStart: false };
-    }
-    if (machine.expired) {
-      throw new SandboxError("snapshot_expired", `sandbox ${id} slept too long; its disk is gone`);
-    }
-
-    const coldStart = options.env !== undefined || now >= machine.warmUntil;
-    if (coldStart) {
-      machine.processes.clear();
-      for (const path of machine.files.keys())
-        if (path.startsWith("/tmp/")) machine.files.delete(path);
-      if (options.env) machine.env = { ...options.env };
-    }
-    if (options.autoStopSeconds !== undefined) machine.autoStopSeconds = options.autoStopSeconds;
-    machine.autoStopAt = now + machine.autoStopSeconds * 1000;
-    machine.reason = null;
-    machine.moving = {
-      to: "awake",
-      at: now + (coldStart ? this.startMs.cold : this.startMs.warm),
-      cold: coldStart,
-    };
-    return { sandbox: toSandbox(machine), coldStart };
-  }
-
-  async stop(id: string): Promise<Sandbox> {
-    this.#fail("stop");
-    const machine = this.#machine(id);
-    if (machine.state === "awake" || machine.moving?.to === "awake") {
-      const now = this.clock.now();
-      this.#meterOff(machine, now);
-      machine.state = "asleep";
-      machine.moving = { to: "asleep", at: now + this.stopMs };
-      machine.busyUntil = now + this.stopMs + this.stopLingerMs;
-      machine.autoStopAt = null;
-      machine.warmUntil = now + this.warmWindowMs;
-    }
-    return toSandbox(machine);
-  }
-
-  async extend(id: string, seconds: number): Promise<Sandbox> {
-    this.#fail("extend");
-    const machine = this.#machine(id);
-    machine.autoStopSeconds = seconds;
-    if (machine.autoStopAt !== null) machine.autoStopAt = this.clock.now() + seconds * 1000;
-    return toSandbox(machine);
-  }
-
-  async destroy(id: string): Promise<void> {
-    this.#fail("destroy");
-    this.#machines.delete(id);
-  }
-
-  async exec(id: string, command: string, options: ExecOptions = {}): Promise<ExecResult> {
-    this.#fail("exec");
-    return this.#run(id, command, options);
-  }
-
-  async *execStream(
-    id: string,
-    command: string,
-    options: ExecOptions = {},
-  ): AsyncGenerator<ExecEvent> {
-    this.#fail("execStream");
-    const result = this.#run(id, command, options);
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
-    if (result.stderr) yield { type: "stderr", data: result.stderr };
-    yield { type: "exit", exitCode: result.exitCode, timedOut: result.timedOut };
-  }
-
-  async spawn(
-    id: string,
-    command: string,
-    options: { cwd?: string } = {},
-  ): Promise<{ pid: number }> {
-    this.#fail("spawn");
-    const machine = this.#reach(id);
-    this.commands.push({ id, command, cwd: options.cwd, env: { ...machine.env }, detached: true });
-    const pid = this.#nextPid++;
-    machine.processes.set(pid, true);
-    return { pid };
-  }
-
-  async process(id: string, pid: number): Promise<ProcessStatus> {
-    this.#fail("process");
-    const running = this.#reach(id).processes.get(pid);
-    if (running === undefined) return { state: "lost", exitCode: null, stdout: "", stderr: "" };
-    return running
-      ? { state: "running", exitCode: null, stdout: "", stderr: "" }
-      : { state: "exited", exitCode: 143, stdout: "", stderr: "" };
-  }
-
-  async kill(id: string, pid: number): Promise<void> {
-    this.#fail("kill");
-    const { processes } = this.#reach(id);
-    if (processes.has(pid)) processes.set(pid, false);
-  }
-
-  async readFile(id: string, path: string): Promise<Uint8Array> {
-    this.#fail("readFile");
-    const bytes = this.#reach(id).files.get(absolute(path));
-    if (!bytes) throw new SandboxError("not_found", `no file ${path} in sandbox ${id}`);
-    return bytes.slice();
-  }
-
-  async writeFile(id: string, path: string, content: Uint8Array | string): Promise<void> {
-    this.#fail("writeFile");
-    const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content.slice();
-    this.#reach(id).files.set(absolute(path), bytes);
-  }
-
-  async address(id: string, port: number): Promise<SandboxAddress> {
-    this.#fail("address");
-    return toAddress(this.#awake(id).id, port);
-  }
-
-  async saveSnapshot(id: string, name: string): Promise<Snapshot> {
-    this.#fail("saveSnapshot");
-    const machine = this.#machine(id);
-    const now = this.clock.now();
-    const last = this.#snapshots.get(name);
-    if (last && last.readyAt > now) {
-      throw new SandboxError("conflict", `snapshot ${name} is already being saved`);
-    }
-    this.#snapshots.set(name, {
-      sandboxId: id,
-      files: new Map(machine.files),
-      createdAt: now,
-      readyAt: now + this.snapshotMs,
-      before: last?.files ?? null,
-    });
-    return this.#snapshot(name)!;
-  }
-
-  async getSnapshot(name: string): Promise<Snapshot | null> {
-    this.#fail("getSnapshot");
-    return this.#snapshot(name);
-  }
-
-  async listSnapshots(): Promise<Snapshot[]> {
-    this.#fail("listSnapshots");
-    return [...this.#snapshots.keys()].map((name) => this.#snapshot(name)!);
-  }
-
-  async deleteSnapshot(name: string): Promise<void> {
-    this.#fail("deleteSnapshot");
-    this.#snapshots.delete(name);
-  }
-
-  async usage(id: string): Promise<Usage> {
-    this.#fail("usage");
-    const machine = this.#machine(id);
-    const running = machine.awakeSince === null ? 0 : this.clock.now() - machine.awakeSince;
-    const awakeSeconds = (machine.awakeMs + running) / 1000;
-    return {
-      awakeSeconds,
-      costUsd: (awakeSeconds / 3600) * USD_PER_AWAKE_HOUR[machine.size],
-      awake: machine.awakeSince !== null,
+  constructor(clock: FakeClock, options: FakeOptions = {}) {
+    this.#clock = clock;
+    this.#options = {
+      stopMs: options.stopMs ?? 2_500,
+      resumeMs: options.resumeMs ?? 1_500,
+      createMs: options.createMs ?? 1_000,
     };
   }
 
-  #fail(method: keyof SandboxProvider): void {
-    const error = this.#failures.get(method)?.shift();
-    if (error) throw error;
-  }
+  // ── Sandboxes
 
-  /** Brings a machine up to the clock: lands a finished start or stop, then applies the auto-stop. */
-  #settle(id: string): Machine | undefined {
-    const machine = this.#machines.get(id);
-    if (!machine) return undefined;
-    const now = this.clock.now();
-    if (machine.moving && now >= machine.moving.at) {
-      if (machine.moving.to === "awake" && machine.startFails !== null) {
-        machine.reason = machine.startFails;
-        machine.startFails = null;
-        machine.autoStopAt = null;
-        machine.warmUntil = 0;
+  async up(name: string, spec: SandboxSpec, _options?: CallOptions): Promise<Up> {
+    this.#fail("up", name);
+    let box = this.#box(name);
+    let recreated = false;
+    let wasRunning = false;
+    const { image, ...config } = spec;
+    if (!box) {
+      box = this.#create(name, spec);
+    } else if (imageDigest(box.image) !== imageDigest(image)) {
+      this.#boxes.delete(name);
+      box = this.#create(name, spec);
+      recreated = true;
+    } else {
+      if (drifted(box.config, config)) {
+        box.config = { ...config };
+        box.updates++;
+      }
+      if (box.session.status === "running") {
+        wasRunning = true;
       } else {
-        machine.state = machine.moving.to;
-        if (machine.state === "awake") machine.awakeSince = machine.moving.at;
+        this.#resume(box);
       }
-      machine.moving = null;
     }
-    if (machine.state === "awake" && machine.autoStopAt !== null && now >= machine.autoStopAt) {
-      this.#meterOff(machine, machine.autoStopAt);
-      machine.state = "asleep";
-      machine.autoStopAt = null;
-      // An auto-stop does not keep the machine: the next resume is cold.
-      machine.warmUntil = 0;
-    }
-    return machine;
-  }
-
-  #meterOff(machine: Machine, at: number): void {
-    if (machine.awakeSince !== null) machine.awakeMs += Math.max(0, at - machine.awakeSince);
-    machine.awakeSince = null;
-  }
-
-  #machine(id: string): Machine {
-    const machine = this.#settle(id);
-    if (!machine) throw new SandboxError("not_found", `no sandbox ${id}`);
-    return machine;
-  }
-
-  #awake(id: string): Machine {
-    const machine = this.#machine(id);
-    if (machine.state !== "awake") {
-      throw new SandboxError("not_running", `sandbox ${id} is ${toSandbox(machine).state}`);
-    }
-    return machine;
-  }
-
-  /**
-   * The machine, for a call that goes to it: a command, a file, a process. Sent during a start,
-   * such a call is held until the start lands, for a minute at most, and so takes that long.
-   */
-  #reach(id: string): Machine {
-    const { moving } = this.#machine(id);
-    if (moving?.to === "awake") {
-      this.clock.advance(Math.min(moving.at - this.clock.now(), HELD_WHILE_STARTING_MS));
-    }
-    return this.#awake(id);
-  }
-
-  #run(id: string, command: string, options: ExecOptions): ExecResult {
-    const seconds = options.timeoutSeconds ?? DEFAULT_COMMAND_SECONDS;
-    if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_COMMAND_SECONDS) {
-      throw new SandboxError(
-        "rejected",
-        `timeoutSeconds must be a whole number from 1 to ${MAX_COMMAND_SECONDS}`,
-      );
-    }
-    const machine = this.#reach(id);
-    const ran = { id, command, cwd: options.cwd, env: { ...machine.env }, detached: false };
-    this.commands.push(ran);
-    return {
-      exitCode: 0,
-      stdout: "",
-      stderr: "",
-      timedOut: false,
-      truncated: false,
-      ...this.onExec?.(ran),
-    };
-  }
-
-  #createdAs(machine: Machine, ports: number[] = []): Created {
-    return {
-      sandbox: toSandbox(machine),
-      addresses: ports.map((port) => toAddress(machine.id, port)),
-    };
-  }
-
-  #snapshot(name: string): Snapshot | null {
-    const saved = this.#snapshots.get(name);
-    if (!saved) return null;
-    const ready = saved.readyAt <= this.clock.now();
-    // While a name is saved over, its size is still that of the save being replaced.
-    const served = ready ? saved.files : saved.before;
-    let sizeBytes = 0;
-    for (const bytes of served?.values() ?? []) sizeBytes += bytes.byteLength;
+    const session = box.session;
+    const urls: Record<number, string> = {};
+    for (const port of spec.ports) urls[port] = `https://${name}-${port}.fake.vercel.run`;
     return {
       name,
-      state: ready ? "ready" : "saving",
-      sandboxId: saved.sandboxId,
-      sizeBytes: served ? sizeBytes : null,
-      createdAt: saved.createdAt,
-      error: null,
+      sessionId: session.id,
+      startedAt: session.startedAt,
+      expiresAt: session.startedAt + session.timeoutMs,
+      image: box.image,
+      urls,
+      fresh: !session.fromSnapshot,
+      recreated,
+      wasRunning,
     };
+  }
+
+  async status(name: string, _options?: CallOptions): Promise<SandboxInfo | null> {
+    this.#fail("status", name);
+    const box = this.#box(name);
+    return box ? info(box) : null;
+  }
+
+  async list(prefix: string, _options?: CallOptions): Promise<SandboxInfo[]> {
+    this.#fail("list", prefix);
+    return [...this.#boxes.keys()]
+      .filter((name) => name.startsWith(prefix))
+      .sort()
+      .map((name) => info(this.#box(name)!));
+  }
+
+  async start(at: At, command: Command, _options?: CallOptions): Promise<{ commandId: string }> {
+    this.#fail("start", at.name);
+    this.#running(at);
+    fits(command);
+    this.#record(at, "start", command);
+    return { commandId: `cmd_${++this.#ids}` };
+  }
+
+  async exec(
+    at: At,
+    command: Command & { timeoutMs: number },
+    _options?: CallOptions,
+  ): Promise<ExecResult> {
+    this.#fail("exec", at.name);
+    const box = this.#running(at);
+    fits(command);
+    const { timeoutMs: _timeout, ...rest } = command;
+    this.#record(at, "exec", rest);
+    const handler = this.#handlers.get(command.cmd);
+    const result = handler ? handler(rest) : { exitCode: 0, stdout: "", stderr: "" };
+    // Recorded: a waited command the session's stop cuts off resolves with SIGTERM's 143.
+    return Promise.race([
+      Promise.resolve(result),
+      box.session.halted.then(() => ({ exitCode: 143, stdout: "", stderr: "" })),
+    ]);
+  }
+
+  async writeFile(
+    at: At,
+    path: string,
+    content: string | Uint8Array,
+    _options?: CallOptions & { mode?: number },
+  ): Promise<void> {
+    this.#fail("writeFile", at.name);
+    const box = this.#running(at);
+    box.files.set(path, typeof content === "string" ? encoder.encode(content) : content.slice());
+  }
+
+  async readFile(at: At, path: string, _options?: CallOptions): Promise<Uint8Array | null> {
+    this.#fail("readFile", at.name);
+    const box = this.#running(at);
+    return box.files.get(path)?.slice() ?? null;
+  }
+
+  async extend(at: At, ms: number, _options?: CallOptions): Promise<number | null> {
+    this.#fail("extend", at.name);
+    const box = this.#box(at.name);
+    if (!box || box.session.id !== at.sessionId || box.session.status !== "running") return null;
+    if (box.session.timeoutMs + ms > MAX_SESSION_MS) {
+      // Recorded: 400 sandbox_timeout_invalid, "extension would exceed maximum execution timeout".
+      throw new SandboxError("rejected", "extend: 400 sandbox_timeout_invalid");
+    }
+    box.session.timeoutMs += ms;
+    return box.session.startedAt + box.session.timeoutMs;
+  }
+
+  async stop(at: At, _options?: CallOptions) {
+    this.#fail("stop", at.name);
+    const box = this.#box(at.name);
+    if (!box || box.session.id !== at.sessionId || box.session.status !== "running") {
+      return { stopped: false, snapshotBytes: null };
+    }
+    this.#clock.advance(this.#options.stopMs);
+    return { stopped: true, snapshotBytes: this.#halt(box) };
+  }
+
+  async remove(name: string, _options?: CallOptions): Promise<void> {
+    this.#fail("remove", name);
+    this.#boxes.delete(name);
+  }
+
+  // ── test controls
+
+  commands(name: string): { sessionId: string; kind: "start" | "exec"; command: Command }[] {
+    return (this.#commands.get(name) ?? []).map((each) => ({ ...each }));
+  }
+
+  files(name: string): ReadonlyMap<string, Uint8Array> {
+    return copy(this.#box(name)?.files ?? new Map());
+  }
+
+  /** The config the sandbox holds and every update() applied to it. */
+  config(name: string): { spec: Omit<SandboxSpec, "image">; image: string; updates: number } {
+    const box = this.#box(name);
+    if (!box) throw new Error(`no sandbox ${name}`);
+    return { spec: { ...box.config }, image: box.image, updates: box.updates };
+  }
+
+  /** Sessions up() (or resumeBehindOurBack) started on `name`: creates do not count. */
+  resumes(name: string): number {
+    return this.#resumes.get(name) ?? 0;
+  }
+
+  /** Abrupt host loss: the session fails; the next up() boots the files from the stop before the last. */
+  lose(name: string): void {
+    const box = this.#box(name);
+    if (!box) return;
+    box.session.status = "failed";
+    box.snapshots.pop();
+    box.files = copy(box.snapshots.at(-1) ?? new Map());
+  }
+
+  /** Snapshot expired: next up() is a fresh disk under the same name. */
+  expire(name: string): void {
+    const box = this.#box(name);
+    if (!box) return;
+    box.snapshots = [];
+    if (box.session.status !== "running") box.files = new Map();
+  }
+
+  /** Vercel removed it after 14 idle days: next up() sees 404 and creates (fresh). */
+  retain(name: string): void {
+    this.#boxes.delete(name);
+  }
+
+  /** A session starts without our asking. */
+  resumeBehindOurBack(name: string): void {
+    const box = this.#box(name);
+    if (box && box.session.status !== "running") this.#resume(box);
+  }
+
+  failNext(
+    op: keyof Sandboxes,
+    name: string,
+    code: SandboxErrorCode,
+    retryAfterSeconds?: number,
+  ): void {
+    this.#failures.push({
+      op,
+      name,
+      code,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    });
+  }
+
+  /** What `cmd` answers when run waited: a promise that never settles is cut off by a stop. */
+  onExec(cmd: string, handler: (command: Command) => ExecResult | Promise<ExecResult>): void {
+    this.#handlers.set(cmd, handler);
+  }
+
+  // ── the model
+
+  /** The box, with its session stopped if its deadline has passed. */
+  #box(name: string): Box | undefined {
+    const box = this.#boxes.get(name);
+    if (
+      box &&
+      box.session.status === "running" &&
+      this.#clock.now() >= box.session.startedAt + box.session.timeoutMs
+    ) {
+      this.#halt(box);
+    }
+    return box;
+  }
+
+  #create(name: string, spec: SandboxSpec): Box {
+    this.#clock.advance(this.#options.createMs);
+    const { image, ...config } = spec;
+    const box: Box = {
+      name,
+      image: fullImage(image),
+      config: { ...config },
+      updates: 0,
+      createdAt: this.#clock.now(),
+      session: this.#session(config, false),
+      files: new Map(),
+      snapshots: [],
+    };
+    this.#boxes.set(name, box);
+    return box;
+  }
+
+  #resume(box: Box): void {
+    this.#clock.advance(this.#options.resumeMs);
+    const snapshot = box.config.persistent ? box.snapshots.at(-1) : undefined;
+    box.files = snapshot ? copy(snapshot) : new Map();
+    box.session = this.#session(box.config, snapshot !== undefined);
+    this.#resumes.set(box.name, (this.#resumes.get(box.name) ?? 0) + 1);
+  }
+
+  #session(config: Config, fromSnapshot: boolean): FakeSession {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return {
+      id: `sbx_fake${++this.#ids}`,
+      startedAt: this.#clock.now(),
+      timeoutMs: config.timeoutMs,
+      status: "running",
+      fromSnapshot,
+      halted: promise,
+      halt: resolve,
+    };
+  }
+
+  /** Stops the running session; a persistent one leaves a snapshot (one kept). */
+  #halt(box: Box): number | null {
+    box.session.status = "stopped";
+    box.session.halt();
+    if (!box.config.persistent) {
+      box.files = new Map();
+      return null;
+    }
+    // keepLastSnapshots { count: 1 } keeps one; lose() needs the one before, so keep two here.
+    box.snapshots = [...box.snapshots.slice(-1), copy(box.files)];
+    let bytes = 0;
+    for (const content of box.files.values()) bytes += content.byteLength;
+    return bytes;
+  }
+
+  #running(at: At): Box {
+    const box = this.#box(at.name);
+    if (!box) throw new SandboxError("not_running", `${at.name} does not exist`);
+    if (box.session.id !== at.sessionId) {
+      throw new SandboxError("not_running", `${at.sessionId} is not ${at.name}'s current session`);
+    }
+    if (box.session.status !== "running") {
+      throw new SandboxError("not_running", `${at.sessionId} is ${box.session.status}`);
+    }
+    return box;
+  }
+
+  #record(at: At, kind: "start" | "exec", command: Command): void {
+    const list = this.#commands.get(at.name) ?? [];
+    list.push({ sessionId: at.sessionId, kind, command: structuredClone(command) });
+    this.#commands.set(at.name, list);
+  }
+
+  #fail(op: keyof Sandboxes, name: string): void {
+    const index = this.#failures.findIndex((each) => each.op === op && each.name === name);
+    if (index < 0) return;
+    const [failure] = this.#failures.splice(index, 1);
+    throw new SandboxError(failure!.code, `fake ${op} failed as ${failure!.code}`, {
+      ...(failure!.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: failure!.retryAfterSeconds }),
+    });
   }
 }
 
-function toSandbox(machine: Machine): Sandbox {
-  return {
-    id: machine.id,
-    state: machine.moving
-      ? machine.moving.to === "awake"
-        ? "starting"
-        : "stopping"
-      : machine.state,
-    labels: { ...machine.labels },
-    autoStopAt: machine.autoStopAt,
-    reason: machine.reason,
-  };
+/** Linux's cap on one argv or env string (MAX_ARG_STRLEN), which Vercel's start runs into. */
+const MAX_ARG_BYTES = 128 * 1024;
+
+/** Recorded: 128 KB in one variable is refused, 400 command_failed "argument list too long". */
+function fits(command: Command): void {
+  const strings = [
+    ...(command.args ?? []),
+    ...Object.entries(command.env ?? {}).map(([key, value]) => `${key}=${value}`),
+  ];
+  if (strings.some((each) => encoder.encode(each).byteLength >= MAX_ARG_BYTES)) {
+    throw new SandboxError("rejected", "exec: 400 command_failed: argument list too long");
+  }
 }
 
-/** JSON with every object's keys in order, so the same options compare equal however they were built. */
-function canonical(value: unknown): string {
-  return JSON.stringify(value, (_key, inner: unknown) =>
-    typeof inner === "object" && inner !== null && !Array.isArray(inner)
-      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : 1)))
-      : inner,
+function drifted(held: Config, wanted: Config): boolean {
+  return (
+    held.persistent !== wanted.persistent ||
+    held.timeoutMs !== wanted.timeoutMs ||
+    (held.vcpus ?? 2) !== (wanted.vcpus ?? 2) ||
+    [...held.ports].sort().join(",") !== [...wanted.ports].sort().join(",") ||
+    (wanted.snapshotExpirationMs !== undefined &&
+      held.snapshotExpirationMs !== wanted.snapshotExpirationMs)
   );
 }
 
-function toAddress(id: string, port: number): SandboxAddress {
-  const token = `fake-token-${id}-${port}`;
-  return {
-    port,
-    url: `https://${id.replace("_", "-")}-${port}.sandbox.test`,
-    token,
-    headers: { "x-sandbox-token": token },
-    query: { token },
-  };
+/** Vercel reports the image as "{team}/{project}/{repository}@{digest}". */
+function fullImage(image: string): string {
+  return image.includes("/") ? image : `fake-team/fake-project/${image}`;
 }
 
-/** Relative paths are under the sandbox user's home, as on a real provider. */
-function absolute(path: string): string {
-  return path.startsWith("/") ? path : `/home/user/${path}`;
+function info(box: Box): SandboxInfo {
+  const status: VercelStatus = box.session.status;
+  return {
+    name: box.name,
+    status,
+    sessionId: box.session.id,
+    image: box.image,
+    createdAt: box.createdAt,
+  };
 }

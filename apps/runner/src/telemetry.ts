@@ -57,8 +57,8 @@ export function posthogTelemetry(
      */
     secrets?: readonly string[];
     /**
-     * What this runner is (`runner/<version>+<image>`), put on every event as `ponzu_runner`, so
-     * a trace says which image its turn ran on.
+     * What this runner is (`runner/<version>+<bundle>`), put on every event as `ponzu_runner`, so
+     * a trace says which build its turn ran on.
      */
     client?: string;
   } = {},
