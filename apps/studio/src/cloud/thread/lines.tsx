@@ -5,7 +5,14 @@ import {
   GitPullRequestIcon,
 } from "@hugeicons/core-free-icons";
 import { memo, type ReactNode, useState } from "react";
-import type { Attachment, Person, PrState, ThreadItem, ThreadNotice } from "../model.ts";
+import type {
+  AgentPrAction,
+  Attachment,
+  Person,
+  PrState,
+  ThreadItem,
+  ThreadNotice,
+} from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
 import { useColorScheme } from "../ui/color-scheme.ts";
@@ -335,6 +342,22 @@ const PR_ICON: Record<PrState, { icon: typeof GitPullRequestIcon; color: string;
   closed: { icon: GitPullRequestClosedIcon, color: "text-muted", verb: "closed" },
 };
 
+/** The agent's own pull request lines: what it did, in the words the line says it with. */
+const AGENT_PR: Record<
+  AgentPrAction,
+  { icon: typeof GitPullRequestIcon; color: string; verb: string }
+> = {
+  opened: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "opened" },
+  ready: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "marked ready" },
+  updated_branch: {
+    icon: GitPullRequestIcon,
+    color: "text-icon-soft",
+    verb: "updated the branch of",
+  },
+  auto_merge: { icon: GitMergeIcon, color: "text-icon-soft", verb: "turned on auto-merge for" },
+  merged: { icon: GitMergeIcon, color: "text-pr-merged", verb: "merged" },
+};
+
 /** What happened to the run that isn't anyone's words: quiet lines, an error in plain words. */
 function NoticeLine({
   notice,
@@ -400,6 +423,37 @@ function NoticeLine({
           <Icon icon={icon} step="small" className={color} />
           <span className="shrink-0">
             Pull request <span className="font-mono text-11">#{notice.number}</span> {verb}
+          </span>
+          <span className="truncate text-faint">{notice.title}</span>
+        </button>
+      );
+    }
+    case "pull_request_agent": {
+      const { icon, color, verb } = AGENT_PR[notice.action];
+      const as = notice.as ? (notice.as.id === meId ? "you" : who(notice.as, meId)) : null;
+      const said =
+        notice.action === "ready" ? (
+          <>
+            Claude marked <span className="font-mono text-11">#{notice.number}</span> ready
+          </>
+        ) : (
+          <>
+            Claude {verb} <span className="font-mono text-11">#{notice.number}</span>
+          </>
+        );
+      return (
+        <button
+          type="button"
+          onClick={handlers.onOpenPullRequest}
+          className={cn(
+            quiet,
+            "-mx-1 -my-0.5 min-w-0 max-w-full cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
+          )}
+        >
+          <Icon icon={icon} step="small" className={color} />
+          <span className="shrink-0">
+            {said}
+            {as ? ` as ${as}` : ""}
           </span>
           <span className="truncate text-faint">{notice.title}</span>
         </button>

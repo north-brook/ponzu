@@ -61,7 +61,16 @@ export interface FakePull {
   shownHead: { sha: string; until: number } | null;
   conflicting: boolean;
   reviews: { id: string; login: string; state: string; body: string; at: number }[];
-  comments: { id: string; login: string; body: string; at: number; path?: string; line?: number }[];
+  comments: {
+    id: string;
+    login: string;
+    body: string;
+    at: number;
+    path?: string;
+    line?: number;
+    /** For a line comment: its thread was marked resolved. */
+    resolved?: boolean;
+  }[];
 }
 
 export interface FakeRules {
@@ -119,6 +128,11 @@ export class FakePullRequests {
   readonly botLogin = "ponzu-test";
   /** How many GraphQL requests it answered. */
   queries = 0;
+  /**
+   * How many of a pull request's newest review threads GraphQL answers for, as the query's
+   * `reviewThreads(last: 100)` caps them, while its reviews can hold line comments of more.
+   */
+  threadsShown = 100;
   /** How long GraphQL goes on showing a merged pull request open (`hideMerges`). */
   #mergesHiddenMs = 0;
 
@@ -127,8 +141,12 @@ export class FakePullRequests {
   readonly #commits = new Map<string, Commit>();
   #next = 1;
 
-  constructor(clock: Clock) {
+  /** A person's GitHub id by their login, for the fake GitHub's accounts. */
+  readonly #idOf: (login: string) => number | undefined;
+
+  constructor(clock: Clock, idOf: (login: string) => number | undefined = () => undefined) {
     this.#clock = clock;
+    this.#idOf = idOf;
   }
 
   /**
@@ -182,7 +200,16 @@ export class FakePullRequests {
   }
 
   comment(pull: FakePull, login: string, body: string, at?: { path: string; line: number }) {
-    pull.comments.push({ id: this.#id("IC"), login, body, at: this.#clock.now(), ...at });
+    const id = this.#id("IC");
+    pull.comments.push({ id, login, body, at: this.#clock.now(), ...at });
+    return id;
+  }
+
+  /** Marks a line comment's thread resolved, as someone does on GitHub. */
+  resolve(pull: FakePull, commentId: string): void {
+    const comment = pull.comments.find((c) => c.id === commentId);
+    if (!comment?.path) throw new Error(`The fake GitHub has no line comment ${commentId}.`);
+    comment.resolved = true;
   }
 
   /**
@@ -192,6 +219,13 @@ export class FakePullRequests {
   lagHead(repo: FakeRepoAccess, pull: FakePull, ms: number): void {
     const sha = this.head(repo, pull.head)!;
     pull.shownHead = { sha, until: this.#clock.now() + ms };
+  }
+
+  #mergedFirstBy: string | null = null;
+
+  /** The next merge asked for finds `login` merged the pull request a moment before it. */
+  mergeFirstAs(login: string): void {
+    this.#mergedFirstBy = login;
   }
 
   /** GraphQL goes on showing a pull request open for `ms` after it merges, as a replica lags. */
@@ -554,6 +588,12 @@ export class FakePullRequests {
 
   #merge(caller: FakeCaller, repo: FakeRepoAccess, pull: FakePull, input: Record<string, any>) {
     if (caller.kind !== "user" || !repo.canPush(caller.id)) return forbidden();
+    const first = this.#mergedFirstBy;
+    if (first) {
+      // Someone else's merge lands between Ponzu's read and this one, as in a race on GitHub.
+      this.#mergedFirstBy = null;
+      this.#merge({ ...caller, login: first }, repo, pull, input);
+    }
     const notMergeable = () =>
       Response.json({ message: "Pull Request is not mergeable" }, { status: 405 });
     if (pull.state !== "open" || pull.draft) return notMergeable();
@@ -878,12 +918,22 @@ export class FakePullRequests {
                     line: comment.line,
                     originalLine: comment.line,
                     createdAt: iso(comment.at),
-                    author: who(comment.login),
+                    author: { ...who(comment.login), databaseId: this.#idOf(comment.login) },
                   },
                 ],
               },
             })),
         ],
+      },
+      // One thread for each line comment, as a comment that starts one; only the newest.
+      reviewThreads: {
+        nodes: pull.comments
+          .filter((comment) => comment.path)
+          .map((comment) => ({
+            isResolved: comment.resolved === true,
+            comments: { nodes: [{ id: comment.id }] },
+          }))
+          .filter((_, i, all) => i >= all.length - this.threadsShown),
       },
     };
   }

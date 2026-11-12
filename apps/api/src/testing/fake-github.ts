@@ -145,7 +145,10 @@ export class FakeGithub {
 
   constructor(clock: Clock) {
     this.#clock = clock;
-    this.pulls = new FakePullRequests(clock);
+    this.pulls = new FakePullRequests(
+      clock,
+      (login) => [...this.#users.values()].find((user) => user.login === login)?.id,
+    );
   }
 
   /** A repository of any installation, as the branch and pull request calls reach it. */

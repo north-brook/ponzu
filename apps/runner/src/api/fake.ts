@@ -10,6 +10,9 @@ import {
   type UploadFile,
 } from "./api.ts";
 import {
+  type AgentPullRequestAction,
+  type AgentPullRequestAnswer,
+  type AgentPullRequestRequest,
   type AnswerEvent,
   CLAIM_LIMIT,
   type ClaimRequest,
@@ -21,6 +24,7 @@ import {
   type Notice,
   type Person,
   type Priority,
+  type PullRequestStanding,
   type PullRequestState,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -199,6 +203,10 @@ export class FakeRunnerApi {
       restore: as((r) => this.restore(r)),
       reportRestored: as((r, report: RestoredReport) => this.reportRestored(r, report)),
       pullRequestSummary: as((r, summary: string) => this.pullRequestSummary(r, summary)),
+      readPullRequest: as((r, turn: string | null) => this.readPullRequest(r, turn)),
+      actOnPullRequest: as((r, action: AgentPullRequestAction, request: AgentPullRequestRequest) =>
+        this.actOnPullRequest(r, action, request),
+      ),
     };
   }
 
@@ -462,6 +470,114 @@ export class FakeRunnerApi {
     return written
       ? { pullRequest: open.number, open, kept: null }
       : { pullRequest: null, open, kept: "none_open" };
+  }
+
+  /** What the agent asked of its pull request, in order: each call's action, turn and commit. */
+  readonly prCalls: ({ action: AgentPullRequestAction | "read" } & AgentPullRequestRequest)[] = [];
+  /**
+   * How the API refuses the agent's pull request calls: an error for an action, or null to do it.
+   * By default every action is done, as for a person's turn.
+   */
+  refusePullRequest: (
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ) => ApiError | null = () => null;
+  /** Where the pull request stands beyond its number and state, as GitHub would say it. */
+  prDetail: Partial<NonNullable<PullRequestStanding["pullRequest"]>> = {};
+  /**
+   * Whether the turn named is a person's, as the API decides it from the feed: a person's
+   * message, answer or comment. A turn this fake's feed doesn't hold counts as one when named.
+   */
+  personTurn: (turn: string | null) => boolean = (turn) => {
+    const event = this.events.find((held) => held.event.id === turn)?.event;
+    if (!event) return turn !== null;
+    return ["message", "answer", "comment"].includes(event.kind) && event.from !== null;
+  };
+
+  async readPullRequest(runner: string, turn: string | null): Promise<PullRequestStanding> {
+    await this.enter("readPullRequest", runner);
+    this.prCalls.push({ action: "read", turn });
+    return this.standing(turn);
+  }
+
+  async actOnPullRequest(
+    runner: string,
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ): Promise<AgentPullRequestAnswer> {
+    await this.enter("actOnPullRequest", runner);
+    this.prCalls.push({ action, ...structuredClone(request) });
+    const refused = this.refusePullRequest(action, request);
+    if (refused) throw refused;
+    // As the API holds to it: only a person's turn may land the pull request.
+    if (["ready", "auto_merge", "merge"].includes(action) && !this.personTurn(request.turn)) {
+      throw new ApiError(
+        403,
+        "turn_not_from_person",
+        "No person in Ponzu began this turn. Only a person's own message, answer or comment in Ponzu can have Claude do this.",
+      );
+    }
+    const pr = this.pullRequest;
+    const open = pr?.state === "open" || pr?.state === "draft";
+    let did = true;
+    if (action === "open") {
+      if (open) did = false;
+      else this.pullRequest = { number: (pr?.number ?? 0) + 1, state: "draft" };
+    } else if (action === "merge" && pr?.state === "merged") {
+      // Merged already, as by someone else first: answered as it is, done by nobody now.
+      did = false;
+    } else if (!open) {
+      throw new ApiError(409, "no_pull_request", "This design has no pull request yet.");
+    } else if (action === "ready") {
+      did = pr!.state === "draft";
+      this.pullRequest = { ...pr!, state: "open" };
+    } else if (action === "merge") {
+      this.pullRequest = { ...pr!, state: "merged" };
+    } else if (action === "auto_merge") {
+      // As the API answers: nothing is left to wait for on one that can merge now.
+      if (this.standing(request.turn).pullRequest?.mergeState === "clean") {
+        throw new ApiError(
+          409,
+          "already_mergeable",
+          "This pull request can merge now; there is nothing for auto-merge to wait for.",
+        );
+      }
+      this.prDetail = { ...this.prDetail, autoMerge: { enabledBy: "ada" } };
+    }
+    return { did, pushing: false, ...this.standing(request.turn) };
+  }
+
+  private standing(turn: string | null): PullRequestStanding {
+    const pr = this.pullRequest;
+    const branch = this.sessionInfo.branch ?? "pz/branch";
+    const personTurn = this.personTurn(turn);
+    return {
+      branch: { name: branch, base: "main", exists: true, aheadBy: 1, behindBy: 0 },
+      pullRequest: pr && {
+        number: pr.number,
+        url: `https://github.com/north/fern/pull/${pr.number}`,
+        title: this.sessionInfo.design.name,
+        state: pr.state,
+        headSha: "a".repeat(40),
+        author: "ada",
+        mergedBy: pr.state === "merged" ? "ada" : null,
+        mergeable: true,
+        mergeState: pr.state === "draft" ? "draft" : "clean",
+        reviewDecision: null,
+        autoMerge: null,
+        checks: { state: "passing", complete: true, items: [] },
+        reviews: [],
+        unresolved: [],
+        mergeHold: null,
+        ...this.prDetail,
+      },
+      mergeMethod: "squash",
+      autoMergeAllowed: true,
+      nextAction: !pr ? "create_pr" : pr.state === "draft" ? "ready" : "merge",
+      actingAs: { name: ADA.name, login: ADA.login! },
+      personTurn,
+      notPersonTurn: personTurn ? null : "No person in Ponzu began this turn.",
+    };
   }
 
   async commit(runner: string, ops: Parameters<SyncTransport["commit"]>[0]) {

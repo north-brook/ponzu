@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { emptyDoc, parseHtml } from "@ponzu/core";
 import { cloudTools, tools } from "@ponzu/tools";
+import { PULL_REQUEST_TOOLS } from "./pull-request-tools.ts";
 import { commandStep, describeStep, looksSecret, shortPath } from "./steps.ts";
 
 const doc = emptyDoc("Fern");
@@ -42,6 +43,7 @@ describe("the canvas", () => {
       ...cloudTools.map((t) => t.name),
       ...tools.map((t) => t.name),
       "describe_pull_request",
+      ...Object.values(PULL_REQUEST_TOOLS),
     ]);
     for (const tool of names) {
       const step = describeStep(`mcp__ponzu__${tool}`, {}, ctx);
@@ -53,6 +55,16 @@ describe("the canvas", () => {
       expect(step.doing, tool).toMatch(/^[A-Z][a-z]+ing\b/);
       expect(step.done, tool).toBeTruthy();
     }
+  });
+
+  test("a pull request action is recorded as asked, never as done, and never sums up the turn", () => {
+    // GitHub may refuse it: the API's own line in the thread says what happened.
+    for (const tool of Object.values(PULL_REQUEST_TOOLS)) {
+      const step = describeStep(`mcp__ponzu__${tool}`, {}, ctx);
+      expect(step.done, tool).not.toMatch(/^(Opened|Merged|Marked|Updated|Turned)\b/);
+      expect(step.weight, tool).toBe(0);
+    }
+    expect(done("mcp__ponzu__merge_pull_request")).toBe("Asked to merge the pull request");
   });
 
   test("boards are named by their real names, in both tenses", () => {

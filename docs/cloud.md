@@ -1001,7 +1001,8 @@ and the sweep put the sandbox to sleep on top of it. Two things now see to it, a
 enough.
 
 **The runner picks it up** (`apps/runner/src/inflight.ts`). When Claude Code takes a message in,
-the runner writes what it took (its uuid and event) to `~/.ponzu/turn.json`, flushed, and clears
+the runner writes what it took (its uuid and event, and the event that began the turn) to
+`~/.ponzu/turn.json`, flushed, and clears
 it at the turn's result, unless its own shutdown cut the turn off. A runner that starts (or starts
 Claude Code again after it died) and finds it, with the resumed session holding that message, says
 so in the thread (`turn_failed`, "Claude was cut off before it finished this, and is picking it
@@ -1070,11 +1071,12 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
 - **Commits** are authored by the person (their GitHub noreply address) and
   committed by the app.
 - **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
-  and acted on as the person ("Pull requests" says why). Ponzu never opens one by itself: the
-  person does, with Create PR. The agent has no GitHub
-  API token; it hands the API its summary of the change with the runner's own tool,
-  `describe_pull_request` (beside the canvas tools, for a design with a repo), which posts
-  `/v1/runner/pull-request-summary`. Once a merge has gone through, the API deletes the
+  and acted on as a person ("Pull requests" says why): whoever presses Create PR or the action
+  button, or, when the agent drives it, the person its turn is for ("The agent's pull
+  request"). The agent has no GitHub API token; it hands the API its summary of the change with
+  the runner's own tool, `describe_pull_request`, and opens, readies, updates and merges with the
+  runner's other pull request tools (beside the canvas tools, for a design with a repo), which
+  post `/v1/runner/pull-request…`. Once a merge has gone through, the API deletes the
   branch as the person, while it is still at the commit that merged.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed as an environment variable when the sandbox starts or
@@ -1166,6 +1168,9 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
+| GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
+| POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |
+| POST | `/v1/runner/pull-request/update-branch`, `/merge` | `{ turn, headSha }` | `AgentPullRequestAnswer` |
 | POST | `/v1/runner/checkpoint` | `{ turn, claudeSessionId, wipCommit, session, workspace }` | `{ saved: SavedPoint }` |
 | POST | `/v1/runner/restore` | `{}` | `{ saved, session, workspace }`, each archive `{ url, size, sha256 }` or null |
 | POST | `/v1/runner/restored` | `RestoredReport` | 204 |
@@ -1295,6 +1300,8 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
             { type: "stopped", by: Person | null }                        the API, from the runner's
                                                                           { type: "stopped", eventId }
             { type: "pull_request", number, url, title, state }           the API
+            { type: "pull_request_agent", action, number, url, title,     the API
+              as: Person, at }
 ```
 
 A `comment` item also says where it was left (`pageId`, `pageName`, and `at`, the pin's place on
@@ -1365,7 +1372,12 @@ reason). The API writes `turn_failed` itself, under `ti_lapsed-<event>` or `ti_s
 for a turn that never came. The `waking` notice becomes `resumed` or
 `started` once Claude Code is up. A `pull_request` notice is written once for each pull request
 opening, merging and closing, under an id of its own (`ti_pr-<number>-opened`, `-merged`,
-`-closed`) that no runner can write, whichever of a route and a webhook sees it first.
+`-closed`) that no runner can write, whichever of a route and a webhook sees it first. A
+`pull_request_agent` notice is the agent's own line for each thing it did to its pull request
+(`action`: `opened`, `ready`, `updated_branch`, `auto_merge`, `merged`), naming the person it
+acted as, under `ti_pra-<random>`, which no runner can write either ("The agent's pull request").
+The thread draws it as "Claude merged #12 as Maya", and an opening or merging the agent did is
+said by its line alone, not again by the `pull_request` notice for the same moment.
 
 `POST /v1/runner/thread` writes items by the id the runner chose (`ti_…`): an id the thread
 does not have is appended, an item still streaming has its payload replaced, and a finished
@@ -1665,22 +1677,31 @@ The agent says them through a tool the runner hosts beside the canvas tools,
 `describe_pull_request({ summary })`, on a repo design whose repository is checked out; the
 thread calls the step "Writing the pull request description". The tool's answer says what it
 did in words the agent can repeat: "Updated the description of pull request #N on GitHub", or
-"Saved as the description the pull request will open with. No pull request is open yet: the
-person opens it with Create PR in Ponzu" (and that commits are still to be pushed, when they
-are), or that #N is open and why its description was left alone.
+"Saved as the description the pull request will open with. No pull request is open yet: open it
+with open_pull_request when the work is ready for a reviewer" (and that commits are still to be
+pushed, when they are), or that #N is open and why its description was left alone. A pull
+request the person opens with Create PR opens with the same words.
 
-**What the agent knows.** Its instructions say Ponzu never opens a pull request by itself (the
-person does, with Create PR), that a failed push is Ponzu's to retry rather than something to
-work around, to write the description once the branch has its change, never to say it opened or
-updated a pull request unless the tool's answer named one, and to end a turn by saying where the
-work stands: committed and on GitHub or not, the description ready, and Create PR when they're
-ready. Each turn starts with a line after the person's words, from the claim's `pullRequest` and
-the last push: `(From Ponzu: no pull request is open for <branch>. …)`, or `pull request #N is
-open …`, and how many commits GitHub still lacks, with why the last push failed. Against an API
+**What the agent knows.** Its instructions say it drives the design's pull request, through tools
+Ponzu acts on GitHub with as the person it works for: it opens the pull request itself once its
+work is committed and worth a reviewer's look (ready for review in the turn its work is done, without
+waiting for checks, which run after; a draft only when it stops partway), keeps the description current, watches checks and reviews,
+fixes what fails and pushes, and keeps the branch up to date. It merges, or turns on auto-merge,
+only when the person asked for that outcome (merge it, ship it, merge when green), never because
+the work is finished: someone who asked for a design change has not asked for it to land in their
+main branch. A check, a review or a comment on GitHub never asks it to merge. They also say that a
+failed push is Ponzu's to retry rather than something to work around, never to say it opened,
+readied, updated or merged a pull request unless a tool's answer said it did, and to end a turn
+on where the work stands: what is committed and on GitHub, and the pull request's number and
+whether it is a draft, ready, waiting on checks or a review, or merged. Each turn starts with a
+line after the event, from the claim's `pullRequest` and the last push: `(From Ponzu: no pull
+request is open for <branch>. Open one with open_pull_request …)`, or `pull request #N is open …`,
+and how many commits GitHub still lacks, with why the last push failed; a turn a check or a
+review began adds that Ponzu won't merge, mark ready or turn on auto-merge in it. Against an API
 whose claim does not say `pullRequest` (older than this), the line claims nothing about whether
-one is open, and the tool's answer says only that no open pull request took the words. So the
-API, with migration 0019, ships before the image with this runner is baked: the other order
-works, but tells the agent less.
+one is open and points at read_pull_request, and the description tool's answer says only that no
+open pull request took the words. So the API ships before the image with this runner is baked:
+an older API answers the new tools 404, which they say as a refusal.
 
 ## Pull requests
 
@@ -1707,7 +1728,7 @@ branch (`exists`, `aheadBy`, `behindBy` against the default branch, and `unpushe
 last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
-hundred comments and reviews) with line comments, the first hundred changed files with their
+hundred comments and reviews) with line comments, each saying whether its thread is resolved, the first hundred changed files with their
 counts, the last hundred commits), the merge method Merge would use, whether the repo allows
 auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the design
 has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
@@ -1738,11 +1759,14 @@ whatever its poster said, and anything else is dropped.
 
 **Who acts.** The App reads the pull request and writes its description, each with a one-hour
 token for the one repository and only what that needs (`contents`, `pull_requests`, `checks`
-and `statuses: read` to read; `pull_requests: write` and `contents: read` to edit). The person
-does everything else (open, ready, merge, auto-merge, close, update the branch) with their own
-GitHub user token (`githubUserToken`).
+and `statuses: read` to read; `pull_requests: write` and `contents: read` to edit). Everything
+else (open, ready, merge, auto-merge, close, update the branch) is done as a person, with their
+own GitHub user token (`githubUserToken`): the person who pressed the button, or, when the agent
+does it, the person its turn is for ("The agent's pull request"). The agent holds no GitHub
+credential for any of it.
 
-- Opened as the person, the pull request's author is whoever pressed Create PR. GitHub never
+- Opened as the person, the pull request's author is whoever pressed Create PR, or whom the agent
+  opened it for. GitHub never
   counts an author's approval of their own pull request, so where the repo's rules want one
   review, it comes from someone else, as it would without Ponzu. Opened as the App, the bot
   would be its author, and the sandbox pushes as the App too, so the person who asked for the
@@ -1756,7 +1780,7 @@ GitHub user token (`githubUserToken`).
   `has_hooks`: anything else (a review wanted, a required check not passed, behind, unknown) is
   refused with its code before GitHub hears of it, and `nextAction` is never `merge` then. A
   client may offer to merge anyway only by asking the person and sending `bypass: true`; GitHub
-  then decides whether they may.
+  then decides whether they may. The agent never can.
 - Reading needs no person, so a webhook can do it.
 - Measured on the test repository with the App's permissions (contents and pull requests
   write; checks, statuses, metadata and members read): a person's token opens a pull request
@@ -1867,11 +1891,140 @@ design settles whether or not the merge's webhook arrives.
 | `auto_merge_not_allowed`, `already_mergeable` | the repo has auto-merge off; nothing is left to wait for |
 | `forbidden` | GitHub does not let this person do it (403) |
 | `github_refused` | anything else GitHub refused (422) |
+| `turn_not_from_person` | the agent's merge, ready or auto-merge in a turn no person in Ponzu began (403) |
+| `agent_limit` | the agent did this as often as an hour allows (409) |
 
 Not handled yet: a repo that merges through a merge queue (GitHub refuses a direct merge there:
 `branch_protected`); the App has no `workflows` permission, so a branch update or a push that
 would change `.github/workflows/` is refused by GitHub; and there is no sweep that reads open
 pull requests whose webhooks were all lost (a merge from Ponzu is covered by its own job).
+
+**Two at once.** A person pressing Merge while the agent merges (or two people, or auto-merge
+landing first) go to GitHub with the same commit, and GitHub merges once. The other's merge is
+refused, and the action reads the pull request again: merged, it answers the tab as it is (the
+person's client shows it merged; the agent's tool says it was already merged, by whom, and that it
+did not merge it). Everything else is already idempotent: opening answers the one open, ready
+answers a pull request already ready, auto-merge one that has it on.
+
+### The agent's pull request
+
+The agent drives its design's pull request: it opens it, reads where it stands, marks it ready,
+updates its branch, turns on auto-merge and merges it. It holds no GitHub credential for any of
+it. Its tools, hosted by the runner beside `describe_pull_request` on a repo design whose
+repository is checked out (`apps/runner/src/pull-request-tools.ts`), ask the API, and the API does
+exactly what the person's own route does, through the same code (`openPullRequest`,
+`actAndSay`), as a person (`apps/api/src/pull-requests/agent.ts`, `routes/runner-pull-request.ts`).
+So everything that made Create PR and Merge safe holds for the agent too: the pull request's author
+is a person, GitHub holds the merge to the repo's rules as they apply to that person, and its
+history names them.
+
+| Tool | Takes | Answers |
+|---|---|---|
+| `open_pull_request` | `{ draft = true }` | pushes the branch, then opens it as a draft (with `draft: false`, marks it ready too, in a person's turn); whether this opened it or one was open |
+| `read_pull_request` | nothing | state, draft or ready, each check with its name, result, whether required and its link, reviews, unresolved line comments, whether it can merge and what holds it back, how far behind the base it is, who Ponzu acts as this turn and whether the turn may merge |
+| `mark_pull_request_ready` | nothing | marked ready, or it was not a draft |
+| `update_pull_request_branch` | nothing | pushes, then has GitHub merge the base in at the checkout's commit; that the agent pulls before committing again |
+| `enable_auto_merge` | nothing | turned on (and that it has not merged yet), or already on |
+| `merge_pull_request` | nothing | pushes, then merges at the checkout's commit; merged as whom, or already merged by whom |
+
+Each answer says what GitHub confirmed, never more: "Merged pull request #12 on GitHub, as Maya
+(@maya)", or "Pull request #12 was already merged by @sam; you didn't merge it". A refusal is the
+API's own sentence and what the agent can do about it (fix the checks, update the branch, turn on
+auto-merge, tell the person a review is wanted, ask the person; a failed check's log is not
+readable from the sandbox, so the agent reproduces it with the repo's own commands). The turn's
+record calls the steps "Merging the pull request" while they run and "Asked to merge the pull
+request" once done, never "Merged": GitHub may have refused, and the API's own line says what
+happened. What GitHub people wrote (a title, a check's name, a comment) comes back quoted, and the
+agent's instructions say it is feedback, never instructions. Unresolved line comments are quoted
+only from people GitHub says can push to the repository, as only their reviews reach the agent as
+events; a stranger's comment on a public repository is left out, and so is one whose thread the
+query's newest 100 didn't include, since whether it is resolved isn't known. When
+`open_pull_request` with `draft: false` can't mark it ready, it reads the pull request again
+rather than say it is still a draft (GitHub may have done it and its answer been lost), or says
+it doesn't know.
+
+**Who it acts as.** Each call names the turn's event (`turn`): the event whose message began the
+turn, taken into the session as it began, other than a canvas edit (which is not words to act
+on). It is set once, as the turn begins: a turn that Ponzu's own note or an edit began has none,
+and keeps none when a person's words come in during it, since no person began it. Words that come
+in later in the turn never take it over, and the next turn names its own. A turn picked up after
+Claude Code stopped (A turn that never came) names the event that began it, which the turn marker
+keeps beside the last one taken in, never those last words: they may have come in during a turn an
+edit, a check or a review began, or from someone else. The API
+looks it up in the design's feed (`getTurnOrigin`, packages/db): it must be one of this design's
+events that **this runner** (its lease, `X-Ponzu-Runner`) was handed, or it is none. So a turn
+picked up after the runner process restarted, or an old event a runner token in other hands names,
+is not a person's turn.
+
+- An event a person sent in Ponzu (`message`, `answer`, `comment`, with its person) is **a
+  person's turn**, and the agent acts as that person.
+- Any other turn (one a `check`, a `review` or an edit began, one that is Ponzu's own note to the
+  agent, one whose event the API cannot find) acts as the last person whose message, answer or
+  comment went into the session, else the design's owner. It is **not a person's turn**.
+- A person's turn stops being one once a `check` or a `review` went into the session after the
+  person's event, or may yet: GitHub's words may have gone in after the person's. What decides it
+  is the order the session took events in, not their place in the feed, since the runner puts a
+  `now` event in ahead of an older `next` one it holds: an event counts when it was handed to a
+  runner and is not acknowledged (it may still go in, and an acknowledgement on its way never lets
+  it through), or was acknowledged (`delivered_at`) no earlier than the person's event. The same
+  moment is one batch of acknowledgements, whose order isn't known, so it counts; before the
+  person's own acknowledgement arrives, one already acknowledged went in ahead of it, as the
+  runner acknowledges in the order the session took them.
+- It stops being one, too, once a message, answer or comment from **anyone else** went into the
+  session after it, or may yet, by the same order: the request is no longer one person's, and a merge would
+  be done as, and credited to, someone who may not have asked. More from the same person keeps
+  it theirs. An answer to a question the agent is waiting on goes into the turn that asked, so it
+  never begins one, and someone else's answer ends the turn's claim like their comment would.
+- So a person's ask counts in the turn it began and only while nothing from GitHub or anyone else
+  came in after it. When something did, the agent says so and the person asks again, or presses
+  the button in the pull request tab.
+
+Then that person must still be allowed: `requireDesign` with write access, as for steering the
+design (a member of the workspace whom GitHub lets push to the repository, asked again when the
+kept answer is old), and a GitHub user token Ponzu can use. Refused, the tool says so in words the
+agent repeats: "Ines can't change this design's repository on GitHub now …, so Ponzu won't act as
+them" (403 `forbidden`), or that their GitHub connection lapsed and they need to sign in again
+(409 `github_reauth_required`: never 401, which a runner takes as its own token being dead).
+
+**Guardrails, in code.**
+
+- **Only a person's turn lands it.** `ready`, `auto-merge` and `merge` in a turn that is not a
+  person's are refused (403 `turn_not_from_person`) before anything else. Any turn may read, open,
+  update the branch, push and describe: a failed check or a review can be fixed, never merged.
+  Text from GitHub is not the person, whatever it says. Auto-merge, once a person's turn turned
+  it on, is GitHub's: it lands what the branch holds when the repo's rules pass, including
+  commits a later turn pushed, as it would for anyone who pushes to the branch. The repo's rules
+  (required reviews, dismissing stale approvals) are what hold those commits.
+- **Never past the repo's rules.** The agent's routes take no `bypass` (the body is strict: one
+  sent is 400), and the merge is sent with `bypass: false`, so it merges only when the merge state
+  is `clean`, `unstable` or `has_hooks`, as the button does; otherwise the agent gets the reason
+  (`review_required`, `checks_failing`, `branch_behind` …) and `read_pull_request`'s
+  `mergeHold` says it before it asks.
+- **What it merges is what it has.** Merge and Update branch send the commit the checkout is at,
+  after the runner pushes what GitHub lacks; a branch that moved on GitHub is `head_moved`.
+- **In the thread, every time.** Each thing the agent did is a `pull_request_agent` notice naming
+  the person it acted as, written by the API when GitHub confirmed it, never by the runner. A
+  merge GitHub took but does not show yet gets none: GitHub's own line says it once it does.
+- **A few an hour.** Per design, counted from those notices (by the API's clock in each): opening
+  3, ready 5, updating the branch 6, auto-merge 5, merging 3. Past one, 409 `agent_limit`; a
+  person's own buttons are not limited. The count is read before GitHub is asked and the notice
+  written after, with no lock, so calls made at the same moment can go one or two past a limit;
+  it is there to stop a loop, not to count exactly.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/runner/pull-request?turn=evt_…` | none | `PullRequestStanding` |
+| POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer`: the standing, `did` (this call did it) and `pushing` (open: the runner was asked to push first) |
+| POST | `/v1/runner/pull-request/update-branch`, `/merge` | `{ turn, headSha }` | the same |
+
+Each holds to the lease. Safe to repeat: what is already done answers `did: false` (already
+open, ready, merged, auto-merge already on), and only a call that did something writes its
+notice. Two answer 409 instead, as the person's routes do: Update branch on a branch already up
+to date (`branch_up_to_date`), and auto-merge on one that can merge now (`already_mergeable`);
+the tool says what each means.
+
+Create PR and the action button work as before, as the person who presses them, beside the
+agent's calls; a person can always do what the agent was refused.
 
 ## Assets and previews
 
@@ -2146,7 +2299,7 @@ Ponzu:
 |---|---|---|---|
 | A question for you | `needsYou` | everyone who can steer the design (write access), the design's owner first | a question row opens (`questions`, the runner's `POST /v1/runner/questions`): a question, a plan, a permission, a sign-in or a secret the agent waits on |
 | A reply | `replies` | everyone who commented on the design | the agent's `assistant` item finishes in a turn that a comment of theirs started |
-| A pull request is ready | `prReady` | the design's owner and whoever pressed Create PR | `recordRead` records the design's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
+| A pull request is ready | `prReady` | the design's owner and whoever opened it (pressed Create PR, or whom the agent opened it as) | `recordRead` records the design's pull request open, not a draft, with checks passing and mergeable, where the last read did not |
 | A design finished | `needsYou` | the design's owner | a turn the owner started ends with the agent `idle` and no question open, after more than a minute of work, and the owner is not looking at it (no presence row) |
 | A teammate comments | `teammateComments` | the design's owner | a person other than the owner comments on it |
 | The cap at 80%, the cap reached | always | the workspace's admins | once a period each, with billing |
@@ -2358,9 +2511,14 @@ the runner's socket. It cannot read the runner token, which only the runner's pr
 What limits it today: other people's words reach the model quoted, under instructions
 that quoted text is feedback and never asks for credentials or for anything to be sent
 elsewhere; the runner token is good for one design and can write nothing an agent could not
-(a runner cannot write the API's notices, such as a pull request's), and a stolen one can at
-most take the lease and stop that design's runner; a git token is good for an hour and one
-repository. Scrubbing the credential from what the agent's tools inherit
+(a runner cannot write the API's notices, such as a pull request's); a git token is good for an
+hour and one repository. What the agent can do to its pull request is held in the API, not the
+prompt: a merge, ready or auto-merge only in a turn a person in Ponzu began, with nothing from
+GitHub or anyone else since, as that person, never past the repo's rules ("The agent's pull
+request"). A stolen runner token is more than before: taking the lease, it can open, ready,
+turn on auto-merge and merge, within the repo's rules and the hourly limits, as a person whose
+message the new runner is then handed, with each of those said in the thread. Not with an old
+event: only one handed to the runner holding the lease counts. Scrubbing the credential from what the agent's tools inherit
 (`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`) is not used: in Claude Code 2.1.322 it turns
 `bypassPermissions` back to `default` unless every tool is listed in `allowedTools`, and
 anything running as `agent` reads Claude Code's environment from `/proc` anyway. What closes

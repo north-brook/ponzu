@@ -226,7 +226,19 @@ export type ThreadNotice =
     }
   | { type: "error"; code: RunErrorCode; message: string }
   | { type: "stopped"; by: Person | null }
-  | { type: "pull_request"; number: number; url: string; title: string; state: PrState };
+  | { type: "pull_request"; number: number; url: string; title: string; state: PrState }
+  /** The agent did this to the pull request on GitHub, as `as`. */
+  | {
+      type: "pull_request_agent";
+      action: AgentPrAction;
+      number: number;
+      url: string;
+      title: string;
+      as: Person | null;
+    };
+
+/** What the agent did to its pull request, as its thread line says. */
+export type AgentPrAction = "opened" | "ready" | "updated_branch" | "auto_merge" | "merged";
 
 export type ThreadItem = {
   id: string;

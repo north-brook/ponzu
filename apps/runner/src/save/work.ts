@@ -2,6 +2,7 @@ import { type Dirent, lstatSync, readdirSync, readFileSync, type Stats } from "n
 import { basename, isAbsolute, join, relative } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { MAX_WORKSPACE_BYTES, type SavedPoint, wipRef } from "../api/protocol.ts";
+import { fingerprint } from "./fingerprint.ts";
 import { type AgentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
@@ -181,7 +182,8 @@ export class GitWork implements WorkSaver {
   async stamp(): Promise<string> {
     const head = await this.head();
     if (!head) return "";
-    // Every change against HEAD, and every untracked file, by size and time.
+    // Every change against HEAD, and every untracked file, by size and time (`fingerprint`).
+    const since = Date.now();
     const listed = await this.git(["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
     const paths = listed
       .split("\0")
@@ -189,8 +191,8 @@ export class GitWork implements WorkSaver {
       .map((entry) => entry.slice(3));
     const sizes = paths.map((path) => {
       try {
-        const stat = lstatSync(join(this.opts.cwd, path));
-        return `${path}:${stat.size}:${stat.mtimeMs}`;
+        const full = join(this.opts.cwd, path);
+        return `${path}:${fingerprint(full, lstatSync(full), since)}`;
       } catch {
         return `${path}:gone`;
       }
@@ -451,8 +453,11 @@ export class ScratchWork implements WorkSaver {
   ) {}
 
   async stamp(): Promise<string> {
+    const since = Date.now();
     return this.list()
-      .taken.map(({ path, size, mtime }) => `${path}:${size}:${mtime}`)
+      .taken.map(
+        ({ path, stat }) => `${path}:${fingerprint(join(this.opts.cwd, path), stat, since)}`,
+      )
       .join("|");
   }
 
@@ -481,7 +486,7 @@ export class ScratchWork implements WorkSaver {
   /** Every file in the folder, but `node_modules` and `.git`, within the limits and no secret. */
   private list() {
     const picker = new Picker(this.opts.cwd, this.opts.limits ?? LIMITS, this.opts.secrets ?? []);
-    const taken: { path: string; size: number; mtime: number }[] = [];
+    const taken: { path: string; stat: Stats }[] = [];
     const walk = (dir: string) => {
       let entries: Dirent[];
       try {
@@ -498,7 +503,7 @@ export class ScratchWork implements WorkSaver {
         if (!entry.isFile() && !entry.isSymbolicLink()) continue;
         const stat = lstatSync(full);
         const path = relative(this.opts.cwd, full);
-        if (picker.take(path, stat)) taken.push({ path, size: stat.size, mtime: stat.mtimeMs });
+        if (picker.take(path, stat)) taken.push({ path, stat });
       }
     };
     walk(this.opts.cwd);
