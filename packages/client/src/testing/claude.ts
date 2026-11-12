@@ -142,6 +142,7 @@ export class FakeClaude {
       expiresAt: account.expiresAt === null ? null : new Date(account.expiresAt).toISOString(),
       expiresSoon: account.expiresAt !== null && account.expiresAt - now < RENEW_AHEAD_MS,
       limitedUntil: null,
+      limits: account.kind === "api_key" ? null : [],
     };
   }
 

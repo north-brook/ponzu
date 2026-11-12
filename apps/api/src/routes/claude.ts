@@ -48,6 +48,20 @@ export const ClaudeAccountView = z.object({
   expiresSoon: z.boolean(),
   /** Until when its plan is at a limit, if it is. */
   limitedUntil: z.date().nullable(),
+  /**
+   * Each window of its plan's limits as a runner on it last saw it, in the Agent SDK's names
+   * (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, …): the apps show those they
+   * know. Empty before any canvas has run on it; null for an API key, which has no plan.
+   */
+  limits: z
+    .array(
+      z.object({
+        window: z.string(),
+        utilization: z.number().nullable(),
+        resetsAt: z.date().nullable(),
+      }),
+    )
+    .nullable(),
 });
 
 /** The account as the apps show it; null when none is connected. */
@@ -71,6 +85,14 @@ export function claudeAccountView(
     expiresSoon: expiresAt !== null && expiresAt - now < EXPIRES_SOON_MS,
     limitedUntil:
       account.limitedUntil && account.limitedUntil.getTime() > now ? account.limitedUntil : null,
+    limits:
+      account.kind === "api_key"
+        ? null
+        : (account.limits ?? []).map((limit) => ({
+            window: limit.window,
+            utilization: limit.utilization,
+            resetsAt: limit.resetsAt ? new Date(limit.resetsAt) : null,
+          })),
   };
 }
 

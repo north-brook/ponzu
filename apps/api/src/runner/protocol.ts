@@ -9,6 +9,7 @@ import {
   type GitCredentialRequest,
   type GitReport as GitReportRequest,
   MAX_PULL_REQUEST_SUMMARY,
+  MAX_SECRET_NAME,
   MAX_STEP_TEXT,
   MAX_TEXT,
   MAX_THREAD_WRITE,
@@ -19,6 +20,8 @@ import {
   type RestoredReport,
   type RunErrorCode,
   type TurnRecord as RunnerTurnRecord,
+  SECRET_NAME,
+  type SecretRequest,
   type StateRequest,
   type ThreadRequest,
   type UploadRequest,
@@ -69,6 +72,7 @@ const RUN_ERRORS = [
   "message_refused",
   "question_failed",
   "push_failed",
+  "elicitation_unsupported",
 ] as const satisfies RunErrorCode[];
 
 const RunnerNotice = z.discriminatedUnion("type", [
@@ -162,6 +166,15 @@ export const State: z.ZodType<StateRequest, unknown> = z.object({
     })
     .nullable()
     .optional(),
+  claudeLimit: z
+    .object({
+      status: z.enum(["allowed", "allowed_warning", "rejected"]),
+      window: text(64).nullable(),
+      resetsAt: z.iso.datetime({ offset: true }).nullable(),
+      utilization: z.number().min(0).max(100).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const Turn = z
@@ -221,8 +234,41 @@ export const Question: z.ZodType<QuestionRequest, unknown> = z.intersection(
       kind: z.literal("permission"),
       payload: z.object({ tool: text(200), title: text(500), description: text(2_000).nullable() }),
     }),
+    // The name's own rule (`checkSecretName`) is the route's, which refuses a reserved one by
+    // its code. Only the shape is checked here.
+    z.object({
+      kind: z.literal("secret"),
+      payload: z.object({
+        name: z.string().regex(SECRET_NAME).max(MAX_SECRET_NAME),
+        description: text(2_000).nullable(),
+      }),
+    }),
+    z.object({
+      kind: z.literal("handoff"),
+      payload: z.object({
+        title: text(200),
+        url: z
+          .string()
+          .max(4_000)
+          .refine(isWebAddress, "A hand-off's address is an http or https URL."),
+        description: text(2_000).nullable(),
+      }),
+    }),
   ]),
 );
+
+/** `POST /v1/runner/secret`. */
+export const SecretAsk: z.ZodType<SecretRequest> = z.object({ questionId: chosenId("q") });
+
+/** An http or https URL: the only kind a person's app opens for a hand-off. */
+function isWebAddress(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 
 export const Withdraw: z.ZodType<WithdrawRequest> = z.object({
   ids: z.array(ShortId).max(CLAIM_LIMIT),

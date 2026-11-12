@@ -375,7 +375,7 @@ function PageBody({
                 onClick={() => onOpenLink(href)}
                 className={cn(
                   OPTION,
-                  draft.chosen.length
+                  draft.chosen[0] === "yes"
                     ? "bg-raised shadow-chosen"
                     : "hover:bg-hover active:bg-press",
                 )}
@@ -385,10 +385,24 @@ function PageBody({
                     Open {new URL(href).host || href}
                   </span>
                   <span className="truncate text-12 text-muted leading-[1.4]">
-                    {draft.chosen.length ? "Opened. Send when you're done there." : href}
+                    {draft.chosen[0] === "yes" ? "Opened. Send when you're done there." : href}
                   </span>
                 </span>
                 <Icon icon={ArrowUpRight01Icon} step="inline" className="text-icon-soft" />
+              </button>
+              <button
+                type="button"
+                data-option
+                disabled={disabled}
+                onClick={() => onChoose("no", false)}
+                className={cn(
+                  OPTION,
+                  draft.chosen[0] === "no"
+                    ? "bg-raised shadow-chosen"
+                    : "hover:bg-hover active:bg-press",
+                )}
+              >
+                <span className="font-medium text-13 leading-[1.3]">Not now</span>
               </button>
             </div>
           ) : (

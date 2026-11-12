@@ -77,24 +77,30 @@ export class AskStore {
   answer(id: string, answer: AskAnswer): void {
     const body = bodyOf(answer);
     const row = this.rows.find((r) => r.id === id);
-    if (!body || !row || this.sending.has(id)) return;
+    const secret = "secret" in answer && row?.kind === "secret" ? answer.secret : null;
+    if ((!body && secret === null) || !row || this.sending.has(id)) return;
     // As it was asked: it may leave the live rows before the API answers.
     const asked = toAsk(row);
     this.sending.add(id);
     this.emit();
     const { ponzu, canvasId } = this.opts;
-    mutate(ponzu, ponzu.mutations.answerQuestion(), { canvasId, questionId: id, body }).then(
+    // A secret's value goes by its own route, never the generic answer's body.
+    const sent =
+      secret !== null
+        ? mutate(ponzu, ponzu.mutations.answerSecret(), { canvasId, questionId: id, value: secret })
+        : mutate(ponzu, ponzu.mutations.answerQuestion(), {
+            canvasId,
+            questionId: id,
+            body: body!,
+          });
+    sent.then(
       () => this.emit(),
       (error: unknown) => {
         this.sending.delete(id);
         if (error instanceof ApiError && error.code === "question_closed") {
           this.settle(asked, answeredBy(error));
         } else {
-          this.opts.onError(
-            error instanceof ApiError && error.code === "network"
-              ? "Your answer didn't reach Ponzu. Check your connection and send it again."
-              : "Your answer didn't go through. Send it again.",
-          );
+          this.opts.onError(refusal(error));
         }
         this.emit();
       },
@@ -156,6 +162,23 @@ export class AskStore {
       });
     this.snapshot = [...open, ...kept, ...this.closed];
     for (const listener of this.listeners) listener();
+  }
+}
+
+/** Why an answer didn't go, in a sentence. */
+function refusal(error: unknown): string {
+  if (!(error instanceof ApiError)) return "Your answer didn't go through. Send it again.";
+  switch (error.code) {
+    case "network":
+      return "Your answer didn't reach Ponzu. Check your connection and send it again.";
+    case "secrets_full":
+      return "This repo has no room for another secret. Remove one in Settings › Environments, then send it again.";
+    case "secret_name_reserved":
+      return "Claude asked for a name Ponzu keeps for itself, so it can't be a secret. Tell Claude to use another name.";
+    case "no_repository":
+      return "A Scratch canvas has no repository to keep a secret with.";
+    default:
+      return "Your answer didn't go through. Send it again.";
   }
 }
 

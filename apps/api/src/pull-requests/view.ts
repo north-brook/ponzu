@@ -1,6 +1,10 @@
 import { PR_CHECKS, PR_STATES } from "@ponzu/db";
 import { z } from "zod";
-import type { GithubPullRequestRead, GithubWho } from "../deps/github-pull-requests.ts";
+import {
+  type GithubPullRequestRead,
+  type GithubWho,
+  MERGE_QUEUE_STATES,
+} from "../deps/github-pull-requests.ts";
 import type { PullRequestTarget } from "./sync.ts";
 
 /*
@@ -92,6 +96,18 @@ export const PullRequestView = z.object({
     /** False when there were more than the first hundred. */
     complete: z.boolean(),
   }),
+  /**
+   * Whether its base merges through a merge queue, and its entry while it is in one: where, from
+   * 1, and how it stands. Absent from an API older than merge queues.
+   */
+  mergeQueue: z
+    .object({
+      enabled: z.boolean(),
+      entry: z
+        .object({ state: z.enum(MERGE_QUEUE_STATES), position: z.number().nullable() })
+        .nullable(),
+    })
+    .optional(),
   reviews: z.array(
     z.object({
       id: z.string(),
@@ -252,6 +268,9 @@ export function nextAction(
     return workedOnSince ? "create_pr" : "none";
   }
   if (pullRequest.state === "draft") return "ready";
+  // In the merge queue: GitHub merges it once the queue's checks pass, and there is nothing to
+  // press meanwhile (taking it out of the queue is GitHub's).
+  if (pullRequest.mergeQueue.entry) return "none";
   if (pullRequest.mergeable === false) return "resolve";
   if (pullRequest.checks.state === "failing") return "fix_checks";
   // Checks still running: the spec's action is Auto-merge. Where the repo has no auto-merge

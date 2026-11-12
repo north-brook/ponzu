@@ -330,10 +330,21 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       }),
     ).toMatchObject({ status: "answered", answer: { approved: true } });
     expect(await getQuestion(db, { canvasId: inRepo.id, id: asked.id })).toMatchObject({ payload });
-    expect((await feedOf(db, inRepo.id))[0]).toMatchObject({
-      kind: "answer",
+    const answers = (await feedOf(db, inRepo.id)).filter((event) => event.kind === "answer");
+    const answerTo = (id: string) =>
+      answers.find((event) => (event.payload as { questionId?: string }).questionId === id);
+    expect(answerTo(asked.id)).toMatchObject({
       payload: { questionId: asked.id, question: { kind: "plan", payload }, approved: true },
     });
+    // The secret's answer names the secret and never carries the value.
+    expect(answerTo(question.id)).toMatchObject({
+      payload: {
+        questionId: question.id,
+        question: { kind: "secret" },
+        secret: { name: "API_KEY" },
+      },
+    });
+    expect(JSON.stringify(answerTo(question.id))).not.toContain("ciphertext");
     expect(await cancelQuestions(db, { canvasId: inRepo.id })).toBe(1);
     expect((await getCanvasHead(db, inRepo.id))!.needsYouCount).toBe(0);
 

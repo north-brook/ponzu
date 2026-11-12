@@ -2,6 +2,7 @@ import { recordOnce } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
+import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
 import { selfcheckStep } from "./steps/selfcheck.ts";
 
@@ -39,6 +40,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   jobsStep,
   installationsStep,
   sandboxesStep,
+  pullRequestSweepStep,
   selfcheckStep,
 ];
 

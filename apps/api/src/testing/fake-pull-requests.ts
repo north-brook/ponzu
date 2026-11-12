@@ -60,6 +60,8 @@ export interface FakePull {
   /** The commit GitHub still shows it at, until when, as it does for a moment after a push. */
   shownHead: { sha: string; until: number } | null;
   conflicting: boolean;
+  /** Its entry in the base's merge queue (GitHub's `MergeQueueEntryState`), while it has one. */
+  queue: { state: "QUEUED" | "AWAITING_CHECKS" | "MERGEABLE" | "UNMERGEABLE" | "LOCKED" } | null;
   reviews: { id: string; login: string; state: string; body: string; at: number }[];
   comments: {
     id: string;
@@ -105,7 +107,24 @@ interface Repo {
   fullName: string;
   branches: Map<string, string[]>;
   pulls: FakePull[];
-  settings: { squash: boolean; merge: boolean; rebase: boolean; autoMerge: boolean };
+  settings: {
+    squash: boolean;
+    merge: boolean;
+    rebase: boolean;
+    autoMerge: boolean;
+    /** The default branch's rules send every merge through a merge queue. */
+    mergeQueue: boolean;
+    /**
+     * Ponzu's App has no `workflows` permission and the default branch has a workflow file the
+     * canvas's branch lacks: an update of the branch is refused in GitHub's words for it.
+     */
+    workflowRefused: boolean;
+    /**
+     * GitHub refuses the merge queue's fields to Ponzu's App (no "Merge queues" permission): the
+     * tab query answers the rest, with an error for each of those.
+     */
+    mergeQueueUnreadable: boolean;
+  };
   /** Branch protection, by the branch protected. */
   rules: Map<string, FakeRules>;
   /** Private repos on a free plan have no drafts. */
@@ -370,7 +389,15 @@ export class FakePullRequests {
         fullName: repo.fullName,
         branches: new Map([[repo.defaultBranch, [root]]]),
         pulls: [],
-        settings: { squash: true, merge: true, rebase: true, autoMerge: false },
+        settings: {
+          squash: true,
+          merge: true,
+          rebase: true,
+          autoMerge: false,
+          mergeQueue: false,
+          workflowRefused: false,
+          mergeQueueUnreadable: false,
+        },
         rules: new Map(),
         draftsUnsupported: false,
       };
@@ -517,6 +544,7 @@ export class FakePullRequests {
       mergeableAt: now + MERGEABLE_AFTER_MS,
       shownHead: null,
       conflicting: false,
+      queue: null,
       reviews: [],
       comments: [],
     };
@@ -617,6 +645,13 @@ export class FakePullRequests {
     const notMergeable = () =>
       Response.json({ message: "Pull Request is not mergeable" }, { status: 405 });
     if (pull.state !== "open" || pull.draft) return notMergeable();
+    // A base behind a merge queue takes merges only from the queue.
+    if (this.#repo(repo).settings.mergeQueue) {
+      return Response.json(
+        { message: "Changes must be made through the merge queue" },
+        { status: 405 },
+      );
+    }
     const settings = this.#repo(repo).settings;
     if (!settings[input.merge_method as "squash" | "merge" | "rebase"]) return notMergeable();
     if (input.sha && input.sha !== this.head(repo, pull.head)) {
@@ -661,6 +696,9 @@ export class FakePullRequests {
     if (pull.conflicting) {
       return Response.json({ message: "merge conflict between base and head" }, { status: 422 });
     }
+    if (this.#repo(repo).settings.workflowRefused) {
+      return Response.json({ message: WORKFLOW_REFUSED }, { status: 422 });
+    }
     const { behind } = this.#compare(repo, pull.base, pull.head);
     const head = this.#repo(repo).branches.get(pull.head)!;
     head.push(...behind);
@@ -691,19 +729,30 @@ export class FakePullRequests {
       const repository = this.#tab(repo, variables);
       // As GitHub answers for a number it does not have: the rest, and an error for that part.
       const missing = variables.known && repository.pullRequest === undefined;
+      const errors: object[] = missing
+        ? [
+            {
+              type: "NOT_FOUND",
+              path: ["repository", "pullRequest"],
+              message: "Could not resolve to a PullRequest.",
+            },
+          ]
+        : [];
+      // As GitHub answers an App without the "Merge queues" permission: those fields alone.
+      const pull = repository.pullRequest;
+      if (pull && this.#repo(repo).settings.mergeQueueUnreadable) {
+        Object.assign(pull, { isMergeQueueEnabled: null, mergeQueueEntry: null });
+        for (const field of ["isMergeQueueEnabled", "mergeQueueEntry"]) {
+          errors.push({
+            type: "FORBIDDEN",
+            path: ["repository", "pullRequest", field],
+            message: "Resource not accessible by integration",
+          });
+        }
+      }
       return Response.json({
         data: { repository: { ...repository, ...(missing ? { pullRequest: null } : {}) } },
-        ...(missing
-          ? {
-              errors: [
-                {
-                  type: "NOT_FOUND",
-                  path: ["repository", "pullRequest"],
-                  message: "Could not resolve to a PullRequest.",
-                },
-              ],
-            }
-          : {}),
+        ...(errors.length > 0 ? { errors } : {}),
       });
     }
     if (caller.kind !== "user") return error("FORBIDDEN", "Resource not accessible by integration");
@@ -732,10 +781,39 @@ export class FakePullRequests {
         pull.autoMerge = null;
         this.#acted("auto_merge_off", pull, caller);
         break;
+      case "EnqueuePullRequest": {
+        if (!this.#repo(repo).settings.mergeQueue) {
+          return unprocessable("Pull request is not in a repository with a merge queue enabled");
+        }
+        if (pull.state !== "open" || pull.draft) {
+          return unprocessable("Pull request is not in a mergeable state");
+        }
+        const expected = variables.expectedHeadOid;
+        if (expected && expected !== this.head(repo, pull.head)) {
+          return unprocessable("Head ref is not at the expected head oid");
+        }
+        pull.queue = { state: "AWAITING_CHECKS" };
+        pull.updatedAt = this.#clock.now();
+        this.#acted("enqueue", pull, caller);
+        return Response.json({
+          data: {
+            enqueuePullRequest: { mergeQueueEntry: this.#queueEntry(repo, pull) },
+          },
+        });
+      }
       default:
         return error("UNKNOWN", `The fake GitHub has no operation ${operation}.`);
     }
     return Response.json({ data: { result: { clientMutationId: null } } });
+  }
+
+  /** A pull request's entry in its base's merge queue, as GraphQL's `mergeQueueEntry` has it. */
+  #queueEntry(repo: FakeRepoAccess, pull: FakePull) {
+    if (!pull.queue) return null;
+    const queued = this.#repo(repo).pulls.filter(
+      (candidate) => candidate.queue && candidate.base === pull.base,
+    );
+    return { state: pull.queue.state, position: queued.indexOf(pull) + 1 };
   }
 
   #byNodeId(id: string, find: (fullName: string) => FakeRepoAccess | undefined) {
@@ -814,6 +892,8 @@ export class FakePullRequests {
       mergeable: this.#mergeable(pull),
       mergeStateStatus: this.#mergeState(repo, pull),
       reviewDecision: this.#reviewDecision(repo, pull),
+      isMergeQueueEnabled: this.#repo(repo).settings.mergeQueue,
+      mergeQueueEntry: this.#queueEntry(repo, pull),
       headRefName: pull.head,
       headRefOid: headSha,
       baseRefName: pull.base,
@@ -974,6 +1054,10 @@ export class FakePullRequests {
     return `${prefix}_${this.#next++}`;
   }
 }
+
+/** GitHub's words when the App would write a workflow file without the `workflows` permission. */
+export const WORKFLOW_REFUSED =
+  "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission";
 
 function notFound(): Response {
   return Response.json({ message: "Not Found" }, { status: 404 });
