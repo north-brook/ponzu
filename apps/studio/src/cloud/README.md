@@ -417,15 +417,19 @@ dark, and writes ours, theirs, the difference and the pair to `.context/visual`,
 of pixels that differ, overall and outside the regions this code doesn't draw (the canvas's
 boards, the thread rail). The design file is not in the repo.
 
-`references` redraws `gallery/references/`, what `gallery.test.ts` compares the compositions
-against, two ways:
+`references` redraws `gallery/references/`, what `gallery.references.*.test.ts` compares the
+compositions against, two ways:
 
-- a picture of each, with its text hidden so it holds across machines' font rendering. It catches
-  layout, grounds and shadows: a moved row, a changed surface.
-- `<id>-<theme>.styles.txt`, the styles it paints with (`paintedStyles`): every text's color,
-  weight, size and family, every icon's color, size and stroke, every ground and shadow. It
-  catches what is too small for the picture's tolerance: a changed text or icon token, a wrong
-  `text-*` class or weight. A failure prints the lines that changed.
+- a picture of each in light, with its text hidden so it holds across machines' font rendering.
+  It catches layout: a moved row, a changed gap, where a popover lands. Dark has no picture: the
+  themes differ only in colors, shadows and a theme's own pictures, which the styles hold
+  exactly. A composition marked `reference: "styles"` has no picture either, because another
+  composition's picture holds its layout.
+- `<id>-<theme>.styles.txt` in both themes, the styles it paints with (`paintedStyles`): every
+  text's color, weight, size and family, every icon's color, size and stroke, every image and the
+  file it shows, every ground and shadow. It catches what is too small for the picture's
+  tolerance: a changed text or icon token, a wrong `text-*` class or weight, the wrong theme's
+  picture. A failure prints the lines that changed.
 
 Redraw them when a change is meant to move pixels or styles, and read the diff before
 committing. The test needs Chrome or Chromium (`PONZU_CHROMIUM`) and skips without one; without

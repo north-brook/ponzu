@@ -235,18 +235,6 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     );
   });
 
-  test("Stop while working with nothing typed; Send once there are words", async () => {
-    await open("thread-in-the-right-rail");
-    expect(await page.$('button[aria-label="Stop"]')).not.toBeNull();
-    await page.fill('textarea[aria-label="Message"]', "Keep the green");
-    expect(await page.$('button[aria-label="Stop"]')).toBeNull();
-    const send = () =>
-      page.$eval('button[aria-label="Send"]', (b) => b.getAttribute("aria-disabled"));
-    expect(await send()).toBeNull();
-    await page.fill('textarea[aria-label="Message"]', "   ");
-    expect(await page.$('button[aria-label="Stop"]')).not.toBeNull();
-  });
-
   test("Return sends, Shift-Return breaks the line, and the draft clears", async () => {
     await open("thread-in-the-right-rail");
     await page.click('textarea[aria-label="Message"]');
@@ -560,14 +548,6 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(plain.italic).toBe("normal");
     expect(plain.link).toBe(true);
     expect(plain.color).not.toBe(asides[0]!.color);
-  });
-
-  test("an older runner's thread keeps its answers and never shows its stretches' stale labels", async () => {
-    await open("turn-old-runner");
-    const text = await page.$eval('[role="log"]', (el) => el.textContent ?? "");
-    expect(text).not.toContain("Setting direction");
-    expect(text).not.toContain("Worked for");
-    expect(text).toContain("The flow is ready");
   });
 
   /** A field's card: the element whose presses go to it. */

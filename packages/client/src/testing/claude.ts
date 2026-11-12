@@ -50,8 +50,8 @@ export class FakeClaude {
   unreachable = false;
   /** While true, a sign-in cannot be started: the person has started too many this hour. */
   limited = false;
-  /** How long starting a sign-in takes, in real time: the API wakes a sandbox for each. */
-  startTakesMs = 0;
+  /** Starts held by `holdStarts`, until `releaseStarts`: the API wakes a sandbox for each. */
+  private held: { promise: Promise<void>; release: () => void } | null = null;
   /** The address each sign-in opens, for a test to check. */
   readonly opened: string[] = [];
 
@@ -61,6 +61,22 @@ export class FakeClaude {
   private ids = 0;
 
   constructor(private readonly clock: Clock) {}
+
+  /** Sign-ins started from now wait, as one waking its sandbox does, until `releaseStarts`. */
+  holdStarts(): void {
+    if (this.held) return;
+    let release!: () => void;
+    const promise = new Promise<void>((done) => {
+      release = done;
+    });
+    this.held = { promise, release };
+  }
+
+  /** Every held start goes on. */
+  releaseStarts(): void {
+    this.held?.release();
+    this.held = null;
+  }
 
   /** Connect `userId`'s Claude without the round trip, as another device would have. */
   connect(userId: string, kind: StoredAccount["kind"] = "subscription", expiresAt?: number): void {
@@ -128,9 +144,7 @@ export class FakeClaude {
         return connected("api_key", key.slice(-4));
       },
       startSignIn: async () => {
-        if (this.startTakesMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, this.startTakesMs));
-        }
+        if (this.held) await this.held.promise;
         if (this.unreachable) {
           throw new ApiError(502, "upstream_unavailable", "Claude couldn't be reached.");
         }

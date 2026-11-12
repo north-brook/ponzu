@@ -50,9 +50,11 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  const shoot = async (name: string) => {
+  /** A picture of the window, once what is easing in has had `settleMs` to settle. */
+  const shoot = async (name: string, settleMs = 0) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
+    if (settleMs) await page.waitForTimeout(settleMs);
     await page.screenshot({ path: join(SHOTS, `${name}.png`) });
   };
   const rail = () => page.locator("#thread");
@@ -147,16 +149,14 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     // Off somewhere else first, so the jump is seen.
     await page.mouse.move(400, 400);
     await page.mouse.wheel(0, 3000);
-    await page.waitForTimeout(200);
+    await waitUntil(async () => !(await inView("Pick a repo")));
     const before = page.url();
     await rail().getByRole("link", { name: "Pick a repo" }).hover();
-    await page.waitForTimeout(250);
-    await shoot("2-hover");
+    await shoot("2-hover", 250);
     await rail().getByRole("link", { name: "Pick a repo" }).click();
     await page.locator("[data-beacon]").waitFor();
     await waitUntil(() => inView("Pick a repo"));
-    await page.waitForTimeout(300);
-    await shoot("3-board-marked");
+    await shoot("3-board-marked", 300);
     expect(await opened()).toEqual([]);
     expect(page.url()).toBe(before);
     // The mark goes by itself.
@@ -180,8 +180,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   test("by keyboard: focus shows a ring, Enter follows it", async () => {
     await page.getByRole("tablist", { name: "Pages" }).getByRole("tab").first().click();
     await rail().getByRole("link", { name: "Phone home" }).focus();
-    await page.waitForTimeout(150);
-    await shoot("5-focus");
+    await shoot("5-focus", 150);
     await page.keyboard.press("Enter");
     await waitUntil(async () => (await activeTab())?.includes("Mobile") ?? false);
     expect(await opened()).toEqual([]);
@@ -245,16 +244,15 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     await rail().getByRole("link", { name: "Phone home" }).last().click();
     await waitUntil(async () => (await activeTab())?.includes("Mobile") ?? false);
     await say(`${line}, and I'd pick A.`, false);
-  });
 
-  test("in dark, the two kinds of link still read apart", async () => {
-    await page.emulateMedia({ colorScheme: "dark" });
-    await page.waitForTimeout(300);
-    await shoot("8-links-dark");
-    await rail().getByRole("link", { name: "Phone home" }).first().hover();
-    await page.waitForTimeout(250);
-    await shoot("9-hover-dark");
-    await page.emulateMedia({ colorScheme: "light" });
+    // In dark, the two kinds of link still read apart: a picture to look at, nothing to assert.
+    if (SHOTS) {
+      await page.emulateMedia({ colorScheme: "dark" });
+      await shoot("8-links-dark", 300);
+      await rail().getByRole("link", { name: "Phone home" }).first().hover();
+      await shoot("9-hover-dark", 250);
+      await page.emulateMedia({ colorScheme: "light" });
+    }
   });
 
   test("another design's board opens that design, in the app", async () => {

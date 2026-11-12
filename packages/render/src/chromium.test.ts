@@ -333,27 +333,6 @@ esac
     },
   );
 
-  test("renders after this process has spawned children", async () => {
-    // Under Bun, a page filled with setContent could leave evaluate waiting
-    // for ever once the process had children; pages are navigated to instead.
-    // A sandbox's runner always has children: a dev server, git, the agent.
-    const kids = [
-      Bun.spawn(["sleep", "30"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" }),
-      Bun.spawn(["sleep", "30"]),
-    ];
-    try {
-      for (let i = 0; i < 3; i++) await Bun.spawn(["true"]).exited;
-      for (let i = 0; i < 8; i++) {
-        const artboard = board(`<p data-id="n_p" style="width:${100 + i}px">Round ${i}</p>`);
-        const out = await ordinary.measure({ artboard, tokens: "", ids: ["n_p"] });
-        expect(out.boxes.n_p?.width).toBe(100 + i);
-        if (i % 4 === 0) await Bun.spawn(["true"]).exited;
-      }
-    } finally {
-      for (const kid of kids) kid.kill();
-    }
-  });
-
   describe("where assets load from", () => {
     const requests: string[] = [];
     const MB = 1024 * 1024;

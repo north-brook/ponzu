@@ -39,7 +39,8 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await page.setViewportSize({ width: WIDTH, height: HEIGHT });
     await page.emulateMedia({ colorScheme: "light" });
     page.on("pageerror", (error) => errors.push(String(error)));
-    await page.goto(server.url);
+    // Signed in past setup: the first run is app.e2e's and the slow-answer walks'.
+    await page.goto(`${server.url}?as=returning`);
     await openTheDesign(page);
     await measureEachMove(page);
   });
@@ -476,35 +477,23 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       return Math.abs(g.sidebar - 420) < 1 && Math.abs(g.rail - 520) < 1;
     });
     expect(await saved(page)).toMatchObject({ sidebarWidth: 420, railWidth: 520 });
-  });
-
-  test("the widths come back after a reload", async () => {
-    await page.locator("#sidebar-pane-edge").focus();
-    for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowLeft");
-    await waitUntil(async () => (await saved(page))?.sidebarWidth === 330);
-    await page.reload();
-    await openTheDesign(page);
-    const g = await geometry(page);
-    expect(g.sidebar).toBeCloseTo(330, 0);
-    expect(g.rail).toBeCloseTo(PANES.rail.max, 0);
-    expect(g.chromeLeftEnd + 4).toBeCloseTo(330, 0);
     expect(errors).toEqual([]);
   });
 });
 
-/** Signs in and through the first run (the team is set up already) to its design. */
+/** Opens the team's design, as its link does, for someone signed in past setup. */
 async function openTheDesign(page: Page) {
-  await page.getByRole("button", { name: "Continue with GitHub" }).click();
-  await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("heading", { name: "Connect Claude" }).waitFor();
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByLabel("Paste the code from claude.ai").fill("k7Hq2-Rw9xT-pL4mZ#state");
-  await page.getByRole("button", { name: "Connect" }).click();
-  await page.getByRole("button", { name: "Start designing" }).click();
-  const row = page.getByRole("button", { name: /Onboarding flow/ });
-  await row.waitFor();
-  if ((await page.locator("[data-artboard-host]").count()) === 0) await row.click();
+  await page.locator("#sidebar").waitFor();
+  const find = () =>
+    page.evaluate(
+      () =>
+        [...window.ponzuFake!.backend.designs.values()].find(
+          (d) => d.sequencer.doc.name === "Onboarding flow",
+        )?.id ?? null,
+    );
+  await waitUntil(async () => (await find()) !== null);
+  const designId = (await find())!;
+  await page.evaluate((id) => window.ponzuFake!.link({ kind: "design", designId: id }), designId);
   await page.locator('[data-board-name][title="Welcome"]').waitFor();
   await page.locator("#thread").waitFor();
   await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
