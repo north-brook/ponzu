@@ -67,6 +67,7 @@ export const LIVE_COLUMNS = {
     "pr_checks",
     "last_activity_at",
     "created_at",
+    "asset_key_rotated_at",
     "seen_seq",
     "seen_thread_seq",
   ],
@@ -88,6 +89,7 @@ export const LIVE_COLUMNS = {
     "pr_mergeable",
     "pr_auto_merge",
     "last_activity_at",
+    "asset_key_rotated_at",
     "agent_blocker",
     "agent_blocked_until",
     "sandbox_state",
@@ -190,6 +192,8 @@ export interface CanvasListRow {
   prChecks: PrChecks;
   lastActivityAt: string;
   createdAt: string;
+  /** When its file links were last reset: its previews' address changed then. */
+  assetKeyRotatedAt: string | null;
   seenSeq: number | null;
   seenThreadSeq: number | null;
 }
@@ -213,6 +217,11 @@ export interface CanvasHeadRow {
   prMergeable: boolean | null;
   prAutoMerge: boolean;
   lastActivityAt: string;
+  /**
+   * When the canvas's file links were last reset; null while they never were. When it moves,
+   * `GET /v1/canvases/:id` names a new `assetsUrl`.
+   */
+  assetKeyRotatedAt: string | null;
   /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
   agentBlocker: AgentBlocker | null;
   /** Until when the blocker holds, when that is known (a Claude plan's limit resets then). */
@@ -313,6 +322,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prChecks: r.pr_checks as PrChecks,
     lastActivityAt: time(r.last_activity_at),
     createdAt: time(r.created_at),
+    assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
     seenSeq: maybeNumber(r.seen_seq),
     seenThreadSeq: maybeNumber(r.seen_thread_seq),
   }),
@@ -334,6 +344,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prMergeable: (r.pr_mergeable ?? null) as boolean | null,
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
+    assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
     agentBlockedUntil: maybeTime(r.agent_blocked_until),
     sandboxState: maybeText(r.sandbox_state),

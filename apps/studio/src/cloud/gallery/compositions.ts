@@ -129,6 +129,24 @@ export const COMPOSITIONS: Composition[] = [
     reference: "styles",
   },
   {
+    // Not drawn: what its owner and the workspace's admins see, Share's rows with a quiet
+    // "Reset file links" at the foot (docs/cloud.md, "Assets and previews").
+    id: "share-reset-links",
+    title: "Share · its owner or an admin, with Reset file links",
+    ...WINDOW,
+    open: 'button[aria-label="Share"]',
+    masks: CANVAS,
+    reference: true,
+  },
+  {
+    // Not drawn: the foot's confirmation, in the spec's words.
+    id: "share-reset-links-confirm",
+    title: "Reset this canvas's file links?",
+    ...WINDOW,
+    masks: CANVAS,
+    reference: true,
+  },
+  {
     id: "thread-in-the-right-rail",
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",

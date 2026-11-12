@@ -3,6 +3,7 @@ import {
   completeUpload,
   createUploads,
   getUploads,
+  isAssetKey,
   newId,
   randomString,
   type Upload,
@@ -150,7 +151,8 @@ export async function completeUploads(
 
   const served = await Promise.all(
     rows.map(async (row) => {
-      if (row.servedKey) return row.servedKey;
+      // Under the canvas's key as it is now: its file links may have been reset since.
+      if (row.servedKey) return underKey(row.servedKey, target.assetKey);
       // A person's file, the first time it is completed: completing it again is no new fact.
       if (userId) {
         deps.analytics.capture("file uploaded", {
@@ -164,7 +166,9 @@ export async function completeUploads(
           ? `${target.assetKey}/${previewPath(previewSeq!, row.name)}`
           : row.purpose === "comment"
             ? `${target.assetKey}/${commentRef(row.name)}`
-            : row.objectKey;
+            : // Signed before the canvas's file links were reset, it landed under the old key,
+              // which is retired soon: it is served from the new one.
+              underKey(row.objectKey, target.assetKey);
       if (key !== row.objectKey) await deps.storage.copy(row.objectKey, key);
       const asset = row.purpose === "asset" ? { path: assetRef(row.name) } : undefined;
       await completeUpload(deps.db, {
@@ -222,6 +226,17 @@ async function showPreviews(
     }
   }
   deps.background("previews_cleared", Promise.all(stale.map((key) => deps.storage.delete(key))));
+}
+
+/**
+ * `key` under the asset key `assetKey`: a key under another canvas key (one its file links were
+ * reset from) is moved to the same path under `assetKey`; any other key is answered as it is.
+ */
+export function underKey(key: string, assetKey: string): string {
+  const slash = key.indexOf("/");
+  const first = key.slice(0, slash);
+  if (slash < 0 || first === assetKey || !isAssetKey(first)) return key;
+  return `${assetKey}${key.slice(slash)}`;
 }
 
 export const assetRef = (name: string) => `assets/${name}`;

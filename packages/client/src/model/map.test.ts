@@ -41,6 +41,7 @@ const row = (over: Partial<CanvasListRow> = {}): CanvasListRow => ({
   prChecks: "none",
   lastActivityAt: "2026-11-10T10:00:00.000Z",
   createdAt: "2026-11-10T09:00:00.000Z",
+  assetKeyRotatedAt: null,
   seenSeq: 4,
   seenThreadSeq: null,
   ...over,

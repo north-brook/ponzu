@@ -112,7 +112,7 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 ## Who can see your work
 
 - A canvas belongs to a repository. The people GitHub lets read that repository, who are in its workspace in Ponzu, can open the canvas; the people who can push to it can steer the agent. A Scratch canvas has no repository and is yours alone.
-- A canvas's files are served from ponzu.cloud at addresses no one can guess. Anyone who is given such an address can open that file.
+- A canvas's files are served from ponzu.cloud at addresses no one can guess. Anyone who is given such an address can open that file. The canvas's owner or a workspace admin can reset its file links in Share: its files move to new addresses, and the old ones stop working about fifteen minutes later (a copy already cached may still be served for a while).
 - A picture of a canvas placed in a pull request can be seen by whoever can see the pull request on GitHub.
 - <Open who="founder">Which people at {ENTITY.name} can reach production data, and when.</Open>
 
@@ -135,11 +135,11 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 
 ## Deleting
 
-**Deleting a canvas** (its owner, or a workspace admin, can) removes its document, thread, comments, events, questions, checkpoints and sandbox. <Open who="founder">Its files at ponzu.cloud are not deleted yet: the job that deletes them exists but nothing runs it (site slice S9 wires it to deleting a canvas). Until then, write to us to have them deleted.</Open>
+**Deleting a canvas** (its owner, or a workspace admin, can) removes its document, thread, comments, events, questions, checkpoints and sandbox, and its files at ponzu.cloud: its images and other files, previews, exports and pictures of where a comment was left. A picture of it placed in a pull request stays, since the pull request on GitHub still shows it. A copy of a file that Cloudflare or your browser already cached can still be served for a while after it is deleted. <Open who="founder">Deleting a canvas's files does not purge Cloudflare's cache: previews, exports and comment pictures are cached for up to a year, other files for five minutes. Decide whether to add a Cloudflare cache purge (an API token with cache purge rights) or to say a firmer limit here.</Open>
 
 **Deleting your account,** in Settings › Account › Delete, confirmed by typing your GitHub login:
 
-- What goes: everything that is only yours. Your sessions end at once, on every device. Your Claude credential is destroyed, the sandboxes of canvases you own are deleted, and canvases that are yours alone (your Scratch canvases, and canvases in a workspace no one else is in) are deleted with everything under them, as a deleted canvas is (their files too, once deleting a canvas deletes its files). We ask WorkOS to delete your sign-in there, so your next sign-in is someone new.
+- What goes: everything that is only yours. Your sessions end at once, on every device. Your Claude credential is destroyed, the sandboxes of canvases you own are deleted, and canvases that are yours alone (your Scratch canvases, and canvases in a workspace no one else is in) are deleted with everything under them, as a deleted canvas is, their files included. We ask WorkOS to delete your sign-in there, so your next sign-in is someone new.
 - What stays:
   - Canvases you own in a workspace others are in stay with that workspace, owned by nobody.
   - Your words in shared threads stay, under "Deleted user", and your changes in a canvas's history show "Deleted user", with no picture.

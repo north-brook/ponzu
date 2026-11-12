@@ -574,6 +574,7 @@ function WorkspaceWindow({
       sharePeople.data?.people,
     ),
     workspaceKind: workspace.kind,
+    viewerIsAdmin: workspace.role === "admin",
     sidebarOpen: !firstCanvas && sidebarOpen,
     rail: railToggle,
     page,

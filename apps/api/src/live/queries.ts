@@ -94,7 +94,7 @@ export const LIVE_QUERIES = {
                  d.name, d.icon, d.branch, d.status, d.settled_at, d.seq, d.preview_seq,
                  d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
                  d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
-                 dr.seen_seq, dr.seen_thread_seq
+                 d.asset_key_rotated_at, dr.seen_seq, dr.seen_thread_seq
             from canvases d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1
             left join repos r on r.id = d.repo_id

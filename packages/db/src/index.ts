@@ -59,6 +59,13 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  type AssetKeySwap,
+  deleteCanvasWithFiles,
+  type FilesJob,
+  type RecordedJob,
+  swapCanvasAssetKey,
+} from "./queries/canvas-files.ts";
+export {
   BRANCH_TAKEN,
   type Canvas,
   type CanvasAccess,

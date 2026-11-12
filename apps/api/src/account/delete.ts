@@ -1,12 +1,12 @@
 import {
   anonymiseUser,
-  deleteCanvas,
   deleteUser,
   listUserWorkspaces,
   planAccountDeletion,
   type User,
 } from "@ponzu/db";
 import { keepAllowances } from "../billing/allowances.ts";
+import { deleteCanvasAndFiles } from "../canvases/files.ts";
 import type { ClaudeDeps } from "../claude/accounts.ts";
 import { disconnectClaude } from "../claude/accounts.ts";
 import type { Deps } from "../deps/index.ts";
@@ -25,7 +25,7 @@ import { accountForgetJob } from "./forget.ts";
  *   their Claude credential destroyed, with every sandbox that held it
  *   every sandbox of a canvas they own retired
  *   their canvases that are theirs alone deleted: Scratch, and those in a workspace nobody
- *     else is in
+ *     else is in, each with its files (the same purge as deleting one canvas)
  *   their name taken out of what stays (thread items, the history of ops)
  *   this period's free allowance granted in each workspace they are in, so it stays counted
  *   their grant of the GitHub App revoked at GitHub, best effort: Ponzu leaves their GitHub
@@ -60,7 +60,8 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   const forgotten: (() => Promise<void>)[] = [];
   for (const canvasId of plan.deleted) {
     forgotten.push(await forgetCheckpoints(deps, canvasId));
-    await deleteCanvas(db, canvasId);
+    // The row, and the job that deletes its files, in one statement; the job runs at once.
+    await deleteCanvasAndFiles(deps, canvasId);
   }
   await anonymiseUser(db, user.id);
   // Leaving mid-period does not take back the free credits they brought.
