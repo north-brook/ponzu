@@ -78,9 +78,12 @@ console.log(
     : "Reports no usage.",
 );
 
-/** The commit this is built from: CI's GITHUB_SHA, else the checkout's HEAD, else `unknown`. */
+/**
+ * The commit this is built from: the checkout's HEAD, else CI's GITHUB_SHA, else `unknown`.
+ * HEAD first, because release.yml checks out the tag it builds, and a push's GITHUB_SHA is
+ * main's head, not the tag's commit.
+ */
 function buildCommit(): string {
-  // HEAD first: release.yml checks out the tag it builds, which a push's GITHUB_SHA isn't.
   const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
   const head = git.status === 0 ? git.stdout.trim() : "";
   if (/^[0-9a-f]{40}$/.test(head)) return head;

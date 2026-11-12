@@ -15,7 +15,8 @@ PONZU_SMOKE=1 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu   # must exit 0
 Where a build talks to is baked in by `scripts/build.ts` from
 [`infra/environments.json`](../../infra/environments.json): a release takes the environment the
 file's `release` names (dev until the cutover PR flips it to production), Ponzu Dev always takes
-dev's, and a field of that environment that is still `null` fails the build, naming it. The
+dev's, and a field of that environment the app reads (`apiUrl`, `workosClientId`, `realtimeUrl`,
+`assetsUrl`) that is still `null` fails the build, naming it. The
 build also bakes the commit it was made from (the checkout's HEAD). About shows both, "Version
 2.0.0 (abc1234 · dev)", and every analytics event carries them as `environment` and
 `app_commit`.
@@ -115,8 +116,8 @@ standard, secure scheme of our own, so its origin never changes (its storage sta
 API's CORS allows exactly it) and the app and its UI always match. Every file goes out with the
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
-hosts, from the environment the build baked; a development build allows any of each), and Google Fonts, for the
-fonts a canvas names (the studio's own fonts ship inside it). Images load
+hosts, from the environment the build baked; a development build allows any of each), and
+Google Fonts, for the fonts a canvas names (the studio's own fonts ship inside it). Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
 A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a

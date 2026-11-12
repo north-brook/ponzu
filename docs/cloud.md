@@ -2877,9 +2877,10 @@ secrets and runs nothing. The values each environment uses (its addresses, clien
 buckets and analytics project) are public and live in
 [`infra/environments.json`](../infra/environments.json). The desktop app bakes one of them in
 when it is built: a release the one the file's `release` names, which stays dev until the
-cutover, and Ponzu Dev always dev's. A field still `null` fails the build, and the release
-workflow refuses to publish unless `release` is production with every field set. The resources, the founder's steps
-that create production, rotation, backups and spend are in [production.md](production.md).
+cutover, and Ponzu Dev always dev's. A field the app reads that is still `null` fails the
+build, and the release workflow refuses to publish unless `release` is production with every
+field set. The resources, the founder's steps that create production, rotation, backups and
+spend are in [production.md](production.md).
 The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
 redirects never have to move at cutover.
 
