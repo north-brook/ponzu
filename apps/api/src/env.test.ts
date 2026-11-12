@@ -1,7 +1,17 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import current from "@ponzu/runner/image/current.json" with { type: "json" };
-import { EnvError, readEnv, sandboxScope } from "./env.ts";
+import {
+  DEFAULT_API_URL,
+  ENVIRONMENTS,
+  EnvError,
+  FORBIDDEN_ENV,
+  OPTIONAL_ENV,
+  REQUIRED_ENV,
+  readEnv,
+  SYSTEM_ENV,
+  sandboxScope,
+} from "./env.ts";
 import { FEATURES_OFF } from "./features.ts";
 
 const complete = {
@@ -62,6 +72,8 @@ test("a complete environment is read into one typed value", () => {
     r2PrivateBucket: null,
     anthropicApiKey: "sk-ant-example",
     minimumClientVersions: {},
+    // Off Vercel, unset says local.
+    environment: "local",
     commit: null,
     // Without a PostHog key, analytics is off.
     posthog: null,
@@ -74,12 +86,19 @@ test("a complete environment is read into one typed value", () => {
   });
 });
 
+/** What a Vercel deployment adds to `complete`: where it is, and where its runners reach it. */
+const deployed = {
+  VERCEL: "1",
+  PONZU_ENVIRONMENT: "dev",
+  PONZU_API_URL: "https://api-dev.ponzu.design",
+};
+
 test("rate limits are off by default, on Vercel too, and only `vercel` switches them on", () => {
-  const onVercel = readEnv({ ...complete, VERCEL: "1" });
+  const onVercel = readEnv({ ...complete, ...deployed });
   expect(onVercel.onVercel).toBe(true);
   expect(onVercel.features.rateLimits).toBe("off");
   expect(readEnv({ ...complete, PONZU_RATE_LIMITS: "" }).features.rateLimits).toBe("off");
-  const on = readEnv({ ...complete, PONZU_RATE_LIMITS: "vercel", VERCEL: "1" });
+  const on = readEnv({ ...complete, ...deployed, PONZU_RATE_LIMITS: "vercel" });
   expect(on.features.rateLimits).toBe("vercel");
   expect(on.onVercel).toBe(true);
   expect(() => readEnv({ ...complete, PONZU_RATE_LIMITS: "on" })).toThrow(
@@ -220,17 +239,17 @@ test("the Vercel triple is all or nothing, and never a token on Vercel itself", 
     "VERCEL_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID are all set or none of them.",
   );
   expect(() => readEnv({ ...complete, ...triple, VERCEL_TEAM_ID: "" })).toThrow(EnvError);
-  expect(() => readEnv({ ...complete, ...triple, VERCEL: "1" })).toThrow(
+  expect(() => readEnv({ ...complete, ...deployed, ...triple })).toThrow(
     "VERCEL_TOKEN is set on Vercel",
   );
   // A deployment's own ids, without a token: OIDC.
-  const deployed = readEnv({
+  const onVercel = readEnv({
     ...complete,
-    VERCEL: "1",
+    ...deployed,
     VERCEL_TEAM_ID: "team_x",
     VERCEL_PROJECT_ID: "prj_x",
   });
-  expect(deployed.sandbox.vercel).toBeNull();
+  expect(onVercel.sandbox.vercel).toBeNull();
 });
 
 test("a sandbox's scope is the database's, through whichever of its hosts", () => {
@@ -298,6 +317,7 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "EXPO_ACCESS_TOKEN",
     "PONZU_API_URL",
     "PONZU_BILLING",
+    "PONZU_ENVIRONMENT",
     "PONZU_MAINTENANCE",
     "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",
@@ -315,4 +335,117 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "VERCEL_TEAM_ID",
     "VERCEL_TOKEN",
   ]);
+});
+
+/** The message readEnv throws for `source`, or "read" when it starts. */
+function problem(source: Record<string, string>): string {
+  try {
+    readEnv(source);
+    return "read";
+  } catch (thrown) {
+    expect(thrown).toBeInstanceOf(EnvError);
+    return (thrown as Error).message;
+  }
+}
+
+test("on Vercel, a deployment that does not say its environment never starts", () => {
+  const { PONZU_ENVIRONMENT: _env, ...rest } = deployed;
+  expect(problem({ ...complete, ...rest })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is not set.",
+  );
+  // Empty is how a dashboard says unset.
+  expect(problem({ ...complete, ...deployed, PONZU_ENVIRONMENT: "" })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is not set.",
+  );
+});
+
+test("on Vercel, a deployment that does not say where its runners reach it never starts", () => {
+  const { PONZU_API_URL: _url, ...rest } = deployed;
+  // Never production's address by default: a dev deployment's runners would call production.
+  expect(problem({ ...complete, ...rest })).toBe("The API cannot start. PONZU_API_URL is not set.");
+  expect(problem({ ...complete, ...deployed, PONZU_API_URL: "" })).toBe(
+    "The API cannot start. PONZU_API_URL is not set.",
+  );
+  expect(problem({ ...complete, VERCEL: "1" })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is not set. PONZU_API_URL is not set.",
+  );
+});
+
+test("on Vercel, the two are named together with everything else that is missing", () => {
+  const { CRON_SECRET: _cron, ...rest } = complete;
+  expect(problem({ ...rest, VERCEL: "1" })).toBe(
+    "The API cannot start. CRON_SECRET is not set. PONZU_ENVIRONMENT is not set. PONZU_API_URL is not set.",
+  );
+});
+
+test("a deployment that says both starts, and reports them", () => {
+  const env = readEnv({ ...complete, ...deployed, PONZU_API_URL: "https://api-dev.ponzu.design/" });
+  expect(env.environment).toBe("dev");
+  expect(env.sandbox.apiUrl).toBe("https://api-dev.ponzu.design");
+  expect([...ENVIRONMENTS]).toEqual(["production", "dev", "preview", "local"]);
+  for (const name of ["production", "dev", "preview"] as const) {
+    expect(readEnv({ ...complete, ...deployed, PONZU_ENVIRONMENT: name }).environment).toBe(name);
+  }
+});
+
+test("on Vercel, a deployment never calls itself local", () => {
+  expect(problem({ ...complete, ...deployed, PONZU_ENVIRONMENT: "local" })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is local on Vercel, where it must be production, dev or preview.",
+  );
+  expect(readEnv({ ...complete, PONZU_ENVIRONMENT: "local" }).environment).toBe("local");
+});
+
+test("an environment it does not know is named and never quoted", () => {
+  const message = problem({ ...complete, ...deployed, PONZU_ENVIRONMENT: "staging-hunter2" });
+  expect(message).toBe("The API cannot start. PONZU_ENVIRONMENT is malformed.");
+  expect(message).not.toContain("hunter2");
+  expect(problem({ ...complete, PONZU_ENVIRONMENT: "Production" })).toBe(
+    "The API cannot start. PONZU_ENVIRONMENT is malformed.",
+  );
+});
+
+test("off Vercel, both may be left out: local, and the default address", () => {
+  const env = readEnv(complete);
+  expect(env.environment).toBe("local");
+  expect(env.sandbox.apiUrl).toBe(DEFAULT_API_URL);
+  // A script pointed at dev may still say so.
+  expect(readEnv({ ...complete, PONZU_ENVIRONMENT: "dev" }).environment).toBe("dev");
+});
+
+test("the required, optional, system and forbidden names are exact and do not overlap", () => {
+  expect([...REQUIRED_ENV].sort()).toEqual(
+    [...Object.keys(complete), "PONZU_ENVIRONMENT", "PONZU_API_URL"].sort(),
+  );
+  expect([...OPTIONAL_ENV].sort()).toEqual([
+    "EXPO_ACCESS_TOKEN",
+    "PONZU_BILLING",
+    "PONZU_MAINTENANCE",
+    "PONZU_MERGE_QUEUE",
+    "PONZU_MIN_CLIENT_VERSIONS",
+    "PONZU_POSTHOG_AI_CONTENT",
+    "PONZU_POSTHOG_HOST",
+    "PONZU_POSTHOG_KEY",
+    "PONZU_RATE_LIMITS",
+    "PONZU_REPO_BASES",
+    "PONZU_SANDBOX_IDLE_SECONDS",
+    "PONZU_SANDBOX_MAX_PER_OWNER",
+    "PONZU_SANDBOX_MAX_PER_WORKSPACE",
+    "PONZU_VAULT_OLD_KEYS",
+    "R2_PRIVATE_BUCKET",
+    "RESEND_API_KEY",
+    "VERCEL_PROJECT_ID",
+    "VERCEL_TEAM_ID",
+  ]);
+  expect([...SYSTEM_ENV]).toEqual(["VERCEL", "VERCEL_GIT_COMMIT_SHA"]);
+  expect([...FORBIDDEN_ENV]).toEqual(["VERCEL_TOKEN", "BOAT_API_KEY", "PONZU_SANDBOX_SNAPSHOT"]);
+  const all = [...REQUIRED_ENV, ...OPTIONAL_ENV, ...SYSTEM_ENV, ...FORBIDDEN_ENV];
+  expect(new Set(all).size).toBe(all.length);
+});
+
+test("a deployment with exactly the required names starts", () => {
+  const values: Record<string, string> = { ...complete, ...deployed };
+  const onlyRequired = Object.fromEntries(
+    [...REQUIRED_ENV, "VERCEL"].map((name) => [name, values[name]!]),
+  );
+  expect(problem(onlyRequired)).toBe("read");
 });

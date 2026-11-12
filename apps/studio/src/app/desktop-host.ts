@@ -58,6 +58,7 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
     docStorage: signedInCache(session, window.localStorage),
+    welcome1x: () => desktop.welcome1x(),
   };
 }
 
