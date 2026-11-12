@@ -9,6 +9,7 @@
 #
 # What it needs from a person is in docs/cloud.md, "Setting up the image workflows". Without it
 # the run passes with one warning saying what is missing; nothing fails on an action's input.
+# A registry login that fails is red, because a missing OIDC policy and an outage look alike.
 # The ids are the repository variables VERCEL_TEAM_ID and VERCEL_API_PROJECT_ID (deploy-api.yml
 # reads the same); the only secrets are VERCEL_TOKEN and, for a real Haiku turn in the checks,
 # ANTHROPIC_API_KEY (the development key). Each is given only to the step that uses it.
@@ -113,13 +114,15 @@ jobs:
       - name: Log in to VCR
         id: vcr
         if: steps.setup.outputs.ready == 'true'
-        continue-on-error: true
+        # A failed login is a failure, not missing setup: a missing OIDC policy cannot be told
+        # apart from a registry outage here. Called, the caller's pull request reports it.
+        continue-on-error: ${{ !!inputs.overlay }}
         uses: vercel/vcr-action/login@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
         with:
           team: ${{ vars.VERCEL_TEAM_ID }}
       - name: Why the login failed
-        if: steps.vcr.outcome == 'failure'
-        run: echo "::warning title=No image built::Docker could not log in to the Vercel Container Registry with this repository's OIDC token, so no image was built. The usual cause is that ponzu-api has no OIDC policy for this repository yet; see docs/cloud.md, \"Setting up the image workflows\"."
+        if: always() && steps.vcr.outcome == 'failure'
+        run: echo "::error title=No image built::Docker could not log in to the Vercel Container Registry with this repository's OIDC token, so no image was built. If ponzu-api has no OIDC policy for this repository yet, see docs/cloud.md, \"Setting up the image workflows\"; otherwise the registry may be down."
       - name: Build, push, check and record
         id: build
         if: steps.vcr.outcome == 'success'
@@ -148,7 +151,7 @@ jobs:
           if [ "$BUILD" = success ]; then echo "result=built" >> "$GITHUB_OUTPUT"
           elif [ "$BUILD" = failure ]; then echo "result=failed" >> "$GITHUB_OUTPUT"
           elif [ "$READY" != true ]; then { echo "result=skipped"; echo "reason=$WHY"; } >> "$GITHUB_OUTPUT"
-          elif [ "$VCR" = failure ]; then { echo "result=skipped"; echo "reason=docker could not log in to the registry (no OIDC policy for this repository yet?)"; } >> "$GITHUB_OUTPUT"
+          elif [ "$VCR" = failure ]; then { echo "result=failed"; echo "reason=docker could not log in to the registry (no OIDC policy for this repository yet, or the registry is down)"; } >> "$GITHUB_OUTPUT"
           else echo "result=failed" >> "$GITHUB_OUTPUT"; fi
           if [ -f apps/runner/image/current.json ] && [ "$BUILD" = success ]; then cp apps/runner/image/current.json "$RUNNER_TEMP/image/"; fi
       - name: Hand the image back to the caller

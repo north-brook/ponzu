@@ -57,6 +57,7 @@ jobs:
       pull-requests: read
     outputs:
       go: ${{ steps.proposed.outputs.go }}
+      head: ${{ steps.proposed.outputs.head }}
       sdk: ${{ steps.discover.outputs.sdk }}
       claude: ${{ steps.discover.outputs.claude }}
       typecheck: ${{ steps.typecheck.outcome }}
@@ -91,19 +92,27 @@ jobs:
           BOT: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           go=true
+          head=""
           if [ -z "$PRETEND" ]; then
             # 0: the branch exists; 2: it does not. Anything else is an error, which stops here
             # rather than building an image and running a turn on every push.
             found=0; git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null || found=$?
             if [ "$found" = 0 ]; then
               git fetch --quiet origin "$BRANCH"
+              head=$(git rev-parse FETCH_HEAD)
               open=$(gh pr list --head "$BRANCH" --state open --json number --jq length)
               if [ "$open" != 0 ] && [ "$(git log -1 --format=%ce FETCH_HEAD)" != "$BOT" ]; then
                 echo "::notice::The open pull request on $BRANCH has a commit this workflow did not make, so it is left as it is. Merge or close it, and the next run proposes the newest pair."
                 go=false
               elif [ "$FORCE" != true ] &&
                 [ "$(git show FETCH_HEAD:apps/runner/image/pins.json | jq -r .claudeVersion)" = "$CLAUDE" ]; then
-                echo "::notice::$BRANCH already proposes Claude Code $CLAUDE. Dispatch this workflow with force to run it again."
+                # Not rebuilt on every push and every day. With no open pull request (it was
+                # closed, or GitHub refused to open it), a forced dispatch opens it again.
+                if [ "$open" != 0 ]; then
+                  echo "::notice::$BRANCH already proposes Claude Code $CLAUDE. Dispatch this workflow with force to run it again."
+                else
+                  echo "::warning title=No open pull request::$BRANCH has Claude Code $CLAUDE, but no open pull request proposes it (it was closed, or could not be opened). Dispatch this workflow with force to build it again and open one: gh workflow run claude-code.yml --ref ${GITHUB_REF_NAME} -f force=true"
+                fi
                 go=false
               fi
             elif [ "$found" != 2 ]; then
@@ -111,7 +120,7 @@ jobs:
               exit 1
             fi
           fi
-          echo "go=$go" >> "$GITHUB_OUTPUT"
+          { echo "go=$go"; echo "head=$head"; } >> "$GITHUB_OUTPUT"
       - name: Move the pins (download, sha256, signature)
         if: steps.proposed.outputs.go == 'true'
         env:
@@ -277,9 +286,26 @@ jobs:
         run: |
           bun apps/runner/image/bump.ts body .context/bump > /dev/null
           cat .context/bump/body.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Is the branch where the bump job found it?
+        id: unchanged
+        if: ${{ !inputs.pretend }}
+        shell: bash
+        env:
+          SEEN: ${{ needs.bump.outputs.head }}
+        # The build and the turn take a while; a person may have pushed to the branch meanwhile.
+        # create-pull-request then resets it, so it runs only when the head is the one the bump
+        # job checked. A push in the seconds between this and that step is not caught.
+        run: |
+          now=$(git ls-remote --heads origin "$BRANCH" | cut -f1)
+          if [ "$now" = "$SEEN" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Branch moved::$BRANCH moved while this run built and checked (from ${SEEN:-nothing} to ${now:-nothing}), so it is left as it is; the run's summary has the body it would have written."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Open or update the pull request
         id: pr
-        if: ${{ !inputs.pretend }}
+        if: ${{ !inputs.pretend && steps.unchanged.outputs.ok == 'true' }}
         continue-on-error: true
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:

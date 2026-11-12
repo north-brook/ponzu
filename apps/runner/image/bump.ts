@@ -114,6 +114,8 @@ export interface Discovery {
   bump: boolean;
   /** Plain sentences for the log and the pull request. */
   notes: string[];
+  /** Why nothing moves when a person should hear of it (a run annotation, not a red run). */
+  warning?: string;
 }
 
 /** What to do, from what is pinned and what the registry and the release channel say. */
@@ -125,10 +127,9 @@ export function discover(current: Pair, packument: Packument, claudeChannel: str
   // A release withdrawn by deprecation, while `latest` still points at it, is not proposed.
   const withdrawn = packument.versions[tag]?.deprecated;
   if (withdrawn) {
-    notes.push(
-      `The registry's latest Agent SDK ${tag} is deprecated (${JSON.stringify(withdrawn)}); nothing moves.`,
-    );
-    return { current, latest, claudeChannel, bump: false, notes } satisfies Discovery;
+    const warning = `The registry's latest Agent SDK ${tag} is deprecated (${JSON.stringify(withdrawn)}); nothing moves.`;
+    notes.push(warning);
+    return { current, latest, claudeChannel, bump: false, notes, warning } satisfies Discovery;
   }
   const order = compareVersions(latest.sdk, current.sdk);
   if (order === 0)
@@ -304,7 +305,9 @@ export function pullRequest(r: RunResults) {
     `built, Ready in the registry and checked in a sandbox: \`${r.image.image}\`, recorded in current.json`,
     check
       ? `**fails** at the check "${check}" (log below)`
-      : "**fails** to build or push (log below)",
+      : r.image.reason
+        ? `**fails**: ${r.image.reason}`
+        : "**fails** to build or push (log below)",
     `not built: ${r.image.reason || "the image job did not run"}`,
   );
   row(
@@ -559,6 +562,9 @@ if (import.meta.main) {
   if (command === "discover" || command === "apply") {
     const d = await runDiscover(pretend);
     for (const note of d.notes) console.log(note);
+    // A deprecated latest is no reason to turn every push to cloud red, but it is shown.
+    if (d.warning && process.env.GITHUB_ACTIONS)
+      console.log(`::warning title=Nothing moves::${d.warning}`);
     output({
       bump: String(d.bump),
       sdk: d.latest.sdk,

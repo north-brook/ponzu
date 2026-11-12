@@ -63,7 +63,7 @@ describe("versions", () => {
     );
   });
 
-  test("a deprecated latest is not proposed, and the note says why", () => {
+  test("a deprecated latest is not proposed, and the note and the warning say why", () => {
     const withdrawn: Packument = {
       "dist-tags": { latest: "0.3.323" },
       versions: {
@@ -71,10 +71,10 @@ describe("versions", () => {
       },
     };
     const d = discover({ sdk: "0.3.322", claude: "2.1.322" }, withdrawn, null);
+    const why = 'The registry\'s latest Agent SDK 0.3.323 is deprecated ("broken"); nothing moves.';
     expect(d.bump).toBe(false);
-    expect(d.notes).toEqual([
-      'The registry\'s latest Agent SDK 0.3.323 is deprecated ("broken"); nothing moves.',
-    ]);
+    expect(d.notes).toEqual([why]);
+    expect(d.warning).toBe(why);
   });
 
   test("one version behind moves both pins to the registry's latest pair", () => {
@@ -248,5 +248,15 @@ describe("the pull request", () => {
     expect(pr.failed).toBe(false);
     expect(pr.body).toContain("not built: VERCEL_TOKEN is not set");
     expect(pr.body).toContain("not run: ANTHROPIC_API_KEY is not set");
+  });
+
+  test("a registry login that fails is a failure that says why, not missing setup", () => {
+    const pr = pullRequest({
+      ...passed,
+      image: { result: "failed", reason: "docker could not log in", log: "", image: "" },
+      turn: { outcome: "skipped", reason: "", log: "" },
+    });
+    expect(pr.failed).toBe(true);
+    expect(pr.body).toContain("| **fails**: docker could not log in |");
   });
 });

@@ -958,7 +958,10 @@ repos or other models exercise, which the release notes are for.
 (permissions, hooks, sessions, the SDK's options and messages in
 `apps/runner/src/agent/sdk.ts`). A failed typecheck means the SDK's API changed: fix the runner
 on the branch. While its pull request is open with a commit the workflow did not make, the
-workflow leaves the branch alone, so a newer release waits until it is merged or closed. A
+workflow leaves the branch alone, so a newer release waits until it is merged or closed; it
+also leaves the branch alone if it moved while the run built and checked. A pair already on the
+branch is not built again, even when its pull request was closed or could not be opened; the
+run warns, and a dispatch with `force` builds it and opens the pull request again. A
 failed check or turn with a passing typecheck means Claude Code behaves differently: the log in
 the body says where. To offer a model the notes name, add it to `CLAUDE_MODELS`. Merging ships
 the image with the next API deploy, and each design moves to it at its next wake ("How images
@@ -966,9 +969,10 @@ roll out").
 
 #### Setting up the image workflows
 
-`image.yml` and `claude-code.yml` need these, once, from a person. Until then they pass with a
-warning that names what is missing, and the bump pull request opens as a draft saying which
-steps did not run.
+`image.yml` and `claude-code.yml` need these, once, from a person. Until the first two and the
+fourth are set they pass with a warning that names what is missing, and the bump pull request
+opens as a draft saying which steps did not run. A registry login that fails (the third, or the
+registry being down; the run cannot tell which) is a red run.
 
 1. The repository variables `VERCEL_TEAM_ID` (the team's `team_…` id) and
    `VERCEL_API_PROJECT_ID` (ponzu-api's `prj_…` id). `deploy-api.yml` reads the same two; on
