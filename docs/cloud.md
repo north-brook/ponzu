@@ -2776,6 +2776,19 @@ said on that route and nowhere else. Errors leave the API as
 `{ error: { code, message, details? } }` with a stable code and nothing of the
 failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
+**Rate limits per caller.** Each declaration that authenticates also counts the request against
+one rate limit, keyed by the person or by the runner's canvas (`apps/api/src/http/rate-limits.ts`):
+creating a canvas, sending messages and answers, upload addresses, `POST /v1/live`, GitHub sync,
+and a runner's git credentials each have their own, and every other write by a person, and every
+other call by a runner, counts against a catch-all. A read by a person is not counted; the
+firewall's per-address rules cover reads and the public routes. Over the limit is 429
+`rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
+behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
+everywhere today, until its rules are applied. It fails open: a check that takes more than
+500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
+count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
+steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
+
 ## Analytics
 
 PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
