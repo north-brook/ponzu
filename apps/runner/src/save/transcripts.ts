@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { MAX_SESSION_BYTES } from "../api/protocol.ts";
+import { fingerprint } from "./fingerprint.ts";
 import { type AgentShell, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
@@ -61,16 +62,31 @@ export class Transcripts {
   }
 
   /**
-   * What the files are now, cheaply: their sizes and times. The same stamp means nothing was
-   * written since, so a checkpoint need not upload the transcript again.
+   * What the files are now, cheaply: their sizes and times (`fingerprint`), and those of every
+   * file in the folder beside the transcript, whose own size and time do not change when a file
+   * in it is written. The same stamp means nothing was written since, so a checkpoint need not
+   * upload the transcript again.
    */
   stamp(sessionId: string): string {
-    return this.files(sessionId)
-      .map((file) => {
-        const stat = statSync(join(this.opts.configDir, file));
-        return `${file}:${stat.size}:${stat.mtimeMs}`;
-      })
-      .join("|");
+    const since = Date.now();
+    const parts: string[] = [];
+    const add = (file: string) => {
+      const full = join(this.opts.configDir, file);
+      let stat: Stats;
+      try {
+        stat = lstatSync(full);
+      } catch {
+        parts.push(`${file}:gone`);
+        return;
+      }
+      if (!stat.isDirectory()) {
+        parts.push(`${file}:${fingerprint(full, stat, since)}`);
+        return;
+      }
+      for (const name of readdirSync(full).sort()) add(join(file, name));
+    };
+    for (const file of this.files(sessionId)) add(file);
+    return parts.join("|");
   }
 
   /** The session's files as a gzipped tar, or null when there is no transcript. */
