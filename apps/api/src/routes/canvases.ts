@@ -496,8 +496,9 @@ export const canvases = new Hono<AppEnv>()
   /**
    * The whole document, as of `seq`, streamed: the JSON text of `{ doc, seq }` in slices of
    * `DOC_SLICE_BYTES`. A Vercel function may send at most 4.5 MB in one answer, but the limit
-   * does not apply to a streamed one, so a canvas of any size can be read. A client reads it
-   * with `response.json()` as before. Whatever can refuse (access, a missing canvas) is
+   * does not apply to a streamed one, so a canvas past that is still read whole. The function
+   * holds the document and its JSON text in memory, so memory is what bounds it now. A client
+   * reads it with `response.json()` as before. Whatever can refuse (access, a missing canvas) is
    * decided before the first byte, so a refusal is still the one error body.
    */
   .get("/:id/doc", access.userOrRunner, validate("param", Params), async (c) => {

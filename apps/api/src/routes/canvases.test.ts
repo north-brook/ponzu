@@ -373,6 +373,9 @@ describe("GET /v1/canvases/:id/doc", () => {
     expect(whole.status).toBe(200);
     expect(whole.headers.get("content-type")).toStartWith("application/json");
     expect(whole.headers.get("content-length")).toBeNull();
+    // The request middleware still stamps a streamed answer after the route returns it.
+    expect(whole.headers.get("cache-control")).toBe("no-store");
+    expect(whole.headers.get("x-request-id")).toBeTruthy();
     const body = await whole.json();
     // The shape the route no longer parses on the way out.
     const parsed = z

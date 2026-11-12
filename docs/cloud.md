@@ -412,7 +412,7 @@ A page of ops holds at most 500 ops and 3 MB of them (always at least one), so t
 answer fits in what a Vercel function may send; when the last op is below `seq`, ask
 again from there. `GET /doc` streams instead: it writes the JSON text of `{ doc, seq }`
 in 256 KB slices, and Vercel's 4.5 MB limit does not apply to a streamed answer, so a
-canvas of any size can be read in one request. A client reads it with `response.json()`
+canvas larger than that is still read in one request. A client reads it with `response.json()`
 like any other answer. A refusal (no access, no such canvas) is decided before the first
 byte and is the usual error body. The function still builds the whole document in memory
 first, so its memory, not the answer's size, is what bounds a canvas; handing out a
