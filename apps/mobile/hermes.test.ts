@@ -10,6 +10,16 @@ import { join, relative, resolve } from "node:path";
  * file the React Native bundle can load (the app's own, and the client and core packages it
  * imports) and refuses the array-by-copy methods, which arrived in engines together.
  * `.slice().sort()`, `.slice().reverse()` and a spread say the same and run everywhere.
+ *
+ * The rest were seen missing on the simulator the same day, by asking the engine itself in a
+ * Debug build of Ponzu Dev (React Native 0.88): `Array.fromAsync`; `Intl.RelativeTimeFormat`,
+ * `Intl.PluralRules`, `Intl.ListFormat` and `Intl.Segmenter` (Hermes has only `Collator`,
+ * `DateTimeFormat` and `NumberFormat`, so `toLocale*String` is fine); and a global
+ * `crypto.randomUUID` (expo-crypto's `Crypto.randomUUID` is the one to use). It does have
+ * `Object.groupBy`, `Promise.withResolvers`, the new `Set` methods, `findLast`, `at`,
+ * `Object.hasOwn`, `structuredClone` (Expo's), `TextEncoder`/`TextDecoder`, and RegExp
+ * lookbehind, named groups and `\p{…}`, but not RegExp's `v` flag. It has no `crypto.subtle`
+ * either: the client takes the app's (lib/cloud/crypto.ts) wherever it digests.
  */
 
 const REPO = resolve(import.meta.dir, "../..");
@@ -24,6 +34,12 @@ const MISSING: [name: string, pattern: RegExp][] = [
   ["Array.prototype.toSorted", /\.toSorted\(/],
   ["Array.prototype.toReversed", /\.toReversed\(/],
   ["Array.prototype.toSpliced", /\.toSpliced\(/],
+  ["Array.fromAsync", /\bArray\.fromAsync\b/],
+  ["Intl.RelativeTimeFormat", /\bIntl\.RelativeTimeFormat\b/],
+  ["Intl.PluralRules", /\bIntl\.PluralRules\b/],
+  ["Intl.ListFormat", /\bIntl\.ListFormat\b/],
+  ["Intl.Segmenter", /\bIntl\.Segmenter\b/],
+  ["crypto.randomUUID", /\bcrypto\.randomUUID\b/],
 ];
 
 function sources(dir: string): string[] {
