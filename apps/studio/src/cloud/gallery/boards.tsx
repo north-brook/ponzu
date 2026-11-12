@@ -179,6 +179,19 @@ export const BOARDS: Record<string, () => ReactNode> = {
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} repos={f.manyRepos} />
     </Harness>
   ),
+  "pick-a-project-workspaces": () => (
+    <Harness designs={f.soloDesigns} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} />
+    </Harness>
+  ),
+  "fresh-start-long-name": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness
+        initialProject={{ kind: "repo", repo: f.longNamedRepo }}
+        repos={[f.longNamedRepo, ...f.repos]}
+      />
+    </Harness>
+  ),
   "fresh-start": () => (
     <Harness designs={f.teamDesigns} openId={null}>
       <CreateHarness ideas={f.ideas} />
@@ -196,7 +209,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   ),
   "fresh-start-loading": () => (
     <Harness designs={null} openId={null}>
-      <CreateHarness ideas="loading" repos={null} />
+      <CreateHarness ideas="loading" repos={null} initialProject={null} />
     </Harness>
   ),
   "sidebar-collapsed": () => <DesignWindow sidebar="closed" rail={false} />,

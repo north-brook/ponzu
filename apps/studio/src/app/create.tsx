@@ -2,7 +2,7 @@ import { type Api, ApiError } from "@ponzu/client";
 import { useRepoIdeas } from "@ponzu/client/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { ProjectChoice } from "../cloud/create/create.ts";
+import type { ProjectChoice, RepoShelf } from "../cloud/create/create.ts";
 import { CreatePage } from "../cloud/create/create-page.tsx";
 import { ClaudeSignedOutDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { Effort, PendingAttachment, Repo } from "../cloud/model.ts";
@@ -67,10 +67,27 @@ interface Picked extends PendingAttachment {
   file: File;
 }
 
+/**
+ * The create page as it was when a repo in another workspace was chosen: the window switches to
+ * that workspace (a new `WorkspaceWindow`, so a new create page) and hands this over, so the page
+ * there opens with the repo chosen and the words, images and picked idea as they were.
+ */
+export interface CreateHandoff {
+  workspaceId: string;
+  project: ProjectChoice;
+  prompt: string;
+  picked: Picked[];
+  idea: string | null;
+}
+
 export function CreateView({
   host,
   workspaceId,
   repos,
+  elsewhere,
+  handoff,
+  onHandoffTaken,
+  onSwitchWorkspace,
   showIdeas,
   onCreated,
   onAllowMore,
@@ -79,6 +96,13 @@ export function CreateView({
   workspaceId: string;
   /** Repos the person can push to; null while they load. */
   repos: Repo[] | null;
+  /** The other workspaces' repos the person can push to, those that have arrived. */
+  elsewhere: RepoShelf[];
+  /** What the create page in the workspace this window just left handed over, if anything. */
+  handoff: CreateHandoff | null;
+  onHandoffTaken: () => void;
+  /** A repo in another workspace was chosen: switch to it, carrying the page over. */
+  onSwitchWorkspace: (handoff: CreateHandoff) => void;
   /** Ideas show while the person is new to the workspace. */
   showIdeas: boolean;
   /**
@@ -92,10 +116,12 @@ export function CreateView({
   const me = useQuery(queries.me());
   const defaults = useQuery(queries.claudeDefaults());
   const create = useMutation(mutations.createDesign());
-  const [prompt, setPrompt] = useState("");
-  const [chosen, setChosen] = useState<ProjectChoice | null>(null);
+  // Handed over by the page in the workspace just left, or fresh.
+  const [taken] = useState(() => (handoff?.workspaceId === workspaceId ? handoff : null));
+  const [prompt, setPrompt] = useState(taken?.prompt ?? "");
+  const [chosen, setChosen] = useState<ProjectChoice | null>(taken?.project ?? null);
   const [model, setModel] = useState<Choice | null>(loadChoice);
-  const [picked, setPicked] = useState<Picked[]>([]);
+  const [picked, setPicked] = useState<Picked[]>(taken?.picked ?? []);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsClaude, setNeedsClaude] = useState(false);
@@ -105,14 +131,23 @@ export function CreateView({
   const picker = useRef<HTMLInputElement>(null);
   const analytics = useAnalytics();
   /** The idea last picked into the composer, to tell an idea sent from words of their own. */
-  const pickedIdea = useRef<string | null>(null);
-  // Until the person picks, the repo pushed to last, or Scratch when there is none.
-  const project: ProjectChoice =
-    chosen ?? (repos?.[0] ? { kind: "repo", repo: repos[0] } : { kind: "scratch" });
+  const pickedIdea = useRef<string | null>(taken?.idea ?? null);
+  // Until the person picks, the repo pushed to last, or Scratch when there is none; nothing
+  // while the repos load, so the selector never says Scratch before it knows.
+  const shown: ProjectChoice | null =
+    chosen ??
+    (repos === null ? null : repos[0] ? { kind: "repo", repo: repos[0] } : { kind: "scratch" });
+  // A design sent before the repos are known is made in Scratch, as the API would.
+  const project: ProjectChoice = shown ?? { kind: "scratch" };
   const ideas = useRepoIdeas(
     host.api,
     showIdeas && project.kind === "repo" ? project.repo.id : null,
   );
+  useEffect(() => {
+    if (taken) onHandoffTaken();
+  }, [taken, onHandoffTaken]);
+  /** Set once the page's images have been handed to the next workspace's page, to keep them. */
+  const handedOver = useRef(false);
   // The last choice holds while the account still offers it.
   const remembered =
     model &&
@@ -134,9 +169,14 @@ export function CreateView({
   });
 
   // The pictures picked are let go of when they are taken out, sent, or the page goes.
-  const shown = useRef(picked);
-  shown.current = picked;
-  useEffect(() => () => release(shown.current), []);
+  const held = useRef(picked);
+  held.current = picked;
+  useEffect(
+    () => () => {
+      if (!handedOver.current) release(held.current);
+    },
+    [],
+  );
 
   const send = async () => {
     const text = prompt.trim();
@@ -230,9 +270,20 @@ export function CreateView({
               }
             : null
         }
-        project={project}
+        project={shown}
         repos={repos}
-        onProjectChange={setChosen}
+        elsewhere={elsewhere}
+        onProjectChange={(choice, there) => {
+          if (!there || there === workspaceId) return setChosen(choice);
+          handedOver.current = true;
+          onSwitchWorkspace({
+            workspaceId: there,
+            project: choice,
+            prompt,
+            picked,
+            idea: pickedIdea.current,
+          });
+        }}
         onAllowMore={onAllowMore}
         ideas={ideas}
         onIdeaPicked={(idea, position) => {

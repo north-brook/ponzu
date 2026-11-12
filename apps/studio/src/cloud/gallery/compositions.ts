@@ -164,6 +164,19 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    id: "pick-a-project-workspaces",
+    title: "Pick a project · two workspaces",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+    reference: true,
+  },
+  {
+    id: "fresh-start-long-name",
+    title: "Fresh start · a long owner and name",
+    ...WINDOW,
+    reference: true,
+  },
+  {
     id: "fresh-start",
     title: "5 · Fresh start",
     board: "onboarding/5-fresh-start.html",
