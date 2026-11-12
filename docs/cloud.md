@@ -2141,7 +2141,10 @@ pull request in the queue offers no action (`nextAction` is `none`; taking it ou
 GitHub's), Merge pressed again changes nothing, and one the queue turned down is
 `merge_queue_unmergeable`. The agent hears the same: what holds its merge back
 (`merge_queue`, `merge_queued` with its place, or `merge_queue_unmergeable`), and, with the switch
-on, that it added the pull request to the queue, never that it merged it.
+on, that it added the pull request to the queue, never that it merged it. GitHub may refuse the
+two queue fields alone to an App without its "Merge queues" permission, which Ponzu's tokens do
+not ask for; the tab then reads as if there were no queue rather than failing, and a Merge goes to
+GitHub, whose queue refuses it. Whether GitHub does refuse them to Ponzu's tokens is not proven.
 
 **Workflow files.** The App has no `workflows` permission, so GitHub refuses any push, branch
 update or merge from Ponzu that would change a file under `.github/workflows/`, in its own words
@@ -2154,7 +2157,8 @@ canvas's commits, or change them on GitHub yourself." The agent is told up front
 workflow files out of its commits, and its pull request tools stop before asking GitHub when its
 push was refused this way. Update branch and Merge answer `workflow_permission` when GitHub's
 refusal names workflows. What status GitHub answers a branch update with in that case is not
-proven against GitHub: the code goes by its words, whatever the status. Granting the App `workflows: write` would lift all of it, and is the founder's choice.
+proven against GitHub: the code goes by its words, whatever the status. Granting the App
+`workflows: write` would lift all of it, and is the founder's choice.
 
 **Lost webhooks.** A sweep in the minute's cron (`cron/steps/pull-request-sweep.ts`,
 `pull-requests/sweep.ts`) reads again the open pull requests (and drafts) nobody has read from

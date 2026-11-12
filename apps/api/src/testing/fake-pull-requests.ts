@@ -119,6 +119,11 @@ interface Repo {
      * canvas's branch lacks: an update of the branch is refused in GitHub's words for it.
      */
     workflowRefused: boolean;
+    /**
+     * GitHub refuses the merge queue's fields to Ponzu's App (no "Merge queues" permission): the
+     * tab query answers the rest, with an error for each of those.
+     */
+    mergeQueueUnreadable: boolean;
   };
   /** Branch protection, by the branch protected. */
   rules: Map<string, FakeRules>;
@@ -381,6 +386,7 @@ export class FakePullRequests {
           autoMerge: false,
           mergeQueue: false,
           workflowRefused: false,
+          mergeQueueUnreadable: false,
         },
         rules: new Map(),
         draftsUnsupported: false,
@@ -703,19 +709,30 @@ export class FakePullRequests {
       const repository = this.#tab(repo, variables);
       // As GitHub answers for a number it does not have: the rest, and an error for that part.
       const missing = variables.known && repository.pullRequest === undefined;
+      const errors: object[] = missing
+        ? [
+            {
+              type: "NOT_FOUND",
+              path: ["repository", "pullRequest"],
+              message: "Could not resolve to a PullRequest.",
+            },
+          ]
+        : [];
+      // As GitHub answers an App without the "Merge queues" permission: those fields alone.
+      const pull = repository.pullRequest;
+      if (pull && this.#repo(repo).settings.mergeQueueUnreadable) {
+        Object.assign(pull, { isMergeQueueEnabled: null, mergeQueueEntry: null });
+        for (const field of ["isMergeQueueEnabled", "mergeQueueEntry"]) {
+          errors.push({
+            type: "FORBIDDEN",
+            path: ["repository", "pullRequest", field],
+            message: "Resource not accessible by integration",
+          });
+        }
+      }
       return Response.json({
         data: { repository: { ...repository, ...(missing ? { pullRequest: null } : {}) } },
-        ...(missing
-          ? {
-              errors: [
-                {
-                  type: "NOT_FOUND",
-                  path: ["repository", "pullRequest"],
-                  message: "Could not resolve to a PullRequest.",
-                },
-              ],
-            }
-          : {}),
+        ...(errors.length > 0 ? { errors } : {}),
       });
     }
     if (caller.kind !== "user") return error("FORBIDDEN", "Resource not accessible by integration");

@@ -136,6 +136,31 @@ test("a quiet open pull request is read once a window, and one with a read waiti
   await cron();
 });
 
+test("quiet pull requests read this window make way for the next oldest, not the same ones again", async () => {
+  const ws = await workspaceWithRepo(t, { maya: "write" });
+  const first = await openPullRequest(ws);
+  t.clock.advance(MINUTE);
+  const second = await openPullRequest(ws);
+  // Start at a window's beginning, so both sweeps below fall in one window.
+  t.clock.advance(SWEEP_STALE_MS + MINUTE);
+  t.clock.advance(SWEEP_STALE_MS - (t.clock.now() % SWEEP_STALE_MS));
+  const now = () => new Date(t.clock.now());
+  // Earlier tests' canvases read just now, so only these two are stale.
+  await t.db.execute(
+    `update canvases set pr_read_at = '${now().toISOString()}' where id not in ('${first.canvas.id}', '${second.canvas.id}')`,
+  );
+
+  expect(await sweepPullRequests(t.deps, now(), { limit: 1 })).toBe(1);
+  expect((await waiting(first.canvas.id)).length).toBe(1);
+  // Its read runs and finds nothing new: still the oldest read, but already taken this window.
+  t.clock.advance(MINUTE);
+  await t.db.execute(
+    `update jobs set completed_at = now() where kind = '${REFRESH_JOB}' and completed_at is null and failed_at is null`,
+  );
+  expect(await sweepPullRequests(t.deps, now(), { limit: 1 })).toBe(1);
+  expect((await waiting(second.canvas.id)).length).toBe(1);
+});
+
 test("at most the limit a run, oldest read first, and never for a workspace GitHub can't be asked about", async () => {
   // The earlier tests' canvases are swept now, and their reads left waiting (no minute runs them
   // below), so the sweep leaves them out of what follows.

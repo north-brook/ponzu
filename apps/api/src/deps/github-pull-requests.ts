@@ -340,6 +340,9 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
   }
 }`;
 
+/** The tab query's merge queue fields, which GitHub may refuse alone (`readPullRequest`). */
+const QUEUE_FIELDS = ["isMergeQueueEnabled", "mergeQueueEntry"];
+
 const MARK_READY = `mutation MarkReady($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`;
 const ENABLE_AUTO_MERGE = `mutation EnableAutoMerge($id: ID!, $mergeMethod: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $mergeMethod }) { clientMutationId } }`;
 const DISABLE_AUTO_MERGE = `mutation DisableAutoMerge($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`;
@@ -391,7 +394,15 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
         // A number GitHub does not have is an error about that part alone; the rest still holds.
         const noSuchNumber = (error: { type?: string; path?: unknown[] }) =>
           error.type === "NOT_FOUND" && error.path?.[1] === "pullRequest";
-        if (!data?.repository || !errors.every(noSuchNumber)) {
+        // The merge queue's fields can be refused to an App without the "Merge queues"
+        // permission, which Ponzu's tokens don't ask for: read as no queue, never as a failed
+        // tab. A merge GitHub then sends to its queue is refused by GitHub, never merged past it.
+        const queueUnreadable = (error: { path?: unknown[] }) =>
+          error.path?.[1] === "pullRequest" && QUEUE_FIELDS.includes(String(error.path?.[2] ?? ""));
+        if (
+          !data?.repository ||
+          !errors.every((error) => noSuchNumber(error) || queueUnreadable(error))
+        ) {
           const notFound = errors.some((error) => error.type === "NOT_FOUND");
           throw new UpstreamError("github", "the pull request query was refused", {
             status: notFound ? 404 : 502,

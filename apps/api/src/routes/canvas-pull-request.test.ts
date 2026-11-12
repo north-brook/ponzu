@@ -896,6 +896,21 @@ describe("merge queues", () => {
     expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prState: "open", status: "active" });
   });
 
+  test("a tab whose queue GitHub won't show the App still reads, and Merge never gets past the queue", async () => {
+    const { ws, repo, canvas, pull } = await queued();
+    t.github.pulls.settings(repo, { mergeQueueUnreadable: true });
+    const tab = await call(t, as(ws, "ines"), "GET", path(canvas.id));
+    expect(tab.status).toBe(200);
+    expect(tab.body.pullRequest).toMatchObject({
+      number: pull.number,
+      mergeQueue: { enabled: false, entry: null },
+    });
+    // Ponzu can't tell, so it asks GitHub to merge, and GitHub's queue refuses it.
+    const { status } = await merge(ws, canvas.id, repo);
+    expect(status).toBe(409);
+    expect(pull.merged).toBe(false);
+  });
+
   test("one the queue turned down says so", async () => {
     const { ws, repo, canvas, pull } = await queued();
     pull.queue = { state: "UNMERGEABLE" };
