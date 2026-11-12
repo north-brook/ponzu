@@ -265,7 +265,20 @@ export type ThreadNotice =
       as: Person | null;
     }
   /** Someone took the canvas over once its owner had left: it runs on their Claude now. */
-  | { type: "owner_changed"; by: Person };
+  | { type: "owner_changed"; by: Person }
+  /**
+   * The model the canvas was made with is no longer one its Claude account offers, so it runs
+   * on `to` in its place. The names are the ones Ponzu knew then; `account` is whose Claude it
+   * is, null when that is not known.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
+    };
 
 /** What the agent did to its pull request, as its thread line says. */
 export type AgentPrAction = "opened" | "ready" | "updated_branch" | "auto_merge" | "merged";

@@ -63,17 +63,17 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     const names = await page.$$eval('[role="menuitemradio"]', (els) =>
       els.map((e) => e.querySelector("span:not([aria-hidden])")?.textContent),
     );
-    expect(names).toEqual(["Northbrook", "Fablefuel", "Personal"]);
+    expect(names).toEqual(["Thistlewick", "Quillmoor", "Personal"]);
     // Typeahead jumps to the row that starts with the letter typed, by its name alone.
-    await page.keyboard.press("f");
-    await page.waitForFunction(() => document.activeElement?.textContent?.endsWith("Fablefuel"));
+    await page.keyboard.press("q");
+    await page.waitForFunction(() => document.activeElement?.textContent?.endsWith("Quillmoor"));
     await page.keyboard.press("End");
     await focusOn("Sign out");
     await page.keyboard.press("Home");
-    await focusOn("Northbrook");
+    await focusOn("Thistlewick");
     await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
-    await focusOn("Workspace: Northbrook");
+    await focusOn("Workspace: Thistlewick");
   });
   test("the filter narrows the list as you choose, stays open, and marks itself on", async () => {
     await open("team-sidebar");
@@ -119,7 +119,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // The same header with a name far too long for it (the text alone: nothing else changes).
     await page.evaluate(() => {
       const name = document.querySelector('#sidebar button[aria-label^="Workspace:"] span')!;
-      name.textContent = "The Northbrook Institute for Uncommonly Long Workspace Names";
+      name.textContent = "The Thistlewick Institute for Uncommonly Long Workspace Names";
     });
     const after = await header();
     expect(after.cut).toBe(true);

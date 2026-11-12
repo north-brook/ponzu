@@ -272,6 +272,38 @@ export const failedTurn: ThreadItem[] = (() => {
   ];
 })();
 
+/**
+ * A canvas of Maya's made on Fable, which her Claude no longer offers: the thread says so as
+ * the next turn starts, and that turn runs on Opus 5.5.
+ */
+export const modelChangedTurn: ThreadItem[] = (() => {
+  const start = turn(false);
+  const final = reply("Done: the cards are one size now, and Pro keeps its accent border.");
+  return [
+    said(maya, "Three pricing cards, Pro in the middle."),
+    reply("Drew the three cards on **Pricing**, Pro in the middle."),
+    said(ada, "Make the cards the same height."),
+    notice({
+      type: "model_changed",
+      from: "claude-fable-5-2",
+      to: "claude-opus-5-5",
+      fromName: "Fable 5.2",
+      toName: "Opus 5.5",
+      account: maya,
+    }),
+    ended(start, {
+      final: final.id,
+      ms: 41_000,
+      boards: 1,
+      steps: [
+        [null, "Read the canvas", 1],
+        [null, 'Restyled "Pricing"', 2],
+      ],
+    }),
+    final,
+  ];
+})();
+
 /** Ended on a question: its answer, then the question, which is how it ended. */
 export const askedTurn: ThreadItem[] = (() => {
   const start = turn(false);
@@ -417,14 +449,14 @@ export const everyKind: ThreadItem[] = [
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "open",
   }),
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "merged",
   }),
@@ -491,7 +523,7 @@ const check = (
   startedAt: seconds === null ? null : at(20),
   completedAt: seconds === null ? null : new Date(NOW - 20 * 60_000 + seconds * 1000).toISOString(),
   description,
-  url: `https://github.com/north-brook/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
+  url: `https://github.com/thistlewick/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
 });
 
 const theo = { login: "theob", name: "Theo Barrett", avatarUrl: null, agent: false };
@@ -508,7 +540,7 @@ const HERO_PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
 /** Board 3's pull request. */
 export const pullRequest: PullRequestDetail = {
   number: 412,
-  url: "https://github.com/north-brook/fernwood/pull/412",
+  url: "https://github.com/thistlewick/fernwood/pull/412",
   title: "Quieter hero, editorial take",
   body: "Drops the paragraph from the hero and lets the photo carry it. Headline set in Instrument Serif at 38px; tokens get a `--hero-measure`.",
   head: "pz/hero-refresh",
@@ -537,7 +569,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(14),
       path: "src/components/hero.tsx",
       line: 15,
-      url: "https://github.com/north-brook/fernwood/pull/412#discussion_r1",
+      url: "https://github.com/thistlewick/fernwood/pull/412#discussion_r1",
     },
     {
       id: "c2",
@@ -546,7 +578,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(12),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-2",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-2",
     },
     {
       id: "c3",
@@ -555,7 +587,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(3),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-3",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-3",
     },
   ],
   reviews: [{ id: "r1", author: theo, state: "approved", at: at(12) }],

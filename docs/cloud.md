@@ -1269,6 +1269,13 @@ holds, came from another Claude Code, or is more than a day old, so a plan that 
 model shows up within a day. The API keeps it on the account (`claude_accounts.models`, with
 `models_reported_at` and `models_claude_code`), only while the sandbox that reported it runs on
 the credential the account holds now; connecting another key or subscription clears it.
+A runner's first report is kept, and after it at most one in ten minutes: the window is held on
+the account (`models_reported_at`), so a report is refused while the account's last was kept in
+the past ten minutes and after this runner took its lease. Runners on one account share the
+window, which only matters when two images report different answers within ten minutes: the
+second is said again at its runner's next start. A refused report is answered 200 with
+`kept: false`, never 429, so the runner does not try again, and logged as
+`claude_models_reported` with `refused: "too_soon"` (or `"old_credential"`).
 
 `supportedModels()` answers aliases, not model ids. For the development API key on Claude Code
 2.1.322 it was `default`, `opus`, `fable`, `sonnet` and `haiku`, each with `resolvedModel` (the
@@ -1300,8 +1307,20 @@ and `POST /v1/canvases` take only a model the account offers and an effort that 
 sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a canvas made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
-never handed a model it would refuse once a runner has reported. Nothing in the canvas's thread
-says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+never handed a model it would refuse once a runner has reported. The canvas's thread says so:
+as that runner's session starts, the API (never the runner, which is refused with 400 if it
+tries) writes a notice `{ type: "model_changed", from, to, fromName, toName, account }` under
+the id `ti_model-` and the first 12 hex digits of the SHA-256 of `from→to`, so each change is
+said once however often the canvas starts (a canvas that goes back to its model and then loses
+it again to the same one is not told twice). It is written only once a runner has reported what
+the account offers: before that (a credential just connected again, or one revoked) the canvas
+still runs on the default in its place, but nobody knows its model is gone, so the thread says
+nothing and only the log does (`reported: false`). The names are the ones the API knows then (what the
+account is offered, else the hand-kept list, else the id), since the model gone is no longer in
+what the account offers; `account` is whose Claude it is, the canvas's owner when they hold the
+account, else null. The apps say it as "Maya's Claude doesn't offer Fable 5.2 any more, so this
+canvas now runs on Opus 5.5." ("Your Claude" to the person whose it is), and it is not an answer
+to anyone's message. The apps hear of a new report only when they read the defaults again (the `me`
 live query does not carry the report): a create or a defaults change refused with
 `model_not_offered` reads them again, as does connecting another credential, so the picker
 then shows what the account offers. Before the first report the hand-kept list is offered as
@@ -1388,7 +1407,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }`; at most one kept in ten minutes after a runner's first, never 429 |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |

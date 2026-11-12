@@ -163,6 +163,12 @@ and the runner's token (the agent's environment holds the first two, so a comman
 would otherwise carry them), and anything that looks like a token or key. With it off those
 properties are null.
 
+The runner sends one more event on the same client, when the agent calls `send_feedback`:
+
+| Event | Properties | When |
+|---|---|---|
+| `agent feedback sent` | `canvas_id`, `workspace_id`, `sentiment`, `category`, `tool`, `summary`, `details`, `ponzu_runner` | The agent told the Ponzu team something with `send_feedback` (the cloud guide asks it to when a tool gets in its way or works notably well). About no one: the agent sent it, so it goes under the workspace's id (the canvas's, without one) and without a person profile. `tool` is a tool's name or null; anything else the agent put there is dropped. `summary` and `details` are the agent's words: sent only with content on, scrubbed as a turn's content is; null with it off. With analytics off nothing is sent and the tool tells the agent so. |
+
 Why the runner sends them itself: it has the whole of Claude Code's message stream, which is
 large with content on, and the API's functions answer in 4.5 MB from a region a hundred
 milliseconds away. The token is public. A turn never waits on PostHog: its events are built when

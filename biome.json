@@ -7,8 +7,6 @@
       "!**/out",
       "!**/node_modules",
       "!examples",
-      "!apps/web/public/demo/seekle.design",
-      "!apps/web/components/demo/before",
       "!.context",
       "!apps/studio/src/cloud/gallery/assets",
       "!packages/db/migrations",

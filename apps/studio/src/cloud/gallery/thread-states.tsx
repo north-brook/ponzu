@@ -264,7 +264,7 @@ export function ThreadStates({
       <Section title="Next action, blocked">
         <NextActionButton
           action="merge"
-          blocked="Needs write access to north-brook/fernwood"
+          blocked="Needs write access to thistlewick/fernwood"
           onRun={ignore}
         />
         <NextActionButton
