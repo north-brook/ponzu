@@ -15,6 +15,9 @@ test("and covers the characters the apps say that file covers", () => {
   const face = css
     .split("@font-face")
     .find((block) => block.includes("funnel-display-latin.woff2"));
-  const range = face?.match(/unicode-range:\s*([^;]+);/)?.[1]?.replace(/\s+/g, " ").trim();
+  const range = face
+    ?.match(/unicode-range:\s*([^;]+);/)?.[1]
+    ?.replace(/\s+/g, " ")
+    .trim();
   expect(range).toBe(DISPLAY_FACE_RANGE);
 });
