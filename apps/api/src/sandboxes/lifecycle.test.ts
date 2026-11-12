@@ -802,7 +802,7 @@ describe("a turn that never came", () => {
       t.sandboxes.onExec(IMAGE_COMMANDS.stop, () => ({ exitCode: 0, stdout: "", stderr: "" }));
     }
     expect(logged("turn_lapsed", design.id)).toMatchObject({ agentState: "working" });
-    expect(heardAtStop).toBe(401);
+    expect(heardAtStop as number | null).toBe(401);
     // Its runner shut down and started again; the copy is the next runner's.
     expect(stops(design.id).length).toBeGreaterThanOrEqual(1);
     expect(startEnv(design.id).PONZU_RUNNER_TOKEN).not.toBe(token);
