@@ -2,21 +2,34 @@ import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { RepoShelf } from "../cloud/create/create.ts";
+import { type Sent, useLanding } from "../cloud/create/landing.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
-import type { DesignSummary, Person } from "../cloud/model.ts";
+import type { DesignSummary, Person, ThreadItem } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
 import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
+import { readDraft, writeDraft } from "../cloud/thread/composer-rules.ts";
+import { ThreadRail } from "../cloud/thread/rail.tsx";
+import { quietFocus } from "../cloud/ui/quiet-focus.ts";
 import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
+import { DesignChrome } from "../cloud/window/design-chrome.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
-import { type CreateHandoff, CreateView } from "./create.tsx";
+import { type CreateHandoff, CreateView, type Launch } from "./create.tsx";
 import { type FreshDesign, useOpenDesign } from "./design.tsx";
 import { useDesignPanes } from "./design-panes.tsx";
 import type { Host } from "./host.ts";
@@ -492,6 +505,38 @@ function WorkspaceWindow({
     workspace.kind === "personal" && summaries?.length === 0 && workspaces.length === 1;
   const designs = [...(active ?? []), ...(settled ?? [])];
   const sidebarOpen = ui.sidebarOpen;
+  // A send from the create page: the thread's pane open for it, whatever it was left as, until
+  // its beat is over (cloud/create/landing.ts); and the design's view at once, until it is made.
+  const [launch, setLaunch] = useState<Launch | null>(null);
+  const [sent, setSent] = useState<Sent | null>(null);
+  /** The design the send made, once the API has said. */
+  const sentFor = useRef<string | null>(null);
+  const railOpen = sent ? true : ui.railOpen;
+  useLanding(sent, (open) => {
+    setSent(null);
+    update((now) => ({ ...now, railOpen: open }));
+  });
+  const railToggle = {
+    open: railOpen,
+    onToggle: () => {
+      analytics.capture("pane toggled", {
+        pane: "thread",
+        open: !railOpen,
+        ...(openId ? { design_id: openId } : {}),
+      });
+      // Pressed during a send's beat: the person's say ends it, and stands.
+      setSent(null);
+      update((now) => ({ ...now, railOpen: !railOpen }));
+    },
+  };
+  // Another design opened, or the create page again, before the beat ended: the pane is left
+  // closed, as the beat would have left it.
+  useEffect(() => {
+    if (!sent || openId === sentFor.current || (openId === null && !sentFor.current)) return;
+    setSent(null);
+    setLaunch(null);
+    update((now) => ({ ...now, railOpen: false }));
+  }, [sent, openId, update]);
   const panes = useDesignPanes({
     host,
     me,
@@ -505,17 +550,7 @@ function WorkspaceWindow({
     ),
     workspaceKind: workspace.kind,
     sidebarOpen: !firstDesign && sidebarOpen,
-    rail: {
-      open: ui.railOpen,
-      onToggle: () => {
-        analytics.capture("pane toggled", {
-          pane: "thread",
-          open: !ui.railOpen,
-          ...(openId ? { design_id: openId } : {}),
-        });
-        update((now) => ({ ...now, railOpen: !now.railOpen }));
-      },
-    },
+    rail: railToggle,
     page,
     onPage: switchPage,
     link,
@@ -534,6 +569,74 @@ function WorkspaceWindow({
       setConnectingClaude(true);
     },
   });
+
+  // The design made: its own view takes the launch's place. What was typed into the launch's
+  // composer meanwhile, and the caret, carry over to the design's.
+  const launchDraft = launch ? `launch:${launch.key}` : null;
+  const swapping = launch !== null && panes !== null;
+  useLayoutEffect(() => {
+    if (!swapping || !launchDraft) return;
+    const designId = sentFor.current;
+    const typed = readDraft(me.id, launchDraft);
+    if (typed && designId) writeDraft(me.id, designId, typed);
+    writeDraft(me.id, launchDraft, "");
+    const caret = document.activeElement?.closest("#thread") != null;
+    setLaunch(null);
+    if (caret) {
+      requestAnimationFrame(() => {
+        const field = document.querySelector<HTMLTextAreaElement>(
+          "#thread [data-composer-card] textarea",
+        );
+        if (field && document.activeElement === document.body) quietFocus(field);
+      });
+    }
+  }, [swapping, launchDraft, me.id]);
+  const launchView =
+    launch && !panes
+      ? {
+          chrome: (
+            <DesignChrome
+              name={launch.name}
+              sidebarOpen={!firstDesign && sidebarOpen}
+              pages={[]}
+              activePageId={null}
+              onSelectPage={() => {}}
+              onAddPage={null}
+              team={null}
+              pullRequest={null}
+              action={null}
+              rail={{ ...railToggle, signal: "working" }}
+            />
+          ),
+          rail: railOpen ? (
+            <ThreadRail
+              designId={launchDraft!}
+              meId={me.id}
+              repoName={null}
+              items={[launchLine(launch, me)]}
+              older="none"
+              onLoadOlder={() => {}}
+              agent={{ state: "waking", status: null }}
+              asks={[]}
+              gate={null}
+              attachments={[]}
+              onAttach={() => {}}
+              onRemoveAttachment={() => {}}
+              onRetryAttachment={() => {}}
+              // Nothing to send to until the design is made: the words stay in the field.
+              onSend={() => Promise.reject(new Error("not made yet"))}
+              onStop={() => {}}
+              onAnswer={() => {}}
+              onDismissAsk={() => {}}
+              renderDrawing={() => null}
+              onOpenComment={() => {}}
+              onOpenArtboards={() => {}}
+              onOpenPullRequest={() => {}}
+              onOpenLink={(url) => host.openExternal(url)}
+            />
+          ) : null,
+        }
+      : null;
 
   const toggleSidebar = () => {
     analytics.capture("pane toggled", { pane: "sidebar", open: !sidebarOpen });
@@ -624,8 +727,8 @@ function WorkspaceWindow({
               ),
             }
       }
-      chrome={panes?.chrome}
-      rail={panes?.rail ?? null}
+      chrome={panes?.chrome ?? launchView?.chrome}
+      rail={panes?.rail ?? launchView?.rail ?? null}
       panes={{
         sidebar: ui.sidebarWidth,
         rail: ui.railWidth,
@@ -655,7 +758,17 @@ function WorkspaceWindow({
             summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
           }
           onAllowMore={addWorkspace}
+          onLaunch={(next) => {
+            sentFor.current = null;
+            setLaunch(next);
+            setSent({ key: next.key, origin: next.origin });
+          }}
+          onLaunchFailed={() => {
+            setLaunch(null);
+            setSent(null);
+          }}
           onCreated={(design, messageFailed) => {
+            sentFor.current = design.id;
             setFresh(design);
             openDesign(design.id, "created");
             if (messageFailed) {
@@ -696,6 +809,18 @@ function WorkspaceWindow({
       />
     </AppWindow>
   );
+}
+
+/** The first line of a design being made: the words just sent, on their way, as the thread shows them. */
+function launchLine(launch: Launch, me: Person): ThreadItem {
+  return {
+    id: `launch_${launch.key}`,
+    seq: 1,
+    at: new Date().toISOString(),
+    streaming: false,
+    kind: "message",
+    payload: { text: launch.text, from: me, attachments: launch.attachments, delivery: "sending" },
+  };
 }
 
 /** A sentence over the window for a few seconds. */

@@ -190,6 +190,14 @@
 }
 
 /*
+ * While the create page's composer travels to the thread (create/flight.ts), the thread's own
+ * composer waits unseen in the place it travels to, and shows the moment it lands.
+ */
+[data-composer-flight] #thread [data-composer-card] {
+  visibility: hidden;
+}
+
+/*
  * While an edge is dragged (`data-pane-drag`): the column-resize cursor wherever the pointer
  * goes, no text selected on the way, and the canvas's frames, which would swallow the pointer,
  * let it through.

@@ -207,7 +207,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     for (const frame of frames.slice(1)) expect(frame).toEqual(frames[0]!);
 
     await page.getByRole("button", { name: "Start designing" }).click();
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("Make something").waitFor();
     // A brand-new personal workspace hides the sidebar only when it is all the person has:
     // with the team Ready, the switcher is how they reach it.
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
@@ -215,17 +215,31 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // Its ideas take turns as the composer's placeholder: Tab takes the one showing.
     await page.locator("[data-suggestion]").waitFor();
     await shoot("5-fresh-start");
-    const field = page.getByPlaceholder(/Describe a screen/);
+    const field = page.getByPlaceholder(/Describe what you want to make/);
     await field.press("Tab");
     expect(KETTLE_IDEAS).toContain(await field.inputValue());
   });
 
   test("Fresh start makes one design however often send is pressed, and opens it", async () => {
-    await page.getByPlaceholder(/Describe a screen/).fill("A quieter checkout");
+    await page.getByPlaceholder(/Describe what you want to make/).fill("A quieter checkout");
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
+    // The composer travels to the thread: one, however often it was pressed.
+    expect(await page.locator('[data-flight="surface"]').count()).toBeLessThanOrEqual(1);
     await page.locator("#sidebar").waitFor();
     await page.getByRole("button", { name: /Quieter checkout/ }).waitFor();
+    // The words are the thread's first line, the composer there is empty and has the caret,
+    // and after the beat, untouched, the thread's pane closes, and stays closed.
+    await page.locator("#thread").getByText("A quieter checkout").waitFor();
+    await waitUntil(
+      async () =>
+        (await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) ===
+        "Message",
+    );
+    expect(await page.locator("#thread").getByPlaceholder("Steer, or ask more").inputValue()).toBe(
+      "",
+    );
+    await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
     const made = await page.evaluate(() =>
       [...window.ponzuFake!.backend.designs.values()]
         .filter((d) => d.sequencer.doc.name === "Quieter checkout")
@@ -322,7 +336,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: /Onboarding flow/ }).waitFor();
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
     // The create page fills the canvas pane until a design is opened.
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("Make something").waitFor();
   });
 
   test("the create page's picker lists both workspaces' repos; one of the other's switches the window there in one step", async () => {
@@ -338,7 +352,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       "maya/kettle",
     ]);
     await page.keyboard.press("Escape");
-    const field = page.getByPlaceholder(/Describe a screen/);
+    const field = page.getByPlaceholder(/Describe what you want to make/);
     await field.fill("A kettle that whistles");
     // Every name the selector shows from here on: no other repo, nor Scratch, on the way.
     await page.evaluate(() => {
@@ -362,7 +376,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
     expect(await field.inputValue()).toBe("A kettle that whistles");
     // The create page, not the design last open there.
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("Make something").waitFor();
     const said = await page.evaluate(() => (window as { selectorSaid?: string[] }).selectorSaid);
     expect(said?.slice(1)).toEqual(["Project: maya/kettle"]);
 
@@ -373,19 +387,32 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   });
 
   test("a design made on the create page opens, and the canvas draws what its agent commits", async () => {
-    await page.getByPlaceholder(/Describe a screen/).fill(PROMPT);
+    await page.getByPlaceholder(/Describe what you want to make/).fill(PROMPT);
+    // The thread's pane was left closed by the last send's beat: a send opens it all the same.
     await page.keyboard.press("Enter");
+    await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
     await page.getByRole("button", { name: new RegExp(NAME) }).waitFor();
     const design = await made();
     // The first message went to the agent.
     expect(design.said).toEqual([PROMPT]);
+    // The pointer goes to the thread before the beat is out: it stays open, and is kept open.
+    await page.locator("#thread").getByText(PROMPT).waitFor();
+    await page.mouse.move(1300, 500);
+    await page.mouse.move(1310, 520);
+    await waitUntil(() =>
+      page.evaluate(() =>
+        Object.keys(localStorage).some(
+          (key) =>
+            key.startsWith("ponzu.ui.") &&
+            JSON.parse(localStorage.getItem(key) ?? "{}").railOpen === true,
+        ),
+      ),
+    );
 
     await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), design.id);
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
-    // The thread came with the design rather than being opened: the caret isn't put there.
-    await page.waitForTimeout(400);
-    expect(await page.evaluate(() => !!document.activeElement?.closest("#thread"))).toBe(false);
+    expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe("true");
   });
 
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
@@ -631,7 +658,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     }, id);
     await page.getByText("This design isn't here any more").waitFor();
     await page.getByRole("button", { name: "Back to designs" }).click();
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("Make something").waitFor();
     expect(await page.getByRole("button", { name: new RegExp(NAME) }).count()).toBe(0);
     expect(errors).toEqual([]);
   });

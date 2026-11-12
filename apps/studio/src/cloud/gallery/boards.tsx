@@ -6,6 +6,7 @@ import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
 import { LivePreviews } from "./live-previews.tsx";
+import { SendHarness } from "./send-harness.tsx";
 import { SETUP_BOARDS } from "./setup-boards.tsx";
 import { THREAD_BOARDS } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
@@ -197,6 +198,17 @@ export const BOARDS: Record<string, () => ReactNode> = {
       <CreateHarness ideas={f.ideas} />
     </Harness>
   ),
+  "fresh-start-short": () => (
+    <Harness designs={f.teamDesigns} openId={null}>
+      <CreateHarness ideas={f.ideas} />
+    </Harness>
+  ),
+  "fresh-start-tall": () => (
+    <Harness designs={f.teamDesigns} openId={null}>
+      <CreateHarness ideas={f.ideas} />
+    </Harness>
+  ),
+  "create-send": () => <SendHarness initialPrompt={ONBOARDING_PROMPT} />,
   "fresh-start-personal": () => (
     <Harness workspace={f.personal} designs={[]} openId={null} sidebar="none" settledCount={0}>
       <CreateHarness ideas={f.ideas} />

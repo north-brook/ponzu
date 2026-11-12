@@ -86,6 +86,7 @@ export function RailComposer({
       onDragLeave={() => setDropping(false)}
       onDrop={onDrop}
       onMouseDown={pressToFocus}
+      data-composer-card
       className={cn(
         "flex shrink-0 flex-col overflow-hidden rounded-16 bg-surface shadow-bar transition-shadow duration-(--dur-hover)",
         !ended && "cursor-text",
@@ -133,6 +134,7 @@ export function RailComposer({
         <IconButton
           label="Attach an image"
           tipSide="top"
+          data-composer-attach
           disabled={gate !== null}
           onClick={() => picker.current?.click()}
           className="size-7 rounded-pill"
@@ -166,7 +168,12 @@ export function RailComposer({
         {button === "stop" ? (
           <StopButton onStop={onStop} />
         ) : (
-          <SendButton size={28} disabled={button === "waiting"} onClick={onSend} />
+          <SendButton
+            size={28}
+            disabled={button === "waiting"}
+            onClick={onSend}
+            data-composer-send
+          />
         )}
       </div>
     </div>
@@ -180,6 +187,7 @@ export function StopButton({ onStop }: { onStop: () => void }) {
       <button
         type="button"
         aria-label="Stop"
+        data-composer-send
         onClick={onStop}
         className="app-no-drag grid size-7 shrink-0 cursor-default place-items-center rounded-pill bg-action outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-action-hover active:bg-action-press"
       >

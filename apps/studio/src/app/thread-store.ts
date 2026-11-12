@@ -129,11 +129,11 @@ export class ThreadStore {
    * The first message of a design just made with it, which the API already has: shown at once,
    * as on its way, until the thread's own item arrives in its place. Nothing is sent.
    */
-  seed(text: string): void {
+  seed(text: string, attachments: Attachment[] = []): void {
     const message: PendingMessage = {
       id: `local_${++this.sends}`,
       text,
-      attachments: [],
+      attachments,
       status: "sending",
       at: new Date(this.opts.now?.() ?? Date.now()).toISOString(),
     };

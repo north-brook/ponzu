@@ -93,6 +93,18 @@ export function CreatePage({
   const dock = useRef<HTMLDivElement>(null);
   const statement = useRef<HTMLDivElement>(null);
   const place = useHeroPlace(pane, dock, statement);
+  // Sent, the page keeps the width it had while the thread's pane opens over its side, so the
+  // hero fades where it stood rather than sliding to the narrower pane's centre.
+  useLayoutEffect(() => {
+    const el = pane.current;
+    if (!el || !launched) return;
+    el.style.right = "auto";
+    el.style.width = `${el.offsetWidth}px`;
+    return () => {
+      el.style.right = "";
+      el.style.width = "";
+    };
+  }, [launched]);
   // The ideas take their turns only while there is an empty field to show them in.
   const suggestion = useSuggestion(
     Array.isArray(ideas) ? ideas : null,
@@ -134,7 +146,7 @@ export function CreatePage({
             data-create-mark
             aria-hidden
             className={cn(
-              "absolute left-1/2 -translate-x-1/2 transition-opacity duration-(--dur-pop)",
+              "absolute left-1/2 flex -translate-x-1/2 transition-opacity duration-(--dur-pop)",
               place?.mark === false && "opacity-0",
             )}
             style={{ bottom: `calc(100% + ${MARK_GAP}px)` }}

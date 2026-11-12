@@ -4,8 +4,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectChoice, RepoShelf } from "../cloud/create/create.ts";
 import { CreatePage } from "../cloud/create/create-page.tsx";
+import { type FlightOrigin, takeOff } from "../cloud/create/flight.ts";
 import { ClaudeSignedOutDialog } from "../cloud/dialogs/account-dialogs.tsx";
-import { type Effort, effortsOf, type PendingAttachment, type Repo } from "../cloud/model.ts";
+import {
+  type Attachment,
+  type Effort,
+  effortsOf,
+  type PendingAttachment,
+  type Repo,
+} from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import type { FreshDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
@@ -23,6 +30,9 @@ import { useClaudeConnect } from "./setup/claude-connect.ts";
  * What a send needs first opens over the window with the prompt kept, and the prompt goes once
  * it is done: a Claude not connected, or signed out. Nothing else blocks yet (no billing).
  */
+
+/** How long the pictures sent with a first message are kept for its bubble, in ms. */
+const PREVIEWS_KEPT_MS = 60_000;
 
 /** The most a first name runs to, before it is cut at a word. */
 const NAME_MAX = 40;
@@ -80,6 +90,18 @@ export interface CreateHandoff {
   idea: string | null;
 }
 
+/**
+ * A send, the moment it goes: what the design's view shows while the API makes it (its first
+ * line, its name), and where the composer was, to travel from (cloud/create/landing.ts).
+ */
+export interface Launch {
+  key: string;
+  text: string;
+  name: string;
+  attachments: Attachment[];
+  origin: FlightOrigin | null;
+}
+
 export function CreateView({
   host,
   workspaceId,
@@ -89,6 +111,8 @@ export function CreateView({
   onHandoffTaken,
   onSwitchWorkspace,
   showIdeas,
+  onLaunch,
+  onLaunchFailed,
   onCreated,
   onAllowMore,
 }: {
@@ -105,6 +129,10 @@ export function CreateView({
   onSwitchWorkspace: (handoff: CreateHandoff) => void;
   /** Ideas show while the person is new to the workspace. */
   showIdeas: boolean;
+  /** A send went: the design's view comes at once, without waiting on the API. */
+  onLaunch: (launch: Launch) => void;
+  /** The send came to nothing: the create page again, as it was, with the error said. */
+  onLaunchFailed: () => void;
   /**
    * The design is made: open it, with what its answer said, so it opens on its first message.
    * `messageFailed` when the first message didn't go.
@@ -123,6 +151,7 @@ export function CreateView({
   const [model, setModel] = useState<Choice | null>(loadChoice);
   const [picked, setPicked] = useState<Picked[]>(taken?.picked ?? []);
   const [sending, setSending] = useState(false);
+  const [launched, setLaunched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsClaude, setNeedsClaude] = useState(false);
   const [sendOnceConnected, setSendOnceConnected] = useState(false);
@@ -189,6 +218,22 @@ export function CreateView({
     setSending(true);
     setError(null);
     const images = picked;
+    // The design's view, now: the composer travels from where it is to the thread.
+    const shown = images.map(
+      ({ name, previewUrl, file }): Attachment => ({
+        ref: `assets/${name}`,
+        url: previewUrl,
+        contentType: file.type,
+      }),
+    );
+    onLaunch({
+      key: createKey.current,
+      text,
+      name: nameFor(text),
+      attachments: shown,
+      origin: takeOff(document.querySelector("[data-create-dock]")),
+    });
+    setLaunched(true);
     try {
       const design = await create.mutateAsync({
         workspaceId,
@@ -210,13 +255,16 @@ export function CreateView({
       const said = images.length ? await sayWithImages(host.api, design.id, text, images) : true;
       createKey.current = newCreateKey();
       setPrompt("");
-      release(images);
+      // The thread shows them until it has the design's own copies.
+      setTimeout(() => release(images), PREVIEWS_KEPT_MS);
+      handedOver.current = true;
       setPicked([]);
       onCreated(
         {
           id: design.id,
           name: design.name,
           message: said ? text : null,
+          attachments: shown,
           access: design.access,
           head: {
             agentState: design.agentState,
@@ -227,6 +275,14 @@ export function CreateView({
         !said,
       );
     } catch (failure) {
+      // Back to the page as it was: the words, the images, the project; nothing travels back.
+      setLaunched(false);
+      onLaunchFailed();
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
+          ?.focus({ preventScroll: true }),
+      );
       analytics.capture("notice shown", { notice: "design_not_made" });
       setError(
         failure instanceof ApiError && failure.code === "network"
@@ -259,6 +315,7 @@ export function CreateView({
         onSend={() => void send()}
         onAttach={() => picker.current?.click()}
         sending={sending}
+        launched={launched}
         model={
           defaults.data && choice
             ? {

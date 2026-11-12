@@ -209,6 +209,9 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* A turn of the slice: turns in the first half, rests in the second. */
   --ease-turn: cubic-bezier(0.65, 0, 0.2, 1);
+  /* Something travelling across the window (the create page's composer to the thread): from
+     rest, gently, then the panes' long settle into place. */
+  --ease-travel: cubic-bezier(0.45, 0, 0.2, 1);
   --dur-hover: 120ms;
   --dur-pop: 140ms;
   --dur-pane: 220ms;
