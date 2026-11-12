@@ -63,6 +63,8 @@ export function fakeApiHandler(
         case "POST /v1/runner/questions/withdraw":
           await fake.withdraw(runner, body.ids);
           return Response.json({ withdrawn: body.ids.length });
+        case "POST /v1/runner/secret":
+          return Response.json(await fake.secret(runner, body.questionId));
         case "POST /v1/runner/uploads":
           // Asking for addresses is a call like the rest; the bytes are counted when they land.
           await fake.upload(runner, []);

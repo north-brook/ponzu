@@ -1,5 +1,6 @@
 import {
   answerQuestion,
+  answerSecretQuestion,
   appendEvent,
   attachCommentPicture,
   getCanvasAssetKey,
@@ -8,6 +9,7 @@ import {
   getUploads,
   getUser,
   listAssets,
+  listCanvasSecrets,
   listThreadItems,
   postMessage,
   type Question,
@@ -26,6 +28,14 @@ import { appSession } from "../analytics/scope.ts";
 import { access } from "../auth/access.ts";
 import { requireCanvas } from "../auth/authorize.ts";
 import { personFor } from "../canvases/actor.ts";
+import {
+  reservedReason,
+  SECRET_LIMITS,
+  SecretValue,
+  secretBinding,
+  secretNameProblem,
+  valueBytes,
+} from "../environments/secrets.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { steer } from "../http/gates.ts";
@@ -174,6 +184,14 @@ function answerOf(question: Question, body: z.infer<typeof AnswerBody>): Record<
     }
     return { approved: body.approved, ...(body.note ? { note: body.note } : {}) };
   }
+  if (asked.kind === "handoff") {
+    // Done there, or not now. Nothing else: the address was the agent's, the answer is a yes.
+    if (body.approved === undefined) {
+      throw new ApiError(400, "invalid_request", "Say whether you're done there.");
+    }
+    return { approved: body.approved };
+  }
+  // A secret's value never goes in a row clients watch: it has a route of its own.
   throw new ApiError(400, "invalid_request", "This kind of question is not answered here.");
 }
 
@@ -251,6 +269,85 @@ export const canvasThread = new Hono<AppEnv>()
         canvas_id: canvas.id,
         question_id: answered.id,
         kind: answered.kind,
+      });
+      await requestWake(deps, canvas.id, "answer");
+      return c.json(QuestionView.parse(answered));
+    },
+  )
+
+  /**
+   * Gives the secret the agent asked for (a question of kind `secret`). The value is sealed into
+   * the repo's secrets under the name the agent asked for, and the question and its `answer`
+   * event carry only that name; the runner of the turn that asked fetches the value once
+   * (`POST /v1/runner/secret`), and every later start has it in its environment. Anyone who may
+   * steer the canvas may give one. The first answer wins (409 `question_closed`); a Scratch
+   * canvas keeps none (409 `no_repository`); a name a secret may not have is refused (400
+   * `secret_name_reserved`); and the repo's limits hold (409 `secrets_full`). The value is never
+   * logged, never in analytics, and never in the answer.
+   */
+  .post(
+    "/:id/questions/:questionId/secret",
+    access.user,
+    validate("param", QuestionParams),
+    validate("json", z.object({ value: SecretValue })),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { id, questionId } = c.req.valid("param");
+      const { canvas } = await requireCanvas(c, id, "write");
+      const question = await getQuestion(deps.db, { canvasId: canvas.id, id: questionId });
+      if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+      if (question.status !== "open" || question.kind !== "secret") {
+        throw await closedBy(deps.db, question);
+      }
+      const repoId = canvas.repoId;
+      if (!repoId) {
+        throw new ApiError(
+          409,
+          "no_repository",
+          "A Scratch canvas has no repository to keep a secret with.",
+        );
+      }
+      const name = String((question.payload as { name?: unknown }).name ?? "");
+      const problem = secretNameProblem(name);
+      if (problem === "reserved") {
+        throw new ApiError(400, "secret_name_reserved", reservedReason(name));
+      }
+      if (problem) {
+        throw new ApiError(400, "invalid_request", "Claude asked for a name a secret can't have.");
+      }
+      await steer(c, { action: "answer", workspaceId: canvas.workspaceId, canvasId: canvas.id });
+      const { value } = c.req.valid("json");
+      const had = (await listCanvasSecrets(deps.db, canvas.id)).some((s) => s.name === name);
+      const answered = await answerSecretQuestion(deps.db, {
+        canvasId: canvas.id,
+        id: questionId,
+        name,
+        encryptedValue: await deps.vault.seal(value, secretBinding(repoId, name)),
+        valueBytes: valueBytes(value),
+        userId: actor.user.id,
+        limits: SECRET_LIMITS,
+        posthogSessionId: appSession(),
+      });
+      if (answered === "full") {
+        throw new ApiError(
+          409,
+          "secrets_full",
+          `A repo holds at most ${SECRET_LIMITS.count} secrets, ${SECRET_LIMITS.totalBytes / 1024} KB in all.`,
+        );
+      }
+      if (!answered) {
+        const now = await getQuestion(deps.db, { canvasId: canvas.id, id: questionId });
+        throw await closedBy(deps.db, now ?? question);
+      }
+      c.var.log.info("question_secret_given", { canvasId: canvas.id, questionId, repoId });
+      deps.analytics.capture("question answered", {
+        canvas_id: canvas.id,
+        question_id: answered.id,
+        kind: "secret",
+      });
+      deps.analytics.capture("repo secret changed", {
+        repo_id: repoId,
+        action: had ? "replaced" : "added",
       });
       await requestWake(deps, canvas.id, "answer");
       return c.json(QuestionView.parse(answered));

@@ -245,6 +245,21 @@ export function toAsk(row: QuestionRow): Ask {
         title: row.payload.title,
         description: row.payload.description || null,
       };
+    case "secret":
+      return {
+        ...open,
+        kind: "secret",
+        name: row.payload.name,
+        description: row.payload.description || null,
+      };
+    case "handoff":
+      return {
+        ...open,
+        kind: "link",
+        title: row.payload.title,
+        url: row.payload.url,
+        description: row.payload.description || null,
+      };
   }
 }
 

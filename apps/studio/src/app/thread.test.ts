@@ -435,6 +435,42 @@ test("a plan and a permission are answered yes or no, with a note", async () => 
   store.close();
 });
 
+test("a secret goes by its own route and never into the question; a link is done or not now", async () => {
+  const w = await world();
+  const store = w.asks();
+  const secret = w.agent.ask(
+    { kind: "secret", payload: { name: "STRIPE_TEST_KEY", description: "For test mode." } },
+    "Secret",
+  );
+  const link = w.agent.ask(
+    {
+      kind: "handoff",
+      payload: { title: "Sign in to Linear", url: "https://linear.app/x", description: null },
+    },
+    "Over to you",
+  );
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([
+    { id: secret, kind: "secret", name: "STRIPE_TEST_KEY", description: "For test mode." },
+    { id: link, kind: "link", title: "Sign in to Linear", url: "https://linear.app/x" },
+  ]);
+
+  store.answer(secret, { secret: "sk_test_value_123" });
+  store.answer(link, { approved: false });
+  await settle();
+
+  expect(w.backend.secretsGiven).toEqual([
+    { canvasId: w.canvas.id, name: "STRIPE_TEST_KEY", value: "sk_test_value_123" },
+  ]);
+  const answers = w.backend.canvas(w.canvas.id).questions.map((q) => q.answer?.body);
+  expect(answers).toEqual([{}, { approved: false }]);
+  expect(JSON.stringify(w.backend.canvas(w.canvas.id).questions)).not.toContain(
+    "sk_test_value_123",
+  );
+  expect(store.getSnapshot()).toEqual([]);
+  store.close();
+});
+
 test("when a teammate answered first, the viewer's answer is turned away calmly", async () => {
   const w = await world();
   const store = w.asks();

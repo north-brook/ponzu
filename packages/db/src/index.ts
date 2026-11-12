@@ -230,6 +230,7 @@ export {
   getQuestion,
   listOpenQuestions,
   type Question,
+  takeSecretAnswer,
 } from "./queries/questions.ts";
 export {
   getRepoAccess,

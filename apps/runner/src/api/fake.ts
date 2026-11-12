@@ -36,6 +36,8 @@ import {
   type RunnerNotice,
   type RunnerSession,
   type SavedPoint,
+  SECRET_DELIVERY_MS,
+  type SecretResponse,
   type StateRequest,
   type StateResponse,
   type ThreadItem,
@@ -110,6 +112,11 @@ export class FakeRunnerApi {
   readonly threadWrites: ThreadWrite[][] = [];
   readonly states: StateRequest[] = [];
   readonly questions = new Map<string, QuestionRequest & { status: QuestionResponse["status"] }>();
+  /** Secrets people gave, by question: fetched once by `secret`, while fresh. */
+  readonly secrets = new Map<
+    string,
+    { name: string; value: string; at: number; delivered: boolean }
+  >();
   readonly uploads: (UploadFile & { seq?: number })[] = [];
   readonly usage = new Map<string, TurnUsage>();
   readonly erased: GitCredentialRequest[] = [];
@@ -189,6 +196,7 @@ export class FakeRunnerApi {
       putState: as((r, state: StateRequest) => this.putState(r, state)),
       ask: as((r, question: QuestionRequest) => this.ask(r, question)),
       withdraw: as((r, ids: string[]) => this.withdraw(r, ids)),
+      secret: as((r, questionId: string) => this.secret(r, questionId)),
       upload: as((r, files: UploadFile[], opts?: { seq?: number }) => this.upload(r, files, opts)),
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
@@ -238,6 +246,24 @@ export class FakeRunnerApi {
     question.status = "answered";
     const { id: _, status: __, ...asked } = question;
     return this.push({ kind: "answer", payload: { ...answer, question: asked } });
+  }
+
+  /**
+   * A person gives the secret a `secret` question asked for: the row closes, the value is kept
+   * for the runner to fetch once, and the `answer` event names the secret and nothing else.
+   */
+  giveSecret(questionId: string, value: string): RunnerEvent {
+    const question = this.questions.get(questionId);
+    if (question?.status !== "open" || question.kind !== "secret")
+      throw new Error(`${questionId} is not an open secret question`);
+    const { name } = question.payload;
+    this.secrets.set(questionId, { name, value, at: Date.now(), delivered: false });
+    question.status = "answered";
+    const { id: _, status: __, ...asked } = question;
+    return this.push({
+      kind: "answer",
+      payload: { questionId, question: asked, secret: { name } },
+    });
   }
 
   /** Ids of the events the runner has acknowledged. */
@@ -389,6 +415,16 @@ export class FakeRunnerApi {
     await this.enter("ask", runner);
     if (!this.questions.has(question.id))
       this.questions.set(question.id, { ...structuredClone(question), status: "open" });
+  }
+
+  /** As `POST /v1/runner/secret`: the value once, while it is fresh; 404 otherwise. */
+  async secret(runner: string, questionId: string): Promise<SecretResponse> {
+    await this.enter("secret", runner);
+    const given = this.secrets.get(questionId);
+    if (!given || given.delivered || Date.now() - given.at > SECRET_DELIVERY_MS)
+      throw new ApiError(404, "not_found", "There is no secret to hand over.");
+    given.delivered = true;
+    return { name: given.name, value: given.value };
   }
 
   async withdraw(runner: string, ids: string[]): Promise<void> {

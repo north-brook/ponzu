@@ -1,7 +1,8 @@
-import { and, count, eq, inArray, isNotNull, ne, type SQL, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { canvases, events, type Json, questions, repoSecrets } from "../schema/index.ts";
+import { canvases, events, type Json, questions, repoSecrets, repos } from "../schema/index.ts";
+import type { SecretLimits } from "./environments.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
@@ -118,11 +119,14 @@ export async function answerQuestion(
 
 /**
  * Answer an open `secret` question: keep the value, already encrypted by the caller, as one of
- * the repo's secrets, and record on the question only which secret was given. One statement,
- * so the question is not closed without the secret being kept.
+ * the repo's secrets, record on the question only which secret was given, and add the `answer`
+ * event that tells the agent so (`secret: { name }`, never the value). One statement, so the
+ * question is not closed without the secret being kept, nor the agent told of one that wasn't.
  *
  * Null, and nothing written, when the question is not an open secret question of this canvas,
- * or the canvas is Scratch: secrets belong to a repo, and Scratch has none.
+ * or the canvas is Scratch: secrets belong to a repo, and Scratch has none. `full`, and nothing
+ * written, when the repo's secrets have no room for it under `limits`, a replacement counted as
+ * one.
  */
 export async function answerSecretQuestion(
   db: Db,
@@ -134,19 +138,32 @@ export async function answerSecretQuestion(
     /** The plain value's length in UTF-8 bytes. */
     valueBytes: number;
     userId: string;
+    /** How much the repo's secrets may hold; unbounded when absent. */
+    limits?: SecretLimits;
+    /** The PostHog session of the app that answered, if it said. */
+    posthogSessionId?: string | null;
   },
-): Promise<Question | null> {
-  const { canvasId, id, name, encryptedValue, valueBytes, userId } = input;
+): Promise<Question | "full" | null> {
+  const { canvasId, id, name, encryptedValue, valueBytes, userId, limits } = input;
   const inRepo = db
     .select({ id: canvases.id })
     .from(canvases)
     .where(and(eq(canvases.id, canvasId), isNotNull(canvases.repoId)));
+  // The repo's other secrets, with this one, within its count and its bytes.
+  const room = limits
+    ? sql`(select count(*) < ${limits.count}
+                  and coalesce(sum(octet_length(o.name) + o.value_bytes), 0)
+                      + ${new TextEncoder().encode(name).length + valueBytes} <= ${limits.totalBytes}
+             from ${repoSecrets} o
+            where o.repo_id = (select repo_id from ${canvases} where id = ${canvasId})
+              and o.name <> ${name})`
+    : sql`true`;
   const answered = answering(db, {
     canvasId,
     id,
     answer: { name },
     userId,
-    only: and(eq(questions.kind, "secret"), sql`exists (${inRepo})`)!,
+    only: and(eq(questions.kind, "secret"), sql`exists (${inRepo})`, room)!,
   });
   const kept = db.$with("kept").as(
     db
@@ -176,13 +193,80 @@ export async function answerSecretQuestion(
       })
       .returning({ name: repoSecrets.name }),
   );
+  const told = db.$with("told", { id: events.id }).as(sql`
+    insert into ${events} (id, canvas_id, kind, priority, payload, user_id, posthog_session_id)
+    select ${newId("evt")}, ${answered.canvasId}, 'answer', 'now',
+           jsonb_build_object(
+             'questionId', ${answered.id},
+             'question', jsonb_build_object('kind', ${answered.kind}, 'payload', ${answered.payload}),
+             'secret', jsonb_build_object('name', ${answered.answer} ->> 'name')
+           ),
+           ${userId}, ${input.posthogSessionId ?? null}
+      from ${answered}
+    returning id
+  `);
   const [question] = await run(
     db
-      .with(answered, uncounted(db, canvasId, answered), kept)
+      .with(answered, uncounted(db, canvasId, answered), kept, told)
       .select()
       .from(answered),
   );
-  return question ?? null;
+  if (question) return question;
+  if (!limits) return null;
+  // Nothing written: still an open secret question of a repo canvas means there was no room.
+  const now = await getQuestion(db, { canvasId, id });
+  if (now?.status !== "open" || now.kind !== "secret") return null;
+  const [repo] = await run(inRepo);
+  return repo ? "full" : null;
+}
+
+/**
+ * The value given for a `secret` question, for the runner of the turn that asked for it: once,
+ * and only within `withinMs` of the answer. Marks the question delivered in the same statement
+ * it reads the secret in, so a second call, or one from a runner that came after, gets nothing.
+ * Null when the question is not this canvas's, not a secret, not answered, delivered already,
+ * answered too long ago, or its repo has lost the secret (or the repo). The value is still
+ * sealed: the caller opens it.
+ */
+export async function takeSecretAnswer(
+  db: Db,
+  { canvasId, id, withinMs }: { canvasId: string; id: string; withinMs: number },
+): Promise<{ repoId: string; name: string; encryptedValue: string } | null> {
+  const taken = db.$with("taken").as(
+    db
+      .update(questions)
+      .set({ deliveredAt: sql`now()` })
+      .where(
+        and(
+          eq(questions.canvasId, canvasId),
+          eq(questions.id, id),
+          eq(questions.kind, "secret"),
+          eq(questions.status, "answered"),
+          isNull(questions.deliveredAt),
+          sql`${questions.answeredAt} > now() - make_interval(secs => ${withinMs / 1000})`,
+        ),
+      )
+      .returning({ name: sql<string>`${questions.answer} ->> 'name'`.as("name") }),
+  );
+  const [secret] = await run(
+    db
+      .with(taken)
+      .select({
+        repoId: repoSecrets.repoId,
+        name: repoSecrets.name,
+        encryptedValue: repoSecrets.encryptedValue,
+      })
+      .from(repoSecrets)
+      .innerJoin(repos, eq(repos.id, repoSecrets.repoId))
+      .where(
+        and(
+          sql`${repoSecrets.name} = (select name from ${taken})`,
+          sql`${repos.id} = (select repo_id from ${canvases} where id = ${canvasId})`,
+          isNull(repos.removedAt),
+        ),
+      ),
+  );
+  return secret ?? null;
 }
 
 /**
