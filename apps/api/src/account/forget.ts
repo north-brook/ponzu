@@ -1,4 +1,4 @@
-import type { NewJob } from "@ponzu/db";
+import { getUserByWorkosId, type NewJob } from "@ponzu/db";
 import { z } from "zod";
 import type { JobDeps } from "../jobs/run.ts";
 
@@ -9,7 +9,8 @@ import type { JobDeps } from "../jobs/run.ts";
  *
  * One job, keyed by the user id, so a provider being down is tried again, for hours, rather
  * than lost with the request that deleted them. Each step is safe to repeat: a WorkOS user
- * already gone is done (`workos.deleteUser`), and PostHog finding nobody is done. Without
+ * already gone is done (`workos.deleteUser`), one an account signed in with since is kept,
+ * and PostHog finding nobody is done. Without
  * PostHog's personal key (`deps.posthogAdmin` null) the second step is skipped, logged, and
  * the job completes.
  *
@@ -33,11 +34,17 @@ export function accountForgetJob(input: z.infer<typeof Payload>): NewJob {
 }
 
 export async function runAccountForgetJob(
-  deps: Pick<JobDeps, "workos" | "posthogAdmin" | "log">,
+  deps: Pick<JobDeps, "db" | "workos" | "posthogAdmin" | "log">,
   payload: unknown,
 ): Promise<void> {
   const { userId, workosUserId } = Payload.parse(payload);
-  if (workosUserId) await deps.workos.deleteUser(workosUserId);
+  // A retry can come hours later. Signing in again meanwhile made a new account on the same
+  // WorkOS user, which is now theirs to keep: deleting it would break the new account's sign-in.
+  if (workosUserId && (await getUserByWorkosId(deps.db, workosUserId))) {
+    deps.log.info("workos_forget_skipped", { userId, reason: "signed_in_again" });
+  } else if (workosUserId) {
+    await deps.workos.deleteUser(workosUserId);
+  }
   if (!deps.posthogAdmin) {
     deps.log.info("analytics_forget_skipped", { userId });
     return;

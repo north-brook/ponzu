@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { jobs } from "@ponzu/db";
 import { runDueJobs, runNow } from "../jobs/run.ts";
+import { call } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 import { ACCOUNT_FORGET_ATTEMPTS, ACCOUNT_FORGET_JOB, accountForgetJob } from "./forget.ts";
 
@@ -111,6 +112,25 @@ describe("with PostHog's personal key", () => {
     await runDueJobs(t.deps, "cron:test");
     expect(t.workos.hasUser(user.id)).toBe(false);
     expect((await stored(t, job!.id)).completedAt).toBeInstanceOf(Date);
+  });
+
+  test("a WorkOS user someone signed in with again since is kept, and PostHog is still asked", async () => {
+    // The retry comes after the same person signed in again, on the same WorkOS user, as a
+    // new account: that account keeps its WorkOS user.
+    const again = await t.signInAs({ login: "vic" });
+    const job = await runNow(
+      t.deps,
+      accountForgetJob({ userId: "usr_forget_6", workosUserId: again.workos.id }),
+    );
+    await t.backgroundDone();
+    expect(t.workos.hasUser(again.workos.id)).toBe(true);
+    expect((await call(t, again.headers, "GET", "/v1/me")).status).toBe(200);
+    expect((await stored(t, job!.id)).completedAt).toBeInstanceOf(Date);
+    expect(t.posthogAdmin.forgotten.at(-1)).toBe("usr_forget_6");
+    expect(lines(t, "workos_forget_skipped").at(-1)).toMatchObject({
+      userId: "usr_forget_6",
+      reason: "signed_in_again",
+    });
   });
 
   test("never logs or records an email or a key", async () => {

@@ -2775,7 +2775,10 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    with no token has nothing to revoke, a grant GitHub no longer has (404) is done, and any
    other answer, no answer, or more than 10 seconds is logged as `github_grant_revoke_failed`
    (their id and GitHub's status, never the token) and the deletion goes on. The
-   `github_app_authorization` webhook that follows finds nobody and does nothing.
+   `github_app_authorization` webhook that follows finds nobody and does nothing, or, if it
+   comes before their row is gone, forgets the token and ends the sessions that step 7 ends
+   anyway. If step 7 then refuses (another admin's deletion left them the only one), the grant
+   is already revoked: they keep their account and sign in again.
 7. Their row is deleted, and with it everything that hangs off it: their sessions (so every
    token of theirs stops working at once), GitHub token, memberships, repo access answers,
    Claude account, devices and open sign-ins. What other people's work points at forgets them:
@@ -2783,7 +2786,8 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
 8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
    them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
-   their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done),
+   their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
+   and one that a new account signed in with before a retry came is kept),
    and then asks PostHog to delete their person with its events and recordings:
    `POST {PONZU_POSTHOG_API_HOST}/api/projects/{PONZU_POSTHOG_PROJECT_ID}/persons/bulk_delete/`
    with the personal key as the bearer and `{ distinct_ids: [userId], delete_events: true,
