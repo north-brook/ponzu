@@ -13,7 +13,7 @@ import { Arrival } from "./arrival.tsx";
 export const PRESENCE_LIMIT = 5;
 
 /**
- * Everyone who has worked on the design, you first: full strength while they're here, faded to
+ * Everyone who has worked on the canvas, you first: full strength while they're here, faded to
  * 40% once they've gone. Hovering one, or reaching it with the keyboard (one Tab stop, then the
  * arrows), says who, and for someone away, when they were last here. The "+" after them opens
  * Share (it must sit in the Share popover's root). It is one of the stack: it overlaps the last
@@ -44,7 +44,7 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
   return (
     <div className="flex shrink-0 items-center">
       {/* biome-ignore lint/a11y/useSemanticElements: a group of avatars, not a form's fieldset */}
-      <div role="group" aria-label="People in this design" onKeyDown={onKeyDown} className="flex">
+      <div role="group" aria-label="People in this canvas" onKeyDown={onKeyDown} className="flex">
         {shown.map((c, i) => {
           const you = c.person.id === meId;
           const name = `${firstName(c.person)}${you ? " (you)" : ""}`;
@@ -53,7 +53,7 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
             away && c.lastHereAt ? `${name} · last here ${ago(c.lastHereAt, now, "long")}` : name;
           return (
             // Someone who joins after the first paint (presence and the thread come a moment
-            // after the design) arrives: their room opens, those before them glide aside, and
+            // after the canvas) arrives: their room opens, those before them glide aside, and
             // they fade in. Drawn whole as their room opens, since each overlaps the one before.
             <Arrival key={c.person.id} show clip={false} name="person">
               <Tip label={label}>

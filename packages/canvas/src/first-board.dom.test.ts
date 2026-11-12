@@ -5,8 +5,8 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
 import { ARRIVE_LAG_MS } from "./arrive.ts";
 
 /*
- * An empty design's first board, in a real browser: the canvas waits at 100% where the board will
- * land, the board arrives with the canvas's own arrival (frame, then sheet), and nothing jumps:
+ * An empty canvas's first board, in a real browser: the view waits at 100% where the board will
+ * land, the board arrives with the view's own arrival (frame, then sheet), and nothing jumps:
  * the zoom reads 100% throughout, the camera doesn't move once the board is on screen, and
  * nothing yuzu is drawn anywhere but round the board's own place.
  */
@@ -104,7 +104,7 @@ window.pzDashAt = (t) => {
 };
 `;
 
-describe.skipIf(!chromium)("an empty design's first board in Chromium", () => {
+describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
   let browser: Browser;
   let page: Page;
   let code: string;

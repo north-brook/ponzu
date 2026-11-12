@@ -31,7 +31,7 @@ const local = (month: number, day: number, hour = 12, minute = 0, year = 2026) =
 
 export const email = "bryce@northbrook.co";
 
-// Where do you design: the person's own account, and the organizations Ponzu is installed on.
+// Where do you build: the person's own account, and the organizations Ponzu is installed on.
 export const personalAccount: GithubAccount = {
   githubAccountId: 1001,
   login: bryce.login,
@@ -271,7 +271,7 @@ export const byPerson: PersonUsage[] = [
 ];
 /**
  * The same period with someone's account deleted (30 of Alex's credits put down to nobody) and
- * by design, with deleted canvases and canvases the viewer can't open: each adds up to 2,060.
+ * by canvas, with deleted canvases and canvases the viewer can't open: each adds up to 2,060.
  */
 export const byPersonWithNobody: PersonUsage[] = byPerson.map((row) =>
   row.person.id === alex.id ? { ...row, usedCredits: 80 } : row,

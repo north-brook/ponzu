@@ -32,7 +32,7 @@ export function ClaudeSignedOutDialog({
   card: ClaudeCardProps;
   /** False for someone with no Claude at all: it asks to connect, not to reconnect. */
   connected?: boolean;
-  /** Its sign-in ran out, rather than being revoked: said as the design's strip says it. */
+  /** Its sign-in ran out, rather than being revoked: said as the mockup's strip says it. */
   expired?: boolean;
   /** Opened from a canvas waiting on the person's Claude, not from a send. */
   resume?: boolean;
@@ -54,7 +54,7 @@ export function ClaudeSignedOutDialog({
       body={
         connected
           ? `${expired ? "Sign in to Claude again" : "Connect Claude again"} ${then}`
-          : `Claude Code does the designing, on your own plan. Connect it ${then}`
+          : `Claude Code does the work, on your own plan. Connect it ${then}`
       }
       wide
     >

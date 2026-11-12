@@ -9,7 +9,7 @@ import { SLICE, SLICE_STROKE } from "./slice.ts";
 /**
  * A page's, a board's or a control's icon at a step of the ladder (ladder.ts): `control` unless
  * told otherwise. `onFill` draws it heavier on a solid ground. `size` and `strokeWidth` override
- * the step, for a host drawing outside the app's ladder (the web's design pages).
+ * the step, for a host drawing outside the app's ladder (the web's GitHub viewer).
  */
 export function Icon({
   name,

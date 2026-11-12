@@ -1,5 +1,5 @@
 /*
- * Brand marks, drawn as the design draws them rather than taken from an icon set. Claude's is the
+ * Brand marks, drawn as the mockup draws them rather than taken from an icon set. Claude's is the
  * canvas's AgentMark.
  */
 import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";

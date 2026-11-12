@@ -79,19 +79,19 @@ const key = (
   isComposing: false,
 });
 
-test("on a Mac ⌘ takes 0–9 for designs and ⌃ takes 1–9 for pages", () => {
+test("on a Mac ⌘ takes 0–9 for canvases and ⌃ takes 1–9 for pages", () => {
   expect(jumpDigit(key("Digit1", { meta: true }), "canvas", true)).toBe(1);
   expect(jumpDigit(key("Digit0", { meta: true }), "canvas", true)).toBe(0);
   expect(jumpDigit(key("Digit3", { ctrl: true }), "page", true)).toBe(3);
   expect(jumpDigit(key("Digit0", { ctrl: true }), "page", true)).toBeNull();
-  // Each modifier is its own: ⌘ doesn't change pages, ⌃ doesn't open designs, ⌥ does neither.
+  // Each modifier is its own: ⌘ doesn't change pages, ⌃ doesn't open canvases, ⌥ does neither.
   expect(jumpDigit(key("Digit1", { ctrl: true }), "canvas", true)).toBeNull();
   expect(jumpDigit(key("Digit1", { meta: true }), "page", true)).toBeNull();
   expect(jumpDigit(key("Digit1", { alt: true }), "page", true)).toBeNull();
   expect(jumpDigit(key("Digit1", { alt: true }), "canvas", true)).toBeNull();
 });
 
-test("off the Mac Ctrl takes the designs and Alt the pages", () => {
+test("off the Mac Ctrl takes the canvases and Alt the pages", () => {
   expect(jumpDigit(key("Digit9", { ctrl: true }), "canvas", false)).toBe(9);
   expect(jumpDigit(key("Digit0", { ctrl: true }), "canvas", false)).toBe(0);
   expect(jumpDigit(key("Digit3", { alt: true }), "page", false)).toBe(3);

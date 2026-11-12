@@ -1,6 +1,6 @@
 /*
  * Drawing the cloud gallery in headless Chromium: build it, serve it, screenshot a composition,
- * draw one of the design's own boards, and compare two pictures. Used by `scripts/visual.ts`
+ * draw one of the mockup's own boards, and compare two pictures. Used by `scripts/visual.ts`
  * and by the gallery's tests. Playwright comes from @ponzu/render, which already depends on it.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -103,8 +103,8 @@ export async function shootComposition(
 }
 
 /**
- * One of the design's boards (an artboard file of a .design folder) at its size, with the
- * design's tokens. Dark swaps the board's `.ui-light` for `.ui-dark`; colors a board writes as
+ * One of the mockup's boards (an artboard file of a .design folder) at its size, with the
+ * mockup's tokens. Dark swaps the board's `.ui-light` for `.ui-dark`; colors a board writes as
  * literals stay light.
  */
 export async function shootBoard(
@@ -135,7 +135,7 @@ async function settle(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
-    // An avatar, and a design's preview, draw their picture only once it has loaded
+    // An avatar, and a canvas's preview, draw their picture only once it has loaded
     // (ui/avatar.tsx, sidebar/canvas-preview.tsx).
     const loading = ["avatar", "canvas-preview"]
       .map((slot) => `[data-slot="${slot}"][data-status="loading"]`)
@@ -324,7 +324,7 @@ export interface Frame {
   /** The first page tab, and the thread toggle. */
   tab: number;
   thread: number;
-  /** The design's name in the chrome: its room's width, and how opaque it is. */
+  /** The canvas's name in the chrome: its room's width, and how opaque it is. */
   title: number;
   titleOpacity: number;
   /** The name's own width inside its room: set once, not re-cut as the room moves. */

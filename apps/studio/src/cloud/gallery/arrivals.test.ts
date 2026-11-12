@@ -2,7 +2,7 @@
  * A canvas opening with its answers late, in a real Chromium (the gallery's `canvas-opening`
  * compositions, opening.tsx): each answer delivered in turn and the movement it starts stepped
  * on its own clock (stepArrival), never by counting frames or waiting. Nothing on screen before
- * an answer moves by more than a pixel when it comes, except by the one designed movement (a
+ * an answer moves by more than a pixel when it comes, except by the one movement meant to happen (a
  * room opening or closing, whose start and end are checked), and what arrives fades in where it
  * rests. Switching canvases replays nothing; reduced motion moves nothing and lands the same.
  * Skips where there is no Chrome or Chromium.

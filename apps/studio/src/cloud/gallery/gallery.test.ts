@@ -187,7 +187,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await focusOn("Jordan · last here 2 days ago");
     await page.waitForSelector('[role="tooltip"]:has-text("Jordan · last here 2 days ago")');
     const stops = await page.$$eval(
-      '[aria-label="People in this design"] [role="img"]',
+      '[aria-label="People in this canvas"] [role="img"]',
       (els) => els.filter((e) => e.tabIndex === 0).length,
     );
     expect(stops).toBe(1);

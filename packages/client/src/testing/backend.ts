@@ -249,7 +249,7 @@ export class FakeBackend {
     /** Who owns the account on GitHub. A personal account's admins own it. */
     owners?: string[];
     repos?: { name: string; access?: Record<string, Permission> }[];
-    /** False: a GitHub account the App is not on yet, which "Where do you design?" offers. */
+    /** False: a GitHub account the App is not on yet, which "Where do you build?" offers. */
     installed?: boolean;
     suspended?: boolean;
     /**

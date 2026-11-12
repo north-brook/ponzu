@@ -32,7 +32,7 @@ import { CanvasChrome, type CanvasChromeProps } from "../window/canvas-chrome.ts
 import { PANES } from "../window/panes.ts";
 import * as f from "./fixtures.ts";
 
-/** `?rail=<px>`: the rail's width, in place of the design's. */
+/** `?rail=<px>`: the rail's width, in place of the mockup's. */
 const RAIL_WIDTH =
   typeof location === "undefined" ? 0 : Number(new URLSearchParams(location.search).get("rail"));
 

@@ -84,7 +84,7 @@ export class CloudSource implements CanvasSource {
   private head: CanvasHeadRow | null = null;
   /** Who made the last change, for the canvas's activity indicator. */
   private lastOrigin: Origin | undefined;
-  /** Why the design can no longer be shown: deleted, or the person lost access to it. */
+  /** Why the canvas can no longer be shown: deleted, or the person lost access to it. */
   private failure: string | null = null;
   private people: readonly PresenceRow[] = [];
   private pageId: string | null = null;

@@ -18,7 +18,7 @@
  * it has none the server could film.
  *
  * Pictures come from the server (`/api/snapshot`), made in the background and
- * cached on disk by content, so a design opens to pictures the second time.
+ * cached on disk by content, so a canvas opens to pictures the second time.
  * On a cold open a board waits as a placeholder (or goes live, when it's
  * cheap; or shows a skeleton of its DOM) until its picture comes. Each picture
  * is decoded before it's shown, and the outgoing representation goes a frame

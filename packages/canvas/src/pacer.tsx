@@ -4,10 +4,10 @@
  * With two or more videos playing, Chromium's viz picks the frame rate for
  * the whole window from the fastest of them (its "video conference" matcher,
  * always on for desktop, with no switch to turn it off). On a page with 30 fps
- * clips, every CSS animation and transition in the designs then runs at
+ * clips, every CSS animation and transition on the boards then runs at
  * 30 fps too. A tiny, nearly invisible clip at 120 fps raises that floor to the
- * display's own rate. It plays only while two or more design videos play and
- * something else in a design is animating: a page of nothing but video stays
+ * display's own rate. It plays only while two or more videos on the boards play and
+ * something else on a board is animating: a page of nothing but video stays
  * at the videos' rate, which saves the GPU half its frames and looks the same.
  * Camera moves don't need it: input lifts the cap by itself.
  */

@@ -27,7 +27,7 @@ export function IphoneStep({
       body="Comment on canvases and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
       actions={
         <StepButton onClick={onStart} busy={starting}>
-          Start designing
+          Start building
         </StepButton>
       }
       below={<PhoneMock />}

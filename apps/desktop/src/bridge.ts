@@ -14,6 +14,8 @@ export const STUDIO_ORIGIN = "ponzu-studio://app";
  *   ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
  *   ponzu://github/setup?result=installed&workspace=<workspace id>
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
+ *
+ * A canvas's link from before canvases had their name opens the same way (deep-links.ts).
  */
 export type DeepLink =
   | { kind: "canvas"; canvasId: string; pageId?: string; artboardId?: string }

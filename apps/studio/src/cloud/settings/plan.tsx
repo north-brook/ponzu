@@ -60,7 +60,7 @@ export interface PlanSectionProps {
   onManageCard?: () => void;
   /** Left out while cards can't be added yet: the row says there is none, and offers nothing. */
   onAddCard?: () => void;
-  /** Use by design, most first, for whoever may see it (an admin); left out, not shown. */
+  /** Use by canvas, most first, for whoever may see it (an admin); left out, not shown. */
   byCanvas?: CanvasUsage[] | null;
 }
 
@@ -156,11 +156,11 @@ export function PlanSection({
   );
 }
 
-/** Use by design, in gross dollars, as the API orders it: most first, the unnamed last. */
+/** Use by canvas, in gross dollars, as the API orders it: most first, the unnamed last. */
 function Canvases({ canvases, usage }: { canvases: CanvasUsage[]; usage: Usage }) {
   return (
-    <section aria-label="By design" className="flex flex-col">
-      <SectionLabel className="pb-1">By design</SectionLabel>
+    <section aria-label="By canvas" className="flex flex-col">
+      <SectionLabel className="pb-1">By canvas</SectionLabel>
       {canvases.map(({ kind, id, name, usedCredits }) => (
         <div key={id ?? kind} className="flex h-[38px] items-center gap-2.5 border-rule border-t">
           <span
@@ -190,7 +190,7 @@ function UsageBar({ usage }: { usage: Usage }) {
   const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
   return (
     <div className="flex flex-col gap-2.5">
-      {/* biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the design's bar */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the mockup's bar */}
       <div
         role="meter"
         aria-label="Usage this month"

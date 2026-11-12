@@ -7,7 +7,7 @@
  * app.e2e.test.ts's. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves a picture of each step there (and four in dark),
- * to look at beside the design's boards.
+ * to look at beside the mockup's boards.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";

@@ -13,7 +13,7 @@ export interface DraftPin {
 }
 
 export interface Draft {
-  /** The design it's in, by its key. */
+  /** The canvas it's in, by its key. */
   file: string;
   text: string;
   /** The thread a reply or an edit is in. */
@@ -97,7 +97,7 @@ export function useDraft(
   return [text ?? initial, set];
 }
 
-/** Every draft, in every design. */
+/** Every draft, in every canvas. */
 export function useDrafts(): Draft[] {
   return useSyncExternalStore(
     subscribe,

@@ -332,7 +332,7 @@ test("Stop while working with nothing typed; Send once there is something to sen
   expect(composerButton({ ...base, working: true, gate })).toBe("stop");
 });
 
-test("drafts are kept per person and design, and signing out clears them", () => {
+test("drafts are kept per person and canvas, and signing out clears them", () => {
   writeDraft("bryce", "cnv_hero", "Calmer, and keep the green");
   writeDraft("maya", "cnv_hero", "Try the serif smaller");
   expect(readDraft("bryce", "cnv_hero")).toBe("Calmer, and keep the green");

@@ -36,7 +36,7 @@ export function TrafficLights({ drawn }: { drawn: boolean }) {
 
 /**
  * The chrome's hairline: one before the page tabs (on the sidebar's edge while it is open, just
- * past the design's name while it is closed), one before the thread toggle (on the rail's edge
+ * past the canvas's name while it is closed), one before the thread toggle (on the rail's edge
  * while it is open, just past the people and the next action while it is closed).
  */
 export function ChromeDivider({ pane }: { pane?: Pane }) {
@@ -69,7 +69,7 @@ export function ChromeDivider({ pane }: { pane?: Pane }) {
 
 /**
  * A chrome divider standing on an open pane's edge is a handle for that edge too: a drag sizes
- * the pane as its own edge below does, and a double click returns it to the design's width. The
+ * the pane as its own edge below does, and a double click returns it to the mockup's width. The
  * keyboard's way is the edge itself, which is in the tab order.
  */
 export interface DividerGrip {

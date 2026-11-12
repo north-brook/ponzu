@@ -84,7 +84,7 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
       document.addEventListener("focusin", (e) => {
         w.landed!.push({
           name: (e.target as Element).getAttribute("aria-label"),
-          // The rail as the design sizes it: its panel and the 10 of gutter (its edge) before it.
+          // The rail as the mockup sizes it: its panel and the 10 of gutter (its edge) before it.
           width: Math.round(
             document.querySelector("#thread-pane")!.getBoundingClientRect().width + 10,
           ),

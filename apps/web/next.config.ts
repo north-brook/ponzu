@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/open", destination: "/local", permanent: true },
+      // A canvas's link was /designs/<id> before canvases had their name. Pull requests and
+      // threads already written keep those links for good, so they still open. The query
+      // (?page=, ?artboard=, ?app=) carries over.
+      { source: "/designs/:id", destination: "/canvases/:id", permanent: true },
       // /download was the Mac's install steps, and every Download button sent ?start=1 there.
       // Those links (in apps and agents' messages) still mean the Mac. The query carries over.
       {

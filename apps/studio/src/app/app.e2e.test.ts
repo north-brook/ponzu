@@ -1,12 +1,12 @@
 /*
  * The studio as it ships, built and in a real Chromium, on Ponzu Cloud in memory
- * (fake-host.ts): a whole first run (the sign-in gate, setting up where to design, connecting
- * Claude by code, the iPhone, Fresh start with ideas, the first design), Settings, the sidebar
- * on live data, making a design, the canvas drawing what its agent commits, and a comment there
+ * (fake-host.ts): a whole first run (the sign-in gate, setting up where to build, connecting
+ * Claude by code, the iPhone, Fresh start with ideas, the first canvas), Settings, the sidebar
+ * on live data, making a canvas, its boards drawing what its agent commits, and a comment there
  * and back. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves a picture of each first-run step and each
- * Settings section there, to look at beside the design's boards.
+ * Settings section there, to look at beside the mockup's boards.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
@@ -144,14 +144,14 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(2);
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
     await page.evaluate(() => window.ponzuFake!.finishSignIn());
-    // Both held attempts finish and the person is in: first run asks where they design.
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+    // Both held attempts finish and the person is in: first run asks where they build.
+    await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(2);
     expect(errors).toEqual([]);
   });
 
-  test("first run: where they design, set up on GitHub and Ready on the way back", async () => {
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+  test("first run: where they build, set up on GitHub and Ready on the way back", async () => {
+    await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
     // The team's account is set up already; their own is not.
     await page.getByText("Ready").waitFor();
     await shoot("2-where-do-you-design");
@@ -223,7 +223,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // Moving between the steps moves nothing they share.
     for (const frame of frames.slice(1)) expect(frame).toEqual(frames[0]!);
 
-    await page.getByRole("button", { name: "Start designing" }).click();
+    await page.getByRole("button", { name: "Start building" }).click();
     await page.getByText("Make something").waitFor();
     // A brand-new personal workspace hides the sidebar only when it is all the person has:
     // with the team Ready, the switcher is how they reach it.
@@ -440,7 +440,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Project: north-brook/ponzu" }).waitFor();
   });
 
-  test("a design made on the create page opens, and the canvas draws what its agent commits", async () => {
+  test("a canvas made on the create page opens, and its boards draw what its agent commits", async () => {
     await page.getByPlaceholder(/Describe what you want to make/).fill(PROMPT);
     // The thread's pane was left closed by the last send's beat: a send opens it all the same.
     await page.keyboard.press("Enter");
@@ -512,7 +512,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.evaluate(() => document.documentElement.style.removeProperty("--dur-pane"));
   });
 
-  test("a comment left on the canvas reaches the design, and a teammate's reply comes back", async () => {
+  test("a comment left on a board reaches the canvas, and a teammate's reply comes back", async () => {
     // The thread opened last, with the caret in its composer: back to the canvas's keys first.
     expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
       "Message",

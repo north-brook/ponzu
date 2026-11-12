@@ -1,7 +1,7 @@
 /*
- * A design's own address, as the agent writes it in the thread to point at a page or a board:
+ * A canvas's own address, as the agent writes it in the thread to point at a page or a board:
  *
- *   https://ponzu.design/canvases/<canvas id>                  the design
+ *   https://ponzu.design/canvases/<canvas id>                  the canvas
  *   https://ponzu.design/canvases/<canvas id>?page=<page id>   one of its pages
  *   https://ponzu.design/canvases/<canvas id>?artboard=<id>    one of its boards
  *
@@ -12,13 +12,16 @@
  * host itself over https (no port, no user, no lookalike), the one path, ids as ids. Anything
  * else is an ordinary link and goes where an ordinary link goes; nothing here widens what
  * markdown.ts lets through, since only an address that already passed `safeHref` reaches it.
+ *
+ * Before canvases had their name the path was /designs/<id>. Pull requests and threads written
+ * then keep it, so that form is read too, for good; nothing writes it any more.
  */
 
 /** Ids as the app's ponzu:// links take them (apps/desktop/src/deep-links.ts). */
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const PATH = /^\/canvases\/([A-Za-z0-9_-]{1,64})\/?$/;
+const PATH = /^\/(?:canvases|designs)\/([A-Za-z0-9_-]{1,64})\/?$/;
 
-/** The place an address names: a design, and maybe one page or board of it. */
+/** The place an address names: a canvas, and maybe one page or board of it. */
 export interface CanvasAddress {
   canvasId: string;
   page?: string;

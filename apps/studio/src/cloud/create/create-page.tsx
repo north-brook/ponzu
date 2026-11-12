@@ -25,8 +25,8 @@ export interface CreatePageProps {
   sending?: boolean;
   /**
    * A send has gone: the hero leaves and the composer is away (travelling to the thread, then
-   * there), leaving the dotted ground for the design's canvas. Back to false, a send that failed
-   * finds everything where it was.
+   * there), leaving the dotted ground for the new canvas's boards. Back to false, a send that
+   * failed finds everything where it was.
    */
   launched?: boolean;
   /** Null until the person's defaults are known: a canvas sent then starts on them. */
@@ -58,9 +58,9 @@ export interface CreatePageProps {
 }
 
 /**
- * Starting a design, in the main pane, on the canvas's own dotted ground, since this is where a
- * canvas starts. The hero (Ponzu's mark over one statement that ends in the project selector)
- * is centred in the pane, a little high (`HERO_RISE`); the composer is docked at the
+ * Starting a canvas, in the main pane, on the same dotted ground its boards will sit on. The hero
+ * (Ponzu's mark over one statement that ends in the project selector) is centred in the pane, a
+ * little high (`HERO_RISE`); the composer is docked at the
  * pane's foot, where the thread's composer sits in its rail, and grows upward with what is typed
  * or attached. On a workspace's first visits the ideas for the chosen repo take turns as the
  * composer's placeholder (composer.tsx), so nothing on the page moves when they arrive or don't,

@@ -11,7 +11,7 @@ import { cn } from "../ui/cn.ts";
 
 /*
  * Room in the chrome for something that can come after the first paint: the pull request mark,
- * the next action, a person, the design's name, the pages. What is there at the first paint is
+ * the next action, a person, the canvas's name, the pages. What is there at the first paint is
  * simply there. What comes later comes as one movement on the panes' clock (--dur-pane,
  * --ease-out): its room opens, so its neighbours glide aside rather than jump, and it fades in,
  * rising a hair, in place at the room's still edge, a fifth of the way into the opening. Leaving
@@ -53,7 +53,7 @@ type Phase = "shown" | "leaving" | "held" | "none";
 /**
  * Whether the arrival something is made inside has shown: an Arrival made inside one already
  * shown (a person joining the people) arrives on its own; one made with it (the people arriving
- * together) is part of its movement, and one made with the chrome is simply there. A design
+ * together) is part of its movement, and one made with the chrome is simply there. A canvas
  * opened anew is a new chrome: what it has at once shows at once, never as an entrance.
  */
 const Scope = createContext<{ painted: boolean }>({ painted: false });

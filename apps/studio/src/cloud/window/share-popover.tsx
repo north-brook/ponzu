@@ -16,7 +16,7 @@ const ACCESS: Record<CanvasAccess, string> = {
 const NOT_JOINED_SHORT = "hasn't opened Ponzu yet";
 
 /**
- * Who can open this design. Access is the repo's on GitHub, so there is nothing to grant here:
+ * Who can open this canvas. Access is the repo's on GitHub, so there is nothing to grant here:
  * the repo line opens it on GitHub, where people are added and removed. Everyone with access is
  * listed, scrolling past 420px; someone who hasn't opened Ponzu yet is quieter, and says so
  * under their login. Render it inside the Popover whose anchor is the chrome's right cluster.

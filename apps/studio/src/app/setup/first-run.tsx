@@ -21,7 +21,7 @@ import { useArrivalSync, WhereView } from "./where-view.tsx";
 /*
  * Guided first run on the Mac (onboarding 3.2): after signing in, the gates are read from the
  * server (`GET /v1/me`) and the first one that holds the person back is the step shown: where
- * they design, connecting Claude, the iPhone. Each step's own action is what clears its gate,
+ * they build, connecting Claude, the iPhone. Each step's own action is what clears its gate,
  * so nothing can be skipped, and a step finished on another device is passed over here: the
  * live `me` row asks for `me` again. With every gate clear, the window is `children`.
  *
@@ -55,7 +55,7 @@ export function FirstRun({
   const devices = useQuery({ ...queries.notifications(), enabled: me.data !== undefined });
   const phone = devices.data ? hasIphone(devices.data) : false;
   const step = me.data ? setupStep(setupFacts(me.data, phone)) : null;
-  // "Where do you design?" waits for its list: until then the sign-in screen keeps waiting.
+  // "Where do you build?" waits for its list: until then the sign-in screen keeps waiting.
   const arrival = useArrivalSync(step === "where");
   // Fresh start's model picker shows the person's defaults: asked for alongside `me`, so the
   // create page opens whole. If they can't be had it opens anyway, and the API applies them.
@@ -157,7 +157,7 @@ function ClaudeView({ host }: { host: Host }) {
   return <ClaudeStep {...card} />;
 }
 
-/** The iPhone step: Start designing stays pending until the window it opens is there. */
+/** The iPhone step: Start building stays pending until the window it opens is there. */
 function IphoneView() {
   const { mutations } = usePonzu();
   const seen = useMutation(mutations.recordOnboarding());

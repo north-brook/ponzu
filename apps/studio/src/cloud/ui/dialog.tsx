@@ -2,7 +2,7 @@
  * shadcn/ui's dialog, themed with our tokens. One change of shape: the dim holds the surface and
  * centres it (a grid), where shadcn's places it at 50% and translates it back by half, which can
  * land it on a half pixel and blur it. A click on the dim is a click outside, so it closes.
- * There is no close button: the design's surfaces carry their own.
+ * There is no close button: the mockup's surfaces carry their own.
  */
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type * as React from "react";

@@ -1,5 +1,5 @@
 /*
- * shadcn/ui's tabs, themed with our tokens as the design's page tabs: 28 tall, the active one
+ * shadcn/ui's tabs, themed with our tokens as the mockup's page tabs: 28 tall, the active one
  * raised. The arrows move between tabs (and Home and End to the ends) without opening them;
  * Return or Space opens one. No tab may be active (the pull request tab is open): give `value`
  * an empty string and the Tab key lands on the first. Tabs that switch something other than a

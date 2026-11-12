@@ -42,7 +42,7 @@ unless built with the release's credentials. CI builds it and runs its smoke che
 
 It was called Ponzu Preview (`design.ponzu.app.preview`, `ponzu-preview://`), and a checkout run
 was called Ponzu Dev. Its first launch (`src/carry-over.ts`) copies Ponzu Preview's window state
-(the studio's localStorage: the workspace and design last open, the sidebar, rail and filters)
+(the studio's localStorage: the workspace and canvas last open, the sidebar, rail and filters)
 and keeps it through the signed-out launch until the person signs in; the canvases Ponzu Preview
 cached come over in the same copy and the studio drops them at once. While Ponzu Preview is
 open, it asks the person to quit it and Try Again, or to Continue Without. The session can't come

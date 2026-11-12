@@ -2,7 +2,7 @@
  * shadcn/ui's alert-dialog, themed with our tokens and shaped like dialog.tsx (the dim centres
  * the surface): a question that must be answered, such as disconnecting Claude or deleting the
  * account. It is announced as an alert dialog; unlike shadcn's, a click on the dim still leaves
- * it, as every dialog in the app does, so it behaves as the design's other dialogs.
+ * it, as every dialog in the app does, so it behaves as the mockup's other dialogs.
  */
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui";
 import type * as React from "react";

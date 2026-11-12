@@ -20,7 +20,7 @@ import { APP_NAMES } from "./config.ts";
  *   before the rename: its session is sealed by a keychain item another program made, which this
  *   app can't open without asking. It moves to "Ponzu Local", where the checkout run now looks,
  *   or beside it when that is taken. Nothing is deleted.
- * - Ponzu Preview's window state (the studio's localStorage: the workspace and design last
+ * - Ponzu Preview's window state (the studio's localStorage: the workspace and canvas last
  *   open, the sidebar, the rail, the filters) is copied in. While Ponzu Preview is open, the
  *   app asks the person to quit it first, or to go on without it (main.ts).
  *   Its session is not: it is sealed by "Ponzu Preview Safe Storage", which only Ponzu Preview

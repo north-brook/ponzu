@@ -1,6 +1,6 @@
 /*
  * shadcn/ui's popover, themed with our tokens: a 14-round surface with the pop shadow, hung from
- * its trigger, as wide as the design draws it. Radix closes it on Escape or a click outside and
+ * its trigger, as wide as the mockup draws it. Radix closes it on Escape or a click outside and
  * returns focus to the trigger.
  */
 import { Popover as PopoverPrimitive } from "radix-ui";
@@ -22,7 +22,7 @@ function PopoverContent({
   collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content> & {
-  /** Its width in the design, in px. */
+  /** Its width in the mockup, in px. */
   width?: number;
 }) {
   return (

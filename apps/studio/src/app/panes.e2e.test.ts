@@ -1,6 +1,6 @@
 /*
  * The window's side panes, resized by hand: the studio built as it ships, in a real Chromium, on
- * Ponzu Cloud in memory (fake-host.ts), with a design open so both the sidebar and the thread
+ * Ponzu Cloud in memory (fake-host.ts), with a canvas open so both the sidebar and the thread
  * rail are there. Dragging an edge moves its pane within its limits and the chrome with it in the
  * same frame, over the canvas's frames too; the arrow keys and a double-click move it; the toggles
  * still collapse and expand it, back to the width it was left at; a small window keeps the main
@@ -76,7 +76,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   const sidebarEdgeX = async () => box(page, "#sidebar-pane-edge").then((b) => b.x + b.width / 2);
   const railEdgeX = async () => box(page, "#thread-pane-edge").then((b) => b.x + b.width / 2);
 
-  test("the panes open at the design's widths, the chrome's dividers on their edges", async () => {
+  test("the panes open at the mockup's widths, the chrome's dividers on their edges", async () => {
     const g = await geometry(page);
     expect(g.sidebar).toBeCloseTo(PANES.sidebar.default, 0);
     expect(g.rail).toBeCloseTo(PANES.rail.default, 0);
@@ -308,7 +308,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     );
   });
 
-  test("double-clicking an edge returns its pane to the design's width", async () => {
+  test("double-clicking an edge returns its pane to the mockup's width", async () => {
     const x = await sidebarEdgeX();
     await page.mouse.dblclick(x, GRIP_Y);
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
@@ -370,7 +370,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     await page.mouse.up();
     await waitUntil(async () => (await saved(page))?.railWidth === 410);
 
-    // A double click on either puts its pane back at the design's width.
+    // A double click on either puts its pane back at the mockup's width.
     const leftNow = await grip("sidebar");
     await page.mouse.dblclick(leftNow.x, leftNow.y);
     expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
@@ -451,7 +451,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     const keyed = await geometry(page);
     expect(keyed.sidebar).toBeCloseTo(after.sidebar, 0);
     expect(keyed.rail).toBeCloseTo(before.rail, 0);
-    // Back to the design's widths for what follows.
+    // Back to the mockup's widths for what follows.
     await page.setViewportSize({ width: WIDTH, height: HEIGHT });
     await waitUntil(async () => (await geometry(page)).mainWidth > 600);
     await page.mouse.dblclick(await sidebarEdgeX(), GRIP_Y);
@@ -485,7 +485,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
   });
 });
 
-/** Opens the team's design, as its link does, for someone signed in past setup. */
+/** Opens the team's canvas, as its link does, for someone signed in past setup. */
 async function openTheCanvas(page: Page) {
   await page.locator("#sidebar").waitFor();
   const find = () =>

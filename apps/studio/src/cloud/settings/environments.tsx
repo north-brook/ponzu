@@ -80,7 +80,7 @@ export function EnvironmentsSection({
         })
       ) : (
         <p className="m-0 flex min-h-12 items-center text-13 text-muted">
-          Nothing here yet. Ponzu sets a repo up the first time you design in it.
+          Nothing here yet. Ponzu sets a repo up the first time you start a canvas in it.
         </p>
       )}
     </Section>

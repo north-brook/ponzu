@@ -29,4 +29,44 @@ export const KEEP_APPS: Keep[] = [
     has: "the viewer left out, by design",
     why: "the idiom",
   },
+  {
+    path: "apps/desktop/src/deep-links*.ts",
+    has: "://design",
+    why: "the app link from before the rename, <scheme>://design/<id>, still opens for good (plan 6.5)",
+  },
+  {
+    path: "apps/desktop/src/deep-links.ts",
+    has: '["canvas", "design"]',
+    why: "the old app link's first segment, still read (plan 6.5)",
+  },
+  {
+    path: "apps/{desktop/src/deep-links,studio/src/cloud/ui/canvas-address}.test.ts",
+    has: '"des_7k2m9x4q0c8v5n1t"',
+    why: "an id from before the rename: canvases made then keep des_",
+  },
+  {
+    path: "{apps/web/next.config.ts,apps/studio/src/cloud/ui/canvas-address*.ts}",
+    has: "/designs/",
+    why: "the web link from before the rename, still read and redirected for good (plan 6.5)",
+  },
+  {
+    path: "apps/studio/src/cloud/ui/canvas-address.ts",
+    has: "(?:canvases|designs)",
+    why: "the address parser reads the old path too (plan 6.5)",
+  },
+  {
+    path: "apps/studio/src/app/pull-request*.ts",
+    has: "Designed in Ponzu: ",
+    why: "the footer on pull requests opened before the rename, still stripped from the tab (plan 6.2)",
+  },
+  {
+    path: "apps/studio/src/app/pull-request-map.ts",
+    has: "(?:Made|Designed) in Ponzu: ",
+    why: "the footer regex reads the new footer and the old one (plan 6.2)",
+  },
+  {
+    path: "apps/studio/src/cloud/styles/cloud.css",
+    has: "as design tools draw one",
+    why: "third-party design tools and how they draw a ground (plan 6.1)",
+  },
 ];

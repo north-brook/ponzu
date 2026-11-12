@@ -42,7 +42,7 @@ function record() {
   w.places = new Set();
   w.frames = [];
   const STEPS: Record<string, string> = {
-    "Where do you design?": "where",
+    "Where do you build?": "where",
     "Connect Claude": "claude",
     "Get Ponzu on your iPhone": "iphone",
   };
@@ -183,7 +183,7 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
       await page.waitForSelector('[data-screen="sign-in"]');
       await page.getByRole("button", { name: "Continue with GitHub" }).click();
       // Signing in: the sign-in screen waits on until the first step can show.
-      await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+      await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
       expect(await screens(page)).toEqual(["blank", "sign-in", "where"]);
 
       // Where → Connect Claude.
@@ -246,7 +246,7 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         };
         requestAnimationFrame(look);
       });
-      await page.getByRole("button", { name: "Start designing" }).click();
+      await page.getByRole("button", { name: "Start building" }).click();
       await page.getByText("Make something").waitFor();
       // The ideas, taking turns as the composer's placeholder.
       await page.locator("[data-suggestion]").waitFor();

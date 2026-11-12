@@ -259,7 +259,7 @@ export const ERROR_COPY: Record<RunErrorCode, string> = {
   agent_exited: "Claude stopped unexpectedly and started again.",
   message_refused: "The repo's Claude Code settings turned that message away.",
   question_failed: "Claude couldn't ask its question, so it went on without an answer.",
-  push_failed: "Ponzu couldn't push the branch to GitHub. The commits are safe in the canvas.",
+  push_failed: "Ponzu couldn't push the branch to GitHub. The commits are safe in Ponzu.",
 };
 
 /** Errors whose own message says more than the sentence does. */

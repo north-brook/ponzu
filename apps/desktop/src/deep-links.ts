@@ -7,6 +7,8 @@ import type { DeepLink, GithubSetupResult } from "./bridge.ts";
  */
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** The first segments that open a canvas: today's, and the one from before the rename. */
+const OPENS_A_CANVAS = new Set(["canvas", "design"]);
 const SETUP_RESULTS: readonly GithubSetupResult[] = [
   "installed",
   "requested",
@@ -27,7 +29,9 @@ export function parseDeepLink(url: string, scheme: string): DeepLink | null {
     return value && ID.test(value) ? value : undefined;
   };
 
-  if (path[0] === "canvas" && path.length === 2 && ID.test(path[1]!)) {
+  // `<scheme>://design/<id>` is the same link as written before canvases had their name: links
+  // already in pull requests, threads and notifications keep it, so it opens for good.
+  if (OPENS_A_CANVAS.has(path[0]!) && path.length === 2 && ID.test(path[1]!)) {
     const pageId = id("page");
     const artboardId = id("artboard");
     return {

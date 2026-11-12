@@ -24,7 +24,7 @@ export function ponzuQueries(api: Api) {
         queryFn: () => api.me(),
         refetchOnWindowFocus: false,
       }),
-    /** "Where do you design?": the person's own account, then each one with the App. */
+    /** "Where do you build?": the person's own account, then each one with the App. */
     githubAccounts: () =>
       queryOptions({ queryKey: queryKeys.githubAccounts(), queryFn: () => api.github.accounts() }),
     /** One workspace: its installation, the repos the person reaches, its members and roles. */

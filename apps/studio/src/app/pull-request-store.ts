@@ -138,7 +138,7 @@ export class PullRequestStore {
   }
 
   /**
-   * Reads it as the design opens, at once rather than after its head: unless a read is already
+   * Reads it as the canvas opens, at once rather than after its head: unless a read is already
    * on its way, or one answered a moment ago (the sidebar's row, hovered before the click,
    * asked ahead), which then answers for now.
    */

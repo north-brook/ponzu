@@ -386,7 +386,7 @@ async function settle(scene: HTMLElement, deadline: number): Promise<void> {
 /**
  * An image from another site, as a data URL: loaded the way the canvas loads it, asking for
  * CORS, and drawn onto a <canvas>, which only an image its host lets be read can be. False for
- * the design's own files and anything else, which modern-screenshot fetches itself.
+ * the canvas's own files and anything else, which modern-screenshot fetches itself.
  */
 async function crossOriginImage(url: string, assetBase?: string): Promise<string | false> {
   if (!/^https?:\/\//.test(url)) return false;

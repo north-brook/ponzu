@@ -23,7 +23,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   let browser: Browser;
   let page: Page;
   const errors: string[] = [];
-  /** The seeded design, its boards, a second page and another canvas. */
+  /** The seeded canvas, its boards, a second page and another canvas. */
   let world: {
     id: string;
     other: string;
@@ -200,7 +200,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
 
   test("a board since deleted is muted text that says what happened", async () => {
     await rail().locator('[data-place="gone"]').hover();
-    await page.getByRole("tooltip").getByText("This board isn't in the design any more").waitFor();
+    await page.getByRole("tooltip").getByText("This board isn't in the canvas any more").waitFor();
     await shoot("6-gone");
     // And one that goes while the reply is on screen turns muted then.
     await page.evaluate(
@@ -236,7 +236,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     const text = (await rail().textContent()) ?? "";
     expect(text).not.toContain("[Phone");
     expect(text).not.toContain("](");
-    expect(text).not.toContain("ponzu.design/des");
+    expect(text).not.toContain("ponzu.design/can");
     await shoot("7-streaming");
     // Closed while still streaming, it works at once.
     await say(`${line}, and`, true);

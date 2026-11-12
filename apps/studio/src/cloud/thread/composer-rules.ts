@@ -29,7 +29,7 @@ export function composerButton({
 
 /*
  * Drafts: what someone started typing to a canvas stays with that canvas, through switching
- * canvases and restarting the app. Kept in the browser's storage, one key per person and design,
+ * canvases and restarting the app. Kept in the browser's storage, one key per person and canvas,
  * and nowhere else: a draft is the person's own until they send it, so someone else signing in
  * on the same Mac never sees it, and signing out clears them all.
  */

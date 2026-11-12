@@ -5,7 +5,7 @@ import { circular, cornersCss, largest, lengths, ownCorners, ringCorners } from 
 const board = (style: Record<string, string>) =>
   ({ root: { style: { width: "320px", height: "200px", ...style } } }) as unknown as Artboard;
 
-test("a design's root radius is read per corner, as the shorthand and longhands give it", () => {
+test("a board's root radius is read per corner, as the shorthand and longhands give it", () => {
   expect(ownCorners(board({}))).toEqual([0, 0, 0, 0]);
   expect(ownCorners(board({ "border-radius": "16px" }))).toEqual([16, 16, 16, 16]);
   expect(ownCorners(board({ "border-radius": "16px 0" }))).toEqual([16, 0, 16, 0]);
@@ -28,7 +28,7 @@ test("a computed radius splits into its lengths at top-level spaces only", () =>
   expect(lengths("")).toEqual([]);
 });
 
-test("each corner is the design's or the canvas's few px, whichever is larger", () => {
+test("each corner is the board's own or the view's few px, whichever is larger", () => {
   expect(cornersCss(circular([16, 16, 16, 16]), "var(--r)")).toBe("max(16px, var(--r))");
   expect(cornersCss(circular([0, 0, 0, 0]), "var(--r)")).toBe("var(--r)");
   // A radius smaller than the canvas's still gets the canvas's.

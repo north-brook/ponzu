@@ -110,15 +110,20 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
 
 /**
  * A description as the tab shows it: what Ponzu wrote for GitHub's readers taken out. The
- * canvas's picture is HTML for GitHub's page (the tab draws HTML as text, and the canvas is open
+ * canvas's picture is HTML for GitHub's page (the tab draws HTML as text, and its boards are open
  * beside it anyway), the way back to Ponzu leads where the tab already is, and the markers around
- * the agent's summary are for rewriting it. What anyone else wrote stays as written.
+ * the agent's summary are for rewriting it. What anyone else wrote stays as written. The way back
+ * reads "Made in Ponzu: …", or "Designed in Ponzu: …" on a pull request opened before canvases
+ * had their name; both come out.
  */
 export function bodyForTab(body: string): string {
   return body
     .replace(/<!-- ponzu:picture -->[\s\S]*?<!-- \/ponzu:picture -->/g, "")
     .replace(/<!-- \/?ponzu:summary -->/g, "")
-    .replace(/^Designed in Ponzu: \[[^\n]*\]\(https:\/\/ponzu\.design\/[^\s)]*\)[ \t]*$/gm, "")
+    .replace(
+      /^(?:Made|Designed) in Ponzu: \[[^\n]*\]\(https:\/\/ponzu\.design\/[^\s)]*\)[ \t]*$/gm,
+      "",
+    )
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

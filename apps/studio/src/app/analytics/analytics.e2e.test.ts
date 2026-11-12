@@ -105,7 +105,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** Signs in as someone whose setup is done, and opens the seeded design from the sidebar. */
+  /** Signs in as someone whose setup is done, and opens the seeded canvas from the sidebar. */
   async function openCanvas(mode: "full" | "private") {
     const sink = postHogSink();
     // PostHog drops HeadlessChrome as a bot; the app's Electron says it is Chrome and Electron.

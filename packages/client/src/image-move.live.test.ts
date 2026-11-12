@@ -140,7 +140,7 @@ describe.skipIf(!ready)("a canvas recreated on a new image, for real", () => {
           createKey: `image-move-live-${Date.now()}`,
         });
         writeFileSync(STATE, JSON.stringify({ canvasId: created.id, word: WORD }));
-        console.log(`design ${created.id}, code word ${WORD}, state in ${STATE}`);
+        console.log(`canvas ${created.id}, code word ${WORD}, state in ${STATE}`);
         await until("the first answer", 5 * MINUTE, () => lastAnswer(created.id));
         await idle(created.id);
         const live = createLive({ api });

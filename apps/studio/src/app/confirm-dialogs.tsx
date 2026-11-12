@@ -5,7 +5,7 @@ import { BlockingDialog, DialogActions, DialogButton } from "../cloud/dialogs/bl
  * is asked first.
  */
 
-/** Deleting a design takes its canvas and thread from everyone. */
+/** Deleting a canvas takes it and its thread from everyone. */
 export function DeleteCanvasDialog({
   name,
   open,
