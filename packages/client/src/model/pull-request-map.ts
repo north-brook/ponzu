@@ -229,6 +229,9 @@ const SAID_BY_THE_API = new Set([
   "branch_not_pushed",
   "no_repository",
   "forbidden",
+  "workflow_permission",
+  "merge_queue",
+  "merge_queue_unmergeable",
 ]);
 
 /** Why an action on the pull request didn't happen, in a sentence a person can act on. */

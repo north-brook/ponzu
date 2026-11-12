@@ -73,6 +73,12 @@ const NEXT: Record<string, string> = {
     "The repository's rules refuse it for a reason GitHub doesn't give (a merge queue, signed commits). Tell the person.",
   no_pull_request: "No pull request is open: open_pull_request opens one.",
   pull_request_closed: "It is merged or closed already.",
+  workflow_permission:
+    "Nobody in Ponzu can get past this, and trying again won't: tell the person it's a change to make on GitHub themselves, and leave workflow files out of the branch's commits.",
+  merge_queue:
+    "Ponzu doesn't add pull requests to a merge queue yet. Don't try again: tell the person it's ready for them to add to the queue on GitHub.",
+  merge_queue_unmergeable:
+    "The queue's checks or rules turned it down: read_pull_request says what holds it back. Tell the person.",
 };
 
 /** The tools, for a canvas with a repository that is checked out. */
@@ -286,13 +292,19 @@ export function actionText(action: AgentPullRequestAction, answer: AgentPullRequ
         ? `Turned on auto-merge for pull request ${n}, ${as}: GitHub merges it once what its rules want has passed. It has not merged yet.`
         : `Auto-merge was already on for pull request ${n}.`;
     case "merge":
+      if (answer.did && answer.queued) {
+        return `Added ${n} to the merge queue on GitHub, ${as}. GitHub merges it when its checks pass; it has not merged yet.`;
+      }
       if (answer.did) {
         return pr.state === "merged"
           ? `Merged pull request ${n} on GitHub, ${as}.`
           : `GitHub took the merge of pull request ${n}, ${as}, but doesn't show it merged yet. Read it again before saying it merged.`;
       }
-      return pr.state === "merged"
-        ? `Pull request ${n} was already merged${pr.mergedBy ? ` by @${pr.mergedBy}` : ""}; you didn't merge it.`
+      if (pr.state === "merged") {
+        return `Pull request ${n} was already merged${pr.mergedBy ? ` by @${pr.mergedBy}` : ""}; you didn't merge it.`;
+      }
+      return pr.mergeQueue?.entry
+        ? `Pull request ${n} was already in the merge queue on GitHub; nothing changed.`
         : `Pull request ${n} was not merged.`;
   }
 }
@@ -348,6 +360,14 @@ export function standingText(s: PullRequestStanding): string {
             )
             .join("\n")}`,
         );
+      }
+      const queue = pr.mergeQueue;
+      if (queue?.entry) {
+        lines.push(
+          `It is in the merge queue on GitHub${queue.entry.position === null ? "" : `, number ${queue.entry.position} in line`}: GitHub merges it when the queue's checks pass.`,
+        );
+      } else if (queue?.enabled) {
+        lines.push("The repository merges through a merge queue.");
       }
       if (pr.autoMerge)
         lines.push(

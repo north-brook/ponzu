@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -369,6 +369,9 @@ test("a repo canvas is told where its checkout is, and that it drives its pull r
   expect(said).not.toContain("Ponzu doesn't open");
   expect(said).not.toContain("the person opens it");
   expect(said).toContain("If a push fails, don't work around it");
+  // The App can't write workflows, and the agent can't fix that: it leaves them out instead.
+  expect(said).toContain("leave workflow files out of your commits");
+  expect(said).not.toMatch(/fix .*workflow/i);
   expect(said).toContain(
     "Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.",
   );
@@ -614,6 +617,80 @@ test("Create PR during a turn waits for the turn to end, so the agent's git is l
   expect(s.onGithub()).toBeNull();
   s.run.end();
   await until(() => s.onGithub() === head, 5_000);
+});
+
+test("the agent's pull request tools push mid-turn, and ask the API only once GitHub has the branch (#511)", async () => {
+  const s = await onRepo();
+  s.api.remoteHead = s.onGithub;
+  s.run.ready();
+  await turn(s);
+  const head = s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: true });
+  expect(opened.isError).toBeFalsy();
+  // Pushed by the tool itself, mid-turn, before the API was asked: not left for the turn's end.
+  expect(s.onGithub()).toBe(head);
+  expect(s.api.prCalls.map((call) => call.action)).toEqual(["open"]);
+  expect(opened.text).toContain("Opened pull request #1 as a draft");
+  // And the merge names the commit GitHub has.
+  s.commit();
+  const merged = await s.run.call("merge_pull_request");
+  expect(merged.isError).toBeFalsy();
+  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", headSha: s.onGithub() });
+});
+
+/** Makes "GitHub" refuse every push, saying `line` as GitHub's own refusal does. */
+function refusePushes(origin: string, line: string) {
+  const hook = join(origin, "hooks", "pre-receive");
+  writeFileSync(hook, `#!/bin/sh\necho "${line}" >&2\nexit 1\n`);
+  chmodSync(hook, 0o755);
+}
+
+test("a push GitHub refuses fails the agent's tools before the API is asked, and nothing is said done (#511)", async () => {
+  const s = await onRepo();
+  s.api.remoteHead = s.onGithub;
+  refusePushes(s.origin, "remote: Repository not found.");
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: false });
+  expect(opened.isError).toBe(true);
+  expect(opened.text).toContain("aren't on GitHub yet, so nothing was asked of the pull request");
+  const merged = await s.run.call("merge_pull_request");
+  expect(merged.isError).toBe(true);
+  // The API heard of neither.
+  expect(s.api.prCalls).toEqual([]);
+  expect(s.onGithub()).toBeNull();
+  // And a fake API that looks at the remote never says it opened one from a branch GitHub lacks.
+  const answer = await s.api.actOnPullRequest(s.api.runner!, "open", { turn: null });
+  expect(answer).toMatchObject({ did: false, pushing: true, branch: { exists: false } });
+});
+
+test("a push with a workflow file is refused in its own words: leave the file out, never 'fix it'", async () => {
+  const s = await onRepo();
+  // GitHub's own line, verbatim, as it answers a GitHub App without the workflows permission.
+  refusePushes(
+    s.origin,
+    "remote: refusing to allow a GitHub App to create or update workflow \\`.github/workflows/ci.yml\\` without \\`workflows\\` permission",
+  );
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: true });
+  expect(opened.isError).toBe(true);
+  expect(opened.text).toContain("Take those changes out of the branch's commits");
+  expect(s.api.prCalls).toEqual([]);
+  s.run.end();
+
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  const message = String((notices(s.api, "error")[0]!.payload as { message?: string }).message);
+  expect(message).toBe(
+    "GitHub won't let Ponzu push changes to files under .github/workflows/ to north/fern: Ponzu's GitHub App isn't allowed to change workflows. 1 commit on pz/hero is safe in this canvas's sandbox. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.",
+  );
+  expect(message).not.toMatch(/fix/i);
+  // Not a failure that passes on another try: tried once a push, never again and again.
+  const tries = s.api.gitReports.filter((r) => r.name === "git_push");
+  expect(tries.every((r) => r.fields.kind === "workflow_permission")).toBe(true);
+  expect(tries.every((r) => r.fields.attempt === 0)).toBe(true);
 });
 
 test("the turn's checkpoint is saved before its push, which may take a while", async () => {

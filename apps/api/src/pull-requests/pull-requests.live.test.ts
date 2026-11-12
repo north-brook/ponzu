@@ -35,6 +35,7 @@ import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
+import { FEATURES_OFF } from "../features.ts";
 import { createLogger } from "../http/log.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { createVault } from "../vault/vault.ts";
@@ -74,6 +75,8 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     },
     // Only where previews are served from is read, for the pull request's description.
     config: { assetsUrl: "https://assets.ponzu.cloud" } as Config,
+    // Every switch off, as the dev deployment has them: a merge-queue repo is refused, not queued.
+    features: FEATURES_OFF,
     // A canvas with no previews yet copies none into its pull request.
     storage: new Proxy({} as ObjectStorage, {
       get: () => () => Promise.reject(new Error("The live test uses no storage.")),
