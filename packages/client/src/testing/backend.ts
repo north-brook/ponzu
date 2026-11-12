@@ -1151,7 +1151,7 @@ export class FakeBackend {
           merge: (id, body) =>
             call(() => github(writable(id)).merge(person.githubLogin, body.headSha, !!body.bypass)),
           autoMerge: (id, on) => call(() => github(writable(id)).autoMerge(on)),
-          close: (id) => call(() => github(writable(id)).close()),
+          close: (id, number) => call(() => github(writable(id)).close(number)),
           updateBranch: (id, body) => call(() => github(writable(id)).updateBranch(body.headSha)),
         },
       },

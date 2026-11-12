@@ -33,6 +33,14 @@ const MergeBody = z.object({
 });
 const UpdateBody = z.object({ headSha: HeadSha });
 const FileQuery = z.object({ path: z.string().min(1).max(4_096) });
+/** The pull request the person said to close; refused if the canvas's newest is another now. */
+const CloseQuery = z.object({
+  number: z
+    .string()
+    .regex(/^[1-9]\d{0,9}$/)
+    .transform(Number)
+    .optional(),
+});
 
 /** The most of one file's diff the tab is sent. */
 const MAX_PATCH_CHARS = 512 * 1024;
@@ -145,8 +153,24 @@ export const canvasPullRequest = new Hono<AppEnv>()
     c.json(await act(c.var, c.req.valid("param").id, { kind: "auto_merge", enabled: false })),
   )
 
-  .post("/:id/pull-request/close", access.user, validate("param", Params), async (c) =>
-    c.json(await act(c.var, c.req.valid("param").id, { kind: "close" })),
+  /**
+   * Closes it without merging, as the person. `?number=` names the one they said to close: 409
+   * `pull_request_changed` if the canvas's newest is another by now.
+   */
+  .post(
+    "/:id/pull-request/close",
+    access.user,
+    validate("param", Params),
+    validate("query", CloseQuery),
+    async (c) => {
+      const { number } = c.req.valid("query");
+      return c.json(
+        await act(c.var, c.req.valid("param").id, {
+          kind: "close",
+          ...(number === undefined ? {} : { number }),
+        }),
+      );
+    },
   )
 
   /** Merges the base into the branch, when the branch is behind it. */

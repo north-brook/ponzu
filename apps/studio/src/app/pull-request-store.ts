@@ -2,8 +2,9 @@ import type { PullRequestTab } from "@ponzu/client";
 import type { PullRequestAction } from "@ponzu/client/query";
 import { QueryObserver } from "@tanstack/react-query";
 import type { LoadedDiff } from "../cloud/model.ts";
+import type { PullRequestMenu } from "../cloud/pr-tab/pull-request-view.tsx";
 import type { NextAction } from "../cloud/pull-request.ts";
-import { prActionError, rulesWant } from "./pull-request-map.ts";
+import { bodyForTab, prActionError, rulesWant } from "./pull-request-map.ts";
 import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
@@ -16,12 +17,20 @@ import { mutate, type StorePonzu } from "./store-ponzu.ts";
  * Resolve are the agent's, asked of it in the thread once for a commit.
  * A merge the repo's rules still hold back is offered only after the person confirms it, and goes
  * out with the commit they confirmed: a push while they decide closes the question.
+ * The tab's menu adds two of the person's own: Turn off auto-merge, and Close pull request, which
+ * is asked first and goes out only while the pull request it named is still the open one.
  *
  * The tab is the client's `pullRequest` query, which an action's answer writes too, and a
  * file's diff its `pullRequestFile`, kept for the commit it was read at. What this keeps beside
  * them is the person's side: the action on its way, a merge waiting to be confirmed, what the
  * agent was asked.
  */
+
+/**
+ * What the person can be doing to the pull request: the chrome's one action, or one of the tab's
+ * menu (Close pull request, Turn off auto-merge).
+ */
+export type PullRequestBusy = NextAction | "close" | "auto_merge_off";
 
 export interface PullRequestState {
   /** The last read, kept while the next is on its way and when it fails. */
@@ -34,9 +43,11 @@ export interface PullRequestState {
    */
   confirmed: boolean;
   /** The action on its way. */
-  busy: NextAction | null;
+  busy: PullRequestBusy | null;
   /** Merging past what the rules still want at `headSha`, waiting on the person to say so. */
   bypass: { reason: string; headSha: string } | null;
+  /** Closing pull request `number` without merging it, waiting on the person to say so. */
+  closing: { number: number } | null;
   /** The agent's action already asked of it for the head as it stands, until it moves. */
   asked: NextAction | null;
 }
@@ -61,6 +72,7 @@ export class PullRequestStore {
     confirmed: false,
     busy: null,
     bypass: null,
+    closing: null,
     asked: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -224,6 +236,40 @@ export class PullRequestStore {
     this.set({ bypass: null });
   }
 
+  /**
+   * The tab's Close pull request: asked first, since Ponzu has no Reopen (Create PR opens a new
+   * one instead). Only an open or draft pull request, and nothing else on its way.
+   */
+  askClose(): void {
+    const pr = this.state.tab?.pullRequest;
+    if (this.state.busy || !pr || !isOpen(pr)) return;
+    this.set({ closing: { number: pr.number } });
+  }
+
+  /**
+   * The person said to close it. It goes out only while the pull request the question named is
+   * still the open one: a merge (auto-merge landing) or a newer pull request closes the question.
+   * The API closes whatever is open, so this is the check that it is still the one asked about.
+   */
+  confirmClose(): void {
+    const { closing, busy, tab } = this.state;
+    this.set({ closing: null });
+    const pr = tab?.pullRequest;
+    if (!closing || busy || !pr || pr.number !== closing.number || !isOpen(pr)) return;
+    this.act("close", { kind: "close", number: closing.number });
+  }
+
+  cancelClose(): void {
+    this.set({ closing: null });
+  }
+
+  /** The tab's Turn off auto-merge, for an open pull request that has it on. */
+  turnOffAutoMerge(): void {
+    const pr = this.state.tab?.pullRequest;
+    if (this.state.busy || !pr?.autoMerge || !isOpen(pr)) return;
+    this.act("auto_merge_off", { kind: "auto_merge", on: false });
+  }
+
   /** The agent's turn ended: what it was asked may be asked again, if the head didn't move. */
   agentIdle(): void {
     if (this.state.asked) this.set({ asked: null });
@@ -242,7 +288,7 @@ export class PullRequestStore {
    * in the query (and so here); a refusal reads it again, since whatever turned it away (a push,
    * a teammate's merge) has moved it, and the button follows.
    */
-  private act(action: NextAction, request: PullRequestAction): void {
+  private act(action: PullRequestBusy, request: PullRequestAction): void {
     const { ponzu, canvasId } = this.opts;
     this.set({ busy: action });
     // A read on its way would answer from before the action: the action's answer is newer.
@@ -329,6 +375,42 @@ export class PullRequestStore {
           : null;
     }
     if (next.asked && sha !== this.askedAt) change.asked = null;
+    if (next.closing && !(pr && pr.number === next.closing.number && isOpen(pr))) {
+      change.closing = null;
+    }
     return change;
   }
+}
+
+/**
+ * The agent's kept words, where Create PR is what the person can do next and no pull request is
+ * open: the description the new one opens with. Ponzu's markers around them come out, as from a
+ * description. An API older than the field says nothing.
+ */
+export function opensWith(tab: PullRequestTab): string | null {
+  const summary = tab.summary ?? null;
+  if (!summary || tab.nextAction !== "create_pr") return null;
+  return bodyForTab(summary) || null;
+}
+
+/**
+ * The tab's menu as the read says: Turn off auto-merge while it is on, and Close, for an open or
+ * draft pull request. Null for one that is merged or closed, or none.
+ */
+export function tabMenu(
+  pull: Pick<PullRequestState, "tab" | "busy">,
+  store: Pick<PullRequestStore, "askClose" | "turnOffAutoMerge">,
+): PullRequestMenu | null {
+  const pr = pull.tab?.pullRequest;
+  if (!pr || !isOpen(pr)) return null;
+  return {
+    ...(pr.autoMerge ? { onTurnOffAutoMerge: () => store.turnOffAutoMerge() } : {}),
+    onClose: () => store.askClose(),
+    busy: pull.busy !== null,
+  };
+}
+
+/** Open or a draft: what Close and Turn off auto-merge act on. */
+function isOpen(pr: NonNullable<PullRequestTab["pullRequest"]>): boolean {
+  return pr.state === "open" || pr.state === "draft";
 }

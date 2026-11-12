@@ -211,6 +211,7 @@ export function rulesWant(pr: Pull): string {
 const SAID_BY_THE_API = new Set([
   "no_pull_request",
   "pull_request_closed",
+  "pull_request_changed",
   "pull_request_draft",
   "head_moved",
   "mergeability_unknown",

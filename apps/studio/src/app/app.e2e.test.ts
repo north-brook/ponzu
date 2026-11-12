@@ -689,6 +689,16 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     }, id);
     await page.getByText("const yearly = true;").waitFor();
 
+    // The details' menu: Close asks first. Cancelled, nothing reaches GitHub, the pull request
+    // stays open, and the window takes clicks again (Merge, below).
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: "Close pull request" }).click();
+    const closing = page.getByRole("dialog", { name: /^Close #\d+ without merging\?$/ });
+    await closing.getByText("The branch and its commits stay.", { exact: false }).waitFor();
+    await closing.getByRole("button", { name: "Cancel" }).click();
+    await closing.waitFor({ state: "detached" });
+    expect(await page.getByText("Closed", { exact: true }).count()).toBe(0);
+
     await action("Merge").click();
     await page
       .getByText(/Merged/)

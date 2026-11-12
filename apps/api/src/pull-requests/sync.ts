@@ -35,6 +35,11 @@ export interface PullRequestTarget {
    * the last push failed. Absent where it was not read.
    */
   sandbox?: { unpushed: number; pushError: string | null };
+  /**
+   * The agent's words on what the branch changes (`describe_pull_request`), kept on the canvas:
+   * the description the next pull request opens with. Absent where it was not read.
+   */
+  summary?: string | null;
 }
 
 /** What asking GitHub about a canvas's pull request takes, or why it cannot be asked. */
@@ -60,6 +65,7 @@ export function targetOf(context: PullRequestContext): PullRequestTarget | ApiEr
     defaultBranch: repo.defaultBranch,
     number: canvas.prNumber,
     sandbox: context.sandbox,
+    summary: canvas.prSummary,
   };
 }
 
