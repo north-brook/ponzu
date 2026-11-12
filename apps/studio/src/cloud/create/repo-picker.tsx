@@ -1,10 +1,11 @@
 import { ArrowDown01Icon, ArrowUpRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Repo } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import {
   Command,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -19,17 +20,22 @@ import { REPO_ICON, SCRATCH_ICON } from "../ui/project-icons.ts";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip.tsx";
 import {
+  heldWhileOpen,
+  LIST_ROOM,
+  type PickerGroup,
   type ProjectChoice,
-  pickerRepos,
-  pickerRows,
+  pickerGroups,
   projectLabel,
-  type RepoRow,
+  projectName,
   type RepoShelf,
+  type Shelf,
   searchAtOpening,
 } from "./create.ts";
 
 const SCRATCH = "scratch";
-const keyOf = (choice: ProjectChoice) => (choice.kind === "scratch" ? SCRATCH : choice.repo.id);
+/** A row's key: the window's Scratch is `scratch`, another workspace's `scratch:<its id>`. */
+const keyOf = (choice: ProjectChoice, workspaceId: string | null) =>
+  choice.kind === "repo" ? choice.repo.id : workspaceId ? `${SCRATCH}:${workspaceId}` : SCRATCH;
 
 /**
  * The create page's project selector, in its header beside the logo: the repo the design is made
@@ -37,13 +43,15 @@ const keyOf = (choice: ProjectChoice) => (choice.kind === "scratch" ? SCRATCH : 
  * chevron. It reads as part of the header, not as a chip, and has a quiet button's grounds.
  * `value` is null until the window's repos are known, and holds the selector's place meanwhile.
  *
- * The picker (shadcn's combobox: a popover holding a command) is one of the menus' family:
- * one-line rows of Scratch, then every repo the person can push to, the window's workspace's
- * first and then each other workspace's (`elsewhere`, as they arrive, after the rows already
- * there), each by its full name; and a way to allow more on GitHub for the window's workspace.
- * A search over them once there are enough to need one. Typing filters, the arrows move (Home
- * and End to the ends), Return chooses, Escape closes without changing. A repo in another
- * workspace is chosen with that workspace's id, for the window to switch to it.
+ * The picker (shadcn's combobox: a popover holding a command) is one of the menus' family. With
+ * one workspace it is one-line rows of Scratch, then every repo the person can push to, each by
+ * its full name. With several, a group for each, the window's first and then the others in the
+ * switcher's order (`elsewhere`): the workspace's name over it as a menu's section label, its
+ * Scratch, and its repos as they arrive (pickerGroups and heldWhileOpen in create.ts). Under them,
+ * a way to allow more on GitHub for the window's workspace. A search over them whenever the list
+ * would scroll. Typing filters, the arrows move over the rows (Home and End to the ends), Return
+ * chooses, Escape closes without changing. A project in another workspace, its Scratch or a repo,
+ * is chosen with that workspace's id, for the window to switch to it.
  *
  * It opens under the selector and the page stays where it is: the list shows five and a half
  * rows and scrolls (a list that long has its search), and in a window too short even for that the
@@ -51,6 +59,7 @@ const keyOf = (choice: ProjectChoice) => (choice.kind === "scratch" ? SCRATCH : 
  */
 export function RepoPicker({
   value,
+  workspaceName = null,
   repos,
   elsewhere = [],
   onChange,
@@ -59,24 +68,25 @@ export function RepoPicker({
   onOpenChange,
 }: {
   value: ProjectChoice | null;
+  /** The window's workspace's name: its group's heading, and whose Scratch the selector says. */
+  workspaceName?: string | null;
   /** The window's workspace's repos; null while they load. */
   repos: Repo[] | null;
-  /** The other workspaces' repos that have arrived, in the switcher's order. */
+  /** Each other usable workspace, in the switcher's order, with its repos once they arrive. */
   elsewhere?: readonly RepoShelf[];
-  /** `workspaceId` is null for Scratch and the window's own repos. */
+  /** `workspaceId` is null for the window's own Scratch and repos. */
   onChange: (choice: ProjectChoice, workspaceId: string | null) => void;
   onAllowMore: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const label = value ? projectLabel(value) : null;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="quiet"
-          aria-label={label ? `Project: ${label}` : "Project"}
-          aria-busy={label ? undefined : true}
+          aria-label={value ? projectName(value, workspaceName) : "Project"}
+          aria-busy={value ? undefined : true}
           data-project-selector
           // The display face at the header's size; ink, so it stands beside the logo.
           className="h-10 min-w-0 max-w-full shrink gap-1 rounded-10 pr-1.5 pl-2 font-display font-semibold text-22 text-ink"
@@ -106,6 +116,7 @@ export function RepoPicker({
       >
         <PickerBody
           value={value}
+          workspaceName={workspaceName}
           repos={repos}
           elsewhere={elsewhere}
           onChoose={(choice, workspaceId) => {
@@ -143,12 +154,14 @@ function RepoTitle({
 
 function PickerBody({
   value,
+  workspaceName,
   repos,
   elsewhere,
   onChoose,
   onAllowMore,
 }: {
   value: ProjectChoice | null;
+  workspaceName: string | null;
   repos: Repo[] | null;
   elsewhere: readonly RepoShelf[];
   onChoose: (choice: ProjectChoice, workspaceId: string | null) => void;
@@ -156,13 +169,17 @@ function PickerBody({
 }) {
   const [query, setQuery] = useState("");
   // The highlighted row: the chosen one as it opens, then wherever the keys or pointer move it.
-  const [active, setActive] = useState(value ? keyOf(value) : SCRATCH);
-  const all = pickerRepos(repos, elsewhere);
-  // Whether there is a search is settled as the picker opens and holds while it is open: rows
-  // arriving join at the foot, and a field brought in over them would move them. With repos still
-  // to come (the window's, or another workspace's) it has one, as the list may come to scroll.
-  const [search] = useState(() => repos === null || searchAtOpening(all.length, elsewhere));
-  const rows = pickerRows(all, search ? query : "");
+  const [active, setActive] = useState(value ? keyOf(value, null) : SCRATCH);
+  const now: Shelf[] = [{ workspaceId: null, name: workspaceName ?? "", repos }, ...elsewhere];
+  // What each workspace had as the picker opened: only the last one's repos join while it is
+  // open, at the foot, so nothing moves under the pointer.
+  const [atOpening] = useState(now);
+  const shelves = heldWhileOpen(atOpening, now);
+  // Whether there is a search is settled as the picker opens and holds while it is open: a field
+  // brought in over the rows would move them. It has one whenever the list would scroll, or may
+  // come to (the last workspace's repos still to come).
+  const [search] = useState(() => searchAtOpening(pickerGroups(shelves, "")));
+  const groups = pickerGroups(shelves, search ? query : "");
   const list = useRef<HTMLDivElement>(null);
   // With no field to type in, the list takes focus as it opens: the keys still move the
   // highlight (cmdk listens on its root), and the list names the highlighted row.
@@ -170,17 +187,34 @@ function PickerBody({
     if (!search) list.current?.focus({ preventScroll: true });
   }, [search]);
 
-  const chosen = value ? keyOf(value) : null;
+  const chosen = value ? keyOf(value, null) : null;
   const scratch: ProjectChoice = { kind: "scratch" };
   const row = (choice: ProjectChoice, workspaceId: string | null) => (
     <PickerRow
-      key={keyOf(choice)}
+      key={keyOf(choice, workspaceId)}
       choice={choice}
       workspaceId={workspaceId}
-      checked={keyOf(choice) === chosen}
-      highlighted={keyOf(choice) === active}
+      checked={keyOf(choice, workspaceId) === chosen}
+      highlighted={keyOf(choice, workspaceId) === active}
       onChoose={onChoose}
     />
+  );
+  const rows = (group: PickerGroup) => (
+    <>
+      {group.scratch ? row(scratch, group.workspaceId) : null}
+      {group.repos.map((repo) => row({ kind: "repo", repo }, group.workspaceId))}
+      {group.loading ? (
+        // Its place held under its Scratch while the workspace's repos are coming.
+        <div
+          role="status"
+          aria-label="Loading repositories"
+          className="flex h-8 shrink-0 items-center gap-[9px] px-2"
+        >
+          <Skeleton className="size-4 rounded-4" />
+          <Skeleton className="h-2.5 w-2/5 rounded-3" />
+        </div>
+      ) : null}
+    </>
   );
 
   return (
@@ -207,22 +241,18 @@ function PickerBody({
         ) : null}
         <FadeScroll style={{ maxHeight: LIST_ROOM }}>
           <CommandList ref={list} label="Repositories">
-            {rows.scratch ? row(scratch, null) : null}
-            {rows.repos.map(({ repo, workspaceId }: RepoRow) =>
-              row({ kind: "repo", repo }, workspaceId),
+            {groups.map((group, i) =>
+              group.heading === null ? (
+                <Fragment key={group.workspaceId ?? SCRATCH}>{rows(group)}</Fragment>
+              ) : (
+                <Fragment key={group.workspaceId ?? SCRATCH}>
+                  {/* The menus' rule between sections; drawn while a search is typed too. */}
+                  {i > 0 ? <CommandSeparator alwaysRender /> : null}
+                  <CommandGroup heading={group.heading}>{rows(group)}</CommandGroup>
+                </Fragment>
+              ),
             )}
-            {repos === null ? (
-              // The window's repos come first: while they load, their place is held under Scratch.
-              <div
-                role="status"
-                aria-label="Loading repositories"
-                className="flex h-8 items-center gap-[9px] px-2"
-              >
-                <Skeleton className="size-4 rounded-4" />
-                <Skeleton className="h-2.5 w-2/5 rounded-3" />
-              </div>
-            ) : null}
-            {repos !== null && !rows.scratch && !rows.repos.length ? (
+            {!groups.length ? (
               // In the names' column (past a 16px icon and its 9px gap), under the field's text.
               <p className="m-0 flex h-8 items-center pr-2 pl-[33px] text-13 text-muted">
                 <span className="truncate">No repositories match “{query.trim()}”</span>
@@ -268,7 +298,7 @@ function PickerRow({
   highlighted: boolean;
   onChoose: (choice: ProjectChoice, workspaceId: string | null) => void;
 }) {
-  const key = keyOf(choice);
+  const key = keyOf(choice, workspaceId);
   const name = projectLabel(choice);
   // Which side of the name the tip sits, and how far from it: past the picker's edge by a tip's
   // usual gap, on the right where the window has room for it, else on the left.
@@ -307,6 +337,7 @@ function PickerRow({
       // between them ("maya / kettle"): the row is named by the whole of it.
       aria-label={name}
       data-choice={key}
+      {...(checked ? { "data-checked": true } : {})}
       {...(workspaceId ? { "data-workspace": workspaceId } : {})}
       onSelect={() => onChoose(choice, workspaceId)}
     >
@@ -371,12 +402,6 @@ const ON_THE_MARK = "pb-[5px]";
  * (half of 660, less half the hairline's pixel), and the picker 6 before the selector.
  */
 const PICKER_WIDTH = 330 - 0.5 - 8 + 6;
-
-/**
- * What the list shows before it scrolls: five 32px rows and half of the next, so a longer list
- * reads as longer.
- */
-const LIST_ROOM = 176;
 
 /** A tip's distance from what it names (the tooltip's own `sideOffset`). */
 const TIP_GAP = 6;

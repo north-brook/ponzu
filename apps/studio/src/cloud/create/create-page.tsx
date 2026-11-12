@@ -23,11 +23,13 @@ export interface CreatePageProps {
   model: ModelChoice | null;
   /** Null until the window's repos are known: the selector holds its place meanwhile. */
   project: ProjectChoice | null;
+  /** The window's workspace's name: its group's heading in the picker, and whose Scratch it is. */
+  workspaceName?: string;
   /** The window's workspace's repos the person can push to, pushed-to lately first; null while they load. */
   repos: Repo[] | null;
-  /** The other workspaces' repos that have arrived, in the workspace switcher's order. */
+  /** Each other usable workspace, in the workspace switcher's order, with its repos once they arrive. */
   elsewhere?: readonly RepoShelf[];
-  /** `workspaceId` is another workspace's for one of its repos, else null. */
+  /** `workspaceId` is another workspace's for its Scratch or one of its repos, else null. */
   onProjectChange: (project: ProjectChoice, workspaceId: string | null) => void;
   onAllowMore: () => void;
   /**
@@ -69,6 +71,7 @@ export function CreatePage({
   sending,
   model,
   project,
+  workspaceName,
   repos,
   elsewhere,
   onProjectChange,
@@ -122,6 +125,7 @@ export function CreatePage({
           <div className="ml-2 flex min-w-0">
             <RepoPicker
               value={project}
+              {...(workspaceName ? { workspaceName } : {})}
               repos={repos}
               {...(elsewhere ? { elsewhere } : {})}
               onChange={onProjectChange}
