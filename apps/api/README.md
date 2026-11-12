@@ -308,10 +308,21 @@ never a cookie, so this is about where Ponzu's UI runs, not about protecting dat
 
 `deps.vault.seal(value, { column, row })` before writing an `encrypted_…` column,
 `deps.vault.open(…)` with the same binding after reading one. The binding is authenticated, so
-a value copied to another row or column does not open. To rotate the key: set
-`PONZU_VAULT_KEY` to a new one and move the old one into `PONZU_VAULT_OLD_KEYS`; drop it from
-there once everything it sealed has been sealed again (GitHub tokens are, at each refresh or
-sign-in).
+a value copied to another row or column does not open. A new sealed column goes into
+`SEALED_COLUMNS` in `packages/db/src/queries/sealed.ts` with its binding; a test fails while an
+`encrypted_` column is missing from it.
+
+To rotate the key: set `PONZU_VAULT_KEY` to a new one and move the old one into
+`PONZU_VAULT_OLD_KEYS`, and deploy. Once that deployment serves every request, run
+`bun scripts/reseal.ts` here with the deployment's `DATABASE_URL`, `PONZU_VAULT_KEY` and
+`PONZU_VAULT_OLD_KEYS` (`--dry-run` first writes nothing). It opens every value an old key
+sealed and seals it again under the new one, one row at a time and only if the row still holds
+what it read, so it can be stopped and run again. A GitHub token whose refresh is in flight is
+left for the next run, because the refresh stores its new pair only over the sealed text it
+read. It prints counts per column and key id, the rows it could not seal again (ids and secret
+names, never a value), and how many values are still under another key, and exits 1 while that
+is more than 0 or any value would not open. When it reports nothing left, drop the old key and deploy. Running it before the
+deployment with the new key is live would seal values the API cannot open yet.
 
 For a person's GitHub token call `githubUserToken(deps, userId)` each time one is needed. It
 refreshes when the token is within five minutes of running out, one refresh at a time per
