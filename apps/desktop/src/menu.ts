@@ -1,5 +1,6 @@
 import { app, Menu, shell } from "electron";
 import type { MenuCommand } from "./bridge.ts";
+import { HELP_LINKS, type SupportFacts, supportMailto } from "./support.ts";
 
 /*
  * The app's menus. What the studio carries out (a new canvas, Settings) goes to it as a
@@ -16,6 +17,8 @@ export interface MenuActions {
   devTools: boolean;
   /** What About says after the version: the commit and the environment (config.ts). */
   about: string;
+  /** What Help › Contact Support's email says about this build, as it is clicked (support.ts). */
+  supportFacts(): SupportFacts;
 }
 
 const SIGN_OUT = "sign-out";
@@ -107,6 +110,16 @@ export function buildMenu(actions: MenuActions): void {
     {
       role: "help",
       submenu: [
+        // A person's own email app, addressed to support, with this build's facts and no token.
+        {
+          label: "Contact Support",
+          click: () => void shell.openExternal(supportMailto(actions.supportFacts())),
+        },
+        { label: "Ponzu Status", click: () => void shell.openExternal(HELP_LINKS.status) },
+        { type: "separator" },
+        { label: "Privacy Policy", click: () => void shell.openExternal(HELP_LINKS.privacy) },
+        { label: "Terms of Service", click: () => void shell.openExternal(HELP_LINKS.terms) },
+        { type: "separator" },
         { label: "ponzu.design", click: () => void shell.openExternal("https://ponzu.design") },
         // Off the Mac there's no app menu to hold these.
         ...(mac

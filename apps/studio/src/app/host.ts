@@ -53,4 +53,9 @@ export interface Host {
   openExternal(url: string): void;
   /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
+  /**
+   * Whether to show the welcome from Ponzu 1.x now: the shell's answer, true once ever. Absent
+   * where there is no shell (a browser, the tests), which never shows it.
+   */
+  welcome1x?(): Promise<boolean>;
 }
