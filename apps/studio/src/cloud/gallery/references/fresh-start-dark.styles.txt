@@ -70,8 +70,13 @@ text "Settled" rgb(183, 179, 169) 400 12px Inter
 text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-text "What do you want to design?" rgb(244, 243, 239) 600 34px Funnel Display
+icon svg 198.95×54.28 rgb(244, 243, 239) stroke 3.4px
+text "What do you want to design?" rgb(244, 243, 239) 400 13px Inter
 ground div rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
+text "Make checkout one page, with the order …" rgb(118, 115, 105) 400 16px Inter
+text "tab" rgb(118, 115, 105) 400 11px Inter
+ground kbd shadow rgb(38, 37, 35) 0px 0px 0px 1px inset
+text "Suggestion: Make checkout one page, wit…" rgb(244, 243, 239) 400 13px Inter
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Opus 5.5" rgb(183, 179, 169) 500 12px Inter
 icon svg[Claude] 13×13 rgb(183, 179, 169) stroke 1px
@@ -82,11 +87,3 @@ icon svg[Send] 16×16 rgb(118, 115, 105) stroke 2.1px
 text "fernwood" rgb(183, 179, 169) 500 12px Inter
 icon svg[Project: fernwood] 12×12 rgb(183, 179, 169) stroke 2px
 icon svg[Project: fernwood] 11×11 rgb(183, 179, 169) stroke 2.2px
-text "Make checkout one page, with the order …" rgb(183, 179, 169) 400 13px Inter
-ground button[Ideas] shadow rgb(38, 37, 35) 0px 0px 0px 1px inset
-text "Three takes on the home hero that put t…" rgb(183, 179, 169) 400 13px Inter
-ground button[Ideas] shadow rgb(38, 37, 35) 0px 0px 0px 1px inset
-text "A dark mode for the shop, using the tok…" rgb(183, 179, 169) 400 13px Inter
-ground button[Ideas] shadow rgb(38, 37, 35) 0px 0px 0px 1px inset
-text "Friendlier empty states for cart, order…" rgb(183, 179, 169) 400 13px Inter
-ground button[Ideas] shadow rgb(38, 37, 35) 0px 0px 0px 1px inset

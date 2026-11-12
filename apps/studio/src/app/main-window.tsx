@@ -56,7 +56,7 @@ interface Opening {
 
 const RETURN_SYNC_MS = 60_000;
 const NOTICE_MS = 6000;
-/** Ideas show under the composer until the person has made this many designs in a workspace. */
+/** Ideas take turns as the composer's placeholder until the person has made this many designs in a workspace. */
 const IDEAS_UNTIL = 3;
 
 export function MainWindow({ host, user, badge }: { host: Host; user: Profile; badge: ReactNode }) {

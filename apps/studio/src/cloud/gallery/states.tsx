@@ -2,7 +2,6 @@
 import { GitMergeIcon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useState } from "react";
 import { NewDesignComposer } from "../create/composer.tsx";
-import { Ideas } from "../create/ideas.tsx";
 import { type DesignFilter, NO_FILTER, projectCounts, repoKey } from "../filter.ts";
 import type { DesignSummary, PullRequestSummary } from "../model.ts";
 import { type NextAction, nextAction } from "../pull-request.ts";
@@ -368,12 +367,6 @@ export function States() {
           <ComposerDemo initial="" />
           <ComposerDemo initial="Three takes on the hero" />
           <ComposerDemo initial="Three takes on the hero" sending />
-        </Section>
-
-        <Section title="Ideas">
-          <div className="w-[660px]">
-            <Ideas ideas={f.ideas} onPick={ignore} />
-          </div>
         </Section>
 
         <Section title="Create page in a pane">
