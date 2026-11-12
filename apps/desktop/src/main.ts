@@ -129,7 +129,7 @@ async function waitForPonzuPreview(): Promise<void> {
       type: "info",
       message: "Ponzu Preview is open",
       detail:
-        "Quit Ponzu Preview, then choose Try Again, and Ponzu Dev opens the way you left it: the same workspace and design, sidebar and filters.",
+        "Quit Ponzu Preview, then choose Try Again, and Ponzu Dev opens the way you left it: the same workspace and canvas, sidebar and filters.",
       buttons: ["Try Again", "Continue Without"],
       defaultId: 0,
       cancelId: 1,

@@ -33,10 +33,10 @@ import { useOnReturn } from "./use-answer.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /*
- * An open design: the canvas on a `CloudSource`, and the chrome over it, both driven by the
- * same source and the design's live head; its thread, what its agent waits on, the images on
+ * An open canvas: the boards view on a `CloudSource`, and the chrome over it, both driven by the
+ * same source and the canvas's live head; its thread, what its agent waits on, the images on
  * their way into a message, the pictures of the viewer's comments, and its pull request. All of
- * them live as long as the design is open.
+ * them live as long as the canvas is open.
  */
 
 export interface OpenCanvas {
@@ -52,8 +52,8 @@ export interface OpenCanvas {
 }
 
 /**
- * A design the create page has just made, as its answer said: it opens straight into its
- * thread with its first message and the agent waking, rather than empty while the canvas, the
+ * A canvas the create page has just made, as its answer said: it opens straight into its
+ * thread with its first message and the agent waking, rather than empty while its boards, the
  * thread and the head are read.
  */
 export interface FreshCanvas {
@@ -304,7 +304,7 @@ export function CanvasChromeSlot({
 }
 
 /**
- * Reads the pull request as the design opens (at once, not waiting for its head), and again
+ * Reads the pull request as the canvas opens (at once, not waiting for its head), and again
  * when what the head says of it changes, when the agent's state changes or a stretch of its
  * work ends (it may have pushed), when the thread says a pull request opened, merged or closed,
  * and on coming back to the window. A Scratch canvas (no `repo`) has none to read.

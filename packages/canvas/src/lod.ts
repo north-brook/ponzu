@@ -433,7 +433,7 @@ export class BoardDetail {
  * is whatever frame shows now, and an element that grows from nothing, or sits in one that pops
  * in from scale 0, measures nothing on its first frame: held for that, it would never move. So
  * it's the larger of that and its box as laid out, which no animation changes; only an element
- * both call tiny is. The box on screen keeps what the design's own transforms make of it: a
+ * both call tiny is. The box on screen keeps what the board's own transforms make of it: a
  * small element scaled up is as big as it's drawn. Part of an SVG counts as the whole SVG,
  * that's the motion you see; a small element counts what's in it, so a zero-size wrapper that
  * spins its parts around it is as big as they are.
@@ -476,7 +476,7 @@ function phase(a: Animation): Phase {
  * Stop or restart a board's infinite animations where they stand. Each loop redraws its board
  * every frame, and a page of them, under backdrop blurs, kept a MacBook Air's GPU busy all
  * afternoon. One-off entrances play out, so a board that's held still shows its settled page.
- * The rate, not pause(): pausing from script overrides the design's own animation-play-state
+ * The rate, not pause(): pausing from script overrides the board's own animation-play-state
  * from then on, and a loop meant to run on :hover would stop answering it. `anims` are the
  * board's CSS animations: on the canvas, the ones motion.ts tracks, so a hold never asks the
  * document for all of them.

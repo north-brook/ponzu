@@ -67,7 +67,7 @@ const WIDTH_VAR: Record<Pane, `--pane-${string}`> = {
 const NAME: Record<Pane, string> = { sidebar: "Sidebar", rail: "Thread" };
 /**
  * The gutter between a pane and the canvas, which is the edge's grab area: the sidebar's right
- * padding (8) and the rail's left (10), as the design pads them. A pane's width, as the design
+ * padding (8) and the rail's left (10), as the mockup pads them. A pane's width, as the mockup
  * gives it and as it's kept, takes in its gutter: its panel is that much narrower.
  */
 const GUTTER: Record<Pane, number> = { sidebar: 8, rail: 10 };
@@ -92,8 +92,8 @@ function panelLimits(pane: Pane, collapsible: boolean) {
 
 /**
  * The main window: a 38px chrome over three panes. The sidebar and the thread rail open at the
- * widths the person last dragged them to (the design's 300 and 360 at first; panes.ts has the
- * limits); the pane between them, the canvas's, takes the rest.
+ * widths the person last dragged them to (the mockup's 300 and 360 at first; panes.ts has the
+ * limits); the main pane between them takes the rest.
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
  * - `chrome` is everything past the left block (CanvasChrome); nothing on the create page.
@@ -110,7 +110,7 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * The panes are react-resizable-panels' (shadcn's Resizable, ui/resizable.tsx), in pixels. Each
  * edge between a pane and the canvas is a separator: the gutter there is its grab area, it
  * follows the pointer, takes focus in tab order and moves with the arrow keys, and a double-click
- * returns the pane to the design's width. Moving one edge never moves the other pane: it stops
+ * returns the pane to the mockup's width. Moving one edge never moves the other pane: it stops
  * where the canvas would go under 400. The toggles collapse and expand the panes through the
  * same panels, easing (`data-pane-motion`); a drag never eases. Whenever the window lays the
  * panes out itself (when it opens, on a toggle, when it's resized) each open pane takes the
@@ -121,9 +121,9 @@ function panelLimits(pane: Pane, collapsible: boolean) {
 /**
  * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
  * at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
- * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌥⌘B, the
- * View menu, or anything else that opens it while the design shows. Not when it came with a
- * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
+ * (`enterThread`), when it opened on a canvas that was already showing: the toggle, ⌥⌘B, the
+ * View menu, or anything else that opens it while the canvas shows. Not when it came with a
+ * canvas being opened, which leaves the keyboard where the person was (a row of the sidebar).
  * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the
  * window, so it never sits in a pane that has gone inert.
  */
@@ -218,7 +218,7 @@ export function AppWindow({
   const groupWidth = useRef(0);
 
   // The rail's content stays while it closes, as it last was, so it slides away rather than
-  // emptying first. Only while there's a chrome: what leaves with the whole view (the design it
+  // emptying first. Only while there's a chrome: what leaves with the whole view (the canvas it
   // showed) goes at once.
   const holdRail = chrome != null;
   const lastRail = useRef(rail);

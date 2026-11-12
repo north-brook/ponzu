@@ -157,7 +157,7 @@
     color: var(--c-ink);
     font-family: var(--font-sans);
     font-size: 13px;
-    /* The design sets text at the font's own line height unless it says otherwise. */
+    /* The mockup sets text at the font's own line height unless it says otherwise. */
     line-height: normal;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -444,7 +444,7 @@
   animation: suggestion-out var(--dur-pane) var(--ease-out) both;
 }
 
-/* The canvas's ground at rest: faint dots a step apart, as design tools draw one. The canvas
+/* The ground at rest: faint dots a step apart, as design tools draw one. The canvas
    draws its own under the boards, moving with its camera (the canvas package, --pz-dot); this
    is the same ground where a canvas starts, on the create page. */
 @utility canvas-dots {
@@ -495,7 +495,7 @@
   animation: settle var(--dur-pane) var(--ease-out);
 }
 
-/* A design's new preview and the one it replaces: a short, quiet cross-fade. The two run on
+/* A canvas's new preview and the one it replaces: a short, quiet cross-fade. The two run on
    the same timing so, added with plus-lighter, they always sum to one (canvas-preview.tsx). */
 @keyframes preview-in {
   from {

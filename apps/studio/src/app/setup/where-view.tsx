@@ -7,7 +7,7 @@ import type { Host } from "../host.ts";
 import { usePonzu } from "../ponzu-query.tsx";
 
 /*
- * "Where do you design?", live: the person's GitHub accounts, Set up opening GitHub's install
+ * "Where do you build?", live: the person's GitHub accounts, Set up opening GitHub's install
  * page in the browser, and on coming back (the install's outcome, by the setup page's link or by
  * asking the API, or the window coming to the front) a sync with GitHub, which turns the row
  * Ready. Continue records the

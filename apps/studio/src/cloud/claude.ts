@@ -75,7 +75,7 @@ function weekdayTime(at: number): string {
   return `${day} ${clock(date)}`;
 }
 
-/** "9:00", "16:00": the canvas writes times on a 24-hour clock without a leading zero. */
+/** "9:00", "16:00": the mockup writes times on a 24-hour clock without a leading zero. */
 function clock(date: Date): string {
   return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
 }

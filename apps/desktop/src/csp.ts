@@ -2,20 +2,20 @@
  * The studio's content security policy. The canvas draws agent-authored HTML in the app's own
  * document (each board in a shadow root, sanitized on its way into the database), so this is the
  * wall behind the sanitizer: no script but the studio's own, no frames, no plugins, no forms,
- * and nothing reached but the API, Neon Realtime, the design's files and, in a build that
+ * and nothing reached but the API, Neon Realtime, each canvas's files and, in a build that
  * reports usage, PostHog's ingestion.
  *
- * Images are the one thing loaded from anywhere on https: a design may show a photo from the
+ * Images are the one thing loaded from anywhere on https: a board may show a photo from the
  * web, as the runner's previews of it do (docs/cloud.md, "Security"). An image runs no script;
- * what it costs is that the image's host learns the design was opened.
+ * what it costs is that the image's host learns the canvas was opened.
  */
 
 /** Any environment's, for a development build that may point anywhere. */
 const ANY_ASSETS = "https://*.ponzu.cloud";
 const ANY_REALTIME = "https://*.neon.tech";
 /**
- * The Google Fonts canvases name, which the canvas loads to draw a board as its author meant. The
- * studio's own fonts ship with it and come from 'self'.
+ * The Google Fonts that boards name, which the canvas loads to draw a board as its author
+ * meant. The studio's own fonts ship with it and come from 'self'.
  */
 const FONT_CSS = "https://fonts.googleapis.com";
 const FONT_FILES = "https://fonts.gstatic.com";
@@ -48,7 +48,7 @@ export function contentSecurityPolicy(where: {
     // Boards carry their own <style> and style attributes, and the canvas positions with both.
     "style-src": ["'self'", "'unsafe-inline'", FONT_CSS],
     "font-src": ["'self'", "data:", FONT_FILES, assets],
-    // A design's pictures from the web, its own files and people's GitHub avatars among them.
+    // A canvas's pictures from the web, its own files and people's GitHub avatars among them.
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "media-src": ["'self'", "blob:", assets],
     // Realtime's socket is the same host over wss. The Google Fonts a board uses are read as

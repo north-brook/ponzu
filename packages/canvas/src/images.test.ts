@@ -13,7 +13,7 @@ import {
 const BASE = "http://127.0.0.1:7777/files/%2Fa.design";
 const asset = (p: string) => `${BASE}/assets/${p}`;
 
-test("a design's images and remote ones have copies; others don't", () => {
+test("a canvas's images and remote ones have copies; others don't", () => {
   const img = { tag: "img", attr: "src" };
   expect(markupUrl(asset("a.jpg"), BASE, img, 512)).toBe(`${asset("a.jpg")}?w=512`);
   expect(markupUrl("https://x.com/p.png?v=2", BASE, img, 256)).toBe(
@@ -71,7 +71,7 @@ test("object-fit and background-size decide how wide an image is drawn", () => {
   expect(backgroundWidth(400, 400, "auto", 1.5, 900)).toBe(900);
 });
 
-test("srcset candidates, inline url()s and image-set() all get copies; the stored design doesn't change", () => {
+test("srcset candidates, inline url()s and image-set() all get copies; the stored canvas doesn't change", () => {
   const html = `<section data-artboard style="width:1440px;height:900px">
 <picture><source srcset="assets/a.jpg 1x, assets/b.jpg 2x"><img src="assets/c.jpg" srcset="assets/c.jpg 1x"></picture>
 <div style="background:url('assets/d.jpg') center/cover"></div>

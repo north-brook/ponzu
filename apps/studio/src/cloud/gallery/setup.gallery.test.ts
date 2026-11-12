@@ -185,7 +185,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     );
   });
 
-  test("where you design: Continue waits for an account, which turns Ready on return", async () => {
+  test("where you build: Continue waits for an account, which turns Ready on return", async () => {
     await open("setup-where-nothing-ready");
     const continueButton = 'button:has-text("Continue")';
     expect(await page.$eval(continueButton, (b) => (b as HTMLButtonElement).disabled)).toBe(true);
@@ -194,7 +194,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await page.$eval(continueButton, (b) => (b as HTMLButtonElement).disabled)).toBe(false);
   });
 
-  test("where you design: a dozen accounts in the smallest window leave Continue in reach", async () => {
+  test("where you build: a dozen accounts in the smallest window leave Continue in reach", async () => {
     await open("setup-where-many", { width: 1100, height: 640 });
     expect(await inView('button:has-text("Continue")')).toBe(true);
     expect(await inView('button:has-text("Don\'t see an organization?")')).toBe(true);

@@ -96,7 +96,7 @@ export function NewCanvasComposer({
         <textarea
           ref={fieldRef}
           {...FIELD}
-          aria-label="Describe the canvas"
+          aria-label="Describe what you want to make"
           aria-describedby={suggested ? described : undefined}
           placeholder="Describe what you want to make"
           rows={1}

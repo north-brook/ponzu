@@ -137,7 +137,7 @@
       "executableName": "ponzu",
       "icon": "build/icons",
       "category": "Graphics",
-      "synopsis": "Design with Claude on a canvas, and ship pull requests",
+      "synopsis": "Build with Claude on a canvas, and ship pull requests",
       "maintainer": "Northbrook <https://ponzu.design>",
       "target": [
         {

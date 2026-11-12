@@ -12,7 +12,7 @@ import { CanvasRail, type CommentLink } from "./thread-rail.tsx";
 type BoardsJump = NonNullable<CanvasProps["link"]>;
 
 /*
- * What the window shows for an open design, in AppWindow's three slots: the chrome, the thread
+ * What the window shows for an open canvas, in AppWindow's three slots: the chrome, the thread
  * rail, and the main pane, which the pull request tab takes over while it is open. The tab
  * swaps what is in the main pane and nothing else: the rail stays as it was, open or closed,
  * and the canvas waits underneath where it was left. A board a line of the thread points at is
@@ -72,7 +72,7 @@ export function useCanvasPanes({
   /** Its sign-in ran out (`expired`), or it isn't connected. */
   onConnectClaude?: (expired: boolean) => void;
 }): CanvasPanes | null {
-  // Each is the open design's own: another design opens on its canvas, where its own link or
+  // Each is the open canvas's own: another canvas opens on its boards, where its own link or
   // the person left it, never on the last one's tab or board.
   const canvasId = open?.id ?? null;
   const [tabFor, setTabFor] = useState<string | null>(null);
@@ -119,7 +119,7 @@ export function useCanvasPanes({
     [show],
   );
   const onOpenComment = useCallback((to: CommentLink) => show(to), [show]);
-  // A link to a page or board: on this design's canvas, or another design opened there.
+  // A link to a page or board: on this canvas's boards, or another canvas opened there.
   const onOpenPlace = useCallback(
     (at: CanvasAddress) => {
       if (at.canvasId !== canvasId) onOpenCanvas(at);

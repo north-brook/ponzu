@@ -56,7 +56,7 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     me: async () => (await v1.me.$get()).json(),
 
     /**
-     * Records a guided setup step as done (Continue on "Where do you design?", Start designing
+     * Records a guided setup step as done (Continue on "Where do you build?", Start building
      * on the iPhone step). The first time counts. Answers where setup stands.
      */
     onboarding: async (step: OnboardingStep) =>
@@ -97,7 +97,7 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     },
 
     github: {
-      /** What "Where do you design?" lists, as of the last sync. */
+      /** What "Where do you build?" lists, as of the last sync. */
       accounts: async () => (await v1.github.accounts.$get()).json(),
       /** Sync with GitHub now: on coming back to focus, and after the install page. */
       sync: async () => (await v1.github.sync.$post()).json(),

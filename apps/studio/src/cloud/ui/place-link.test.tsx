@@ -8,13 +8,13 @@ import { Prose } from "./prose.tsx";
 import { TipProvider } from "./tooltip.tsx";
 
 /*
- * Links to a page or board of a design in the agent's words: which addresses are ours, how the
+ * Links to a page or board of a canvas in the agent's words: which addresses are ours, how the
  * thread draws them, and a link still being written while a reply streams in.
  */
 
 const ORIGIN = "https://ponzu.design/canvases/cnv_1";
 
-test("our own design's address, and a page or board of it, are recognised exactly", () => {
+test("our own canvas's address, and a page or board of it, are recognised exactly", () => {
   expect(parseCanvasAddress(ORIGIN)).toEqual({ canvasId: "cnv_1" });
   expect(parseCanvasAddress(`${ORIGIN}/`)).toEqual({ canvasId: "cnv_1" });
   expect(parseCanvasAddress(`${ORIGIN}?artboard=ab_x1`)).toEqual({
@@ -72,7 +72,7 @@ const drawn = (text: string, value: CanvasPlaces | null = places()) => {
   return renderToStaticMarkup(<TipProvider>{tree}</TipProvider>);
 };
 
-test("in a design's thread a link to one of its boards or pages stays in the app", () => {
+test("in a canvas's thread a link to one of its boards or pages stays in the app", () => {
   const board = drawn(`The options are on [Note: Pricing](${ORIGIN}?artboard=ab_x1).`);
   expect(board).toContain('data-place="board"');
   expect(board).toContain(`href="${ORIGIN}?artboard=ab_x1"`);
@@ -80,7 +80,7 @@ test("in a design's thread a link to one of its boards or pages stays in the app
   expect(board).toContain(">Note: Pricing</a>");
   const page = drawn(`See [Mobile](${ORIGIN}?page=pg_2).`);
   expect(page).toContain('data-place="page"');
-  // Another design's address opens that design, in the app too.
+  // Another canvas's address opens that canvas, in the app too.
   expect(drawn(`[Checkout](https://ponzu.design/canvases/cnv_9?artboard=ab_1)`)).toContain(
     'data-place="other-canvas"',
   );
@@ -92,19 +92,19 @@ test("a link to a board that isn't there any more reads as muted text, not a lin
   expect(out).toContain('data-place="gone"');
   expect(out).toContain(">Hero / B</span>");
   expect(drawn(`[Old](${ORIGIN}?page=pg_gone)`)).toContain('data-place="gone"');
-  // While the design is still loading nothing is known gone: it stays a link.
+  // While the canvas is still loading nothing is known gone: it stays a link.
   expect(drawn(`[Hero](${ORIGIN}?artboard=ab_1)`, places({ has: () => undefined }))).toContain(
     'data-place="board"',
   );
 });
 
-test("everything else is the link it was, and outside a design ours is too", () => {
+test("everything else is the link it was, and outside a canvas ours is too", () => {
   const out = drawn(
     "[docs](https://ponzu.design/docs) and [evil](https://evil.test/canvases/cnv_1)",
   );
   expect(out.match(/target="_blank"/g)).toHaveLength(2);
   expect(out).not.toContain("data-place");
-  // A pull request's tab has no design to follow it in: an ordinary link that leaves the app.
+  // A pull request's tab has no canvas to follow it in: an ordinary link that leaves the app.
   const outside = drawn(`[Note](${ORIGIN}?artboard=ab_1)`, null);
   expect(outside).toContain('target="_blank"');
   expect(outside).not.toContain("data-place");
@@ -146,7 +146,7 @@ test("a link still being written at a streaming reply's end shows as its words a
   }
   // Drawn, no half address and no bracket ever shows.
   const out = renderToStaticMarkup(
-    <Prose text="on [Note: Pricing](https://ponzu.design/des" streaming />,
+    <Prose text="on [Note: Pricing](https://ponzu.design/can" streaming />,
   );
   expect(out).toContain(">on Note: Pricing</p>");
   expect(out).not.toContain("<a");

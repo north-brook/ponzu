@@ -2,7 +2,7 @@
  * The gallery's full-window compositions: what each is, its size, and how it is compared. The
  * React for each is in boards.tsx; this file stays free of it so the visual scripts can read it.
  *
- * - `board` names the design's artboard file (under its pages/ folder) it is compared with.
+ * - `board` names the mockup's artboard file (under its pages/ folder) it is compared with.
  * - `open` is a control pressed before the picture: a menu or a popover's trigger.
  * - `masks` cover what the gallery doesn't draw: the canvas's boards, and on the sidebar's
  *   boards the thread rail, which their compositions leave empty.
@@ -34,7 +34,7 @@ export interface Composition {
 }
 
 /**
- * The chrome as the design's boards draw it, 44px across the window's width. Masked in every
+ * The chrome as the mockup's boards draw it, 44px across the window's width. Masked in every
  * comparison with the boards (visual.ts adds it): ours departs from them on purpose, with no
  * lockup, the toggles at the window's edges, and 38px tall (README, "The window chrome"), which
  * this covers too. Under it, everything of ours sits 6px higher than on a board.

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /*
- * The design boards' sample content as the product's types. The boards' local-era leftovers are
+ * The mockup boards' sample content as the product's types. The boards' local-era leftovers are
  * not reproduced: every repo canvas here is on a `pz/` branch, and "brand" is a repo like any
  * other.
  */

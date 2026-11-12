@@ -178,7 +178,7 @@ function elements(onOpenLink?: (url: string) => void): Components {
           {children}
         </a>
       );
-      // A design's own address, a page or board of it: followed in place where a design is open.
+      // A canvas's own address, a page or board of it: followed in place where a canvas is open.
       const address = parseCanvasAddress(href);
       return address ? (
         <PlaceLink address={address} href={href} external={external}>

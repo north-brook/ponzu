@@ -700,11 +700,12 @@ test("the tab shows a description without what Ponzu wrote for GitHub's own page
   const body = [
     "<!-- ponzu:summary -->\nAdds the **Pro** pricing card.\n<!-- /ponzu:summary -->",
     '<!-- ponzu:picture --><a href="https://ponzu.design/canvases/cnv_1"><picture><source media="(prefers-color-scheme: dark)" srcset="https://assets/d.png"><img src="https://assets/l.png" alt="Pricing card" width="720"></picture></a><!-- /ponzu:picture -->',
-    "Designed in Ponzu: [Pricing card](https://ponzu.design/canvases/cnv_1)",
+    "Made in Ponzu: [Pricing card](https://ponzu.design/canvases/cnv_1)",
     "Reviewer note: <b>kept</b>.",
   ].join("\n\n");
   expect(bodyForTab(body)).toBe("Adds the **Pro** pricing card.\n\nReviewer note: <b>kept</b>.");
-  // An empty summary leaves nothing.
+  // An empty summary leaves nothing, and neither does the footer of a pull request opened before
+  // canvases had their name.
   expect(
     bodyForTab(
       "<!-- ponzu:summary -->\n\n<!-- /ponzu:summary -->\n\nDesigned in Ponzu: [A](https://ponzu.design/designs/des_1)",

@@ -19,6 +19,19 @@ test("a canvas, with the page and artboard to open it on", () => {
   });
 });
 
+test("a link from before canvases had their name opens the same canvas", () => {
+  expect(parseDeepLink("ponzu://design/des_7k2m9x4q0c8v5n1t", "ponzu")).toEqual({
+    kind: "canvas",
+    canvasId: "des_7k2m9x4q0c8v5n1t",
+  });
+  expect(parseDeepLink("ponzu-dev://design/cnv_1?page=pg_2&artboard=ab_3", "ponzu-dev")).toEqual({
+    kind: "canvas",
+    canvasId: "cnv_1",
+    pageId: "pg_2",
+    artboardId: "ab_3",
+  });
+});
+
 test("the way back from GitHub's install page, as the API's setup page links it", () => {
   expect(parseDeepLink("ponzu://github/setup?result=installed&workspace=ws_1", "ponzu")).toEqual({
     kind: "github_setup",
@@ -38,8 +51,11 @@ test("anything else is dropped", () => {
   for (const url of [
     "ponzu://canvas",
     "ponzu://canvas/cnv_1/extra",
-    "ponzu://canvas/dsn%201",
+    "ponzu://canvas/cnv%201",
     "ponzu://canvas/cnv_1%2F..",
+    "ponzu://design",
+    "ponzu://design/des_1/extra",
+    "ponzu://design/des%201",
     "ponzu://auth/callback?code=x&state=y",
     "ponzu://open?file=/Users/me/a.design",
     "https://ponzu.design/canvas/cnv_1",

@@ -7,11 +7,11 @@
  * which also keeps it out of autocapture, on the Claude card (its code and API key), a secret's
  * field in Needs you, and a repo's secrets in Settings.
  *
- * `private`, besides: a design's boards are blocked wherever they are drawn (the canvas's live
+ * `private`, besides: a canvas's boards are blocked wherever they are drawn (its live
  * boards and their pictures, the thread's miniatures and attachments, the sidebar's previews),
- * and the text of the canvas (board names, comments), the thread and its composer, the create
+ * and the text on it (board names, comments), the thread and its composer, the create
  * page's ideas, the pull request tab, the sidebar's canvas names and its search results, and
- * the open design's name in the chrome is masked. The chrome, the layout and every
+ * the open canvas's name in the chrome is masked. The chrome, the layout and every
  * pointer and key stay watchable.
  */
 
@@ -20,14 +20,14 @@ export type ReplayMode = "full" | "private";
 /** The class PostHog never records the inside of, nor autocaptures: for what can show a secret. */
 export const SECRET_CLASS = "ph-no-capture";
 
-/** A design's own pixels: its boards, their pictures, its previews. */
+/** A canvas's own pixels: its boards, their pictures, its previews. */
 const CANVAS_PIXELS = [
   // A live board's shadow host, and in the canvas the tier around it with its picture.
   "[data-artboard-host]",
   "[data-pz-tier]",
   "[data-pz-cover]",
   '[data-replay="block"]',
-  // The thread's attachments: a person's own pictures, at addresses that carry the design's
+  // The thread's attachments: a person's own pictures, at addresses that carry the canvas's
   // asset key. Masking the thread's text would leave both.
   "#thread img",
 ];

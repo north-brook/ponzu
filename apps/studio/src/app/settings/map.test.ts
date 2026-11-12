@@ -68,7 +68,7 @@ describe("Members", () => {
     });
     const { api } = backend.connect(bryce);
 
-    // The row on "Where do you design?" counts her too: "north-brook · 2 people".
+    // The row on "Where do you build?" counts her too: "north-brook · 2 people".
     const { accounts } = await api.github.accounts();
     expect(accounts.find((a) => a.login === "north-brook")?.memberCount).toBe(2);
 

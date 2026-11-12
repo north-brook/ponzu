@@ -86,7 +86,7 @@ export interface CanvasProps {
   footerExtra?: ReactNode;
   /**
    * Look, don't touch: pan, zoom, switch pages, select and read comment
-   * threads, but never send an edit. For showing a design you can't save,
+   * threads, but never send an edit. For showing a canvas you can't save,
    * like one on GitHub. Default false.
    */
   readOnly?: boolean;
@@ -357,7 +357,7 @@ export function Canvas({
   // Agents' screenshots default to how this canvas shows artboards.
   useEffect(() => source.setTheme?.(theme), [source, theme]);
 
-  // An agent's work, and files saved straight into the design, develop onto the canvas; the
+  // An agent's work, and files saved straight into its folder, develop onto the canvas; the
   // person's own edits here just appear. Only what's new arrives: a save that rewrote a whole board
   // brings in just the pieces it added. One per source: what's arriving in one document never
   // arrives in another.
@@ -405,7 +405,7 @@ export function Canvas({
 
   // New comments left unsent keep their "+" pin, to open again.
   const drafts = useDrafts();
-  // Drafts belong to this design on this host: another Mac's design can share its path.
+  // Drafts belong to this canvas on this host: another Mac's canvas can share its path.
   const draftsFile = source.assetBase ?? state.path;
   const unsentPins = useMemo(
     () =>
@@ -1921,12 +1921,12 @@ interface Worker {
 }
 
 /**
- * A yuzu ring round a working artboard, a few px off its edge so it never touches the design,
+ * A yuzu ring round a working artboard, a few px off its edge so it never touches the board,
  * breathing slowly in width and glow so it reads on a light canvas as well as a dark one. It
  * fades in after `delay` ms (a new board's frame is still drawing) and fades out when `leaving`,
  * or while an agent's capture plays over the board (capture.tsx).
  * Drawn in the screen-space overlay so it's the same on screen at any zoom, and never part of the
- * design: screenshots and exports don't see it.
+ * board: screenshots and exports don't see it.
  */
 function Ring({
   x,
@@ -2047,7 +2047,7 @@ function Frame({
 const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
 /**
  * A circle centred on the comment's spot, holding its message count. The hairline keeps a yuzu pin
- * visible on a yellow design.
+ * visible on a yellow board.
  */
 const pin =
   "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
@@ -2384,7 +2384,7 @@ const Board = memo(function Board({
     [source, version, colorScheme],
   );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
-  // The design's own corners where it rounds its root, the canvas's few px where it doesn't: the
+  // The board's own corners where it rounds its root, the view's few px where it doesn't: the
   // sheet and its shadow take the radii ArtboardView gives the live root (corners.ts).
   // Measured where it has been live, so a token's, a calc()'s or a % radius counts; the
   // document's px before that.

@@ -57,7 +57,7 @@ test("a link survives only to http, https or mailto", () => {
   expect(html("[mail](mailto:hi@ponzu.design)")).toContain('href="mailto:hi@ponzu.design"');
 });
 
-test("a link to a design's page or board is held to the same rules as any other", () => {
+test("a link to a canvas's page or board is held to the same rules as any other", () => {
   // Followed in place only once it is a safe https address (place-link.test.tsx): what the rules
   // refuse stays text however much it looks like one of ours.
   for (const href of [

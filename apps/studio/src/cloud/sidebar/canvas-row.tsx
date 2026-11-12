@@ -46,10 +46,11 @@ export interface RowHandlers {
 export const INTENT_MS = 80;
 
 /**
- * A design in the sidebar: its preview beside three lines. The first says where it lives (the
+ * A canvas in the sidebar: its preview beside three lines. The first says where it lives (the
  * repo, or Scratch) with one status at its end; the second is its name; the third is its branch
  * (or Scratch's city) with its pull request at the end, set the same quiet way as the repo and
- * the branch. The open design's row takes the selected ground (the canvas's, in light).
+ * the branch. The open canvas's row takes the selected ground (in light, the ground colour,
+ * `--c-canvas`).
  * Teammates in it now sit on the preview's corner. Right-click for its actions; Rename edits
  * the name in place. It draws again only when its own props change, so a long list stays quick.
  * One of the first nine shows its ⌘ number on the preview's corner while ⌘ is held.

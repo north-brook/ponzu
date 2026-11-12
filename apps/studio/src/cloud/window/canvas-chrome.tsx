@@ -14,7 +14,7 @@ import { ThreadToggle } from "./thread-toggle.tsx";
 
 export interface CanvasChromeProps {
   name: string;
-  /** The design's name shows here only while the sidebar is collapsed: the open row says it otherwise. */
+  /** The canvas's name shows here only while the sidebar is collapsed: the open row says it otherwise. */
   sidebarOpen: boolean;
   pages: PageTab[];
   /** Null while the pull request tab is open. */
@@ -22,7 +22,7 @@ export interface CanvasChromeProps {
   onSelectPage: (id: string) => void;
   /** Null for someone who may only look. */
   onAddPage: (() => void) | null;
-  /** People on a repo design in a team workspace; null for Scratch and a personal workspace. */
+  /** People on a repo canvas in a team workspace; null for Scratch and a personal workspace. */
   team: {
     meId: string;
     contributors: Contributor[];
@@ -40,17 +40,17 @@ export interface CanvasChromeProps {
   } | null;
   rail: { open: boolean; signal: RailSignal; onToggle: () => void };
   /**
-   * The action the design is expected to offer while its own answer is on its way (from what
+   * The action the canvas is expected to offer while its own answer is on its way (from what
    * the sidebar's row says of its pull request): its room is held, unseen, from the first frame.
    */
   actionExpected?: NextAction | null;
 }
 
 /**
- * The chrome past the left block while a design is open: its name while the sidebar is
+ * The chrome past the left block while a canvas is open: its name while the sidebar is
  * collapsed, the divider, its pages; then who is in it, its pull request and next action, the
  * rail's divider, and the thread toggle last at the window's right edge. The spacing between the
- * right-hand pieces is the design's, whichever of them a design has.
+ * right-hand pieces is the mockup's, whichever of them a canvas has.
  */
 export function CanvasChrome({
   name,
@@ -117,7 +117,7 @@ export function CanvasChrome({
   return (
     <>
       {/*
-       * The design's name, then the divider. Collapsed, the name sits just past the sidebar
+       * The canvas's name, then the divider. Collapsed, the name sits just past the sidebar
        * toggle (set as the row sets it, cut at 240) and the divider just past it; open, the row
        * says the name, so its room closes to nothing and the divider lands on the sidebar's edge.
        * The room opens and closes on the panes' clock, with the left block before it. A part of
@@ -128,7 +128,7 @@ export function CanvasChrome({
         <span
           aria-hidden={sidebarOpen}
           data-chrome-title
-          // A design's name: masked in a private session replay, as its row is (analytics/privacy.ts).
+          // A canvas's name: masked in a private session replay, as its row is (analytics/privacy.ts).
           data-replay="mask"
           className={cn(
             // Hidden once its room has closed (visibility waits out the transition). The name is
@@ -152,7 +152,7 @@ export function CanvasChrome({
         <ChromeDivider pane="sidebar" />
       </span>
       <span className="w-1 shrink-0" />
-      {/* The pages come with the design's document: they fade in where they rest, and nothing
+      {/* The pages come with the canvas's document: they fade in where they rest, and nothing
           beside them moves (the space after them takes up the difference). */}
       <Arrival show={pages.length > 0} room={false} anchor="start" name="pages">
         <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />

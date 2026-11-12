@@ -42,7 +42,7 @@ test("a new comment left unsent keeps its pin, until its words are gone", () => 
   );
   // Read-only, there's nothing to send it with.
   expect(renderToStaticMarkup(<Canvas source={source} readOnly />)).not.toContain("Unsent comment");
-  // Another design's draft isn't this one's.
+  // Another canvas's draft isn't this one's.
   setDraft(key, { file: "elsewhere", pin, text: "tighter" });
   expect(renderToStaticMarkup(<Canvas source={source} />)).not.toContain("Unsent comment");
   setDraft(key, null);
@@ -68,7 +68,7 @@ test("a new comment dragged to another spot takes its words with it", () => {
   setDraft(b, null);
 });
 
-test("a design on another Mac at the same path keeps its own drafts", () => {
+test("a canvas on another Mac at the same path keeps its own drafts", () => {
   const here = new MemorySource(doc(), undefined, { assetBase: "http://127.0.0.1:7777/files/k" });
   const there = new MemorySource(doc(), undefined, {
     assetBase: "http://127.0.0.1:7777/mac/laptop/files/k",

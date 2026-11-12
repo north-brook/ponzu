@@ -2,7 +2,7 @@
  * The product's menus: a trigger's dropdown and a row's context menu share one look. They are
  * shadcn/ui's dropdown-menu and context-menu (dropdown-menu.tsx, context-menu.tsx), with a row's
  * leading mark, its truncating label and its trailing text laid out the same everywhere, and a
- * content width the design gives. Radix gives them their keyboard (arrows, Home and End,
+ * content width the mockup gives. Radix gives them their keyboard (arrows, Home and End,
  * typeahead, Escape, focus back to the trigger) and roles.
  */
 import { Tick02Icon } from "@hugeicons/core-free-icons";
@@ -48,7 +48,7 @@ export function MenuContent({
   onCloseAutoFocus,
   ...props
 }: ComponentProps<typeof DropdownMenuContent> & {
-  /** The design's width, or "max-content" for one that fits what it lists. */
+  /** The mockup's width, or "max-content" for one that fits what it lists. */
   width: number | "max-content";
 }) {
   const clicked = useRef<HTMLElement | null>(null);

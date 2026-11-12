@@ -2,7 +2,7 @@ import { type Api, ApiError } from "@ponzu/client";
 import type { Doc, Op, Origin } from "@ponzu/core";
 
 /*
- * The pictures of the comments the viewer leaves on one design's canvas. Each comment or reply
+ * The pictures of the comments the viewer leaves on one canvas's boards. Each comment or reply
  * they send is drawn the moment it reaches the document (`drawCommentPicture`, from the document
  * as it is then), and given to its thread item once the API has it: uploaded straight to
  * storage, then attached once the comment's op is committed. The comment goes as it always has;

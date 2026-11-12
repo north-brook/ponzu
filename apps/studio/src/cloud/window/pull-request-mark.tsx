@@ -21,7 +21,7 @@ import { Tip } from "../ui/tooltip.tsx";
 /**
  * How loud a mark is. `colored` gives the icon and the checks their state's color (the pull
  * request tab open); `neutral` draws them in the text's color (the chrome at rest, the open
- * design's row).
+ * canvas's row).
  */
 type Tone = "colored" | "neutral";
 

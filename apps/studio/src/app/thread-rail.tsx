@@ -65,7 +65,7 @@ export function CanvasRail({
   onOpenArtboards: (artboardIds: string[]) => void;
   /** Takes the canvas to a comment, or to where it was when its thread is gone. */
   onOpenComment: (to: CommentLink) => void;
-  /** Shows a page or board a link in the agent's words points at, in this design or another. */
+  /** Shows a page or board a link in the agent's words points at, in this canvas or another. */
   onOpenPlace: (at: CanvasAddress) => void;
   onOpenPullRequest: () => void;
   /**

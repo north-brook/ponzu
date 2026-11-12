@@ -3,7 +3,7 @@
  * use. Each color names its light and its dark value side by side with light-dark(), so the app
  * follows the system appearance; `data-theme="light"` or `"dark"` on <html> pins one.
  *
- * Light values are the design's `.ui-light` (tokens.css of the "Ship with Ponzu" design). Dark
+ * Light values are the mockup's `.ui-light` (tokens.css of the "Ship with Ponzu" mockup). Dark
  * values are its `.ui-dark` where it gives one; the ones marked "derived" it does not, and keep
  * the light value's relationship to its neighbours (a step between the same two inks, the same
  * alpha on the dark ground).
@@ -37,7 +37,7 @@
   --c-chip: light-dark(#e8e6e0, #1f1f1e);
   /*
    * The second ground inside a surface: Settings' nav, an open environment, an icon's tile. Dark:
-   * derived; the design's (#1b1b1a) is the surface itself, which leaves the nav no edge.
+   * derived; the mockup's (#1b1b1a) is the surface itself, which leaves the nav no edge.
    */
   --c-secondary: light-dark(#f4f3ef, #161615);
 
@@ -45,14 +45,14 @@
    * Ink, strongest to quietest: the colour ladder (README, "The ladder"). Ink is what is read or
    * chosen; muted a control at rest and a secondary line; faint quiet text (meta, placeholders,
    * labels), deliberately under AA. icon-soft is the quiet step for an icon standing alone (a
-   * disclosure chevron, a field's glyph), the design's #807c73 (--n-500), one step above faint so
+   * disclosure chevron, a field's glyph), the mockup's #807c73 (--n-500), one step above faint so
    * it holds 3:1. Dark: derived. dry is the slice at rest and the dot between meta.
    */
   --c-ink: light-dark(#111110, #f4f3ef);
-  /* A step past the design's #5e5b54 (--n-600), and dark's a step up, so text holds AA on the glassy shell. */
+  /* A step past the mockup's #5e5b54 (--n-600), and dark's a step up, so text holds AA on the glassy shell. */
   --c-muted: light-dark(#56534d, #b7b3a9);
   --c-icon-soft: light-dark(#807c73, #8e8a82);
-  /* Dark: steps up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
+  /* Dark: steps up from the mockup's #6b6862, so it holds where it did on the open row now the shell is lifted. */
   --c-faint: light-dark(#a9a59b, #767369);
   --c-dry: light-dark(#c9c5bc, #5e5b54);
 
@@ -63,7 +63,7 @@
   /* A control held down, and the repo chip while its picker is open. Dark: derived. */
   --c-press: light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
   /*
-   * What is open or chosen: the open design's row, the selected search result, the "+" while
+   * What is open or chosen: the open canvas's row, the selected search result, the "+" while
    * Share is open. Light is the canvas (white), so the open row reads as part of the pane beside it.
    * Dark: derived, a step above hover; the black canvas would read as a hole in the shell.
    */
@@ -79,14 +79,14 @@
   --c-knob: light-dark(#ffffff, #1b1b1a);
   /* An input's edge at rest. Dark: derived, a step above the rule so a field shows its shape. */
   --c-field-edge: light-dark(#e8e6e0, #3a3936);
-  /* Behind Settings, and behind a dialog that blocks a send: the design keeps the two apart. Dark: derived. */
+  /* Behind Settings, and behind a dialog that blocks a send: the mockup keeps the two apart. Dark: derived. */
   --c-dim: light-dark(rgba(17, 17, 16, 0.18), rgba(0, 0, 0, 0.4));
   --c-dim-dialog: light-dark(rgba(17, 17, 16, 0.16), rgba(0, 0, 0, 0.36));
 
   /* Yuzu: the agent and the brand. Text on it is always ink. */
   --c-yuzu: #ffc81e;
   --c-yuzu-ink: #111110;
-  /* Pith: a search match (the design's --c-pin-soft). */
+  /* Pith: a search match (the mockup's --c-pin-soft). */
   --c-pith: light-dark(#fff4d1, #2e2a1c);
   --c-danger: light-dark(#d93a2b, #ff6b5e);
   /* Text on a danger button. Dark: derived; white on the lighter dark red doesn't hold. */
@@ -128,7 +128,7 @@
     0 1px 2px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4));
   /* The hairline round a row's unseen dot. Dark: derived. */
   --c-dot-ring: 0 0 0 1px light-dark(rgba(17, 17, 16, 0.08), rgba(0, 0, 0, 0.4));
-  /* A design's preview in a row. Dark: derived. */
+  /* A canvas's preview in a row. Dark: derived. */
   --c-preview-ring: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
   --c-tip-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 4px 14px rgba(0, 0, 0, 0.18);
   /* A card on the canvas: the setup's account and Claude cards. */
@@ -137,7 +137,7 @@
   /* A raised button: Set up, Sign out, Rebuild. */
   --c-button-shadow:
     var(--c-raised-shadow), 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), transparent);
-  /* A text field at rest, focused (the design's: a 1px --n-400 ring and a soft halo), and wrong. */
+  /* A text field at rest, focused (the mockup's: a 1px --n-400 ring and a soft halo), and wrong. */
   --c-field: inset 0 0 0 1px var(--c-field-edge);
   --c-field-focus:
     0 0 0 1px light-dark(#a9a59b, #6b6862),
@@ -160,16 +160,16 @@
   /*
    * The thread rail and the pull request tab.
    *
-   * The frosted ground of the composer while the agent asks something (the design's --c-bar).
+   * The frosted ground of the composer while the agent asks something (the mockup's --c-bar).
    */
   --c-bar: light-dark(rgba(250, 250, 249, 0.72), rgba(28, 28, 28, 0.72));
-  /* The strip above the composer's field while the run waits (the design's --c-secondary). */
+  /* The strip above the composer's field while the run waits (the mockup's --c-secondary). */
   --c-strip: light-dark(#f4f3ef, #1b1b1a);
   /* The soft halo round the yuzu dot that heads a question. */
   --c-yuzu-halo: rgba(255, 200, 30, 0.25);
   /*
    * A board's edge, on the canvas and in a miniature (the canvas package's --pz-board-*,
-   * below): its hairline's colour and the shadow under it. The design's --c-board, its hairlines
+   * below): its hairline's colour and the shadow under it. The mockup's --c-board, its hairlines
    * a step firmer: a white board on the white canvas, or a near-black one on the black, is held
    * by the hairline alone, which the canvas draws one screen px wide at any zoom.
    */

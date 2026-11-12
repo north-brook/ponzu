@@ -165,7 +165,7 @@ export function toTeamUsage(usage: ApiUsage, name: string): TeamUsage {
   };
 }
 
-/** Use by design, for an admin; the unnamed rows last: deleted canvases, then those they can't open. */
+/** Use by canvas, for an admin; the unnamed rows last: deleted canvases, then those they can't open. */
 export function toCanvasUsage(usage: ApiUsage): CanvasUsage[] | null {
   return (
     usage.byCanvas?.map(({ kind, canvas, usedCredits }) => ({

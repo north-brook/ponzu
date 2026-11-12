@@ -5,7 +5,7 @@
 import type { ClaudeConnection, ClaudeMethod } from "../claude.ts";
 
 /**
- * One row of "Where do you design?" (`GET /v1/github/accounts`): the person's own account, then
+ * One row of "Where do you build?" (`GET /v1/github/accounts`): the person's own account, then
  * every account where Ponzu is installed and they are a member. GitHub does not show the person
  * organizations without the App, so only their own account can be `not_installed`.
  */
@@ -41,7 +41,7 @@ export type SetupStep = "sign_in" | "where" | "claude" | "iphone" | "done";
  * The first gate that is not clear, in order:
  *
  * 1. Signed out: Sign in.
- * 2. No workspace Ponzu can work in, or "Where do you design?" never confirmed: that step. It is
+ * 2. No workspace Ponzu can work in, or "Where do you build?" never confirmed: that step. It is
  *    shown once even to someone whose team already set Ponzu up, so they learn they can add more.
  * 3. No Claude at all: Connect Claude (on the code field while a sign-in is pending; see
  *    `claudeStepMode`). One that was connected and has since signed out does not send a

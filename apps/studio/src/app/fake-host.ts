@@ -273,7 +273,7 @@ function countAnswers(api: object, answers: FakeWorld["answers"]) {
   }
 }
 
-/** One design the agent has worked on, so the sidebar and a canvas have something in them. */
+/** One canvas the agent has worked on, so the sidebar and the boards have something in them. */
 async function seed(
   backend: FakeBackend,
   api: Host["api"],

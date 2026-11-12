@@ -61,7 +61,7 @@ test("a pane's width comes back within its limits, in whole pixels", () => {
   expect(widths(333.6, 401.2)).toEqual([334, 401]);
   // Past the limits (a build that allowed more, a hand-edited store): to the nearest limit.
   expect(widths(90, 2000)).toEqual([PANES.sidebar.min, PANES.rail.max]);
-  // Not a width: the canvas's.
+  // Not a width: the mockup's.
   expect(widths("wide", null)).toEqual([PANES.sidebar.default, PANES.rail.default]);
   expect(widths(Number.NaN, undefined)).toEqual([300, 360]);
 });
