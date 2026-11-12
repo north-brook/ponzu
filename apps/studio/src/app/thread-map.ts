@@ -100,6 +100,8 @@ function noticeOf(
       return { type: "stopped", by: notice.by ? personOf(notice.by, people) : null };
     case "error":
       return { type: "error", code: notice.code as RunErrorCode, message: notice.message };
+    case "pull_request_agent":
+      return { ...notice, as: notice.as ? personOf(notice.as, people) : null };
     default:
       return notice;
   }
@@ -147,20 +149,32 @@ export function toThreadItem(item: RunnerItem, ctx: ThreadContext): ThreadItem {
 
 /**
  * The items the rail shows. A question still open is in the composer's place, never in the
- * thread too: its "Asked" line appears once it has closed.
+ * thread too: its "Asked" line appears once it has closed. A pull request opening or merging that
+ * the agent did is said once, by the agent's own line (who it acted as), not again by GitHub's.
  */
 export function shownItems(
   items: readonly RunnerItem[],
   openAsks: ReadonlySet<string>,
 ): RunnerItem[] {
-  return items.filter(
-    (item) =>
-      !(
-        item.kind === "notice" &&
-        item.payload.type === "question" &&
-        openAsks.has(item.payload.questionId)
-      ),
+  const byAgent = new Set(
+    items.flatMap((item) =>
+      item.kind === "notice" &&
+      item.payload.type === "pull_request_agent" &&
+      (item.payload.action === "opened" || item.payload.action === "merged")
+        ? [`${item.payload.number}:${item.payload.action}`]
+        : [],
+    ),
   );
+  return items.filter((item) => {
+    if (item.kind !== "notice") return true;
+    const notice = item.payload;
+    if (notice.type === "question") return !openAsks.has(notice.questionId);
+    if (notice.type === "pull_request") {
+      const moment = notice.state === "merged" ? "merged" : "opened";
+      return notice.state === "closed" || !byAgent.has(`${notice.number}:${moment}`);
+    }
+    return true;
+  });
 }
 
 /**
@@ -172,7 +186,8 @@ export function branchMoment(items: readonly RunnerItem[]): number {
   for (const item of items) {
     const moved =
       (item.kind === "tool" && !item.streaming) ||
-      (item.kind === "notice" && item.payload.type === "pull_request");
+      (item.kind === "notice" &&
+        (item.payload.type === "pull_request" || item.payload.type === "pull_request_agent"));
     if (moved && item.seq > at) at = item.seq;
   }
   return at;
