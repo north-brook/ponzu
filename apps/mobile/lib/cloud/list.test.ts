@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CanvasListRow, QuestionRow } from "@ponzu/client";
+import { keepUnchanged } from "@ponzu/client/model";
 import {
   askLine,
   buildList,
@@ -218,6 +219,21 @@ describe("the question line", () => {
         .map((r) => r.id),
     );
   });
+});
+
+test("a live change to one row leaves the others the same objects, so only it draws again", () => {
+  const a = row({ name: "A", lastActivityAt: "2026-11-09T00:00:00.000Z" });
+  const b = row({ name: "B", lastActivityAt: "2026-11-05T00:00:00.000Z" });
+  const before = buildList([a, b], context());
+  // B moves to the top; A is untouched.
+  const after = keepUnchanged(
+    before,
+    buildList([a, { ...b, lastActivityAt: "2026-11-10T00:00:00.000Z" }], context()),
+  );
+  expect(after.active.map((r) => r.canvas.name)).toEqual(["B", "A"]);
+  expect(after.active[1]).toBe(before.active[0]!);
+  expect(after.active[0]).not.toBe(before.active[1]!);
+  expect(keepUnchanged(before, buildList([a, b], context()))).toBe(before);
 });
 
 test("VoiceOver hears the row as the Mac's label, with the question it waits on", () => {

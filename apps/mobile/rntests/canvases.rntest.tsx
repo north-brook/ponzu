@@ -198,6 +198,33 @@ describe("the canvases list", () => {
     expect(rowNames()).toContain("Onboarding");
   });
 
+  test("a settle that doesn't take leaves the row and says so, as the Mac does", async () => {
+    backend.seed("signed-in");
+    const settle = jest
+      .spyOn(backend.api.canvases, "settle")
+      .mockRejectedValueOnce(new Error("offline"));
+    const alert = jest.spyOn(ReactNative.Alert, "alert").mockImplementation(() => {});
+    try {
+      await render(
+        <CloudProvider>
+          <List />
+        </CloudProvider>,
+      );
+      await screen.findByText("Onboarding");
+      await fireEvent.press(
+        within(screen.getByTestId("menu Onboarding")).getByRole("menuitem", { name: "Settle" }),
+      );
+      await waitFor(() =>
+        expect(alert).toHaveBeenCalledWith("“Onboarding” couldn't be changed. Try again."),
+      );
+      expect(screen.getByText("Onboarding")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /^Settled/ })).toBeNull();
+    } finally {
+      settle.mockRestore();
+      alert.mockRestore();
+    }
+  });
+
   test("while nothing has come, the rows' shapes stand in", async () => {
     await render(<CanvasList list={undefined} loading margin={16} />);
     expect(screen.getByTestId("canvases-loading")).toBeTruthy();

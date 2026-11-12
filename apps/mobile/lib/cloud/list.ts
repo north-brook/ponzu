@@ -31,6 +31,8 @@ export interface QuestionLine {
 
 /** A row of the list: the canvas, and its question while it waits on the viewer. */
 export interface ListRow {
+  /** The canvas's id, so a row that moves up the list is still the same row (`keepUnchanged`). */
+  id: string;
   canvas: CanvasSummary;
   question: QuestionLine | null;
 }
@@ -89,6 +91,7 @@ export function buildList(rows: readonly CanvasListRow[], context: ListContext):
     return toSummary(row, { people: context.people, ...(assetsUrl ? { assetsUrl } : {}) });
   });
   const row = (canvas: CanvasSummary): ListRow => ({
+    id: canvas.id,
     canvas,
     question: canvas.needsYou > 0 ? firstQuestion(context.questions.get(canvas.id)) : null,
   });
@@ -98,7 +101,7 @@ export function buildList(rows: readonly CanvasListRow[], context: ListContext):
       context.kind,
     ).map(row),
     settled: orderSettled(summaries.filter((canvas) => canvas.status === "settled")).map(
-      (canvas) => ({ canvas, question: null }),
+      (canvas) => ({ id: canvas.id, canvas, question: null }),
     ),
   };
 }

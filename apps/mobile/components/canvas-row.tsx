@@ -85,6 +85,9 @@ export const CanvasRow = memo(function CanvasRow({
           if (name === "settle" || name === "reopen") onAction(row, name);
         }}
         onPress={() => onOpen(canvas.id)}
+        // Holding is the menu's: with a long press of its own, letting go after one never also
+        // opens the canvas under the menu.
+        onLongPress={() => {}}
         style={({ pressed }) => ({
           flexDirection: "row",
           alignItems: "center",

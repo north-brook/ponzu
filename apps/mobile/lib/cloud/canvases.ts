@@ -7,9 +7,9 @@ import {
   type LiveSnapshot,
   type QuestionRow,
 } from "@ponzu/client";
-import { membersById, type Person, type WorkspaceKind } from "@ponzu/client/model";
+import { keepUnchanged, membersById, type Person, type WorkspaceKind } from "@ponzu/client/model";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { backend } from "./backend";
 import { buildList, type CanvasList, previewWatch, questionWatch } from "./list";
 import { phoneKeys } from "./persist";
@@ -193,10 +193,17 @@ export function useCanvasList(): {
   const watched = useMemo(() => (rows ? questionWatch(rows, kind) : []), [rows, kind]);
   const assetsUrls = useAssetsUrls(previews);
   const questions = useQuestions(watched);
-  const list = useMemo(
+  const built = useMemo(
     () => (rows ? buildList(rows, { kind, people, assetsUrls, questions }) : undefined),
     [rows, kind, people, assetsUrls, questions],
   );
+  // Rows a live update didn't touch stay the same objects, so CanvasRow's memo holds and only
+  // the row that changed draws again (as the Mac's sidebar does, sidebar-data.ts).
+  const last = useRef(built);
+  const list = useMemo(() => keepUnchanged(last.current, built), [built]);
+  useEffect(() => {
+    last.current = list;
+  }, [list]);
   return {
     userId,
     workspace,
