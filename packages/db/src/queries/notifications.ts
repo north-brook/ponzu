@@ -1,6 +1,12 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import type { DeliveryState, NotificationKind, NotificationReadVia } from "../enums.ts";
+import type {
+  DeliveryState,
+  MemberRole,
+  NotificationKind,
+  NotificationReadVia,
+  RepoPermission,
+} from "../enums.ts";
 import { newId } from "../ids.ts";
 import {
   devices,
@@ -388,6 +394,59 @@ export async function forgetDevices(db: Db, ids: readonly string[]): Promise<num
   return deleted.length;
 }
 
+/**
+ * Forget iPhones whose push token Expo just said is dead, each only while it still holds the
+ * token that was sent to: a phone whose token changed in place since keeps its row and its new
+ * token. Answers how many went.
+ */
+export async function forgetDeadTokens(
+  db: Db,
+  dead: readonly { id: string; pushToken: string }[],
+): Promise<number> {
+  if (dead.length === 0) return 0;
+  const result = await queryJson<{ count: number }>(
+    db,
+    sql`
+      with gone as (
+        delete from devices d
+         using json_to_recordset(${JSON.stringify(dead.map((row) => ({ id: row.id, token: row.pushToken })))}::json)
+               as u(id text, token text)
+         where d.id = u.id and d.push_token = u.token
+        returning d.id
+      )
+      select json_build_object('count', (select count(*) from gone)) as result
+    `,
+  );
+  return Number(result?.count ?? 0);
+}
+
+/**
+ * Forget iPhones a receipt said are dead, each only if nothing has registered or touched it
+ * since `sentAt`, the send the receipt is about: the receipt comes minutes later, and by then
+ * the phone may have registered a new token on the same row. One seen since stays; a later
+ * send's ticket says plainly whether its token is dead. Answers how many went.
+ */
+export async function forgetDevicesUnseenSince(
+  db: Db,
+  dead: readonly { id: string; sentAt: Date }[],
+): Promise<number> {
+  if (dead.length === 0) return 0;
+  const result = await queryJson<{ count: number }>(
+    db,
+    sql`
+      with gone as (
+        delete from devices d
+         using json_to_recordset(${JSON.stringify(dead.map((row) => ({ id: row.id, sent_at: row.sentAt.toISOString() })))}::json)
+               as u(id text, sent_at timestamptz)
+         where d.id = u.id and d.last_seen_at <= u.sent_at
+        returning d.id
+      )
+      select json_build_object('count', (select count(*) from gone)) as result
+    `,
+  );
+  return Number(result?.count ?? 0);
+}
+
 /** A person's devices, the one seen last first. */
 export function listDevices(db: Db, userId: string): Promise<Device[]> {
   return run(
@@ -625,27 +684,31 @@ export async function collapseCommentNotification(
 }
 
 /**
- * Mark a person's unread notifications read, as of `now`, by `via`: the ones named by `ids`,
- * or every one about `canvasId`, or (with neither) all of them. Only those made by `now` are
- * read, so one made a moment later still shows. Reading again is safe. Answers the ids read.
+ * Mark a person's unread notifications read, as of `now`, by `via`: the ones named by `ids`, or
+ * by `dedupeKeys`, or every one about `canvasId`, or (with none of these) all of them. Only
+ * those made by `now` are read, so one made a moment later still shows. Reading again is safe.
+ * Answers the ids read.
  */
 export async function markNotificationsRead(
   db: Db,
   {
     userId,
     ids,
+    dedupeKeys,
     canvasId,
     now,
     via,
   }: {
     userId: string;
     ids?: readonly string[];
+    dedupeKeys?: readonly string[];
     canvasId?: string;
     now: Date;
     via: NotificationReadVia;
   },
 ): Promise<string[]> {
   if (ids && ids.length === 0) return [];
+  if (dedupeKeys && dedupeKeys.length === 0) return [];
   const read = await run(
     db
       .update(notifications)
@@ -656,6 +719,7 @@ export async function markNotificationsRead(
           sql`${notifications.readAt} is null`,
           sql`${notifications.createdAt} <= ${at(now)}`,
           ids ? inArray(notifications.id, [...ids]) : undefined,
+          dedupeKeys ? inArray(notifications.dedupeKey, [...dedupeKeys]) : undefined,
           canvasId ? eq(notifications.canvasId, canvasId) : undefined,
         ),
       )
@@ -916,9 +980,12 @@ export interface DueDelivery {
   device: {
     id: string;
     userId: string;
+    platform: Device["platform"];
     pushToken: string | null;
     pingsEnabled: boolean;
     pingsBlocked: boolean;
+    lastSeenAt: Date;
+    activeAt: Date | null;
   } | null;
 }
 
@@ -938,9 +1005,12 @@ export async function dueDeliveries(
       device: {
         id: string;
         user_id: string;
+        platform: Device["platform"];
         push_token: string | null;
         pings_enabled: boolean;
         pings_blocked: boolean;
+        last_seen_at: string;
+        active_at: string | null;
       } | null;
     }[];
     next: string | null;
@@ -952,8 +1022,10 @@ export async function dueDeliveries(
           select json_agg(json_build_object(
                    'id', d.id, 'send_at', d.send_at, 'attempts', d.attempts,
                    'device', case when v.id is null then null else json_build_object(
-                     'id', v.id, 'user_id', v.user_id, 'push_token', v.push_token,
-                     'pings_enabled', v.pings_enabled, 'pings_blocked', v.pings_blocked
+                     'id', v.id, 'user_id', v.user_id, 'platform', v.platform,
+                     'push_token', v.push_token, 'pings_enabled', v.pings_enabled,
+                     'pings_blocked', v.pings_blocked, 'last_seen_at', v.last_seen_at,
+                     'active_at', v.active_at
                    ) end
                  ) order by d.send_at, d.id)
             from notification_deliveries d
@@ -981,9 +1053,12 @@ export async function dueDeliveries(
         ? {
             id: row.device.id,
             userId: row.device.user_id,
+            platform: row.device.platform,
             pushToken: row.device.push_token,
             pingsEnabled: row.device.pings_enabled,
             pingsBlocked: row.device.pings_blocked,
+            lastSeenAt: new Date(row.device.last_seen_at),
+            activeAt: row.device.active_at ? new Date(row.device.active_at) : null,
           }
         : null,
     })),
@@ -1136,4 +1211,181 @@ export async function settleLostSends(
       .returning({ id: notificationDeliveries.id }),
   );
   return settled.length;
+}
+
+// What the pipeline reads ---------------------------------------------------------------------
+
+/** One notification by its id, or null. */
+export async function getNotification(db: Db, id: string): Promise<Notification | null> {
+  const [row] = await run(db.select().from(notifications).where(eq(notifications.id, id)));
+  return row ?? null;
+}
+
+/** Notifications by id, whoever's: for a job that made them and is run again. */
+export function listNotificationsByIds(db: Db, ids: readonly string[]): Promise<Notification[]> {
+  if (ids.length === 0) return Promise.resolve([]);
+  return run(
+    db
+      .select()
+      .from(notifications)
+      .where(inArray(notifications.id, [...ids])),
+  );
+}
+
+/** One member of a canvas's workspace, and the kept answer for the canvas's repo. */
+export interface NotifyPerson {
+  userId: string;
+  role: MemberRole;
+  /** The kept `repo_access` answer for the canvas's repo, or null when there is none (or no repo). */
+  permission: RepoPermission | null;
+  checkedAt: Date | null;
+}
+
+/** What choosing who hears about a canvas needs, read in one statement. */
+export interface NotifyCanvasFacts {
+  id: string;
+  workspaceId: string;
+  repoId: string | null;
+  ownerId: string | null;
+  name: string;
+  /** Whose Claude account the canvas runs on, if it names one. */
+  claudeAccountId: string | null;
+  claudeUserId: string | null;
+  /** The event asked about, when it is the canvas's. */
+  event: { kind: string; userId: string | null } | null;
+  /** The person behind the newest delivered message, answer or comment: who is driving it. */
+  driverId: string | null;
+  /** How many of its questions are open. */
+  openQuestions: number;
+  /** Everyone who has opened it (a `canvas_reads` row). */
+  openedBy: string[];
+  /** Every member of its workspace, with their kept answer for its repo. */
+  people: NotifyPerson[];
+}
+
+/**
+ * The facts about a canvas that the `notify` job and a delivery's access check read: the canvas,
+ * the event a turn began with (`eventId`), who is driving it, its open questions, who has opened
+ * it, and its workspace's members with their kept answers for its repo. Null when there is no
+ * such canvas.
+ */
+export async function notifyCanvasFacts(
+  db: Db,
+  { canvasId, eventId = null }: { canvasId: string; eventId?: string | null },
+): Promise<NotifyCanvasFacts | null> {
+  const result = await queryJson<{
+    canvas: {
+      id: string;
+      workspace_id: string;
+      repo_id: string | null;
+      owner_id: string | null;
+      name: string;
+      claude_account_id: string | null;
+      claude_user_id: string | null;
+    } | null;
+    event: { kind: string; user_id: string | null } | null;
+    driver_id: string | null;
+    open_questions: number;
+    opened_by: string[];
+    people: {
+      user_id: string;
+      role: NotifyPerson["role"];
+      permission: NotifyPerson["permission"];
+      checked_at: string | null;
+    }[];
+  }>(
+    db,
+    sql`
+      select json_build_object(
+        'canvas', (
+          select json_build_object(
+                   'id', c.id, 'workspace_id', c.workspace_id, 'repo_id', c.repo_id,
+                   'owner_id', c.owner_id, 'name', c.name,
+                   'claude_account_id', c.claude_account_id, 'claude_user_id', ca.user_id)
+            from canvases c left join claude_accounts ca on ca.id = c.claude_account_id
+           where c.id = ${canvasId}
+        ),
+        'event', (
+          select json_build_object('kind', e.kind, 'user_id', e.user_id)
+            from events e where e.canvas_id = ${canvasId} and e.id = ${eventId}::text
+        ),
+        'driver_id', (
+          select e.user_id from events e
+           where e.canvas_id = ${canvasId} and e.kind in ('message', 'answer', 'comment')
+             and e.delivered_at is not null and e.user_id is not null
+           order by e.seq desc limit 1
+        ),
+        'open_questions', (
+          select count(*) from questions where canvas_id = ${canvasId} and status = 'open'
+        ),
+        'opened_by', coalesce((
+          select json_agg(r.user_id) from canvas_reads r where r.canvas_id = ${canvasId}
+        ), '[]'::json),
+        'people', coalesce((
+          select json_agg(json_build_object(
+                   'user_id', m.user_id, 'role', m.role,
+                   'permission', ra.permission, 'checked_at', ra.checked_at))
+            from canvases c
+            join memberships m on m.workspace_id = c.workspace_id
+            left join repo_access ra on ra.user_id = m.user_id and ra.repo_id = c.repo_id
+           where c.id = ${canvasId}
+        ), '[]'::json)
+      ) as result
+    `,
+  );
+  const canvas = result?.canvas;
+  if (!result || !canvas) return null;
+  return {
+    id: canvas.id,
+    workspaceId: canvas.workspace_id,
+    repoId: canvas.repo_id,
+    ownerId: canvas.owner_id,
+    name: canvas.name,
+    claudeAccountId: canvas.claude_account_id,
+    claudeUserId: canvas.claude_user_id,
+    event: result.event ? { kind: result.event.kind, userId: result.event.user_id } : null,
+    driverId: result.driver_id,
+    openQuestions: Number(result.open_questions),
+    openedBy: result.opened_by,
+    people: result.people.map((person) => ({
+      userId: person.user_id,
+      role: person.role,
+      permission: person.permission,
+      checkedAt: person.checked_at ? new Date(person.checked_at) : null,
+    })),
+  };
+}
+
+/** A person a notification may go to: their toggles and their devices. */
+export interface NotifyRecipient {
+  userId: string;
+  prefs: PingPrefs;
+  devices: Device[];
+}
+
+/** The people among `userIds` who exist, with their toggles and devices. */
+export async function listNotifyRecipients(
+  db: Db,
+  userIds: readonly string[],
+): Promise<NotifyRecipient[]> {
+  if (userIds.length === 0) return [];
+  const [people, owned] = await Promise.all([
+    run(
+      db
+        .select()
+        .from(users)
+        .where(inArray(users.id, [...userIds])),
+    ),
+    run(
+      db
+        .select()
+        .from(devices)
+        .where(inArray(devices.userId, [...userIds])),
+    ),
+  ]);
+  return people.map((user) => ({
+    userId: user.id,
+    prefs: pingPrefsOf(user),
+    devices: owned.filter((device) => device.userId === user.id),
+  }));
 }

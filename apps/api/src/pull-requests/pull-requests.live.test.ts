@@ -34,6 +34,7 @@ import { systemClock } from "@ponzu/sandbox";
 import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
+import { noPush } from "../deps/push.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createLogger } from "../http/log.ts";
 import type { JobDeps } from "../jobs/run.ts";
@@ -69,6 +70,8 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     vault: createVault({ key: env.PONZU_VAULT_KEY ?? "" }),
     log: createLogger(() => {}),
     analytics: noAnalytics,
+    // Nothing here pings a phone.
+    push: noPush,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },

@@ -40,6 +40,8 @@ import { CLIENT_HEADER } from "../http/client-version.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { questionsClosed } from "../notifications/badge.ts";
+import { notify } from "../notifications/notify.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
 import { credentialOf, describeToken, gitTarget } from "../runner/git-credential.ts";
@@ -340,16 +342,25 @@ export const runner = new Hono<AppEnv>()
           { workspaceId },
         ),
       );
+      await notify(deps, {
+        kind: "question_raised",
+        canvasId: actor.canvasId,
+        questionId: question.id,
+        questionKind: kind,
+      });
     }
     return c.json({ id: question.id, status: question.status } satisfies QuestionResponse);
   })
 
   /** The run moved on: closes those of these that are still open. Safe to repeat. */
   .post("/questions/withdraw", access.runner, validate("json", Withdraw), async (c) => {
+    const { ids } = c.req.valid("json");
     const withdrawn = await cancelQuestions(c.var.deps.db, {
       canvasId: c.var.actor.canvasId,
-      ids: c.req.valid("json").ids,
+      ids,
     });
+    // Every one of them is closed now, by this call or before it.
+    await questionsClosed(c.var.deps, { canvasId: c.var.actor.canvasId, questionIds: ids });
     return c.json({ withdrawn } satisfies WithdrawResponse);
   })
 
@@ -457,6 +468,20 @@ export const runner = new Hono<AppEnv>()
       await noteRunnerSaid(c.var.deps.db, {
         canvasId: c.var.actor.canvasId,
         now: new Date(c.var.deps.clock.now()),
+      });
+    }
+    // What each finished turn is worth telling someone: a reply, finished, failed, a limit. A
+    // report sent again is the same job and the same rows (their keys are the turn's).
+    for (const { id, turn } of turns) {
+      if (!turn) continue;
+      await notify(c.var.deps, {
+        kind: "turn_finished",
+        canvasId: c.var.actor.canvasId,
+        turnId: id,
+        eventId: turn.eventId,
+        outcome: turn.outcome,
+        errorCode: turn.errorCode,
+        durationMs: turn.durationMs,
       });
     }
     // Off the runner's path: the row is what matters to it, and analytics never fails a call.

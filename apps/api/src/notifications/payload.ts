@@ -96,7 +96,7 @@ export function pushData(notification: PushNotification): PushData {
 /**
  * The message that pings one phone. `badge` is the person's open needs-you count. A canvas's
  * pings are grouped by its id (a billing ping's by the workspace's), and a teammate's comments
- * replace one another on the phone.
+ * replace one another on the phone (`collapseIdOf`).
  */
 export function pushMessage(
   to: string,
@@ -111,15 +111,24 @@ export function pushMessage(
     sound: "default",
     badge,
     ...(group ? { threadId: group } : {}),
-    ...(notification.kind === "teammate_comment" && notification.canvasId
-      ? { collapseId: `${notification.canvasId}:comments` }
-      : {}),
+    collapseId: collapseIdOf(notification),
     priority: "high",
     interruptionLevel: "active",
     ttl: PUSH_TTL_S,
     data: pushData(notification),
   };
   return fit(message);
+}
+
+/**
+ * What a later ping replaces this one by on the phone. A teammate's comments on a canvas replace
+ * one another. Every other ping collapses by its own notification's id: Expo delivers at least
+ * once, so a ping it hands Apple twice shows once.
+ */
+export function collapseIdOf(notification: Pick<PushNotification, "id" | "kind" | "canvasId">) {
+  return notification.kind === "teammate_comment" && notification.canvasId
+    ? `${notification.canvasId}:comments`
+    : notification.id;
 }
 
 /** A push that only sets the app's badge: no words, no sound. */

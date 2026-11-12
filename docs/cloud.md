@@ -1207,6 +1207,9 @@ When Claude asks a question, wants a secret, or hands off a link, the runner wri
 a question row. Every client shows it in the composer, the canvas's row shows a
 count, and the phone gets a push. An answer is an event with priority `now`.
 
+Who hears of it, and when, is in "Notifications": the owner and whoever is driving the canvas at
+once, everyone else who can steer it and has opened it five minutes on if nobody has answered.
+
 A question outlives the sandbox's sleep. The API keeps a sandbox awake only while its
 runner is `working`, so one that waits on a person sleeps after five minutes; its question
 stays open, the canvas stays `needs_you`, and the answer wakes the sandbox and goes into
@@ -2508,8 +2511,11 @@ state.
 
 Settings › Notifications chooses what pings a person and where. What Ponzu tells a person is
 a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
-delivery of that row. Nothing writes those rows or sends pushes yet; the routes and the inbox
-below are what sending will use.
+delivery of that row (`notification_deliveries`), sent through Expo's push service. Questions
+and finished turns write those rows and send their pushes today (see "Sending" below); the
+comment, pull request, lapse, wake and billing pings are not wired yet. Pushes stay off until
+`EXPO_ACCESS_TOKEN` is set: without it every planned push is cancelled as `push_off`, and the
+inbox, the Mac and the badge work regardless.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
@@ -2577,9 +2583,53 @@ Settings shows as "Turned off in iOS Settings". A person keeps twenty devices; r
 21st forgets the one unseen longest. Signing out of the phone deletes its device. No answer
 carries a push token back.
 
-**What is worth a ping**, and who gets it, once sending is built. Each goes to the person's
-devices with `pings` on and not `blocked`, never to the person who caused it, and speaks as
-Ponzu:
+**Sending.** Product code calls `notify(trigger)` (apps/api/src/notifications/notify.ts) with
+ids only. It records a `notify` job keyed by the trigger and runs it at once, past the
+response; the minute's cron runs one whose request died. The job reads the facts, works out who
+hears of it, and writes one inbox row per person, each with a dedupe key (`needs_you:<canvas>:
+<question>`, `reply:<canvas>:<turn>`, …) that one person never gets twice, however often the
+trigger comes. Its words are Ponzu's own sentences in `copy.ts`: the title is the canvas's name,
+and the body never holds a question's, comment's or the agent's words, a repo, a branch or a
+path. Then the quiet rules (`plan.ts`) choose the pushes:
+
+1. A toggle that is off keeps the row, `muted`, and pushes nothing.
+2. Someone whose presence on the canvas was focused in the last 75 seconds is looking: the row
+   is read at once (`looking`) and nothing is pushed.
+3. More than 20 pushes to a person in an hour, needs-you and billing aside: the Mac only.
+4. Every iPhone with `pings` on, not `blocked`, with a token and seen in the last 90 days gets a
+   delivery. It goes now, or two minutes on when one of the person's Macs was active in the
+   last two minutes (the Mac shows it first).
+
+Each notification's pushes are a `notification.deliver` job, keyed by the notification, run
+when the first is due. At send time a delivery is cancelled, with its reason, when the row was
+read (`read`: a banner clicked, the canvas looked at, the question answered by this person), a
+needs-you was resolved (`resolved`), the toggle went off (`pref_off`), the phone is gone, off or
+blocked (`device_off`), the person can no longer read the canvas by their kept access answers
+(`access`), the row is more than 30 minutes old (`stale`), or push is off (`push_off`). The rest
+go in one request. A push is marked `sending` before the request and is never sent twice:
+Expo's 429 puts it back to wait 30 seconds; a 5xx or no answer may mean Expo took it, so it
+stays `sending` and the cron marks it `unknown` five minutes on. Every push carries a collapse
+id (its notification's, or `<canvas>:comments` for a teammate's comments), so one that arrives
+twice shows once. A ticket's `DeviceNotRegistered` forgets the phone if it still holds that
+token. The cron reads receipts from 15 minutes after a push: `delivered`, `failed` with Expo's
+code (a `DeviceNotRegistered` forgets a phone not seen since the push), or `unknown` after a
+day with none. A push's `data` is `@ponzu/core/push` version 1, ids only.
+
+When a question closes (answered, withdrawn, or found closed by the cron), its needs-you rows
+are resolved and whoever answered has theirs read. Each person whose badge went down gets one
+badge-only push 30 seconds on (`notification.badge`, keyed by the person, so a burst is one
+push); so does a person whose new needs-you pushed nothing. Every ten minutes the cron reads
+unread rows past three days as `expired`, deletes rows past 30 days, and forgets iPhones unseen
+90 days and Macs unseen 30.
+
+**What is worth a ping**, and who gets it. Each goes to the person's devices with `pings` on
+and not `blocked`, never to the person who caused it, and speaks as Ponzu. Built today: a
+question for you (the owner and whoever is driving the canvas at once, if they can steer it;
+five minutes on, if it is still open, everyone else who can steer it and has opened it), a
+reply (the commenter whose comment began the turn), a canvas finished (the person whose message
+or answer began a turn that worked more than a minute and left no question open), a turn that
+failed (that person, in words that say why), and a Claude plan limit (whoever's Claude account
+the canvas runs on, once a day). The rest of the table is still to be wired:
 
 | Event | Toggle | Who | When |
 |---|---|---|---|

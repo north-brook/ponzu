@@ -78,6 +78,9 @@ test("only the scheduler's secret runs it", async () => {
         repair: 0,
         reconciled: 0,
       },
+      receipts: { lost: 0 },
+      resolve_questions: { lowered: 0 },
+      prune_notifications: { expired: 0, deleted: 0, devices: 0 },
     },
   });
   // The same answer, logged.

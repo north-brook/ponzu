@@ -9,7 +9,9 @@ import {
   collapseCommentNotification,
   type DeviceRegistration,
   dueDeliveries,
+  forgetDeadTokens,
   forgetDevices,
+  forgetDevicesUnseenSince,
   insertDeliveries,
   insertNotifications,
   listDevices,
@@ -326,6 +328,42 @@ describe("devices", () => {
     expect((await listDevices(db, user.id)).map((d) => d.id)).toEqual([kept.device.id]);
     expect(await forgetDevices(db, [kept.device.id])).toBe(1);
     expect(await listDevices(db, user.id)).toEqual([]);
+  });
+
+  test("a dead token forgets its phone only while the phone still holds it", async () => {
+    const user = await seedUser(db, "dead-token");
+    const dead = await registered(phone(user.id));
+    const rotated = await registered(phone(user.id));
+    const oldToken = rotated.device.pushToken!;
+    await updateDevice(db, {
+      userId: user.id,
+      id: rotated.device.id,
+      changes: { pushToken: token() },
+    });
+    expect(
+      await forgetDeadTokens(db, [
+        { id: dead.device.id, pushToken: dead.device.pushToken! },
+        { id: rotated.device.id, pushToken: oldToken },
+      ]),
+    ).toBe(1);
+    expect((await listDevices(db, user.id)).map((d) => d.id)).toEqual([rotated.device.id]);
+  });
+
+  test("a receipt's dead token forgets a phone only if it was not seen after the send", async () => {
+    const user = await seedUser(db, "dead-receipt");
+    const idle = await registered(phone(user.id));
+    const back = await registered(phone(user.id));
+    const seen = (id: string, at: Date) =>
+      run(db.update(devices).set({ lastSeenAt: at }).where(eq(devices.id, id)));
+    await seen(idle.device.id, start);
+    await seen(back.device.id, after(MINUTE));
+    expect(
+      await forgetDevicesUnseenSince(db, [
+        { id: idle.device.id, sentAt: start },
+        { id: back.device.id, sentAt: start },
+      ]),
+    ).toBe(1);
+    expect((await listDevices(db, user.id)).map((d) => d.id)).toEqual([back.device.id]);
   });
 });
 
@@ -726,9 +764,12 @@ describe("deliveries", () => {
           device: {
             id: phones[0]!.device.id,
             userId: phones[0]!.device.userId,
+            platform: "ios",
             pushToken: phones[0]!.device.pushToken,
             pingsEnabled: true,
             pingsBlocked: false,
+            lastSeenAt: phones[0]!.device.lastSeenAt,
+            activeAt: null,
           },
         },
       ],

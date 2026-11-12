@@ -30,6 +30,7 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
+import { questionsClosed } from "../notifications/badge.ts";
 import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
 import { requestWake } from "../sandboxes/wake.ts";
 import { commentRef, completeUploads, presignUploads } from "../uploads/uploads.ts";
@@ -251,6 +252,12 @@ export const canvasThread = new Hono<AppEnv>()
         canvas_id: canvas.id,
         question_id: answered.id,
         kind: answered.kind,
+      });
+      // Off everyone's badge, and read for whoever answered, so their phone is not pinged.
+      await questionsClosed(deps, {
+        canvasId: canvas.id,
+        questionIds: [answered.id],
+        answeredBy: actor.user.id,
       });
       await requestWake(deps, canvas.id, "answer");
       return c.json(QuestionView.parse(answered));
