@@ -599,8 +599,14 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(last.surface!.x + last.surface!.width - (last.send!.x + last.send!.width)).toBeLessThan(
       12,
     );
+    // At its last step it is on the thread's composer, measured in the same frame: no jump.
+    expect(near(last.surface, last.home!)).toBe(true);
     await releaseSend(page);
     await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    // And that is where the thread's composer rests once the pane's easing is over. (Held
+    // stepping can outlast the window's watch on that easing, which is on the wall clock, and
+    // the pane then lays itself out once more: wait for that rather than read it mid-way.)
+    await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
     const home = await page.$eval("#thread [data-composer-card]", (el) => {
       const { x, y, width, height } = el.getBoundingClientRect();
       const style = getComputedStyle(el);
@@ -957,8 +963,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click('[data-choice="scratch:ws_lennylearning"]');
     await page.waitForSelector('[role="listbox"]', { state: "detached" });
     await page.waitForSelector('button[aria-label="Workspace: Lenny Learning"]');
-    // The selector says Scratch; to assistive tech, whose.
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
+    // The statement says "from scratch"; to assistive tech, whose.
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
     expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
       "Project: Scratch in Lenny Learning",
     );
