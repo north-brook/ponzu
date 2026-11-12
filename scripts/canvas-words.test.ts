@@ -133,7 +133,7 @@ test("nothing writes an old link, route, variable, tool or footer", () => {
     ":!apps/studio/src/cloud/ui/canvas-address*",
     ":!apps/web/next.config.ts",
     ":!apps/desktop/src/deep-links*",
-    ":!apps/studio/src/app/pull-request-map*",
+    ":!packages/client/src/model/pull-request-map*",
     ":!apps/studio/src/app/pull-request.test.ts",
     ":!apps/runner/evals/agent/checks*",
     ":!scripts/canvas-words*",
