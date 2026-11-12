@@ -240,23 +240,26 @@ export function DesignChromeHarness({
 
 /**
  * The create page with its own prompt, model and project. With `shelves` (each workspace's
- * repos), the person is in several workspaces: the picker lists the window's first and then the
- * others', and choosing one of another workspace's switches the window's workspace (the
- * sidebar's) as the app does, keeping the words. `?later` holds the others' back until the page
- * calls `window.galleryArrive()`, as a slow answer would.
+ * repos, null for one whose repos failed to load), the person is in several workspaces: the
+ * picker has a group for each, the window's first, and choosing another workspace's Scratch or
+ * repo switches the window's workspace (the sidebar's) as the app does, keeping the words.
+ * `later` (or `?later`) holds the others' repos back until the page calls
+ * `window.galleryArrive()`, as a slow answer would.
  */
 export function CreateHarness({
   initialPrompt = "",
   initialProject = { kind: "repo", repo: f.fernwood },
   repos: ownRepos = f.repos,
   shelves,
+  later = false,
   ideas = null,
 }: {
   initialPrompt?: string;
   /** Null: not known yet (the window's repos are loading). */
   initialProject?: ProjectChoice | null;
   repos?: CreatePageProps["repos"];
-  shelves?: Record<string, Repo[]>;
+  shelves?: Record<string, Repo[] | null>;
+  later?: boolean;
   ideas?: CreatePageProps["ideas"];
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -265,15 +268,19 @@ export function CreateHarness({
   const params = new URLSearchParams(location.search);
   const dwell = Number(params.get("dwell")) || 0;
   const window_ = useContext(WindowWorkspace);
-  const [arrived, setArrived] = useState(!params.has("later"));
+  const [arrived, setArrived] = useState(!later && !params.has("later"));
   useEffect(() => {
     (window as { galleryArrive?: () => void }).galleryArrive = () => setArrived(true);
   }, []);
   const repos = shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
   const elsewhere: RepoShelf[] = shelves
     ? window_.workspaces
-        .filter((w) => w.id !== window_.workspace.id && shelves[w.id])
-        .map((w) => ({ workspaceId: w.id, repos: arrived ? shelves[w.id]! : null }))
+        .filter((w) => w.id !== window_.workspace.id && w.id in shelves)
+        .map((w) => ({
+          workspaceId: w.id,
+          name: w.name,
+          repos: arrived ? (shelves[w.id] ?? []) : null,
+        }))
     : [];
   return (
     <CreatePage
@@ -289,6 +296,7 @@ export function CreateHarness({
         onChange: (m, e) => setModel({ model: m, effort: e }),
       }}
       project={project}
+      workspaceName={window_.workspace.name}
       repos={repos}
       elsewhere={elsewhere}
       onProjectChange={(choice, workspaceId) => {

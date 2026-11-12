@@ -782,45 +782,149 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     ).toBe("1");
   });
 
-  test("the picker lists every workspace's repos by full name, the window's first, and searches them all", async () => {
-    await open("pick-a-project-workspaces");
+  /** The open list as read top to bottom: `# <heading>` for a group's heading, else a row's words. */
+  const listed = () =>
+    page.$$eval('[role="listbox"] [cmdk-group-heading], [role="listbox"] [role="option"]', (els) =>
+      els.map((e) => (e.hasAttribute("cmdk-group-heading") ? `# ${e.textContent}` : e.textContent)),
+    );
+  const openPicker = async () => {
     await page.click('button[aria-label^="Project"]');
     await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
-    const options = () => page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
-    expect(await options()).toEqual([
+  };
+  /** Opens a board with the other workspaces' repos held back until `galleryArrive()`. */
+  const openLater = async (board: string) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?board=${board}&theme=light&later`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+  };
+  /** Each row's key and where it is, in px from the window's top. */
+  const rowTops = () =>
+    page.$$eval('[role="option"]', (els) =>
+      els.map((e) => [e.getAttribute("data-choice"), Math.round(e.getBoundingClientRect().top)]),
+    );
+
+  test("with several workspaces the picker groups them, each under its name with its own Scratch, and searches them all", async () => {
+    await open("pick-a-project-workspaces");
+    await openPicker();
+    expect(await listed()).toEqual([
+      "# Northbrook",
       "Scratch",
       "north-brook/fernwood",
       "north-brook/lenny",
       "north-brook/ponzu",
       "north-brook/fablefuel",
+      "# Lenny Learning",
+      "Scratch",
       "lennylearning/app",
       "lennylearning/site",
       "lennylearning/curriculum",
     ]);
+    // Each Scratch is its workspace's.
+    expect(
+      await page.$$eval('[role="option"]', (els) =>
+        els.filter((e) => e.textContent === "Scratch").map((e) => e.getAttribute("data-choice")),
+      ),
+    ).toEqual(["scratch", "scratch:ws_lennylearning"]);
+    // A heading is the menus' section label, cut short on one line; not an option, but the name
+    // of its rows' group.
+    const headings = await page.$$eval("[cmdk-group-heading]", (els) =>
+      els.map((h) => {
+        const label = h.firstElementChild!;
+        const css = getComputedStyle(label);
+        const group = h.parentElement!.querySelector('[role="group"]')!;
+        return {
+          height: Math.round(label.getBoundingClientRect().height),
+          type: [css.fontSize, css.fontWeight, css.paddingTop, css.paddingBottom, css.paddingLeft],
+          hidden: h.getAttribute("aria-hidden"),
+          names: document.getElementById(group.getAttribute("aria-labelledby")!) === h,
+          truncates: css.textOverflow === "ellipsis" && css.whiteSpace === "nowrap",
+        };
+      }),
+    );
+    expect(headings).toEqual(
+      ["Northbrook", "Lenny Learning"].map(() => ({
+        height: 24,
+        type: ["11px", "600", "6px", "4px", "8px"],
+        hidden: "true",
+        names: true,
+        truncates: true,
+      })),
+    );
+    // In the faint ink of every menu's label, and the rows' icons stand under its first letter.
+    const [faint, iconLeft, headingLeft] = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.className = "text-faint";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      const label = document.querySelector("[cmdk-group-heading] > *")!;
+      return [
+        color === getComputedStyle(label).color,
+        Math.round(
+          document.querySelector('[data-choice="scratch"] svg')!.getBoundingClientRect().left,
+        ),
+        Math.round(label.getBoundingClientRect().left + 8),
+      ];
+    });
+    expect(faint).toBe(true);
+    expect(iconLeft).toBe(headingLeft);
     // Owners read quieter than names.
     const [owner, name] = await page.$eval('[data-choice="repo_lennylearning_app"]', (row) =>
       [...row.querySelectorAll("span span")].map((s) => getComputedStyle(s).color),
     );
     expect(owner).not.toBe(name);
-    // A search matches anywhere in owner/name: an organization finds its repos, a name both's.
+    // A search matches anywhere in owner/name, and a workspace's name finds its Scratch and repos;
+    // a heading shows only over a group with a match.
     await page.keyboard.type("lenny");
-    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 4);
-    expect(await options()).toEqual([
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 5);
+    expect(await listed()).toEqual([
+      "# Northbrook",
       "north-brook/lenny",
+      "# Lenny Learning",
+      "Scratch",
       "lennylearning/app",
       "lennylearning/site",
       "lennylearning/curriculum",
     ]);
     await page.fill('input[aria-label="Search repositories"]', "/site");
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
-    expect(await options()).toEqual(["lennylearning/site"]);
+    expect(await listed()).toEqual(["# Lenny Learning", "lennylearning/site"]);
+    // "scratch" finds every workspace's.
+    await page.fill('input[aria-label="Search repositories"]', "scratch");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 2);
+    expect(await listed()).toEqual(["# Northbrook", "Scratch", "# Lenny Learning", "Scratch"]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("the arrows move over the rows and pass the headings by", async () => {
+    await open("pick-a-project-workspaces");
+    await openPicker();
+    const field = 'input[aria-label="Search repositories"]';
+    const highlighted = () =>
+      page.$eval(field, (el) => {
+        const id = el.getAttribute("aria-activedescendant");
+        return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
+      });
+    expect(await highlighted()).toBe("repo_fernwood");
+    await page.keyboard.press("Home");
+    expect(await highlighted()).toBe("scratch");
+    await page.keyboard.press("End");
+    expect(await highlighted()).toBe("repo_lennylearning_curriculum");
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+    expect(await highlighted()).toBe("scratch:ws_lennylearning");
+    // Past Lenny Learning's heading to Northbrook's last repo.
+    await page.keyboard.press("ArrowUp");
+    expect(await highlighted()).toBe("repo_fablefuel");
+    await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toBe("scratch:ws_lennylearning");
+    await page.keyboard.press("Escape");
   });
 
   test("choosing another workspace's repo switches the sidebar's workspace and keeps the choice and the words", async () => {
     await open("pick-a-project-workspaces");
     await page.fill("textarea", "Three takes on the lesson page");
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    await openPicker();
     await page.click('[data-choice="repo_lennylearning_app"]');
     await page.waitForSelector('[role="listbox"]', { state: "detached" });
     await page.waitForSelector('button[aria-label="Workspace: Lenny Learning"]');
@@ -828,37 +932,105 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       "Project: lennylearning/app",
     );
     expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
-    // There, its own repos come first and Northbrook's after.
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
-    const names = await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
-    expect(names.slice(0, 3)).toEqual(["Scratch", "lennylearning/app", "lennylearning/site"]);
-    expect(names.at(-1)).toBe("north-brook/fablefuel");
+    // There, its own group comes first and Northbrook's after.
+    await openPicker();
+    expect(await listed()).toEqual([
+      "# Lenny Learning",
+      "Scratch",
+      "lennylearning/app",
+      "lennylearning/site",
+      "lennylearning/curriculum",
+      "# Northbrook",
+      "Scratch",
+      "north-brook/fernwood",
+      "north-brook/lenny",
+      "north-brook/ponzu",
+      "north-brook/fablefuel",
+    ]);
     await page.keyboard.press("Escape");
   });
 
-  test("nothing moves when the other workspaces' repos arrive, the open list included", async () => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
-    await page.goto(`${server.url}/gallery.html?board=pick-a-project-workspaces&theme=light&later`);
-    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+  test("choosing another workspace's Scratch switches the sidebar's workspace with Scratch chosen and the words kept", async () => {
+    await open("pick-a-project-workspaces");
+    await page.fill("textarea", "Three takes on the lesson page");
+    await openPicker();
+    await page.click('[data-choice="scratch:ws_lennylearning"]');
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    await page.waitForSelector('button[aria-label="Workspace: Lenny Learning"]');
+    // The selector says Scratch; to assistive tech, whose.
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: Scratch in Lenny Learning",
+    );
+    expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
+    // Lenny Learning's Scratch, now the window's own, is the one checked.
+    await openPicker();
+    expect(
+      await page.$$eval("[data-checked]", (els) => els.map((e) => e.getAttribute("data-choice"))),
+    ).toEqual(["scratch"]);
+    expect(await page.getAttribute('[data-choice="scratch"]', "data-selected")).toBe("true");
+    expect(await listed().then((l) => l.slice(0, 2))).toEqual(["# Lenny Learning", "Scratch"]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("a workspace's heading and Scratch show at once; its repos join at the foot, and nothing moves", async () => {
+    await openLater("pick-a-project-workspaces");
     const before = await header();
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
-    const rows = () =>
-      page.$$eval('[role="option"]', (els) =>
-        els.map((e) => [e.getAttribute("data-choice"), Math.round(e.getBoundingClientRect().top)]),
-      );
-    const open_ = await rows();
-    expect(open_.length).toBe(5);
-    // Five rows fit, but more are coming: the search is there from the start, not brought in
-    // over the rows when they arrive.
+    await openPicker();
+    // Lenny Learning's name and Scratch are there before its repos, which hold a place under it.
+    expect(await listed()).toEqual([
+      "# Northbrook",
+      "Scratch",
+      "north-brook/fernwood",
+      "north-brook/lenny",
+      "north-brook/ponzu",
+      "north-brook/fablefuel",
+      "# Lenny Learning",
+      "Scratch",
+    ]);
+    expect(await page.$('[role="status"][aria-label="Loading repositories"]')).not.toBeNull();
     expect(await page.$('input[aria-label="Search repositories"]')).not.toBeNull();
+    const open_ = await rowTops();
+    await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 9);
+    // They join at the foot: the rows there were stay put, and so does the page.
+    expect((await rowTops()).slice(0, open_.length)).toEqual(open_);
+    expect(await header()).toEqual(before);
+    expect(await page.$('[role="status"][aria-label="Loading repositories"]')).toBeNull();
+    await page.keyboard.press("Escape");
+  });
+
+  test("an open list takes only the last workspace's late repos; the others' wait until it opens again", async () => {
+    await openLater("pick-a-project-three-workspaces");
+    await openPicker();
+    const opened = await listed();
+    expect(opened.slice(6)).toEqual(["# Lenny Learning", "Scratch", "# Bryce Bjork", "Scratch"]);
+    // The pointer rests on Lenny Learning's Scratch, under which its repos would go (the list
+    // scrolls it into view first).
+    await page.hover('[data-choice="scratch:ws_lennylearning"] span');
+    const open_ = await rowTops();
     await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 8);
-    // They join at the foot: the rows there were stay put, and so does the page.
-    expect((await rows()).slice(0, 5)).toEqual(open_);
-    expect(await header()).toEqual(before);
+    // The last workspace's repo joined at the foot; Lenny Learning's wait, so nothing moved.
+    expect(await listed()).toEqual([...opened, "brycedbjork/dotfiles"]);
+    expect((await rowTops()).slice(0, open_.length)).toEqual(open_);
+    expect(
+      await page.getAttribute('[data-choice="scratch:ws_lennylearning"]', "data-selected"),
+    ).toBe("true");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    // Opened again, every workspace lists what it has.
+    await openPicker();
+    expect((await listed()).slice(6)).toEqual([
+      "# Lenny Learning",
+      "Scratch",
+      "lennylearning/app",
+      "lennylearning/site",
+      "lennylearning/curriculum",
+      "# Bryce Bjork",
+      "Scratch",
+      "brycedbjork/dotfiles",
+    ]);
     await page.keyboard.press("Escape");
   });
 

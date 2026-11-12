@@ -78,9 +78,10 @@ interface Picked extends PendingAttachment {
 }
 
 /**
- * The create page as it was when a repo in another workspace was chosen: the window switches to
- * that workspace (a new `WorkspaceWindow`, so a new create page) and hands this over, so the page
- * there opens with the repo chosen and the words, images and picked idea as they were.
+ * The create page as it was when Scratch or a repo in another workspace was chosen: the window
+ * switches to that workspace (a new `WorkspaceWindow`, so a new create page) and hands this over,
+ * so the page there opens with that project chosen and the words, images and picked idea as they
+ * were.
  */
 export interface CreateHandoff {
   workspaceId: string;
@@ -105,6 +106,7 @@ export interface Launch {
 export function CreateView({
   host,
   workspaceId,
+  workspaceName,
   repos,
   elsewhere,
   handoff,
@@ -118,14 +120,16 @@ export function CreateView({
 }: {
   host: Host;
   workspaceId: string;
+  /** As the sidebar names it: the picker's heading, and whose Scratch the selector says. */
+  workspaceName: string;
   /** Repos the person can push to; null while they load. */
   repos: Repo[] | null;
-  /** The other workspaces' repos the person can push to, those that have arrived. */
+  /** Each other usable workspace, with the repos the person can push to once they arrive. */
   elsewhere: RepoShelf[];
   /** What the create page in the workspace this window just left handed over, if anything. */
   handoff: CreateHandoff | null;
   onHandoffTaken: () => void;
-  /** A repo in another workspace was chosen: switch to it, carrying the page over. */
+  /** Scratch or a repo in another workspace was chosen: switch to it, carrying the page over. */
   onSwitchWorkspace: (handoff: CreateHandoff) => void;
   /** Ideas show while the person is new to the workspace. */
   showIdeas: boolean;
@@ -331,6 +335,7 @@ export function CreateView({
             : null
         }
         project={shown}
+        workspaceName={workspaceName}
         repos={repos}
         elsewhere={elsewhere}
         onProjectChange={(choice, there) => {

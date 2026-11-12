@@ -308,9 +308,10 @@ function WorkspaceWindow({
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
     [detail.data],
   );
-  // The create page's picker lists every workspace's repos: the others' from the same query,
-  // each as it arrives (one that fails is left out), in the switcher's order. Their answers
-  // stay in the cache, so switching to one of them shows its repos at once.
+  // The create page's picker lists every usable workspace, in the switcher's order: each one's
+  // name and Scratch at once (they come with `me`), its repos from the same query as they arrive.
+  // One whose repos fail to load still offers its Scratch. Their answers stay in the cache, so
+  // switching to one of them shows its repos at once.
   const others = useMemo(() => workspaces.filter((w) => w.id !== id), [workspaces, id]);
   const elsewhere = useQueries({
     queries: others.map((w) => queries.workspace(w.id)),
@@ -318,10 +319,11 @@ function WorkspaceWindow({
       (
         results: { data?: { repos: Parameters<typeof pushableRepos>[0] }; isPending: boolean }[],
       ): RepoShelf[] =>
-        results.flatMap((result, i): RepoShelf[] => {
-          const workspaceId = others[i]!.id;
-          if (result.data) return [{ workspaceId, repos: pushableRepos(result.data.repos) }];
-          return result.isPending ? [{ workspaceId, repos: null }] : [];
+        results.map((result, i): RepoShelf => {
+          const workspace = others[i]!;
+          const shelf = { workspaceId: workspace.id, name: toWorkspace(workspace).name };
+          if (result.data) return { ...shelf, repos: pushableRepos(result.data.repos) };
+          return { ...shelf, repos: result.isPending ? null : [] };
         }),
       [others],
     ),
@@ -748,6 +750,7 @@ function WorkspaceWindow({
         <CreateView
           host={host}
           workspaceId={id}
+          workspaceName={toWorkspace(workspace).name}
           repos={repos}
           elsewhere={elsewhere}
           handoff={handoff}

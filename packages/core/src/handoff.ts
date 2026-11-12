@@ -21,6 +21,7 @@
  * markup, escaped, and the link must be one of the apps' own.
  */
 
+import { DISPLAY_FACE_RANGE, DISPLAY_FACE_WOFF2 } from "./display-face.ts";
 import { WORDMARK } from "./wordmark.ts";
 
 /** How long the app has to take the page's focus before the page offers its link again. */
@@ -137,9 +138,19 @@ const SCRIPT = `(() => {
 /*
  * The page's look: the cloud's tokens (apps/studio/src/cloud/styles/tokens.css) and the site's
  * handoff (`/local`): white or near black, ink, the slice in ink on light and yuzu on dark, and
- * the action in the same two. System fonts: the page loads nothing.
+ * the action in the same two. The heading is in the display face, as the apps' headings are,
+ * and the page still asks for nothing: the face is inside the style sheet (display-face.ts),
+ * which the policy allows with \`font-src data:\`. The rest is in the system's fonts.
  */
 const STYLE = `
+@font-face {
+  font-family: "Funnel Display";
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url(data:font/woff2;base64,${DISPLAY_FACE_WOFF2}) format("woff2");
+  unicode-range: ${DISPLAY_FACE_RANGE};
+}
 :root {
   color-scheme: light dark;
   --ground: #ffffff;
@@ -194,14 +205,14 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 22px;
   padding: 24px 16px 82px;
   text-align: center;
 }
 .mark { width: 56px; height: 56px; flex: none; }
 .mark g { fill: var(--slice); stroke: var(--slice); }
 main[data-problem="true"] .mark g { fill: var(--quiet); stroke: var(--quiet); }
-.view { display: none; flex-direction: column; align-items: center; gap: 10px; max-width: 460px; }
+.view { display: none; flex-direction: column; align-items: center; gap: 10px; max-width: 640px; }
 .view[data-for="opening"] { display: flex; }
 main[data-state="opened"] .view[data-for="opening"],
 main[data-state="missed"] .view[data-for="opening"] { display: none; }
@@ -209,13 +220,13 @@ main[data-state="opened"] .view[data-for="opened"],
 main[data-state="missed"] .view[data-for="missed"] { display: flex; animation: swap 220ms cubic-bezier(0.2, 0.9, 0.3, 1); }
 h1 {
   margin: 0;
+  font-family: "Funnel Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
   font-size: 32px;
   line-height: 38px;
   font-weight: 600;
-  letter-spacing: -0.03em;
   text-wrap: balance;
 }
-p { margin: 0; color: var(--muted); text-wrap: balance; }
+p { margin: 0; max-width: 460px; color: var(--muted); text-wrap: balance; }
 .cta {
   display: inline-flex;
   align-items: center;
@@ -314,12 +325,12 @@ function handoffHashes(): Promise<{ script: string; style: string }> {
 }
 
 /**
- * Everything the page may do: its own script and style, by hash, and nothing else. No request,
- * no form, no frame around it.
+ * Everything the page may do: its own script and style, by hash, a font from inside that style
+ * sheet, and nothing else. No request, no form, no frame around it.
  */
 export async function handoffPolicy(): Promise<string> {
   const { script, style } = await handoffHashes();
-  return `default-src 'none'; script-src ${script}; style-src ${style}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  return `default-src 'none'; script-src ${script}; style-src ${style}; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 }
 
 /**

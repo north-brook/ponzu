@@ -150,6 +150,15 @@ export const shelves: Record<string, Repo[]> = {
   [northbrook.id]: repos,
   [lennyLearning.id]: lennyRepos,
 };
+/** The person's own repos, in their personal workspace. */
+export const personalRepos: Repo[] = [
+  { id: "repo_brycedbjork_dotfiles", owner: "brycedbjork", name: "dotfiles" },
+];
+/** And in their personal workspace too, the switcher's third. */
+export const threeShelves: Record<string, Repo[]> = {
+  ...shelves,
+  [personal.id]: personalRepos,
+};
 /** A repo whose owner and name are both too long for the header. */
 export const longNamedRepo: Repo = {
   id: "repo_long",
