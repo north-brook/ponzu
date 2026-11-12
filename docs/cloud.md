@@ -578,10 +578,14 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   to `awake` once the start is sent, and every runner token of the design but the new one is
   revoked; the runner claims by itself as soon as it is up, so the wake neither waits for
   `/health` nor pokes. Vercel limiting the pace, being busy or away, or the session ending between
-  `up()` and the start, is waited out: the token is revoked and the job tried again, from 15
-  seconds doubling to five minutes, or when Vercel said. Anything else, or about three hours of
-  tries, stops the session, moves the row to `asleep` with its `failure`, and shows
-  `sandbox_failed`; the next message tries again.
+  `up()` and the start, is waited out: the token is revoked, the session `up()` returned is
+  stopped (so nothing runs between tries, which a resume of about two seconds undoes), and the job
+  is tried again, from 15 seconds doubling to five minutes, or when Vercel said. Anything else, or
+  about three hours of tries, stops the session the same way, moves the row to `asleep` with its
+  `failure`, and shows `sandbox_failed`; the next message tries again. A wake whose row was taken
+  from it after its `up()` (a retire, a repair) stops the session it started unless the row's
+  holder now runs on it, and removes the sandbox when the design is settled or gone, since a
+  retire that finished in between could not see what this wake made after it.
 - **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
   design's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
   (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
@@ -617,15 +621,20 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   forgets stops by itself. The sweep extends an awake one by 20 minutes once its deadline is
   less than 10 minutes off, clamped so the session's whole timeout stays five minutes inside
   Vercel's 24-hour cap, and puts a session 23.5 hours old to sleep first (`cycle`, then the pending
-  rule). When the extend finds Vercel already stopped the session, the row goes to `asleep` and
-  the pending rule applies.
+  rule); while a turn is under way or owed it waits for the turn until the session is 23 hours 45
+  minutes old, since a sleep cuts the turn. When the extend, or a restart's look at a runner
+  unheard for 90 seconds, finds Vercel already stopped the session (its timeout), the row goes to
+  `asleep`, its tokens are revoked and the pending rule applies: it is woken only for work.
 - **Retire** (`retire.ts`) runs when a design settles, when a design is deleted while its
   account is kept, and when an account is deleted. It moves the row to `stopping` with
   `waking_by = 'retire:<job>'` whatever its state, which meters what was awake and turns away a
   wake that held it; revokes the design's runner tokens; stops the session if one runs; deletes
   the sandbox at Vercel with its snapshots; and only then deletes the row. A design reopened
   meanwhile finds its row `stopping` and its wake waits or tries again, so a late delete can
-  never hit its new sandbox. A retire that dies leaves the row held, and the sweep runs it again.
+  never hit its new sandbox. A settle's retire, and the sweep's, take the row only while the
+  design is still settled, so one that comes late (a sweep that listed the design before it was
+  reopened) leaves the reopened design alone. A retire that dies leaves the row held, and the
+  sweep runs it again.
 - **The sweep**, every minute, never resumes anything: every call it makes reads or is pinned to
   the row's session. Each row gets the first step that applies, in this order:
 
@@ -633,26 +642,28 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   |---|---|---|
   | retire | the design is settled | retire |
   | stop | its Claude can no longer run it, or its owner left the workspace | sleep (`claude_owner_left` shown for the second) |
-  | restart | awake, and its runner unheard for 90 seconds | sleep, then wake at once; after three in a row, sleep with `sandbox_failed` |
-  | lapse | a turn it owes is past waiting for ("A turn that never came") | the thread says so and the event goes in again; an idle runner is poked, one that says it works is slept and woken |
-  | stalled | its runner says it works and has written nothing for an hour | the thread says so; sleep, then wake |
+  | restart | awake, and its runner unheard for 90 seconds | a session Vercel already stopped: `asleep` and the pending rule; otherwise sleep, then wake at once; after three in a row, sleep with `sandbox_failed` |
+  | lapse | a turn it owes is past waiting for ("A turn that never came") | the thread says so and the event goes in again; an idle runner is poked, one that says it works is let go (its token revoked, so it writes no notice of its own) and slept and woken |
+  | stalled | its runner says it works and has written nothing for an hour | the thread says so; the runner is let go, slept and woken |
   | sleep | idle for `PONZU_SANDBOX_IDLE_SECONDS` (300), owing no turn | sleep |
-  | cycle | its session is 23.5 hours old | sleep, then the pending rule |
+  | cycle | its session is 23.5 hours old (23.75 with a turn under way or owed) | sleep, then the pending rule |
   | extend | its session's deadline is less than 10 minutes off | extend, clamped |
-  | repair | `waking` or `stopping` past its six-minute lease | stop a running session, pinned to its own id; `asleep`; the pending rule |
+  | repair | `waking` or `stopping` past its six-minute lease | take the row (only if nothing moved it since the sweep looked), stop a running session pinned to its own id, revoke its tokens; `asleep`; the pending rule |
 
 - **Reconcile**, on minutes divisible by ten, lists this scope's names at Vercel and compares
   them with the rows, at most ten actions a run. A row waking or stopping inside its lease is
   left alone. A running sandbox is stopped, pinned to its own session, when its row is missing,
-  asleep, or awake on another session (`sandbox_leak`); a name whose design was deleted is removed
+  asleep, or awake on another session (`sandbox_leak`), looked at again just before the stop so a
+  wake that claimed it since the list keeps it; a name whose design was deleted is removed
   (an id never comes back); a settled design's is retire's. A sign-in's sandbox is removed once
   its sign-in is over or an hour old.
 - **Disconnecting Claude** puts every awake sandbox started with that credential to sleep at
   once; an asleep one holds nothing and is left alone. One waking at that moment is put to sleep
   by the sweep's `stop` within the minute.
 - **Logs.** `sandbox_awake` (with `start`, `fresh` and how long), `sandbox_stopped` (why, the
-  snapshot's size, how long), `wake_failed`, `sandbox_expired`, `sandbox_repaired`,
-  `sandbox_retired`, `sandbox_leak`, `sandbox_orphan_removed`, `runner_dead`.
+  snapshot's size, how long), `wake_failed`, `wake_let_go`, `sandbox_expired`, `sandbox_repaired`,
+  `sandbox_retired`, `sandbox_retire_skipped`, `sandbox_leak`, `sandbox_orphan_removed`,
+  `runner_dead`.
 
 ### The runner
 
@@ -2447,9 +2458,21 @@ After a deploy that changes the sandbox lifecycle, the image or the runner, on t
 4. No `sandbox_leak` in the logs.
 5. The command log of a `ponzu-start` holds only that script's own lines (none of the runner's,
    and no secret).
-6. `sandbox woke` durations are about 2 to 3 seconds for a resume.
+6. `sandbox woke` `duration_ms` runs from the wake job's start to `ponzu-start` being accepted
+   (not to the runner answering): 1.0 to 1.6 seconds for a create or a resume and 0.4 seconds
+   for a restart in place were measured from a local API on real sandboxes. A resume's runner
+   answers `/health` about a second after that (1.8 to 2.9 seconds from the message in the
+   spike).
 7. Nothing at Vercel holds `VERCEL_TOKEN` for Preview or Production: the API refuses it there
    and runs on OIDC.
+8. With a person's session against the deployed API, run the client's live suites:
+   `packages/client/src/lifecycle.live.test.ts` (it prints `wake to answer`, the time from a
+   message to the runner's first answer, the number the speed claim rests on) and
+   `packages/client/src/image-move.live.test.ts`.
+9. Dispatch the Image workflow (`image.yml`) once: it builds, pushes to the registry through
+   the OIDC policy, checks the image in a sandbox and opens a pull request with
+   `current.json`. That pull request is opened with `GITHUB_TOKEN`, so no CI runs on it until a
+   person closes and reopens it.
 
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of
@@ -2530,8 +2553,9 @@ from `cloud` into `main`, released as the next major version.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<design>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.
-- A sleep takes a few seconds (`ponzu-stop`, then the snapshot: 2 to 3 seconds for the image's
-  550 MB). A message that arrives meanwhile finds the row `stopping` and its wake waits for the
+- A sleep takes a few seconds (`ponzu-stop`, then the snapshot: `putToSleep` took 1.3 seconds
+  with a 549 MiB snapshot from a local API on a real sandbox; a runner mid-turn takes longer, up
+  to `ponzu-stop`'s 30 seconds). A message that arrives meanwhile finds the row `stopping` and its wake waits for the
   sleep to land, up to 30 seconds, then resumes.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
