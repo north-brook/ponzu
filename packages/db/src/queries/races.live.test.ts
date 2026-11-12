@@ -12,7 +12,7 @@ import { getCanvas, getCanvasHead } from "./canvases.ts";
 import { openClaudeSignIn } from "./claude-sign-ins.ts";
 import { appendEvent, claimEvents } from "./events.ts";
 import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
-import { claimJobs, enqueueJob } from "./jobs.ts";
+import { claimJobs, enqueueJob, recordOnce } from "./jobs.ts";
 import { ensureWorkspaceAdmin, setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
@@ -159,6 +159,21 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const rest = await claimJobs(db, { worker: "sweep", limit: 40 });
     expect(taken.length + rest.length).toBe(40);
     expect(await db.$count(jobs, eq(jobs.attempts, 1))).toBe(40);
+    await db.delete(jobs);
+  }, 60_000);
+
+  test("cron runs recording one slot at once: exactly one takes it, every round", async () => {
+    await db.delete(jobs);
+    for (let round = 0; round < 10; round++) {
+      const slot = {
+        kind: "cron.step",
+        key: `live@2026-11-12T${String(round).padStart(2, "0")}:00`,
+      };
+      const taken = await Promise.all(times(8, () => recordOnce(db, slot)));
+      expect(taken.filter(Boolean)).toHaveLength(1);
+    }
+    // Recorded as done, so no claim ever takes one.
+    expect(await claimJobs(db, { worker: "w1", limit: 20 })).toEqual([]);
     await db.delete(jobs);
   }, 60_000);
 
