@@ -443,7 +443,7 @@ describe("GET /v1/github/setup", () => {
     expect(unclaimed).not.toContain("evil");
   });
 
-  test("the page is as strict as it can be: its one script and one style sheet by hash, nothing else", async () => {
+  test("the page is as strict as it can be: its one script and one style sheet by hash, a font from inside it, nothing else", async () => {
     const jo = await t.signInAs({ login: "jo" });
     const state = await installLink(jo);
     const installation = installOnOrg("strictco", [jo]);
@@ -465,12 +465,15 @@ describe("GET /v1/github/setup", () => {
     expect(directives["base-uri"]).toEqual(["'none'"]);
     expect(directives["form-action"]).toEqual(["'none'"]);
     expect(directives["frame-ancestors"]).toEqual(["'none'"]);
+    // The heading's face is inside the style sheet; no font may come from anywhere else.
+    expect(directives["font-src"]).toEqual(["data:"]);
     expect(csp).not.toContain("unsafe-inline");
     expect(csp).not.toContain("nonce-");
     expect(Object.keys(directives).sort()).toEqual(
       [
         "base-uri",
         "default-src",
+        "font-src",
         "form-action",
         "frame-ancestors",
         "script-src",

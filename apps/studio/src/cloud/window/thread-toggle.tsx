@@ -6,7 +6,7 @@ import { Slice } from "../ui/marks.tsx";
 import { paneHeld, useShortcut } from "../ui/shortcut.ts";
 
 /**
- * Opens and closes the thread rail (⌘J). While the rail is closed it carries the agent's state
+ * Opens and closes the thread rail (⌥⌘B). While the rail is closed it carries the agent's state
  * in its place: a count of what waits on you, the turning slice, or a dot for something unseen.
  * Open, it is the plain icon: the rail itself says the rest.
  */
@@ -20,7 +20,8 @@ export function ThreadToggle({
   onToggle: () => void;
 }) {
   // Not under a menu or a modal (paneHeld), as ⌘B.
-  useShortcut("j", () => paneHeld("thread") || onToggle());
+  // ⌥⌘B, the sidebar's ⌘B with ⌥: the two panes are one pair of keys.
+  useShortcut("b", () => paneHeld("thread") || onToggle(), true, { alt: true });
   const shown = open ? "idle" : signal;
   const label =
     typeof shown === "object"
@@ -33,7 +34,7 @@ export function ThreadToggle({
   return (
     <IconButton
       label={label}
-      keys={["⌘", "J"]}
+      keys={["⌥", "⌘", "B"]}
       aria-expanded={open}
       aria-controls="thread"
       onClick={onToggle}
