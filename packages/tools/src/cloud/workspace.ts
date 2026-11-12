@@ -62,9 +62,10 @@ export interface CloudWorkspaceOptions {
   files?: AgentFiles;
   host: CloudHost;
   /**
-   * Where send_feedback goes, and the tools' usage counts. The runner's sends the feedback to
-   * PostHog when its session says analytics is on and answers false otherwise (its
-   * apps/runner/src/telemetry.ts); without one, send_feedback says it was not sent.
+   * Where send_feedback goes, and the tools' usage counts. The runner's telemetry sends the feedback to
+   * PostHog (apps/runner/src/telemetry.ts) when its session says analytics is on, and answers
+   * false otherwise; the runner sends no usage counts. Without one, send_feedback says it was
+   * not sent.
    */
   telemetry?: Telemetry;
 }
