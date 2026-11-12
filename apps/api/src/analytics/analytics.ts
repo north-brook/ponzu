@@ -210,8 +210,9 @@ export function cachedOptOuts(
  *
  * Who has turned it off is read from the database only when the queue is sent, in the
  * background, never on the request path. A capture is checked against the copy this instance
- * holds while that copy is fresh; otherwise it is held here (at most `HELD_MAX`, the oldest
- * dropped first, each with the time it was captured) and handed to `sink` only once the send
+ * holds while that copy is fresh; otherwise it is held here (at most `HELD_MAX` in all, counting
+ * those a send under way is deciding, the oldest dropped first, each with the time it was
+ * captured) and handed to `sink` only once the send
  * has read the set again, by a read begun after it was held. If that read fails, the last copy
  * decides, however old, unless a switch changed here since it was read; with none, everything
  * waits for the next send. Nothing about an opted-out person is ever sent on a guess.
@@ -221,7 +222,22 @@ export function withoutOptedOut(
   optOuts: OptOuts,
   log?: Logger,
 ): AnalyticsSink {
-  const held: { about: string; send: () => void }[] = [];
+  type Held = { about: string; send: () => void };
+  const held: Held[] = [];
+  // What sends under way took from `held` and wait on their read, oldest first. They count
+  // toward `HELD_MAX` too, so a slow read never lets more than that pile up.
+  const deciding = new Set<Held[]>();
+  const trim = () => {
+    let over = held.length - HELD_MAX;
+    for (const batch of deciding) over += batch.length;
+    for (const batch of deciding) {
+      if (over <= 0) return;
+      const n = Math.min(over, batch.length);
+      batch.splice(0, n);
+      over -= n;
+    }
+    if (over > 0) held.splice(0, over);
+  };
   const decide = (about: string | null, send: () => void) => {
     if (about === null) return send();
     const out = optOuts.fresh();
@@ -230,7 +246,7 @@ export function withoutOptedOut(
       return;
     }
     held.push({ about, send });
-    if (held.length > HELD_MAX) held.splice(0, held.length - HELD_MAX);
+    trim();
   };
   return {
     capture: (message) => {
@@ -254,12 +270,15 @@ export function withoutOptedOut(
         // Only what was held before this read began is its to decide: what is captured while it
         // is out (perhaps after a switch here) waits for the next send's read.
         const waiting = held.splice(0);
+        deciding.add(waiting);
         let out: ReadonlySet<string> | null;
         try {
           out = await optOuts.current();
         } catch (error) {
           log?.warn("analytics_opt_outs_unread", { error });
           out = optOuts.known();
+        } finally {
+          deciding.delete(waiting);
         }
         if (out) {
           for (const { about, send } of waiting) {
@@ -267,7 +286,7 @@ export function withoutOptedOut(
           }
         } else {
           held.unshift(...waiting);
-          if (held.length > HELD_MAX) held.splice(0, held.length - HELD_MAX);
+          trim();
         }
       }
       await sink.flush();

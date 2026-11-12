@@ -90,7 +90,8 @@ export function createAiTracing({
  *
  * With `optOuts`, a person who has turned usage sharing off is left off: the span is still the
  * workspace's, about no one. Spans start on the request path, so this reads only the copy the
- * analytics' sends hold; before that copy exists it asks for one and leaves everyone off.
+ * analytics' sends hold, and only while it is fresh: with no fresh copy it asks for one and
+ * leaves everyone off, so an idle instance's old copy never attributes a span to anyone.
  */
 export function scopeContextFor(optOuts: OptOuts | null = null) {
   return {
@@ -100,7 +101,7 @@ export function scopeContextFor(optOuts: OptOuts | null = null) {
       let distinctId = scope.userId();
       let sessionId = scope.sessionId;
       if (optOuts && distinctId) {
-        const out = optOuts.known();
+        const out = optOuts.fresh();
         if (!out) void optOuts.current().catch(() => {});
         if (!out || out.has(distinctId)) {
           distinctId = null;

@@ -417,13 +417,20 @@ function registerIpc(session: MainSession, updater: Updates) {
  */
 async function setUsageSharing(enabled: boolean): Promise<boolean> {
   // Off stops reporting first, so a file that can't be written never leaves it running.
+  let shutdown: Promise<void> | null = null;
   if (!enabled && telemetry && !telemetryStopped) {
     telemetryStopped = true;
     // No error after this is reported; what was queued before the person said no is sent.
     telemetry.stop();
-    await telemetry.shutdown();
+    shutdown = telemetry.shutdown();
   }
-  writeUsageSharing(homedir(), enabled);
+  // The file is written before anything is awaited, so changes land in the order they were
+  // made: a later "on" is never overwritten by an earlier "off" still shutting down.
+  try {
+    writeUsageSharing(homedir(), enabled);
+  } finally {
+    await shutdown;
+  }
   // Whether the next launch reports: this build has a project, and nothing else says no.
   return (
     enabled && Boolean(config.posthog) && !smoke && !telemetryOffBecause(process.env, homedir())

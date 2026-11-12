@@ -8,6 +8,7 @@ import {
   noAnalytics,
   scrubbed,
   stableUuid,
+  withoutOptedOut,
 } from "./analytics.ts";
 import { type AnalyticsScope, noteWorkspace, withScope } from "./scope.ts";
 
@@ -324,6 +325,33 @@ test("at most HELD_MAX captures wait for a read, the oldest dropped first", asyn
   await s.sent();
   expect(s.sink.events).toHaveLength(HELD_MAX);
   expect(s.sink.events[0]!.distinctId).toBe("usr_5");
+});
+
+test("captures that sends under way are deciding count toward HELD_MAX too", async () => {
+  // One read, held open, that every send shares while it is out.
+  let answer: ((ids: string[]) => void) | null = null;
+  const optOuts = cachedOptOuts(
+    () =>
+      new Promise<string[]>((resolve) => {
+        answer = resolve;
+      }),
+    () => 0,
+  );
+  const memory = new MemoryAnalytics();
+  const sink = withoutOptedOut(memory, optOuts);
+  const sends: Promise<void>[] = [];
+  sink.capture({ event: "user signed out", distinctId: "usr_first", properties: {} });
+  sends.push(sink.flush());
+  // Each capture is taken by its own send while the read is slow.
+  for (let i = 0; i < HELD_MAX + 5; i++) {
+    sink.capture({ event: "user signed out", distinctId: `usr_${i}`, properties: {} });
+    sends.push(sink.flush());
+  }
+  for (let turn = 0; turn < 1_000 && !answer; turn++) await Promise.resolve();
+  answer!([]);
+  await Promise.all(sends);
+  expect(memory.events).toHaveLength(HELD_MAX);
+  expect(memory.events[0]!.distinctId).toBe("usr_5");
 });
 
 test("a read that began before a switch here is not trusted for what comes after it", async () => {
