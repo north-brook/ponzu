@@ -1458,7 +1458,7 @@ export function Canvas({
           // A middle press pans the canvas, not the browser's autoscroll.
           onMouseDown={(e) => e.button === 1 && e.preventDefault()}
         >
-          <div aria-hidden style={{ width: PLANE, height: PLANE }} />
+          <div aria-hidden className="pz-dots" style={{ width: PLANE, height: PLANE }} />
           <div ref={layer} className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left">
             {boards.map((ab) => {
               const g = ghostFor(ab.id);

@@ -67,7 +67,8 @@ text "Settled" rgb(183, 179, 169) 400 12px Inter
 text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-text "What do you want to design?" rgb(244, 243, 239) 600 34px Funnel Display
+icon svg 198.95×54.28 rgb(244, 243, 239) stroke 3.4px
+text "What do you want to design?" rgb(244, 243, 239) 400 13px Inter
 ground div rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
 text "Try a darker footer with the newsletter…" rgb(244, 243, 239) 400 16px Inter
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
