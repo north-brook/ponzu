@@ -43,6 +43,7 @@ import { validate } from "../http/validate.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
 import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
 import { credentialOf, describeToken, gitTarget } from "../runner/git-credential.ts";
+import { recordReportedLimit } from "../runner/limits.ts";
 import { recordReportedModels } from "../runner/models.ts";
 import {
   Ack,
@@ -279,12 +280,15 @@ export const runner = new Hono<AppEnv>()
    */
   .put("/state", access.runner, validate("json", State), async (c) => {
     const { deps, actor } = c.var;
+    const { claudeLimit, ...state } = c.req.valid("json");
     const answer = await reportRunnerState(deps.db, {
       canvasId: actor.canvasId,
       now: new Date(deps.clock.now()),
-      ...c.req.valid("json"),
+      ...state,
     });
     if (answer === null) throw new ApiError(404, "not_found", "There is no such canvas.");
+    // News, said once: kept on the Claude account only from a runner on its current credential.
+    if (claudeLimit) await recordReportedLimit(deps, actor.canvasId, claudeLimit);
     return c.json({ seq: answer.seq } satisfies StateResponse);
   })
 

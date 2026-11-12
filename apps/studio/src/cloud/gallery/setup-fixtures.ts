@@ -133,6 +133,11 @@ export const limitsFull: ClaudeLimit[] = [
   { window: "week", utilization: 0.64, resetsAt: local(11, 16, 9) },
   { window: "week_opus", utilization: 1, resetsAt: local(11, 16, 9) },
 ];
+/** The session and the week on Opus used up, with the Sonnet week some plans have. */
+export const limitsAtLimit: ClaudeLimit[] = [
+  ...limitsFull,
+  { window: "week_sonnet", utilization: 0.27, resetsAt: local(11, 16, 9) },
+];
 export const limitsUnseen: ClaudeLimit[] = limits.map((l) => ({
   ...l,
   utilization: null,

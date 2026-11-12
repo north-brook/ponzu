@@ -279,3 +279,49 @@ test("the repo's MCP servers come from its .mcp.json, and can't take Ponzu's nam
   await writeFile(join(dir, ".mcp.json"), "{ not json");
   expect(repoServers(dir)).toEqual({});
 });
+
+test("a rate_limit_event is the plan's limit, read as the runner reports it", () => {
+  const t = new Translator();
+  const limit = (info: Record<string, unknown>, extra = {}) =>
+    t.events(msg({ type: "rate_limit_event", rate_limit_info: info, ...extra }));
+  // As Claude Code sends it: the reset in seconds since the epoch, the share used as a fraction.
+  expect(
+    limit({
+      status: "rejected",
+      resetsAt: 1_794_520_800,
+      rateLimitType: "five_hour",
+      utilization: 1,
+    }),
+  ).toEqual([
+    {
+      type: "limit",
+      limit: {
+        status: "rejected",
+        window: "five_hour",
+        resetsAt: "2026-11-12T22:00:00.000Z",
+        utilization: 1,
+      },
+    },
+  ]);
+  // A reset in milliseconds is not taken for seconds.
+  expect(limit({ status: "allowed_warning", resetsAt: 1_794_520_800_000 })).toEqual([
+    {
+      type: "limit",
+      limit: {
+        status: "allowed_warning",
+        window: null,
+        resetsAt: "2026-11-12T22:00:00.000Z",
+        utilization: null,
+      },
+    },
+  ]);
+  // What it cannot read is null, and a status it does not know is no limit.
+  expect(limit({ status: "later", resetsAt: "soon", utilization: -1, rateLimitType: 7 })).toEqual([
+    {
+      type: "limit",
+      limit: { status: "allowed", window: null, resetsAt: null, utilization: null },
+    },
+  ]);
+  // A subagent's request learns of the same plan.
+  expect(limit({ status: "allowed" }, { parent_tool_use_id: "toolu_1" })).toHaveLength(1);
+});

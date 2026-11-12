@@ -140,6 +140,16 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       agent={WORKING}
     />
   ),
+  "limit-teammate": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.teamThread}
+      agent={IDLE}
+      gate={{ kind: "claude_limit", owner: f.maya, until: "2026-11-10T21:00:00Z" }}
+    />
+  ),
   "thread-read-only": () => (
     <CanvasHarness
       canvases={f.teamCanvases}

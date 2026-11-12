@@ -322,6 +322,13 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  // A teammate's canvas whose owner's plan is at its limit: the line is for everyone, and the
+  // composer still takes a message, which goes in at the reset.
+  {
+    id: "limit-teammate",
+    title: "Thread · the owner's plan at its limit, as a teammate",
+    ...WINDOW,
+  },
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
   { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
   { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },

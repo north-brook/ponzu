@@ -1,5 +1,5 @@
 import { type RunnerApi, retryable } from "./api/api.ts";
-import type { StateRequest } from "./api/protocol.ts";
+import type { ClaudeLimitReport, StateRequest } from "./api/protocol.ts";
 import { Pacer } from "./pacer.ts";
 
 /**
@@ -17,6 +17,14 @@ export class StateReporter {
   private sent = "";
   /** The branch report last sent, by identity: each push's outcome is a new object. */
   private sentBranch: StateRequest["branch"];
+  /**
+   * What Claude Code said of the plan's limits and the API has not been told, the latest for
+   * each window, oldest first: one goes with each report, so a burst about two windows inside
+   * one pacer gap loses neither.
+   */
+  private limits: ClaudeLimitReport[] = [];
+  /** What each window last said that went to the API, so the same news is not sent twice. */
+  private readonly saidLimits = new Map<string | null, string>();
   private readonly pacer: Pacer;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -45,6 +53,20 @@ export class StateReporter {
     if (news || JSON.stringify(next) !== this.sent) this.pacer.kick();
   }
 
+  /**
+   * Pass on what Claude Code said of one of the plan's limits, once: news, like the branch, and
+   * said again only when it changes.
+   */
+  limit(report: ClaudeLimitReport): void {
+    const said = JSON.stringify(report);
+    if (this.saidLimits.get(report.window) === said) {
+      this.limits = this.limits.filter((l) => l.window !== report.window);
+      return;
+    }
+    this.limits = [...this.limits.filter((l) => l.window !== report.window), report];
+    this.pacer.kick();
+  }
+
   start(): void {
     this.pacer.kick();
     this.heartbeat = setInterval(() => this.pacer.kick(), this.opts.heartbeatMs);
@@ -65,8 +87,14 @@ export class StateReporter {
     // `branch` is news, said once per push: the API keeps it until the next one (absent leaves
     // it), and clears its error itself when a person asks for a new push (Create PR). Said again
     // with every heartbeat, an old failure would undo that clearing before the new push ends.
-    const { branch, ...rest } = state;
-    const body: StateRequest = branch !== undefined && branch !== this.sentBranch ? state : rest;
+    // A limit is news the same way, one window at a time.
+    const { branch, claudeLimit: _never, ...rest } = state;
+    const limit = this.limits[0];
+    const body: StateRequest = {
+      ...rest,
+      ...(branch !== undefined && branch !== this.sentBranch ? { branch } : {}),
+      ...(limit ? { claudeLimit: limit } : {}),
+    };
     try {
       const { seq } = await this.api.putState(body);
       this.opts.onSeq(seq);
@@ -77,5 +105,10 @@ export class StateReporter {
     }
     this.sentBranch = branch;
     this.sent = JSON.stringify(state);
+    if (limit) {
+      this.saidLimits.set(limit.window, JSON.stringify(limit));
+      this.limits = this.limits.filter((l) => l !== limit);
+      if (this.limits.length) this.pacer.kick();
+    }
   }
 }

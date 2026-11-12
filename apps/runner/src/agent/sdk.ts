@@ -9,12 +9,13 @@ import {
   type PermissionResult,
   query,
   type SDKMessage,
+  type SDKRateLimitEvent,
   type SDKResultMessage,
   type SDKUserMessage,
   tool,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { ToolResult } from "@ponzu/tools";
-import type { AskedQuestion, ModelUsage } from "../api/protocol.ts";
+import type { AskedQuestion, ClaudeLimitReport, ModelUsage } from "../api/protocol.ts";
 import type {
   Agent,
   AgentEvent,
@@ -341,6 +342,8 @@ export class Translator {
   }
 
   events(m: SDKMessage): AgentEvent[] {
+    // The plan's limits are the account's, whichever thread's request learned of them.
+    if (m.type === "rate_limit_event") return [{ type: "limit", limit: limitReport(m) }];
     if ("parent_tool_use_id" in m && m.parent_tool_use_id) return [];
     const out: AgentEvent[] = [];
     const uuids = (m as { user_message_uuids?: string[] }).user_message_uuids;
@@ -430,6 +433,28 @@ export class Translator {
     }
     return out;
   }
+}
+
+/**
+ * A `rate_limit_event` as the runner reports it. The SDK gives `resetsAt` in seconds since the
+ * epoch, as Anthropic's rate-limit headers do; a value too large to be seconds is taken as
+ * milliseconds, so a change of unit at an SDK bump cannot put the reset in the year 50,000.
+ * Anything the SDK leaves out, or sends in another shape, is null.
+ */
+export function limitReport(m: SDKRateLimitEvent): ClaudeLimitReport {
+  const info = m.rate_limit_info;
+  const status =
+    info.status === "rejected" || info.status === "allowed_warning" ? info.status : "allowed";
+  const at =
+    typeof info.resetsAt === "number" && Number.isFinite(info.resetsAt) ? info.resetsAt : null;
+  const resetsAt = at === null || at <= 0 ? null : new Date(at < 1e12 ? at * 1000 : at);
+  const used = info.utilization;
+  return {
+    status,
+    window: typeof info.rateLimitType === "string" ? info.rateLimitType : null,
+    resetsAt: resetsAt && !Number.isNaN(resetsAt.getTime()) ? resetsAt.toISOString() : null,
+    utilization: typeof used === "number" && Number.isFinite(used) && used >= 0 ? used : null,
+  };
 }
 
 /**

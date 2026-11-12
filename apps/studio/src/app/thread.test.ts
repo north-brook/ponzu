@@ -611,6 +611,24 @@ test("each blocker is what keeps the canvas from running, in the composer or the
     steerGate({ access: "write", repo, head: head(null), owner: maya, me, now: 20_000 }),
   ).toBeNull();
 
+  // The owner's plan at its limit, from the head: every viewer reads it, not only the owner,
+  // and it lasts until the head says.
+  const until = new Date(30_000).toISOString();
+  const limited = { ...head("claude_limited"), agentBlockedUntil: until };
+  const teammate = { id: "usr_someone_else", claudeAccount: null } as unknown as MeRow;
+  for (const viewer of [teammate, undefined]) {
+    expect(
+      steerGate({ access: "write", repo, head: limited, owner: maya, me: viewer, now: 5_000 }),
+    ).toEqual({ kind: "claude_limit", owner: maya, until });
+  }
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: maya, me: teammate, now: 40_000 }),
+  ).toBeNull();
+  // An owner the workspace no longer has can't be named here either.
+  expect(
+    steerGate({ access: "write", repo, head: limited, owner: null, me: teammate, now: 5_000 }),
+  ).toEqual({ kind: "claude_owner_left" });
+
   // The live head carries the blocker the API sets.
   w.agent.block("sandbox_busy");
   const view = await w.client.api.canvases.get(w.canvas.id);
