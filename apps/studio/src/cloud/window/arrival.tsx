@@ -166,7 +166,10 @@ export function Arrival({
       nested.length === 0 &&
       Math.abs(natural - was.width) > 0.5;
     const unheld = phase === "none" && was.phase === "held";
-    if (!entering && !startsLeaving && !resized && !unheld) return;
+    // Expected only after the first paint (the row arriving at launch): the held room opens from
+    // nothing with whatever arrives beside it, rather than pushing its neighbours in one frame.
+    const heldOpens = phase === "held" && (was.phase === "none" || was.phase === "leaving");
+    if (!entering && !startsLeaving && !resized && !unheld && !heldOpens) return;
 
     // Gone: what it showed goes in the same frame as the room's last, so nothing flashes back.
     const gone = () => {
@@ -188,7 +191,7 @@ export function Arrival({
     const moving =
       roomMove.current?.playState === "running" || roomMove.current?.playState === "paused";
     const now = moving ? room$.getBoundingClientRect().width : was.width;
-    const from = entering && was.phase === "none" && !moving ? 0 : now;
+    const from = ((entering && was.phase === "none") || heldOpens) && !moving ? 0 : now;
     const to = startsLeaving || unheld ? 0 : natural;
     const closing = startsLeaving || unheld;
 

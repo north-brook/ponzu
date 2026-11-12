@@ -131,7 +131,9 @@ GitHub through the API (`pullRequest`). In that order of preference, each is:
 - **Room held.** While the row says the pull request is open or a draft, the room its likely
   action takes (`nextAction` on the row's summary) is held unseen (`ActionRoom`), so the mark
   stands where it will; the action fades into it, and only if its words differ does the room
-  ease to their width while they fade in. No skeleton bars in the chrome.
+  ease to their width while they fade in. Where the row itself comes only after the first paint
+  (a launch), the held room opens with the mark on the same clock rather than appearing whole.
+  No skeleton bars in the chrome.
 - **Arriving on purpose** (`window/arrival.tsx`). What can't be known ahead arrives as one
   movement on the panes' clock (`--dur-pane`, `--ease-out`): its room opens from its still edge
   (the cluster's right, the name's left), what is beside it glides aside once, and it fades in,

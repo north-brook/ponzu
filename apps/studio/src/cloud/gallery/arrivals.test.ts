@@ -281,6 +281,28 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
     expectStill(before, frames, [MARK, MERGE, "img[", SHARE, "tab[", "button[New page]"], 2);
   });
 
+  test("at launch, the mark arriving alone opens the action's held room with it, on one clock", async () => {
+    await open("design-opening-launch");
+    await stepArrival(page, "title");
+    const { frames, animations } = await stepArrival(page, "pull-request");
+    // Two rooms open together: the mark's, and the one held for the action it predicts.
+    const rooms = animations.filter((a) => a.id === "arrival-room");
+    expect(rooms.length).toBe(2);
+    expect(new Set(rooms.map((a) => `${a.duration} ${a.delay} ${a.easing}`)).size).toBe(1);
+    const held = await page.$eval(
+      '[data-arrival="action"]',
+      (el) => el.getBoundingClientRect().width,
+    );
+    expect(held).toBeGreaterThan(60);
+    // The mark starts where it would with no action and glides out by exactly the held room,
+    // once: the held room never pushes it in a single frame.
+    const first = frames[0]!.pieces[MARK]!.x;
+    const rest = frames.at(-1)!.pieces[MARK]!.x;
+    expect(Math.abs(first - rest - held)).toBeLessThanOrEqual(PX);
+    expectGlide(frames, MARK, first, rest);
+    expectFadesIn(frames, MARK);
+  });
+
   test("switching to another design replays nothing: what both have is simply there", async () => {
     await open("design-opening");
     await stepArrival(page, "everything");
