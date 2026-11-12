@@ -52,6 +52,9 @@ jobs:
     name: Find and apply a newer pair
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       go: ${{ steps.proposed.outputs.go }}
       sdk: ${{ steps.discover.outputs.sdk }}
@@ -75,21 +78,40 @@ jobs:
         env:
           PRETEND: ${{ inputs.pretend }}
         run: bun apps/runner/image/bump.ts discover ${PRETEND:+--pretend "$PRETEND"}
-      - name: Is it already proposed?
+      - name: Is it already proposed, or has a person taken the branch?
         id: proposed
         if: steps.discover.outputs.bump == 'true'
+        shell: bash
         env:
           FORCE: ${{ inputs.force }}
           PRETEND: ${{ inputs.pretend }}
           CLAUDE: ${{ steps.discover.outputs.claude }}
+          GH_TOKEN: ${{ github.token }}
+          # The committer the pull request step below names; anyone else's commit is a person's.
+          BOT: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
-          if [ "$FORCE" != true ] && [ -z "$PRETEND" ] && git fetch --quiet origin "$BRANCH" 2>/dev/null &&
-            [ "$(git show FETCH_HEAD:apps/runner/image/pins.json | jq -r .claudeVersion)" = "$CLAUDE" ]; then
-            echo "::notice::The pull request on $BRANCH already proposes Claude Code $CLAUDE. Dispatch this workflow with force to run it again."
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=true" >> "$GITHUB_OUTPUT"
+          go=true
+          if [ -z "$PRETEND" ]; then
+            # 0: the branch exists; 2: it does not. Anything else is an error, which stops here
+            # rather than building an image and running a turn on every push.
+            found=0; git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null || found=$?
+            if [ "$found" = 0 ]; then
+              git fetch --quiet origin "$BRANCH"
+              open=$(gh pr list --head "$BRANCH" --state open --json number --jq length)
+              if [ "$open" != 0 ] && [ "$(git log -1 --format=%ce FETCH_HEAD)" != "$BOT" ]; then
+                echo "::notice::The open pull request on $BRANCH has a commit this workflow did not make, so it is left as it is. Merge or close it, and the next run proposes the newest pair."
+                go=false
+              elif [ "$FORCE" != true ] &&
+                [ "$(git show FETCH_HEAD:apps/runner/image/pins.json | jq -r .claudeVersion)" = "$CLAUDE" ]; then
+                echo "::notice::$BRANCH already proposes Claude Code $CLAUDE. Dispatch this workflow with force to run it again."
+                go=false
+              fi
+            elif [ "$found" != 2 ]; then
+              echo "::error::Could not read whether $BRANCH exists (git ls-remote exited $found)."
+              exit 1
+            fi
           fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
       - name: Move the pins (download, sha256, signature)
         if: steps.proposed.outputs.go == 'true'
         env:
@@ -148,7 +170,10 @@ jobs:
       outcome: ${{ steps.e2e.outcome }}
       reason: ${{ steps.setup.outputs.reason }}
     steps:
+      # The turn runs the new SDK and Claude Code; no token of this run is left on the disk.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: claude-code-pins
@@ -198,7 +223,9 @@ jobs:
   pull-request:
     name: Open or update the pull request
     needs: [bump, image, turn]
-    if: always() && needs.bump.outputs.go == 'true'
+    # A bump job that failed (the registry or download host down, a signature or hash that does
+    # not hold, a Claude Code not yet published) left no pins to propose; its red run says why.
+    if: always() && needs.bump.result == 'success' && needs.bump.outputs.go == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
@@ -266,6 +293,9 @@ jobs:
           commit-message: "chore(runner): claude code ${{ needs.bump.outputs.claude }} with the agent sdk ${{ needs.bump.outputs.sdk }}"
           title: "chore(runner): claude code ${{ needs.bump.outputs.claude }} with the agent sdk ${{ needs.bump.outputs.sdk }}"
           body-path: .context/bump/body.md
+          # Not the person whose push or schedule started the run; the check above relies on it.
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           draft: ${{ steps.body.outputs.draft == 'true' && 'always-true' || 'false' }}
       - name: Ready for review when everything passed
         if: steps.body.outputs.draft == 'false' && steps.pr.outputs.pull-request-operation == 'updated'

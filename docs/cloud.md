@@ -955,11 +955,14 @@ real turn works end to end on it. What it does not: behaviour that only a person
 repos or other models exercise, which the release notes are for.
 
 **Reviewing it.** Read the notes for anything that touches how the runner drives Claude Code
-(permissions, hooks, sessions, the SDK's options and messages in `apps/runner/src/agent/sdk.ts`).
-A failed typecheck means the SDK's API changed: fix the runner on the branch. A failed check or
-turn with a passing typecheck means Claude Code behaves differently: the log in the body says
-where. To offer a model the notes name, add it to `CLAUDE_MODELS`. Merging ships the image with
-the next API deploy, and each design moves to it at its next wake ("How images roll out").
+(permissions, hooks, sessions, the SDK's options and messages in
+`apps/runner/src/agent/sdk.ts`). A failed typecheck means the SDK's API changed: fix the runner
+on the branch. While its pull request is open with a commit the workflow did not make, the
+workflow leaves the branch alone, so a newer release waits until it is merged or closed. A
+failed check or turn with a passing typecheck means Claude Code behaves differently: the log in
+the body says where. To offer a model the notes name, add it to `CLAUDE_MODELS`. Merging ships
+the image with the next API deploy, and each design moves to it at its next wake ("How images
+roll out").
 
 #### Setting up the image workflows
 

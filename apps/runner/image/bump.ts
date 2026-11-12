@@ -58,10 +58,12 @@ export const claudeUrl = (version: string) => `${RELEASES}/${version}/${PLATFORM
 
 /* ── versions ── */
 
+const VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
+
 /** -1, 0 or 1, for x.y.z versions; anything else throws rather than guessing an order. */
 export function compareVersions(a: string, b: string): number {
   const parse = (v: string) => {
-    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v);
+    const m = VERSION.exec(v);
     if (!m) throw new Error(`not an x.y.z version: ${v}`);
     return m.slice(1).map(Number);
   };
@@ -75,7 +77,7 @@ const patchOf = (v: string) => v.split(".")[2];
 /** What the npm registry says of the SDK: its dist-tags and, per version, the Claude Code it names. */
 export interface Packument {
   "dist-tags": Record<string, string>;
-  versions: Record<string, { version: string; claudeCodeVersion?: string }>;
+  versions: Record<string, { version: string; claudeCodeVersion?: string; deprecated?: string }>;
 }
 
 export interface Pair {
@@ -91,6 +93,10 @@ export interface Pair {
 export function pairOf(packument: Packument, sdk: string): Pair {
   const claude = packument.versions[sdk]?.claudeCodeVersion;
   if (!claude) throw new Error(`the registry names no claudeCodeVersion for ${SDK}@${sdk}`);
+  // Both go on into GITHUB_OUTPUT, a URL and the pull request's title: digits and dots only.
+  for (const v of [sdk, claude])
+    if (!VERSION.test(v))
+      throw new Error(`${SDK}@${sdk} names Claude Code ${JSON.stringify(claude)}: not x.y.z`);
   if (patchOf(claude) !== patchOf(sdk))
     throw new Error(
       `${SDK}@${sdk} names Claude Code ${claude}: their patch numbers no longer match, so ` +
@@ -116,6 +122,14 @@ export function discover(current: Pair, packument: Packument, claudeChannel: str
   if (!tag) throw new Error(`the registry has no latest tag for ${SDK}`);
   const latest = pairOf(packument, tag);
   const notes: string[] = [];
+  // A release withdrawn by deprecation, while `latest` still points at it, is not proposed.
+  const withdrawn = packument.versions[tag]?.deprecated;
+  if (withdrawn) {
+    notes.push(
+      `The registry's latest Agent SDK ${tag} is deprecated (${JSON.stringify(withdrawn)}); nothing moves.`,
+    );
+    return { current, latest, claudeChannel, bump: false, notes } satisfies Discovery;
+  }
   const order = compareVersions(latest.sdk, current.sdk);
   if (order === 0)
     notes.push(

@@ -53,6 +53,30 @@ describe("versions", () => {
     );
   });
 
+  test("a version that is not digits and dots is refused before it reaches an output or a URL", () => {
+    const odd: Packument = {
+      ...packument,
+      versions: { "0.4.7": { version: "0.4.7", claudeCodeVersion: "x\ngo=true.1.7" } },
+    };
+    expect(() => pairOf(odd, "0.4.7")).toThrow(
+      '@anthropic-ai/claude-agent-sdk@0.4.7 names Claude Code "x\\ngo=true.1.7": not x.y.z',
+    );
+  });
+
+  test("a deprecated latest is not proposed, and the note says why", () => {
+    const withdrawn: Packument = {
+      "dist-tags": { latest: "0.3.323" },
+      versions: {
+        "0.3.323": { version: "0.3.323", claudeCodeVersion: "2.1.323", deprecated: "broken" },
+      },
+    };
+    const d = discover({ sdk: "0.3.322", claude: "2.1.322" }, withdrawn, null);
+    expect(d.bump).toBe(false);
+    expect(d.notes).toEqual([
+      'The registry\'s latest Agent SDK 0.3.323 is deprecated ("broken"); nothing moves.',
+    ]);
+  });
+
   test("one version behind moves both pins to the registry's latest pair", () => {
     const d = discover({ sdk: "0.3.321", claude: "2.1.321" }, packument, "2.1.322");
     expect(d.bump).toBe(true);

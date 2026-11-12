@@ -65,7 +65,11 @@ jobs:
       result: ${{ steps.result.outputs.result }}
       reason: ${{ steps.result.outputs.reason }}
     steps:
+      # This job's token can write; build.ts runs the bumped SDK's code, so the token is not left
+      # in .git/config (create-pull-request sets up its own).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: The person's setup
         id: setup
         # Only whether each secret is set reaches this step, never its value.
@@ -171,6 +175,8 @@ jobs:
           add-paths: apps/runner/image/current.json
           commit-message: "chore(runner): record sandbox image ${{ steps.tag.outputs.tag }}"
           title: "chore(runner): record sandbox image ${{ steps.tag.outputs.tag }}"
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           body: |
             build.ts built ponzu-runner:${{ steps.tag.outputs.tag }}, the registry has it Ready, and checks.ts passed in a Vercel Sandbox made from it ([the run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})). Merging ships it with the next API deploy.
 
