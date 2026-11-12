@@ -161,6 +161,27 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       gate={{ kind: "read_only", repo: f.fernwood }}
     />
   ),
+  // The sweep plan, §8: its owner left, and the viewer, who can change it and has Claude, may take
+  // it over; then the thread once Maya has.
+  "owner-left-take-over": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.teamThread}
+      agent={IDLE}
+      gate={{ kind: "claude_owner_left", canTakeOver: true, repo: f.fernwood }}
+    />
+  ),
+  "owner-left-taken-over": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.takenOverThread}
+      agent={IDLE}
+    />
+  ),
   "pull-request-busy": () => (
     <CanvasHarness
       canvases={f.soloCanvases}

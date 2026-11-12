@@ -239,6 +239,7 @@ export function CanvasHarness({
       }}
       onDismissAsk={(id) => setAsks((all) => all.filter((a) => a.id !== id))}
       onConnectClaude={ignore}
+      onTakeOver={ignore}
       renderDrawing={renderDrawing}
       onOpenComment={ignore}
       onOpenArtboards={ignore}

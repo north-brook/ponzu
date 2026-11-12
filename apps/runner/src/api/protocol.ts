@@ -595,6 +595,11 @@ export type Notice =
       as: Person | null;
     }
   /**
+   * Written by the API: `by` took the canvas over once its owner had left the workspace or
+   * deleted their account. It runs on their Claude from then on.
+   */
+  | { type: "owner_changed"; by: Person }
+  /**
    * Written by the API, once per change, as a runner session starts: the model the canvas was
    * made with is no longer one the Claude account offers, so it runs on `to` in its place
    * ("Models"). Both are model ids, each with the name Ponzu knew it by then (the id itself when

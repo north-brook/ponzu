@@ -323,6 +323,18 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
   {
+    id: "owner-left-take-over",
+    title: "Thread · its owner left: Take over",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "owner-left-taken-over",
+    title: "Thread · a teammate took it over",
+    ...WINDOW,
+    reference: true,
+  },
+  {
     id: "thread-model-changed",
     title: "Thread · the canvas's model is no longer offered",
     ...WINDOW,

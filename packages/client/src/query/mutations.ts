@@ -171,6 +171,12 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
     /** Stops the agent's turn; the runner's `stopped` notice follows in the thread. */
     stopAgent: () =>
       mutationOptions({ mutationFn: (canvasId: string) => api.canvases.stop(canvasId) }),
+    /**
+     * Takes over a canvas whose owner left, onto the person's Claude. The live rows follow: the
+     * sidebar's names the new owner, the head loses its wait, and the thread says who took it.
+     */
+    takeOver: () =>
+      mutationOptions({ mutationFn: (canvasId: string) => api.canvases.takeOver(canvasId) }),
     /** A person's image, straight to storage, as a file of the canvas. The bytes are not kept. */
     upload: () =>
       mutationOptions({

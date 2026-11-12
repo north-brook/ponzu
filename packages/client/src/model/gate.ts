@@ -13,9 +13,7 @@ export function gateMessage(gate: SteerGate, meId: string): string {
       ? `You can view this canvas. Ask for write access to ${gate.repo.owner}/${gate.repo.name} to steer it.`
       : "You can view this canvas.";
   }
-  if (gate.kind === "claude_owner_left") {
-    return "Its owner left the workspace. A canvas runs on its owner's Claude alone, so this one can't run again. You can still look through it.";
-  }
+  if (gate.kind === "claude_owner_left") return ownerLeftLine(gate);
   const whose = whoseClaude(gate.owner, meId);
   switch (gate.kind) {
     case "claude_limit":
@@ -25,6 +23,21 @@ export function gateMessage(gate: SteerGate, meId: string): string {
     case "claude_disconnected":
       return `${whose} Claude isn't connected. This canvas waits.`;
   }
+}
+
+/**
+ * A canvas whose owner left the workspace (or deleted their account), word for word from
+ * the sweep plan, §8: to someone who can take it over, what pressing "Take over" does; to anyone
+ * else, who can.
+ */
+function ownerLeftLine(gate: Extract<SteerGate, { kind: "claude_owner_left" }>): string {
+  if (gate.canTakeOver) {
+    return "Its owner left the workspace. Take it over to run it on your Claude.";
+  }
+  const nobody = "Its owner left the workspace, so nobody's Claude runs it.";
+  return gate.repo
+    ? `${nobody} Someone who can change ${gate.repo.owner}/${gate.repo.name} can take it over.`
+    : nobody;
 }
 
 /** "Your", or "Maya's": whose Claude the canvas runs on, said to the viewer. */

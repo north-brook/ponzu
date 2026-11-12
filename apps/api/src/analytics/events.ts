@@ -77,6 +77,11 @@ export interface ServerEvents {
   "canvas deleted": { canvas_id: string; by_owner: boolean };
   "canvas settled": { canvas_id: string };
   "canvas reopened": { canvas_id: string };
+  /**
+   * A teammate took over a canvas whose owner had left the workspace or deleted their account:
+   * it runs on their Claude from now on. `woke`: its feed held work owed, so it was woken.
+   */
+  "canvas taken over": { canvas_id: string; woke: boolean };
 
   // The thread
   "message sent": {

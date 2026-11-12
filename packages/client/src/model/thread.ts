@@ -280,6 +280,16 @@ export function who(person: Person, meId: string): string {
 }
 
 /**
+ * The thread's line once someone took over a canvas whose owner left, word for word from
+ * the sweep plan, §8, and said to the taker as "you".
+ */
+export function ownerChangedLine(by: Person, meId: string): string {
+  return by.id === meId
+    ? "You took this canvas over. It runs on your Claude from now on."
+    : `${who(by, meId)} took this canvas over. It runs on their Claude from now on.`;
+}
+
+/**
  * The thread's line when a canvas's model gave way (docs/cloud.md, "Models"): "Maya's Claude
  * doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5."
  */

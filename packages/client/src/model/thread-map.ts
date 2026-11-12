@@ -109,6 +109,8 @@ function noticeOf(
       return { type: "error", code: notice.code as RunErrorCode, message: notice.message };
     case "pull_request_agent":
       return { ...notice, as: notice.as ? personOf(notice.as, people) : null };
+    case "owner_changed":
+      return { type: "owner_changed", by: personOf(notice.by, people) };
     case "model_changed":
       return { ...notice, account: notice.account ? personOf(notice.account, people) : null };
     default:
@@ -300,7 +302,9 @@ export function steerGate({
   if (access === "read") return { kind: "read_only", repo };
   const blocker = head?.agentBlocker ?? null;
   const claude = blocker?.startsWith("claude_") ?? false;
-  if (blocker === "claude_owner_left" || (claude && !owner)) return { kind: "claude_owner_left" };
+  if (blocker === "claude_owner_left" || (claude && !owner)) {
+    return { kind: "claude_owner_left", canTakeOver: claudeRuns(me, now), repo };
+  }
   if (owner && blocker === "claude_not_connected") return { kind: "claude_disconnected", owner };
   if (owner && blocker === "claude_expired") return { kind: "claude_expired", owner };
   const until = me?.claudeAccount?.limitedUntil;
@@ -308,4 +312,14 @@ export function steerGate({
     return { kind: "claude_limit", owner, until };
   }
   return null;
+}
+
+/**
+ * Whether the viewer's own Claude could run a canvas now: connected, and not past its sign-in.
+ * What taking over a canvas whose owner left asks of them (the API's `claude_not_connected`).
+ */
+function claudeRuns(me: MeRow | undefined, now: number): boolean {
+  const account = me?.claudeAccount;
+  if (account?.status !== "connected") return false;
+  return account.expiresAt === null || Date.parse(account.expiresAt) > now;
 }

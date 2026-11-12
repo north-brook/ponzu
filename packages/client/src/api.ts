@@ -157,6 +157,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       delete: async (id: string): Promise<void> => {
         await v1.canvases[":id"].$delete(canvas(id));
       },
+      /**
+       * Takes over a canvas whose owner left the workspace or deleted their account: it runs on
+       * the caller's Claude from now on. 409 `not_ownerless` while its owner is there, and
+       * `claude_not_connected` when the caller has no Claude that could run it.
+       */
+      takeOver: async (id: string) =>
+        (await v1.canvases[":id"]["take-over"].$post(canvas(id))).json(),
 
       doc: async (id: string) => (await v1.canvases[":id"].doc.$get(canvas(id))).json(),
       /** 410 `ops_pruned` when the log no longer keeps the ops after `after`. */
