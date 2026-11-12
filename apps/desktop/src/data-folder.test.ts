@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configFor } from "./config.ts";
 import { dataFolder, removeOnceExited, throwawayDataFolder } from "./data-folder.ts";
+import { built } from "./testing.ts";
 
 const home = mkdtempSync(join(tmpdir(), "ponzu-home-"));
 const appData = join(home, "Library/Application Support");
@@ -12,9 +13,9 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 
 test("each app has its own folder, and Ponzu Dev's is never 1.x's", () => {
   const folders = [
-    configFor(true, {}, false, "release"),
-    configFor(true, {}, false, "dev"),
-    configFor(false, {}),
+    configFor(true, {}, built()),
+    configFor(true, {}, built({ variant: "dev" })),
+    configFor(false, {}, built()),
   ].map((config) => dataFolder(appData, config.appName, { smoke: false }));
   expect(folders).toEqual([
     join(appData, "Ponzu"),
@@ -27,7 +28,7 @@ test("the smoke check runs on a throwaway folder, for every app, outside the per
   const parent = mkdtempSync(join(tmpdir(), "ponzu-tmp-"));
   try {
     for (const variant of ["release", "dev"] as const) {
-      const { appName } = configFor(true, {}, false, variant);
+      const { appName } = configFor(true, {}, built({ variant }));
       const folder = dataFolder(appData, appName, {
         smoke: true,
         temporary: () => throwawayDataFolder(parent),

@@ -38,21 +38,6 @@ describe("infra/", () => {
     expect(() => loadInfra()).not.toThrow();
   });
 
-  test("dev's values are the ones apps/desktop/src/config.ts hard-codes today", () => {
-    // Removed by production slice 3, when the desktop build reads infra/environments.json.
-    const source = readFileSync(join(ROOT, "apps/desktop/src/config.ts"), "utf8");
-    const constant = (name: string) => {
-      const match = source.match(new RegExp(`^const ${name} = "([^"]+)";$`, "m"));
-      if (!match?.[1]) throw new Error(`config.ts has no ${name}`);
-      return match[1];
-    };
-    const dev = loadEnvironments().environments.dev;
-    expect(dev.apiUrl).toBe(constant("API_URL"));
-    expect(dev.workosClientId).toBe(constant("WORKOS_CLIENT_ID"));
-    expect(dev.realtimeUrl).toBe(constant("REALTIME_URL"));
-    expect(dev.assetsUrl).toBe(constant("ASSETS_URL"));
-  });
-
   test("the release build stays on dev until the cutover PR flips it", () => {
     expect(loadEnvironments().release).toBe("dev");
   });

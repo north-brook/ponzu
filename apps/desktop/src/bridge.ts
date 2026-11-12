@@ -67,6 +67,12 @@ export interface AnalyticsSetup {
   /** The operating system's version (the user agent's is frozen). */
   osVersion: string;
   /**
+   * Where this build talks to (`dev`, `production`, or `custom` for Ponzu Local pointed
+   * elsewhere) and the commit it was built from: every event's `environment` and `app_commit`.
+   */
+  environment: string;
+  commit: string;
+  /**
    * What this launch follows, for `app opened` and `update installed`; only in the launch's
    * first window. A window opened again later (the Mac's dock icon after its window closed) has
    * null: the launch was reported already.

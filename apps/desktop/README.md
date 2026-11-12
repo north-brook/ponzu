@@ -12,8 +12,17 @@ bun run package:dir                             # out/<platform>-unpacked, unsig
 PONZU_SMOKE=1 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu   # must exit 0
 ```
 
+Where a build talks to is baked in by `scripts/build.ts` from
+[`infra/environments.json`](../../infra/environments.json): a release takes the environment the
+file's `release` names (dev until the cutover PR flips it to production), Ponzu Dev always takes
+dev's, and a field of that environment that is still `null` fails the build, naming it. The
+build also bakes the commit it was made from (the checkout's HEAD). About shows both, "Version
+2.0.0 (abc1234 · dev)", and every analytics event carries them as `environment` and
+`app_commit`.
+
 A development build may also take `PONZU_API_URL` (https, or http on this computer) and
-`PONZU_WORKOS_CLIENT_ID`. A packaged build ignores all three and talks to `api.ponzu.design`.
+`PONZU_WORKOS_CLIENT_ID`, and then says its environment is `custom`. A packaged build ignores
+all three and talks to the environment it was built for.
 A development build is an app of its own, `Ponzu Local`: its own data folder
 (`~/Library/Application Support/Ponzu Local`), keychain item ("Ponzu Local Safe Storage") and
 single-instance lock, so it runs beside an installed Ponzu or Ponzu Dev and never touches their
@@ -63,8 +72,11 @@ Ponzu Preview that asks.
 apps/api instead of the keychain, rotating it in place, unencrypted (the window says so): for
 driving the app without a browser. A development build takes it, and so does a test build,
 which is the packaged app built with `PONZU_TEST_BUILD=1` (`scripts/build.ts`) and which also
-allows `--remote-debugging-port` and developer tools. A release is never a test build: it
-ignores the variable, quits when started with a debugging port, and has no developer tools.
+allows `--remote-debugging-port` and developer tools. A test build also takes
+`PONZU_ENVIRONMENT_OVERRIDE`, a whole environment as JSON (`name`, `apiUrl`, `workosClientId`,
+`realtimeUrl`, `assetsUrl`), to run against a stack of its own; one it can't use stops it rather
+than falling back to the baked environment. A release is never a test build: it ignores both
+variables, quits when started with a debugging port, and has no developer tools.
 
 ```sh
 PONZU_TEST_BUILD=1 bun run package:dir          # for spare or CI to drive, signed in
@@ -103,7 +115,7 @@ standard, secure scheme of our own, so its origin never changes (its storage sta
 API's CORS allows exactly it) and the app and its UI always match. Every file goes out with the
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
-hosts, in `config.ts`; a development build allows any of each), and Google Fonts, for the
+hosts, from the environment the build baked; a development build allows any of each), and Google Fonts, for the
 fonts a canvas names (the studio's own fonts ship inside it). Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
