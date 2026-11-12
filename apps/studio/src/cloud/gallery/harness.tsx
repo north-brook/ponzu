@@ -244,7 +244,10 @@ export function DesignChromeHarness({
  * picker has a group for each, the window's first, and choosing another workspace's Scratch or
  * repo switches the window's workspace (the sidebar's) as the app does, keeping the words.
  * `later` (or `?later`) holds the others' repos back until the page calls
- * `window.galleryArrive()`, as a slow answer would.
+ * `window.galleryArrive()`, as a slow answer would. `?resolve=scratch` or `?resolve=repo` starts
+ * the page not knowing its project (the window's repos loading), and `galleryArrive()` settles it
+ * on Scratch or on the first repo. `?models=reported` offers what an account's Claude Code
+ * reported (a long name, a model that takes no effort) in place of the hand-kept list.
  */
 export function CreateHarness({
   initialPrompt = "",
@@ -262,17 +265,27 @@ export function CreateHarness({
   later?: boolean;
   ideas?: CreatePageProps["ideas"];
 }) {
-  const [prompt, setPrompt] = useState(initialPrompt);
-  const [project, setProject] = useState(initialProject);
-  const [model, setModel] = useState({ model: f.models[0]!.id, effort: "high" as Effort });
   const params = new URLSearchParams(location.search);
+  const resolve = params.get("resolve");
+  const offered = params.get("models") === "reported" ? f.reportedModels : f.models;
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [project, setProject] = useState(resolve ? null : initialProject);
+  const [model, setModel] = useState({ model: offered[0]!.id, effort: "high" as Effort });
   const dwell = Number(params.get("dwell")) || 0;
   const window_ = useContext(WindowWorkspace);
-  const [arrived, setArrived] = useState(!later && !params.has("later"));
+  const [arrived, setArrived] = useState(!later && !params.has("later") && !resolve);
   useEffect(() => {
-    (window as { galleryArrive?: () => void }).galleryArrive = () => setArrived(true);
-  }, []);
-  const repos = shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
+    (window as { galleryArrive?: () => void }).galleryArrive = () => {
+      setArrived(true);
+      if (resolve) {
+        setProject(
+          resolve === "scratch" ? { kind: "scratch" } : { kind: "repo", repo: f.repos[0]! },
+        );
+      }
+    };
+  }, [resolve]);
+  const repos =
+    resolve && !arrived ? null : shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
   const elsewhere: RepoShelf[] = shelves
     ? window_.workspaces
         .filter((w) => w.id !== window_.workspace.id && w.id in shelves)
@@ -289,7 +302,7 @@ export function CreateHarness({
       onSend={ignore}
       onAttach={ignore}
       model={{
-        models: f.models,
+        models: offered,
         efforts: ["low", "medium", "high", "xhigh", "max"],
         model: model.model,
         effort: model.effort,

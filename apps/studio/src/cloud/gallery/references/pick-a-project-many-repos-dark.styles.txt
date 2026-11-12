@@ -78,10 +78,10 @@ icon svg[Project: north-brook/fernwood] 16×16 rgb(142, 138, 130) stroke 1.7px
 ground div rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(244, 243, 239) 400 16px Inter
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
-text "Opus 5.5" rgb(183, 179, 169) 500 12px Inter
-icon svg[Claude] 13×13 rgb(183, 179, 169) stroke 1px
-text "High" rgb(118, 115, 105) 400 12px Inter
-icon svg[Model: Opus 5.5, effort High] 11×11 rgb(183, 179, 169) stroke 2.2px
+text "Opus 5.5" rgb(183, 179, 169) 500 14px Inter
+icon svg[Claude] 14×14 rgb(183, 179, 169) stroke 1px
+text "High" rgb(118, 115, 105) 400 14px Inter
+icon svg[Model: Opus 5.5, effort High] 12×12 rgb(183, 179, 169) stroke 2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
 ground div[Choose a repo] rgb(27, 27, 26) shadow rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.5) 0px 10px 30px 0px

@@ -44,7 +44,9 @@ const SETUP = new Set(SETUP_COMPOSITIONS.map((c) => c.id));
 
 export function areaOf(c: Composition): Area {
   if (c.id.startsWith("setup-")) return "setup";
-  if (/^create$|^pick-a-project|^fresh-start|^claude-sets-it-up$/.test(c.id)) return "create";
+  if (/^create(-model-menu)?$|^pick-a-project|^fresh-start|^claude-sets-it-up$/.test(c.id)) {
+    return "create";
+  }
   if (/^settings-(github|environments|plan)|^free-credits/.test(c.id)) return "workspace";
   if (SETUP.has(c.id)) return "settings";
   if (c.id.includes("sidebar")) return "sidebar";

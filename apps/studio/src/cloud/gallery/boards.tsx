@@ -156,6 +156,11 @@ export const BOARDS: Record<string, () => ReactNode> = {
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} />
     </Harness>
   ),
+  "create-model-menu": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} />
+    </Harness>
+  ),
   "pick-a-project": () => (
     <Harness designs={f.soloDesigns} openId={null}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} />
