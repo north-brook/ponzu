@@ -99,3 +99,48 @@ export function pickerRows(
     repos: rows.filter((row) => matches(fullName(row.repo))),
   };
 }
+
+/**
+ * The create page's measures (create-page.tsx). The composer is docked at the foot of the canvas
+ * pane, `DOCK_INSET` above its bottom edge: the distance the thread's composer keeps from the
+ * rail's (AppWindow pads the rail 10 at its foot), the place it travels to on a send.
+ */
+export const DOCK_INSET = 10;
+/** The composer's height at rest: one line and its controls (composer.tsx's `min-h`). */
+export const COMPOSER_REST = 118;
+/** The mark's size, and the gap between it and the statement under it. */
+export const MARK = 56;
+export const MARK_GAP = 24;
+/** How far over the centre of the room above the resting composer the hero sits: optically centred. */
+export const HERO_LIFT = 28;
+/** The least room kept between the statement and the composer, and above the hero at the top. */
+export const HERO_GAP = 40;
+export const HERO_TOP = 24;
+
+/**
+ * Where the statement's top goes, in a pane `pane` tall with the composer `dock` tall (its card
+ * and its inset) and the statement `statement` tall; and whether the mark over it shows.
+ *
+ * The hero (the mark over the statement) is centred in the room the pane has above the composer
+ * at rest, a little high of true centre, so it holds still while the composer grows with what is
+ * typed or attached. Only once the composer would come within `HERO_GAP` of the statement does
+ * the statement give way, rising ahead of it; the mark goes once that would take it past
+ * `HERO_TOP`, and the statement rises on to `HERO_TOP`, where the pane scrolls rather than let
+ * the two overlap.
+ */
+export function heroPlace({
+  pane,
+  dock,
+  statement,
+}: {
+  pane: number;
+  dock: number;
+  statement: number;
+}): { top: number; mark: boolean } {
+  const above = MARK + MARK_GAP;
+  const room = pane - (COMPOSER_REST + DOCK_INSET);
+  const centred = (room - (above + statement)) / 2 - HERO_LIFT + above;
+  const clear = pane - dock - HERO_GAP - statement;
+  const top = Math.round(Math.max(HERO_TOP, Math.min(centred, clear)));
+  return { top, mark: top - above >= HERO_TOP };
+}
