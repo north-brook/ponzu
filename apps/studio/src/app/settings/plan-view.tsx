@@ -12,7 +12,8 @@ import { SectionUnavailable } from "./unavailable.tsx";
  * cap (an admin changes it in place), and for an admin who used what and on which canvas.
  *
  * Billing has no card yet (the API answers `not_set_up`): the row says there is none and
- * offers nothing, rather than a button that would go nowhere.
+ * offers nothing, rather than a button that would go nowhere. While the API's billing switch
+ * isn't "on", the section shows credits and that Ponzu is free, with no dollars and no cap.
  */
 
 const REFUSAL_MS = 6000;
@@ -20,6 +21,9 @@ const REFUSAL_MS = 6000;
 export function PlanView({ workspace }: { workspace: Workspace }) {
   const { queries, mutations } = usePonzu();
   const answer = useQuery(queries.usage(workspace.id));
+  // Dollars and the cap come back by themselves once the API says billing is on; until `me`
+  // answers, and while billing is off or only observed, nothing here is charged.
+  const billingOn = useQuery(queries.me()).data?.features.billing === "on";
   const setCap = useMutation(mutations.setCap());
   const refused = setCap.error;
   const { reset } = setCap;
@@ -39,6 +43,7 @@ export function PlanView({ workspace }: { workspace: Workspace }) {
         // While a new cap is on its way, the row shows it.
         usage={setCap.isPending ? { ...usage, capUsd: setCap.variables.capUsd } : usage}
         team={workspace.kind === "org" ? toTeamUsage(answer.data, workspace.name) : null}
+        billingOn={billingOn}
         canManage={answer.data.canManage}
         onCapChange={(capUsd) => setCap.mutate({ workspaceId: workspace.id, capUsd })}
         byCanvas={toCanvasUsage(answer.data)}

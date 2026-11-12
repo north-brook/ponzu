@@ -96,6 +96,15 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   settings("settings-plan", "Settings · Plan and usage", "plan-and-usage.html"),
   settings("settings-plan-solo", "Settings · Plan and usage, solo", "plan-and-usage-solo.html"),
   {
+    // What ships while the API's billing switch is off: credits, one line saying it is free, and
+    // no dollars, bar or cap. The mockup has no board for it.
+    id: "settings-plan-free",
+    title: "Settings · Plan and usage, while billing is off",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+    reference: true,
+  },
+  {
     id: "settings-plan-breakdown",
     title: "Settings · Plan and usage, by canvas, with deleted canvases and a deleted account",
     ...WINDOW,

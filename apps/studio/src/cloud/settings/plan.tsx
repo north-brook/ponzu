@@ -53,6 +53,12 @@ export interface PlanSectionProps {
   usage: Usage;
   /** A team's workspace; null for a personal one. */
   team: TeamUsage | null;
+  /**
+   * Ponzu charges for use: the API's billing switch (`features.billing` from `GET /v1/me`) is
+   * "on". Until then nothing is charged and nothing enforces the cap, so the section shows no
+   * dollars and no cap, only credits and one line saying it is free.
+   */
+  billingOn: boolean;
   /** May change the cap and the card: a team's admin, or anyone in their own workspace. */
   canManage: boolean;
   onCapChange: (usd: number) => void;
@@ -79,6 +85,7 @@ const BRAND_NAMES: Record<Brand, string> = {
 export function PlanSection({
   usage,
   team,
+  billingOn,
   canManage,
   onCapChange,
   onManageCard,
@@ -86,19 +93,23 @@ export function PlanSection({
   byCanvas,
 }: PlanSectionProps) {
   const billed = billedUsd(usage);
+  // Before billing, use is told in credits, which are true, and never in dollars.
+  const amount = (n: number) => (billingOn ? money(n * usage.creditUsd) : creditsText(n));
   return (
     <>
       <div className="flex flex-col gap-1.5">
         <span className="font-display font-semibold text-40 text-ink leading-none tracking-[-0.02em]">
-          {money(headlineUsd(usage))}
+          {billingOn ? money(headlineUsd(usage)) : creditsText(usage.usedCredits)}
         </span>
         <span className="text-13 text-muted">
-          {usageLine(usage, team ? { name: team.name, people: team.people } : undefined)}
+          {billingOn
+            ? usageLine(usage, team ? { name: team.name, people: team.people } : undefined)
+            : FREE_LINE}
         </span>
       </div>
-      <UsageBar usage={usage} />
+      {billingOn ? <UsageBar usage={usage} /> : null}
       <div className="flex flex-col border-rule border-t">
-        {usage.capUsd !== null ? (
+        {billingOn && usage.capUsd !== null ? (
           <CapRow
             capUsd={usage.capUsd}
             billed={billed}
@@ -145,19 +156,48 @@ export function PlanSection({
             label="By person · only admins see this"
             people={team.byPerson}
             nobody={team.unattributedCredits}
-            usage={usage}
+            amount={amount}
+            wide={!billingOn}
           />
         ) : (
-          <People label="Your usage" people={[team.mine]} usage={usage} />
+          <People label="Your usage" people={[team.mine]} amount={amount} wide={!billingOn} />
         )
       ) : null}
-      {byCanvas?.length ? <Canvases canvases={byCanvas} usage={usage} /> : null}
+      {byCanvas?.length ? <Canvases canvases={byCanvas} amount={amount} wide={!billingOn} /> : null}
     </>
   );
 }
 
-/** Use by canvas, in gross dollars, as the API orders it: most first, the unnamed last. */
-function Canvases({ canvases, usage }: { canvases: CanvasUsage[]; usage: Usage }) {
+/** What Plan and usage says in place of the dollars and the cap while billing is off. */
+export const FREE_LINE = "Ponzu is free while billing is set up. Nothing here is charged.";
+
+/** "2,060 credits". */
+function creditsText(credits: number): string {
+  const n = Math.floor(credits);
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "credit" : "credits"}`;
+}
+
+/** The amount at the end of a by-person or by-canvas line; credits need more room than dollars. */
+function amountClass(wide: boolean): string {
+  return cn(
+    "text-right font-medium font-mono text-12 text-muted leading-none",
+    wide ? "shrink-0" : "w-20",
+  );
+}
+
+/**
+ * Use by canvas, as the API orders it: most first, the unnamed last. In gross dollars once
+ * billing is on; in credits before.
+ */
+function Canvases({
+  canvases,
+  amount,
+  wide,
+}: {
+  canvases: CanvasUsage[];
+  amount: (credits: number) => string;
+  wide: boolean;
+}) {
   return (
     <section aria-label="By canvas" className="flex flex-col">
       <SectionLabel className="pb-1">By canvas</SectionLabel>
@@ -171,9 +211,7 @@ function Canvases({ canvases, usage }: { canvases: CanvasUsage[]; usage: Usage }
           >
             {kind === "canvas" ? name : UNNAMED[kind]}
           </span>
-          <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
-            {money(usedCredits * usage.creditUsd)}
-          </span>
+          <span className={amountClass(wide)}>{amount(usedCredits)}</span>
         </div>
       ))}
     </section>
@@ -338,19 +376,22 @@ function CapRow({
 }
 
 /**
- * Use by person, in gross dollars before the pooled free credits, most first; then, when there
- * is any, what is put down to nobody, so the lines add up to the headline.
+ * Use by person, gross before the pooled free credits (in dollars once billing is on, in credits
+ * before), most first; then, when there is any, what is put down to nobody, so the lines add up
+ * to the headline.
  */
 function People({
   label,
   people,
   nobody = 0,
-  usage,
+  amount,
+  wide,
 }: {
   label: string;
   people: PersonUsage[];
   nobody?: number;
-  usage: Usage;
+  amount: (credits: number) => string;
+  wide: boolean;
 }) {
   const sorted = [...people].sort((a, b) => b.usedCredits - a.usedCredits);
   return (
@@ -363,9 +404,7 @@ function People({
             {person.name}
             {admin ? <span className="ml-1.5 font-normal text-11 text-faint">admin</span> : null}
           </span>
-          <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
-            {money(usedCredits * usage.creditUsd)}
-          </span>
+          <span className={amountClass(wide)}>{amount(usedCredits)}</span>
         </div>
       ))}
       {nobody > 0 ? (
@@ -374,9 +413,7 @@ function People({
           <span className="min-w-0 flex-1 truncate text-13 text-muted">
             Deleted accounts and wakes no one started
           </span>
-          <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
-            {money(nobody * usage.creditUsd)}
-          </span>
+          <span className={amountClass(wide)}>{amount(nobody)}</span>
         </div>
       ) : null}
     </section>
