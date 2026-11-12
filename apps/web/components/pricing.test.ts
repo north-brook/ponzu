@@ -134,6 +134,17 @@ test("the page prints the rate card's numbers, and says billing hasn't started",
     "you can add one any time in Settings",
   ])
     expect(text).toContain(words);
+  // The source scan above misses an amount split across JSX ({"$"}100), so the rendered page is
+  // checked too: every dollar amount on it is one the rate card works out.
+  const worked = new Set([
+    PRICES.credit,
+    PRICES.hour,
+    PRICES.cap,
+    ...EXAMPLES.map(({ cost }) => dollars(cost.cents)),
+  ]);
+  const printed = [...text.matchAll(/\$\s?\d[\d,]*(?:\.\d+)?/g)].map(([amount]) => amount);
+  expect(printed.length).toBeGreaterThan(0);
+  expect(printed.filter((amount) => !worked.has(amount))).toEqual([]);
   expect(BILLING_LIVE).toBe(false);
   expect(text).toContain("Ponzu is free while billing is being set up.");
   expect(html).toContain('href="mailto:hello@ponzu.design"');
