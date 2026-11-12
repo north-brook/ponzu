@@ -34,6 +34,8 @@ import { usePonzu } from "./ponzu-query.tsx";
 const LAUNCHED_AT = Date.now();
 /** How long signing out waits for the API to forget this Mac before it goes on regardless. */
 const FORGET_WAIT_MS = 2000;
+/** How long registering this Mac waits to try again after the API couldn't be reached. */
+const REGISTER_RETRY_MS = 60_000;
 
 export interface MacNotifications {
   /** This Mac's device, once the API has it: Settings calls it "This Mac". */
@@ -100,6 +102,7 @@ export function useMacNotifications(host: Host, openCanvasId: string | null): Ma
   useEffect(() => {
     if (!mac) return;
     let current = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     host.api.devices
       .register({
         platform: "macos",
@@ -114,10 +117,16 @@ export function useMacNotifications(host: Host, openCanvasId: string | null): Ma
           // Settings lists it.
           void queryClient.invalidateQueries({ queryKey: queries.notifications().queryKey });
         },
-        () => {},
+        (error: unknown) => {
+          // Offline at launch, or the API busy: banners wait on this Mac being known, so try
+          // again in a minute rather than go a whole launch without them. A refusal is final.
+          if (!current || (error instanceof ApiError && !error.transient)) return;
+          retry = setTimeout(() => registerAgain((n) => n + 1), REGISTER_RETRY_MS);
+        },
       );
     return () => {
       current = false;
+      clearTimeout(retry);
     };
   }, [host, mac, queries, queryClient, registering]);
 

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
@@ -231,9 +232,30 @@ let device: { installId: string; name: string | null } | null = null;
 function deviceFacts() {
   device ??= {
     installId: installIdIn(join(userData, "install-id")),
-    name: deviceNameOf(hostname()),
+    name: deviceNameOf(computerName()),
   };
   return device;
+}
+
+/**
+ * The name the person gave this computer ("Maya's MacBook Pro", System Settings › General ›
+ * About), which `os.hostname()` gives only as a host name ("Mayas-MacBook-Pro.local"). Read
+ * once; the host name stands in when it can't be.
+ */
+function computerName(): string {
+  if (process.platform === "darwin") {
+    try {
+      const name = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 1000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (name) return name;
+    } catch {
+      // No name kept, or scutil missing: the host name.
+    }
+  }
+  return hostname();
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -586,8 +608,9 @@ if (!app.requestSingleInstanceLock()) {
       // Ponzu Preview, which waits here for the person's first sign-in (carry-over.ts).
       const launching = was === "loading" && keepCarriedOver;
       if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
-      // Nobody's questions wait on the dock once they have signed out.
-      if (state.status !== was && endsSession(state)) notifier?.setBadge(0);
+      // Nobody's questions wait on the dock, nor their banners in Notification Center, once they
+      // have signed out: whoever signs in next sees none of them. The smoke check touches neither.
+      if (state.status !== was && endsSession(state) && !smoke) notifications().clear();
       was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");

@@ -42,6 +42,8 @@ export interface NotificationClass {
   }): ShownNotification;
   /** Takes delivered notifications out of Notification Center, by id (macOS). */
   remove?(ids: string[]): void;
+  /** Takes all of the app's delivered notifications out of Notification Center (macOS). */
+  removeAll?(): void;
 }
 
 export interface ShownNotification {
@@ -56,6 +58,11 @@ export interface Notifier {
   show(value: unknown): void;
   remove(value: unknown): void;
   setBadge(value: unknown): void;
+  /**
+   * The session ended: every banner goes, from the screen and Notification Center, and the
+   * dock's number with them, so nobody who signs in next sees the last person's.
+   */
+  clear(): void;
   /** How many banners are kept hold of now. */
   readonly kept: number;
 }
@@ -119,6 +126,14 @@ export function createNotifier(deps: {
     setBadge(value) {
       if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return;
       deps.setBadge(Math.min(value, BADGE_MAX));
+    },
+    clear() {
+      const shown = [...kept.values()];
+      kept.clear();
+      for (const notification of shown) notification.close();
+      // Those let go of, or shown before a reload, are still in Notification Center.
+      deps.Notification.removeAll?.();
+      deps.setBadge(0);
     },
     get kept() {
       return kept.size;
@@ -192,7 +207,10 @@ export function installIdIn(file: string, make: () => string = randomUUID): stri
   return id;
 }
 
-/** The computer's name as Settings lists it: its host name without `.local`; null for none. */
+/**
+ * The computer's name as Settings lists it: the name macOS shows, or a host name without
+ * `.local`; null for none.
+ */
 export function deviceNameOf(hostname: string): string | null {
   const name = hostname.replace(/\.local\.?$/i, "").trim();
   return name ? name.slice(0, 100) : null;

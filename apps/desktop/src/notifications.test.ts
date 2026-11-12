@@ -16,6 +16,7 @@ import {
 function fakeNotifications() {
   const made: FakeShown[] = [];
   const removed: string[][] = [];
+  let allRemoved = 0;
   class FakeShown {
     readonly listeners = new Map<string, ((...args: unknown[]) => void)[]>();
     shown = false;
@@ -39,8 +40,16 @@ function fakeNotifications() {
     static remove(ids: string[]) {
       removed.push(ids);
     }
+    static removeAll() {
+      allRemoved++;
+    }
   }
-  return { Notification: FakeShown as unknown as NotificationClass, made, removed };
+  return {
+    Notification: FakeShown as unknown as NotificationClass,
+    made,
+    removed,
+    cleared: () => allRemoved,
+  };
 }
 
 function world() {
@@ -162,6 +171,18 @@ describe("taking banners away", () => {
     notifier.remove("ntf_1");
     notifier.remove([1, null, "../x"]);
     expect(removed).toEqual([]);
+  });
+
+  test("signing out takes every banner and the dock's number away", () => {
+    const { notifier, made, cleared, badges } = world();
+    notifier.show(QUESTION);
+    notifier.setBadge(2);
+    notifier.clear();
+    expect(made[0]!.closed).toBe(true);
+    expect(notifier.kept).toBe(0);
+    // Those shown before a reload are only in Notification Center: it is emptied too.
+    expect(cleared()).toBe(1);
+    expect(badges).toEqual([2, 0]);
   });
 });
 
