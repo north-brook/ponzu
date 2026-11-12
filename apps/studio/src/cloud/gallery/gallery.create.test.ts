@@ -154,6 +154,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("pick-a-project-many-repos");
     await page.setViewportSize({ width: 1440, height: 560 });
     try {
+      // The column re-centres for the shorter pane in the frame after the resize (a
+      // ResizeObserver): past two frames it is where it rests.
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
       const resting = await questionTop();
       await page.click('button[aria-label^="Project"]');
       await page.waitForSelector('input[aria-label="Search repositories"]');
