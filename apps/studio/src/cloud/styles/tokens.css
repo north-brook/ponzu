@@ -22,9 +22,9 @@
    * material: `header` in light, `hud` in dark). Measured on a real desktop, macOS 27.2: light
    * comes to (230, 228, 227) over a black backdrop, (238, 237, 235) over mid grey and
    * (247, 246, 244) over white; dark to (22, 22, 22), (39, 39, 39) and (59, 61, 61). So the
-   * shell is always a clear step off the canvas, whatever is behind the window, and takes
+   * shell is always a clear step off the boards' ground, whatever is behind the window, and takes
    * about twice as much of it as the sidebar material did. (The same material under a darker
-   * tint, (11, 11, 13) over black, was too near the canvas to tell from it.) Change a tint or
+   * tint, (11, 11, 13) over black, was too near the ground to tell from it.) Change a tint or
    * a material and those are measured again (tokens.test.ts holds the pair).
    * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
    */

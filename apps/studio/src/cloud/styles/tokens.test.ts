@@ -91,7 +91,7 @@ for (const [theme, i] of [
     expect(token("chrome-glass")[i]).toBe(measured.tint);
     expect(contrast(token("ink")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(token("muted")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
-    // And it is the canvas's shade, a clear step off it whatever is behind the window (the
+    // And it is a shade off the boards' ground, a clear step whatever is behind the window (the
     // nearest backdrop included: white behind a light window, black behind a dark one), and
     // never a mid grey.
     for (const shell of [measured.worst, measured.usual, measured.best]) {
