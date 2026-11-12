@@ -3,11 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { router } from "expo-router";
 import { Text } from "react-native";
+import Settings from "../app/settings";
 import { CanvasNameRow } from "../components/canvas-name-row";
 import { backend } from "../lib/cloud/backend.fake";
 import { useCanvases } from "../lib/cloud/canvases";
 import { CloudProvider } from "../lib/cloud/query";
-import Settings from "../app/settings";
 
 const replace = router.replace as unknown as jest.Mock;
 

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as WebBrowser from "expo-web-browser";
-import { backend } from "../lib/cloud/backend.fake";
 import SignIn from "../app/sign-in";
+import { backend } from "../lib/cloud/backend.fake";
 
 jest.mock("expo-web-browser", () => ({ openAuthSessionAsync: jest.fn() }));
 const openAuthSession = WebBrowser.openAuthSessionAsync as unknown as jest.Mock<

@@ -303,7 +303,8 @@ cd apps/mobile && bun run test:rn                  # component tests (jest-expo)
 cd apps/mobile && bunx expo export --platform ios  # the bundle
 ```
 
-Component tests are `*.rntest.tsx` beside what they test, rendered with
+Component tests are `*.rntest.tsx` in `rntests/` (never in `app/`, where Expo Router
+would bundle them as routes), rendered with
 jest-expo and React Native Testing Library against the fake backend; `bun
 test` skips them by their name. They stand in for the router (`jest.setup.js`)
 and read where a screen sends the app from its calls.

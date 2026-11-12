@@ -95,6 +95,10 @@ function sources(dir: string): string[] {
   });
 }
 
+test("no test lives in app/: Expo Router would bundle it as a route", () => {
+  expect(sources("app").filter(isTest)).toEqual([]);
+});
+
 describe("the imports rule", () => {
   test("app/, lib/ and components/ keep it", () => {
     const files = CHECKED.flatMap(sources);

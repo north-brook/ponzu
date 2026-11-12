@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globa
 import type { SessionState } from "@ponzu/client";
 import { act, render, screen } from "@testing-library/react-native";
 import { router } from "expo-router";
-import { backend } from "../lib/cloud/backend.fake";
 import Launch from "../app/index";
+import { backend } from "../lib/cloud/backend.fake";
 
 const replace = router.replace as unknown as jest.Mock;
 /** The fake session's own setter, for a state no scenario names (still reading the Keychain). */
