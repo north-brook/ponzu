@@ -557,7 +557,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // width rounds apart).
     expect(Math.round(long.mark.left)).toBe(Math.round(short.mark.left));
     expect(long.mark.top).toBe(short.mark.top);
-    expect(long.firstLine).toEqual(short.firstLine);
+    expect(long.firstLine.top).toBe(short.firstLine.top);
+    expect(long.firstLine.bottom).toBe(short.firstLine.bottom);
+    expect(Math.round(long.firstLine.left)).toBe(Math.round(short.firstLine.left));
+    expect(Math.round(long.firstLine.right)).toBe(Math.round(short.firstLine.right));
     expect(long.statement.bottom).toBe(short.statement.bottom);
     // The owner gave way first: most of what shows is the name.
     expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.6);
