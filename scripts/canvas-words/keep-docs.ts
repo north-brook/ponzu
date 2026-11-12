@@ -37,4 +37,9 @@ export const KEEP_DOCS: Keep[] = [
     has: "the app reads `ponzu://design/<id>` as `ponzu://canvas/<id>`",
     why: "the old app link, which the spec says still opens (the desktop's deep-link parser reads it)",
   },
+  {
+    path: "docs/cloud.md",
+    has: "Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`",
+    why: "the old app link, which the links grammar in @ponzu/core still reads for good",
+  },
 ];
