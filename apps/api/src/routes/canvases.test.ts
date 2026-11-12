@@ -506,10 +506,21 @@ describe("seen", () => {
     const readVia = async (id: string) =>
       (await t.db.select().from(notifications)).find((row) => row.id === id)!.readVia;
 
+    const seen = () => call(t, as("ines"), "POST", `/v1/canvases/${canvas.id}/seen`, {});
+    const presence = (body: unknown) =>
+      call(t, as("ines"), "PUT", `/v1/canvases/${canvas.id}/presence`, body);
+
+    // Open, but in a window behind another: the canvas moving on reads nothing, so a question
+    // raised while she is away from it still reaches her.
     t.clock.advance(1_000);
-    expect((await call(t, as("ines"), "POST", `/v1/canvases/${canvas.id}/seen`, {})).status).toBe(
-      204,
-    );
+    await presence({ focused: false });
+    expect((await seen()).status).toBe(204);
+    expect(await readVia("ntf_seen_here")).toBeNull();
+
+    // Looking at it: what Ponzu told her about this canvas is read.
+    await presence({ focused: true });
+    t.clock.advance(1_000);
+    expect((await seen()).status).toBe(204);
 
     expect(await readVia("ntf_seen_here")).toBe("seen");
     expect(await readVia("ntf_seen_there")).toBeNull();

@@ -108,7 +108,17 @@ describe("ping preferences", () => {
     );
     expect((await call(t, ines.headers, "GET", "/v1/me/notifications")).body.timeZone).toBeNull();
 
-    for (const bad of ["Mars/Olympus_Mons", "../../etc/passwd", "", "x".repeat(65), 7]) {
+    // A bare offset is refused: Postgres reads "+05" as five hours west.
+    const badZones = [
+      "Mars/Olympus_Mons",
+      "../../etc/passwd",
+      "",
+      "x".repeat(65),
+      7,
+      "+05",
+      "-0330",
+    ];
+    for (const bad of badZones) {
       const refused = await zone(bad);
       expect(refused.status).toBe(400);
       expect(refused.body.error.code).toBe("invalid_request");

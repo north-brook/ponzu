@@ -992,8 +992,14 @@ export class FakeBackend {
               seq: Math.max(was?.seq ?? 0, body.seq ?? canvas.sequencer.seq),
               threadSeq: body.threadSeq ?? was?.threadSeq ?? null,
             });
-            // What Ponzu told them about the canvas is read too, as the API does.
-            this.settings.read(person.id, { canvasId: canvas.id });
+            // Looking at it (focused within 75 seconds), what Ponzu told them about the canvas
+            // is read too, as the API does. A window open in the background reads nothing.
+            const here = canvas.presence.get(person.id);
+            const looking =
+              here?.focusedAt != null &&
+              this.clock.now() - Date.parse(here.focusedAt) <= 75_000 &&
+              this.clock.now() - Date.parse(here.seenAt) <= 75_000;
+            if (looking) this.settings.read(person.id, { canvasId: canvas.id });
             this.changed();
           }),
         sendMessage: (id, body) =>

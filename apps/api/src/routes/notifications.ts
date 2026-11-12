@@ -85,13 +85,14 @@ const Notifications = z.object({
  * An IANA time zone, as `Intl.DateTimeFormat().resolvedOptions().timeZone` names one: a name the
  * runtime's own time zone data knows. (Not `Intl.supportedValuesOf`, which lists canonical names
  * only and, depending on the engine, can leave out `UTC` or an older name such as `Asia/Calcutta`
- * that a browser still reports.)
+ * that a browser still reports.) It starts with a letter: `Intl` also takes a bare offset such
+ * as `+05`, which Postgres would read as a POSIX zone five hours west, the wrong way round.
  */
 const TimeZone = z
   .string()
   .min(1)
   .max(64)
-  .regex(/^[A-Za-z0-9_+\-/]+$/, "A time zone is an IANA name, such as Europe/Lisbon.")
+  .regex(/^[A-Za-z][A-Za-z0-9_+\-/]*$/, "A time zone is an IANA name, such as Europe/Lisbon.")
   .refine(knownTimeZone, "A time zone is an IANA name, such as Europe/Lisbon.");
 
 function knownTimeZone(name: string): boolean {

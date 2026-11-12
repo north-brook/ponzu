@@ -16,6 +16,7 @@ import {
   type Canvas,
   deleteCanvas,
   findCanvasByCreateKey,
+  focusedPresence,
   getCanvas,
   getCanvasAssetKey,
   getMemberWorkspace,
@@ -50,6 +51,7 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
+import { isLooking } from "../notifications/plan.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { finishRetire, holdForRetire, retire } from "../sandboxes/retire.ts";
 import { toPersonView, WorkspacePersonView } from "./workspaces.ts";
@@ -517,8 +519,11 @@ export const canvases = new Hono<AppEnv>()
   /**
    * Records how far the person has looked: the canvas's seq and the thread's, as they saw
    * them. Left out, the canvas's seq is now's. It never moves back, nor past what there is.
-   * Whatever Ponzu told the person about the canvas until now is read too (`via: seen`): they
-   * have looked, so no ping about it is still to come, and no banner stays.
+   * When their presence says they are looking at it (focused within the last 75 seconds),
+   * whatever Ponzu told them about the canvas until now is read too (`via: seen`): no ping
+   * about it is still to come, and no banner stays. Without that, it reads nothing: an app sends
+   * this whenever the canvas or its thread moves on screen, even in a window left open in the
+   * background, and a question the agent raised then must still reach the person.
    */
   .post(
     "/:id/seen",
@@ -530,15 +535,14 @@ export const canvases = new Hono<AppEnv>()
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
       const { seq = canvas.seq, threadSeq } = c.req.valid("json");
       const userId = actor.user.id;
-      await Promise.all([
+      const now = new Date(deps.clock.now());
+      const [, focused] = await Promise.all([
         markCanvasSeen(deps.db, { userId, canvasId: canvas.id, seq, threadSeq }),
-        markNotificationsRead(deps.db, {
-          userId,
-          canvasId: canvas.id,
-          now: new Date(deps.clock.now()),
-          via: "seen",
-        }),
+        focusedPresence(deps.db, { canvasId: canvas.id, userIds: [userId], now }),
       ]);
+      if (isLooking(focused.get(userId) ?? null, now)) {
+        await markNotificationsRead(deps.db, { userId, canvasId: canvas.id, now, via: "seen" });
+      }
       return c.body(null, 204);
     },
   );

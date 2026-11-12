@@ -206,7 +206,8 @@ describe("the Settings methods", () => {
     expect(inbox.map((row) => [row.id, row.readAt !== null])).toEqual([[question.id, true]]);
     expect((await api.notifications.get()).badge).toBe(1);
 
-    // Opening the canvas reads what came since; its question answered, the row goes.
+    // Opening the canvas reads what came since, once she is looking at it; its question
+    // answered, the row goes.
     const later = backend.notify(maya.id, {
       kind: "finished",
       canvasId: canvas.id,
@@ -216,6 +217,12 @@ describe("the Settings methods", () => {
     });
     await clock.advance(0);
     expect(inbox.map((row) => row.id)).toContain(later.id);
+    // Open in a window behind another, the canvas reads nothing.
+    await api.canvases.presence(canvas.id, null, false);
+    await api.canvases.seen(canvas.id);
+    await clock.advance(0);
+    expect(inbox.map((row) => row.id)).toContain(later.id);
+    await api.canvases.presence(canvas.id, null, true);
     await api.canvases.seen(canvas.id);
     backend.settings.resolve(canvas.id, "q_1");
     await api.canvases.seen(canvas.id);

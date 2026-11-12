@@ -2527,7 +2527,7 @@ or not pings are on. `email.address` is where the daily email would go and `emai
 says whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and
 Settings hides the Email row while it is). `timeZone` is the IANA zone the app last reported,
 null until one has; the app sends `timeZone` in a PATCH when its own differs, and a name the
-API's time zone data does not know is a 400. The daily email's 9:00 is in that zone.
+API's time zone data does not know, or a bare offset such as `+05`, is a 400. The daily email's 9:00 is in that zone.
 
 `PUT /v1/me/devices/:id/active` is a heartbeat: the person is at this install now (a Mac with a
 window focused and input in the last two minutes, a phone in the foreground). Apps send it every
@@ -2536,10 +2536,12 @@ last one is under 30 seconds old. A phone's ping waits two minutes for a person 
 which shows it at once. `POST /v1/me/notifications/:id/read` is the app that showed a
 notification saying it was read: a Mac's banner clicked or a phone's ping tapped. Reading again
 keeps the first reading, and an id that is not the person's changes nothing; the answer is 204
-either way, so it says nothing about whose an id is. Opening a canvas reads the rest:
-`POST /v1/canvases/:id/seen` also marks every notification the person had about the canvas,
-made up to that moment, read (`via: seen`). A needs-you stays on the badge until its question
-closes, read or not.
+either way, so it says nothing about whose an id is. Looking at a canvas reads the rest:
+`POST /v1/canvases/:id/seen`, sent while the person's presence on the canvas says it is focused
+(within the last 75 seconds), also marks every notification the person had about the canvas,
+made up to that moment, read (`via: seen`). Sent from a window left open in the background, it
+reads none of them, so a question raised there still reaches the person's phone. A needs-you
+stays on the badge until its question closes, read or not.
 
 The inbox is the live query `me.notifications` ("Realtime"): the person's unread notifications
 and every needs-you whose question is still open. A row carries ids, a kind, a title (the

@@ -267,6 +267,7 @@ export class FakeSettings {
           call(() => {
             if (timeZone !== undefined) {
               try {
+                if (!/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(timeZone)) throw new Error();
                 new Intl.DateTimeFormat("en-US", { timeZone });
               } catch {
                 throw new ApiError(400, "invalid_request", "A time zone is an IANA name.");
