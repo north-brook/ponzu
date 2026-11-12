@@ -520,6 +520,75 @@ describe("POST /v1/canvases/:id/asset-key/rotate", () => {
     expect(new Set(added.map((k) => k.slice(0, k.indexOf("/"))))).toEqual(new Set([key]));
   });
 
+  test("deleted after the swap, as the second pass copies: the retire job takes what it left", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Late delete"));
+    const from = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, from, 4);
+
+    // The first pass makes four copies. As the second begins, the canvas is deleted and its files
+    // job (keyed by the new key, the row's as it went) runs whole; that pass then copies on.
+    const copy = t.storage.copy.bind(t.storage);
+    let copies = 0;
+    let to = "";
+    t.storage.copy = async (source: string, target: string) => {
+      to = target.slice(0, target.indexOf("/"));
+      if (++copies === 5) {
+        expect((await call(t, as("ada"), "DELETE", `/v1/canvases/${canvas.id}`)).status).toBe(204);
+        await t.backgroundDone();
+      }
+      return copy(source, target);
+    };
+    let answered: { status: number; body: any };
+    try {
+      answered = await rotate("maya", canvas.id);
+    } finally {
+      t.storage.copy = copy;
+    }
+    await t.backgroundDone();
+    // Gone by the time it would answer, so it answers as for any deleted canvas.
+    expect(answered.status).toBe(404);
+    expect(await jobsFor(ASSET_KEY_RETIRE_JOB, from)).toHaveLength(1);
+    expect((await jobsFor(CANVAS_FILES_DELETE_JOB, to))[0]?.completed_at).not.toBeNull();
+    // The second pass wrote under the new key after its files job had finished.
+    expect(paths(to).length).toBeGreaterThan(0);
+
+    await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    expect(paths(from)).toEqual([]);
+    expect(paths(to)).toEqual([]);
+  });
+
+  test("a file written under the new key since the swap is never copied over by the old", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Newer"));
+    const from = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, from, 2);
+    expect((await rotate("maya", canvas.id)).status).toBe(200);
+    await t.backgroundDone();
+    const to = (await getCanvasAssetKey(t.db, canvas.id))!;
+    const body = (byte: number) => new Uint8Array([byte]);
+    const write = (key: string, byte: number) =>
+      t.storage.objects.set(key, {
+        body: body(byte),
+        headers: { "content-type": "image/png" },
+        sha256: null,
+        modifiedAt: t.clock.now(),
+      });
+
+    // The runner, still on the old address, replaces an image there a moment after the swap;
+    // then, under the new key, replaces it again. The retire job copies the old key's late
+    // change, but not over the newer file.
+    t.clock.advance(1000);
+    write(`${from}/assets/logo.png`, 1);
+    t.clock.advance(1000);
+    write(`${to}/assets/logo.png`, 2);
+    // And a late change with nothing newer under the new key is copied across.
+    write(`${from}/assets/late.png`, 3);
+
+    await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    expect(paths(from)).toEqual([]);
+    expect(t.storage.objects.get(`${to}/assets/logo.png`)?.body).toEqual(body(2));
+    expect(t.storage.objects.get(`${to}/assets/late.png`)?.body).toEqual(body(3));
+  });
+
   test("a canvas deleted while it is reset: refused as gone, and its copies deleted", async () => {
     const canvas = await canvasIn(t, ws, "maya", emptyDoc("Vanishing"));
     const from = (await getCanvasAssetKey(t.db, canvas.id))!;

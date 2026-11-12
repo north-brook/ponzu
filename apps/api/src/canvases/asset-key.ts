@@ -56,9 +56,11 @@ const RetirePayload = z.object({
 
 /**
  * Copy every object under `from/` to the same path under `to/` that `to/` lacks, or that changed
- * at `from/` at or after `changedSince` (storage's own time of writing). Both must be well-formed
- * asset keys, and different, or it throws before asking storage anything. Answers how many it
- * copied. Safe to repeat.
+ * at `from/` at or after `changedSince` (storage's own time of writing), unless the one at `to/`
+ * was written after it: a file written under the new key since the swap (the runner replacing an
+ * image) is newer than anything left under the old one, and is never copied over. Both must be
+ * well-formed asset keys, and different, or it throws before asking storage anything. Answers
+ * how many it copied. Safe to repeat.
  */
 export async function copyUnder(
   storage: ObjectStorage,
@@ -69,16 +71,23 @@ export async function copyUnder(
   if (!isAssetKey(from) || !isAssetKey(to) || from === to) {
     throw new Error("copyUnder takes two different asset keys.");
   }
-  const have = new Set<string>();
-  for await (const object of listAll(storage, `${to}/`)) have.add(object.key.slice(to.length));
+  // Each path `to/` has, with when storage wrote it there (null when it does not say).
+  const have = new Map<string, number | null>();
+  for await (const object of listAll(storage, `${to}/`)) {
+    have.set(object.key.slice(to.length), object.modifiedAt?.getTime() ?? null);
+  }
   let copied = 0;
   let batch: Promise<void>[] = [];
   for await (const object of listAll(storage, `${from}/`)) {
     const path = object.key.slice(from.length);
-    const changed =
-      changedSince !== undefined &&
-      (object.modifiedAt === null || object.modifiedAt.getTime() >= changedSince);
-    if (have.has(path) && !changed) continue;
+    const at = object.modifiedAt?.getTime() ?? null;
+    if (have.has(path)) {
+      const changed = changedSince !== undefined && (at === null || at >= changedSince);
+      if (!changed) continue;
+      // Written at `to/` after this was written at `from/`: the copy there is as new, or newer.
+      const there = have.get(path) ?? null;
+      if (there !== null && at !== null && there > at) continue;
+    }
     batch.push(copyIfThere(storage, object.key, `${to}${path}`));
     copied++;
     if (batch.length >= COPY_CONCURRENCY) {
@@ -175,8 +184,9 @@ export async function rotateAssetKey(
 /**
  * The retire job's handler: while the canvas's files are still under `to`, copy what `from`
  * gained or changed since the swap; then delete a page of `from`'s files, and come back while
- * more remain, as the files delete does. A canvas deleted meanwhile, or reset again, needs no
- * copy: `to` is going too.
+ * more remain, as the files delete does. A canvas reset again needs no copy: `to` has its own
+ * retire job. A canvas deleted meanwhile needs none either, and what is under `to` is deleted
+ * here as well as by its files job, which may have run while the reset still copied into it.
  */
 export async function runAssetKeyRetireJob(
   deps: Pick<JobDeps, "db" | "storage" | "log">,
@@ -184,10 +194,18 @@ export async function runAssetKeyRetireJob(
   job?: Pick<RunningJob, "attempts" | "maxAttempts">,
 ): Promise<void> {
   const { canvasId, from, to, swappedAt } = RetirePayload.parse(payload);
-  if ((await getCanvasAssetKey(deps.db, canvasId)) === to) {
+  const now = await getCanvasAssetKey(deps.db, canvasId);
+  if (now === to) {
     await copyUnder(deps.storage, from, to, { changedSince: swappedAt - CLOCK_SLACK_MS });
   }
-  const { deleted, done } = await deleteUnder(deps.storage, `${from}/`);
+  let { deleted, done } = await deleteUnder(deps.storage, `${from}/`);
+  if (now === null && isAssetKey(to)) {
+    // Deleted after the swap: its files job took `to/` as the reset's second pass may still have
+    // been copying into it. Long past that pass now, whatever it left under `to/` goes too.
+    const left = await deleteUnder(deps.storage, `${to}/`);
+    deleted += left.deleted;
+    done &&= left.done;
+  }
   // Ids only: an asset key is the capability to the files, so it is never logged.
   deps.log.info("asset_key_retired", { canvasId, deleted, done });
   if (done) return;
