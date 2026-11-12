@@ -7,7 +7,7 @@ ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(58, 57, 54)
 text "Connect Claude" rgb(244, 243, 239) 600 28px Funnel Display
-text "Claude Code does the designing, in the …" rgb(183, 179, 169) 400 15px Inter
+text "Claude Code does the work, in the cloud…" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
 ground span rgb(22, 22, 21)
 icon svg[Claude] 17×17 rgb(183, 179, 169) stroke 1px

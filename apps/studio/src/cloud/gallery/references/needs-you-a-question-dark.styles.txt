@@ -29,7 +29,7 @@ text "Northbrook" rgb(244, 243, 239) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px
 icon svg[Search] 16×16 rgb(183, 179, 169) stroke 1.7px
 icon svg[Filter] 16×16 rgb(183, 179, 169) stroke 1.7px
-icon svg[New design] 16×16 rgb(183, 179, 169) stroke 1.7px
+icon svg[New canvas] 16×16 rgb(183, 179, 169) stroke 1.7px
 ground button[Quieter shop hero, 2 waiting for you, f…] rgb(48, 48, 46)
 ground span[Quieter shop hero, 2 waiting for you, f…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 image img[Quieter shop hero, 2 waiting for you, f…] hero.png
@@ -89,7 +89,7 @@ icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(118, 115, 105) s
 text "pz/inbox-triage" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Settled" rgb(183, 179, 169) 400 12px Inter
 text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono
-icon svg[Designs] 11×11 rgb(142, 138, 130) stroke 2.2px
+icon svg[Canvases] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 text "Give me three takes on the hero. Keep t…" rgb(244, 243, 239) 400 13px Inter
 ground p[Thread] rgb(27, 27, 26)
