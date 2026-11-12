@@ -24,17 +24,17 @@ name: sign-in
       id: canvases
     timeout: 30000
 - extendedWaitUntil:
-    visible: "Pricing page"
+    visible: "Pricing page, acme/site"
     timeout: 15000
-- assertVisible: "Onboarding"
-- assertVisible: "Launch poster"
+- assertVisible: "Onboarding, acme/app"
+- assertVisible: "Launch poster, Scratch"
 - tapOn:
     id: lockup
 - extendedWaitUntil:
     visible:
       id: settings
     timeout: 10000
-- assertVisible: "@maya"
+- assertVisible: "Signed in as Maya Lin, maya on GitHub"
 - tapOn:
     id: settings-sign-out
 - extendedWaitUntil:

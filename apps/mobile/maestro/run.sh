@@ -60,6 +60,9 @@ if [ "${SKIP_BUILD:-}" != 1 ]; then
 fi
 
 DEV_CLIENT="exp+ponzu://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A$METRO_PORT"
-exec maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
+# Not exec: the EXIT trap must still stop Metro and the authorize page.
+status=0
+maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
   ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} \
-  ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/"
+  ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/" || status=$?
+exit "$status"
