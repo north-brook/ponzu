@@ -219,7 +219,7 @@ function PickerBody({
 
   return (
     <>
-      {/* Our own filter (pickerRows), so cmdk only drives the keyboard and the highlight. */}
+      {/* Our own filter (pickerGroups), so cmdk only drives the keyboard and the highlight. */}
       <Command
         shouldFilter={false}
         value={active}
