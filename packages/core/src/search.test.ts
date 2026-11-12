@@ -26,7 +26,7 @@ const codePoints = (s: string) => [...s].length;
 /** No lone surrogate: what String.prototype.isWellFormed says, which this tsconfig's lib lacks. */
 const wellFormed = (s: string) =>
   !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(s);
-const ALPHABET = /^[\p{L}\p{N} ]*$/u;
+const ALPHABET = /^[\p{L}\p{M}\p{N} ]*$/u;
 
 describe("foldForSearch", () => {
   const table: [string, string, string][] = [
@@ -42,12 +42,16 @@ describe("foldForSearch", () => {
     ["CJK, where the long vowel mark is a letter", "東京タワー、検索。", "東京タワー 検索 "],
     ["emoji: two spaces for a pair", "hi 🎉!", "hi    "],
     ["a ZWJ sequence", "a👩‍💻b", "a     b"],
-    ["combining marks on their own", "\u0301x\u0308", " x "],
+    ["a mark on its own is a space, one on a letter stays", "\u0301x\u0308 \u0301", " x\u0308  "],
+    ["Devanagari vowel signs stay in the word", "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920", "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920"],
+    ["Hebrew points stay in the word", "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea", "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea"],
+    ["a mark after an emoji or a space is a space", "\ud83c\udf89\u0301 \u20dd", "     "],
+    ["an astral mark on an astral letter stays", "\ud804\udc13\ud804\udc38 \ud804\udc38", "\ud804\udc13\ud804\udc38   "],
     ["control characters", "a\tb\nc\u0001d\u007f", "a b c d "],
     ["lone surrogates", "a\ud800b\udc00", "a b "],
     ["an astral letter lowercases", "𐐀𐐨", "𐐨𐐨"],
     ["mathematical letters are letters", "𝐀𝟏", "𝐀𝟏"],
-    ["NBSP and other spaces", "a b c", "a b c"],
+    ["NBSP and other spaces", "a\u00a0b\u2003c", "a b c"],
   ];
   for (const [name, input, folded] of table) {
     test(name, () => {
@@ -68,23 +72,33 @@ describe("foldForSearch", () => {
       const outPoints = [...folded];
       let a = 0;
       let b = 0;
+      let split = 0;
+      let inWord = false;
       while (a < inPoints.length) {
-        const width = inPoints[a]!.length;
+        const ch = inPoints[a]!;
         const out = outPoints[b]!;
-        if (out.length === width) {
+        const mark = /^\p{M}$/u.test(ch);
+        // A mark is kept exactly when it sits on a letter, a digit or a mark kept so.
+        if (mark) expect(out === ch).toBe(inWord);
+        if (out.length === ch.length) {
           b += 1;
+          if (!mark) inWord = out !== " ";
         } else {
-          // An astral non-letter: two spaces.
-          expect(width).toBe(2);
+          // An astral code point that is not a letter, a digit or a kept mark: two spaces.
+          expect(ch.length).toBe(2);
+          expect(/^[\p{L}\p{N}]$/u.test(ch)).toBe(false);
           expect(out + outPoints[b + 1]).toBe("  ");
           b += 2;
+          split += 1;
+          if (!mark) inWord = false;
         }
         a += 1;
       }
       expect(b).toBe(outPoints.length);
-      // Code points are kept except for the astral non-letters, each of which gives two.
-      const astralNonWord = inPoints.filter((c) => c.length === 2 && !/^[\p{L}\p{N}]$/u.test(c));
-      expect(codePoints(folded)).toBe(codePoints(input) + astralNonWord.length);
+      // Code points are kept except for those, each of which gives two.
+      expect(codePoints(folded)).toBe(codePoints(input) + split);
+      // No folded word starts with a mark.
+      expect(/(^| )\p{M}/u.test(folded)).toBe(false);
       // Folding what is folded changes nothing, so a stored fold and a query's agree.
       expect(foldForSearch(folded)).toBe(folded);
     }
@@ -229,6 +243,12 @@ describe("findMatches", () => {
     const [match] = m(t, "cafe");
     expect(t.slice(...(match as [number, number]))).toBe("café");
     expect(t.slice(...(m(t, "istanbul")[0] as [number, number]))).toBe("İstanbul");
+  });
+
+  test("a word written with vowel signs is one term, and matches whole", () => {
+    expect(searchTerms("हिन्दी")).toEqual([{ words: ["हिन्दी"], short: false }]);
+    expect(m("नमस्ते हिन्दी", "हिन्दी")).toEqual([[7, 13]]);
+    expect(m("हिन्दी", "हि")).toEqual([[0, 2]]);
   });
 
   test("no terms, no matches", () => {
@@ -448,6 +468,7 @@ describe("docSearchEntries", () => {
     doc.pages.push({ id: "pg_1", name: "Again", artboards: [twin("Fourth")] });
     doc.threads.push(structuredClone(doc.threads[0]!));
     doc.threads[1]!.messages[0]!.text = "Twin";
+    doc.threads[1]!.messages.push({ ...doc.threads[1]!.messages[0]!, id: "m_twin", text: "Lost" });
     doc.threads[0]!.messages.push({ ...doc.threads[0]!.messages[0]!, text: "Echo" });
 
     const entries = docSearchEntries(doc);
@@ -459,6 +480,8 @@ describe("docSearchEntries", () => {
     });
     expect(entries.find((e) => e.ref === "pg_1")!.text).toBe("First");
     expect(entries.find((e) => e.ref === "th_1/m_1")!.text).toBe("Tighter?");
+    // The second thread of an id is one no op reaches, so none of its messages is offered.
+    expect(entries.some((e) => e.ref === "th_1/m_twin")).toBe(false);
   });
 
   test("an old message with no author, or a broken time, still gives an entry", () => {

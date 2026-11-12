@@ -33,7 +33,7 @@ export type SearchKind = (typeof SEARCH_KINDS)[number];
 /** A start of a match in a result's text, and its end (exclusive), in UTF-16 code units. */
 export type Match = readonly [start: number, end: number];
 
-/** One word, or a quoted phrase's words. Words hold only letters and digits. */
+/** One word, or a quoted phrase's words. Words hold only letters, digits and combining marks. */
 export interface SearchTerm {
   words: string[];
   short: boolean;
@@ -68,15 +68,17 @@ export function searchText(raw: string): string {
 }
 
 const WORD_CHAR = /^[\p{L}\p{N}]$/u;
+const MARK = /^\p{M}$/u;
 const MARKS = /^\p{M}+$/u;
-const WORD = /^[\p{L}\p{N}]+$/u;
+/** A folded word: a letter or digit, then letters, digits and the marks that belong to them. */
+const WORD = /^[\p{L}\p{N}][\p{L}\p{M}\p{N}]*$/u;
 /** What each character of the Basic Multilingual Plane past ASCII folds to, once worked out. */
 const folds = new Map<string, string>();
 
 /**
- * Text as it is matched: lowercase, with accents gone and everything that is not a letter or a
- * digit turned into spaces. The result has exactly the input's UTF-16 length, so an offset found
- * in it is an offset in the original.
+ * Text as it is matched: lowercase, with accents gone and everything that is not a letter, a
+ * digit or a mark inside a word turned into spaces. The result has exactly the input's UTF-16
+ * length, so an offset found in it is an offset in the original.
  *
  * It goes code point by code point. A character that decomposes into a base and combining marks
  * becomes its base (é is e, İ is I), and then is lowercased, keeping the first unit when lowering
@@ -84,10 +86,26 @@ const folds = new Map<string, string>();
  * A letter or digit outside the Basic Multilingual Plane is lowercased when that keeps it one
  * code point, and kept otherwise; any other code point there (an emoji) becomes two spaces, so
  * the length holds though the code-point count then does not. A lone surrogate is one space.
+ *
+ * A combining mark that follows a letter, a digit or a mark kept so is kept as it is: in
+ * Devanagari, Bengali, Tamil and the other scripts written this way the vowel signs are marks,
+ * and turning them into spaces would cut every word into letters. A mark with nothing to sit on
+ * becomes a space (two for one outside the Basic Multilingual Plane). Folded text therefore
+ * holds letters, digits, spaces and marks, and no word starts with a mark.
  */
 export function foldForSearch(text: string): string {
   let out = "";
-  for (const ch of text) out += foldChar(ch);
+  let inWord = false;
+  for (const ch of text) {
+    // Every combining mark is at U+0300 or above.
+    if (ch.charCodeAt(0) >= 0x300 && MARK.test(ch)) {
+      out += inWord ? ch : ch.length === 2 ? "  " : " ";
+      continue;
+    }
+    const folded = foldChar(ch);
+    out += folded;
+    inWord = folded.charCodeAt(0) !== 0x20;
+  }
   return out;
 }
 
@@ -128,7 +146,7 @@ const QUOTES = new Set(['"', "“", "”"]);
 /**
  * A query's terms. A quoted phrase (straight or curly quotes; an unclosed one runs to the end)
  * is one term of its words; every other word is a term of its own. Everything is folded first,
- * so a term holds only letters, digits and the spaces between a phrase's words: `#412` is 412
+ * so a term's words hold only letters, digits and combining marks: `#412` is 412
  * and `100%` is 100. Empty terms and repeats are dropped, and the first SEARCH_TERMS_MAX kept.
  * A query of punctuation alone has no terms.
  */
@@ -166,12 +184,14 @@ export function searchTerms(query: string): SearchTerm[] {
 }
 
 /**
- * Throws unless every word of `term` is letters and digits only. What reaches SQL is checked
- * with this first, so no LIKE wildcard (`%`, `_`), escape (`\`) or regex metacharacter can.
+ * Throws unless every word of `term` is a folded word: a letter or digit, then letters, digits
+ * and combining marks. What reaches SQL is checked with this first, so no LIKE wildcard (`%`,
+ * `_`), escape (`\`) or regex metacharacter can. Callers use this rather than a pattern of their
+ * own, since folded words may hold marks.
  */
 export function assertSearchTerm(term: SearchTerm): void {
   if (!term.words.length || !term.words.every((w) => WORD.test(w))) {
-    throw new Error("A search term must be letters and digits only.");
+    throw new Error("A search term must be letters, digits and marks only.");
   }
 }
 
@@ -187,7 +207,7 @@ export function findMatches(text: string, terms: readonly SearchTerm[]): Match[]
   for (const term of terms) {
     assertSearchTerm(term);
     if (term.words.length > 1) {
-      // The words are letters and digits only, so they can go into a pattern as they are.
+      // The words are letters, digits and marks only, so they can go into a pattern as they are.
       for (const hit of folded.matchAll(new RegExp(term.words.join(" +"), "gu"))) {
         found.push([hit.index, hit.index + hit[0].length]);
       }
@@ -360,7 +380,11 @@ export function docSearchEntries(doc: Doc): SearchEntry[] {
       add("board", board.id, board.name, { kind: "board", pageId: page.id });
     }
   }
+  const threads = new Set<string>();
   for (const thread of doc.threads) {
+    // A second thread of one id is one no op can reach, so its messages are not offered either.
+    if (threads.has(thread.id)) continue;
+    threads.add(thread.id);
     const pageId = threadPage(doc, thread)?.id ?? null;
     for (const message of thread.messages) {
       const author: SearchAuthor | null = message.author
