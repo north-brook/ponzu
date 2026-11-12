@@ -11,7 +11,12 @@
 # every WebContent process the simulator runs. Backgrounded is the canvas with Settings
 # in front (`simctl launch` of Settings); locked isn't something simctl can do.
 # Simulator numbers are this Mac's CPU, not an iPhone's: compare runs, not devices.
+#
+# The server is Ponzu 1.x, whose command line is no longer on this branch: `bunx ponzu` (the
+# package published from main) unless PONZU_CLI names another command, such as the one in a
+# checkout of main.
 set -euo pipefail
+PONZU_CLI=${PONZU_CLI:-bunx ponzu}
 UDID=${1:?simulator udid}
 LABEL=${2:?label}
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -40,7 +45,7 @@ bun "$HERE/../corpus.ts" "$SCRATCH/designs" >/dev/null
 PONZU_PORT=$(free_port)
 (cd "$SCRATCH/designs" && HOME="$SCRATCH/home" PONZU_HOME="$SCRATCH/home" PONZU_SPOTLIGHT=0 \
   PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 \
-  exec bun "$ROOT/apps/cli/src/index.ts" serve --no-open --port "$PONZU_PORT" ./*.design) \
+  exec $PONZU_CLI serve --no-open --port "$PONZU_PORT" ./*.design) \
   >"$OUT/server.log" 2>&1 &
 pids+=($!)
 wait_for "http://127.0.0.1:$PONZU_PORT/api/info"

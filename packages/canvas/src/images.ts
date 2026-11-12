@@ -43,7 +43,7 @@ const DOWN = 1.5;
 
 /**
  * The server sends the original for a copy at least this share of its width
- * (packages/server/src/renditions.ts): asking wider changes nothing.
+ * (1.x's local server, its renditions.ts): asking wider changes nothing.
  */
 const ORIGINAL = 0.8;
 

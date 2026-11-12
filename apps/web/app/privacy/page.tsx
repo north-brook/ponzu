@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 const ISSUES = `${REPO}/issues`;
 
-// Keep this in step with the code: README.md's Telemetry section, apps/cli/src/telemetry.ts,
-// apps/mobile/lib/telemetry.ts and apps/web/instrumentation-client.ts.
+// Keep this in step with the code: README.md's Telemetry section, 1.x's CLI telemetry.ts (on
+// main), apps/mobile/lib/telemetry.ts and apps/web/instrumentation-client.ts.
 export default function Page() {
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
