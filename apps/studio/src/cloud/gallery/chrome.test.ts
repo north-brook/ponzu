@@ -7,12 +7,14 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import {
   type Browser,
   buildGallery,
+  type Clock,
   chromiumPath,
   type Frame,
   launch,
   type Page,
   sampleToggle,
   serve,
+  stepToggle,
 } from "../../../scripts/visual-lib.ts";
 
 setDefaultTimeout(60_000);
@@ -31,21 +33,22 @@ function drift(frames: Frame[], clock: number[], key: keyof Frame): number {
   return Math.max(...frames.map((f, i) => Math.abs(f[key] - (from + (to - from) * clock[i]!))));
 }
 
-/** From the first frame that moved to the first that rested, in ms. */
-function duration(frames: Frame[], key: keyof Frame): number {
-  const end = frames.at(-1)![key];
-  const start = frames.findIndex((f) => f[key] !== frames[0]![key]);
-  // Within a layout unit (1/64px) of where it ends: the panes are laid out as shares of the
-  // window, and the last unit can land with the easing's end rather than its last frame.
-  const rest = frames.findIndex((f, i) => i >= start && Math.abs(f[key] - end) <= 1 / 64 + 0.001);
-  return frames[rest]!.t - frames[start - 1]!.t;
+/** What moves things along (not the name's fade, which is on the hover clock). */
+const GEOMETRY = new Set(["width", "min-width", "margin-left", "margin-right", "flex-grow"]);
+
+/**
+ * A toggle's clocks: each of `moving` eased, and everything that moved eased on one clock, the
+ * panes' own: `ms` (`--dur-pane`), no delay, one curve.
+ */
+function expectOneClock(clocks: Clock[], moving: string[], ms: number) {
+  const moved = clocks.filter((c) => GEOMETRY.has(c.property));
+  expect(moved.map((c) => c.target)).toEqual(expect.arrayContaining(moving));
+  const one = new Set(moved.map((c) => `${c.duration}ms ${c.delay}ms ${c.easing}`));
+  expect([...one]).toEqual([`${ms}ms 0ms ${moved[0]!.easing}`]);
 }
 
-/** The longest time between two frames while the pane moved, in ms. */
-function gap(frames: Frame[]): number {
-  const moving = frames.slice(1, -1);
-  return Math.max(0, ...moving.slice(1).map((f, i) => f.t - moving[i]!.t));
-}
+/** How far along the move the middle frame is (the easing's halfway point when stepped). */
+const halfway = (clock: number[]) => clock[(clock.length - 1) >> 1]!;
 
 describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
   let built: Awaited<ReturnType<typeof buildGallery>>;
@@ -76,21 +79,25 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
 
   test("each pane opens and closes on one clock, and the chrome moves on it within a pixel", async () => {
     await open("team-sidebar", "no-preference");
-    // The panes' clock slowed to a second, so even a busy machine (CI) draws many frames of each
-    // move; the hover clock with it, in proportion (the name's fade).
-    await page.addStyleTag({
-      content: ":root { --dur-pane: 1000ms !important; --dur-hover: 545ms !important; }",
+    // Each toggle walked on the easing's own clock (stepToggle): the same frames on any machine,
+    // however few a busy one would have painted.
+    const ms = await page.evaluate(() => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
+      return Number.parseFloat(value) * (/\ds\s*$/.test(value) ? 1000 : 1);
     });
-    const times: number[] = [];
-    const gaps: number[] = [];
+    expect(ms).toBeGreaterThan(0);
     for (const state of ["closing", "opening"]) {
-      const sidebar = await sampleToggle(page, SIDEBAR);
+      const { frames: sidebar, clocks } = await stepToggle(page, SIDEBAR);
+      // The pane, the canvas's edge, and the chrome's block and name over it, on one clock.
+      expectOneClock(
+        clocks,
+        ["#sidebar-pane", "main", "header > div:first-child", "[data-chrome-title]"],
+        ms,
+      );
       const clock = progress(sidebar, "left");
-      // Frames between, not a jump (a busy CI machine draws fewer of them).
-      expect(
-        sidebar.filter((_, i) => clock[i]! > 0.05 && clock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(5);
-      gaps.push(gap(sidebar));
+      // It eases rather than jumps: halfway along its clock, the pane is partway.
+      expect(halfway(clock)).toBeGreaterThan(0.05);
+      expect(halfway(clock)).toBeLessThan(0.95);
       expect(drift(sidebar, clock, "divider")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "tab")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "title")).toBeLessThanOrEqual(1);
@@ -103,14 +110,12 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(drift(sidebar, clock, "thread")).toBeLessThanOrEqual(1 / 64);
       expect(drift(sidebar, clock, "right")).toBeLessThanOrEqual(1 / 64);
       expect(drift(sidebar, clock, "railDivider")).toBeLessThanOrEqual(1 / 64);
-      times.push(duration(sidebar, "left"));
 
-      const rail = await sampleToggle(page, THREAD);
+      const { frames: rail, clocks: railClocks } = await stepToggle(page, THREAD);
+      expectOneClock(railClocks, ["#thread-pane", "main", "[data-chrome-rail]"], ms);
       const railClock = progress(rail, "right");
-      expect(
-        rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(5);
-      gaps.push(gap(rail));
+      expect(halfway(railClock)).toBeGreaterThan(0.05);
+      expect(halfway(railClock)).toBeLessThan(0.95);
       // The rail's divider is on the canvas's right edge (its pixel the canvas's last) in every
       // frame, until the edge passes where the divider rests with the rail closed, 12 before
       // the toggle; there it holds.
@@ -120,7 +125,6 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(drift(rail, railClock, "left")).toBeLessThanOrEqual(1 / 64);
       expect(drift(rail, railClock, "tab")).toBeLessThanOrEqual(1 / 64);
       expect(drift(rail, railClock, "thread")).toBeLessThanOrEqual(1 / 64);
-      times.push(duration(rail, "right"));
       if (state === "opening") {
         // Open, the tabs' divider is on the sidebar's edge.
         const last = rail.at(-1)!;
@@ -148,19 +152,12 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       return read;
     });
     expect(new Set(clocks).size).toBe(1);
-    // And measured, they take the same time: within a frame at either end. Only where the machine
-    // drew frames steadily; a busy one (CI) can stall long enough to say nothing.
-    if (Math.max(...gaps) <= 34) {
-      expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(
-        2 * Math.max(10, ...gaps),
-      );
-    }
   });
 
   test("with reduced motion a pane is open or closed from the next frame", async () => {
     await open("team-sidebar");
     for (const selector of [SIDEBAR, THREAD]) {
-      const frames = await sampleToggle(page, selector);
+      const { frames } = await sampleToggle(page, selector);
       const moved = frames.filter(
         (f) => f.left !== frames[0]!.left || f.right !== frames[0]!.right,
       );

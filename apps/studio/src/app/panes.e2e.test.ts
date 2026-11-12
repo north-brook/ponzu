@@ -192,13 +192,17 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
 
   test("toggled closed and open, a pane eases both ways and comes back at its width", async () => {
     const toggle = page.getByRole("button", { name: "Toggle sidebar" });
-    const easing = framesOf(page, "#sidebar-pane");
+    const easing = await watchEasing(page);
     await toggle.click();
-    // Easing, then closed: it passes through the widths between, frame by frame.
+    // Easing, then closed: its panel eased on the panes' clock, rather than jumping.
     expect(await page.locator("[data-pane-motion]").count()).toBe(1);
-    const widths = await easing;
-    expect(widths.some((w) => w > 20 && w < 300)).toBe(true);
-    expect(widths.at(-1)).toBeLessThan(0.5);
+    const ms = await page.evaluate(() => {
+      // The build may write it in seconds (".22s").
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
+      return Number.parseFloat(value) * (/\ds\s*$/.test(value) ? 1000 : 1);
+    });
+    expect(ms).toBeGreaterThan(0);
+    expect(await easing()).toContainEqual({ target: "sidebar-pane", property: "flex-grow", ms });
     await waitUntil(async () => (await geometry(page)).sidebar < 0.5);
     await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
     const closed = await geometry(page);
@@ -569,22 +573,44 @@ function measure() {
   };
 }
 
-/** An element's width at each frame for the next 400ms, from now. */
-function framesOf(page: Page, selector: string): Promise<number[]> {
-  return page.evaluate(
-    (selector) =>
-      new Promise<number[]>((done) => {
-        const widths: number[] = [];
-        const start = performance.now();
-        const tick = () => {
-          widths.push(document.querySelector(selector)!.getBoundingClientRect().width);
-          if (performance.now() - start < 400) requestAnimationFrame(tick);
-          else done(widths);
-        };
-        requestAnimationFrame(tick);
-      }),
-    selector,
-  );
+/**
+ * Watches, from now, for the transitions the panes' panels start: each caught as the change that
+ * starts it lands (a MutationObserver, before a frame is drawn), so none can have finished first,
+ * however few frames the machine paints. The function it gives back stops watching and says
+ * what eased, on which property, for how long.
+ */
+async function watchEasing(
+  page: Page,
+): Promise<() => Promise<{ target: string; property: string; ms: number }[]>> {
+  await page.evaluate(() => {
+    type Seen = { target: string; property: string; ms: number };
+    const seen = new Map<Animation, Seen>();
+    const look = () => {
+      for (const a of document.getAnimations()) {
+        const target = (a.effect as KeyframeEffect | null)?.target;
+        if (seen.has(a) || !("transitionProperty" in a) || !(target instanceof Element)) continue;
+        if (!target.matches("[data-panel]")) continue;
+        seen.set(a, {
+          target: target.id,
+          property: (a as Animation & { transitionProperty: string }).transitionProperty,
+          ms: Number(a.effect!.getComputedTiming().duration),
+        });
+      }
+    };
+    const observer = new MutationObserver(look);
+    observer.observe(document.body, { subtree: true, attributes: true, childList: true });
+    (window as unknown as { easing: () => Seen[] }).easing = () => {
+      look();
+      observer.disconnect();
+      return [...seen.values()];
+    };
+  });
+  return () =>
+    page.evaluate(() =>
+      (
+        window as unknown as { easing: () => { target: string; property: string; ms: number }[] }
+      ).easing(),
+    );
 }
 
 /** What the window keeps for Maya between launches. */
