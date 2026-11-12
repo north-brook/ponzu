@@ -11,8 +11,8 @@ This is being rebuilt from the 1.x app, which talked to paired Macs over
 Tailscale. That data layer, pairing, Tailscale and the camera are gone. What
 is built so far: the native modules the cloud app needs, the two app
 variants, the cloud seams (`lib/cloud/`), launch, sign-in, the update screen,
-a plain list of canvases, and a settings sheet that signs out. Setup, the
-canvas, comments and the rest arrive slice by slice.
+a plain list of canvases, a settings sheet that signs out, and a canvas, live
+and read only. Setup, comments and the rest arrive slice by slice.
 
 ## Layout
 
@@ -20,6 +20,7 @@ canvas, comments and the rest arrive slice by slice.
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root; `+native-intent.tsx` reads every incoming link. |
 | `lib/cloud/` | Everything that talks to Ponzu Cloud (below). |
+| `lib/canvas/` | A canvas on the phone: its replica, the bridge to the page, how the page loads, and what the screen shows (below, "The canvas"). |
 | `lib/links.ts` | The one reader of links (below). |
 | `lib/` | The rest: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `polyfills.ts`, `first-launch.ts`, `duo-layout.ts`, `dictation.ts`, `drafts.ts`, `haptics.ts`. |
 | `components/` | Shared views: the canvas web view (`canvas-view.tsx`), the comment composer and sheets, the launch handoff, and `glass.tsx`, the floating controls' Liquid Glass. |
@@ -329,6 +330,106 @@ at a limit with `backend.limitClaude(until)`.
 cd apps/mobile
 APP_VARIANT=dev PONZU_BACKEND=fake bunx expo start --dev-client
 ```
+
+In the fake, Maya's "Pricing page" has two boards, so the canvas has
+something to draw.
+
+## The canvas
+
+A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
+and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
+`message`. Comments work (below); the chat sheet and the pull request sheet
+come with their own slices.
+
+- **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
+  opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
+  with the offline `DocCache` in `Documents/cache/docs`, and closes it when
+  the screen goes. The web view only draws: it holds no token and calls no
+  API. iOS ends a web view's process in the background, and a replica there
+  would lose what it hadn't sent.
+- **The bridge** (`lib/canvas/bridge.ts`) tells the page each op the replica
+  hears, so an agent's work develops in as on the Mac, and sends the whole
+  doc whenever an op can't say what changed: the first load, the cached copy,
+  a resync, a refused op rolled back, or someone else's op landing under one
+  of the person's own before the API answered it. When the page loads again
+  after iOS ended it, it says `ready` and gets everything.
+- **Where the page loads from.** Its base URL is the canvas's `assetsUrl`, so
+  every file a board loads is same-origin. A content security policy in the
+  page runs only its own script, pinned by hash; the app fills in the asset
+  origin before it loads the page (`lib/canvas/page.ts`), and the web view
+  never navigates. `apps/mobile/canvas/README.md` has the details.
+- **What the screen shows** (`lib/canvas/status.ts`), from the canvas's live
+  head row and the replica's state: waking (the title shimmers, "Waking up"
+  under it), working (the agent's boards ringed, the title shimmering),
+  needs you (a count on Chat), asleep (quiet), offline ("You're offline.
+  This is the last copy Ponzu had.") and gone ("That canvas isn't available to
+  you." with Back). A board being worked on gets the yuzu ring alone, on a
+  pure white or pure black ground.
+- **Chrome.** Back, the canvas's name in a glass pill, the page button with
+  the pages' native menu, and the floating stack bottom right: the pull
+  request (once there is one), Comment, and Chat (the shared `railSignal`: the
+  needs-you count, else the turning slice while the agent wakes or works).
+  The chat and pull request sheets aren't built yet, so those two are shown
+  and unavailable. A double-tapped board has the screen and the chrome steps
+  aside.
+- **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
+  `CloudSource` and the client's fake backend, with a stand-in page that
+  applies what it's sent as the real one does. `canvas/page.webkit.test.ts`
+  loads the built page in Playwright's WebKit from a local origin standing in
+  for R2: it draws, applies ops, loads files same-origin, rings a working
+  board and refuses an injected script. `rntests/canvas-stack.rntest.tsx`
+  covers the stack's states. A WebContent kill on a simulator, and the canvas
+  on a phone, are proven only on the job runner or a device.
+
+### Comments
+
+Comments are left where they're about (iPhone design §8). Hold on the canvas,
+or press Comment and then tap (the page drops the pin where the tap lands,
+`commenting` in `canvas/protocol.ts`), and the comment field floats up, in
+voice or typing as last used. A pin opens its thread's sheet: the messages
+under their authors' names, a reply field, and Resolve or Reopen. A held
+unsent pin offers Open, Move and Discard draft.
+
+- **One op each, through the replica.** `lib/canvas/comments.ts` makes
+  `thread.create`, `thread.message` (with `thread.update` to open a resolved
+  thread again) and `thread.update`, and `commit` applies each with
+  `source.apply()`: it is on the canvas at once, and `commit` answers once the
+  API has it, or rejects with the API's words once it never will. The person
+  is stamped from the session (`lib/canvas/actor.ts`); the API stamps it
+  again. There is no "writing" signal to send: the cloud has none.
+- **Drafts are on disk** (`lib/drafts.ts`, AsyncStorage `ponzu.drafts.<canvasId>`).
+  Words stay in their draft until the API has them, not just until Send:
+  sent words carry the id they were sent as (`sending`), so after the app was
+  killed in between, the next open drops the draft if the API's canvas has
+  that thread or message and keeps it, as an unsent pin, if not. Only the
+  API's own doc settles drafts, never the cached copy. Signing out clears
+  them with every other `ponzu.*` key.
+- **Refused**, the words come back in the field with the API's reason under
+  it (or, if something else is open by then, the pin stays unsent and the
+  reason shows under the title). **Offline**, a comment is still applied and
+  waits; the title says "Saved here. Ponzu sends it when you're back online."
+  until it lands. Leaving the canvas or the app being killed before then
+  loses the op but not the draft: leaving releases the canvas's sends
+  (`drafts.release`), so the words show as an unsent pin on the next open
+  unless the API's canvas has them. A reply's field opened again while its
+  send is out shows only what was written after the sent words
+  (`sentWords`), and the send landing takes only those words away
+  (`landed`).
+- **Read only.** On a canvas the person may only look at (no push access, or
+  the last copy shown offline before the canvas opened), Comment is
+  unavailable and VoiceOver says why ("You can look at this canvas. Steering
+  it takes push access to <repo>."), a hold does nothing, and a thread's sheet
+  shows that line in place of its reply field, with Resolve unavailable.
+- **Proofs.** `bun test apps/mobile/lib/canvas/comments.test.ts` runs each op
+  over the real `CloudSource` and the fake backend (shown at once, refused,
+  read only, offline then landed, a reply reopening) and the drafts over a
+  storage that outlives the app (killed before and after the API took it).
+  `rntests/comments.rntest.tsx` renders the canvas screen against the fake
+  with a stand-in web view: Comment, a tap, Send puts the op on the page at
+  once; a refused one comes back with its words; a read-only canvas disables
+  Comment. `canvas/page.webkit.test.ts` checks a tap after Comment drops a
+  pin in WebKit. `maestro/comment.yaml` and `comment-modes.yaml` run the
+  flows on a simulator, on spare only.
 
 ## Variants
 

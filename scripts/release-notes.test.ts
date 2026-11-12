@@ -8,6 +8,8 @@ import {
   changelog,
   compareVersions,
   extractNotes,
+  inMacRelease,
+  MAC_EXCLUDED,
   phoneOnly,
   releases,
   WHAT_TO_TEST_LIMIT,
@@ -131,6 +133,40 @@ test("a commit that changed only the phone app is not the Mac's", () => {
   expect(phoneOnly(["apps/mobile/app/index.tsx", "apps/mobile/app.json"])).toBe(true);
   expect(phoneOnly(["apps/mobile/app/index.tsx", "packages/core/src/doc.ts"])).toBe(false);
   expect(phoneOnly([])).toBe(false);
+  // The phone plus a path neither app's release holds is still the phone's.
+  expect(phoneOnly(["apps/mobile/app/index.tsx", "apps/api/src/routes/push.ts"])).toBe(true);
+  expect(phoneOnly(["apps/api/src/routes/push.ts"])).toBe(false);
+  expect(phoneOnly(["apps/mobile-web/x.ts"])).toBe(false);
+});
+
+test("the Mac's release leaves out what Release Please leaves out of it", () => {
+  expect(MAC_EXCLUDED).toEqual([
+    "apps/mobile",
+    "apps/api",
+    "apps/runner",
+    "packages/db",
+    "packages/sandbox",
+    "packages/evals",
+    "infra",
+    "docs",
+  ]);
+  for (const file of [
+    "apps/mobile/app/index.tsx",
+    "apps/api/src/app.ts",
+    "apps/runner/src/main.ts",
+    "packages/db/migrations/0030_x.sql",
+    "packages/sandbox/src/index.ts",
+    "packages/evals/src/run.ts",
+    "infra/environments.json",
+    "docs/cloud.md",
+  ])
+    expect(inMacRelease([file])).toBe(false);
+  expect(inMacRelease(["apps/api/src/app.ts", "docs/cloud.md", "infra/neon.json"])).toBe(false);
+  expect(inMacRelease(["apps/api/src/app.ts", "apps/desktop/src/main.ts"])).toBe(true);
+  expect(inMacRelease(["packages/client/src/api.ts"])).toBe(true);
+  // A name that only starts like an excluded path is not under it.
+  expect(inMacRelease(["docs.md", "infrastructure/x"])).toBe(true);
+  expect(inMacRelease([])).toBe(true);
 });
 
 test("versions order by number, not text", () => {
@@ -166,6 +202,8 @@ test("each release carries the Mac's notes merged since the tag before it", asyn
     await commit("fix: comments stay put", "Comments stay where you left them.");
     await commit("feat: page icons", "Pages show their icons.", "apps/studio/icons.ts");
     await commit("feat: scan the code", "Scan the code to pair.", "apps/mobile/app/scan.tsx");
+    await commit("feat(api): faster wakes", "Canvases wake faster.", "apps/api/src/wake.ts");
+    await commit("docs: the runbook", "A runbook.", "docs/production.md");
     await commit("chore(main): release 0.2.0", "Not a note.");
     await git("tag", "v0.2.0");
     await commit("feat: not shipped yet", "Unreleased.");
@@ -209,11 +247,20 @@ test("each phone release carries its notes merged since the phone's tag before i
       "packages/core/doc.ts",
       "apps/mobile/app/pins.tsx",
     );
+    await commit(
+      "feat(mobile): pings",
+      "- Pings reach the phone.",
+      "apps/mobile/lib/push.ts",
+      "apps/api/src/routes/devices.ts",
+    );
     await commit("chore(main): release mobile 0.2.0", "- Not a note.", "apps/mobile/app.json");
     await git("tag", "mobile-v0.2.0");
     await commit("fix(mobile): not shipped yet", "- Unreleased.", "apps/mobile/app/later.tsx");
     expect(await releases(dir, "iphone")).toEqual([
-      { version: "0.2.0", notes: ["Send takes one tap.", "Pins stay put."] },
+      {
+        version: "0.2.0",
+        notes: ["Send takes one tap.", "Pins stay put.", "Pings reach the phone."],
+      },
       { version: "0.1.0", notes: ["Open a design."] },
     ]);
     // The phone's tags never become the desktop's releases.

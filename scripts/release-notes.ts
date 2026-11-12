@@ -10,12 +10,15 @@
  *       the desktop app's (`vX.Y.Z`): write `{ "releases": [{ version, notes }] }`,
  *       newest first, which the release publishes beside its build for the
  *       title bar's update popover. `iPhone:` notes are left out, and `Mac:`
- *       ones keep their words without the label.
+ *       ones keep their words without the label. So is every note of a commit
+ *       Release Please leaves out of the desktop's release (its `exclude-paths`:
+ *       the phone, the API, the runner, the database, infra and docs).
  *   bun scripts/release-notes.ts --phone <mobile-vX.Y.Z>
  *       the iPhone app's: print that release's notes, one `- ` line each, for
  *       TestFlight's What to Test (apps/mobile/.eas/workflows/production.yml).
  *       Its notes are the `iPhone:` ones and those without a label from
- *       commits that changed only `apps/mobile`; nothing if it has none.
+ *       commits that changed `apps/mobile` and nothing in the desktop's
+ *       release; nothing if it has none.
  *   bun scripts/release-notes.ts --changelog <out.json>
  *       both apps' releases with the date of each tag's commit, for the site's
  *       /changelog: `{ "mac": [{ version, date, notes }], "iphone": [...] }`,
@@ -33,6 +36,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { $ } from "bun";
+import releasePleaseConfig from "../release-please-config.json" with { type: "json" };
 
 export interface Release {
   version: string;
@@ -128,12 +132,36 @@ export function extractNotes(message: string, app: App = "mac", unlabelled = tru
 }
 
 /**
- * A commit that changed only the phone app, which ships on its own tags
- * (mobile-vX.Y.Z). Release Please leaves it out of the Mac's release too
- * (`exclude-paths` in release-please-config.json).
+ * The paths Release Please leaves out of the desktop app's release (the root
+ * component's `exclude-paths` in release-please-config.json): the phone, and
+ * what ships with an API deploy or not at all (the API, the runner, the
+ * database, infra, docs). Read from the config, so the two never disagree.
+ */
+export const MAC_EXCLUDED: readonly string[] = (
+  releasePleaseConfig as { packages: Record<string, { "exclude-paths"?: string[] }> }
+).packages["."]?.["exclude-paths"] ?? ["apps/mobile"];
+
+const under = (file: string, path: string) => file === path || file.startsWith(`${path}/`);
+
+/**
+ * Whether a commit is in the desktop app's release: it changed something
+ * outside the paths Release Please excludes from it. A commit with no files
+ * (an empty one) counts, as Release Please would see it.
+ */
+export function inMacRelease(files: string[]): boolean {
+  return (
+    files.length === 0 || files.some((file) => !MAC_EXCLUDED.some((path) => under(file, path)))
+  );
+}
+
+/**
+ * A commit that changed the phone app and nothing the desktop app's release
+ * holds, so it ships only on the phone's tags (mobile-vX.Y.Z), and its notes
+ * need no `iPhone:` label to be the phone's. It may also have changed the API
+ * or another path both apps leave out.
  */
 export function phoneOnly(files: string[]): boolean {
-  return files.length > 0 && files.every((file) => file.startsWith("apps/mobile/"));
+  return files.some((file) => under(file, "apps/mobile")) && !inMacRelease(files);
 }
 
 /** Orders `x.y.z` versions; anything unparsable sorts first. */
@@ -183,7 +211,7 @@ export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<R
         const files = list.split("\n").filter(Boolean);
         if (RELEASE_COMMIT.test(subject)) return [];
         if (app === "iphone") return extractNotes(message, app, phoneOnly(files));
-        return phoneOnly(files) ? [] : extractNotes(message);
+        return inMacRelease(files) ? extractNotes(message) : [];
       });
     if (notes.length) out.push({ version, notes });
   }

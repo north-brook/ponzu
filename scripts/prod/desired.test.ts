@@ -34,7 +34,7 @@ function run(...argv: string[]) {
 
 describe("infra/", () => {
   test("every file parses with its schema, and every file has one", () => {
-    expect(listJson(INFRA_DIR)).toEqual(Object.keys(INFRA_FILES).sort());
+    expect(listJson(INFRA_DIR).sort()).toEqual(Object.keys(INFRA_FILES).sort());
     expect(() => loadInfra()).not.toThrow();
   });
 
@@ -164,10 +164,11 @@ describe("status", () => {
     const lines = fieldLines(loadEnvironments(), "dev");
     expect(lines.find((l) => l.path === "dev.r2.private")?.state).toBe("none");
     expect(lines.find((l) => l.path === "dev.minClientVersions")?.state).toBe("none");
+    // Dev's bucket, as the API's R2_BUCKET names it (recorded by production slice 9).
     expect(lines.find((l) => l.path === "dev.r2.assets")).toEqual({
       path: "dev.r2.assets",
-      state: "pending",
-      says: "read from Cloudflare by production slice 9",
+      state: "ok",
+      says: '"ponzu-dev"',
     });
     const prod = fieldLines(loadEnvironments(), "production");
     expect(prod.find((l) => l.path === "production.posthog.aiContent")).toEqual({

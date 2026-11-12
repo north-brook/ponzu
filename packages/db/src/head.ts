@@ -25,6 +25,11 @@ export interface CanvasHead {
   prMergeable: boolean | null;
   prAutoMerge: boolean;
   lastActivityAt: Date;
+  /**
+   * When the canvas's file links were last reset; null while they never were. When it moves,
+   * the canvas's address for its files (`GET /v1/canvases/:id`) has changed.
+   */
+  assetKeyRotatedAt: Date | null;
 }
 
 /**
@@ -49,6 +54,7 @@ export const CANVAS_HEAD_COLUMNS = [
   "pr_mergeable",
   "pr_auto_merge",
   "last_activity_at",
+  "asset_key_rotated_at",
 ] as const;
 
 /** A head as Realtime delivers it: keyed by column, with each `bigint` as a string. */
@@ -77,5 +83,9 @@ export function toCanvasHead(row: LiveCanvasHead): CanvasHead {
     prMergeable: row.pr_mergeable as boolean | null,
     prAutoMerge: row.pr_auto_merge as boolean,
     lastActivityAt: new Date(row.last_activity_at as string | Date),
+    assetKeyRotatedAt:
+      row.asset_key_rotated_at === null || row.asset_key_rotated_at === undefined
+        ? null
+        : new Date(row.asset_key_rotated_at as string | Date),
   };
 }

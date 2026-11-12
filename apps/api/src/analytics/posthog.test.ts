@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { gunzipSync } from "node:zlib";
 import { createLogger } from "../http/log.ts";
 import type { AiTracing } from "./ai.ts";
-import { createAnalytics } from "./analytics.ts";
+import { cachedOptOuts, createAnalytics, type OptOuts } from "./analytics.ts";
 import { createPosthogAnalytics, createPosthogSink } from "./posthog.ts";
 import { withScope } from "./scope.ts";
 
@@ -33,20 +33,43 @@ const noTracing: AiTracing = {
   flush: async () => {},
 };
 
-function connected() {
+function connected(optOuts: OptOuts | null = null) {
   const ph = localPosthog();
   const { sink, client } = createPosthogSink(
     { key: "phc_dev", host: "https://ph.test", aiContent: false },
-    { fetch: ph.fetch, ai: noTracing },
+    { fetch: ph.fetch, ai: noTracing, optOuts },
   );
   const kept: Promise<void>[] = [];
   const analytics = createAnalytics({
     sink,
     keep: (work) => kept.push(work),
     log: createLogger(() => {}),
+    optOuts,
   });
   return { ph, analytics, client, sent: () => Promise.all(kept) };
 }
+
+test("someone who turned usage sharing off never reaches PostHog's wire; others do", async () => {
+  const { ph, analytics, client, sent } = connected(
+    cachedOptOuts(async () => ["usr_off"], Date.now),
+  );
+  for (const userId of ["usr_off", "usr_on"]) {
+    analytics.capture("user signed out", {}, { distinctId: userId });
+    analytics.identify({
+      userId,
+      name: null,
+      email: null,
+      githubLogin: userId,
+      signedUpAt: new Date(0),
+    });
+  }
+  await sent();
+  await analytics.flush();
+  const people = ph.events().map((e) => e.distinct_id);
+  expect(people.sort()).toEqual(["usr_on", "usr_on"]);
+  expect(JSON.stringify(ph.batches)).not.toContain("usr_off");
+  await client.shutdown();
+});
 
 const scope = {
   userId: () => "usr_ada",
@@ -133,5 +156,8 @@ test("people and workspaces get their profiles, and an exception goes to error t
 });
 
 test("without a key there is no client at all", () => {
-  expect(createPosthogAnalytics(null, { keep: () => {}, log: createLogger(() => {}) })).toBeNull();
+  const optOuts = cachedOptOuts(async () => [], Date.now);
+  expect(
+    createPosthogAnalytics(null, { keep: () => {}, log: createLogger(() => {}), optOuts }),
+  ).toBeNull();
 });

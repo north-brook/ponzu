@@ -17,6 +17,7 @@ import {
 import { parseSandboxName, type SandboxInfo, scopePrefix } from "@ponzu/sandbox";
 import type { ServerEvents } from "../analytics/events.ts";
 import type { JobDeps } from "../jobs/run.ts";
+import { notify } from "../notifications/notify.ts";
 import {
   EXTEND_BY_MS,
   EXTEND_MARGIN_MS,
@@ -232,6 +233,12 @@ export const STEPS: Record<SweepStep, Step> = {
       if (!(await putToSleep(deps, sandbox, "failed", { failure }))) return false;
       await showAgentWaiting(db, { canvasId, waking: false, blocker: "sandbox_failed" });
       log.error("runner_dead", { canvasId, restarts });
+      // Given up on, as a wake that gave up is: whoever waits on it is asked to try again.
+      await notify(deps, {
+        kind: "wake_failed",
+        canvasId,
+        failedAt: new Date(deps.clock.now()).toISOString(),
+      });
       return true;
     }
     // A runner that exited for good (a revoked token, a lost lease, a bad environment) comes
@@ -283,6 +290,11 @@ export const STEPS: Record<SweepStep, Step> = {
       agent_state: row.agentState,
       waited_ms: fields.deliveredMs,
     });
+    // A copy that lapsed too is given up on: its person is asked to send it again.
+    for (const event of lapsed) {
+      if (event.retryOf)
+        await notify(deps, { kind: "turn_lapsed_twice", canvasId, eventId: event.id });
+    }
     if (starting) {
       // It says it is working and has said nothing in all this time: its runner is started
       // again, and the copy is the next runner's.

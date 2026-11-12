@@ -301,3 +301,60 @@ test("a sink that throws never reaches the run", () => {
   trace.observe(assistant("msg_1", [{ type: "text", text: "Hi" }]));
   expect(() => trace.observe(result())).not.toThrow();
 });
+
+/** A message put in by `userId`, whose event's `trace` said `trace`, and its model call begun. */
+function begin(
+  t: ReturnType<typeof traced>,
+  n: number,
+  { userId, trace }: { userId: string; trace?: boolean },
+) {
+  t.trace.put(
+    `u${n}`,
+    `Message ${n}`,
+    { eventId: `evt_${n}`, userId, sessionId: null, ...(trace === undefined ? {} : { trace }) },
+    false,
+  );
+  t.feed(
+    stream(
+      { type: "message_start", message: { id: `msg_${n}`, model: "claude-haiku-5-5", usage: {} } },
+      { user_message_uuids: [`u${n}`] },
+    ),
+  );
+}
+
+test("a turn begun by someone who turned usage sharing off sends no $ai_* at all", () => {
+  const t = traced({ content: true });
+  begin(t, 1, { userId: "usr_ada", trace: false });
+  t.feed(
+    assistant("msg_1", [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }]),
+    toolResult("toolu_1"),
+  );
+  // The run still learns what the turn was: only the trace is withheld.
+  const [summary] = t.feed(result()).filter(Boolean);
+  expect(summary).toMatchObject({ toolCalls: 1, eventId: "evt_1" });
+  expect(t.sent).toEqual([]);
+
+  // Nor a turn of theirs that the run never finished.
+  begin(t, 2, { userId: "usr_ada", trace: false });
+  t.trace.abandon();
+  expect(t.sent).toEqual([]);
+});
+
+test("the turn's first event decides: opting out mid-turn keeps that trace, and stops the next", () => {
+  const t = traced();
+  begin(t, 1, { userId: "usr_ada" });
+  // Ada turned it off while her turn ran: her next message's event says so.
+  begin(t, 2, { userId: "usr_ada", trace: false });
+  t.feed(result());
+  expect(t.sent).toHaveLength(1);
+  expect(t.sent[0]!.every((e) => e.distinctId === "usr_ada")).toBe(true);
+
+  begin(t, 3, { userId: "usr_ada", trace: false });
+  t.feed(result({ uuid: "res-turn-2" }));
+  expect(t.sent).toHaveLength(1);
+
+  // An event that says nothing (an older API) is traced as before.
+  begin(t, 4, { userId: "usr_bo" });
+  t.feed(result({ uuid: "res-turn-3" }));
+  expect(t.sent).toHaveLength(2);
+});

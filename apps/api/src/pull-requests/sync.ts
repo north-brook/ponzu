@@ -12,6 +12,8 @@ import type {
 } from "../deps/github-pull-requests.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
+import { loginOrNull } from "../notifications/kinds.ts";
+import { type NotifyDeps, notify } from "../notifications/notify.ts";
 
 /*
  * Keeping a canvas's row in step with its pull request on GitHub. Every path that learns
@@ -20,7 +22,11 @@ import { ApiError } from "../http/errors.ts";
  * a merge settles the canvas there whichever path saw it first.
  */
 
-export type PullRequestDeps = Pick<Deps, "db" | "github" | "clock" | "log" | "analytics">;
+/**
+ * What reading and recording a pull request takes: a job's deps (a webhook's, a refresh's) or a
+ * request's, since recording one that became ready to merge pings (`notify`).
+ */
+export type PullRequestDeps = NotifyDeps;
 
 /** A canvas whose branch GitHub can be asked about, as the App. */
 export interface PullRequestTarget {
@@ -127,7 +133,7 @@ export function lagsBranch({ pullRequest, branch }: GithubPullRequestRead): bool
  * records it all the same, for the last read there will be.
  */
 export async function recordCurrent(
-  deps: Pick<Deps, "db" | "log" | "analytics">,
+  deps: PullRequestDeps,
   canvasId: string,
   { read, readAt }: Read,
   { lagging = false } = {},
@@ -142,11 +148,12 @@ export async function recordCurrent(
  * was not applied: a read that began later was recorded first, or the row already says this.
  */
 export async function recordRead(
-  { db, log, analytics }: Pick<Deps, "db" | "log" | "analytics">,
+  deps: PullRequestDeps,
   canvasId: string,
   pullRequest: GithubPullRequest,
   readAt: Date,
 ): Promise<Canvas | null> {
+  const { db, log, analytics } = deps;
   const { number, state, url, title } = pullRequest;
   const canvas = await recordPullRequestRead(db, {
     canvasId,
@@ -177,6 +184,15 @@ export async function recordRead(
     analytics.capture(event, { canvas_id: canvasId, number }, { workspaceId: canvas.workspaceId });
   }
   log.info("pull_request_recorded", { canvasId, number, state });
+  if (state === "open" && pullRequest.checks.state === "passing" && pullRequest.mergeable) {
+    await notify(deps, {
+      kind: "pull_request_ready",
+      canvasId,
+      number,
+      headSha: pullRequest.head.sha,
+      authorLogin: loginOrNull(pullRequest.author?.login),
+    });
+  }
   return canvas;
 }
 

@@ -1,8 +1,8 @@
-import { createDb, type Db } from "@ponzu/db";
+import { createDb, type Db, listUsageOptOuts } from "@ponzu/db";
 import { type RunnerBundle, runnerBundle } from "@ponzu/runner/bundle";
 import { type Clock, type Sandboxes, systemClock, vercelSandboxes } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
-import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
+import { type Analytics, cachedOptOuts, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { createPosthogAdmin, type PosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
@@ -16,6 +16,7 @@ import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
+import { createResendMail, type Mail, noMail } from "./mail.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
@@ -84,6 +85,8 @@ export interface Deps {
   posthogAdmin: PosthogAdmin | null;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /** The daily email through Resend (deps/mail.ts). Off, as `noMail`, without RESEND_API_KEY. */
+  mail: Mail;
   /**
    * Per-caller rate limits through Vercel's firewall (deps/rate-limit.ts, http/rate-limits.ts).
    * Off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` on Vercel; fails open.
@@ -139,9 +142,16 @@ export function createDeps(env: Env): Deps {
   const outbound: Fetch = (url, init) => fetch(url, init);
   const log = createLogger(consoleSink);
   const storage = createR2Storage({ ...env.r2, fetch: outbound, clock });
-  const analytics = createPosthogAnalytics(env.posthog, { keep: waitUntil, log }) ?? noAnalytics;
+  const db = createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) });
+  // Who has turned usage sharing off, read in the analytics' background sends.
+  const optOuts = cachedOptOuts(
+    () => listUsageOptOuts(db),
+    () => clock.now(),
+  );
+  const analytics =
+    createPosthogAnalytics(env.posthog, { keep: waitUntil, log, optOuts }) ?? noAnalytics;
   return {
-    db: createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) }),
+    db,
     clock,
     ids: randomIds,
     log,
@@ -187,6 +197,7 @@ export function createDeps(env: Env): Deps {
       ? createPosthogAdmin({ config: env.posthogAdmin, fetch: outbound, clock })
       : null,
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    mail: env.mail ? createResendMail({ ...env.mail, clock, log }) : noMail,
     rateLimit: selectRateLimit(
       { mode: env.features.rateLimits, onVercel: env.onVercel },
       { clock, log },

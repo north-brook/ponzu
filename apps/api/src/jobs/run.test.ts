@@ -1,10 +1,15 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { jobs } from "@ponzu/db";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
+import { ASSET_KEY_RETIRE_JOB } from "../canvases/asset-key.ts";
 import { CANVAS_FILES_DELETE_JOB } from "../canvases/files.ts";
 import { BASE_REBUILD_JOB } from "../environments/rebuild.ts";
 import { PEOPLE_JOB } from "../github/people.ts";
 import { WEBHOOK_JOB } from "../github/webhook.ts";
+import { BADGE_JOB } from "../notifications/badge.ts";
+import { DELIVER_JOB } from "../notifications/deliver.ts";
+import { DIGEST_JOB } from "../notifications/digest.ts";
+import { NOTIFY_JOB } from "../notifications/notify.ts";
 import { REFRESH_JOB } from "../pull-requests/refresh.ts";
 import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
@@ -28,6 +33,11 @@ test("the registry runs every kind the API records, each from one module", () =>
       BASE_REBUILD_JOB,
       PEOPLE_JOB,
       CANVAS_FILES_DELETE_JOB,
+      NOTIFY_JOB,
+      DELIVER_JOB,
+      BADGE_JOB,
+      DIGEST_JOB,
+      ASSET_KEY_RETIRE_JOB,
       ACCOUNT_FORGET_JOB,
     ].sort(),
   );

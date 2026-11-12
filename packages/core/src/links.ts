@@ -5,7 +5,11 @@
  *   <scheme>://github/setup?result=<result>&workspace=<workspace id>
  *   <scheme>://auth/callback?code=<code>&state=<state>
  *   <scheme>://billing/card?setup=<setup id>&result=added|cancelled
- *   <scheme>://settings?section=usage|notifications|account
+ *   <scheme>://settings?section=usage|notifications|account&workspace=&n=
+ *
+ * `n` is the notification a link came from (a canvas's, or a workspace's billing ping, which
+ * opens Plan and usage), so opening it can mark it read. A settings link's `workspace` is the
+ * workspace its section is about (a billing ping's), so the app shows that one's plan.
  *
  * `<scheme>` is `ponzu`, or a development build's `ponzu-dev`. A link written as
  * `<scheme>://design/<id>` is the same canvas link from before canvases had their name: links
@@ -71,7 +75,14 @@ export type AppLink =
   | { kind: "github_setup"; result: GithubSetupResult; workspaceId?: string }
   | { kind: "auth_callback"; code: string; state: string }
   | { kind: "card_setup"; setupId: string; result: CardSetupResult }
-  | { kind: "settings"; section?: SettingsSection };
+  | {
+      kind: "settings";
+      section?: SettingsSection;
+      /** The workspace the section is about: a billing ping's, whose Plan and usage it opens. */
+      workspaceId?: string;
+      /** The notification the link came from, so opening it can mark it read. */
+      notificationId?: string;
+    };
 
 export type AppLinkKind = AppLink["kind"];
 
@@ -149,7 +160,14 @@ export function parseAppLink(url: string, scheme: string): AppLink | null {
   }
   if (route === "settings") {
     const section = oneOf(SETTINGS_SECTIONS, one("section"));
-    return { kind: "settings", ...(section ? { section } : {}) };
+    const workspaceId = id("workspace");
+    const notificationId = id("n");
+    return {
+      kind: "settings",
+      ...(section ? { section } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(notificationId ? { notificationId } : {}),
+    };
   }
   return null;
 }
@@ -211,6 +229,8 @@ export function appLink(link: AppLink, scheme: LinkScheme): string {
     case "settings":
       route = "settings";
       putOneOf("section", SETTINGS_SECTIONS, link.section);
+      put("workspace", link.workspaceId, LINK_ID);
+      put("n", link.notificationId, LINK_ID);
       break;
   }
   const search = query.toString();

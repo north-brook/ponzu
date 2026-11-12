@@ -6,6 +6,7 @@ import {
   getSandbox,
   moveSandbox,
   newId,
+  notifications,
   recordCheckpoint,
   type SweptSandbox,
 } from "@ponzu/db";
@@ -67,6 +68,12 @@ const status = async (canvasId: string) => (await t.sandboxes.status(nameOf(canv
 /** The newest line about this canvas with this event. */
 const logged = (event: string, canvasId: string) =>
   t.logs.findLast((line) => line.event === event && line.canvasId === canvasId);
+
+/** The inbox rows about this canvas: who was told what. */
+const pingsAbout = async (canvasId: string) =>
+  (await t.db.select().from(notifications))
+    .filter((ping) => ping.canvasId === canvasId)
+    .map(({ userId, dedupeKey, body }) => ({ userId, dedupeKey, body }));
 
 /** The newest capture of `event` about this canvas. */
 const captured = (event: "sandbox woke" | "sandbox slept", canvasId: string) =>
@@ -511,6 +518,14 @@ describe("a dead runner", () => {
       failure: "Its runner stopped answering 4 times in a row.",
     });
     expect((await head(canvas.id)).agentBlocker).toBe("sandbox_failed");
+    // Whoever's message waits on it is asked to try again.
+    expect(await pingsAbout(canvas.id)).toEqual([
+      {
+        userId: ws.people.maya!.userId,
+        dedupeKey: expect.stringMatching(new RegExp(`^wake_failed:${canvas.id}:`)),
+        body: "Ponzu couldn't start. Send a message to try again.",
+      },
+    ]);
     expect(await status(canvas.id)).toBe("stopped");
     t.clock.advance(2 * MINUTE);
     await cron();
@@ -843,6 +858,14 @@ describe("a turn that never came", () => {
       payload: { type: "error", code: "turn_failed", message: LAPSED_GIVE_UP },
     });
     expect(await feed(canvas.id)).toHaveLength(2);
+    // Whoever sent it is pinged to send it again; the first lapse, sent again, pinged nobody.
+    expect(await pingsAbout(canvas.id)).toEqual([
+      {
+        userId: ws.people.maya!.userId,
+        dedupeKey: `lapsed:${canvas.id}:${copy.id}`,
+        body: "Ponzu couldn't get to your message. Send it again.",
+      },
+    ]);
     // Nothing is owed now: the next idle sweep puts it to sleep.
     await idleToSleep(runner);
     expect((await row(canvas.id)).state).toBe("asleep");
@@ -1094,6 +1117,13 @@ describe("a Vercel that refuses", () => {
     expect(await row(canvas.id)).toMatchObject({ state: "asleep" });
     expect((await row(canvas.id)).failure).toContain("rejected");
     expect((await head(canvas.id)).agentBlocker).toBe("sandbox_failed");
+    expect(await pingsAbout(canvas.id)).toEqual([
+      {
+        userId: ws.people.maya!.userId,
+        dedupeKey: `wake_failed:${canvas.id}:${new Date(t.clock.now()).toISOString()}`,
+        body: "Ponzu couldn't start. Send a message to try again.",
+      },
+    ]);
     await say(canvas.id, "Try again");
     expect(await row(canvas.id)).toMatchObject({ state: "awake", failure: null });
   });

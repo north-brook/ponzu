@@ -195,6 +195,49 @@ describe("opening", () => {
     expect(asked).toEqual([]);
   });
 
+  test("its file links reset: every open copy follows to the new address, and draws again", async () => {
+    const h = await harness();
+    const maya = h.open(h.maya);
+    const ines = h.open(h.ines);
+    await h.settle();
+    const before = `https://assets.test/${h.canvas.id}/`;
+    expect([maya.source.assetBase, ines.source.assetBase]).toEqual([before, before]);
+    const drawn = ines.states.length;
+
+    // Ines may change the canvas but neither owns it nor runs the workspace.
+    await expect(ines.client.api.canvases.rotateAssetKey(h.canvas.id)).rejects.toMatchObject({
+      status: 403,
+      code: "forbidden",
+    });
+    const answered = await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    const after = `https://assets.test/${h.canvas.id}-1/`;
+    expect(answered.assetsUrl).toBe(after);
+    await h.settle();
+
+    expect([maya.source.assetBase, ines.source.assetBase]).toEqual([after, after]);
+    expect(ines.states.length).toBeGreaterThan(drawn);
+
+    // A head change that is not a reset asks for nothing.
+    let asked = 0;
+    const get = ines.client.api.canvases.get;
+    ines.client.api.canvases.get = (...args) => {
+      asked++;
+      return get(...args);
+    };
+    await maya.client.api.canvases.rename(h.canvas.id, { name: "Kettle, renamed" });
+    await h.settle();
+    expect(asked).toBe(0);
+    ines.client.api.canvases.get = get;
+
+    // Reset twice more, a second apart: it ends at the last address.
+    await h.clock.advance(1000);
+    await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    await h.clock.advance(1000);
+    await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    await h.settle();
+    expect(ines.source.assetBase).toBe(`https://assets.test/${h.canvas.id}-3/`);
+  });
+
   test("presence is said on opening, every 30 seconds after, and taken back on closing", async () => {
     const h = await harness();
     const { source } = h.open(h.maya);
@@ -215,6 +258,65 @@ describe("opening", () => {
     await h.settle();
     expect(present().has(h.maya.id)).toBe(false);
     expect(ines.source.getState().presence).toEqual([]);
+  });
+
+  test("whether the person is looking is said on opening, at once when it changes, and on each beat", async () => {
+    const h = await harness();
+    const client = h.backend.connect(h.ines);
+    const said: (boolean | undefined)[] = [];
+    const canvases = new Proxy(client.api.canvases, {
+      get(target, key) {
+        const method = Reflect.get(target, key) as (...args: unknown[]) => unknown;
+        if (key !== "presence") return method;
+        return (...args: unknown[]) => {
+          said.push(args[2] as boolean | undefined);
+          return method.apply(target, args);
+        };
+      },
+    });
+    const source = new CloudSource({
+      api: { canvases },
+      live: client.live,
+      canvasId: h.canvas.id,
+      me: actorOf(h.ines),
+      clock: h.clock,
+      focused: true,
+    });
+    const focusedAt = () => h.backend.canvas(h.canvas.id).presence.get(h.ines.id)?.focusedAt;
+    await h.settle();
+    expect(said).toEqual([true]);
+    expect(focusedAt()).toBe(new Date(h.clock.now()).toISOString());
+
+    // The window loses focus ten seconds in: said then, not at the next beat.
+    await h.clock.advance(10_000);
+    source.setFocused(false);
+    await h.settle();
+    expect(said).toEqual([true, false]);
+    expect(focusedAt()).toBeNull();
+    // Saying the same again sends nothing.
+    source.setFocused(false);
+    await h.settle();
+    expect(said).toEqual([true, false]);
+
+    // The beat starts over from the change, and carries what is true now.
+    await h.clock.advance(29_000);
+    expect(said).toEqual([true, false]);
+    await h.clock.advance(1_000);
+    expect(said).toEqual([true, false, false]);
+    source.setFocused(true);
+    await h.settle();
+    expect(said).toEqual([true, false, false, true]);
+    expect(focusedAt()).toBe(new Date(h.clock.now()).toISOString());
+    source.close();
+  });
+
+  test("a host that says nothing of focus leaves it unsaid", async () => {
+    const h = await harness();
+    const { source } = h.open(h.maya);
+    await h.settle();
+    await h.clock.advance(30_000);
+    expect(h.backend.canvas(h.canvas.id).presence.get(h.maya.id)?.focusedAt).toBeNull();
+    source.close();
   });
 });
 

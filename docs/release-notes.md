@@ -33,10 +33,12 @@ block: some fixes are invisible.
 
 Ponzu ships two apps that release apart: the desktop app (`vX.Y.Z`, built
 for the Mac, Windows and Linux from the same tag, which all show the same
-notes) and the iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). A pull request that
-changes only `apps/mobile` is the iPhone's: its notes never reach the Mac's
-release notes, and Release Please leaves it out of the Mac's release. A pull
-request that changes both says which app each note is about:
+notes) and the iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). Release Please
+leaves `apps/mobile`, `apps/api`, `apps/runner`, `packages/db`, `packages/sandbox`,
+`packages/evals`, `infra` and `docs` out of the Mac's release (`exclude-paths` in
+release-please-config.json), and a pull request that changes only those paths has no
+notes in the Mac's release notes either. One of them that changes `apps/mobile` is the
+iPhone's. A pull request that changes both apps says which app each note is about:
 
 ```md
 ## Release note

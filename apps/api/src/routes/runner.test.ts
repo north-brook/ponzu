@@ -187,15 +187,38 @@ describe("events", () => {
           from: { id: ws.people.maya!.userId, name: "Maya", login: "maya" },
           // Sent without the app's PostHog session.
           posthogSessionId: null,
+          // Maya shares usage data, as everyone does until they turn it off.
+          trace: true,
           kind: "message",
           payload: { text: "Make it blue" },
         },
-        expect.objectContaining({ kind: "check", priority: "next", from: null }),
+        // GitHub's: about no person, traced as anyone's is.
+        expect.objectContaining({ kind: "check", priority: "next", from: null, trace: true }),
       ],
       seq: 0,
       // No pull request yet: the agent's next turn says so.
       pullRequest: null,
     });
+  });
+
+  test("an event from someone who turned usage sharing off goes out with trace false", async () => {
+    const { canvas, runner } = await sample();
+    const off = await call(t, as("ines"), "PATCH", "/v1/me/privacy", { shareUsage: false });
+    expect(off).toEqual({ status: 200, body: { shareUsage: false } });
+    const hers = await say(canvas.id, "Quieter", ws.people.ines!.userId);
+    const his = await say(canvas.id, "Louder");
+
+    const { body } = await send(runner, "POST", "/events/claim", claim());
+    expect(body.events.map((e: { id: string; trace: boolean }) => [e.id, e.trace])).toEqual([
+      [hers.id, false],
+      [his.id, true],
+    ]);
+
+    // Turned on again, the next claim says so: the row is read at each claim.
+    await call(t, as("ines"), "PATCH", "/v1/me/privacy", { shareUsage: true });
+    const again = await say(canvas.id, "Again", ws.people.ines!.userId);
+    const next = await send(runner, "POST", "/events/claim", claim());
+    expect(next.body.events).toEqual([expect.objectContaining({ id: again.id, trace: true })]);
   });
 
   test("claiming again hands out only what is new, and a new runner gets what the old one never acked", async () => {

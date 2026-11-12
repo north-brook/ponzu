@@ -65,4 +65,30 @@ status=0
 maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
   ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} \
   ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/" || status=$?
-exit "$status"
+[ "$status" = 0 ] || exit "$status"
+# Opt in with REMOUNT=1 until a run on spare has proven it; then make it the default.
+[ "${REMOUNT:-}" = 1 ] || exit 0
+
+# iOS ends a web view's process in the background to save memory. Do that to
+# the open canvas: the canvas must mount a new web view and draw again
+# (remount/). Only this simulator's WebContent processes, found from inside it,
+# are ended: other simulators on the host keep theirs.
+webcontent() { xcrun simctl spawn "$UDID" launchctl list | awk '/com\.apple\.WebKit\.WebContent/ && $1 ~ /^[0-9]+$/ { print $1 }'; }
+maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
+  ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT/remount-open"} \
+  "$MOBILE/maestro/remount/open.yaml"
+before=$(webcontent)
+[ -n "$before" ] || { echo "No WebContent process in the simulator to end" >&2; exit 1; }
+echo "Ending WebContent: $before"
+kill -9 $before
+maestro --device "$UDID" test \
+  ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT/remount-check"} \
+  "$MOBILE/maestro/remount/check.yaml"
+after=$(webcontent)
+echo "WebContent now: ${after:-none}"
+for pid in $before; do
+  if printf '%s\n' $after | grep -qx "$pid"; then
+    echo "WebContent $pid outlived the kill: the remount was not tested" >&2
+    exit 1
+  fi
+done

@@ -1,8 +1,8 @@
-import type { Db } from "@ponzu/db";
+import { type Db, listUsageOptOuts } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import type { RunnerBundle } from "@ponzu/runner/bundle";
 import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
-import { createAnalytics } from "../analytics/analytics.ts";
+import { cachedOptOuts, createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
 import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
@@ -23,6 +23,7 @@ import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
 import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
+import { FakeMail } from "./fake-mail.ts";
 import { FakeModel } from "./fake-model.ts";
 import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 import { FakePush } from "./fake-push.ts";
@@ -32,6 +33,7 @@ import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { type CapturedEvent, MemoryAnalytics } from "./fake-analytics.ts";
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
+export { FakeMail } from "./fake-mail.ts";
 export {
   FAKE_IDEAS,
   FakeModel,
@@ -149,8 +151,13 @@ export async function createTestApp(
     /** Rate limits other than the fake's, such as the real seam on a scripted SDK call. */
     rateLimit?: RateLimit;
     /**
+     * True to run with email on, as a deployment with RESEND_API_KEY does. Off by default, so
+     * every test that does not ask runs as a deployment without the key.
+     */
+    mail?: boolean;
+    /**
      * Feature switches over the defaults, which are every switch off as in an environment that
-     * sets none, except `push`, which follows the option above.
+     * sets none, except `push` and `email`, which follow the options above.
      */
     features?: Partial<Features>;
   } = {},
@@ -174,6 +181,7 @@ export async function createTestApp(
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
   const push = new FakePush({ enabled: options.push ?? true });
+  const mail = new FakeMail({ enabled: options.mail ?? false });
   const posthogAdmin = new FakePosthogAdmin();
   const rateLimit = new FakeRateLimit(clock);
   /** Every line the app logged, oldest first. */
@@ -183,7 +191,16 @@ export async function createTestApp(
   const background: Promise<void>[] = [];
   const keep = (work: Promise<void>) => background.push(work);
   const analytics = new MemoryAnalytics();
-  const tracked = createAnalytics({ sink: analytics, keep, log });
+  // As a deployment's: what is about someone who turned usage sharing off never reaches the sink.
+  // Read now, and again only once the switch changes (never by age), so a capture reaches the
+  // sink as it is made, as a test reads it, unless that person's switch has just changed.
+  const optOuts = cachedOptOuts(
+    () => listUsageOptOuts(db),
+    () => clock.now(),
+    Number.POSITIVE_INFINITY,
+  );
+  await optOuts.current();
+  const tracked = createAnalytics({ sink: analytics, keep, log, optOuts });
 
   const deps: Deps = {
     db,
@@ -217,8 +234,14 @@ export async function createTestApp(
       ? createPosthogAdmin({ config: posthogAdmin.config, fetch: posthogAdmin.fetch, clock })
       : null,
     push,
+    mail,
     rateLimit: options.rateLimit ?? rateLimit,
-    features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
+    features: {
+      ...FEATURES_OFF,
+      push: options.push ?? true,
+      email: options.mail ?? false,
+      ...options.features,
+    },
     config: {
       build: {
         version: "0.0.0-test",
@@ -362,6 +385,8 @@ export async function createTestApp(
     posthogAdmin,
     /** Every ping the app sent to a phone, and how Expo answers the next ones. */
     push,
+    /** Every email the app sent, and how Resend answers the next ones. */
+    mail,
     /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */
     rateLimit,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */

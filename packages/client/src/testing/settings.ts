@@ -1,6 +1,7 @@
 import type { Api } from "../api.ts";
 import type { Clock } from "../clock.ts";
 import { ApiError } from "../errors.ts";
+import type { NotificationRow } from "../live/rows.ts";
 
 /*
  * The Settings routes in memory, for the fake backend: ping toggles and devices, repos'
@@ -11,7 +12,7 @@ import { ApiError } from "../errors.ts";
 
 export type SettingsApi = Pick<
   Api,
-  "notifications" | "devices" | "environments" | "usage" | "account"
+  "notifications" | "devices" | "environments" | "usage" | "privacy" | "account"
 >;
 
 type Prefs = Awaited<ReturnType<Api["notifications"]["get"]>>["prefs"];
@@ -57,19 +58,116 @@ export interface SettingsWorld {
   soleAdminOf(userId: string): { id: string; name: string }[];
   /** Take the person out of every workspace and forget them. */
   forget(userId: string): void;
+  /** Where the person's daily email would go, and whether the API can send it at all. */
+  email(userId: string): { address: string | null; available: boolean };
+  /** Something a live query shows changed. */
+  changed(): void;
+  /** The person's own row changed: the live `me` row says so. */
+  meChanged(): void;
 }
+
+/** A notification in the fake's inbox, as the apps read it from `me.notifications`. */
+export type FakeNotification = NotificationRow;
 
 export class FakeSettings {
   readonly prefs = new Map<string, Prefs>();
+  /** Share usage data, by person: on unless they turned it off. */
+  readonly sharing = new Map<string, boolean>();
   readonly devices = new Map<string, Device[]>();
   readonly secrets = new Map<string, { name: string; updatedAt: string }[]>();
   readonly bases = new Map<string, Base>();
   /** Credits used this period, by workspace and person. */
   readonly used = new Map<string, Map<string, number>>();
   readonly caps = new Map<string, number>();
+  /** What Ponzu told each person, oldest first: the rows `me.notifications` selects from. */
+  readonly inbox = new Map<string, FakeNotification[]>();
+  /** The IANA time zone each person's app reported. */
+  readonly timeZones = new Map<string, string>();
+  /** When each device was last marked active. */
+  readonly activeAt = new Map<string, string>();
+  /** Each device's install id, which registering again finds it by. */
+  private readonly installs = new Map<string, string>();
   private ids = 0;
 
   constructor(private readonly clock: Clock) {}
+
+  /** Tell a person something, as the API's pipeline would: their inbox gains a row. */
+  notify(
+    userId: string,
+    row: Partial<FakeNotification> & Pick<FakeNotification, "kind" | "title" | "body" | "link">,
+  ): FakeNotification {
+    const now = new Date(this.clock.now()).toISOString();
+    const notification: FakeNotification = {
+      id: `ntf_${++this.ids}`,
+      workspaceId: null,
+      canvasId: null,
+      subtitle: null,
+      count: 1,
+      muted: false,
+      readAt: null,
+      resolvedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      ...row,
+    };
+    this.inbox.set(userId, [...(this.inbox.get(userId) ?? []), notification]);
+    return notification;
+  }
+
+  /**
+   * Read a person's unread notifications made by now: those named, or every one about a canvas.
+   * Answers whether any changed.
+   */
+  read(userId: string, which: { ids?: readonly string[]; canvasId?: string }): boolean {
+    const now = new Date(this.clock.now()).toISOString();
+    let changed = false;
+    const rows = (this.inbox.get(userId) ?? []).map((row) => {
+      const named = which.ids ? which.ids.includes(row.id) : row.canvasId === which.canvasId;
+      if (!named || row.readAt !== null || row.createdAt > now) return row;
+      changed = true;
+      return { ...row, readAt: now, updatedAt: now };
+    });
+    this.inbox.set(userId, rows);
+    return changed;
+  }
+
+  /** A canvas's question closed: its needs-you notifications are resolved, for everyone. */
+  resolve(canvasId: string, questionId: string): boolean {
+    const now = new Date(this.clock.now()).toISOString();
+    let changed = false;
+    for (const [userId, rows] of this.inbox) {
+      this.inbox.set(
+        userId,
+        rows.map((row) => {
+          if (
+            row.kind !== "needs_you" ||
+            row.canvasId !== canvasId ||
+            row.link.questionId !== questionId ||
+            row.resolvedAt !== null
+          ) {
+            return row;
+          }
+          changed = true;
+          return { ...row, resolvedAt: now, updatedAt: now };
+        }),
+      );
+    }
+    return changed;
+  }
+
+  /** What `me.notifications` holds for a person: unread, or a needs-you still open. */
+  inboxOf(userId: string): FakeNotification[] {
+    return (this.inbox.get(userId) ?? []).filter(
+      (row) => row.readAt === null || (row.kind === "needs_you" && row.resolvedAt === null),
+    );
+  }
+
+  /** The badge: a person's open needs-you questions, read or muted. */
+  badgeOf(userId: string): number {
+    return (this.inbox.get(userId) ?? []).filter(
+      (row) => row.kind === "needs_you" && row.resolvedAt === null,
+    ).length;
+  }
 
   /** A repo's base, as Claude would have built it. */
   setBase(repoId: string, base: Partial<Base>): void {
@@ -88,7 +186,13 @@ export class FakeSettings {
     const now = () => new Date(this.clock.now()).toISOString();
     const prefs = () => this.prefs.get(userId) ?? DEFAULT_PREFS;
     const mine = () => this.devices.get(userId) ?? [];
-    const notifications = () => ({ prefs: prefs(), devices: mine() });
+    const notifications = () => ({
+      prefs: prefs(),
+      devices: mine(),
+      badge: this.badgeOf(userId),
+      email: world.email(userId),
+      timeZone: this.timeZones.get(userId) ?? null,
+    });
     const device = (id: string) => {
       const found = mine().find((d) => d.id === id);
       if (!found) throw new ApiError(404, "not_found", "There is no such device.");
@@ -165,15 +269,43 @@ export class FakeSettings {
     return {
       notifications: {
         get: () => call(notifications),
-        set: (changes) =>
+        set: ({ timeZone, ...changes }) =>
           call(() => {
+            if (timeZone !== undefined) {
+              try {
+                if (!/^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$/.test(timeZone)) throw new Error();
+                new Intl.DateTimeFormat("en-US", { timeZone });
+              } catch {
+                throw new ApiError(400, "invalid_request", "A time zone is an IANA name.");
+              }
+              this.timeZones.set(userId, timeZone);
+            }
             this.prefs.set(userId, { ...prefs(), ...changes });
             return notifications();
+          }),
+        read: (id) =>
+          call(() => {
+            if (this.read(userId, { ids: [id] })) world.changed();
           }),
       },
       devices: {
         register: (body) =>
           call(() => {
+            // The same install again (each launch) is the same device, as the API's upsert.
+            const again = mine().find((d) => this.installs.get(d.id) === body.installId);
+            if (again) {
+              const device: Device = {
+                ...again,
+                name: body.name ?? again.name,
+                appVersion: body.appVersion ?? again.appVersion,
+                lastSeenAt: now(),
+              };
+              this.devices.set(
+                userId,
+                mine().map((d) => (d.id === again.id ? device : d)),
+              );
+              return { device };
+            }
             const device: Device = {
               id: `dev_${++this.ids}`,
               platform: body.platform,
@@ -184,6 +316,7 @@ export class FakeSettings {
               lastSeenAt: now(),
               createdAt: now(),
             };
+            this.installs.set(device.id, body.installId);
             this.devices.set(userId, [device, ...mine()]);
             return { device };
           }),
@@ -209,6 +342,16 @@ export class FakeSettings {
             this.devices.set(
               userId,
               mine().filter((d) => d.id !== id),
+            );
+          }),
+        active: (id) =>
+          call(() => {
+            const at = now();
+            const changed: Device = { ...device(id), lastSeenAt: at };
+            this.activeAt.set(id, at);
+            this.devices.set(
+              userId,
+              mine().map((d) => (d.id === id ? changed : d)),
             );
           }),
       },
@@ -294,6 +437,14 @@ export class FakeSettings {
             return usage(workspaceId);
           }),
       },
+      privacy: {
+        setShareUsage: (shareUsage) =>
+          call(() => {
+            this.sharing.set(userId, shareUsage);
+            world.meChanged();
+            return { shareUsage };
+          }),
+      },
       account: {
         delete: (confirm) =>
           call(() => {
@@ -309,6 +460,7 @@ export class FakeSettings {
             }
             world.forget(userId);
             this.prefs.delete(userId);
+            this.sharing.delete(userId);
             this.devices.delete(userId);
           }),
       },

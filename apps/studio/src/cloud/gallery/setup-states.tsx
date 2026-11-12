@@ -42,6 +42,17 @@ const STATES: [string, SettingsSection, SettingsData][] = [
     "notifications",
     team({ devices: [{ ...s.iphone, blocked: true }] }),
   ],
+  [
+    "Notifications · This Mac, another Mac and an iPhone",
+    "notifications",
+    team({ devices: [s.thisMac, s.otherMac, s.iphone] }),
+  ],
+  ["Notifications · This Mac, no iPhone yet", "notifications", team({ devices: [s.thisMac] })],
+  [
+    "Notifications · no email yet",
+    "notifications",
+    team({ devices: [s.thisMac, s.iphone], emailAvailable: false }),
+  ],
   ["Members · as a member", "members", team({ meId: f.maya.id })],
   [
     "Members · the last admin",

@@ -4,7 +4,7 @@ import { cn } from "../ui/cn.ts";
 import { ExternalLink } from "../ui/external-link.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { GithubMark } from "../ui/marks.tsx";
-import { PopoverContent } from "../ui/popover.tsx";
+import { PopoverClose, PopoverContent } from "../ui/popover.tsx";
 
 const ACCESS: Record<CanvasAccess, string> = {
   owner: "Owner",
@@ -19,7 +19,8 @@ const NOT_JOINED_SHORT = "hasn't opened Ponzu yet";
  * Who can open this canvas. Access is the repo's on GitHub, so there is nothing to grant here:
  * the repo line opens it on GitHub, where people are added and removed. Everyone with access is
  * listed, scrolling past 420px; someone who hasn't opened Ponzu yet is quieter, and says so
- * under their login. Render it inside the Popover whose anchor is the chrome's right cluster.
+ * under their login. Its owner and the workspace's admins also find "Reset file links" at its
+ * foot. Render it inside the Popover whose anchor is the chrome's right cluster.
  */
 export function SharePopover({
   canvasName,
@@ -27,12 +28,18 @@ export function SharePopover({
   members,
   meId,
   onOpenRepo,
+  onResetLinks = null,
 }: {
   canvasName: string;
   repo: Repo;
   members: CanvasMember[];
   meId: string;
   onOpenRepo: () => void;
+  /**
+   * Asks to reset the canvas's file links (it confirms first). Null for anyone but its owner and
+   * the workspace's admins, who are the only ones who may; the foot is not shown then.
+   */
+  onResetLinks?: (() => void) | null;
 }) {
   return (
     <PopoverContent
@@ -85,6 +92,21 @@ export function SharePopover({
           ))}
         </ul>
       </FadeScroll>
+      {onResetLinks ? (
+        // Quiet, at the foot: it is rarely wanted, and it confirms before anything changes.
+        <div className="flex shrink-0 border-rule border-t px-4 py-2.5">
+          {/* The popover closes as the confirm dialog opens over the window. */}
+          <PopoverClose asChild>
+            <button
+              type="button"
+              onClick={onResetLinks}
+              className="-mx-1 -my-0.5 cursor-default rounded-6 px-1 py-0.5 text-12 text-muted outline-none transition-colors duration-(--dur-hover) hover:text-ink focus-ring"
+            >
+              Reset file links
+            </button>
+          </PopoverClose>
+        </div>
+      ) : null}
     </PopoverContent>
   );
 }

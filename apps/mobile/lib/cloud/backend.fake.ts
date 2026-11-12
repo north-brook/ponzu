@@ -7,6 +7,7 @@ import {
   SignInError,
 } from "@ponzu/client";
 import { createFakeBackend, type FakeBackend, type FakeClient } from "@ponzu/client/testing";
+import type { Artboard } from "@ponzu/core";
 import type { Backend } from "./types";
 
 /*
@@ -107,9 +108,37 @@ export interface FakeWorld {
   ready: Promise<void>;
 }
 
+/** A phone-sized board with its name as a heading: enough for the canvas to draw. */
+function fakeBoard(id: string, name: string, x: number): Artboard {
+  return {
+    id,
+    name,
+    x,
+    y: 0,
+    root: {
+      kind: "el",
+      id,
+      tag: "section",
+      name,
+      attrs: {},
+      style: { width: "390px", height: "640px", background: "#ffffff", padding: "32px" },
+      children: [
+        {
+          kind: "el",
+          id: `${id}_title`,
+          tag: "h1",
+          attrs: {},
+          style: { margin: "0", "font-family": "Inter, sans-serif", "font-size": "32px" },
+          children: [{ kind: "text", value: name }],
+        },
+      ],
+    },
+  };
+}
+
 /**
- * Maya in acme with three canvases, and Sam alone with none, both through setup with Claude
- * connected; Lee and Ava part of the way through it.
+ * Maya in acme with three canvases (the first with two boards), and Sam alone with none, both
+ * through setup with Claude connected; Lee and Ava part of the way through it.
  */
 export function fakeWorld(fake: FakeBackend = createFakeBackend()): FakeWorld {
   const maya = fake.addPerson({ login: "maya", name: "Maya Lin" });
@@ -135,9 +164,19 @@ export function fakeWorld(fake: FakeBackend = createFakeBackend()): FakeWorld {
   const { api } = fake.connect(maya);
   const [site, app] = acme.repos;
   const ready = (async () => {
-    await api.canvases.create({ workspaceId: acme.id, repoId: site!.id, name: "Pricing page" });
+    const pricing = await api.canvases.create({
+      workspaceId: acme.id,
+      repoId: site!.id,
+      name: "Pricing page",
+    });
     await api.canvases.create({ workspaceId: acme.id, repoId: app!.id, name: "Onboarding" });
     await api.canvases.create({ workspaceId: acme.id, repoId: null, name: "Launch poster" });
+    // Something to look at: the pricing canvas has two boards, as the agent drew them.
+    const page = fake.canvas(pricing.id).sequencer.doc.pages[0]!.id;
+    fake.agent(pricing.id).commit([
+      { op: "artboard.create", page, index: 0, artboard: fakeBoard("ab_plans", "Plans", 0) },
+      { op: "artboard.create", page, index: 1, artboard: fakeBoard("ab_faq", "FAQ", 480) },
+    ]);
   })();
   return { fake, maya, sam, lee, ava, acme, leeAccount, ready };
 }

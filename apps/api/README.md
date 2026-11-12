@@ -342,10 +342,13 @@ saves the session to `PONZU_SESSION_FILE` (see the top of `scripts/dev-signin.ts
 ## Deploying
 
 **`api.ponzu.design` is the head of `cloud`, and merging is how it gets there.** On every
-push to `cloud`, [deploy-api.yml](../../.github/workflows/deploy-api.yml) applies the pending
-migrations to the Neon `dev` branch, deploys to production, and checks that `/v1/health`
-answers with the commit. Nobody runs `vercel deploy --prod` from a checkout: the API the apps
-are built against would become whichever branch deployed last. And nobody applies a migration
+push to `cloud`, [deploy-api.yml](../../.github/workflows/deploy-api.yml)'s `dev` job applies
+the pending migrations to the Neon `dev` branch, deploys to the ponzu-api project's Production
+target, and checks that `/v1/health` answers `dev` with the commit, its image and every
+migration applied. Its `production` job does the same for ponzu-api-prod and the Neon default
+branch, only on a push to `main`, with the founder's approval (docs/production.md). Nobody
+runs `vercel deploy --prod` from a checkout: the API the apps are built against would become
+whichever branch deployed last. And nobody applies a migration
 by hand: it reaches the shared database when it merges, so write it to work with the code
 that is already deployed.
 

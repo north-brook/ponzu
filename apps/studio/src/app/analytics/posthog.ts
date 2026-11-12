@@ -162,6 +162,17 @@ export function startPosthog(
     exception: guarded((error: unknown, properties?: Record<string, unknown>) => {
       ph.captureException(error, properties);
     }),
+    setSharing: guarded((on: boolean) => {
+      if (on === !ph.has_opted_out_capturing()) return;
+      if (on) {
+        ph.opt_in_capturing({ captureEventName: false });
+      } else {
+        ph.opt_out_capturing();
+        // Opting out stops capture; the recorder is told too, so nothing more is buffered.
+        ph.stopSessionRecording();
+      }
+    }),
+    reporting: true,
   };
 }
 

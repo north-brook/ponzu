@@ -35,6 +35,9 @@ const PRIVATE: Record<string, string[]> = {
   "@ponzu/core/links": ["lib/links.ts", "lib/links.test.ts"],
 };
 
+/** All the app may take from the canvas page: its messages, and the built page as a string. */
+const PAGE_ALLOWED = ["canvas/protocol", "canvas/dist/bundle"];
+
 const isTest = (file: string) => /\.(test|rntest)\.tsx?$/.test(file);
 
 /** Every module `source` imports or requires, by its specifier. */
@@ -81,6 +84,16 @@ function violations(file: string, source: string): string[] {
       } else if (!test) {
         out.push(`${file} imports ${outside}, outside the app`);
       }
+      continue;
+    }
+    // The page (canvas/) is a browser bundle built from packages/canvas source: the app reaches
+    // it only through its messages and the built page, or the page's code would be in Hermes.
+    if (
+      !test &&
+      /^canvas(\/|$)/.test(target) &&
+      !PAGE_ALLOWED.includes(target.replace(/\.tsx?$/, ""))
+    ) {
+      out.push(`${file} imports ${target}, the canvas page's code`);
       continue;
     }
     for (const [module, readers] of Object.entries(PRIVATE)) {
@@ -134,7 +147,19 @@ describe("the imports rule", () => {
     expect(
       violations("app/x.tsx", 'import { parseAppLink } from "@ponzu/core/links";'),
     ).toHaveLength(1);
+    expect(violations("lib/canvas/x.ts", 'import { receive } from "../../canvas/store";')).toEqual([
+      "lib/canvas/x.ts imports canvas/store, the canvas page's code",
+    ]);
+    expect(
+      violations("components/x.tsx", 'import { PhoneCanvas } from "../canvas/Canvas";'),
+    ).toHaveLength(1);
     // What the rule allows.
+    expect(
+      violations("lib/canvas/x.ts", 'import { CANVAS_BRIDGE } from "../../canvas/protocol";'),
+    ).toEqual([]);
+    expect(violations("components/x.tsx", 'const p = require("../canvas/dist/bundle");')).toEqual(
+      [],
+    );
     expect(
       violations(
         "lib/page-icons.ts",
@@ -147,6 +172,14 @@ describe("the imports rule", () => {
     expect(violations("lib/x.ts", 'import { createApi } from "@ponzu/client";')).toEqual([]);
     expect(violations("lib/x.ts", 'import { applyOp } from "@ponzu/core";')).toEqual([]);
   });
+});
+
+test("the page's messages, which the app imports, bring nothing of the page with them", () => {
+  const source = readFileSync(join(ROOT, "canvas/protocol.ts"), "utf8");
+  const runtime = [
+    ...source.matchAll(/^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/gm),
+  ];
+  expect(runtime.map(([, spec]) => spec)).toEqual([]);
 });
 
 describe("the backend swap", () => {

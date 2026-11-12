@@ -3,6 +3,7 @@ import {
   listUserWorkspaces,
   MEMBER_ROLES,
   recordOnboardingStep,
+  setShareUsage,
   WORKSPACE_KINDS,
 } from "@ponzu/db";
 import { Hono } from "hono";
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { BILLING_MODES } from "../features.ts";
 import type { AppEnv } from "../http/context.ts";
+import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { ClaudeAccountView, claudeAccountView } from "./claude.ts";
 import { Profile, toProfile } from "./profile.ts";
@@ -30,9 +32,17 @@ const OnboardingBody = z.object({
   step: z.enum(["where", "iphone"]),
 });
 
+/**
+ * Settings › Account › Share usage data. Off, the apps report nothing, the API sends nothing
+ * about the person to PostHog, and the agent's turns they begin are not traced
+ * (docs/analytics.md, "Turning it off").
+ */
+const Privacy = z.object({ shareUsage: z.boolean() });
+
 const Me = z.object({
   user: Profile,
   onboarding: Onboarding,
+  privacy: Privacy,
   /**
    * The person's own Claude, or null if none is connected: whether their canvases can run, and
    * whether it runs out soon. Never its credential.
@@ -78,6 +88,7 @@ export const me = new Hono<AppEnv>()
           whereConfirmedAt: user.onboardingWhereAt,
           iphoneStepSeenAt: user.onboardingIphoneAt,
         },
+        privacy: { shareUsage: user.shareUsage },
         claudeAccount: claudeAccountView(claudeAccount, c.var.deps.clock.now()),
         workspaces: workspaces.map((workspace) => ({
           ...workspace,
@@ -103,4 +114,20 @@ export const me = new Hono<AppEnv>()
     return c.json(
       Onboarding.parse({ whereConfirmedAt: done.whereAt, iphoneStepSeenAt: done.iphoneAt }),
     );
+  })
+
+  /**
+   * Turns Share usage data on or off, for every device the person uses. It captures nothing,
+   * either way. This instance reads who has turned it off again at its next send; others within
+   * a minute. A turn already running keeps the trace flag it began with.
+   */
+  .patch("/privacy", access.user, validate("json", Privacy), async (c) => {
+    const { deps, actor } = c.var;
+    const saved = await setShareUsage(deps.db, {
+      userId: actor.user.id,
+      shareUsage: c.req.valid("json").shareUsage,
+    });
+    if (!saved) throw new ApiError(404, "not_found", "There is no such person.");
+    deps.analytics.sharingChanged();
+    return c.json(Privacy.parse(saved));
   });

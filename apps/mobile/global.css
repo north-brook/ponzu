@@ -11,7 +11,7 @@
  */
 :root {
   --c-bg: #faf9f6;
-  --c-canvas: #f4f3ef;
+  --c-canvas: #ffffff;
   --c-card: #ffffff;
   --c-ink: #111110;
   --c-muted: #5e5b54;
@@ -25,7 +25,7 @@
 
   @media (prefers-color-scheme: dark) {
     --c-bg: #0e0e0d;
-    --c-canvas: #121211;
+    --c-canvas: #000000;
     --c-card: #1b1b1a;
     --c-ink: #f4f3ef;
     --c-muted: #a9a59b;

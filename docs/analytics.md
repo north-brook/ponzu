@@ -97,6 +97,7 @@ Every event about a workspace also carries `workspace_id`.
 | `claude disconnected` | | |
 | `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
 | `canvas deleted` | `canvas_id`, `by_owner` | |
+| `canvas file links reset` | `canvas_id`, `by_owner` | The owner or an admin reset the canvas's file links from Share: its files moved under a new asset key, and links to the old one stop working. |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
 | `canvas taken over` | `canvas_id`, `woke` | A teammate took over a canvas whose owner left the workspace or deleted their account; it runs on their Claude from then on. `woke`: its feed held work no runner took, so it was woken. About the person who took it. |
 | `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
@@ -108,6 +109,9 @@ Every event about a workspace also carries `workspace_id`.
 | `turn stalled` | `canvas_id` | The runner said it was working and wrote nothing of the turn for an hour; the sandbox was started again. About the canvas's owner. |
 | `question asked` | `canvas_id`, `question_id`, `kind` | The agent asked; about no one. |
 | `question answered` | `canvas_id`, `question_id`, `kind` | |
+| `notification created` | `kind`, `muted`, `suppressed` (`pref_off`, `looking`, `rate`, `no_device`, or null), `pushes`, `deferred` | A person was told something (an inbox row was written). `pushes`: how many phones it was planned for; `deferred`: they wait for the person at their Mac. About the person told. Never its title, body or link. |
+| `push sent` | `kind` | Expo took a push to one phone. About the person it is for. |
+| `push failed` | `kind`, `error` | Expo refused a push, in its ticket or later in its receipt, with Expo's code (`DeviceNotRegistered`, `MessageRateExceeded`, …). Never the token. |
 | `pull request created` / `merged` / `closed` | `canvas_id`, `number` | Once each, whichever of a route and a webhook sees it first. |
 | `sandbox woke` | `canvas_id`, `start` (`create`, `resume`, `restart`), `fresh`, `recreated`, `duration_ms`, `image` | About the canvas's owner, whose Claude it runs on. `duration_ms` is from the wake's start until `ponzu-start` was sent. `create`: the session booted on an empty disk (a first wake, a new image, or a snapshot that expired); `resume`: from its snapshot; `restart`: the runner started again in a session that was already running (a changed Claude credential, or a session left running). `fresh`: the disk was empty, so the runner rebuilds from git and the last checkpoint. `recreated`: the sandbox was deleted and made again on a new image (docs/cloud.md, "How images roll out"). `image` is the `ponzu-runner@sha256:…` it runs. |
 | `sandbox slept` | `canvas_id`, `why` (`idle`, `claude_unusable`, `claude_disconnected`, `owner_left`, `restart`, `failed`, `cycle`, `expired`), `awake_ms` | The sandbox was stopped after its runner shut down, and `awake_ms` metered. `restart`: put to sleep to be woken again at once (a runner unheard for 90 seconds, a lapsed or stalled turn); `cycle`: its session neared Vercel's 24-hour cap; `expired`: Vercel had already stopped the session when the sweep went to extend it. About the canvas's owner. |
@@ -226,6 +230,8 @@ a canvas is its `canvas_id`.
 | `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+j` | the window's ⌘ shortcuts |
 | `settings section viewed` | `section` | |
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
+| `notification shown` | `kind`, `surface`: `mac` | the Mac showed a banner from the person's inbox; never its title or body |
+| `notification opened` | `kind`, `surface`: `mac`, `age_ms` | a banner was clicked; `age_ms` is how long after the notification was made |
 | `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 
@@ -305,11 +311,54 @@ the builds write source maps, and before electron-builder packs the app
 process, the preload and the studio, then deletes them. Without them, or if PostHog fails, any
 map is deleted all the same: the app never ships one, and a release never fails for PostHog.
 
-## Turning the Mac app's reporting off
+## Turning it off
 
-As in 1.x, any of these turns everything off, in the shell and the studio, before anything loads:
-`PONZU_TELEMETRY=0`, `DO_NOT_TRACK=1`, `CI`, or `ponzu telemetry off` (`"enabled": false` in
-`~/.ponzu/telemetry.json`). The app has no switch of its own in Settings yet.
+**Settings › Account › Share usage data** is the person's switch, on by default. It lives on the
+account (`users.share_usage`), so it follows them to every device, and it stops what is sent
+about them from everywhere, not only from one computer:
+
+- **The API.** `PATCH /v1/me/privacy` `{ shareUsage }` sets it, and captures nothing either way;
+  `GET /v1/me` (`privacy.shareUsage`) and the `me` live row (`share_usage`) carry it. The API's
+  analytics sink (`withoutOptedOut` in `apps/api/src/analytics/analytics.ts`) drops every
+  capture, profile (`identify`) and exception whose person has turned it off. Who has is read
+  (`select id from users where share_usage = false`) in the background send, never on a
+  request's path, and kept a minute per instance; the instance that took the `PATCH` reads it
+  again at once. While an instance holds no fresh copy, what it captures about a person waits
+  for the next send's read (at most 1,000 held, each keeping the time it was captured), so
+  nothing about someone who turned it off is ever sent on a guess. Events about no person (a
+  sandbox put to sleep, a workspace's group) are not anyone's to stop and still go. The API's
+  own model calls (repo ideas) are still traced for their workspace, about no one.
+- **The agent.** Each event handed to a runner carries `trace` (false when the person behind it
+  has turned sharing off, read from their row at the claim), and the runner sends no `$ai_*`
+  events for a turn whose first event says false (`apps/runner/src/agent/trace.ts`). The API's
+  own `turn started` and `turn finished` for that person are dropped by the sink. A turn already
+  running when the switch is turned off keeps the flag it began with: that one turn's trace may
+  still go; the next does not.
+- **The Mac app.** Turning it off stops the studio's PostHog at once (`opt_out_capturing`, which
+  PostHog keeps in its own storage, so it holds at the next launch), and the shell writes
+  `{"enabled": false}` to `~/.ponzu/telemetry.json` (keeping whatever else 1.x kept there) and
+  stops the main process's error reporting. Turning it on writes `{"enabled": true}` and opts
+  the studio back in; where this launch loaded nothing to report with, recording starts at the
+  next launch, and the row says "Recording resumes next time Ponzu opens" until then. Turned
+  off on another device, a window that was reporting does the same as if it were turned off
+  here. Turned on from another device, the studio's PostHog starts again if it was loaded, but
+  the shell's file is written on only by the toggle on that computer, so a `ponzu telemetry off`
+  from 1.x is never undone from elsewhere.
+- **The iPhone** shows the same row, reading `me.shareUsage`, once the phone's analytics land.
+
+On the Mac, as in 1.x, any of these also turns everything off, in the shell and the studio,
+before anything loads, whatever the account says: `PONZU_TELEMETRY=0`, `DO_NOT_TRACK=1`, `CI`,
+or `"enabled": false` in `~/.ponzu/telemetry.json` (what `ponzu telemetry off` wrote, and what
+the switch writes).
+
+What is not built: turning the switch on from another device does not turn a Mac back on whose
+file says off; turn it on there. On a Mac that has never been told (no file, and no opt-out kept
+in the studio's PostHog storage), a launch reports from the moment it opens until `GET /v1/me`
+answers, usually a second or less: the app opened event, the first page view and the start of
+a recording may go before the studio learns the switch is off, and from then on nothing does.
+An API instance other than the one that took the `PATCH` keeps sending about the person for up
+to a minute, until its copy of who is out is read again. The website's own analytics are cookieless and anonymous, and
+are not tied to the account.
 
 ## What the Mac app never sends
 

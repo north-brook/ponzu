@@ -1,3 +1,4 @@
+import type { CanvasOpen } from "@ponzu/core/links";
 import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
 import type { Api } from "../api.ts";
 
@@ -33,6 +34,7 @@ export const LIVE_COLUMNS = {
     "ping_pr_ready",
     "ping_teammate_comments",
     "email_digest",
+    "share_usage",
     "onboarding_where_at",
     "onboarding_iphone_at",
     "claude_account_id",
@@ -43,6 +45,22 @@ export const LIVE_COLUMNS = {
     "claude_connected_at",
     "claude_expires_at",
     "claude_limited_until",
+  ],
+  "me.notifications": [
+    "id",
+    "kind",
+    "workspace_id",
+    "canvas_id",
+    "title",
+    "subtitle",
+    "body",
+    "link",
+    "count",
+    "muted",
+    "read_at",
+    "resolved_at",
+    "created_at",
+    "updated_at",
   ],
   "workspace.canvases": [
     "id",
@@ -66,6 +84,7 @@ export const LIVE_COLUMNS = {
     "pr_checks",
     "last_activity_at",
     "created_at",
+    "asset_key_rotated_at",
     "seen_seq",
     "seen_thread_seq",
   ],
@@ -87,6 +106,7 @@ export const LIVE_COLUMNS = {
     "pr_mergeable",
     "pr_auto_merge",
     "last_activity_at",
+    "asset_key_rotated_at",
     "agent_blocker",
     "agent_blocked_until",
     "sandbox_state",
@@ -126,6 +146,7 @@ export type RawRow<Name extends LiveQueryName> = Record<
 /** What each query is asked with. */
 export interface LiveArgs {
   me: Record<string, never>;
+  "me.notifications": Record<string, never>;
   "workspace.canvases": { workspaceId: string };
   "canvas.head": { canvasId: string };
   "canvas.thread": { canvasId: string };
@@ -148,6 +169,8 @@ export interface MeRow {
   pingPrReady: boolean;
   pingTeammateComments: boolean;
   emailDigest: boolean;
+  /** Settings › Account › Share usage data. */
+  shareUsage: boolean;
   onboardingWhereAt: string | null;
   onboardingIphoneAt: string | null;
   claudeAccount: {
@@ -162,6 +185,45 @@ export interface MeRow {
     expiresAt: string | null;
     limitedUntil: string | null;
   } | null;
+}
+
+/** What a notification opens, as ids: the thread, the pull request, a comment's pin, or usage. */
+export interface NotificationLink {
+  open: CanvasOpen;
+  pageId?: string;
+  artboardId?: string;
+  commentThreadId?: string;
+  questionId?: string;
+}
+
+/**
+ * Something Ponzu told the person, in their inbox: unread, or a needs-you whose question is still
+ * open. A canvas's name and Ponzu's own sentences, never anything a person or the agent wrote.
+ */
+export interface NotificationRow {
+  id: string;
+  /**
+   * `needs_you`, `reply`, `teammate_comment` and the rest (apps/api/src/notifications/kinds.ts).
+   * A string, so a kind a newer API adds still shows.
+   */
+  kind: string;
+  workspaceId: string | null;
+  /** Null for a ping about a workspace (billing). */
+  canvasId: string | null;
+  /** The canvas's name, or the workspace's. */
+  title: string;
+  subtitle: string | null;
+  body: string;
+  link: NotificationLink;
+  /** How many things it stands for: a teammate's comments fold into one row. */
+  count: number;
+  /** The person's toggle for its kind was off: no banner and no ping, but a needs-you still counts on the badge. */
+  muted: boolean;
+  readAt: string | null;
+  /** When its question closed, for a needs-you. */
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** A row of the sidebar: a canvas and how far the person has looked at it. */
@@ -187,6 +249,8 @@ export interface CanvasListRow {
   prChecks: PrChecks;
   lastActivityAt: string;
   createdAt: string;
+  /** When its file links were last reset: its previews' address changed then. */
+  assetKeyRotatedAt: string | null;
   seenSeq: number | null;
   seenThreadSeq: number | null;
 }
@@ -210,6 +274,11 @@ export interface CanvasHeadRow {
   prMergeable: boolean | null;
   prAutoMerge: boolean;
   lastActivityAt: string;
+  /**
+   * When the canvas's file links were last reset; null while they never were. When it moves,
+   * `GET /v1/canvases/:id` names a new `assetsUrl`.
+   */
+  assetKeyRotatedAt: string | null;
   /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
   agentBlocker: AgentBlocker | null;
   /** Until when the blocker holds, when that is known (a Claude plan's limit resets then). */
@@ -241,6 +310,7 @@ export interface PresenceRow {
 
 export interface LiveRows {
   me: MeRow;
+  "me.notifications": NotificationRow;
   "workspace.canvases": CanvasListRow;
   "canvas.head": CanvasHeadRow;
   "canvas.thread": ThreadItem;
@@ -271,6 +341,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     pingPrReady: Boolean(r.ping_pr_ready),
     pingTeammateComments: Boolean(r.ping_teammate_comments),
     emailDigest: Boolean(r.email_digest),
+    shareUsage: Boolean(r.share_usage),
     onboardingWhereAt: maybeTime(r.onboarding_where_at),
     onboardingIphoneAt: maybeTime(r.onboarding_iphone_at),
     claudeAccount:
@@ -286,6 +357,22 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
             expiresAt: maybeTime(r.claude_expires_at),
             limitedUntil: maybeTime(r.claude_limited_until),
           },
+  }),
+  "me.notifications": (r) => ({
+    id: text(r.id),
+    kind: text(r.kind),
+    workspaceId: maybeText(r.workspace_id),
+    canvasId: maybeText(r.canvas_id),
+    title: text(r.title),
+    subtitle: maybeText(r.subtitle),
+    body: text(r.body),
+    link: r.link as NotificationLink,
+    count: number(r.count),
+    muted: Boolean(r.muted),
+    readAt: maybeTime(r.read_at),
+    resolvedAt: maybeTime(r.resolved_at),
+    createdAt: time(r.created_at),
+    updatedAt: time(r.updated_at),
   }),
   "workspace.canvases": (r) => ({
     id: text(r.id),
@@ -309,6 +396,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prChecks: r.pr_checks as PrChecks,
     lastActivityAt: time(r.last_activity_at),
     createdAt: time(r.created_at),
+    assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
     seenSeq: maybeNumber(r.seen_seq),
     seenThreadSeq: maybeNumber(r.seen_thread_seq),
   }),
@@ -330,6 +418,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prMergeable: (r.pr_mergeable ?? null) as boolean | null,
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
+    assetKeyRotatedAt: maybeTime(r.asset_key_rotated_at),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
     agentBlockedUntil: maybeTime(r.agent_blocked_until),
     sandboxState: maybeText(r.sandbox_state),

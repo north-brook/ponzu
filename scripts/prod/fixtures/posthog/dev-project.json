@@ -1,0 +1,17 @@
+{
+  "_recorded": "Checked on 2026-11-12 against dev's real project 728454, read once through PostHog's own read-only project-get tool (the project serializer GET /api/projects/{id}/ answers with), not yet with a personal API key over REST. Its answer carried exactly these field names and values: name 'Ponzu Dev', ingested_event true, session_recording_opt_in, autocapture_exceptions_opt_in, capture_console_log_opt_in and heatmaps_opt_in all true, and the group type 'workspace' at index 0. Only the fields the check reads are kept. Not proven: the separate GET /api/projects/{id}/groups_types/ path and a project:read personal key's access to both; the first run with a read-only key should confirm them.",
+  "project": {
+    "name": "Ponzu Dev",
+    "ingested_event": true,
+    "session_recording_opt_in": true,
+    "autocapture_exceptions_opt_in": true,
+    "capture_console_log_opt_in": true,
+    "heatmaps_opt_in": true
+  },
+  "groupTypes": [
+    {
+      "group_type": "workspace",
+      "group_type_index": 0
+    }
+  ]
+}

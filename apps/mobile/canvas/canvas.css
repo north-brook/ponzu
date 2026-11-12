@@ -1,10 +1,11 @@
 /*
  * The phone canvas. No chrome: the app draws it. Colors are the studio's and the iPhone design's
  * (`--c-*`), light and dark; the ring, the rain and the frame are desktop's (packages/canvas's
- * styles.css), copied here: the page doesn't load desktop's stylesheet.
+ * styles.css), copied here: the page doesn't load desktop's stylesheet. The ground is pure white,
+ * or pure black in dark, and a working board has its ring alone (the founder's 11 Nov direction).
  */
 :root {
-  --c-canvas: #f4f3ef;
+  --c-canvas: #ffffff;
   --c-muted: #5e5b54;
   --c-board: 0 0 0 1px rgba(0, 0, 0, 0.06);
   --yuzu: #ffc81e;
@@ -18,7 +19,7 @@
 }
 
 :root.dark {
-  --c-canvas: #121211;
+  --c-canvas: #000000;
   --c-muted: #a9a59b;
   --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
   --c-surface: #1b1b1a;

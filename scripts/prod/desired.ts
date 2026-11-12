@@ -104,7 +104,6 @@ export const PENDING_BECAUSE: Record<string, string> = {
   "production.workosClientId": "founder step D7",
   "production.realtimeUrl": "founder step D3",
   "production.posthog.projectId": "founder step D8",
-  "dev.r2.assets": "read from Cloudflare by production slice 9",
 };
 
 export interface FieldLine {
@@ -350,6 +349,8 @@ export const CorsSchema = z.strictObject({
           methods: z.array(z.enum(["GET", "PUT", "HEAD", "POST", "DELETE"])).min(1),
           headers: z.array(z.string().min(1)),
         }),
+        /** Response headers a page may read, such as an upload's ETag. */
+        exposeHeaders: z.array(z.string().min(1)).optional(),
         maxAgeSeconds: z.number().int().nonnegative(),
       }),
     )
@@ -455,6 +456,31 @@ export const RepoSchema = z.strictObject({
   secrets: z.array(secretName).refine(sortedUnique, "sorted and unique"),
 });
 
+// --- github-app/*.json --------------------------------------------------------------------------
+
+/**
+ * A GitHub App manifest (docs.github.com, "Registering a GitHub App from a manifest"), less the
+ * two fields the manifest flow fills when it runs: `redirect_url` (its loopback page) and
+ * `callback_urls` (WorkOS's GitHub callback, passed as `--workos-callback`). The check compares
+ * the live App's public permissions, events and homepage with it; `scripts/prod/github-app.ts`
+ * creates the App from it. One file per App, named by its slug.
+ */
+export const GithubAppManifestSchema = z.strictObject({
+  name: z.string().min(1).max(34),
+  url: httpsOrigin,
+  description: z.string(),
+  public: z.boolean(),
+  hook_attributes: z.strictObject({ url: z.url({ protocol: /^https$/ }), active: z.boolean() }),
+  setup_url: z.url({ protocol: /^https$/ }),
+  setup_on_update: z.boolean(),
+  request_oauth_on_install: z.boolean(),
+  default_permissions: z.record(z.string().regex(/^[a-z_]+$/), z.enum(["read", "write", "admin"])),
+  default_events: z
+    .array(z.string().regex(/^[a-z_]+$/))
+    .refine((names) => sortedUnique(names), "sorted and unique"),
+});
+export type GithubAppManifest = z.infer<typeof GithubAppManifestSchema>;
+
 // --- every file ---------------------------------------------------------------------------------
 
 /** Every file in infra/, with the schema it must parse with. A file not named here is an error. */
@@ -469,6 +495,8 @@ export const INFRA_FILES = {
   "github/ruleset-main.json": RulesetSchema,
   "github/ruleset-cloud.json": RulesetSchema,
   "github/repo.json": RepoSchema,
+  "github-app/ponzu-dev.json": GithubAppManifestSchema,
+  "github-app/ponzu.json": GithubAppManifestSchema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type InfraFile = keyof typeof INFRA_FILES;

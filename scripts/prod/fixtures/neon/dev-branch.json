@@ -1,0 +1,46 @@
+{
+  "_recorded": "Recorded read-only from the Neon API on 2026-11-12 with dev's NEON_API_KEY (@neondatabase/api-client 2.7.3: getProject, listProjectBranches, listProjectBranchEndpoints, getSnapshotSchedule, listSnapshots; GET /branches/{id}/realtime). The dev branch: what --env dev reads. Every id is dropped; only the fields the check reads are kept.",
+  "project": {
+    "history_retention_seconds": 86400
+  },
+  "branches": [
+    {
+      "name": "dev",
+      "default": false,
+      "protected": false
+    },
+    {
+      "name": "dev-before-0027",
+      "default": false,
+      "protected": false
+    },
+    {
+      "name": "dev-before-canvas",
+      "default": false,
+      "protected": false
+    },
+    {
+      "name": "production",
+      "default": true,
+      "protected": false
+    }
+  ],
+  "endpoints": [
+    {
+      "type": "read_write",
+      "host": "ep-quiet-butterfly-bc2zsmia.c-16.us-east-1.aws.neon.tech",
+      "suspend_timeout_seconds": 0,
+      "autoscaling_limit_min_cu": 0.25,
+      "autoscaling_limit_max_cu": 0.25,
+      "disabled": false
+    }
+  ],
+  "schedule": {
+    "schedule": []
+  },
+  "snapshots": [],
+  "realtime": {
+    "enabled": true,
+    "invocation_url": "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech/"
+  }
+}

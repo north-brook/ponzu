@@ -16,6 +16,7 @@ import { appSession } from "../analytics/scope.ts";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
+import { commentPosted, notify } from "../notifications/notify.ts";
 import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
 import { actorOf, personFor, toCommittedOp } from "./actor.ts";
 import { keep, readCurrentDoc } from "./document.ts";
@@ -110,6 +111,8 @@ export async function commitPost(
           canvas_id: canvas.id,
           reply: (event.payload as { reply?: unknown }).reply === true,
         });
+        const posted = commentPosted(canvas.id, caller.user.id, event);
+        if (posted) await notify(deps, posted);
       }
       await requestWake(deps, canvas.id, commented ? "comment" : "edit");
     }

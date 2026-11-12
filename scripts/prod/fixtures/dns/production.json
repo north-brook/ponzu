@@ -1,0 +1,50 @@
+{
+  "_recorded": "Recorded on 2026-11-12 by fetchDns for production: public DNS-over-HTTPS answers, certificates and response headers.",
+  "checkedAt": "2026-11-12T14:51:27.782Z",
+  "hosts": [
+    {
+      "host": "assets.ponzu.cloud",
+      "dns": {
+        "status": 0,
+        "addresses": ["104.21.19.68", "172.67.185.152"]
+      },
+      "certificate": {
+        "authorized": true,
+        "error": null,
+        "validTo": "2027-02-08T16:30:02.000Z"
+      },
+      "https": {
+        "status": 525,
+        "server": "cloudflare",
+        "headers": {
+          "server": "cloudflare",
+          "content-security-policy": null,
+          "x-content-type-options": null,
+          "x-vercel-error": null
+        }
+      }
+    },
+    {
+      "host": "ponzu.design",
+      "dns": {
+        "status": 0,
+        "addresses": ["216.150.16.129", "216.150.16.1"]
+      },
+      "certificate": {
+        "authorized": true,
+        "error": null,
+        "validTo": "2027-01-18T06:06:26.000Z"
+      },
+      "https": {
+        "status": 200,
+        "server": "Vercel",
+        "headers": {
+          "server": "Vercel",
+          "content-security-policy": null,
+          "x-content-type-options": null,
+          "x-vercel-error": null
+        }
+      }
+    }
+  ]
+}
