@@ -15,12 +15,16 @@ export function shouldCapture(nav: PrivacySignals): boolean {
   return nav.doNotTrack !== "1" && nav.globalPrivacyControl !== true;
 }
 
-/** The signals a browser sends, read where each browser keeps them. */
+/**
+ * The signals a browser sends, read where each browser keeps them. Either place saying "1" is a
+ * no: a navigator that says "unspecified" must not hide a window that says "1".
+ */
 export function signalsOf(win: Window): PrivacySignals {
   const nav = win.navigator as Navigator & { globalPrivacyControl?: boolean };
   const legacy = win as Window & { doNotTrack?: string | null };
+  const said = [nav.doNotTrack, legacy.doNotTrack];
   return {
-    doNotTrack: nav.doNotTrack ?? legacy.doNotTrack ?? null,
+    doNotTrack: said.includes("1") ? "1" : (said.find((v) => v != null) ?? null),
     globalPrivacyControl: nav.globalPrivacyControl,
   };
 }

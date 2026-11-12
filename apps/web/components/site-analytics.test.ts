@@ -125,4 +125,8 @@ test("signals are read from navigator, and window for older browsers", () => {
     globalPrivacyControl: true,
   });
   expect(signalsOf(browser({}, "1").win).doNotTrack).toBe("1");
+  // A navigator that says something other than "1" does not hide a window that says "1".
+  expect(signalsOf(browser({ doNotTrack: "unspecified" }, "1").win).doNotTrack).toBe("1");
+  expect(signalsOf(browser({ doNotTrack: "0" }, "1").win).doNotTrack).toBe("1");
+  expect(signalsOf(browser({ doNotTrack: "0" }).win).doNotTrack).toBe("0");
 });
