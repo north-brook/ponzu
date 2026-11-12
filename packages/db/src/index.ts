@@ -254,6 +254,14 @@ export {
   releaseRepoIdeas,
   saveRepoIdeas,
 } from "./queries/repo-ideas.ts";
+export {
+  AUTH_STATE_RETENTION_MS,
+  JOB_RETENTION_DAYS,
+  RETENTION_BATCH,
+  type SweptRows,
+  sweepOldRows,
+  WEBHOOK_RETENTION_DAYS,
+} from "./queries/retention.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,

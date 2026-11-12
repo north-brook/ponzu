@@ -552,6 +552,11 @@ sweep and any other step, at once. A step that throws is logged as `cron_step_fa
 others still run. A step runs every minute, once in every few minutes, or once an hour at a
 given minute. One on a slot runs once in it however many runs overlap, and catches up within
 five minutes when the run it was due in never came.
+On the hour, the retention step (`cron/steps/retention.ts`) deletes the rows that only keep
+the service running: `auth_states` a day after they expire, finished `jobs` (completed or
+failed for good) and `webhook_deliveries` 30 days after they finished or arrived, at most 5,000
+of each a run, logging counts only. The periods are constants in
+`packages/db/src/queries/retention.ts`, and the privacy policy states them.
 
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
