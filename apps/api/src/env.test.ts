@@ -69,7 +69,22 @@ test("a complete environment is read into one typed value", () => {
     push: null,
     // Every feature switch is off when nothing sets it.
     features: FEATURES_OFF,
+    // Not on Vercel, so rate limits could not be asked even with PONZU_RATE_LIMITS=vercel.
+    onVercel: false,
   });
+});
+
+test("rate limits are off by default, on Vercel too, and only `vercel` switches them on", () => {
+  const onVercel = readEnv({ ...complete, VERCEL: "1" });
+  expect(onVercel.onVercel).toBe(true);
+  expect(onVercel.features.rateLimits).toBe("off");
+  expect(readEnv({ ...complete, PONZU_RATE_LIMITS: "" }).features.rateLimits).toBe("off");
+  const on = readEnv({ ...complete, PONZU_RATE_LIMITS: "vercel", VERCEL: "1" });
+  expect(on.features.rateLimits).toBe("vercel");
+  expect(on.onVercel).toBe(true);
+  expect(() => readEnv({ ...complete, PONZU_RATE_LIMITS: "on" })).toThrow(
+    "PONZU_RATE_LIMITS is malformed.",
+  );
 });
 
 test("every feature switch is off by default, and an empty value is unset", () => {

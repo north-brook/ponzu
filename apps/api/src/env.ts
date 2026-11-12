@@ -108,7 +108,12 @@ const schema = z.object({
   PONZU_REPO_BASES: z.enum(["0", "1"]).default("0"),
   /** "1": Merge adds a pull request to its repo's merge queue instead of refusing. */
   PONZU_MERGE_QUEUE: z.enum(["0", "1"]).default("0"),
-  /** off, or "vercel": per-caller limits through Vercel's firewall (deps/rate-limit.ts). */
+  /**
+   * off, or "vercel": per-caller limits through Vercel's firewall (deps/rate-limit.ts), which
+   * only a deployment on Vercel (`VERCEL=1`) can ask. Turn it on only once the firewall's
+   * rate-limit rules are applied: a check whose rule is missing lets the request through,
+   * logged as `rate_limit_unavailable`.
+   */
   PONZU_RATE_LIMITS: z.enum(RATE_LIMIT_MODES).default("off"),
   /** The incident switch: off, wakes_paused (nothing wakes), or read_only (nothing writes). */
   PONZU_MAINTENANCE: z.enum(MAINTENANCE_MODES).default("off"),
@@ -182,6 +187,8 @@ export interface Env {
   push: { accessToken: string } | null;
   /** Which features are switched on (features.ts): all off unless their variables say so. */
   features: Features;
+  /** Whether this runs as a Vercel deployment (`VERCEL=1`): only there can rate limits be asked. */
+  onVercel: boolean;
 }
 
 /**
@@ -256,6 +263,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       : null,
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
     features: featuresFrom(env),
+    onVercel: env.VERCEL === "1",
   };
 }
 
