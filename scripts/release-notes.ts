@@ -16,12 +16,19 @@
  *       TestFlight's What to Test (apps/mobile/.eas/workflows/production.yml).
  *       Its notes are the `iPhone:` ones and those without a label from
  *       commits that changed only `apps/mobile`; nothing if it has none.
+ *   bun scripts/release-notes.ts --changelog <out.json>
+ *       both apps' releases with the date of each tag's commit, for the site's
+ *       /changelog: `{ "mac": [{ version, date, notes }], "iphone": [...] }`,
+ *       each newest first. The publish job puts it beside each desktop
+ *       release as `changelog.json`, so the iPhone's newest releases reach the
+ *       site with the desktop's next one.
  *
  * A checkout without history or tags (CI's shallow clone) finds no releases
  * and warns instead of failing, so whatever reads the notes still works with
- * nothing to show. The desktop's file is marked `"incomplete": true`, so an
- * app about to update doesn't take the empty list for every release's notes;
- * the phone's prints nothing, and its workflow falls back to its own line.
+ * nothing to show. The desktop's file and the changelog are marked
+ * `"incomplete": true`, so an app about to update (or the site) doesn't take
+ * the empty list for every release's notes; the phone's prints nothing, and
+ * its workflow falls back to its own line.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -30,6 +37,20 @@ import { $ } from "bun";
 export interface Release {
   version: string;
   notes: string[];
+}
+
+/** A release with the date its tag's commit was made, as the site's changelog shows it. */
+export interface DatedRelease extends Release {
+  /** ISO 8601 with the committer's offset, from `git log -1 --format=%cI <tag>`. */
+  date: string;
+}
+
+/** What the site's /changelog reads: each app's releases, newest first. */
+export interface Changelog {
+  mac: DatedRelease[];
+  iphone: DatedRelease[];
+  /** Set when the history couldn't be read, so the lists are empty rather than complete. */
+  incomplete?: true;
 }
 
 /** The desktop app (Mac, Windows, Linux) or the iPhone app, which release apart. */
@@ -169,6 +190,24 @@ export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<R
   return out.reverse();
 }
 
+/** The ISO date of the commit `tag` points at. */
+export async function tagDate(cwd: string, tag: string): Promise<string> {
+  return (await $`git log -1 --format=%cI ${tag}`.cwd(cwd).quiet().text()).trim();
+}
+
+/** Both apps' releases with their tags' dates: the desktop's `vX.Y.Z`, the phone's `mobile-vX.Y.Z`. */
+export async function changelog(cwd = process.cwd()): Promise<Changelog> {
+  const dated = async (app: App, prefix: string) =>
+    Promise.all(
+      (await releases(cwd, app)).map(async (r) => ({
+        version: r.version,
+        date: await tagDate(cwd, `${prefix}${r.version}`),
+        notes: r.notes,
+      })),
+    );
+  return { mac: await dated("mac", "v"), iphone: await dated("iphone", "mobile-v") };
+}
+
 /** A release's notes as TestFlight's What to Test, leaving out whole notes past Apple's limit. */
 export function whatToTest(notes: string[]): string {
   let text = "";
@@ -206,6 +245,25 @@ if (import.meta.main) {
     } catch (err) {
       console.warn(`release-notes: none for ${tag} (${describe(err)})`);
     }
+  } else if (args[0] === "--changelog") {
+    const path = args[1];
+    if (!path) {
+      console.error("usage: bun scripts/release-notes.ts --changelog <out.json>");
+      process.exit(1);
+    }
+    let out: Changelog;
+    try {
+      await assertHistory();
+      out = await changelog();
+    } catch (err) {
+      out = { mac: [], iphone: [], incomplete: true };
+      console.warn(`release-notes: changelog has none (${describe(err)})`);
+    }
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`);
+    console.log(
+      `release-notes: ${out.mac.length} desktop and ${out.iphone.length} iPhone releases → ${path}`,
+    );
   } else {
     const [path] = args;
     if (!path) {
