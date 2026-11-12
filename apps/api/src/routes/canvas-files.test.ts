@@ -31,6 +31,7 @@ import {
   TEST_ASSETS_URL,
   type TestApp,
 } from "../testing/index.ts";
+import { UPLOADS_SETTLED_MS } from "../uploads/uploads.ts";
 
 /*
  * A canvas's files (docs/cloud.md, "Assets and previews"): deleted with the canvas, through the
@@ -128,14 +129,18 @@ describe("DELETE /v1/canvases/:id takes the canvas's files with it", () => {
       attempts: 1,
       completed_at: null,
       failed_at: null,
-      payload: { assetKey: key },
+      payload: { assetKey: key, until: t.clock.now() + UPLOADS_SETTLED_MS },
     });
     expect(under(`${key}/`)).toHaveLength(500);
 
     await cronAfter(FILES_RETRY_MS);
     expect(under(`${key}/`)).toEqual([]);
+    // Empty, and waiting for its last pass once every upload address has run out.
+    const [emptied] = await jobsFor(CANVAS_FILES_DELETE_JOB, key);
+    expect(emptied).toMatchObject({ attempts: 2, completed_at: null, failed_at: null });
+    await cronAfter(UPLOADS_SETTLED_MS - FILES_RETRY_MS);
     const [done] = await jobsFor(CANVAS_FILES_DELETE_JOB, key);
-    expect(done).toMatchObject({ attempts: 2, failed_at: null });
+    expect(done).toMatchObject({ attempts: 3, failed_at: null });
     expect(done!.completed_at).not.toBeNull();
 
     expect(under(`${otherKey}/`)).toHaveLength(7);
@@ -145,6 +150,33 @@ describe("DELETE /v1/canvases/:id takes the canvas's files with it", () => {
     ).toHaveLength(1);
     // The asset key is the capability to the files: no log line carries it.
     expect(JSON.stringify(t.logs)).not.toContain(key);
+  });
+
+  test("a file an upload address signed before the delete lands after the purge is deleted too", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Late"));
+    const key = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, key, 3);
+
+    expect((await call(t, as("maya"), "DELETE", `/v1/canvases/${canvas.id}`)).status).toBe(204);
+    await t.backgroundDone();
+    expect(under(`${key}/`)).toEqual([]);
+
+    // An address signed a minute before the delete is good for nine more: its bytes land now.
+    fill(t.storage, key, 1, "late-");
+    await cronAfter(UPLOADS_SETTLED_MS - 1);
+    expect(under(`${key}/`)).toHaveLength(1);
+    expect((await jobsFor(CANVAS_FILES_DELETE_JOB, key))[0]?.completed_at).toBeNull();
+
+    await cronAfter(1);
+    expect(under(`${key}/`)).toEqual([]);
+    const [done] = await jobsFor(CANVAS_FILES_DELETE_JOB, key);
+    expect(done).toMatchObject({ attempts: 2, failed_at: null });
+    expect(done!.completed_at).not.toBeNull();
+    // The purge's attempts and one more, so the final pass always has one left.
+    const [attempts] = await rows(
+      `select max_attempts from jobs where kind = '${CANVAS_FILES_DELETE_JOB}' and key = '${key}'`,
+    );
+    expect(attempts!.max_attempts).toBe(CANVAS_FILES_DELETE_ATTEMPTS + 1);
   });
 
   test("deleted twice at once: one job, one event, and both requests are answered as done", async () => {
@@ -548,13 +580,63 @@ describe("POST /v1/canvases/:id/asset-key/rotate", () => {
     // Gone by the time it would answer, so it answers as for any deleted canvas.
     expect(answered.status).toBe(404);
     expect(await jobsFor(ASSET_KEY_RETIRE_JOB, from)).toHaveLength(1);
-    expect((await jobsFor(CANVAS_FILES_DELETE_JOB, to))[0]?.completed_at).not.toBeNull();
-    // The second pass wrote under the new key after its files job had finished.
+    // Its files job emptied the new key and waits for its last pass.
+    expect((await jobsFor(CANVAS_FILES_DELETE_JOB, to))[0]).toMatchObject({
+      attempts: 1,
+      completed_at: null,
+    });
+    // The second pass wrote under the new key after the files job's first pass.
     expect(paths(to).length).toBeGreaterThan(0);
 
     await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
     expect(paths(from)).toEqual([]);
     expect(paths(to)).toEqual([]);
+  });
+
+  test("a slow first pass and a failed second: the retire job copies what changed since the first began", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Slow"));
+    const from = (await getCanvasAssetKey(t.db, canvas.id))!;
+    fill(t.storage, from, 2);
+    t.clock.advance(120_000);
+    const began = t.clock.now();
+    const image = `${from}/assets/00000.png`;
+    const body = (n: number) => new Uint8Array([n, n, n]);
+
+    // The first pass copies the image, which is then rewritten under the old key; that pass runs
+    // on for two minutes, longer than the slack for storage's clock. Then every copy fails.
+    const copy = t.storage.copy.bind(t.storage);
+    let copies = 0;
+    t.storage.copy = async (source: string, target: string) => {
+      copies++;
+      if (copies > 2) throw new Error("storage is down");
+      await copy(source, target);
+      if (source === image) {
+        t.clock.advance(1);
+        t.storage.objects.set(image, {
+          body: body(2),
+          headers: { "content-type": "image/png" },
+          sha256: null,
+          modifiedAt: t.clock.now(),
+        });
+        t.clock.advance(120_000);
+      }
+    };
+    let answered: { status: number; body: any };
+    try {
+      answered = await rotate("maya", canvas.id);
+    } finally {
+      t.storage.copy = copy;
+    }
+    await t.backgroundDone();
+    expect(answered.status).toBe(200);
+    const to = (await getCanvasAssetKey(t.db, canvas.id))!;
+    expect(t.storage.objects.get(`${to}/assets/00000.png`)?.body).not.toEqual(body(2));
+    const [job] = await jobsFor(ASSET_KEY_RETIRE_JOB, from);
+    expect(job).toMatchObject({ payload: { copiedSince: began } });
+
+    await cronAfter(ASSET_KEY_RETIRE_DELAY_MS);
+    expect(paths(from)).toEqual([]);
+    expect(t.storage.objects.get(`${to}/assets/00000.png`)?.body).toEqual(body(2));
   });
 
   test("a file written under the new key since the swap is never copied over by the old", async () => {

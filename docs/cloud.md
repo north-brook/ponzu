@@ -2506,7 +2506,11 @@ Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canva
 it, "Deleting an account") go through the same purge, `deleteCanvasAndFiles`: one statement
 deletes the canvas's row and records that job, keyed by the asset key the row had as it went, so
 the row is never gone without the job that deletes its files. The request then runs the job at
-once, past its answer; a function that dies first leaves it to the minute's cron. A canvas
+once, past its answer; a function that dies first leaves it to the minute's cron. An upload
+address signed before the delete can still land bytes under the key until it runs out, so once
+the key is empty the job comes back for one last pass, fifteen minutes after the delete (the
+upload address's ten minutes, with five over), and deletes whatever came late. That pass has an
+attempt of its own, an eleventh, so a purge that needs all ten still gets it. A canvas
 deleted twice finds no row the second time and records nothing. A pull request's pictures are
 not under the asset key and stay: its description on GitHub still shows them.
 
@@ -2526,8 +2530,9 @@ makes a new asset key and:
 4. answers the canvas as `GET` does, with its new `assetsUrl`.
 
 The job runs once every upload address signed for the old key has run out (ten minutes, with
-five over): while the canvas is still under the new key it copies once more what came late, then
-deletes everything under the old key, a page at a time as the files delete does. Neither that
+five over): while the canvas is still under the new key it copies once more what changed under
+the old key since the first pass began (all the second pass covers, so a second pass that failed
+loses nothing), then deletes everything under the old key, a page at a time as the files delete does. Neither that
 copy nor the second pass writes over a file that was written under the new key after the one
 under the old key, so a file the runner replaced since the swap keeps its newer version: each
 copy reads the new key's file again just before it copies. That narrows the race to one round
@@ -3080,7 +3085,8 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    a canvas's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
 8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
-   them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
+   them outside Ponzu, recorded in the same statement that deletes their row (so the row never
+   goes without it) and run at once (`apps/api/src/account/forget.ts`). It deletes
    their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
    and one that a new account signed in with before the job was recorded is kept). While the
    job waits, sign-in refuses that WorkOS user as `account_being_deleted` (409), so no account

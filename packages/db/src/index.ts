@@ -62,6 +62,7 @@ export {
   type AssetKeySwap,
   deleteCanvasWithFiles,
   type FilesJob,
+  type HeldJob,
   type RecordedJob,
   swapCanvasAssetKey,
 } from "./queries/canvas-files.ts";

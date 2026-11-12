@@ -1,6 +1,9 @@
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { queryJson } from "./json.ts";
+import { newId } from "../ids.ts";
+import { jobs } from "../schema/index.ts";
+import type { HeldJob, RecordedJob } from "./canvas-files.ts";
+import { queryJson, timeParam } from "./json.ts";
 
 /*
  * Deleting a person's account (docs/cloud.md, "Deleting an account"). The API goes step by
@@ -117,7 +120,8 @@ export async function anonymiseUser(db: Db, userId: string): Promise<number> {
 }
 
 export type DeleteUserResult =
-  | { status: "deleted"; workosUserId: string }
+  /** `job` is the forget job recorded with the deletion, or null if one was already waiting. */
+  | { status: "deleted"; workosUserId: string; job: RecordedJob | null }
   | { status: "gone" }
   /** They are now the only admin of a workspace others are in: nothing was deleted. */
   | { status: "sole_admin" };
@@ -126,9 +130,19 @@ export type DeleteUserResult =
  * Delete the person's row, and with it everything that is only theirs, unless that would leave
  * a workspace others are in without an admin. The check is in the same statement, on the
  * admins' rows locked: two admins deleting themselves at once cannot each see the other stay.
+ *
+ * In that same statement, record `job`, keyed by the user id, with `{ userId, workosUserId }`
+ * as its payload: the job that forgets them outside Ponzu. Their WorkOS id goes with the row,
+ * so the row is never gone without the job that still knows it. Nothing is recorded when
+ * nothing is deleted.
  */
-export async function deleteUser(db: Db, userId: string): Promise<DeleteUserResult> {
-  const result = await queryJson<{ workosUserId: string | null; blocked: boolean }>(
+export async function deleteUser(db: Db, userId: string, job: HeldJob): Promise<DeleteUserResult> {
+  const locked = job.lockedBy !== undefined;
+  const result = await queryJson<{
+    workosUserId: string | null;
+    blocked: boolean;
+    job: (Omit<RecordedJob, "maxAttempts"> & { max_attempts: number }) | null;
+  }>(
     db,
     sql`
       with admins as (
@@ -143,15 +157,41 @@ export async function deleteUser(db: Db, userId: string): Promise<DeleteUserResu
         delete from users
          where id = ${userId} and not exists (select 1 from sole_admin_of)
         returning workos_user_id
+      ),
+      recorded as (
+        insert into ${jobs} (id, kind, key, payload, run_at, max_attempts, locked_by, locked_at,
+                             attempts)
+        select ${newId("job")}, ${job.kind}, ${userId}::text,
+               jsonb_build_object('userId', ${userId}::text, 'workosUserId', deleted.workos_user_id),
+               ${timeParam(job.runAt)}::timestamptz, ${job.maxAttempts}::int,
+               ${job.lockedBy ?? null}::text,
+               ${locked ? sql`now()` : sql`null::timestamptz`},
+               ${locked ? 1 : 0}::int
+          from deleted
+        on conflict (kind, key) where completed_at is null and failed_at is null do nothing
+        returning id, kind, payload, attempts, max_attempts
       )
       select json_build_object(
         'workosUserId', (select workos_user_id from deleted),
-        'blocked', exists (select 1 from sole_admin_of)
+        'blocked', exists (select 1 from sole_admin_of),
+        'job', (select row_to_json(r) from recorded r)
       ) as result
     `,
   );
   if (result?.blocked) return { status: "sole_admin" };
-  return result?.workosUserId
-    ? { status: "deleted", workosUserId: result.workosUserId }
-    : { status: "gone" };
+  if (!result?.workosUserId) return { status: "gone" };
+  const recorded = result.job;
+  return {
+    status: "deleted",
+    workosUserId: result.workosUserId,
+    job: recorded
+      ? {
+          id: recorded.id,
+          kind: recorded.kind,
+          payload: recorded.payload,
+          attempts: recorded.attempts,
+          maxAttempts: recorded.max_attempts,
+        }
+      : null,
+  };
 }

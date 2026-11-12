@@ -67,7 +67,9 @@ export const access = {
    * act on from `c.var.actor.canvasId`, and must not act on any other.
    */
   runner: declare<Declaration<LeasedRunner>>("authenticated", async (c, next) => {
-    const actor = await authenticateRunner(c.var.deps, bearer(c), c.req.header(RUNNER_HEADER));
+    const actor = await authenticateRunner(c.var.deps, bearer(c), {
+      runnerId: c.req.header(RUNNER_HEADER),
+    });
     c.set("actor", actor);
     await limitCaller(c, actor);
     return next();
@@ -75,7 +77,7 @@ export const access = {
 
   /** A runner starting, on the one route that takes the lease: no `X-Ponzu-Runner` yet. */
   runnerStarting: declare<Declaration<RunnerActor>>("authenticated", async (c, next) => {
-    const actor = await authenticateRunner(c.var.deps, bearer(c), "taking");
+    const actor = await authenticateRunner(c.var.deps, bearer(c), { taking: true });
     c.set("actor", actor);
     await limitCaller(c, actor);
     return next();
@@ -89,7 +91,7 @@ export const access = {
     const token = bearer(c);
     const { deps } = c.var;
     const actor = isRunnerToken(token)
-      ? await authenticateRunner(deps, token, c.req.header(RUNNER_HEADER))
+      ? await authenticateRunner(deps, token, { runnerId: c.req.header(RUNNER_HEADER) })
       : await authenticateUser(deps, token);
     c.set("actor", actor);
     await limitCaller(c, actor);
