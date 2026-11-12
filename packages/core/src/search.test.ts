@@ -43,10 +43,22 @@ describe("foldForSearch", () => {
     ["emoji: two spaces for a pair", "hi 🎉!", "hi    "],
     ["a ZWJ sequence", "a👩‍💻b", "a     b"],
     ["a mark on its own is a space, one on a letter stays", "\u0301x\u0308 \u0301", " x\u0308  "],
-    ["Devanagari vowel signs stay in the word", "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920", "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920"],
-    ["Hebrew points stay in the word", "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea", "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea"],
+    [
+      "Devanagari vowel signs stay in the word",
+      "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920",
+      "\u0939\u093f\u0928\u094d\u0926\u0940 \u092a\u093e\u0920",
+    ],
+    [
+      "Hebrew points stay in the word",
+      "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea",
+      "\u05e2\u05b4\u05d1\u05b0\u05e8\u05b4\u05d9\u05ea",
+    ],
     ["a mark after an emoji or a space is a space", "\ud83c\udf89\u0301 \u20dd", "     "],
-    ["an astral mark on an astral letter stays", "\ud804\udc13\ud804\udc38 \ud804\udc38", "\ud804\udc13\ud804\udc38   "],
+    [
+      "an astral mark on an astral letter stays",
+      "\ud804\udc13\ud804\udc38 \ud804\udc38",
+      "\ud804\udc13\ud804\udc38   ",
+    ],
     ["control characters", "a\tb\nc\u0001d\u007f", "a b c d "],
     ["lone surrogates", "a\ud800b\udc00", "a b "],
     ["an astral letter lowercases", "𐐀𐐨", "𐐨𐐨"],
@@ -220,6 +232,11 @@ describe("findMatches", () => {
       [10, 12],
     ]);
     expect(m("Ad", "ad")).toEqual([[0, 2]]);
+    expect(m("Head lead", "ad")).toEqual([]);
+    expect(m("Head lead", "ead")).toEqual([
+      [1, 4],
+      [6, 9],
+    ]);
   });
 
   test("a phrase marks its words in order, one or more spaces apart", () => {
@@ -564,6 +581,19 @@ describe("docSearchChanges", () => {
         context: expect.objectContaining({ pageId: null }),
       }),
     ]);
+  });
+
+  test("an entry whose author or time alone changed is upserted", () => {
+    const op = SAMPLE_OPS["thread.update"];
+    const before = sampleDoc();
+    const byId = structuredClone(before);
+    byId.threads[0]!.messages[0]!.author = { kind: "user", id: "user_ada", name: "Ada" };
+    expect(docSearchChanges(before, byId, [op])!.upsert.map((e) => e.author)).toEqual([
+      { kind: "user", id: "user_ada", name: "Ada" },
+    ]);
+    const later = structuredClone(before);
+    later.threads[0]!.messages[0]!.createdAt = 5000;
+    expect(docSearchChanges(before, later, [op])!.upsert.map((e) => e.at)).toEqual([5000]);
   });
 
   test("every op kind, applied incrementally, matches the entries computed whole", () => {
