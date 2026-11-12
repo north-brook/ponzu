@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Ponzu",
     short_name: "Ponzu",
-    description: "The open source canvas for your agent.",
+    description: "Make it on the canvas. Ship it to your repo.",
     start_url: "/",
     display: "browser",
     background_color: "#ffffff",

@@ -1,6 +1,7 @@
 /* The compositions of the thread rail, needs you and the pull request tab (compositions.ts). */
 import type { ReactNode } from "react";
 import type { AgentActivity, CanvasSummary } from "../model.ts";
+import { teamHeroBoards } from "./canvas-fixtures.ts";
 import { CanvasHarness } from "./canvas-harness.tsx";
 import * as f from "./fixtures.ts";
 import { LiveTurnRail } from "./live-turn.tsx";
@@ -78,6 +79,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       contributors={f.contributors}
       thread={t.teamThread}
       agent={t.teamAgent}
+      boards={teamHeroBoards}
     />
   ),
   "crowded-chrome": () => (
@@ -138,6 +140,15 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       contributors={f.contributors}
       thread={t.everyKind}
       agent={WORKING}
+    />
+  ),
+  "thread-model-changed": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.modelChangedTurn}
+      agent={IDLE}
     />
   ),
   "thread-read-only": () => (

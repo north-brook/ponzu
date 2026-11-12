@@ -5,6 +5,7 @@
  * an answer goes out and the ask closes, an image uploads, and the thread loads older items as
  * you read up.
  */
+import type { Doc } from "@ponzu/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
   AgentActivity,
@@ -26,6 +27,7 @@ import { actionBlock, type NextAction, nextAction } from "../pull-request.ts";
 import { railSignal } from "../status.ts";
 import { ThreadRail } from "../thread/rail.tsx";
 import { CanvasChrome } from "../window/canvas-chrome.tsx";
+import { BoardsPane, SHOW_BOARDS } from "./boards-pane.tsx";
 import * as f from "./fixtures.ts";
 import { Harness } from "./harness.tsx";
 import { notice, reply as replyFixture, said } from "./thread-fixtures.ts";
@@ -81,6 +83,7 @@ export function CanvasHarness({
   action: forcedAction,
   opensWith = null,
   autoMerge = false,
+  boards,
 }: {
   canvases: CanvasSummary[];
   canvas: CanvasSummary;
@@ -107,6 +110,8 @@ export function CanvasHarness({
   opensWith?: string | null;
   /** The tab's pull request has auto-merge on: its menu offers to turn it off. */
   autoMerge?: boolean;
+  /** The canvas's boards, drawn in the main pane with `&boards` (boards-pane.tsx). */
+  boards?: Doc;
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
@@ -297,6 +302,15 @@ export function CanvasHarness({
           onRetry={ignore}
           summary={opensWith}
           menu={tabMenu(pullRequest, autoMerge, gate)}
+        />
+      ) : boards && SHOW_BOARDS ? (
+        <BoardsPane
+          doc={boards}
+          page={page}
+          onPage={(id) => {
+            setPrTab(false);
+            setPage(id);
+          }}
         />
       ) : null}
     </Harness>

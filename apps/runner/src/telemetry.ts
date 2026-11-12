@@ -1,4 +1,5 @@
-import { knownSecrets, redact } from "@ponzu/core/redact";
+import { knownSecrets, redact, redactText } from "@ponzu/core/redact";
+import type { Feedback } from "@ponzu/tools";
 import { PostHog, type PostHogOptions } from "posthog-node";
 import type { AiEvent } from "./agent/trace.ts";
 import type { RunnerAnalytics } from "./api/protocol.ts";
@@ -7,7 +8,8 @@ import type { RunnerAnalytics } from "./api/protocol.ts";
  * Where the runner sends its turns' traces: PostHog, directly, with the project token the API
  * handed it in the session (docs/analytics.md, "Agent turns"). The runner has the whole of
  * Claude Code's message stream; sending from here takes none of it through the API, whose
- * functions answer in 4.5 MB and whose region is a hundred milliseconds away.
+ * functions answer in 4.5 MB and whose region is a hundred milliseconds away. What the agent
+ * says to the Ponzu team with send_feedback leaves the same way, as `agent feedback sent`.
  *
  * Nothing here is waited on by a turn: a capture goes on posthog-node's bounded queue, which
  * sends itself every few seconds. The runner flushes it, within a few seconds, as it gets ready
@@ -16,6 +18,11 @@ import type { RunnerAnalytics } from "./api/protocol.ts";
 
 export interface Telemetry {
   capture(events: AiEvent[]): void;
+  /**
+   * What the agent told the Ponzu team with send_feedback, as `agent feedback sent`. Queued like
+   * a trace's events, and sent with them.
+   */
+  feedback(feedback: AgentFeedback): void;
   /** Sends what is queued. The runner bounds how long it waits. */
   flush(): Promise<void>;
   /** Sends what is queued and stops. */
@@ -45,6 +52,45 @@ const CONTENT = ["$ai_input", "$ai_output_choices", "$ai_input_state", "$ai_outp
 
 /** Deep enough for a tool's arguments inside a model call's prompt. */
 const CONTENT_DEPTH = 32;
+
+/** The event send_feedback becomes (docs/analytics.md, "Agent turns"). */
+export const FEEDBACK_EVENT = "agent feedback sent";
+
+/** The agent's feedback, and the canvas whose agent sent it. */
+export interface AgentFeedback extends Feedback {
+  canvasId: string;
+  workspaceId: string | null;
+}
+
+/**
+ * What `tool` must look like to be sent: a tool's name. The agent fills it in freely, and it goes
+ * even with content off, so anything else (a sentence, a path) is dropped rather than sent.
+ */
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * The properties of `agent feedback sent`. About no one person, like the API's events about no
+ * one: the agent sent it, not whoever's message began the turn. The free text (`summary`,
+ * `details`) goes only with content on, scrubbed of every secret `known` holds and of anything
+ * that looks like one; with content off it is null, as a trace's content is.
+ */
+export function feedbackProperties(
+  feedback: AgentFeedback,
+  options: { content: boolean; known: readonly string[] },
+): Record<string, unknown> {
+  const text = (value: string | undefined) =>
+    options.content && value ? redactText(value, options.known) : null;
+  return {
+    canvas_id: feedback.canvasId,
+    ...(feedback.workspaceId ? { workspace_id: feedback.workspaceId } : {}),
+    sentiment: feedback.sentiment,
+    category: feedback.category,
+    tool: feedback.tool && TOOL_NAME.test(feedback.tool) ? feedback.tool : null,
+    summary: text(feedback.summary),
+    details: text(feedback.details),
+    $process_person_profile: false,
+  };
+}
 
 export function posthogTelemetry(
   config: RunnerAnalytics,
@@ -96,6 +142,18 @@ export function posthogTelemetry(
           ...(groups ? { groups } : {}),
         });
       }
+    },
+    feedback(feedback) {
+      client.capture({
+        event: FEEDBACK_EVENT,
+        // About no one person: under the workspace, as the API keys its events about no one.
+        distinctId: feedback.workspaceId ?? feedback.canvasId,
+        properties: {
+          ...feedbackProperties(feedback, { content: config.content, known }),
+          ...(options.client ? { ponzu_runner: options.client } : {}),
+        },
+        ...(feedback.workspaceId ? { groups: { workspace: feedback.workspaceId } } : {}),
+      });
     },
     flush: () => client.flush(),
     shutdown: () => client.shutdown(),

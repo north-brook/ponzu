@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import type { AgentActivity, Person, ThreadItem, TurnRecord } from "./model.ts";
-import { SENT_GRACE_MS, type ThreadRow, threadRows, workingLine } from "./thread.ts";
+import {
+  modelChangedLine,
+  SENT_GRACE_MS,
+  type ThreadRow,
+  threadRows,
+  workingLine,
+} from "./thread.ts";
 
 const person = (id: string): Person => ({ id, name: id, login: id, avatarUrl: null });
 const bryce = person("bryce");
@@ -72,12 +78,39 @@ test("between a send and the agent's first word, the line says it is thinking, f
   // A runner's word that it started is no answer: the line stays for the rest of the while.
   const resumed = item({ kind: "notice", payload: { type: "resumed" } });
   expect(workingLine([sent, resumed], idle, now)).toBe("Thinking");
+  // Nor is the API's word that the canvas now runs on another model, though it is a line.
+  const changed = item({ kind: "notice", payload: modelChanged(maya) });
+  expect(workingLine([sent, changed, resumed], idle, now)).toBe("Thinking");
+  expect(ids(threadRows([sent, changed, resumed]))).toEqual([sent.id, changed.id]);
   // An error the agent or Ponzu wrote is one: the thread says what happened.
   const lapsed = item({
     kind: "notice",
     payload: { type: "error", code: "turn_failed", message: "Claude was cut off." },
   });
   expect(workingLine([sent, resumed, lapsed], idle, now)).toBeNull();
+});
+
+const modelChanged = (account: Person | null) =>
+  ({
+    type: "model_changed",
+    from: "claude-fable-5-2",
+    to: "claude-opus-5-5",
+    fromName: "Fable 5.2",
+    toName: "Opus 5.5",
+    account,
+  }) as const;
+
+test("the model notice says whose Claude no longer offers what, and what the canvas runs on now", () => {
+  const mayaOrtiz: Person = { ...maya, name: "Maya Ortiz" };
+  expect(modelChangedLine(modelChanged(mayaOrtiz), bryce.id)).toBe(
+    "Maya's Claude doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5.",
+  );
+  expect(modelChangedLine(modelChanged(maya), maya.id)).toBe(
+    "Your Claude doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5.",
+  );
+  expect(modelChangedLine(modelChanged(null), maya.id)).toBe(
+    "The Claude this canvas runs on doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5.",
+  );
 });
 
 test("a running turn shows what it says as asides, its newest words plain, and none of its work", () => {

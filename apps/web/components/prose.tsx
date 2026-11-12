@@ -29,6 +29,25 @@ export function Section({ title, children }: { title: string; children: ReactNod
   );
 }
 
+/** A long-form page's own title, at the top of its column (the legal pages' `#`). */
+export function H1(props: ComponentProps<"h1">) {
+  return (
+    <h1
+      className="m-0 mb-2 text-[clamp(36px,5vw,52px)] leading-[1.08] font-semibold tracking-[-0.03em] text-balance text-ink"
+      {...props}
+    />
+  );
+}
+
+/** A heading inside a part (`###`). */
+export function H3(props: ComponentProps<"h3">) {
+  return <h3 className="m-0 mt-2 text-[17px]/[27px] font-semibold text-ink" {...props} />;
+}
+
+export function Strong(props: ComponentProps<"strong">) {
+  return <strong className="font-semibold text-ink" {...props} />;
+}
+
 export function H2(props: ComponentProps<"h2">) {
   return (
     <h2 className="m-0 text-[22px]/[30px] font-semibold tracking-[-0.01em] text-ink" {...props} />
