@@ -163,6 +163,54 @@ workspace's usage this period, read only: the total, the Mac's line under it
 and the bar, with nothing to raise, add or pay, and no word sending anyone to
 pay elsewhere.
 
+### New canvas
+
+New canvas (`app/new.tsx`) is a full screen pushed over the list from the
+header's New canvas, with only the glass back button. It says what the Mac's
+create page says (`lib/copy.ts`; `lib/copy.test.ts` reads the studio's create
+page, composer, pickers and Claude dialog): the slice, then "Make something
+in" over the repo's `owner/name`, or "Make something from" over "scratch",
+and the composer's "Describe what you want to make". The rules are pure, in
+`lib/cloud/create.ts`; the canvas's first name comes from the shared
+`nameFor` (`@ponzu/client/model/create`), as on the Mac.
+
+- **The project** starts on the repo the person pushed to last, or Scratch
+  when they can push to none; the control under the statement opens **Pick a
+  project** (`app/pick-project.tsx`, a sheet): a search, then a group for each
+  usable workspace (the person's own first, each headed by its name when there
+  is more than one), each its Scratch and then its repos, pushed to lately
+  first, the chosen one ticked. Picking a project in another workspace moves
+  the whole app to that workspace (`lib/cloud/workspace.ts`), as the Mac's
+  picker does. "Allow more on GitHub" at the foot opens GitHub's install page
+  in the auth session, and GitHub is synced however it ends. The pick and the
+  prompt being written are held in memory (`lib/cloud/new-canvas.ts`) until
+  sent or signed out.
+- **The composer** (radius 26) holds Attach (the photo library, as JPEG), the
+  model and effort (`components/model-sheet.tsx`: the system's menu with the
+  models, then the efforts the chosen one takes; the last pick is kept at
+  `ponzu.create.model`, an id), and Send, yuzu once there is a prompt and the
+  project is known.
+- **Send** makes the canvas with its first message in one call, in the chosen
+  repo or Scratch, on the model and effort shown, then replaces New canvas
+  with `/canvas/<id>`. Each composition carries one create key (a UUID), and a
+  tap while one is on its way does nothing, so a double tap makes one canvas.
+  With photos the canvas is made first, they go up, then the message says
+  them; if that fails the canvas stays, the line says so, and sending again
+  goes to the same canvas.
+- **What stops a send**, read from `me`: a Claude never connected, run out or
+  signed out opens the Claude card as a sheet, titled and worded as the Mac's
+  dialog, and the kept prompt goes once Claude is connected; Cancel sends
+  nothing. A plan at its limit asks first, "Your Claude plan resets at
+  <time>. Ponzu sends this then.", with Send then and Cancel: Send then makes
+  the canvas, which waits for the plan. A send that fails says why in the
+  Mac's words under the composer and keeps the prompt, photos and project. At
+  a billing limit (402) the line is only the API message's first sentence:
+  the workspace's state, never a word about paying.
+
+Someone through setup whose workspace has no canvases yet gets New canvas
+over the list by itself, once per person on this phone
+(`lib/cloud/use-first-canvas.ts`, `ponzu.firstCanvas.<userId>`).
+
 ### Signing in
 
 Continue with GitHub (`app/sign-in.tsx`, `lib/cloud/sign-in.ts`) is the
@@ -271,7 +319,8 @@ state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 `setup-where` (Lee, whose own account has no Ponzu yet) and `setup-claude`
 (Ava, with no Claude). Only a fake build takes that link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
-back as a finished install.
+back as a finished install. A component test can put the person's Claude plan
+at a limit with `backend.limitClaude(until)`.
 
 ```sh
 cd apps/mobile
@@ -359,11 +408,11 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened |
-| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped |
-| `success` | A comment or reply sent; a thread resolved |
+| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened; the project control or Attach pressed; a project, model or effort picked; a send stopped to ask first |
+| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped; New canvas opened; a new canvas sent |
+| `success` | A comment or reply sent; a thread resolved; a new canvas made |
 | `thud` | Sign out; a draft discarded; a canvas settled |
-| `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take |
+| `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take; a new canvas that couldn't be made |
 
 ## Styling
 

@@ -39,6 +39,69 @@ export const CLAUDE = {
   keyHelp: "Usage bills to your Anthropic Console account. Ponzu stores the key encrypted.",
 } as const;
 
+/**
+ * New canvas and the project picker, in the Mac's create page's words
+ * (apps/studio/src/cloud/create/{create-page,composer,repo-picker,model-picker}.tsx and
+ * apps/studio/src/cloud/ui/button.tsx); copy.test.ts reads them there.
+ */
+export const CREATE = {
+  inRepo: "Make something in",
+  fromScratch: "Make something from",
+  placeholder: "Describe what you want to make",
+  attach: "Attach",
+  send: "Send",
+  model: "Model",
+  effort: "Effort",
+  noEffort: "None for this model",
+  chooseRepo: "Choose a repo",
+  search: "Search repositories",
+  allowMore: "Allow more on GitHub",
+  allowRepos: "Allow repositories on GitHub",
+  loadingRepos: "Loading repositories",
+} as const;
+
+/** Effort levels as the Mac's model picker names them. */
+export const EFFORT_LABELS = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+} as const;
+
+/**
+ * What stops a send, as the Mac's Claude dialog says it (apps/studio/src/cloud/dialogs/
+ * account-dialogs.tsx), and the phone's own lines for what the Mac doesn't stop on.
+ */
+export const BLOCKED = {
+  connect: "Connect Claude",
+  expired: "Your Claude sign-in ran out",
+  signedOut: "Claude was signed out",
+  connectBody: "Claude Code does the work, on your own plan. Connect it",
+  expiredBody: "Sign in to Claude again",
+  signedOutBody: "Connect Claude again",
+  andSend: "and Ponzu sends this. Your prompt is saved.",
+  cancel: "Cancel",
+  connectAndSend: "Connect and send",
+} as const;
+
+/** The phone's own: a plan at its limit before a send (iPhone design §13, G-M5). */
+export const LIMITED = {
+  title: "Your Claude plan is at its limit",
+  line: (time: string) => `Your Claude plan resets at ${time}. Ponzu sends this then.`,
+  sendThen: "Send then",
+  cancel: "Cancel",
+} as const;
+
+/** The phone's own: a Scratch row's line in the picker, and the project control's label. */
+export const PICKER = {
+  title: "Project",
+  scratch: "Scratch",
+  scratchLine: "no repo, kept in Ponzu",
+  newCanvas: "New canvas",
+  back: "Back",
+} as const;
+
 /** The phone's own: the Mac signs out from its window's menu, the phone from under setup. */
 export const SETUP = {
   signOut: "Sign out",

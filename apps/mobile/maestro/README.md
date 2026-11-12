@@ -10,8 +10,9 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | --- | --- |
 | `launch.yaml` | A clean install: the slice and wordmark on yuzu, then Sign in, since nobody is. A link the build doesn't take opens nothing. |
 | `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
-| `setup.yaml` | Lee, with nothing set up: Set up installs the GitHub App through the auth session onto the fake's install page (`authorize.ts /install`), back on `ponzu-dev://github/setup`, and the row turns Ready; Continue; Connect Claude with an API key; the canvases. |
+| `setup.yaml` | Lee, with nothing set up: Set up installs the GitHub App through the auth session onto the fake's install page (`authorize.ts /install`), back on `ponzu-dev://github/setup`, and the row turns Ready; Continue; Connect Claude with an API key; the canvases, with New canvas over them since Lee has none. |
 | `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
+| `new-canvas.yaml` | Sam, with no canvases: New canvas comes by itself, in Scratch, in the Mac's words; Send waits for a prompt, then makes the canvas and opens it. Maya: New canvas from the header, the picker grouped by workspace, and a repo in Northbrook moving the statement to it. |
 
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
@@ -25,7 +26,10 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `settings-sign-out`, `update`, `setup-where`, `setup-account-<login>-set-up`,
 `setup-where-continue`, `setup-claude`, `setup-claude-add-key`,
 `setup-claude-key-field`, `setup-claude-connect`, `setup-code`, `settled`,
-`settings-workspaces`, `settings-usage`. A canvas's row reads as its VoiceOver label
+`settings-workspaces`, `settings-usage`, `new-canvas`, `new-canvas-project`,
+`new-canvas-prompt`, `new-canvas-send`, `new-canvas-attach`, `new-canvas-model`,
+`new-canvas-error`, `pick-project`, `pick-project-search`,
+`pick-project-allow-more`, `connect-claude-sheet`. A canvas's row reads as its VoiceOver label
 ("Pricing page, 1 waiting for you, site, …"), so flows match it with a pattern.
 Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.

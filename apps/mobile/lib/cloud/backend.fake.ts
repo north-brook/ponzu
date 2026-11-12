@@ -212,6 +212,11 @@ export interface FakeCloud extends Backend {
   settleInstalls(result: string | null): void;
   /** The install pages the app opened, in turn. */
   readonly installPages: string[];
+  /**
+   * The person's Claude plan is at a limit until `until` (an ISO time), as a runner on it would
+   * have seen, or no longer with null: `GET /v1/me` says so.
+   */
+  limitClaude(until: string | null): void;
 }
 
 /** The fake's install page: GitHub's, or the local stand-in the Maestro run serves. */
@@ -227,6 +232,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   const session = new FakeSignInSession(world.maya);
   const clients = new Map<string, FakeClient>();
   let settled: string | null = null;
+  let limitedUntil: string | null = null;
   const installPages: string[] = [];
   const stocked = new WeakSet<FakeWorld>();
   const client = () => {
@@ -261,11 +267,22 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
       };
     },
   });
+  /** `me`, with the plan's limit the test set (the client's fake has no runner to see one). */
+  const me =
+    (real: Api["me"]): Api["me"] =>
+    async () => {
+      const answer = await real();
+      return answer.claudeAccount && limitedUntil
+        ? { ...answer, claudeAccount: { ...answer.claudeAccount, limitedUntil } }
+        : answer;
+    };
   // The person signed in now: their api, whichever of them that is.
   const api = new Proxy({} as Api, {
     get: (_target, key) => {
       const real = client().api;
-      return key === "github" ? github(real.github) : real[key as keyof Api];
+      if (key === "github") return github(real.github);
+      if (key === "me") return me(real.me);
+      return real[key as keyof Api];
     },
   });
   return {
@@ -283,10 +300,14 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
     settleInstalls(result) {
       settled = result;
     },
+    limitClaude(until) {
+      limitedUntil = until;
+    },
     reset() {
       world = fakeWorld();
       clients.clear();
       settled = null;
+      limitedUntil = null;
       installPages.length = 0;
       session.person = world.maya;
       session.set({ status: "signed_out" });

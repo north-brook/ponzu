@@ -4,14 +4,18 @@ import { type HostInstance, Pressable, View } from "react-native";
 import { CanvasList } from "../../../components/canvas-list";
 import { Lockup } from "../../../components/chrome";
 import { useCanvasList } from "../../../lib/cloud/canvases";
-import { select } from "../../../lib/haptics";
+import { useFirstCanvas } from "../../../lib/cloud/use-first-canvas";
+import { PICKER } from "../../../lib/copy";
+import { select, tick } from "../../../lib/haptics";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 
 /**
  * Canvases, the first tab: the Mac sidebar at phone size (docs/mobile.md, "The canvases list").
  * The workspace in view's canvases under the lockup in the system's see-through header
- * (components/canvas-list.tsx). Tapping the lockup opens settings (workspaces, account, usage).
+ * (components/canvas-list.tsx). Tapping the lockup opens settings (workspaces, account, usage);
+ * New canvas, at the header's other end, pushes the create screen (app/new.tsx), which also
+ * comes by itself, once, to someone whose workspace has no canvases yet.
  * While nothing has come yet the rows' shapes stand in and the lockup's slice juices.
  */
 export default function Canvases() {
@@ -19,6 +23,7 @@ export default function Canvases() {
   const canvases = useCanvasList();
   const m = useMargin();
   const header = useRef<HostInstance>(null);
+  useFirstCanvas(canvases);
   const openSettings = () => {
     select();
     router.push("/settings");
@@ -46,6 +51,18 @@ export default function Canvases() {
             </Pressable>
           </View>
         </Stack.Toolbar.View>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          accessibilityLabel={PICKER.newCanvas}
+          onPress={() => {
+            tick();
+            router.push("/new");
+          }}
+        >
+          <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-new" />
+          <Stack.Toolbar.Label>{PICKER.newCanvas}</Stack.Toolbar.Label>
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <CanvasList {...canvases} margin={m} />
     </>

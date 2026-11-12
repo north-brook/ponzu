@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useCallback } from "react";
 import { backend } from "./backend";
 import { DOC_CACHE_PATH, fileStorage } from "./files";
+import { forgetNewCanvas } from "./new-canvas";
 import { useCloud } from "./query";
 import { DEVICE_KEY, keysToClear, signOut } from "./sign-out";
 import { forgetWorkspaces } from "./workspace";
@@ -21,6 +22,7 @@ export function useSignOut(): () => Promise<void> {
         closeLive: () => cloud.live.close(),
         clearFiles: async () => {
           forgetWorkspaces();
+          forgetNewCanvas();
           fileStorage(...DOC_CACHE_PATH).clear();
           await AsyncStorage.multiRemove(keysToClear(await AsyncStorage.getAllKeys()));
           await Image.clearDiskCache();

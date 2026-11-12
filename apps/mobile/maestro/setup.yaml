@@ -6,7 +6,7 @@ name: setup
 # the fake's install page (maestro/authorize.ts /install), which comes back
 # on ponzu-dev://github/setup?result=installed, and the row turns Ready.
 # Continue goes on to Connect Claude; an API key connects, and the canvases
-# open.
+# open, with New canvas over them since Lee has none yet.
 - runFlow: shared/start.yaml
 - openLink: ponzu-dev://dev?seed=setup-where
 - extendedWaitUntil:
@@ -42,8 +42,9 @@ name: setup
 - inputText: "sk-ant-maestro-fake"
 - tapOn:
     id: setup-claude-connect
+# Lee's workspace has no canvases yet: New canvas comes over the list, once.
 - extendedWaitUntil:
     visible:
-      id: canvases
+      id: new-canvas
     timeout: 30000
 - assertNotVisible: ".*Cannot update a component.*"

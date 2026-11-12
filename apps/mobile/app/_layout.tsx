@@ -90,6 +90,17 @@ export default function RootLayout() {
                     contentStyle: { backgroundColor: color.bg },
                   }}
                 />
+                {/* New canvas: a full screen pushed over the list; its picker, a sheet. */}
+                <Stack.Screen name="new" />
+                <Stack.Screen
+                  name="pick-project"
+                  options={{
+                    presentation: "formSheet",
+                    sheetAllowedDetents: [0.6, 1],
+                    sheetGrabberVisible: true,
+                    contentStyle: { backgroundColor: color.bg },
+                  }}
+                />
                 <Stack.Screen name="dev" options={{ animation: "none" }} />
                 <Stack.Screen name="+not-found" options={{ animation: "none" }} />
               </Stack>
