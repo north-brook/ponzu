@@ -362,7 +362,7 @@ export function observeVercel(
 }
 
 /** What the SDK answered, or what the API sent when the SDK's schema refused it. */
-async function answer<T>(call: () => Promise<T>): Promise<unknown> {
+export async function answer<T>(call: () => Promise<T>): Promise<unknown> {
   try {
     return await call();
   } catch (error) {
@@ -372,7 +372,7 @@ async function answer<T>(call: () => Promise<T>): Promise<unknown> {
 }
 
 /** The same, but `null` for a 404: the thing does not exist. */
-async function answerOrMissing<T>(call: () => Promise<T>): Promise<unknown> {
+export async function answerOrMissing<T>(call: () => Promise<T>): Promise<unknown> {
   try {
     return await answer(call);
   } catch (error) {
@@ -382,7 +382,9 @@ async function answerOrMissing<T>(call: () => Promise<T>): Promise<unknown> {
 }
 
 /** The team, by id when one is given, otherwise by its public slug. */
-function team(ctx: CheckContext): { teamId: string } | { slug: string } {
+export function team(
+  ctx: Pick<CheckContext, "credentials">,
+): { teamId: string } | { slug: string } {
   const teamId = ctx.credentials.VERCEL_TEAM_ID;
   return teamId ? { teamId } : { slug: VERCEL_TEAM_SLUG };
 }

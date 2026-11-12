@@ -6,12 +6,13 @@ restored, and what bounds the bill. The specification is [cloud.md](cloud.md); t
 runbook behind its "Environments" section.
 
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
-reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
-scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`), the API's `/v1/cron/selfcheck` and the
-production deploy job are later pieces of work. (The API's `PONZU_ENVIRONMENT` variable and
-the environment, image, bundle and migration counts in `/v1/health` are built.) Each is
-marked *(not built yet)* where it first appears, and nothing in production exists until the
+reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested, as are
+the scripts that check and apply that state (`scripts/prod/check.ts`, `apply.ts`,
+`restore-drill.ts`), the API's `/v1/cron/selfcheck`, its `PONZU_ENVIRONMENT` variable and the
+environment, image, bundle and migration counts in `/v1/health`. The GitHub App script
+(`github-app.ts`) and the production deploy job are later pieces of work, each marked *(not
+built yet)* where it first appears. The scripts are tested against fakes and answers recorded
+from dev; `apply.ts` has never sent a write to a vendor. Nothing in production exists until the
 founder's steps below create it.
 
 ## Two environments
@@ -88,7 +89,8 @@ uses (`apiUrl`, `workosClientId`, `realtimeUrl`, `assetsUrl`) fails the build.
 
 ### Vercel `ponzu-api-prod`
 
-Created by `bun scripts/prod/apply.ts vercel-project --env production --yes` *(not built yet)*.
+Created by `bun scripts/prod/apply.ts vercel-project --env production --yes` (see
+[Applying the desired state](#applying-the-desired-state)).
 
 | Setting | Value |
 |---|---|
@@ -405,6 +407,58 @@ project answer (it requires a `traffic_sources` field the API does not send), so
 back to the answer the SDK hands over with its validation error. The tests run that path on the
 recorded answers (trimmed to the fields the check reads, which the SDK refuses too); the full
 answer went through it once when it was recorded.
+
+## Applying the desired state
+
+`bun scripts/prod/apply.ts <area> --env dev|production [--yes]` makes one area of an
+environment what `infra/` says.
+
+- Without `--yes` it only reads (GETs, mostly through the check's own readers), then prints
+  what already matches, what it cannot do (a founder step or a dashboard setting), and each
+  change as the exact request it would send: method, URL and body. Nothing is changed.
+- With `--yes` it sends those requests in order and stops at the first that fails. Then it
+  reads the area again and prints the check's lines for it. It exits 0 only when every one of
+  them is `ok`.
+- Credentials come from the environment, with the same names as the check's, but with write
+  access. A missing one stops the area before anything is read. Every printed line goes
+  through the redactor, and a vendor's refusal prints only its status, never its body.
+- Agents run it only without `--yes`. Applying to production is the founder's.
+
+| Area | What it does | Needs |
+|---|---|---|
+| `vercel-project` | Creates the project when it is missing (`apps/api`, `hono`, `iad1`, OIDC with the team issuer, Standard Protection, no Git, no variables), then sets the Node version. On an existing project it updates only the settings that differ. A connected Git repository is a note: disconnect it in the dashboard. | `VERCEL_TOKEN` |
+| `vercel-env` | Adds the public values `environments.json` holds to the Production target as `plain` variables: `PONZU_ENVIRONMENT`, `PONZU_API_URL`, `WORKOS_CLIENT_ID`, `GITHUB_APP_SLUG`, `NEON_REALTIME_URL`, `PONZU_ASSETS_URL`, `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `PONZU_POSTHOG_HOST`, `PONZU_POSTHOG_AI_CONTENT`, `PONZU_MIN_CLIENT_VERSIONS`. A plain value that differs is changed. A value stored as sensitive or encrypted cannot be read back, so it is left alone and named. A `null` in infra is skipped. It never writes the Preview target. | `VERCEL_TOKEN` |
+| `secrets generate --names PONZU_VAULT_KEY,CRON_SECRET` | Makes 32 random bytes (base64url) for each name that is not set yet and stores it on the Production target as `sensitive`. The value exists only in memory, is sent once, and is never printed or written to disk. A name that is already set is never replaced (rotation is below), and no other name is accepted. | `VERCEL_TOKEN` |
+| `firewall` | When the live firewall differs from `infra/vercel-firewall.json`, one `PUT /v1/security/firewall/config` with the file as its body. | `VERCEL_TOKEN` |
+| `neon` | Where `infra/neon.json` asks (production): the read-write compute (`suspend_timeout_seconds`, autoscaling), the project's history retention, the branch's backup schedule and its protection, each only when it differs. Realtime is a note: the founder turns it on (D3). | `NEON_API_KEY`, `NEON_PROJECT_ID` |
+| `r2` | The assets bucket's CORS and lifecycle, each replaced with its file when it differs. Replacing the lifecycle also removes any live rule that would delete under `private/`. Buckets, domains and r2.dev are the founder's (D4). | `CLOUDFLARE_API_TOKEN` (R2 write), `CLOUDFLARE_ACCOUNT_ID` |
+| `cloudflare-headers` | The response header rule on the environment's assets host, in the zone's `http_response_headers_transform` phase. The phase is written whole, so every other rule in it is sent back unchanged; a rule already on the host is replaced in place, keeping its id. | `CLOUDFLARE_API_TOKEN` (Zone Read, Transform Rules Edit) |
+| `posthog` | When any of the four settings in `infra/posthog.json` differs, one `PATCH /api/projects/{id}/` with all four. | `POSTHOG_PERSONAL_API_KEY` (`project:write`) |
+| `github-rulesets` | Each `infra/github/ruleset-*.json`, found by name: created when missing, replaced by id when it differs. It belongs to the repository, so `--env` may be left out. | `GH_TOKEN` or `GITHUB_TOKEN`, as an admin |
+
+Two things it does differently from the obvious route, and why:
+
+- **The firewall's PUT is a plain request, not `@vercel/sdk`'s `security.putFirewallConfig`.**
+  On 1.28.53 that method's request schema declares `managedRules` as an empty object, so it
+  strips `bot_protection` and `ai_bots` before sending. A test pins this, so it fails when the
+  SDK is fixed and the area can move back to it. The URL, query and body are the ones the SDK
+  would send.
+- **PostHog has no official SDK for its management API**, so its PATCH is a plain request, as
+  the check's read is.
+
+Not proven yet:
+
+- No write has gone to any vendor. Every area is tested against fakes: for each, the dry run's
+  bodies are asserted exactly, and `--yes` must send exactly what the dry run printed.
+- Live dry runs, which are read-only, have run on dev for `neon` (nothing to change) and
+  `github-rulesets` (`Protect main` matches its file; `Protect cloud` would be created).
+- That `filterProjectEnvs` returns a `plain` variable's value without being asked to decrypt.
+  If it does not, `vercel-env` would propose editing a value that is already right; the read
+  after `--yes` would still show the truth.
+- That PostHog still accepts the four settings on `/api/projects/{id}/`, rather than only on
+  `/api/environments/{id}/`. If it ignores them, the read after `--yes` fails and says so.
+- That Vercel applies a firewall `PUT` at once, rather than as a draft. The read after `--yes`
+  would fail if it does not.
 
 ## Rotating secrets
 
