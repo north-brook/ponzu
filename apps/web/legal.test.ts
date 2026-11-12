@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import sitemap from "./app/sitemap.ts";
 import { DraftNotice, LastUpdated } from "./components/draft-notice.tsx";
-import { Open, SubprocessorSummary, SubprocessorTable } from "./components/legal.tsx";
+import { Li, Open, SubprocessorSummary, SubprocessorTable } from "./components/legal.tsx";
 import {
   LEGAL_DRAFT,
   LEGAL_PAGES,
@@ -16,6 +16,7 @@ import {
 import { ADVISORIES, EXPIRES_DAYS, securityTxt } from "./components/security-txt.ts";
 import { CONTACT, ENTITY, LEGAL_EFFECTIVE, LEGAL_STATUS } from "./components/site.ts";
 import { SUBPROCESSORS } from "./components/subprocessors.ts";
+import { components as mdxComponents } from "./mdx-components.tsx";
 import config from "./next.config.ts";
 
 /*
@@ -74,6 +75,17 @@ test("while a draft, the founder's and counsel's open notes stay in the source b
     expect(renderToStaticMarkup(createElement(Open, { who: "counsel" }, "x"))).toBe("");
     expect(renderToStaticMarkup(createElement(SubprocessorTable))).not.toContain("data-open");
   }
+  // A list item that is only a note (privacy's "- <Open>…</Open>" lines) would be an empty bullet,
+  // so it goes while the note is hidden. MDX hands the item its children as below.
+  const item = (draft: boolean, ...lead: string[]) =>
+    renderToStaticMarkup(
+      createElement(Li, null, ...lead, createElement(Open, { who: "founder", draft }, "q"), "\n"),
+    );
+  expect(item(true, "\n")).toBe("");
+  expect(item(false, "\n")).toContain("<li>");
+  expect(item(true, "Export: none. ")).toBe("<li>Export: none. \n</li>");
+  expect(mdxComponents.li).toBe(Li);
+  expect(source("privacy")).toMatch(/^- <Open /m);
 });
 
 test("each page ends on its effective date, or says it is not in effect yet", () => {

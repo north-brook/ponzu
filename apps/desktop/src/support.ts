@@ -4,8 +4,9 @@ import { scrubSecretsText } from "@ponzu/client";
  * The Help menu's links (menu.ts): Contact Support, the Privacy Policy and the Terms of Service.
  * Contact Support writes an email to support@ponzu.design with what support needs to find a
  * problem (this build's version, commit and environment, and the id of the last request the
- * studio made to the API) and nothing else: never a token, a session, a canvas or a path. Each field is checked against the shape it must have, and the whole body is scrubbed
- * again on the way out, so a field that went wrong upstream can't carry a secret into an email.
+ * studio made to the API) and nothing else: never a token, a session, a canvas or a path. Each
+ * field is checked against the shape it must have, and the whole body is scrubbed again on the way
+ * out, so a field that went wrong upstream can't carry a secret into an email.
  */
 
 export const SUPPORT_EMAIL = "support@ponzu.design";

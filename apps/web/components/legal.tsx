@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, type ComponentProps, isValidElement, type ReactNode } from "react";
 import { LEGAL_DRAFT } from "./legal-status";
 import { Link, Table, Td, Th } from "./prose";
 import { CONTACT } from "./site";
@@ -38,6 +38,20 @@ export function Open({
       [{OPEN_LABEL[who]}: {children}]
     </span>
   );
+}
+
+/**
+ * A Markdown list item (mdx-components.tsx). An item that holds only open notes would be an empty
+ * bullet while they are hidden, so it is left out until there is something in it to read.
+ */
+export function Li({ children, ...props }: ComponentProps<"li">) {
+  const shown = Children.toArray(children).some((child) =>
+    typeof child === "string"
+      ? child.trim() !== ""
+      : !(isValidElement<{ draft?: boolean }>(child) && child.type === Open) ||
+        !(child.props.draft ?? LEGAL_DRAFT),
+  );
+  return shown ? <li {...props}>{children}</li> : null;
 }
 
 /** One of the site's mailboxes, as a link. */
