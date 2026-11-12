@@ -169,6 +169,8 @@ export const COMPOSITIONS: Composition[] = [
     board: "onboarding/5-fresh-start.html",
     ...WINDOW,
     reference: true,
+    differs:
+      "the logo stands where the board's question is, the ideas take turns as the composer's placeholder instead of tiles under it, and the page has the canvas's dots",
   },
   { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
   { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },

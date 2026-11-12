@@ -380,9 +380,14 @@ repaint something or say what isn't so. The usual swaps:
   (`leave` in cloud.css), each line kept for its last frame at exactly the room it held, while
   the rail's own scroll anchoring keeps the reader's place. Not a library's exit animation:
   only the rail knows where a line sat and what the reader is anchored on.
-- The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
-  first visit the column sits at the top from its first frame, where the ideas will go, and they
-  rise into that room when they come; if none do, nothing moves.
+- The create page departs from board 5 (fresh start) on purpose, at the founder's direction:
+  Ponzu's logo stands where the question was (the question is still the page's heading, for a
+  screen reader); the ideas are not tiles under the composer but take turns as its placeholder
+  (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
+  rises in), put away by typing and taken into the field with Tab, to edit and send; and the
+  page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
+  its boards with `--pz-dot`), since this is where a canvas starts. Nothing on the page moves
+  when ideas arrive or don't.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
   no line under Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's

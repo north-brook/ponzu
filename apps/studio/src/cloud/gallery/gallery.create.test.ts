@@ -73,20 +73,38 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     });
     expect(toggle).toBe(true);
   });
-  test("the composer sends only something, and an idea fills it without sending", async () => {
+  test("the composer sends only something, and Tab takes the suggestion in without sending", async () => {
     await open("fresh-start");
+    // The first idea stays for the whole test: which one Tab takes mustn't depend on the clock.
+    await page.goto(`${server.url}/gallery.html?board=fresh-start&theme=light&dwell=600000`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
     const send = 'button[aria-label="Send"]';
     const disabled = () => page.$eval(send, (b) => b.getAttribute("aria-disabled") === "true");
     expect(await disabled()).toBe(true);
     await page.fill("textarea", "   ");
     expect(await disabled()).toBe(true);
-    await page.click('button:has-text("A dark mode for the shop")');
-    expect(await page.inputValue("textarea")).toBe(
-      "A dark mode for the shop, using the tokens you already have",
-    );
-    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    // Spaces are typing too: the suggestion is put away.
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    await page.fill("textarea", "");
+    await page.waitForSelector('[data-suggestion="idea_checkout"]');
+    await page.focus("textarea");
+    await page.keyboard.press("Tab");
+    const idea = "Make checkout one page, with the order summary on the right";
+    expect(await page.inputValue("textarea")).toBe(idea);
+    // In the field to edit, the cursor after it, and nothing sent.
+    expect(
+      await page.$eval("textarea", (el) => {
+        const field = el as HTMLTextAreaElement;
+        return document.activeElement === field && field.selectionStart === field.value.length;
+      }),
+    ).toBe(true);
+    expect(await page.$("[data-suggestion]")).toBeNull();
     expect(await disabled()).toBe(false);
+    // With words in the field, Tab is the keyboard's again.
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
   });
+
   /** Where the create page's question sits, in px from the window's top. */
   const questionTop = () =>
     page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
@@ -160,15 +178,73 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       await page.setViewportSize({ width: 1440, height: 900 });
     }
   });
-  test("a first visit keeps its ideas' room: a skeleton while they're made, and nothing moves", async () => {
-    await open("fresh-start");
-    const withIdeas = await questionTop();
-    expect(await page.$('[aria-label="Ideas"]')).not.toBeNull();
+  test("ideas take turns as the composer's placeholder, and nothing on the page moves for them", async () => {
+    const placeholder = () =>
+      page.$eval("textarea", (el) => getComputedStyle(el, "::placeholder").color);
+    // While they are being made: the plain placeholder.
     await open("fresh-start-loading");
-    expect(await page.$('[aria-label="Finding ideas"]')).not.toBeNull();
-    expect(await page.$('[aria-label="Ideas"]')).toBeNull();
-    expect(await questionTop()).toBe(withIdeas);
+    const waiting = await questionTop();
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    const plain = await placeholder();
+    expect(plain).not.toBe("rgba(0, 0, 0, 0)");
+
+    // Made: each shows in the placeholder's place and colour, with the key that takes it.
+    await page.goto(`${server.url}/gallery.html?board=fresh-start&theme=light&dwell=200`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    expect(await questionTop()).toBe(waiting);
+    await page.waitForSelector("[data-suggestion]");
+    // Everything about the one showing, read in one go: the next takes its place in 200ms.
+    const prompts: Record<string, string> = {
+      idea_checkout: "Make checkout one page, with the order summary on the right",
+      idea_hero: "Three takes on the home hero that put the plants first",
+      idea_dark: "A dark mode for the shop, using the tokens you already have",
+      idea_empty: "Friendlier empty states for cart, orders and search",
+    };
+    const showing = await page.evaluate(() => {
+      const line = document.querySelector<HTMLElement>("[data-suggestion]")!;
+      const field = document.querySelector("textarea")!;
+      const now = line.querySelector(".suggestion-in")!;
+      const words = now.firstChild?.textContent ?? "";
+      return {
+        id: line.dataset.suggestion!,
+        words,
+        key: now.querySelector("kbd")?.textContent,
+        color: getComputedStyle(line).color,
+        pointer: getComputedStyle(line).pointerEvents,
+        placeholder: getComputedStyle(field, "::placeholder").color,
+        described: document.getElementById(field.getAttribute("aria-describedby")!)?.textContent,
+        // Words made from the repo: none of them reaches a private recording unmasked.
+        masked: [...document.querySelectorAll("[data-create-composer] *")]
+          .filter((el) =>
+            [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent?.includes(words)),
+          )
+          .map((el) => el.closest('[data-replay="mask"]') !== null),
+      };
+    });
+    const prompt = prompts[showing.id]!;
+    // In the placeholder's place and colour, with the key that takes it; the real placeholder
+    // steps aside, and the pointer goes through to the field.
+    expect(showing.words).toBe(prompt);
+    expect(showing.key).toBe("tab");
+    expect(showing.color).toBe(plain);
+    expect(showing.placeholder).toBe("rgba(0, 0, 0, 0)");
+    expect(showing.pointer).toBe("none");
+    // The field tells assistive tech what the picture of a placeholder can't.
+    expect(showing.described).toBe(`Suggestion: ${prompt}. Press Tab to use it.`);
+    expect(showing.masked.length).toBeGreaterThanOrEqual(2);
+    expect(showing.masked.every(Boolean)).toBe(true);
+    // One after another, round to the first again.
+    for (const id of ["idea_hero", "idea_dark", "idea_empty", "idea_checkout"]) {
+      await page.waitForSelector(`[data-suggestion="${id}"]`);
+    }
+    // Typing puts them away, and the plain placeholder is the field's again once it is cleared.
+    await page.fill("textarea", "A card");
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    expect(await questionTop()).toBe(waiting);
+    await page.fill("textarea", "");
+    await page.waitForSelector("[data-suggestion]");
   });
+
   test("a menu gives focus back without a ring, unless the keyboard brought it to the chip", async () => {
     await open("create");
     const chip = 'button[aria-label^="Model"]';
@@ -391,7 +467,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("create");
     const field = 'textarea[aria-label="Describe the design"]';
     const card = await page.$eval(field, (el) => {
-      const r = el.parentElement!.getBoundingClientRect();
+      const r = el.closest(".cursor-text")!.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     });
     const focused = () =>
