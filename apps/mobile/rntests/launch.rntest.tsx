@@ -112,5 +112,11 @@ describe("launch goes where the session says", () => {
     await waitFor(() => expect(replace.mock.calls).toEqual([["/setup/claude"]]), {
       timeout: 5_000,
     });
+    // Gone while still offline, inside this test's own time: the paused fetch then has nothing
+    // to resume into when afterEach comes back online, and the shared cleanup has no screen to
+    // wait on.
+    await act(async () => {
+      screen.unmount();
+    });
   }, 20_000);
 });
