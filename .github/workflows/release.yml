@@ -494,6 +494,22 @@ jobs:
           persist-credentials: false
       - name: The release's notes
         run: bun scripts/release-notes.ts "$RUNNER_TEMP/release-notes.json"
+      # Both apps' dated notes, which the site's /changelog reads from the
+      # latest release (scripts/release-notes.ts --changelog). Run from this
+      # workflow's tooling, since a tag rebuilt by hand can predate the mode.
+      # Uploaded before the draft is downloaded, or put beside a dry run's
+      # builds, so the check below reads it too.
+      - name: The site's changelog
+        run: |
+          bun release-tools/scripts/release-notes.ts --changelog "$RUNNER_TEMP/changelog.json"
+          if [ "$PUBLISH" = true ]; then
+            bash release-tools/scripts/release-upload.sh "$TAG" "$RUNNER_TEMP/changelog.json"
+          else
+            mkdir -p "$RUNNER_TEMP/release"
+            cp "$RUNNER_TEMP/changelog.json" "$RUNNER_TEMP/release/"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Upload the notes and download the draft
         if: env.PUBLISH == 'true'
         run: |

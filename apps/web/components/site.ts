@@ -29,3 +29,9 @@ export const BILLING_LIVE = false;
 export const IPHONE_URL_TARGET = TESTFLIGHT;
 /** The first desktop version of Ponzu Cloud; the changelog starts there. */
 export const FIRST_CLOUD_VERSION = "2.0.0";
+/**
+ * The first version of the cloud iPhone app (tags `mobile-vX.Y.Z`), where its changelog starts.
+ * Ponzu 1's phone app released 0.x, so the cloud app's first release must be at least this one: the
+ * cutover sets its version (Release Please's release-as), or this changes to match.
+ */
+export const FIRST_CLOUD_IPHONE_VERSION = "1.0.0";

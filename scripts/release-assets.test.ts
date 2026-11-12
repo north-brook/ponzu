@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type File, problems } from "./release-assets";
+import { changelogProblems, type File, problems } from "./release-assets";
 
 const file = (size: number, sha512 = `sha-${size}`): File => ({ size, sha512 });
 
@@ -108,5 +108,43 @@ test("a feed's path, which older updaters read, must be one of the files it chec
   files.set("Ponzu-Setup.exe", file(20, "other"));
   expect(problems("1.66.0", ["windows"], feeds, files)).toEqual([
     "latest.yml's path, Ponzu-Setup.exe, isn't one of its files",
+  ]);
+});
+
+const CHANGELOG = JSON.stringify({
+  mac: [{ version: "2.1.0", date: "2026-11-20T18:15:00-05:00", notes: ["Pins stay put."] }],
+  iphone: [],
+});
+
+test("a release passes with or without the site's changelog.json", () => {
+  const { feeds, files } = release();
+  // Built before the publish job wrote one.
+  expect(problems("1.66.0", ["windows"], feeds, files)).toEqual([]);
+  files.set("changelog.json", file(CHANGELOG.length));
+  expect(problems("1.66.0", ["windows"], feeds, files, CHANGELOG)).toEqual([]);
+  // A shallow run's file says it's incomplete, and still has both lists.
+  const incomplete = JSON.stringify({ mac: [], iphone: [], incomplete: true });
+  expect(problems("1.66.0", ["windows"], feeds, files, incomplete)).toEqual([]);
+});
+
+test("a changelog.json the site couldn't read holds the release back", () => {
+  const { feeds, files } = release();
+  expect(problems("1.66.0", ["windows"], feeds, files, "{")).toEqual(["changelog.json isn't JSON"]);
+  expect(changelogProblems("[]")).toEqual([
+    "changelog.json has no mac list",
+    "changelog.json has no iphone list",
+  ]);
+  expect(changelogProblems("null")).toEqual(["changelog.json isn't an object"]);
+  expect(
+    changelogProblems(
+      JSON.stringify({
+        mac: [{ version: "v2.1.0", date: "2026-11-20", notes: [] }],
+        iphone: [{ version: "1.0.0", date: "someday", notes: ["ok"] }, { version: "1.0.1" }],
+      }),
+    ),
+  ).toEqual([
+    "changelog.json's mac release 1 isn't a version, date and notes",
+    "changelog.json's iphone release 1 isn't a version, date and notes",
+    "changelog.json's iphone release 2 isn't a version, date and notes",
   ]);
 });
