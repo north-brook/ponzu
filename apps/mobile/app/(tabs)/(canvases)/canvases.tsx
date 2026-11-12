@@ -1,29 +1,32 @@
 import { router, Stack } from "expo-router";
 import { useRef } from "react";
-import { type HostInstance, Pressable, ScrollView, Text, View } from "react-native";
-import { CanvasNameRow } from "../../../components/canvas-name-row";
+import { type HostInstance, Pressable, View } from "react-native";
+import { CanvasList } from "../../../components/canvas-list";
 import { Lockup } from "../../../components/chrome";
-import { useCanvases } from "../../../lib/cloud/canvases";
-import { select } from "../../../lib/haptics";
+import { useCanvasList } from "../../../lib/cloud/canvases";
+import { useFirstCanvas } from "../../../lib/cloud/use-first-canvas";
+import { PICKER } from "../../../lib/copy";
+import { select, tick } from "../../../lib/haptics";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { useTheme } from "../../../lib/theme";
 
-/** What the list says when the workspace has no canvases: where they come from. */
-export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";
+/** What the list says when the workspace has no canvases (components/canvas-list-parts.tsx). */
+export { EMPTY_CANVASES } from "../../../lib/copy";
 
 /**
- * Canvases, the first tab: the workspace in view's canvases, newest activity first, under the
- * lockup in the system's see-through header. Tapping the lockup opens settings (account, sign
- * out). While nothing has come yet the lockup's slice juices: the app's one loading signal.
- *
- * This is the skeleton: names and where each lives. The rows with previews, status and the
- * needs-you order, the settled tray and opening a canvas each arrive with their own slice.
+ * Canvases, the first tab: the Mac sidebar at phone size (docs/mobile.md, "The canvases list").
+ * The workspace in view's canvases under the lockup in the system's see-through header
+ * (components/canvas-list.tsx). Tapping the lockup opens settings (workspaces, account, usage);
+ * New canvas, at the header's other end, pushes the create screen (app/new.tsx), which also
+ * comes by itself, once, to someone whose workspace has no canvases yet.
+ * While nothing has come yet the rows' shapes stand in and the lockup's slice juices.
  */
 export default function Canvases() {
   const { color } = useTheme();
-  const { canvases, loading } = useCanvases();
+  const canvases = useCanvasList();
   const m = useMargin();
   const header = useRef<HostInstance>(null);
+  useFirstCanvas(canvases);
   const openSettings = () => {
     select();
     router.push("/settings");
@@ -40,42 +43,31 @@ export default function Canvases() {
             <Pressable
               testID="lockup"
               accessibilityRole="button"
-              accessibilityLabel="Settings"
-              accessibilityHint="Your account, and signing out"
+              accessibilityLabel={
+                canvases.workspace ? `Settings, ${canvases.workspace.name}` : "Settings"
+              }
+              accessibilityHint="Your workspaces, your account and usage"
               onPress={openSettings}
               style={{ marginLeft: -LOCKUP_INK }}
             >
-              <Lockup color={color.ink} busy={loading} />
+              <Lockup color={color.ink} busy={canvases.loading} />
             </Pressable>
           </View>
         </Stack.Toolbar.View>
       </Stack.Toolbar>
-      <ScrollView
-        testID="canvases"
-        style={{ flex: 1, backgroundColor: color.bg }}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
-      >
-        {canvases?.map((canvas) => (
-          <CanvasNameRow key={canvas.id} canvas={canvas} margin={m} />
-        ))}
-        {canvases?.length === 0 && (
-          <Text
-            testID="canvases-empty"
-            style={{
-              marginTop: 40,
-              marginHorizontal: 40,
-              textAlign: "center",
-              fontFamily: "Inter",
-              fontSize: 15,
-              lineHeight: 22,
-              color: color.muted,
-            }}
-          >
-            {EMPTY_CANVASES}
-          </Text>
-        )}
-      </ScrollView>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          accessibilityLabel={PICKER.newCanvas}
+          onPress={() => {
+            tick();
+            router.push("/new");
+          }}
+        >
+          <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-new" />
+          <Stack.Toolbar.Label>{PICKER.newCanvas}</Stack.Toolbar.Label>
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <CanvasList {...canvases} margin={m} />
     </>
   );
 }

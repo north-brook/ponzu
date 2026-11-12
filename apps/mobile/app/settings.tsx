@@ -1,18 +1,24 @@
 import { useSessionState } from "@ponzu/client/react";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { SectionCard, SectionTitle } from "../components/settings-parts";
+import { SettingsUsage } from "../components/settings-usage";
+import { SettingsWorkspaces } from "../components/settings-workspaces";
 import { backend } from "../lib/cloud/backend";
+import { useWorkspaces } from "../lib/cloud/canvases";
 import { useSignOut } from "../lib/cloud/use-sign-out";
 import { thud } from "../lib/haptics";
 import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
 
 /**
- * Settings, a sheet from the lockup. For now, the account: who is signed in, and Sign out. The
- * workspaces, notifications, read-only usage and Delete account join it with their slices.
+ * Settings, a sheet from the lockup: the workspaces (when there are more than one), the account
+ * (who is signed in, and Sign out), and the workspace in view's usage, read only. Notifications
+ * and Delete account join it with their slices.
  */
 export default function Settings() {
-  const { color, shadow } = useTheme();
+  const { color } = useTheme();
+  const { workspaces, workspace, choose } = useWorkspaces();
   const state = useSessionState(backend.session);
   const signOut = useSignOut();
   const [leaving, setLeaving] = useState(false);
@@ -46,25 +52,13 @@ export default function Settings() {
       >
         Settings
       </Text>
-      <Text
-        style={{
-          marginTop: 12,
-          fontFamily: "Inter",
-          fontWeight: "600",
-          fontSize: 13,
-          color: color.muted,
-        }}
-      >
-        Account
-      </Text>
-      <View
-        style={{
-          borderRadius: 16,
-          backgroundColor: color.card,
-          boxShadow: shadow.board,
-          overflow: "hidden",
-        }}
-      >
+      <SettingsWorkspaces
+        workspaces={workspaces ?? []}
+        current={workspace?.id ?? null}
+        onChoose={choose}
+      />
+      <SectionTitle>Account</SectionTitle>
+      <SectionCard>
         {user && (
           <View
             testID="settings-account"
@@ -116,7 +110,8 @@ export default function Settings() {
           </Text>
           {leaving && <Juice size={16} color={color.faint} />}
         </Pressable>
-      </View>
+      </SectionCard>
+      <SettingsUsage workspace={workspace} />
     </ScrollView>
   );
 }

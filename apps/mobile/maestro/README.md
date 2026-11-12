@@ -10,6 +10,9 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | --- | --- |
 | `launch.yaml` | A clean install: the slice and wordmark on yuzu, then Sign in, since nobody is. A link the build doesn't take opens nothing. |
 | `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
+| `setup.yaml` | Lee, with nothing set up: Set up installs the GitHub App through the auth session onto the fake's install page (`authorize.ts /install`), back on `ponzu-dev://github/setup`, and the row turns Ready; Continue; Connect Claude with an API key; the canvases, with New canvas over them since Lee has none. |
+| `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
+| `new-canvas.yaml` | Sam, with no canvases: New canvas comes by itself, in Scratch, in the Mac's words; Send waits for a prompt, then makes the canvas and opens it. Maya: New canvas from the header, the picker grouped by workspace, and a repo in Northbrook moving the statement to it. |
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
 | `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
@@ -25,18 +28,26 @@ has not yet run on spare; once it passes there, make it the default.
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
-too-old); only a fake build takes it. Every flow checks no development warning
+too-old, setup-where, setup-claude, canvases); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `sign-in`, `sign-in-github`, `sign-in-error`, `canvases`, `lockup`,
 `canvas-<id>`, `tab-canvases`, `tab-search`, `search`, `settings`,
-`settings-sign-out`, `update`, `canvas`, `canvas-web`, `canvas-placeholder`,
-`canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`, `stack-comment`,
-`stack-chat`, `canvas-hint`, `comment-sheet`, `comment-field`, `comment-input`,
-`comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`, `resolve`,
-`thread-note`, `thread-read-only`, `draft-sheet`, `move-done`. Give a new
-screen a `testID` named after it.
+`settings-sign-out`, `update`, `setup-where`, `setup-account-<login>-set-up`,
+`setup-where-continue`, `setup-claude`, `setup-claude-add-key`,
+`setup-claude-key-field`, `setup-claude-connect`, `setup-code`, `settled`,
+`settings-workspaces`, `settings-usage`, `new-canvas`, `new-canvas-project`,
+`new-canvas-prompt`, `new-canvas-send`, `new-canvas-attach`, `new-canvas-model`,
+`new-canvas-error`, `pick-project`, `pick-project-search`,
+`pick-project-allow-more`, `connect-claude-sheet`, `canvas`, `canvas-web`,
+`canvas-placeholder`, `canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`,
+`stack-comment`, `stack-chat`, `canvas-hint`, `comment-sheet`, `comment-field`,
+`comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
+`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`. A
+canvas's row reads as its VoiceOver label ("Pricing page, 1 waiting for you,
+site, …"), so flows match it with a pattern. Give a new screen a `testID` named
+after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 
 ## Run them

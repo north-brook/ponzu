@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
+  accountLabel,
   canContinue,
   claudeStepMode,
   type GithubAccount,
+  installNotice,
   isReady,
+  phoneSetupStep,
   type SetupFacts,
   type SetupStep,
+  setupFacts,
   setupStep,
 } from "./setup.ts";
 
@@ -116,5 +120,72 @@ describe("where do you build", () => {
     expect(canContinue([account({ status: "ready", suspended: true })])).toBe(false);
     expect(canContinue([account({}), account({ status: "ready", kind: "org" })])).toBe(true);
     expect(isReady(account({ status: "ready" }))).toBe(true);
+  });
+
+  test("each row's two lines, as the Mac and the phone both write them", () => {
+    expect(accountLabel(account({}))).toEqual({ title: "Personal", line: "brycedbjork" });
+    const org = account({ kind: "org", login: "acme", name: "Acme Inc", status: "ready" });
+    expect(accountLabel({ ...org, memberCount: 1 })).toEqual({
+      title: "Acme Inc",
+      line: "acme · 1 person",
+    });
+    expect(accountLabel({ ...org, memberCount: 4 }).line).toBe("acme · 4 people");
+    // An organization with no other name is its login, with only the people under it.
+    expect(accountLabel({ ...org, name: "", memberCount: 4 })).toEqual({
+      title: "acme",
+      line: "4 people",
+    });
+    expect(accountLabel({ ...org, name: "acme", memberCount: null })).toEqual({
+      title: "acme",
+      line: null,
+    });
+  });
+
+  test("only an install asked of the owners, or one that failed, leaves a line", () => {
+    expect(installNotice("requested")).toBe("requested");
+    expect(installNotice("failed")).toBe("failed");
+    for (const result of ["installed", "pending", "sign_in", "cancelled"]) {
+      expect(installNotice(result)).toBeNull();
+    }
+  });
+});
+
+describe("the phone's steps", () => {
+  type Me = Parameters<typeof phoneSetupStep>[0];
+  const me = (over: {
+    workspaces?: { installed: boolean; suspended: boolean }[];
+    where?: boolean;
+    iphone?: boolean;
+    claude?: "connected" | "expired" | null;
+  }): Me =>
+    ({
+      workspaces: (over.workspaces ?? []).map((w, i) => ({ id: `ws_${i}`, ...w })),
+      onboarding: {
+        whereConfirmedAt: over.where ? "2026-11-10T00:00:00Z" : null,
+        iphoneStepSeenAt: over.iphone ? "2026-11-10T00:00:00Z" : null,
+      },
+      claudeAccount: over.claude ? { status: over.claude } : null,
+    }) as unknown as Me;
+
+  test("where, then Claude, then done: the phone never asks for an iPhone", () => {
+    expect(phoneSetupStep(me({}))).toBe("where");
+    expect(phoneSetupStep(me({ workspaces: [ready] }))).toBe("where");
+    expect(phoneSetupStep(me({ workspaces: [suspended], where: true }))).toBe("where");
+    expect(phoneSetupStep(me({ workspaces: [removed], where: true }))).toBe("where");
+    expect(phoneSetupStep(me({ workspaces: [ready], where: true }))).toBe("claude");
+    expect(phoneSetupStep(me({ workspaces: [ready], where: true, claude: "connected" }))).toBe(
+      "done",
+    );
+  });
+
+  test("a Claude that has signed out sends no one back through setup; none at all does", () => {
+    expect(phoneSetupStep(me({ workspaces: [ready], where: true, claude: "expired" }))).toBe(
+      "done",
+    );
+    // Through setup on the Mac before (the iPhone step seen): disconnected is signed out.
+    expect(phoneSetupStep(me({ workspaces: [ready], where: true, iphone: true }))).toBe("done");
+    expect(setupFacts(me({ workspaces: [ready], where: true, iphone: true })).claude).toEqual({
+      status: "revoked",
+    });
   });
 });

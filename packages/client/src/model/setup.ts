@@ -1,7 +1,9 @@
 /*
- * The guided first run on the Mac: which step shows, decided again from the server's state after
- * every launch, sign-in and change, so setup picks up where it was left on any device.
+ * The guided first run, on the Mac and the phone: which step shows, decided again from the
+ * server's state after every launch, sign-in and change, so setup picks up where it was left on
+ * any device. The phone has no iPhone step: it is the iPhone.
  */
+import type { Api } from "../api.ts";
 import type { ClaudeConnection, ClaudeMethod } from "./claude.ts";
 
 /**
@@ -58,9 +60,71 @@ export function setupStep(facts: SetupFacts): SetupStep {
   return "done";
 }
 
+type Me = Awaited<ReturnType<Api["me"]>>;
+
+/**
+ * The gates' facts from `GET /v1/me`, and whether an iPhone is signed in as the person (their
+ * devices, `GET /v1/me/notifications`): someone with Ponzu on their phone already has no need
+ * of the iPhone step. A Claude sign-in in progress is the step's own (the card holds it), so
+ * the gates never need it.
+ *
+ * The API answers no Claude at all once one is disconnected, as for someone who never had one.
+ * Someone who has seen the iPhone step was through setup with a Claude connected, so for them
+ * no Claude is a Claude signed out: a send asks them to connect it again, and setup does not.
+ */
+export function setupFacts(me: Me, hasIphone = false): SetupFacts {
+  const iphoneStepSeen = me.onboarding.iphoneStepSeenAt !== null;
+  return {
+    signedIn: true,
+    workspaces: me.workspaces.map(({ installed, suspended }) => ({ installed, suspended })),
+    whereConfirmed: me.onboarding.whereConfirmedAt !== null,
+    claude: me.claudeAccount
+      ? { status: me.claudeAccount.status }
+      : iphoneStepSeen
+        ? { status: "revoked" }
+        : null,
+    claudeSignIn: null,
+    iphoneStepSeen,
+    hasIphone,
+  };
+}
+
+/** The phone's steps: where you build, and Claude. It is itself the iPhone the Mac asks for. */
+export type PhoneSetupStep = "where" | "claude" | "done";
+
+/** The step the phone shows for `me`, by the Mac's own gates with the iPhone step done. */
+export function phoneSetupStep(me: Me): PhoneSetupStep {
+  const step = setupStep({ ...setupFacts(me, true), iphoneStepSeen: true });
+  return step === "where" || step === "claude" ? step : "done";
+}
+
 /** An account Ponzu can work in now: installed, and not suspended on GitHub. */
 export function isReady(account: GithubAccount): boolean {
   return account.status === "ready" && !account.suspended;
+}
+
+/**
+ * An account's row in "Where do you build?": the person's own account is "Personal" over their
+ * login; an organization is its name over its login (and, once ready, how many people reach
+ * it), or just the login when it has no other name.
+ */
+export function accountLabel(account: GithubAccount): { title: string; line: string | null } {
+  const personal = account.kind === "personal";
+  const title = personal ? "Personal" : account.name || account.login;
+  const people =
+    !personal && account.status === "ready" && account.memberCount !== null
+      ? ` · ${account.memberCount} ${account.memberCount === 1 ? "person" : "people"}`
+      : "";
+  const line = personal || title !== account.login ? `${account.login}${people}` : people.slice(3);
+  return { title, line: line || null };
+}
+
+/** What came back from GitHub's install page when it was not an installation. */
+export type InstallNotice = "requested" | "failed";
+
+/** The line an install's outcome leaves under the accounts, if any. */
+export function installNotice(result: string): InstallNotice | null {
+  return result === "requested" || result === "failed" ? result : null;
 }
 
 /** Continue is live once at least one account is ready. */

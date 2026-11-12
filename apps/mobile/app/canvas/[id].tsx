@@ -27,7 +27,6 @@ import { Sheet } from "../../components/sheet";
 import { Shimmer } from "../../components/shimmer";
 import { ThreadSheet } from "../../components/thread-sheet";
 import {
-  COMMENT_WORDS,
   commit,
   newThreadOp,
   readOnlyLine,
@@ -39,6 +38,7 @@ import {
 import { canvasStatus, previewUrl } from "../../lib/canvas/status";
 import { useCanvasHead, useCanvasSource, useCanvasView } from "../../lib/canvas/use-canvas";
 import { backend } from "../../lib/cloud/backend";
+import { COMMENT_WORDS } from "../../lib/copy";
 import {
   draftKey,
   drafts,

@@ -1,7 +1,7 @@
 import type { Unsaved } from "@ponzu/client/canvas";
 import { type Author, newId, type Op, type Thread } from "@ponzu/core";
 import type { PendingPin } from "../../canvas/protocol";
-import { CANVAS_WORDS } from "./status";
+import { CANVAS_WORDS, COMMENT_WORDS } from "../copy";
 
 /*
  * Comments on the phone (iPhone design §8): a new thread where a pin was dropped, a reply in a
@@ -12,18 +12,6 @@ import { CANVAS_WORDS } from "./status";
  * rejects with the API's reason when it never will be; until then the words stay in their
  * draft (lib/drafts.ts), so a phone killed in between still has them.
  */
-
-/** Words the comment flow says. The lander moves these into lib/copy.ts once it exists. */
-export const COMMENT_WORDS = {
-  /** A comment made while the phone can't reach Ponzu: in the canvas here, sent later. */
-  queued: "Saved here. Ponzu sends it when you're back online.",
-  /** The Comment button was pressed: the next tap on the canvas drops the pin. */
-  place: "Tap where your comment goes",
-  /** A refusal the API gave no words for. */
-  refused: "Ponzu couldn't keep that comment. Try again.",
-  /** A canvas with no repo (Scratch) the person can only look at. */
-  readOnlyScratch: "You can look at this canvas.",
-} as const;
 
 /** Where a new comment goes: a pin as the canvas page reports it. */
 export type Spot = PendingPin & { nodeId?: string; offset?: { x: number; y: number } };

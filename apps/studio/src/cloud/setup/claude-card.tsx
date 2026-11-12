@@ -4,6 +4,15 @@
  * Anthropic API key. Guided setup, Settings › Agents and the reconnect dialog all use it.
  */
 import { Key01Icon } from "@hugeicons/core-free-icons";
+import {
+  CLAUDE_LIMITED,
+  CLAUDE_UNREACHABLE,
+  type ClaudeCardState,
+  type ClaudeEntry,
+  canConnect,
+  entryError,
+  signInSpent,
+} from "@ponzu/client/model/claude-entry";
 import { useId } from "react";
 import { enteredKey, pastedCode } from "../claude.ts";
 import { cn } from "../ui/cn.ts";
@@ -13,68 +22,9 @@ import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
 import { MarkTile, RowButton, SetupCard, SetupRow, Waiting } from "./step.tsx";
 
-export type ClaudeCardState =
-  | {
-      mode: "choose";
-      /** Asking for a claude.ai sign-in: Sign in waits until its address is ready. */
-      starting: boolean;
-      /** The sign-in couldn't be started. */
-      failed: boolean;
-      /** Claude turned the start away: the person has started too many this hour. */
-      limited?: boolean;
-    }
-  | {
-      mode: "subscription";
-      code: string;
-      /**
-       * `incomplete`: not the whole code, so it can be pasted again. `wrong`: claude.ai turned it
-       * away. `used`, `expired`: the sign-in is spent. Past each of those three only Open
-       * sign-in again helps. `limited`: too many sign-ins this hour, so even that waits. `failed`:
-       * Claude couldn't be reached.
-       */
-      status:
-        | "idle"
-        | "connecting"
-        | "incomplete"
-        | "wrong"
-        | "used"
-        | "expired"
-        | "limited"
-        | "failed";
-    }
-  | {
-      mode: "api_key";
-      key: string;
-      status: "idle" | "connecting" | "rejected" | "failed";
-    };
-
-/** As the API says it when a person has started too many sign-ins in an hour. */
-const LIMITED = "You've started signing in to Claude several times this hour. Try again later.";
-
-/**
- * What each failure says, in place of the field's helper. For a code, Open sign-in again
- * follows it, which is the way on from each.
- */
-const ERRORS: Partial<Record<Exclude<ClaudeCardState, { mode: "choose" }>["status"], string>> = {
-  incomplete: "That code isn't complete. Copy all of it.",
-  wrong: "That code didn't work.",
-  used: "That sign-in has been used.",
-  expired: "That code has expired.",
-  limited: LIMITED,
-  rejected: "Anthropic didn't accept that key.",
-  failed: "Couldn't reach Claude. Try again.",
-};
-
-/** A sign-in that can take no more codes: only a new one helps. */
-export function signInSpent(state: ClaudeCardState): boolean {
-  return (
-    state.mode === "subscription" &&
-    (state.status === "wrong" ||
-      state.status === "used" ||
-      state.status === "expired" ||
-      state.status === "limited")
-  );
-}
+export type { ClaudeCardState };
+// The states and their words are shared with the phone (@ponzu/client/model/claude-entry).
+export { canConnect, signInSpent };
 
 export interface ClaudeCardProps {
   state: ClaudeCardState;
@@ -93,12 +43,6 @@ export interface ClaudeCardProps {
   /** A new sign-in is being started: Open sign-in again waits until claude.ai opens. */
   reopening?: boolean;
   onSubmit: () => void;
-}
-
-/** Whether Connect can send what was entered. */
-export function canConnect(state: ClaudeCardState): boolean {
-  if (state.mode === "choose" || state.status === "connecting" || signInSpent(state)) return false;
-  return (state.mode === "subscription" ? state.code : state.key).trim().length > 0;
 }
 
 export function ClaudeCard(props: ClaudeCardProps) {
@@ -128,7 +72,7 @@ export function ClaudeCard(props: ClaudeCardProps) {
         </SetupCard>
         {state.failed || state.limited ? (
           <p role="alert" className="m-0 pt-3.5 text-center text-12 text-danger">
-            {state.limited ? LIMITED : "Couldn't reach Claude. Try again."}
+            {state.limited ? CLAUDE_LIMITED : CLAUDE_UNREACHABLE}
           </p>
         ) : null}
       </>
@@ -144,11 +88,11 @@ function MethodEntry({
   onReopen,
   reopening = false,
   onSubmit,
-}: ClaudeCardProps & { state: Exclude<ClaudeCardState, { mode: "choose" }> }) {
+}: ClaudeCardProps & { state: ClaudeEntry }) {
   const subscription = state.mode === "subscription";
   const value = subscription ? state.code : state.key;
   const connecting = state.status === "connecting";
-  const error = ERRORS[state.status] ?? null;
+  const error = entryError(state);
   const label = subscription ? "Paste the code from claude.ai" : "Paste your Anthropic API key";
   const id = useId();
   return (

@@ -29,15 +29,18 @@ export default function SignIn() {
   const { color } = useTheme();
   const insets = useSafeAreaInsets();
   const state = useSessionState(backend.session);
-  const [waiting, setWaiting] = useState(false);
+  const [opening, setOpening] = useState(false);
+  // Signed in, the screen stays until `me` says where setup stands (lib/cloud/use-gate.ts):
+  // the button keeps turning the slice until then, rather than offer to sign in again.
+  const waiting = opening || state.status === "signed_in";
   const [failure, setFailure] = useState<string | null>(null);
   const busy = useRef(false);
   const notice = failure ?? signInNotice(state);
 
   const go = async () => {
-    if (busy.current) return;
+    if (busy.current || waiting) return;
     busy.current = true;
-    setWaiting(true);
+    setOpening(true);
     setFailure(null);
     const cfg = config();
     const fakeWithoutPage = backend.kind === "fake" && !backend.authorizeUrl;
@@ -51,7 +54,7 @@ export default function SignIn() {
       ...(fakeWithoutPage ? { skipBrowser: { code: "fake" } } : {}),
     });
     busy.current = false;
-    setWaiting(false);
+    setOpening(false);
     if (outcome.kind === "failed") {
       fail();
       setFailure(outcome.message);

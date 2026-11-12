@@ -16,6 +16,7 @@ import {
   GithubIcon,
   GitPullRequestIcon,
   InboxIcon,
+  Key01Icon,
   KeyboardIcon,
   LaptopIcon,
   MessageMultiple02Icon,
@@ -25,6 +26,8 @@ import {
   MoveIcon,
   Notification01Icon,
   Notification03Icon,
+  PencilEdit02Icon,
+  PlusSignIcon,
   QrCodeIcon,
   RefreshIcon,
   Search01Icon,
@@ -69,6 +72,8 @@ export const ICONS = {
   mic: Mic01Icon,
   micOff: MicOff01Icon,
   keyboard: KeyboardIcon,
+  /** An Anthropic API key, in Connect Claude. */
+  key: Key01Icon,
   send: ArrowUp02Icon,
   file: File01Icon,
   comment: Comment01Icon,
@@ -84,6 +89,10 @@ export const ICONS = {
   quiet: Notification03Icon,
   /** Tailscale isn't on */
   alert: AlertCircleIcon,
+  /** New canvas, in the canvases list's header */
+  newCanvas: PencilEdit02Icon,
+  /** Attach, in New canvas's composer */
+  plus: PlusSignIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -113,6 +122,7 @@ export const Refresh = icon(ICONS.refresh, 20, 2);
 export const Mic = icon(ICONS.mic, 20, 1.8);
 export const MicOff = icon(ICONS.micOff, 20, 1.8);
 export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
+export const KeyIcon = icon(ICONS.key, 17, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
 export const CommentIcon = icon(ICONS.comment, 20, 1.8);
@@ -124,6 +134,8 @@ export const Done = icon(ICONS.done, 28, 1.6);
 export const Inbox = icon(ICONS.inbox, 17, 1.7);
 export const Quiet = icon(ICONS.quiet, 28, 1.6);
 export const AlertCircle = icon(ICONS.alert, 18, 2);
+export const NewCanvas = icon(ICONS.newCanvas, 20, 1.8);
+export const Plus = icon(ICONS.plus, 20, 1.8);
 
 /** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {
