@@ -109,10 +109,11 @@ export function posthogTelemetry(
     client?: string;
   } = {},
 ): Telemetry {
-  const known = knownSecrets(options.secrets);
   // What a secret looks like, and every value known to be one, out of the content before it goes.
+  // The list is read as each event goes: a secret given mid-turn joins it.
   const scrub = (properties: Record<string, unknown>) => {
     if (!config.content) return properties;
+    const known = knownSecrets(options.secrets);
     const out = { ...properties };
     for (const name of CONTENT) {
       if (out[name] != null) out[name] = redact(out[name], { known, maxDepth: CONTENT_DEPTH });
@@ -149,7 +150,10 @@ export function posthogTelemetry(
         // About no one person: under the workspace, as the API keys its events about no one.
         distinctId: feedback.workspaceId ?? feedback.canvasId,
         properties: {
-          ...feedbackProperties(feedback, { content: config.content, known }),
+          ...feedbackProperties(feedback, {
+            content: config.content,
+            known: knownSecrets(options.secrets),
+          }),
           ...(options.client ? { ponzu_runner: options.client } : {}),
         },
         ...(feedback.workspaceId ? { groups: { workspace: feedback.workspaceId } } : {}),

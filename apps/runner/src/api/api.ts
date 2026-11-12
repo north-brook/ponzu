@@ -16,6 +16,7 @@ import type {
   RestoredReport,
   RunnerSession,
   SavedPoint,
+  SecretResponse,
   StateRequest,
   StateResponse,
   ThreadResponse,
@@ -71,6 +72,11 @@ export interface RunnerApi {
   ask(question: QuestionRequest): Promise<void>;
   /** Safe to repeat. */
   withdraw(ids: string[]): Promise<void>;
+  /**
+   * The value given for a `secret` question this runner raised: once, soon after the answer.
+   * Not safe to repeat: a second call is refused (404), and the next start's environment has it.
+   */
+  secret(questionId: string): Promise<SecretResponse>;
   /** Puts the bytes where the API says and confirms them. Safe to repeat. */
   upload(files: UploadFile[], opts?: { seq?: number }): Promise<Uploaded[]>;
   /** A short-lived token for the canvas's own repository. Safe to repeat. */
@@ -180,6 +186,7 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     putState: watch(api.putState.bind(api)),
     ask: watch(api.ask.bind(api)),
     withdraw: watch(api.withdraw.bind(api)),
+    secret: watch(api.secret.bind(api)),
     upload: watch(api.upload.bind(api)),
     gitCredential: watch(api.gitCredential.bind(api)),
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),

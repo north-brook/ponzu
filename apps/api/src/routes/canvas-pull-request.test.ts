@@ -915,4 +915,118 @@ describe("acting", () => {
 
     expect(await codeOf(merge(ws, canvas.id, repo))).toBe("github_reauth_required");
   });
+
+  test("an update that would bring a workflow file is refused in its own words, not as GitHub's", async () => {
+    const { ws, repo, canvas } = await ready();
+    t.github.pulls.push(repo, "main");
+    t.github.pulls.settings(repo, { workflowRefused: true });
+
+    const { status, body } = await act(ws, canvas.id, "update-branch", { headSha: head(repo) });
+    expect(status).toBe(422);
+    expect(body.error).toEqual({
+      code: "workflow_permission",
+      message:
+        "GitHub won't let Ponzu change files under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows. Do this on GitHub instead.",
+    });
+    expect(t.github.pulls.actions.at(-1)?.kind).not.toBe("update_branch");
+  });
+});
+
+describe("merge queues", () => {
+  /** A canvas with its pull request open and mergeable, on a repo that merges through a queue. */
+  async function queued() {
+    const context = await setup();
+    await opened(context.ws, context.canvas.id);
+    const pull = t.github.pulls.latest(context.repo)!;
+    pull.draft = false;
+    t.github.pulls.settings(context.repo, { mergeQueue: true });
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    return { ...context, pull };
+  }
+
+  const merge = (ws: Workspace, canvasId: string, repo: FakeRepoAccess, body = {}) =>
+    call(t, as(ws, "maya"), "POST", path(canvasId, "/merge"), { headSha: head(repo), ...body });
+
+  /** The merge-queue switch (PONZU_MERGE_QUEUE) on for `run`, then off again. */
+  async function withQueueOn<T>(run: () => Promise<T>): Promise<T> {
+    t.deps.features.mergeQueue = true;
+    try {
+      return await run();
+    } finally {
+      t.deps.features.mergeQueue = false;
+    }
+  }
+
+  test("detected on the tab, and refused clearly while the switch is off, never merged past", async () => {
+    const { ws, repo, canvas, pull } = await queued();
+    const tab = await call(t, as(ws, "ines"), "GET", path(canvas.id));
+    expect(tab.body.pullRequest.mergeQueue).toEqual({ enabled: true, entry: null });
+    const actionsBefore = t.github.pulls.actions.length;
+
+    for (const body of [{}, { bypass: true }]) {
+      const { status, body: answer } = await merge(ws, canvas.id, repo, body);
+      expect(status).toBe(409);
+      expect(answer.error).toEqual({
+        code: "merge_queue",
+        message: "This repository merges through a merge queue. Add it to the queue on GitHub.",
+      });
+    }
+    // GitHub heard of neither: no merge, no queue.
+    expect(pull.merged).toBe(false);
+    expect(pull.queue).toBeNull();
+    expect(t.github.pulls.actions.length).toBe(actionsBefore);
+  });
+
+  test("with the switch on, Merge adds it to the queue as the person, at the commit they saw", async () => {
+    const { ws, repo, canvas, pull } = await queued();
+    await withQueueOn(async () => {
+      expect(
+        await (await merge(ws, canvas.id, repo, { headSha: "f".repeat(40) })).body.error.code,
+      ).toBe("head_moved");
+      const { status, body } = await merge(ws, canvas.id, repo);
+      expect(status).toBe(200);
+      expect(body).toMatchObject({
+        pullRequest: { state: "open", mergeQueue: { enabled: true, entry: { position: 1 } } },
+        // In the queue: nothing to press while GitHub merges it.
+        nextAction: "none",
+      });
+      expect(t.github.pulls.actions.at(-1)).toEqual({
+        kind: "enqueue",
+        number: pull.number,
+        by: "maya",
+      });
+      // Pressed again: already there, nothing more asked of GitHub.
+      const again = await merge(ws, canvas.id, repo);
+      expect(again.status).toBe(200);
+      expect(t.github.pulls.actions.filter((a) => a.kind === "enqueue")).toHaveLength(1);
+    });
+    // The canvas is not settled: GitHub hasn't merged it.
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prState: "open", status: "active" });
+  });
+
+  test("a tab whose queue GitHub won't show the App still reads, and Merge never gets past the queue", async () => {
+    const { ws, repo, canvas, pull } = await queued();
+    t.github.pulls.settings(repo, { mergeQueueUnreadable: true });
+    const tab = await call(t, as(ws, "ines"), "GET", path(canvas.id));
+    expect(tab.status).toBe(200);
+    expect(tab.body.pullRequest).toMatchObject({
+      number: pull.number,
+      mergeQueue: { enabled: false, entry: null },
+    });
+    // Ponzu can't tell, so it asks GitHub to merge, and GitHub's queue refuses it.
+    const { status } = await merge(ws, canvas.id, repo);
+    expect(status).toBe(409);
+    expect(pull.merged).toBe(false);
+  });
+
+  test("one the queue turned down says so", async () => {
+    const { ws, repo, canvas, pull } = await queued();
+    pull.queue = { state: "UNMERGEABLE" };
+    const { status, body } = await merge(ws, canvas.id, repo);
+    expect(status).toBe(409);
+    expect(body.error).toEqual({
+      code: "merge_queue_unmergeable",
+      message: `GitHub's merge queue can't merge #${pull.number}. The pull request on GitHub says why.`,
+    });
+  });
 });

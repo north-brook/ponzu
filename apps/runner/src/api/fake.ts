@@ -36,6 +36,8 @@ import {
   type RunnerNotice,
   type RunnerSession,
   type SavedPoint,
+  SECRET_DELIVERY_MS,
+  type SecretResponse,
   type StateRequest,
   type StateResponse,
   type ThreadItem,
@@ -110,6 +112,11 @@ export class FakeRunnerApi {
   readonly threadWrites: ThreadWrite[][] = [];
   readonly states: StateRequest[] = [];
   readonly questions = new Map<string, QuestionRequest & { status: QuestionResponse["status"] }>();
+  /** Secrets people gave, by question: fetched once by `secret`, while fresh. */
+  readonly secrets = new Map<
+    string,
+    { name: string; value: string; at: number; delivered: boolean }
+  >();
   readonly uploads: (UploadFile & { seq?: number })[] = [];
   readonly usage = new Map<string, TurnUsage>();
   readonly erased: GitCredentialRequest[] = [];
@@ -189,6 +196,7 @@ export class FakeRunnerApi {
       putState: as((r, state: StateRequest) => this.putState(r, state)),
       ask: as((r, question: QuestionRequest) => this.ask(r, question)),
       withdraw: as((r, ids: string[]) => this.withdraw(r, ids)),
+      secret: as((r, questionId: string) => this.secret(r, questionId)),
       upload: as((r, files: UploadFile[], opts?: { seq?: number }) => this.upload(r, files, opts)),
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
@@ -238,6 +246,24 @@ export class FakeRunnerApi {
     question.status = "answered";
     const { id: _, status: __, ...asked } = question;
     return this.push({ kind: "answer", payload: { ...answer, question: asked } });
+  }
+
+  /**
+   * A person gives the secret a `secret` question asked for: the row closes, the value is kept
+   * for the runner to fetch once, and the `answer` event names the secret and nothing else.
+   */
+  giveSecret(questionId: string, value: string): RunnerEvent {
+    const question = this.questions.get(questionId);
+    if (question?.status !== "open" || question.kind !== "secret")
+      throw new Error(`${questionId} is not an open secret question`);
+    const { name } = question.payload;
+    this.secrets.set(questionId, { name, value, at: Date.now(), delivered: false });
+    question.status = "answered";
+    const { id: _, status: __, ...asked } = question;
+    return this.push({
+      kind: "answer",
+      payload: { questionId, question: asked, secret: { name } },
+    });
   }
 
   /** Ids of the events the runner has acknowledged. */
@@ -391,6 +417,16 @@ export class FakeRunnerApi {
       this.questions.set(question.id, { ...structuredClone(question), status: "open" });
   }
 
+  /** As `POST /v1/runner/secret`: the value once, while it is fresh; 404 otherwise. */
+  async secret(runner: string, questionId: string): Promise<SecretResponse> {
+    await this.enter("secret", runner);
+    const given = this.secrets.get(questionId);
+    if (!given || given.delivered || Date.now() - given.at > SECRET_DELIVERY_MS)
+      throw new ApiError(404, "not_found", "There is no secret to hand over.");
+    given.delivered = true;
+    return { name: given.name, value: given.value };
+  }
+
   async withdraw(runner: string, ids: string[]): Promise<void> {
     await this.enter("withdraw", runner);
     for (const id of ids) {
@@ -493,6 +529,14 @@ export class FakeRunnerApi {
   /** Where the pull request stands beyond its number and state, as GitHub would say it. */
   prDetail: Partial<NonNullable<PullRequestStanding["pullRequest"]>> = {};
   /**
+   * The commit GitHub has the canvas's branch at, for a test with a remote to look at (a bare
+   * repository), or null while GitHub has no such branch. Set, the fake answers as the API does
+   * from GitHub: opening finds nothing to open from (`pushing`) while the branch isn't there, and
+   * a merge or a branch update named at another commit is `head_moved`. Unset, the branch is
+   * taken to be on GitHub at whatever commit is asked about.
+   */
+  remoteHead: (() => string | null | Promise<string | null>) | null = null;
+  /**
    * Whether the turn named is a person's, as the API decides it from the feed: a person's
    * message, answer or comment. A turn this fake's feed doesn't hold counts as one when named.
    */
@@ -525,6 +569,23 @@ export class FakeRunnerApi {
         "No person in Ponzu began this turn. Only a person's own message, answer or comment in Ponzu can have Claude do this.",
       );
     }
+    // What GitHub has of the branch, when the test gives the fake a remote to look at: never a
+    // claim that it did something to a branch GitHub doesn't have (#511).
+    const remote = this.remoteHead ? await this.remoteHead() : undefined;
+    if (action === "open" && remote === null) {
+      return { did: false, pushing: true, ...this.standing(request.turn, remote) };
+    }
+    if (
+      (action === "merge" || action === "update_branch") &&
+      remote !== undefined &&
+      request.headSha !== remote
+    ) {
+      throw new ApiError(
+        409,
+        "head_moved",
+        "The branch has new commits since you looked. Look again first.",
+      );
+    }
     const pr = this.pullRequest;
     const open = pr?.state === "open" || pr?.state === "draft";
     let did = true;
@@ -552,21 +613,22 @@ export class FakeRunnerApi {
       }
       this.prDetail = { ...this.prDetail, autoMerge: { enabledBy: "ada" } };
     }
-    return { did, pushing: false, ...this.standing(request.turn) };
+    return { did, pushing: false, ...this.standing(request.turn, remote) };
   }
 
-  private standing(turn: string | null): PullRequestStanding {
+  /** `remote` is the branch's commit on GitHub, as `remoteHead` says; undefined when unknown. */
+  private standing(turn: string | null, remote?: string | null): PullRequestStanding {
     const pr = this.pullRequest;
     const branch = this.sessionInfo.branch ?? "pz/branch";
     const personTurn = this.personTurn(turn);
     return {
-      branch: { name: branch, base: "main", exists: true, aheadBy: 1, behindBy: 0 },
+      branch: { name: branch, base: "main", exists: remote !== null, aheadBy: 1, behindBy: 0 },
       pullRequest: pr && {
         number: pr.number,
         url: `https://github.com/north/fern/pull/${pr.number}`,
         title: this.sessionInfo.canvas.name,
         state: pr.state,
-        headSha: "a".repeat(40),
+        headSha: remote ?? "a".repeat(40),
         author: "ada",
         mergedBy: pr.state === "merged" ? "ada" : null,
         mergeable: true,

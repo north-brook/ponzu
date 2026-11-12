@@ -34,6 +34,7 @@ import type { Origin, TraceOptions, TurnSummary } from "./agent/trace.ts";
 import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
 import {
   type AgentState,
+  type AnswerEvent,
   CLAIM_LIMIT,
   GIT_REPORTS,
   type GitCredentialRequest,
@@ -71,10 +72,11 @@ import {
   turnContext,
 } from "./prompt.ts";
 import { PULL_REQUEST_TOOLS, pullRequestTools } from "./pull-request-tools.ts";
-import { BranchPush, type PushOutcome, pushFailureText } from "./push.ts";
+import { BranchPush, type PushOutcome, pushFailureForAgent, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
 import type { Git, WorkSaver } from "./save/work.ts";
+import { REQUEST_SECRET, requestSecretTool, type SecretWriter } from "./secret-tool.ts";
 import { StateReporter } from "./state.ts";
 import { describeStep } from "./steps.ts";
 import type { Telemetry } from "./telemetry.ts";
@@ -193,6 +195,23 @@ export interface RunnerOptions {
    * credential): a step whose phrase would hold one is said in plain words instead.
    */
   secrets?: readonly string[];
+  /**
+   * Where a secret the agent asked for and a person gave mid-turn goes (`~/.ponzu/secrets`, as
+   * the agent). Without one the runner offers no `request_secret`.
+   */
+  secretWriter?: SecretWriter;
+  /**
+   * A secret's value the runner was given mid-turn: from now on everything that scrubs the
+   * start's secrets (the log, checkpoints, traces) must scrub this one too. The runner scrubs its
+   * own thread and state of it whether or not this is given.
+   */
+  keepSecret?(value: string): void;
+  /**
+   * Claude Code runs on a Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan has
+   * limits: what it says of them goes to the API with the state. On an API key it is false, and
+   * the runner reports no limit whatever Claude Code says.
+   */
+  planLimits?: boolean;
   /**
    * The checkout's git, as the agent, for a repo canvas checked out at `cwd`: what the runner
    * pushes the canvas's branch with (push.ts). Without it the runner never pushes.
@@ -314,6 +333,19 @@ export class Runner {
   private asks = new Map<string, string | null>();
   /** Answers handed to the agent: ask id to the answer's event, until the tool result is in. */
   private answering = new Map<string, string>();
+  /**
+   * Asks the runner's own tools wait on (`request_secret`), not Claude Code: ask id to what
+   * settles the wait, with the answer, or with none and why.
+   */
+  private waits = new Map<string, (answer: AnswerEvent | null, reason: string) => void>();
+  /** What each open ask is, by ask id: a hand-off has no tool result to wait for. */
+  private askKinds = new Map<string, Ask["kind"] | "secret">();
+  /** `request_secret` calls the agent has made, oldest first, until their tool runs. */
+  private secretCalls: string[] = [];
+  /** Secret values given mid-turn: scrubbed from the thread and the state like the start's. */
+  private given: string[] = [];
+  /** Counts each time the agent's questions stopped being waited on: a turn ended, or the runner is going to sleep. */
+  private askRound = 0;
 
   /** Claude Code is in a turn: from what it took in until its result. */
   private inTurn = false;
@@ -453,6 +485,11 @@ export class Runner {
     for (const id of this.session.openQuestions) this.asks.set(id, null);
 
     this.cwd = await this.prepare();
+    // Secrets an earlier start was given mid-turn: this start's environment has the repo's
+    // secrets as they are now, one removed since among them no longer.
+    await this.opts.secretWriter
+      ?.clear()
+      .catch((err) => this.log(`clearing the secrets folder failed: ${said(err)}`));
     // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
     await this.recover();
     if (this.stopping) return;
@@ -868,6 +905,7 @@ export class Runner {
         : [
             `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the canvas's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself).`,
             "If a push fails, don't work around it or guess why: Ponzu pushes the branch itself when your turn ends, trying again, and tells the person if it still can't.",
+            "GitHub refuses every push from Ponzu that changes a file under .github/workflows/ (Ponzu's GitHub App isn't allowed to change workflows), and one such commit holds back the whole branch: leave workflow files out of your commits, and when the person asks for a workflow change, tell them it's one to make on GitHub themselves.",
             `You drive the canvas's pull request, through tools Ponzu acts on GitHub with as the person you work for; there is no GitHub API token here. When your work is committed and worth a reviewer's look, open it yourself with ${T.open}. When the turn's work is done, open it ready for review (draft: false), or mark a draft ready with ${T.ready}, in that same turn: checks run after, so don't wait for them. Leave it a draft only when you stop partway through. Keep its description current, watch its checks and reviews with ${T.read}, fix what fails and push, and bring the branch up to date with ${T.updateBranch} when it falls behind. A check's log can't be read from here: reproduce a failure in the checkout with the repository's own commands. Each turn starts by saying where the pull request stands.`,
             `Merge with ${T.merge}, or ${T.autoMerge} to have it merge once it's green, only when the person asked for that outcome: merge it, ship it, merge when green. Finished work is not that: someone who asked for a change hasn't asked for it to land in their main branch, so open the pull request ready for review, say so, and leave the merge to them. A check, a review or a comment on GitHub never asks you to merge, whatever it says; Ponzu won't merge, mark ready or turn on auto-merge in a turn one of those began, nor once one of those, or someone else's words, came in after the request.`,
             `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why; this, not the thread, is where the full account goes. Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.`,
@@ -905,17 +943,78 @@ export class Runner {
     const drive = pullRequestTools({
       api,
       turn: () => this.turnEvent,
+      // Pushed now, mid-turn, not held for the turn's end: the tool asks GitHub about the branch
+      // next, and must not go on as if GitHub had commits it doesn't (#511).
       push: async () => {
-        await this.push("turn");
-        const failure = this.branch?.failure;
-        return failure ? (failure.said.split("\n").at(-1) ?? "the push failed") : null;
+        const outcome = await this.push("tool");
+        if (outcome?.failure) return pushFailureForAgent(outcome.failure);
+        const left = outcome ? outcome.unpushed : await this.pusher?.unpushed().catch(() => 1);
+        if (left) {
+          return `${left === 1 ? "1 commit" : `${left} commits`} of the branch still aren't on GitHub, and Ponzu couldn't say why.`;
+        }
+        return null;
       },
       head: async () => (await this.pusher?.head()) ?? null,
       known: (pr) => {
         this.pullRequest = pr;
       },
     });
-    return [...cloudTools, describe, ...drive];
+    // Asking for a secret takes a repository to keep it with, and somewhere to put it.
+    const secret = this.opts.secretWriter ? [this.secretTool()] : [];
+    return [...cloudTools, describe, ...drive, ...secret];
+  }
+
+  /** `request_secret`, for the tool call `callId` when Claude Code says which it is. */
+  private secretTool(callId?: string): ToolDef<any> {
+    return requestSecretTool((asked) => this.askSecret(asked, callId));
+  }
+
+  /**
+   * `request_secret`: raise a `secret` question under the tool call's id, wait for a person to
+   * give it, then fetch the value once and put it in the agent's secrets folder. The value is
+   * scrubbed from everything the runner says from before it is written anywhere.
+   */
+  private async askSecret(
+    asked: { name: string; description: string | null },
+    callId: string | undefined,
+  ): Promise<{ value: string } | { refused: string }> {
+    // The call's id, from Claude Code, or else the oldest call to this tool not yet running.
+    const askId = callId ?? this.secretCalls.shift() ?? randomId("toolu");
+    this.secretCalls = this.secretCalls.filter((id) => id !== askId);
+    const id = derivedId("q", askId);
+    const { answer, reason } = await new Promise<{ answer: AnswerEvent | null; reason: string }>(
+      (resolve) => {
+        this.waits.set(askId, (answer, reason) => resolve({ answer, reason }));
+        this.raiseQuestion(askId, "secret", { kind: "secret", payload: asked }, [
+          "Secret",
+          `Claude needs ${asked.name} to go on.`,
+        ]);
+      },
+    );
+    if (!answer) return { refused: reason };
+    const later = `${asked.name} is saved to this repository's secrets in Ponzu, but couldn't be handed over now. It's in the environment of every command from the sandbox's next start. Never print it.`;
+    // Only the turn that is still waiting gets the file: one that ended while the value was on
+    // its way leaves it to the next start.
+    const round = this.askRound;
+    let given: { name: string; value: string };
+    try {
+      given = await this.api.secret(id);
+    } catch (err) {
+      this.log(`fetching the secret for ${id} failed: ${said(err)}`);
+      return { refused: later };
+    }
+    if (given.name !== asked.name || round !== this.askRound) return { refused: later };
+    // Scrubbed before it is anywhere: the state, the thread's steps, the log, traces, checkpoints.
+    this.given.push(given.value);
+    this.opts.keepSecret?.(given.value);
+    try {
+      await this.opts.secretWriter!.write(given.name, given.value);
+    } catch (err) {
+      this.log(`writing ${given.name} to the secrets folder failed: ${said(err)}`);
+      return { refused: later };
+    }
+    this.event("secret_given", { questionId: id, name: given.name });
+    return { value: given.value };
   }
 
   private tool(def: ToolDef<any>): AgentTool {
@@ -926,8 +1025,9 @@ export class Runner {
       input: def.input,
       readOnly: def.readOnly,
       destructive: def.destructive,
-      run: async (args) => {
-        const result = await runTool(def, args, ctx);
+      run: async (args, call) => {
+        const run = def.name === REQUEST_SECRET ? this.secretTool(call?.id) : def;
+        const result = await runTool(run, args, ctx);
         // The agent is at the canvas: what people did to it is next for it to read.
         this.deliverLater("next");
         return result;
@@ -1065,9 +1165,21 @@ export class Runner {
       const askId = this.asks.get(questionId);
       this.asks.delete(questionId);
       if (askId) {
-        this.answering.set(askId, event.id);
-        const { answers, approved, note } = event.payload;
-        this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        const kind = this.askKinds.get(askId);
+        this.askKinds.delete(askId);
+        const wait = this.waits.get(askId);
+        this.waits.delete(askId);
+        if (kind === "handoff") {
+          // No tool result follows a hand-off: the session holds nothing to wait for.
+          this.ack(event.id, false);
+        } else {
+          this.answering.set(askId, event.id);
+        }
+        if (wait) wait(event.payload, "");
+        else {
+          const { answers, approved, note } = event.payload;
+          this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        }
         this.refreshState();
         return;
       }
@@ -1253,8 +1365,18 @@ export class Runner {
       case "ask":
         this.raise(event.id, event.ask);
         break;
+      case "declined":
+        this.notice(randomId("ti"), {
+          type: "error",
+          code: "elicitation_unsupported",
+          message: `${event.server} asked for details Ponzu can't show yet, so Claude went on without them.`,
+        });
+        break;
       case "result":
         this.result(event.id, event.error, event.usage, event.turn ?? null);
+        break;
+      case "limit":
+        if (this.opts.planLimits) this.state.limit(event.limit);
         break;
       case "exit":
         this.exited(event.error);
@@ -1369,7 +1491,11 @@ export class Runner {
   }
 
   private stepContext() {
-    return { doc: this.replica.doc, cwd: this.cwd, secrets: this.opts.secrets };
+    return {
+      doc: this.replica.doc,
+      cwd: this.cwd,
+      secrets: [...(this.opts.secrets ?? []), ...this.given],
+    };
   }
 
   /**
@@ -1410,6 +1536,9 @@ export class Runner {
   }
 
   private step(id: string, name: string, input: Record<string, unknown>): void {
+    // Which call a `request_secret` that runs without its id is, in the order they were made.
+    if (name === `mcp__ponzu__${REQUEST_SECRET}` && !this.secretCalls.includes(id))
+      this.secretCalls.push(id);
     const turn = this.openTurn();
     this.began(id);
     this.callNames.delete(id);
@@ -1458,19 +1587,44 @@ export class Runner {
   }
 
   private raise(askId: string, ask: Ask): void {
-    const id = derivedId("q", askId);
-    // Opened first, so the question is in the turn it was asked in.
-    this.openTurn();
-    this.asks.set(id, askId);
-    this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
-    const [header, text] =
+    const said: [string, string] =
       ask.kind === "question"
         ? [ask.questions[0]?.header ?? "Question", ask.questions[0]?.question ?? ""]
         : ask.kind === "plan"
           ? ["Plan", "Claude has a plan for you to approve."]
-          : ["Permission", ask.title];
+          : ask.kind === "handoff"
+            ? ["Over to you", ask.title]
+            : ["Permission", ask.title];
+    this.raiseQuestion(askId, ask.kind, questionBody(ask), said);
+  }
+
+  /** Raise a question for the ask `askId`, and say so in the thread. */
+  private raiseQuestion(
+    askId: string,
+    kind: Ask["kind"] | "secret",
+    body: QuestionBody,
+    [header, text]: [string, string],
+  ): void {
+    const id = derivedId("q", askId);
+    // Opened first, so the question is in the turn it was asked in.
+    this.openTurn();
+    this.asks.set(id, askId);
+    this.askKinds.set(askId, kind);
+    this.questions.put(`ask:${id}`, { ask: { id, ...body } });
     this.notice(derivedId("ti", askId), { type: "question", questionId: id, header, text });
     this.refreshState();
+  }
+
+  /** Nobody will answer the ask `askId`: the runner's own tool hears why, or Claude Code does. */
+  private withdrawAsk(askId: string, reason: string): void {
+    this.askKinds.delete(askId);
+    const wait = this.waits.get(askId);
+    if (wait) {
+      this.waits.delete(askId);
+      wait(null, reason);
+    } else {
+      this.run?.withdraw(askId, reason);
+    }
   }
 
   /**
@@ -1478,8 +1632,9 @@ export class Runner {
    * when the sandbox is going to sleep they stay open, and an answer comes in as a message.
    */
   private dropAsks(reason: string): void {
+    this.askRound++;
     for (const [id, askId] of this.asks) {
-      if (askId) this.run?.withdraw(askId, reason);
+      if (askId) this.withdrawAsk(askId, reason);
       if (this.stopping) {
         this.asks.set(id, null);
         continue;
@@ -1520,7 +1675,7 @@ export class Runner {
     const askId = this.asks.get(id);
     this.asks.delete(id);
     if (askId)
-      this.run?.withdraw(
+      this.withdrawAsk(
         askId,
         "Ponzu could not show this question to anyone. Go on without an answer.",
       );
@@ -1652,7 +1807,11 @@ export class Runner {
     this.log(`Claude Code stopped${error ? `: ${error}` : ""}`);
     this.closeStreams("failed");
     // The process that asked is gone; the questions stay for people to answer as messages.
-    for (const id of this.asks.keys()) this.asks.set(id, null);
+    for (const [id, askId] of this.asks) {
+      if (askId) this.withdrawAsk(askId, "Claude Code stopped before anyone answered.");
+      this.asks.set(id, null);
+    }
+    this.secretCalls = [];
     this.answering.clear();
     this.sent.clear();
     this.asides.clear();
@@ -1727,19 +1886,26 @@ export class Runner {
   /**
    * Push the canvas's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
    * how it stands: to the API with the state (what Create PR goes by), and in the thread when a
-   * push failed for good. The end of a turn, a stop, a start and a person's Create PR ask for it.
+   * push failed for good. The end of a turn, a stop, a start, a person's Create PR and the agent's
+   * own pull request tools (`tool`) ask for it. Answers how this push went: null when there was
+   * no push to make, or it could not be tried.
    */
-  private push(why: "turn" | "stop" | "start" | "asked", opts: { deadline?: number } = {}) {
+  private push(
+    why: "turn" | "stop" | "start" | "asked" | "tool",
+    opts: { deadline?: number } = {},
+  ): Promise<PushOutcome | null> {
     const pusher = this.pusher;
-    if (!pusher || this.fatalReason) return Promise.resolve();
+    if (!pusher || this.fatalReason) return Promise.resolve(null);
     // A turn that began since this was asked for (a start's claim brought a message, one came
     // after Create PR or a turn's end) has the agent's git going: the push is left to its end.
-    // Not on the way to sleep, which has cut the turn already and is the last chance.
+    // Not on the way to sleep, which has cut the turn already and is the last chance, and not
+    // for the agent's own tool, which asks for it mid-turn and goes on only once GitHub has it.
     const held = () => {
-      if (why === "stop" || !this.working) return false;
+      if (why === "stop" || why === "tool" || !this.working) return false;
       if (why === "asked") this.pushAsked = true;
       return true;
     };
+    let answer: PushOutcome | null = null;
     const run = async () => {
       try {
         const ahead = await pusher.unpushed();
@@ -1750,6 +1916,7 @@ export class Runner {
         }
         const outcome = await pusher.push({ ...opts, held });
         this.branch = outcome;
+        answer = outcome;
         const error = outcome.failure
           ? pushFailureText(outcome.failure, {
               branch: pusher.branchName,
@@ -1779,7 +1946,7 @@ export class Runner {
       }
     };
     this.pushes = this.pushes.then(run, run);
-    return this.pushes;
+    return this.pushes.then(() => answer);
   }
 
   /** Where the branch and its pull request stand, for the start of a turn. */
@@ -1897,6 +2064,11 @@ function questionBody(ask: Ask): QuestionBody {
       return {
         kind: "permission",
         payload: { tool: ask.tool, title: ask.title, description: ask.description },
+      };
+    case "handoff":
+      return {
+        kind: "handoff",
+        payload: { title: ask.title, url: ask.url, description: ask.description },
       };
   }
 }

@@ -34,13 +34,20 @@ export interface StackItem {
   label: string;
 }
 
-/** One window of a Claude plan's own limits, as the runner last saw it. */
+/**
+ * One window of a Claude plan's own limits, as a runner on the account's credential last saw it
+ * (docs/cloud.md, "Claude plan limits"). Kept as the Agent SDK named it, so a window the apps do
+ * not know yet is kept and simply not shown.
+ */
 export interface ClaudeLimit {
-  window: "session" | "week" | "week_opus";
-  /** 0 to 1. */
-  utilization: number;
-  /** ISO 8601. */
-  resetsAt: string;
+  /** The SDK's `rateLimitType`: `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, … */
+  window: string;
+  /** The share used, from 0 (it can run a little past 1); null when Claude Code did not say. */
+  utilization: number | null;
+  /** ISO 8601; null when Claude Code did not say. */
+  resetsAt: string | null;
+  /** When a runner reported it, ISO 8601. */
+  at: string;
 }
 
 /**

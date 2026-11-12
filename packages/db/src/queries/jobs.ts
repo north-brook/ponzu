@@ -52,6 +52,11 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<Job | null> {
   return row ?? null;
 }
 
+/** The id of `recordOnce`'s row for `kind` and `key`: a query can look for it by its key. */
+export function onceId(kind: string, key: string): string {
+  return `once:${kind}:${key}`;
+}
+
 /**
  * Record that `kind` was done for `key`, once ever: true for the first caller, false for
  * every caller after, including one at the same moment. For work that must happen at most
@@ -66,7 +71,7 @@ export async function recordOnce(db: Db, { kind, key }: { kind: string; key: str
   const [row] = await run(
     db
       .insert(jobs)
-      .values({ id: `once:${kind}:${key}`, kind, key, completedAt: sql`now()` })
+      .values({ id: onceId(kind, key), kind, key, completedAt: sql`now()` })
       .onConflictDoNothing()
       .returning({ id: jobs.id }),
   );
