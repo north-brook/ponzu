@@ -355,7 +355,10 @@ read-only and never asks a vendor to decrypt a value.
   names. It runs only with every sandbox asleep, paired with the deploy of the API that reads the
   new names. An API deployed before it fails on the renamed schema, so never use Vercel's
   instant rollback across it: going back past 0025 means restoring the Neon database from the
-  restore point (a branch) taken just before it, together with the deploy of that time.
+  restore point (a branch) taken just before it, together with the deploy of that time. On dev
+  that branch is the only way back: dev is a child branch, and Neon's point-in-time restore works
+  only on root branches. So it is taken last, with every sandbox asleep and no job waiting,
+  immediately before the migration, and its operations are finished before the migration starts.
 
 ## Spend
 
