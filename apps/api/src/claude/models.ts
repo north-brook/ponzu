@@ -3,7 +3,8 @@ import type { Effort } from "@ponzu/runner/protocol";
 /*
  * What a design's agent may run on: the models the sandbox image's Claude Code takes, and the
  * effort levels. They move with the image's Claude Code (apps/runner/image pins it), so a new
- * model is added here when the image that knows it is baked.
+ * model is added here once the image's Claude Code knows it: the Claude Code workflow's pull
+ * request names any model its release notes mention that this list does not offer.
  */
 
 export interface ClaudeModel {

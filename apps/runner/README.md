@@ -61,8 +61,9 @@ image/             the sandbox image: its recipe, its build, its checks (image/R
 ## How it runs in a sandbox
 
 [image/README.md](image/README.md) is the image. It holds no runner: the Bun this repo pins,
-the Claude Code the Agent SDK pin speaks to (`0.3.322` with `2.1.322`: they are released
-together and move together, and the runner never runs the copy the SDK would download),
+the Claude Code the Agent SDK pin speaks to (they are released together with one patch number
+and move together, by the Claude Code workflow's pull request, docs/cloud.md "Keeping Claude
+Code current"; the runner never runs the copy the SDK would download),
 playwright-core and the Chrome Headless Shell it pins, `packages/render`'s fonts, and the two
 commands the API runs as root. The runner comes as a bundle: `scripts/build.ts` builds `dist/`
 (`runner.js`, `supervise.js`, `git-credential.js`, `manifest.json`), packs it into a tgz that is

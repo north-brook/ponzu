@@ -24,6 +24,7 @@ build.ts         build, push, wait for Ready, check, record current.json
 checks.ts        the acceptance checks, in a pz-test-image-* sandbox
 e2e.ts           the runner for real: turns, sleeps and wakes, a repo checkout and push
 durability.ts    a sleep and a wake, then the sandbox removed and the design rebuilt
+bump.ts          moves the Agent SDK and Claude Code pins together, for claude-code.yml
 live.ts          what those three do to a sandbox, on @ponzu/sandbox only
 sandbox/         what they run inside a sandbox: the fake API, a screenshot, the tools probe
 current.json     the image the API runs: digest, inputs, base, dates, size, pins
@@ -86,8 +87,29 @@ context is scanned for any secret value of the environment before the build.
 
 `.github/workflows/image.yml` does the same on `ubuntu-latest` (amd64, so no emulation) for
 pushes touching the inputs, logs docker in with `vercel/vcr-action/login` (GitHub OIDC; needs a
-VCR OIDC policy for this repository) and uses the `VERCEL_TOKEN`/`VERCEL_TEAM_ID`/
-`VERCEL_PROJECT_ID` secrets for the rest, then opens a pull request with `current.json`.
+VCR OIDC policy for this repository) and uses the `VERCEL_TOKEN` secret with the
+`VERCEL_TEAM_ID` and `VERCEL_API_PROJECT_ID` variables for the rest, then opens a pull request
+with `current.json` and dispatches CI on it. Without that setup it passes with a warning naming
+what is missing (docs/cloud.md, "Setting up the image workflows").
+
+## Claude Code and the Agent SDK (bump.ts)
+
+`.github/workflows/claude-code.yml` moves the two pins together when a newer Agent SDK is out,
+builds and checks the image through `image.yml`, runs `e2e.ts scratch`, and opens or updates one
+pull request saying what passed (docs/cloud.md, "Keeping Claude Code current"). By hand:
+
+```sh
+bun apps/runner/image/bump.ts discover                          # what would move
+bun apps/runner/image/bump.ts apply --dry-run --pretend 0.3.321 # the whole change path, written nowhere
+bun apps/runner/image/bump.ts apply                             # pins.json, package.json, bun.lock
+```
+
+`apply` verifies the release's `manifest.json` with Anthropic's release key (fingerprint
+`31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`, as code.claude.com/docs/en/setup gives it; needs
+`gpg`), streams the binary through SHA-256 and holds it to that manifest's hash and size, and
+after `bun add` to the SDK package's own manifest. It refuses an SDK whose Claude Code has
+another patch number. `bump.test.ts` runs its pure parts on answers recorded in
+`fixtures/bump/`.
 
 `image.test.ts` fails when current.json is stale for the inputs, when its pins are not
 pins.json's, when the runner bundle's `requires` are not pins.json's Claude Code and
@@ -116,7 +138,7 @@ In one persistent `pz-test-image-*` sandbox, removed at the end:
 ## Live runs
 
 All need the Vercel triple; e2e.ts and durability.ts also `ANTHROPIC_API_KEY` (the development
-key, Haiku) and the GitHub App with `GITHUB_TEST_REPO`. Every sandbox is a `pz-test-*` name and
+key; the fake API asks for Haiku at low effort) and the GitHub App with `GITHUB_TEST_REPO`. Every sandbox is a `pz-test-*` name and
 is removed, on Ctrl-C too; each run ends by listing what is left. Lines are kept in
 `.context/image/*.jsonl` (gitignored).
 
