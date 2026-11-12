@@ -1715,6 +1715,14 @@ export class Runner {
   private push(why: "turn" | "sleep" | "start" | "asked", opts: { deadline?: number } = {}) {
     const pusher = this.pusher;
     if (!pusher || this.fatalReason) return Promise.resolve();
+    // A turn that began since this was asked for (a start's claim brought a message, one came
+    // after Create PR or a turn's end) has the agent's git going: the push is left to its end.
+    // Not on the way to sleep, which has cut the turn already and is the last chance.
+    const held = () => {
+      if (why === "sleep" || !this.working) return false;
+      if (why === "asked") this.pushAsked = true;
+      return true;
+    };
     const run = async () => {
       try {
         const ahead = await pusher.unpushed();
@@ -1723,7 +1731,7 @@ export class Runner {
           this.pushingNow = true;
           this.refreshState();
         }
-        const outcome = await pusher.push(opts);
+        const outcome = await pusher.push({ ...opts, held });
         this.branch = outcome;
         const error = outcome.failure
           ? pushFailureText(outcome.failure, {
