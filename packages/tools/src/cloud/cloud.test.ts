@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -835,6 +835,34 @@ test("write_html and create_artboard take a file of HTML by path, cleaned like a
   await writeFile(picture, bytesOf(ASSET_HEADS.png!));
   const notText = await call("write_html", { target: "ab_hero", path: picture });
   expect(notText.text).toBe(`${picture} isn't text. HTML is read as UTF-8.`);
+});
+
+test("an id made up for new HTML is never one the design already has", async () => {
+  const { call, replica } = setup();
+  await call("write_html", { target: "ab_hero", html: '<p data-id="n_00000">Here first</p>' });
+  // Five random characters: the next one made up comes out n_00000, then as it would.
+  const entropy = spyOn(crypto, "getRandomValues");
+  const clash = () =>
+    entropy.mockImplementationOnce(<T extends ArrayBufferView | null>(bytes: T) => {
+      new Uint8Array(bytes!.buffer).fill(0);
+      return bytes;
+    });
+  try {
+    clash();
+    const wrote = await call("write_html", { target: "ab_hero", html: "<p>Then this</p>" });
+    expect(wrote.isError, wrote.text).toBeFalsy();
+    clash();
+    const made = await call("create_artboard", { name: "Next", html: "<p>And this</p>" });
+    const { id } = made.data as { id: string };
+    expect(findArtboard(replica.doc, id)?.artboard.root.children[0]).not.toMatchObject({
+      id: "n_00000",
+    });
+  } finally {
+    entropy.mockRestore();
+  }
+  expect(locate(replica.doc, "n_00000")?.node.children).toEqual([
+    { kind: "text", value: "Here first" },
+  ]);
 });
 
 test("one call takes what the guide and the tools say it does, by path as in the call", async () => {

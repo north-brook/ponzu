@@ -49,6 +49,11 @@ export interface ParseOptions {
    * parse as before.
    */
   parent?: Pick<PElement, "tag" | "ns" | "attrs">;
+  /**
+   * Ids already in the design the fragment goes into. A made-up id never takes one: five
+   * random characters clash, now and then, with one of a large design's thousands.
+   */
+  taken?: ReadonlySet<string>;
 }
 
 export interface ParseResult {
@@ -69,7 +74,7 @@ export function parseHtml(html: string, opts: ParseOptions = {}): ParseResult {
   const written = new Set<string>();
   collectIds(frag.childNodes, written);
   const assigned = new Set<string>();
-  const ids: IdState = { assign, seen, written, assigned };
+  const ids: IdState = { assign, seen, written, assigned, taken: opts.taken ?? new Set() };
   const nodes = convertChildren(frag.childNodes, [], ids, dropped);
   return { nodes, dropped, assigned };
 }
@@ -82,6 +87,8 @@ interface IdState {
   written: Set<string>;
   /** Ids made up for elements without a usable data-id. */
   assigned: Set<string>;
+  /** Ids in the design already. */
+  taken: ReadonlySet<string>;
 }
 
 function collectIds(list: P5.ChildNode[], out: Set<string>): void {
@@ -99,7 +106,7 @@ function makeUpId(ids: IdState, path: number[]): string {
     ids.assign === "random" ? newId("n") : ids.assign(n ? [...path, -n] : path);
   let id = make(0);
   // Still derived from position on a clash, so it comes out the same next time.
-  for (let n = 1; ids.seen.has(id) || ids.written.has(id); n++) id = make(n);
+  for (let n = 1; ids.seen.has(id) || ids.written.has(id) || ids.taken.has(id); n++) id = make(n);
   ids.assigned.add(id);
   return id;
 }
