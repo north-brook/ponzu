@@ -24,7 +24,7 @@ export interface SupportFacts {
   version: string;
   /** The commit it was built from, or null when the build wasn't told. */
   commit: string | null;
-  /** The environment it talks to: `production`, `dev` or `local`. */
+  /** The environment it talks to: `production`, `dev` or `custom` (config.ts). */
   environment: string;
   /** The `x-request-id` of the API's last answer to the studio, or null before any. */
   lastRequestId: string | null;
@@ -76,31 +76,4 @@ export function requestIdOf(headers: Record<string, string[] | string> | undefin
     return id && REQUEST_ID.test(id) ? id : null;
   }
   return null;
-}
-
-/*
- * What the build was stamped with. The production plan's slice 3 bakes `PONZU_COMMIT` and
- * `PONZU_ENVIRONMENT` into the main process (scripts/build.ts); until a build defines them, the
- * commit is unknown and the environment is the one config.ts hard-codes: dev for a packaged app,
- * local for a run from a checkout.
- */
-declare const PONZU_COMMIT: string | undefined;
-declare const PONZU_ENVIRONMENT: { name?: unknown } | string | undefined;
-
-/** The commit this build was made from, or null. */
-export function bakedCommit(): string | null {
-  return typeof PONZU_COMMIT === "string" && PONZU_COMMIT ? PONZU_COMMIT : null;
-}
-
-/** The environment this build talks to, by name. */
-export function bakedEnvironment(packaged: boolean): string {
-  // Its name, or the environment as an object with one (the plan bakes "name and values").
-  const baked =
-    typeof PONZU_ENVIRONMENT === "string"
-      ? PONZU_ENVIRONMENT
-      : typeof PONZU_ENVIRONMENT === "object"
-        ? PONZU_ENVIRONMENT?.name
-        : undefined;
-  if (typeof baked === "string" && baked) return packaged ? baked : "local";
-  return packaged ? "dev" : "local";
 }

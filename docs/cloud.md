@@ -2479,9 +2479,9 @@ any prefix that is not exactly a well-formed asset key followed by `/`, before i
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
 bucket. Nothing records the job yet; deleting a canvas or an account will.
 
-Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
-(`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
-ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
+Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
+exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
+and disposition, for ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
 assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
 PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
 
@@ -3023,8 +3023,12 @@ projects also keep the environments apart by more than a name: each has its own 
 env, image registry, spend and firewall. The production project's Preview target holds no
 secrets and runs nothing. The values each environment uses (its addresses, client ids,
 buckets and analytics project) are public and live in
-[`infra/environments.json`](../infra/environments.json); the resources, the founder's steps
-that create production, rotation, backups and spend are in [production.md](production.md).
+[`infra/environments.json`](../infra/environments.json). The desktop app bakes one of them in
+when it is built: a release the one the file's `release` names, which stays dev until the
+cutover, and Ponzu Dev always dev's. A field the app reads that is still `null` fails the
+build, and the release workflow refuses to publish unless `release` is production with every
+field set. The resources, the founder's steps that create production, rotation, backups and
+spend are in [production.md](production.md).
 The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
 redirects never have to move at cutover.
 
@@ -3061,6 +3065,21 @@ the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING`
 is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
 and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
 push and email, so an app shows only what can work.
+
+Each deployment checks its own dependencies and settings: `GET /v1/cron/selfcheck`, behind
+`CRON_SECRET` like the minute's cron, and a cron step at minute 7 of every hour
+(`apps/api/src/ops/selfcheck.ts`). It answers `{ checks: [{ id, ok, detail }] }` for the
+database, the migrations applied against the ones the build has, Realtime sealing, both buckets
+(a HEAD of a key that is never stored), WorkOS's key, the GitHub App (its slug, and the
+permissions and events the API uses), the App's webhook (its URL is `PONZU_API_URL` plus
+`/v1/github/webhook`, json, TLS checked), Ponzu's Anthropic key, the sandbox list, values still
+sealed under an old vault key, and whether PostHog is set. Each check has five seconds, and
+all run at once. `detail` is a word from a fixed list and never quotes what a service said or
+a value from the environment. Two checks add a field: `github_app` names in `missing` the
+permissions or events from the API's own list that the App lacks, and `vault_old_keys` gives
+its `count`. The hourly step raises each failed check to PostHog as an
+exception (`selfcheck_failed`, with `check`), which is the alarm; the old-keys count and
+PostHog are informational and only logged.
 
 ### Checking a deploy's sandboxes
 

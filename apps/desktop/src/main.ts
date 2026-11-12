@@ -34,7 +34,14 @@ import {
   signedInOnce,
   skipWindowState,
 } from "./carry-over.ts";
-import { APP_NAMES, bundleMismatch, claimsScheme, configFor, testBuild } from "./config.ts";
+import {
+  APP_NAMES,
+  aboutVersion,
+  bundleMismatch,
+  claimsScheme,
+  configFor,
+  testBuild,
+} from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
@@ -48,7 +55,7 @@ import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
-import { bakedCommit, bakedEnvironment, requestIdOf, type SupportFacts } from "./support.ts";
+import { requestIdOf, type SupportFacts } from "./support.ts";
 import { telemetryOffBecause } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
@@ -59,7 +66,20 @@ import { createMainWindow } from "./window.ts";
  * local server: the studio talks to Ponzu Cloud itself, with an access token it borrows from here.
  */
 
-const config = configFor(app.isPackaged, process.env);
+/*
+ * Where this build talks to was baked in by scripts/build.ts. A test build given an override it
+ * can't use (PONZU_ENVIRONMENT_OVERRIDE) stops here rather than talk to the baked one instead.
+ */
+const config = (() => {
+  try {
+    return configFor(app.isPackaged, process.env);
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    console.error(why);
+    if (!smoke) dialog.showErrorBox("Ponzu can't start", why);
+    process.exit(1);
+  }
+})();
 
 /*
  * Ponzu Dev and Ponzu Local (a run from a checkout) are apps of their own: their own data folder,
@@ -192,6 +212,8 @@ const buildProperties = {
   channel: config.appName,
   platform: process.platform,
   os_version: process.getSystemVersion(),
+  environment: config.environment,
+  app_commit: config.commit,
 };
 /** What a new window is told about analytics; the launch's facts go to the first one only. */
 const analyticsFor = (): AnalyticsSetup | null =>
@@ -202,6 +224,8 @@ const analyticsFor = (): AnalyticsSetup | null =>
         replay: posthog.replay,
         channel: config.appName,
         osVersion: buildProperties.os_version,
+        environment: config.environment,
+        commit: config.commit,
         launch: takeLaunch(),
       }
     : null;
@@ -520,8 +544,9 @@ function watchRequestIds() {
 function supportFacts(): SupportFacts {
   return {
     version: app.getVersion(),
-    commit: bakedCommit(),
-    environment: bakedEnvironment(app.isPackaged),
+    // The same facts About and analytics carry: what scripts/build.ts baked, as config.ts read it.
+    commit: config.commit,
+    environment: config.environment,
     lastRequestId,
   };
 }
@@ -614,6 +639,7 @@ if (!app.requestSingleInstanceLock()) {
       signOut: () => void session.signOut(),
       // Developer tools are a developer's: a release has no way to open them on someone's session.
       devTools: config.remoteDebugging,
+      about: aboutVersion(config),
       supportFacts,
     });
     setSignedIn(session.getState().status === "signed_in");

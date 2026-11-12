@@ -310,6 +310,15 @@ export {
   type WakeContext,
 } from "./queries/sandboxes.ts";
 export {
+  countSealedValues,
+  listSealedNotUnder,
+  replaceSealedValue,
+  SEALED_COLUMNS,
+  type SealedColumn,
+  type SealedCount,
+  type SealedValue,
+} from "./queries/sealed.ts";
+export {
   admitSession,
   endSession,
   endUserSessions,

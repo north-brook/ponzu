@@ -253,6 +253,30 @@ describe("the orphan archive sweep", () => {
     expect(has(key)).toBe(true);
   });
 
+  test("when the database fails on a later page, nothing from the earlier pages is deleted either", async () => {
+    clearPrivate();
+    const keys = Array.from({ length: 1500 }, orphanKey).sort();
+    for (const key of keys) put(key, 2 * DAY);
+    // The first page's query answers; the second's fails.
+    let asked = 0;
+    const flaky = new Proxy(t.deps.db, {
+      get(target, property) {
+        if (property === "select" && ++asked > 1) {
+          return () => {
+            throw new Error("Postgres went away");
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(
+      sweepOrphanArchives({ ...t.deps, db: flaky }, now(), { start: "private/" }),
+    ).rejects.toThrow("Postgres went away");
+    expect(asked).toBe(2);
+    expect(keys.filter(has)).toEqual(keys);
+  });
+
   test("a start outside private/ is refused before storage is asked", async () => {
     t.storage.bulk.length = 0;
     await expect(sweepOrphanArchives(t.deps, now(), { start: "staging/" })).rejects.toThrow();

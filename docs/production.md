@@ -75,7 +75,13 @@ that says where to connect (the API, WorkOS, Realtime, assets, the GitHub App, t
 project, the Neon branch, a bucket, the PostHog project) is the same as dev's, so dev's `apiUrl`
 and `apiDomains` must move to `api-dev.ponzu.design` (founder step D11) before it can pass.
 Production's `r2.private` may be `null` until the bucket exists, but never `false`. The release
-workflow will run it before building, so no release can ship pointing at dev.
+workflow runs it, from the tag being released, before it publishes ("The release talks to
+production" in release.yml), so no release can ship pointing at dev. A dry run publishes
+nothing and is not held by it.
+
+The desktop build reads the same file (`apps/desktop/scripts/build.ts`): a release bakes the
+environment `release` names and Ponzu Dev bakes dev's, and a `null` among the fields the app
+uses (`apiUrl`, `workosClientId`, `realtimeUrl`, `assetsUrl`) fails the build.
 
 ## Every resource, and what is right
 

@@ -1,6 +1,6 @@
 import { randomString, recordedArchiveKeys } from "@ponzu/db";
 import type { Deps } from "../../deps/index.ts";
-import type { ListedObject } from "../../deps/storage.ts";
+import { type ListedObject, MAX_DELETE_KEYS } from "../../deps/storage.ts";
 import { PRIVATE } from "../../uploads/uploads.ts";
 import type { CronStep } from "../steps.ts";
 
@@ -19,7 +19,8 @@ import type { CronStep } from "../steps.ts";
  * What keeps a recorded checkpoint safe:
  * - Only `private/` is listed, and a key storage answers from anywhere else is never touched.
  * - An object is deleted only when the database, asked after the listing, says no canvas's
- *   checkpoint names it. A failed query fails the step and deletes nothing.
+ *   checkpoint names it. Nothing is deleted until every page's query has answered, so a failed
+ *   query fails the step and deletes nothing.
  * - An object storage gives no time for is kept.
  * - A checkpoint records only archives uploaded in the last `ARCHIVE_RECORD_HOURS` hours
  *   (runner/checkpoint.ts), far inside the day this sweep waits, so no archive the sweep finds
@@ -55,8 +56,8 @@ export interface ArchiveSweep {
  * List `private/` in `deps.archives` and delete up to `limit` objects over a day old that no
  * checkpoint records, reading at most `pages` pages. A run starts at a random key (`start`, a
  * key under `private/`, for a test to fix) and goes round to it, so a bucket larger than a run
- * reads is still swept whole over the days. Throws, having deleted only what it had checked,
- * when storage or the database fails.
+ * reads is still swept whole over the days. The deletes come only after every page is listed
+ * and checked, so when storage's list or the database fails it throws having deleted nothing.
  */
 export async function sweepOrphanArchives(
   deps: Pick<Deps, "db" | "archives" | "log">,
@@ -74,7 +75,8 @@ export async function sweepOrphanArchives(
   // From `start` to the end, then from the beginning back round to `start`.
   let after: string | undefined = start;
   let wrapped = false;
-  for (let page = 0; page < pages && counts.deleted < limit; page++) {
+  const orphans: string[] = [];
+  for (let page = 0; page < pages && orphans.length < limit; page++) {
     const listed = await deps.archives.list(prefix, after === undefined ? {} : { after });
     let objects = listed.objects.filter((object) => object.key.startsWith(prefix));
     let round = false;
@@ -85,7 +87,7 @@ export async function sweepOrphanArchives(
         round = true;
       }
     }
-    await sweepPage(deps, objects, before, limit - counts.deleted, counts);
+    orphans.push(...(await checkPage(deps, objects, before, limit - orphans.length, counts)));
     if (round) break;
     if (!listed.truncated || listed.keys.length === 0) {
       if (wrapped) break;
@@ -95,18 +97,24 @@ export async function sweepOrphanArchives(
     }
     after = listed.keys.at(-1);
   }
+  // Every page is checked: only now is anything deleted.
+  for (let from = 0; from < orphans.length; from += MAX_DELETE_KEYS) {
+    const batch = orphans.slice(from, from + MAX_DELETE_KEYS);
+    await deps.archives.deleteMany(batch);
+    counts.deleted += batch.length;
+  }
   deps.log.info("archives_swept", { ...counts });
   return counts;
 }
 
-/** Sort one page into kept and deleted, and delete up to `room` of it. */
-async function sweepPage(
-  deps: Pick<Deps, "db" | "archives">,
+/** Sort one page into kept and to delete, and answer up to `room` of the ones to delete. */
+async function checkPage(
+  deps: Pick<Deps, "db">,
   objects: ListedObject[],
   before: number,
   room: number,
   counts: ArchiveSweep,
-): Promise<void> {
+): Promise<string[]> {
   counts.listed += objects.length;
   const old: string[] = [];
   for (const { key, modifiedAt } of objects) {
@@ -114,14 +122,11 @@ async function sweepPage(
     else if (modifiedAt.getTime() > before) counts.young++;
     else old.push(key);
   }
-  if (old.length === 0) return;
+  if (old.length === 0) return [];
   // Asked after the listing: a checkpoint recorded since is seen.
   const recorded = await recordedArchiveKeys(deps.db, old);
   counts.recorded += recorded.size;
-  const orphans = old.filter((key) => !recorded.has(key)).slice(0, room);
-  if (orphans.length === 0) return;
-  await deps.archives.deleteMany(orphans);
-  counts.deleted += orphans.length;
+  return old.filter((key) => !recorded.has(key)).slice(0, room);
 }
 
 /** Once a day: the archives no checkpoint records, deleted. */

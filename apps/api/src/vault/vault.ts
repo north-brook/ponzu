@@ -32,6 +32,8 @@ export interface Vault {
   seal(plaintext: string, binding: Binding): Promise<string>;
   /** Throws a `VaultError` if the value was altered, moved, or sealed with a key not held. */
   open(sealed: string, binding: Binding): Promise<string>;
+  /** The ids of the keys held: the one that seals, and the old ones that still open. */
+  keyIds(): Promise<{ current: string; old: string[] }>;
 }
 
 /** A sealed value that cannot be opened, or a key that cannot be used. It never quotes either. */
@@ -90,7 +92,23 @@ export function createVault({ key, oldKeys = [] }: { key: string; oldKeys?: stri
         );
       }
     },
+
+    async keyIds() {
+      const [current, ...old] = (await held).map(({ id }) => id);
+      return { current: current!, old };
+    },
   };
+}
+
+/**
+ * The id of the key a stored value was sealed with, read without opening it; null for text not
+ * in the vault's format. The id is public (it is the start of the key's SHA-256), so it can be
+ * counted and printed.
+ */
+export function sealedKeyId(sealed: string): string | null {
+  const [format, keyId, nonce, ciphertext, ...rest] = sealed.split(".");
+  if (format !== FORMAT || !keyId || !nonce || !ciphertext || rest.length > 0) return null;
+  return /^[0-9a-f]{8}$/.test(keyId) ? keyId : null;
 }
 
 /** A fresh key, as `PONZU_VAULT_KEY` wants it. */

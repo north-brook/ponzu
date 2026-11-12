@@ -31,11 +31,12 @@ src/
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
-                    delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
-    sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
+                    delete, list, delete many), signed with SigV4 by aws4fetch; `archives` is
+                    the same, on R2_PRIVATE_BUCKET when it is set
     poke.ts         real: `POST /poke` to an awake runner on its sandbox's public port, with
                     the port's bearer token; a 502 or 503 just after a start is tried again
-    anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
+    anthropic.ts    real: whether Anthropic takes an API key, a person's or Ponzu's own (the
+                    free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku (ideas) and Sonnet (their gate) via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
@@ -75,6 +76,9 @@ src/
   account/        deleting a person's account, step by step
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
+  ops/            selfcheck.ts: the deployment's checks of its own dependencies and settings
+                  (`/v1/cron/selfcheck`, and hourly from the cron); github-app.ts: the
+                  permissions and events the API needs of its GitHub App
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
                   its checks (prompt.ts), when they are made and kept (ideas.ts)
   routes/         one file per area, mounted under /v1 in routes/index.ts
@@ -406,3 +410,17 @@ by then, and the cron retries its work.
 `CRON_SECRET` is what Vercel sends as the bearer of each cron request (`crons` in
 [vercel.json](vercel.json)); Vercel reads that exact name from the project. Crons run on
 production only, so a preview never runs its jobs again by itself.
+
+**After a deploy, ask the selfcheck.** `GET /v1/cron/selfcheck` takes the same bearer and
+answers every check of the deployment's dependencies and settings, each `ok` or not with a
+fixed word saying why ([src/ops/selfcheck.ts](src/ops/selfcheck.ts)). Read the secret into
+the shell without printing it, then:
+
+```sh
+curl -s -H "authorization: Bearer $CRON_SECRET" https://api.ponzu.design/v1/cron/selfcheck
+```
+
+The minute's cron runs the same checks at minute 7 of every hour and raises each failure to
+PostHog error tracking as `selfcheck_failed`. A `github_app` failure names, in `missing`, the
+permissions or events from [src/ops/github-app.ts](src/ops/github-app.ts) the App lacks;
+`vault_old_keys` counts values still sealed under a key in `PONZU_VAULT_OLD_KEYS`.
