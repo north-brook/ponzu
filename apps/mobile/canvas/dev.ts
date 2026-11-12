@@ -1,8 +1,8 @@
 /*
  * The dev harness: builds the canvas, then serves dev.html (the app's part) with the built page
- * in a frame. Point it at a running Ponzu:
+ * in a frame. Point it at a running Ponzu 1.x (its command line is on main, not this branch):
  *
- *   PONZU_TELEMETRY=0 bun apps/cli/src/index.ts serve examples/kettle.design --port 7791
+ *   PONZU_TELEMETRY=0 bunx ponzu serve examples/kettle.design --port 7791
  *   bun apps/mobile/canvas/dev.ts            # http://127.0.0.1:7792/?server=http://127.0.0.1:7791
  *
  * Every load of /canvas.html rebuilds, so a reload shows the latest source.

@@ -21,7 +21,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
  * Code, Codex and Cursor. The update took the server away, so each of those now starts nothing.
  *
  * Each is removed only when it is provably 1.x's and provably dead: written in the exact form
- * 1.x wrote (apps/cli/src/install.ts, command.ts, host.ts and wake.ts), and pointing at a server
+ * 1.x wrote (its CLI's install.ts, command.ts, host.ts and wake.ts), and pointing at a server
  * binary that no longer exists. Anything else is the person's and stays, and so does everything
  * when a 1.x Ponzu is still installed somewhere the command can find. Nothing outside these
  * entries is touched: no design, no folder of the person's, nothing else in ~/.ponzu.

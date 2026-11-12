@@ -72,7 +72,7 @@ test("the import scan sees a type-only import of the canvas", () => {
   expect(specifiers('export type { X } from "@ponzu/render/types";')).toEqual([
     "@ponzu/render/types",
   ]);
-  expect(specifiers('const m = await import("@ponzu/server");')).toEqual(["@ponzu/server"]);
+  expect(specifiers('const m = await import("@ponzu/render");')).toEqual(["@ponzu/render"]);
 });
 
 /** Every specifier a module names: imports, re-exports and dynamic imports, type-only ones too. */

@@ -41,9 +41,10 @@ Nobody bumps versions or pushes tags by hand.
 [Release Please](https://github.com/googleapis/release-please) releases two
 components, each with its own release PR:
 
-- **The desktop app and CLI** (the root package, tags `vX.Y.Z`): `chore(main):
+- **The desktop app** (the root package, tags `vX.Y.Z`): `chore(main):
   release X.Y.Z` collects every `feat` and `fix` on `main` into `CHANGELOG.md`.
-  Changes only under `apps/mobile` don't count.
+  Changes only under `apps/mobile`, `apps/api`, `apps/runner`, `packages/db`,
+  `packages/sandbox`, `packages/evals`, `infra` or `docs` don't count.
 - **The iPhone app** (`apps/mobile`, tags `mobile-vX.Y.Z`): `chore(main):
   release mobile X.Y.Z` collects those that touch `apps/mobile` into
   `apps/mobile/CHANGELOG.md`. Its tag starts EAS's production workflow, which
@@ -79,12 +80,6 @@ pass it merges, and for the desktop app
    publishes the release. Only now can the site's download links and installed
    apps see it. A platform that fails leaves the draft a draft: every release
    ships on all three or on none.
-
-Beside the desktop builds, the same version of the CLI goes to npm as `ponzu`, which
-`bunx ponzu` runs: bundled for Bun with the studio
-(`scripts/npm-package.ts`), installed from its tarball and checked to serve
-the studio (`scripts/npm-smoke.ts`, which CI's desktop job also runs), then
-published with provenance. A version npm already has is skipped.
 
 So a merged `fix:` or `feat:` reaches everyone without anyone touching the
 release PR. To hold a release, close its release PR; the next push to `main`
@@ -124,13 +119,3 @@ key), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`. `RELEASE_TOKEN` is a
 repository secret: a token that can open and merge pull requests, so the
 release PR's checks run (pull requests opened with the workflow's own token
 start no workflows).
-
-npm takes the `ponzu` package from the release workflow by [trusted
-publishing](https://docs.npmjs.com/trusted-publishers): on npmjs.com, the
-package's settings name `north-brook/ponzu` and `release.yml` as its
-publisher, so no token is stored. For the first publish, sign in interactively
-with `npm login`, build the studio and npm package, run its smoke test, then
-run `npm publish ./apps/cli/npm --access public` and complete the 2FA prompt.
-Once the package exists, configure its trusted publisher before the next
-release. Future releases publish from GitHub Actions with provenance; no
-`NPM_TOKEN` repository secret is needed.
