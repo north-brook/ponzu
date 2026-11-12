@@ -228,9 +228,14 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
           { x: 0, y: 40, width: 40, height: 40, period: 1000, src: "", ids: ["n_paused"] },
         ],
       };
-      // The videos have no source: the handoff doesn't wait on them.
-      for (const v of layer.querySelectorAll("video"))
+      // The videos have no source: they say they have metadata, and a seek lands at once, so
+      // the handoff takes its first lead instead of waiting out each seek's fallback.
+      for (const v of layer.querySelectorAll("video")) {
         Object.defineProperty(v, "readyState", { value: 1 });
+        Object.defineProperty(v, "currentTime", {
+          set: () => setTimeout(() => v.dispatchEvent(new Event("seeked"))),
+        });
+      }
       await w.pz.handoffToVideos(
         root,
         layer,

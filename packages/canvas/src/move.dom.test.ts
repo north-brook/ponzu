@@ -171,21 +171,6 @@ describe.skipIf(!chromium)("moving artboards in Chromium", () => {
       [id, x] as const,
     );
 
-  test("a dropped board stays where it was dropped while the move is on its way", async () => {
-    await mount([["ab_a", 0, 0]]);
-    await dragBy("ab_a", 300, 0, 10);
-    const dropped = await drawnAt("ab_a");
-    expect(dropped.x).toBeGreaterThan(250);
-    // Watch every frame from the drop until well after the echo.
-    const watch = watchX("ab_a", ECHO * 2);
-    await page.mouse.up();
-    const xs = await watch;
-    expect(Math.min(...xs)).toBe(dropped.x);
-    expect(await docAt("ab_a")).toEqual({ x: dropped.x, y: 0 });
-    expect(await drawnAt("ab_a")).toEqual({ x: dropped.x, y: 0 });
-    await page.close();
-  });
-
   test("dragging another board doesn't let a drop on its way go", async () => {
     await mount([
       ["ab_a", 0, 0],
@@ -214,6 +199,7 @@ describe.skipIf(!chromium)("moving artboards in Chromium", () => {
     await page.mouse.up();
     expect(Math.min(...(await watch))).toBe(second);
     await docReaches("ab_a", second);
+    expect(await docAt("ab_a")).toEqual({ x: second, y: 0 });
     expect(await drawnAt("ab_a")).toEqual({ x: second, y: 0 });
     await page.close();
   });

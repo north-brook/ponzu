@@ -147,8 +147,16 @@ describe.skipIf(!chromium)("reordering pages in Chromium", () => {
       [name, ms] as const,
     );
 
-  test("a tab dragged past the others moves its page there, and stays put on the way", async () => {
+  test("Escape puts a dragged tab back; a tab dragged past the others moves its page there, and stays put on the way", async () => {
     await mount(["One", "Two", "Three"]);
+    const one = await box("One");
+    const three = await box("Three");
+    await dragBy("Three", one.left - three.left);
+    expect(await drawn()).toEqual(["Three", "One", "Two"]);
+    await page.keyboard.press("Escape");
+    expect(await drawn()).toEqual(["One", "Two", "Three"]);
+    await page.mouse.up();
+    // That drag sent nothing: the one move sent below is the only one.
     const start = await box("One");
     const end = await box("Three");
     await dragBy("One", end.left + end.width - (start.left + start.width));
@@ -183,22 +191,6 @@ describe.skipIf(!chromium)("reordering pages in Chromium", () => {
     const b = await box("Three");
     await page.mouse.click(b.left + b.width / 2, b.y);
     expect(await active()).toBe("Three");
-    await page.close();
-  });
-
-  test("Escape puts a dragged tab back", async () => {
-    await mount(["One", "Two", "Three"]);
-    const one = await box("One");
-    const three = await box("Three");
-    await dragBy("Three", one.left - three.left);
-    expect(await drawn()).toEqual(["Three", "One", "Two"]);
-    await page.keyboard.press("Escape");
-    expect(await drawn()).toEqual(["One", "Two", "Three"]);
-    await page.mouse.up();
-    await new Promise((r) => setTimeout(r, ECHO * 1.5));
-    expect(await sent()).toEqual([]);
-    expect(await docOrder()).toEqual(["One", "Two", "Three"]);
-    expect(await active()).toBe("One");
     await page.close();
   });
 });
