@@ -86,6 +86,11 @@ export type ErrorCode =
   /** Anthropic does not take this API key. */
   | "claude_key_invalid"
   /**
+   * The model, or that effort for it, is not one the person's Claude account offers now. Read
+   * `/v1/claude/defaults` again for what it does.
+   */
+  | "model_not_offered"
+  /**
    * A Claude sign-in's code that is not whole, or that claude.ai turned away (wrong, from an
    * earlier sign-in, or past its time there). Open sign-in again for a new one.
    */

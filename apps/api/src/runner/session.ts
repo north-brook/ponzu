@@ -1,4 +1,5 @@
 import {
+  getClaudeAccountById,
   getRunnerContext,
   getSandbox,
   listOpenQuestions,
@@ -6,16 +7,16 @@ import {
   takeRunnerLease,
 } from "@ponzu/db";
 import type { Effort, RunnerSession } from "@ponzu/runner/protocol";
+import { effortOrDefault, type ModelOffer, modelOrDefault, offerFor } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import { savedView } from "./checkpoint.ts";
+import { modelsHeld } from "./models.ts";
 
 /*
  * The runner's first call (docs/cloud.md, "The runner protocol", "Session"): it takes the
  * design's lease, and is answered with everything the runner needs to start.
  */
-
-const EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh", "max"] satisfies Effort[];
 
 /** Where a design opens in Ponzu. */
 export const designLink = (designId: string) => `https://ponzu.design/designs/${designId}`;
@@ -40,6 +41,14 @@ export async function startRunnerSession(
   if (!context) throw new ApiError(404, "not_found", "There is no such design.");
   logStart(deps, designId, client, sandbox);
   const { design, repo, owner, assetKey } = context;
+  const claude = design.claudeAccountId
+    ? await getClaudeAccountById(deps.db, design.claudeAccountId)
+    : null;
+  const run = runsOn(offerFor(claude), design);
+  if (design.model !== null && run.model !== design.model) {
+    // What it was made with is no longer offered: it runs on what the account offers now.
+    deps.log.info("model_unoffered", { designId, chosen: design.model, runs: run.model });
+  }
   const { slug, botUserId } = deps.config.githubApp;
   const committer = {
     name: `${slug}[bot]`,
@@ -52,8 +61,8 @@ export async function startRunnerSession(
     repo: repo ? { owner: repoOwner!, name: repoName!, defaultBranch: repo.defaultBranch } : null,
     branch: repo ? design.branch : null,
     claudeSessionId: lease.claudeSessionId,
-    model: design.model,
-    effort: design.effort && EFFORTS.includes(design.effort) ? (design.effort as Effort) : null,
+    model: run.model,
+    effort: run.effort,
     // A design whose owner is gone is still worked on; its commits are then the App's own.
     author: owner
       ? {
@@ -78,7 +87,25 @@ export async function startRunnerSession(
           content: deps.config.posthog.aiContent,
         }
       : null,
+    models: modelsHeld(claude),
   };
+}
+
+/**
+ * What a design's turns run on: what it was made with while its account offers that, or what
+ * the account runs in its place; nothing chosen is Claude Code's own default. The effort is the
+ * one chosen while the model takes it.
+ */
+export function runsOn(
+  offer: ModelOffer,
+  design: { model: string | null; effort: string | null },
+): { model: string | null; effort: Effort | null } {
+  const model = design.model === null ? null : modelOrDefault(offer, design.model);
+  const effort =
+    design.effort === null
+      ? null
+      : effortOrDefault(offer, model ?? offer.defaultModel, design.effort);
+  return { model, effort };
 }
 
 /** Which runner started, in which session, on which image, and what it says it is. */

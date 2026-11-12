@@ -44,7 +44,7 @@ export function claudeProblem(claude: WakeContext["claude"], now: number): Agent
  * Which credential a runner was started with, as the sandbox's row records it: the account and
  * when it was connected, which a new sign-in or a new key changes. Never the credential itself.
  */
-export function credentialMark(claude: Claude): string {
+export function credentialMark(claude: Pick<Claude, "id" | "connectedAt">): string {
   return `${claude.id}@${claude.connectedAt.toISOString()}`;
 }
 

@@ -11,7 +11,13 @@ import {
   type User,
 } from "@ponzu/db";
 import { appSession } from "../analytics/scope.ts";
-import { effortOrDefault, modelOrDefault } from "../claude/models.ts";
+import {
+  checkOffered,
+  DEFAULT_EFFORT,
+  effortOrDefault,
+  modelOrDefault,
+  offerFor,
+} from "../claude/models.ts";
 import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
 import { personFor } from "./actor.ts";
 import { branchFor, branchTopic } from "./branch.ts";
@@ -48,6 +54,13 @@ export async function startDesign(
 ): Promise<{ design: Design; created: boolean }> {
   const { user, repo, name, message, createKey } = request;
   const claude = await getClaudeAccount(deps.db, user.id);
+  // What it runs on is what the person's account offers: a choice it doesn't is refused here,
+  // and a saved default it no longer does gives way to what runs in its place.
+  const offer = offerFor(claude);
+  const model = request.model ?? modelOrDefault(offer, user.defaultModel);
+  checkOffered(offer, model, request.effort);
+  const effort =
+    request.effort ?? effortOrDefault(offer, model, user.defaultEffort ?? DEFAULT_EFFORT);
   const topic = branchTopic(message?.text ?? (name === "Untitled" ? "" : name));
   const firstMessage = message && {
     item: { text: message.text, from: personFor(user) },
@@ -66,8 +79,8 @@ export async function startDesign(
         claudeAccountId: claude && claude.status !== "revoked" ? claude.id : null,
         name,
         branch: repo ? branchFor(topic, taken) : null,
-        model: request.model ?? modelOrDefault(user.defaultModel),
-        effort: request.effort ?? effortOrDefault(user.defaultEffort),
+        model,
+        effort,
         createKey: createKey ?? null,
         doc: { ...emptyDoc(name), pages: [{ id: newId("pg"), name: "Page 1", artboards: [] }] },
         ...(firstMessage ? { firstMessage } : {}),

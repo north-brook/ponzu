@@ -10,7 +10,7 @@ import {
   shortDate,
 } from "../claude.ts";
 import { EFFORT_LABELS } from "../create/model-picker.tsx";
-import type { Effort, ModelOption } from "../model.ts";
+import { type Effort, effortFor, effortsOf, type ModelOption } from "../model.ts";
 import { ClaudeCard, type ClaudeCardProps, canConnect } from "../setup/claude-card.tsx";
 import { StepButton } from "../setup/step.tsx";
 import { useNow } from "../time.ts";
@@ -39,8 +39,8 @@ export type AgentsSectionProps = AgentsConnection & {
   /** Sign in again: a subscription near its year's end, or one signed out. */
   onReconnect: () => void;
   defaults: AgentDefaults;
-  models: ModelOption[];
-  efforts: Effort[];
+  models: readonly ModelOption[];
+  efforts: readonly Effort[];
   onDefaultsChange: (defaults: AgentDefaults) => void;
   /** The plan's windows, as last seen; null for an API key, which has none. */
   limits: ClaudeLimit[] | null;
@@ -138,7 +138,12 @@ export function AgentsSection({
               label="Model"
               value={defaults.model}
               options={models.map((m) => ({ value: m.id, label: m.label }))}
-              onChange={(model) => onDefaultsChange({ ...defaults, model })}
+              onChange={(model) =>
+                onDefaultsChange({
+                  model,
+                  effort: effortFor(models, efforts, model, defaults.effort),
+                })
+              }
             />
           }
         >
@@ -149,7 +154,10 @@ export function AgentsSection({
             <ValuePicker
               label="Effort"
               value={defaults.effort}
-              options={efforts.map((e) => ({ value: e, label: EFFORT_LABELS[e] }))}
+              options={effortsOf(models, efforts, defaults.model).map((e) => ({
+                value: e,
+                label: EFFORT_LABELS[e],
+              }))}
               onChange={(effort) => onDefaultsChange({ ...defaults, effort })}
             />
           }

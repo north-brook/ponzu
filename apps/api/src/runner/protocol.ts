@@ -13,6 +13,7 @@ import {
   MAX_TEXT,
   MAX_THREAD_WRITE,
   MAX_TURN_GROUPS,
+  type ModelsReport,
   type PullRequestSummaryRequest,
   type QuestionRequest,
   type RestoredReport,
@@ -281,6 +282,29 @@ export const GitReport: z.ZodType<GitReportRequest, unknown> = z.object({
 
 export const PullRequestSummary: z.ZodType<PullRequestSummaryRequest> = z.object({
   summary: text(MAX_PULL_REQUEST_SUMMARY),
+});
+
+/**
+ * What Claude Code offers the account the runner runs as. Model ids and aliases are refused
+ * rather than clipped: a clipped id would be a model that does not exist.
+ */
+export const Models: z.ZodType<ModelsReport> = z.object({
+  claudeCode: z.string().regex(/^[0-9A-Za-z.+-]{1,64}$/),
+  models: z
+    .array(
+      z.object({
+        value: z.string().min(1).max(200),
+        resolvedModel: z.string().min(1).max(200).nullable(),
+        displayName: text(200),
+        description: text(400),
+        efforts: z
+          .array(z.enum(["low", "medium", "high", "xhigh", "max"]))
+          .max(5)
+          .nullable(),
+      }),
+    )
+    .min(1)
+    .max(50),
 });
 
 const Count = z.number().int().min(0);

@@ -28,6 +28,7 @@ import type {
   SessionHistory,
   TurnError,
 } from "./agent/agent.ts";
+import { sameModels } from "./agent/models.ts";
 import type { Origin, TraceOptions, TurnSummary } from "./agent/trace.ts";
 import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
 import {
@@ -40,6 +41,7 @@ import {
   type GitReportName,
   HEARTBEAT_MS,
   MAX_PULL_REQUEST_SUMMARY,
+  type ModelsHeld,
   type ModelUsage,
   type PullRequestState,
   type PullRequestSummaryResponse,
@@ -112,6 +114,8 @@ export interface Timing {
   turnRefreshMs: number;
   /** How often the runner looks for a stuck turn. */
   watchEveryMs: number;
+  /** How old the API's record of what Claude Code offers may be before it is reported again. */
+  modelsStaleMs: number;
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -132,6 +136,7 @@ export const TIMING: Timing = {
   turnQuietMs: 20 * 60_000,
   turnRefreshMs: 5 * 60_000,
   watchEveryMs: 60_000,
+  modelsStaleMs: 24 * 3600_000,
   backoff: BACKOFF,
 };
 
@@ -264,6 +269,8 @@ interface Sent {
 export class Runner {
   private readonly api: RunnerApi;
   private readonly timing: Timing;
+  /** What the API holds of what Claude Code offers, as the session said or this runner told it. */
+  private modelsHeld: ModelsHeld | null = null;
   private readonly thread: ThreadWriter;
   private readonly state: StateReporter;
   private readonly acks: Outbox<Ack>;
@@ -436,6 +443,7 @@ export class Runner {
   /** Start: read the session, ready the checkout, open the design, start Claude, claim. */
   async start(): Promise<void> {
     this.session = await this.retry(() => this.api.session());
+    this.modelsHeld = this.session.models ?? null;
     this.telemetry = this.startTelemetry(this.session.analytics ?? null);
     this.notice(this.wakeItem, { type: "waking" }, true);
     this.state.set({ state: "working", status: "Waking up", claudeSessionId: null });
@@ -723,6 +731,8 @@ export class Runner {
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
+    // Beside the turn, never ahead of it: the answer came with Claude Code's start.
+    void this.reportModels(run);
     if (this.sessionId) {
       this.state.set({ claudeSessionId: this.sessionId });
       this.acks.kick();
@@ -1490,6 +1500,35 @@ export class Runner {
       message: "Claude had a question that Ponzu could not show, so it went on without an answer.",
     });
     this.refreshState();
+  }
+
+  /**
+   * Tell the API what Claude Code offers the account this runner runs as (docs/cloud.md,
+   * "Models"), when it differs from what the API holds, or what the API holds is a day old, or
+   * came from another Claude Code. Once per start of Claude Code at most, and only when it says.
+   */
+  private async reportModels(run: AgentRun): Promise<void> {
+    try {
+      const offered = await run.offered();
+      if (!offered?.claudeCode || offered.models.length === 0 || this.stopping) return;
+      const held = this.modelsHeld;
+      if (
+        held &&
+        held.claudeCode === offered.claudeCode &&
+        sameModels(held.models, offered.models) &&
+        Date.now() - Date.parse(held.at) < this.timing.modelsStaleMs
+      ) {
+        this.event("models_held", { claudeCode: held.claudeCode });
+        return;
+      }
+      const report = { claudeCode: offered.claudeCode, models: offered.models };
+      const { kept } = await this.api.reportModels(report);
+      if (kept) this.modelsHeld = { ...report, at: new Date().toISOString() };
+      this.event("models_reported", { kept, claudeCode: report.claudeCode });
+    } catch (err) {
+      // The next start of Claude Code says it again.
+      this.log(`reporting the models failed: ${said(err)}`);
+    }
   }
 
   private async sendUsage(turns: TurnUsage[]): Promise<void> {

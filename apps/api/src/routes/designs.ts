@@ -38,7 +38,7 @@ import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type DesignGrant, requireDesign, requireWorkspace } from "../auth/authorize.ts";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
-import { EFFORTS, MODEL_IDS } from "../claude/models.ts";
+import { EFFORTS } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
 import { toCommittedOp } from "../designs/actor.ts";
 import { commitPost } from "../designs/commit.ts";
@@ -127,8 +127,11 @@ const CreateBody = z.object({
   name: Name.optional(),
   /** What the person says first, which sets the agent going and names the design's branch. */
   message: z.object({ text: z.string().trim().min(1).max(MAX_TEXT) }).optional(),
-  /** What it runs on; the person's defaults when left out. */
-  model: z.enum(MODEL_IDS).optional(),
+  /**
+   * What it runs on, one of the models the person's Claude account offers (400
+   * `model_not_offered` otherwise); the person's defaults when left out.
+   */
+  model: z.string().min(1).max(200).optional(),
   effort: z.enum(EFFORTS).optional(),
   /**
    * The app's own id for this create, new for each design it means to make and the same when it

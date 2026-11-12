@@ -1,9 +1,10 @@
-import { and, eq, getTableColumns, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   type AgentBlocker,
   type ClaudeAccountKind,
+  type ClaudeModelReport,
   claudeAccounts,
   designs,
   users,
@@ -66,6 +67,9 @@ export async function connectClaudeAccount(
     limits: null,
     limitsObservedAt: null,
     limitedUntil: null,
+    models: null,
+    modelsReportedAt: null,
+    modelsClaudeCode: null,
   };
   const { encryptedCredential: _sealed, ...returned } = getTableColumns(claudeAccounts);
   const [row] = await run(
@@ -80,6 +84,49 @@ export async function connectClaudeAccount(
       .returning(returned),
   );
   return row ?? null;
+}
+
+/** A Claude account by its id, without its credential. */
+export async function getClaudeAccountById(db: Db, id: string): Promise<ClaudeAccount | null> {
+  const { encryptedCredential: _sealed, ...columns } = getTableColumns(claudeAccounts);
+  const [row] = await run(db.select(columns).from(claudeAccounts).where(eq(claudeAccounts.id, id)));
+  return row ?? null;
+}
+
+/**
+ * Keep what Claude Code offers an account, as a runner on its credential reported at `now`. Kept
+ * only while the credential is still the one connected at `connectedAt`: a report from a runner
+ * on a credential since replaced or destroyed says nothing about the one there now. Answers
+ * whether it was kept.
+ */
+export async function recordClaudeModels(
+  db: Db,
+  report: {
+    claudeAccountId: string;
+    connectedAt: Date;
+    claudeCode: string;
+    models: ClaudeModelReport[];
+    now: Date;
+  },
+): Promise<boolean> {
+  const rows = await run(
+    db
+      .update(claudeAccounts)
+      .set({
+        models: report.models,
+        modelsReportedAt: sql`${timeParam(report.now)}::timestamptz`,
+        modelsClaudeCode: report.claudeCode,
+      })
+      .where(
+        and(
+          eq(claudeAccounts.id, report.claudeAccountId),
+          sql`${claudeAccounts.connectedAt} = ${timeParam(report.connectedAt)}::timestamptz`,
+          ne(claudeAccounts.status, "revoked"),
+        ),
+      )
+      .returning({ id: claudeAccounts.id }),
+  );
+  return rows.length > 0;
 }
 
 /** Destroy a person's credential. Answers their account's id, or null if they had none connected. */

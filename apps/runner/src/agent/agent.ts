@@ -1,6 +1,12 @@
 import type { ToolResult } from "@ponzu/tools";
 import type { z } from "zod";
-import type { AskedQuestion, Effort, ModelUsage, RunErrorCode } from "../api/protocol.ts";
+import type {
+  AskedQuestion,
+  Effort,
+  ModelUsage,
+  ReportedModel,
+  RunErrorCode,
+} from "../api/protocol.ts";
 import type { Origin, TraceOptions, TurnSummary } from "./trace.ts";
 
 /*
@@ -120,6 +126,17 @@ export interface AgentRun extends AsyncIterable<AgentEvent> {
   /** End the running turn. The session stays. */
   interrupt(): Promise<void>;
   close(): Promise<void>;
+  /**
+   * What Claude Code offers the account it runs as, once the session has started; null when it
+   * did not say. Asking sends nothing to Claude: the answer came with the session's start.
+   */
+  offered(): Promise<OfferedModels | null>;
+}
+
+/** What Claude Code offers, and which Claude Code says so (null when it did not say). */
+export interface OfferedModels {
+  claudeCode: string | null;
+  models: ReportedModel[];
 }
 
 /** What a session already holds, read from its transcript. */

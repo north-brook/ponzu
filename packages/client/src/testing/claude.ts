@@ -12,17 +12,22 @@ type ClaudeView = NonNullable<Awaited<ReturnType<Api["claude"]["get"]>>["account
 type Defaults = Awaited<ReturnType<Api["claude"]["defaults"]>>;
 type Effort = Defaults["effort"];
 
-/** As the API's own list (apps/api/src/claude/models.ts). */
-const MODELS = [
-  { id: "claude-fable-5-2", label: "Fable 5.2" },
-  { id: "claude-opus-5-5", label: "Opus 5.5" },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
-  { id: "claude-haiku-5-5", label: "Haiku 5.5" },
-];
+type OfferedModel = Defaults["models"][number];
+
 /** The API's `DEFAULT_MODEL` and `DEFAULT_EFFORT`: what new designs run on until a person chooses. */
 const DEFAULT_MODEL = "claude-opus-5-5";
 const DEFAULT_EFFORT: Effort = "medium";
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
+/**
+ * As the API's hand-kept list (apps/api/src/claude/models.ts): what an account is offered until
+ * a runner on it reports what its Claude Code offers.
+ */
+export const KNOWN_MODELS: OfferedModel[] = [
+  { id: "claude-fable-5-2", label: "Fable 5.2", efforts: EFFORTS },
+  { id: "claude-opus-5-5", label: "Opus 5.5", efforts: EFFORTS },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", efforts: EFFORTS },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", efforts: EFFORTS },
+];
 const SIGN_IN_MS = 10 * 60_000;
 const YEAR_MS = 365 * 24 * 3600_000;
 const RENEW_AHEAD_MS = 28 * 24 * 3600_000;
@@ -57,6 +62,8 @@ export class FakeClaude {
 
   private readonly accounts = new Map<string, StoredAccount>();
   private readonly defaults = new Map<string, { model: string; effort: Effort }>();
+  /** What each person's account offers, once a test says a runner reported it. */
+  private readonly offered = new Map<string, OfferedModel[]>();
   private readonly signIns = new Map<string, SignIn>();
   private ids = 0;
 
@@ -87,6 +94,27 @@ export class FakeClaude {
       connectedAt: now,
       expiresAt: kind === "api_key" ? null : (expiresAt ?? now + YEAR_MS),
     });
+  }
+
+  /**
+   * `userId`'s account offers these, in this order, as the API does once a runner on it has
+   * reported what Claude Code offers (the API names and orders them; this takes them as given).
+   */
+  offer(userId: string, models: OfferedModel[]): void {
+    this.offered.set(userId, models);
+  }
+
+  /** What `userId`'s account offers. */
+  modelsOf(userId: string): OfferedModel[] {
+    return this.offered.get(userId) ?? KNOWN_MODELS;
+  }
+
+  /** As the API refuses a model or effort the account does not offer. */
+  checkOffered(userId: string, model: string, effort: string | undefined): void {
+    const offered = this.modelsOf(userId).find((m) => m.id === model);
+    if (!offered || (effort !== undefined && !(offered.efforts as string[]).includes(effort))) {
+      throw new ApiError(400, "model_not_offered", "Your Claude account doesn't offer that model.");
+    }
   }
 
   /** The person's Claude as `/v1/me` and `/v1/claude` show it, or null. */
@@ -209,6 +237,7 @@ export class FakeClaude {
       defaults: async () => this.defaultsOf(userId),
       setDefaults: async (body) => {
         const was = this.defaultsOf(userId);
+        this.checkOffered(userId, body.model ?? was.model, body.effort);
         this.defaults.set(userId, {
           model: body.model ?? was.model,
           effort: body.effort ?? was.effort,
@@ -219,14 +248,26 @@ export class FakeClaude {
     };
   }
 
-  /** What `userId`'s new designs start on. */
+  /**
+   * What `userId`'s new designs start on: the saved choice while the account offers it, or the
+   * default (Opus 5.5 on medium when offered, else the first offered), as the API answers it.
+   */
   defaultsOf(userId: string): Defaults {
     const chosen = this.defaults.get(userId);
+    const models = this.modelsOf(userId);
+    const fallback = models.find((m) => m.id === DEFAULT_MODEL) ?? models[0]!;
+    const model = models.find((m) => m.id === chosen?.model) ?? fallback;
+    const effort =
+      chosen && model.efforts.includes(chosen.effort)
+        ? chosen.effort
+        : model.efforts.includes(DEFAULT_EFFORT)
+          ? DEFAULT_EFFORT
+          : (model.efforts[0] ?? DEFAULT_EFFORT);
     return {
-      model: chosen?.model ?? DEFAULT_MODEL,
-      effort: chosen?.effort ?? DEFAULT_EFFORT,
-      models: MODELS,
-      efforts: EFFORTS,
+      model: model.id,
+      effort,
+      models,
+      efforts: EFFORTS.filter((e) => models.some((m) => m.efforts.includes(e))),
     };
   }
 }
