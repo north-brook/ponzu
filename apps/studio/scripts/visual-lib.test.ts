@@ -6,8 +6,43 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { heroBoards, teamHeroBoards } from "../src/cloud/gallery/canvas-fixtures.ts";
 import { COMPOSITIONS } from "../src/cloud/gallery/compositions.ts";
-import { REFERENCES, SITE_PRODUCT, SITE_SCALE, SITE_SHOTS, STUDIO } from "./visual-lib.ts";
+import * as f from "../src/cloud/gallery/fixtures.ts";
+import {
+  REFERENCES,
+  SITE_BOARDS,
+  SITE_PRODUCT,
+  SITE_SCALE,
+  SITE_SHOTS,
+  STUDIO,
+} from "./visual-lib.ts";
+
+test("the shots drawn with boards are site shots, and their boards carry their pins", () => {
+  for (const id of SITE_BOARDS) expect(SITE_SHOTS as readonly string[]).toContain(id);
+  for (const doc of [heroBoards, teamHeroBoards]) {
+    const boards = new Set(doc.pages.flatMap((p) => p.artboards.map((a) => a.id)));
+    expect(boards.size).toBeGreaterThanOrEqual(4);
+    for (const thread of doc.threads) expect(boards.has(thread.artboardId!)).toBe(true);
+    // Every board has something drawn in it.
+    for (const board of doc.pages.flatMap((p) => p.artboards))
+      expect(board.root.children.length).toBeGreaterThan(0);
+  }
+  expect(teamHeroBoards.threads.length).toBe(3);
+});
+
+test("the workspaces and repo owners the shots can show are the invented ones", () => {
+  expect(f.workspaces.map((w) => [w.name, w.login])).toEqual([
+    ["Thistlewick", "thistlewick"],
+    ["Quillmoor", "quillmoor"],
+    ["Ada Park", "adapark"],
+  ]);
+  expect(f.brambleSchool.name).toBe("Bramble School");
+  const owners = new Set(
+    [...f.manyRepos, ...f.brambleRepos, ...f.personalRepos, ...f.oneRepo].map((r) => r.owner),
+  );
+  expect([...owners].sort()).toEqual(["adapark", "brambleschool", "thistlewick"]);
+});
 
 test("SITE_SHOTS names existing compositions, once each", () => {
   const ids = new Set(COMPOSITIONS.map((c) => c.id));

@@ -16,7 +16,7 @@
   /* Yuzu: the brand's one color. */
   --yuzu: #ffc81e;
   /*
-   * The desktop the demo and the download page's steps sit on: yuzu on light. Its big slice is
+   * The desktop the download page's steps sit on: yuzu on light. Its big slice is
    * ink, faint.
    */
   --stage: #ffc81e;
@@ -24,6 +24,7 @@
   --stage-slice-opacity: 0.12;
   --stage-shadow: rgba(90, 60, 0, 0.3);
   --shot-shadow: rgba(40, 30, 0, 0.28);
+  --shot-rule: rgb(17 17 16 / 0.08);
   --rule: #e8e6e0;
   --outline: #d3d0c8;
   --cta: #111110;
@@ -66,6 +67,7 @@
     --stage-slice-opacity: 0.1;
     --stage-shadow: rgba(0, 0, 0, 0.5);
     --shot-shadow: rgba(0, 0, 0, 0.8);
+    --shot-rule: rgb(255 255 255 / 0.09);
     --rule: #1f1f1e;
     --outline: #3f3d39;
     --cta: #ffc81e;
@@ -159,7 +161,7 @@
 }
 
 /*
- * The desktop under the demo and the download steps. Dark mode lights it from the corner the slice
+ * The desktop under the download steps. Dark mode lights it from the corner the slice
  * sits in, so the soy reads as a surface and not a hole.
  */
 .stage {
@@ -175,42 +177,13 @@
 }
 
 /*
- * The homepage demo's desktop: ink in both schemes, so the studio and the use-case tabs above it
- * stand out at full contrast. On the dark page plain ink would be a hole, so it lifts a step and
- * takes a hairline.
+ * A product shot (components/hero-shot.tsx): the Mac window, drawn by the studio's gallery, with
+ * a hairline and a soft shadow so it sits on the page in either scheme.
  */
-.demo-stage {
-  background: #111110;
-}
-
-@media (prefers-color-scheme: dark) {
-  .demo-stage {
-    background: #171716;
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
-  }
-}
-
-/* The app's home screen, in its tile on the home page: the studio's own colors. */
-.home {
-  --home-rule: rgb(17 17 16 / 0.06);
-  --home-rule-strong: rgb(17 17 16 / 0.12);
-  background: #faf9f6;
-}
-
-.home-preview {
-  background: #f4f3ef;
-}
-
-@media (prefers-color-scheme: dark) {
-  .home {
-    --home-rule: rgb(255 255 255 / 0.11);
-    --home-rule-strong: rgb(255 255 255 / 0.2);
-    background: #151514;
-  }
-
-  .home-preview {
-    background: #121211;
-  }
+.shot {
+  box-shadow:
+    0 0 0 1px var(--shot-rule),
+    0 30px 80px -30px var(--shot-shadow);
 }
 
 /*
