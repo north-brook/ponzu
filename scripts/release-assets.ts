@@ -32,7 +32,22 @@ export const CHANGELOG = "changelog.json";
 
 const VERSION = /^\d+\.\d+\.\d+$/;
 /** `git log --format=%cI`'s date with its offset, the only date the site accepts (zod's iso.datetime). */
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+
+/**
+ * Whether a date is `%cI`'s form and a real moment, as zod's iso.datetime holds it: a day that
+ * exists in its month (Date.parse would roll 30 February into March), and a time on the clock.
+ */
+function realDate(date: string): boolean {
+  const m = ISO_DATE.exec(date);
+  if (!m) return false;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  if (month === undefined || month < 1 || month > 12 || day === undefined || day < 1) return false;
+  // Day 0 of the next month is this month's last day.
+  if (day > new Date(Date.UTC(year ?? 0, month, 0)).getUTCDate()) return false;
+  if ((hour ?? 0) > 23 || (minute ?? 0) > 59 || (second ?? 0) > 59) return false;
+  return m[8] === "Z" || (Number(m[9]) <= 23 && Number(m[10]) <= 59);
+}
 
 /** What's wrong with a changelog.json's text: nothing when the site can read it. */
 export function changelogProblems(text: string): string[] {
@@ -59,8 +74,7 @@ export function changelogProblems(text: string): string[] {
         typeof r.version === "string" &&
         VERSION.test(r.version) &&
         typeof r.date === "string" &&
-        ISO_DATE.test(r.date) &&
-        !Number.isNaN(Date.parse(r.date)) &&
+        realDate(r.date) &&
         Array.isArray(r.notes) &&
         r.notes.every((n) => typeof n === "string");
       if (!ok) out.push(`${CHANGELOG}'s ${app} release ${i + 1} isn't a version, date and notes`);

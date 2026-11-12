@@ -147,7 +147,8 @@ test("a changelog.json the site couldn't read holds the release back", () => {
     "changelog.json's iphone release 1 isn't a version, date and notes",
     "changelog.json's iphone release 2 isn't a version, date and notes",
   ]);
-  // Dates the site's zod check refuses (a bare day, no offset) hold it back here too.
+  // Dates the site's zod check refuses (a bare day, no offset, a day or time that doesn't exist)
+  // hold it back here too.
   expect(
     changelogProblems(
       JSON.stringify({
@@ -155,6 +156,11 @@ test("a changelog.json the site couldn't read holds the release back", () => {
           { version: "2.1.0", date: "2026-11-20", notes: ["ok"] },
           { version: "2.0.0", date: "2026-11-18T09:00:00", notes: ["ok"] },
           { version: "1.9.0", date: "2026-11-17T09:00:00.5+01:00", notes: ["ok"] },
+          { version: "1.8.0", date: "2026-02-30T09:00:00Z", notes: ["ok"] },
+          { version: "1.7.0", date: "2026-13-01T09:00:00Z", notes: ["ok"] },
+          { version: "1.6.0", date: "2026-01-10T24:00:00Z", notes: ["ok"] },
+          { version: "1.5.0", date: "2028-02-29T09:00:00-08:00", notes: ["ok"] },
+          { version: "1.4.0", date: "2027-02-29T09:00:00Z", notes: ["ok"] },
         ],
         iphone: [],
         incomplete: false,
@@ -164,5 +170,9 @@ test("a changelog.json the site couldn't read holds the release back", () => {
     "changelog.json's incomplete is neither true nor left out",
     "changelog.json's mac release 1 isn't a version, date and notes",
     "changelog.json's mac release 2 isn't a version, date and notes",
+    "changelog.json's mac release 4 isn't a version, date and notes",
+    "changelog.json's mac release 5 isn't a version, date and notes",
+    "changelog.json's mac release 6 isn't a version, date and notes",
+    "changelog.json's mac release 8 isn't a version, date and notes",
   ]);
 });
