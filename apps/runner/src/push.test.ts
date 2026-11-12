@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BranchPush, classify, pushFailureText } from "./push.ts";
+import { BranchPush, classify, pushFailureForAgent, pushFailureText } from "./push.ts";
 import { agentShell, ShellError } from "./save/shell.ts";
 import { type Git, gitIn } from "./save/work.ts";
 
@@ -213,11 +213,26 @@ test("what git says decides whether to try again", () => {
   expect(
     fail("", "remote: error: GH006: Protected branch update failed for refs/heads/pz/hero.").kind,
   ).toBe("refused");
+  // GitHub's own lines for a workflow file, verbatim: the App's porcelain refusal, and an OAuth
+  // App's. Their own kind, never tried again and never "refused" (which tells Claude to fix it).
+  expect(
+    fail(
+      "To https://github.com/north/fern.git\n!\trefs/heads/pz/hero:refs/heads/pz/hero\t[remote rejected] (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)\nDone",
+      "error: failed to push some refs to 'https://github.com/north/fern.git'",
+    ),
+  ).toEqual({
+    kind: "workflow_permission",
+    said: "!\trefs/heads/pz/hero:refs/heads/pz/hero\t[remote rejected] (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)\nerror: failed to push some refs to 'https://github.com/north/fern.git'",
+  });
   expect(
     fail(
       "",
-      "! [remote rejected] pz/hero -> pz/hero (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)",
+      "! [remote rejected] pz/hero -> pz/hero (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)",
     ).kind,
+  ).toBe("workflow_permission");
+  // A hook that declines for its own reasons is still `refused`.
+  expect(
+    fail("", "! [remote rejected] pz/hero -> pz/hero (pre-receive hook declined)").kind,
   ).toBe("refused");
   expect(
     fail("", "fatal: unable to access 'https://github.com/': Could not resolve host").kind,
@@ -244,5 +259,15 @@ test("the thread says what happened and what to do, in Ponzu's words", () => {
   );
   expect(pushFailureText({ kind: "diverged", said: "" }, { ...where, unpushed: 1 })).toBe(
     "pz/hero on GitHub has commits this canvas doesn't, so Ponzu didn't push over them. 1 commit on pz/hero is safe in this canvas's sandbox. Ask Claude to bring in what's on GitHub and push again.",
+  );
+  // What the App lacks is no one's to fix in the canvas: leave the files out, or change them on
+  // GitHub.
+  const workflow = pushFailureText({ kind: "workflow_permission", said: "x" }, where);
+  expect(workflow).toBe(
+    "GitHub won't let Ponzu push changes to files under .github/workflows/ to north/fern: Ponzu's GitHub App isn't allowed to change workflows. 2 commits on pz/hero are safe in this canvas's sandbox. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.",
+  );
+  expect(workflow).not.toMatch(/fix/i);
+  expect(pushFailureForAgent({ kind: "workflow_permission", said: "a\nb" })).toBe(
+    "GitHub refuses every push from Ponzu that changes a file under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows, so trying again won't get it through. Take those changes out of the branch's commits and push again, and tell the person which workflow change they'll need to make on GitHub themselves. (b)",
   );
 });
