@@ -292,6 +292,9 @@ export default function CanvasScreen() {
           openDraftRef.current(msg.key);
           break;
         case "holdUnsent":
+          // Read only, a hold does nothing here either: Move and Discard are for a canvas the
+          // person may comment on. The words stay in their draft.
+          if (!writableRef.current) break;
           // Its sheet takes the place of whatever was up, as a hold's field does.
           tick();
           setThreadId(null);

@@ -214,6 +214,17 @@ describe("comments on a canvas", () => {
       const pageId = pricing().sequencer.doc.pages[0]!.id;
       await say({ t: "longpress", pageId, artboardId: "ab_plans", x: 1, y: 1 });
       expect(screen.queryByTestId("comment-sheet")).toBeNull();
+      // So does a hold on an unsent pin: no Move or Discard on a canvas the person can't steer.
+      const key = `${pricing().id}\0pin:ab_plans:2:2`;
+      act(() =>
+        drafts.set(key, {
+          file: pricing().id,
+          text: "Kept from before",
+          pin: { pageId, artboardId: "ab_plans", x: 2, y: 2 },
+        }),
+      );
+      await say({ t: "holdUnsent", key });
+      expect(screen.queryByTestId("draft-sheet")).toBeNull();
     } finally {
       repo.access.delete(world.maya.id);
     }
