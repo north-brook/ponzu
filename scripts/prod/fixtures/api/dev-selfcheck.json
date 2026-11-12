@@ -1,0 +1,66 @@
+{
+  "_recorded": "Recorded read-only from dev on 2026-11-12: GET /v1/cron/selfcheck with dev's CRON_SECRET. Every word is from the API's fixed vocabulary.",
+  "checks": [
+    {
+      "id": "database",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "migrations",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "realtime",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "storage_assets",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "storage_private",
+      "ok": true,
+      "detail": "same_bucket"
+    },
+    {
+      "id": "workos",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "github_app",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "github_webhook",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "anthropic",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "sandboxes",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "id": "vault_old_keys",
+      "ok": false,
+      "detail": "old_keys",
+      "count": 2
+    },
+    {
+      "id": "posthog",
+      "ok": true,
+      "detail": "configured"
+    }
+  ]
+}

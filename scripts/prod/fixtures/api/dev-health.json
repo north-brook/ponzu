@@ -1,0 +1,14 @@
+{
+  "_recorded": "Recorded from dev on 2026-11-12: GET https://api.ponzu.design/v1/health (public).",
+  "status": "ok",
+  "version": "0.1.0",
+  "commit": "86864bf2850394ff24ce561488a57abd4ed0831e",
+  "environment": "dev",
+  "image": "ponzu-runner@sha256:7ed162f9c9e40774e475ea83ea426cff02a57c2644a287852bf40a2cd7e0d8cc",
+  "runnerBundle": "012b722157df",
+  "migrations": {
+    "applied": 28,
+    "expected": 28
+  },
+  "database": true
+}

@@ -1,0 +1,53 @@
+{
+  "_recorded": "Recorded read-only from dev on 2026-11-12 (GET /v1/security/firewall/config/active). Ids are dropped. Dev has none of the rules applied yet.",
+  "firewallEnabled": true,
+  "crs": {
+    "gen": {
+      "action": "log",
+      "active": true
+    },
+    "java": {
+      "action": "log",
+      "active": false
+    },
+    "lfi": {
+      "action": "log",
+      "active": false
+    },
+    "ma": {
+      "action": "log",
+      "active": false
+    },
+    "php": {
+      "action": "log",
+      "active": false
+    },
+    "rce": {
+      "action": "log",
+      "active": true
+    },
+    "rfi": {
+      "action": "log",
+      "active": false
+    },
+    "sd": {
+      "action": "log",
+      "active": false
+    },
+    "sf": {
+      "action": "log",
+      "active": false
+    },
+    "sqli": {
+      "action": "log",
+      "active": true
+    },
+    "xss": {
+      "action": "log",
+      "active": true
+    }
+  },
+  "managedRules": null,
+  "rules": [],
+  "version": 2
+}

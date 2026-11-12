@@ -2,11 +2,12 @@
   "rules": [
     {
       "allowed": {
-        "origins": ["ponzu-studio://app", "https://ponzu.design"],
-        "methods": ["PUT", "GET", "HEAD"],
-        "headers": ["content-type", "x-amz-checksum-sha256", "cache-control", "content-disposition"]
+        "origins": ["*"],
+        "methods": ["GET", "HEAD", "PUT"],
+        "headers": ["*"]
       },
-      "maxAgeSeconds": 3600
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 86400
     }
   ]
 }

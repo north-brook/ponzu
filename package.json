@@ -20,8 +20,13 @@
     "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@neondatabase/api-client": "2.7.3",
+    "@octokit/core": "7.0.8",
     "@ponzu/evals": "workspace:*",
     "@types/bun": "latest",
+    "@vercel/sdk": "1.28.53",
+    "@workos-inc/node": "12.0.0",
+    "cloudflare": "7.3.0",
     "typescript": "^5.9.3",
     "zod": "^4"
   },

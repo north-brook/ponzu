@@ -1,0 +1,55 @@
+{
+  "_recorded": "NOT recorded from the Cloudflare API: no Cloudflare API token was available to the builder (2026-11-12). Written in the shapes of the cloudflare SDK 7.3.0's types (r2.buckets.get, domains.custom.list, domains.managed.list, cors.get, lifecycle.get, rulesets.phases.get, accounts.tokens.list). What is real: the bucket name ponzu-dev (dev's R2_BUCKET), the custom domain assets-dev.ponzu.cloud, and the CORS rule, read from the public host's own answers (an OPTIONS preflight answered origin *, methods GET, HEAD, PUT, any requested header, max age 86400; a GET exposed ETag). What is assumed: the custom domain's status, r2.dev being off, the lifecycle being Cloudflare's documented default for a new bucket (abort incomplete uploads after 7 days, so founder step B6 is still to come), no transform rule on assets-dev.ponzu.cloud (its responses carry no CSP header), and one account token scoped to ponzu-dev. The account id in resource keys is a placeholder. The orchestrator's first run with a read-only token replaces this with what dev answers.",
+  "buckets": {
+    "ponzu-dev": {
+      "bucket": { "name": "ponzu-dev", "location": null },
+      "custom": {
+        "domains": [
+          {
+            "domain": "assets-dev.ponzu.cloud",
+            "enabled": true,
+            "status": { "ownership": "active", "ssl": "active" }
+          }
+        ]
+      },
+      "managed": { "domain": "pub-00000000000000000000000000000000.r2.dev", "enabled": false },
+      "cors": {
+        "rules": [
+          {
+            "allowed": { "origins": ["*"], "methods": ["GET", "HEAD", "PUT"], "headers": ["*"] },
+            "exposeHeaders": ["ETag"],
+            "maxAgeSeconds": 86400
+          }
+        ]
+      },
+      "lifecycle": {
+        "rules": [
+          {
+            "id": "Default Multipart Abort Rule",
+            "enabled": true,
+            "conditions": { "prefix": "" },
+            "abortMultipartUploadsTransition": { "condition": { "type": "Age", "maxAge": 604800 } }
+          }
+        ]
+      }
+    }
+  },
+  "zone": { "rules": [] },
+  "tokens": [
+    {
+      "status": "active",
+      "policies": [
+        {
+          "effect": "allow",
+          "permission_groups": [
+            { "name": "Workers R2 Storage Bucket Item Write" },
+            { "name": "Workers R2 Storage Bucket Item Read" }
+          ],
+          "resources": {
+            "com.cloudflare.edge.r2.bucket.00000000000000000000000000000000_default_ponzu-dev": "*"
+          }
+        }
+      ]
+    }
+  ]
+}

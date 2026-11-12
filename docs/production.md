@@ -6,15 +6,15 @@ restored, and what bounds the bill. The specification is [cloud.md](cloud.md); t
 runbook behind its "Environments" section.
 
 **What exists today, and what does not.** The desired state in [`infra/`](../infra) and its
-reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested. The
-scripts this page names for checking and applying that state (`scripts/prod/check.ts`,
-`apply.ts`, `github-app.ts`, `restore-drill.ts`) and the API's `/v1/cron/selfcheck` are later
-pieces of work. (The API's `PONZU_ENVIRONMENT` variable, the environment, image, bundle and
+reader, [`scripts/prod/desired.ts`](../scripts/prod/desired.ts), are built and tested, as are
+the scripts that check and apply that state (`scripts/prod/check.ts`, `apply.ts`,
+`restore-drill.ts`) and create the GitHub App (`github-app.ts`), the API's
+`/v1/cron/selfcheck`, its `PONZU_ENVIRONMENT` variable, the environment, image, bundle and
 migration counts in `/v1/health`, and the production deploy job in
-[`deploy-api.yml`](../.github/workflows/deploy-api.yml), off until `API_DEPLOY_PRODUCTION` is
-set, are built.) Each is
-marked *(not built yet)* where it first appears, and nothing in production exists until the
-founder's steps below create it.
+[`deploy-api.yml`](../.github/workflows/deploy-api.yml), which is off until
+`API_DEPLOY_PRODUCTION` is set. The scripts are tested against fakes and answers recorded from
+dev; `apply.ts` has never sent a write to a vendor, and `github-app.ts` has never created an App.
+Nothing in production exists until the founder's steps below create it.
 
 ## Two environments
 
@@ -51,6 +51,7 @@ Public values only. Secrets never go in the repository.
 | `cloudflare/assets-headers.json` | The response header rule on the asset hosts |
 | `github/ruleset-main.json`, `github/ruleset-cloud.json` | The branch rulesets, in the shape GitHub's API takes |
 | `github/repo.json` | Merge settings, the environments, and the names of every variable and secret the workflows read |
+| `github-app/ponzu-dev.json`, `github-app/ponzu.json` | Each GitHub App's manifest, named by its slug: name, homepage, webhook and setup URLs, permissions and events. The check holds each App to its own file, and a test holds the two files to the same permissions, events and URLs; only the name differs |
 | `posthog.json` | Project settings both PostHog projects must have |
 
 The rules of `environments.json`:
@@ -89,7 +90,8 @@ uses (`apiUrl`, `workosClientId`, `realtimeUrl`, `assetsUrl`) fails the build.
 
 ### Vercel `ponzu-api-prod`
 
-Created by `bun scripts/prod/apply.ts vercel-project --env production --yes` *(not built yet)*.
+Created by `bun scripts/prod/apply.ts vercel-project --env production --yes` (see
+[Applying the desired state](#applying-the-desired-state)).
 
 | Setting | Value |
 |---|---|
@@ -144,10 +146,14 @@ it).
   tell a recorded checkpoint from an unrecorded one, so the API's own sweep deletes unrecorded
   archives instead. The schema refuses any rule whose prefix is inside `private/`, and any
   delete rule whose prefix contains it (an empty prefix, `p`, `priv`).
-- CORS (`infra/r2/cors.json`): `PUT`, `GET` and `HEAD` from `ponzu-studio://app` and
-  `https://ponzu.design`, with the four headers an upload is signed with. This is the minimum the
-  API's presigned uploads need; it is reconciled with dev's live rules when the Cloudflare check
-  is built.
+- CORS (`infra/r2/cors.json`) is dev's, copied: `GET`, `HEAD` and `PUT` from any origin, any
+  request header, `ETag` exposed, cached a day. It was read from `assets-dev.ponzu.cloud`'s own
+  answers to a preflight and a GET, since no Cloudflare token was at hand. Any origin is safe
+  here: an upload is a presigned PUT whose signature is its authority, no request carries a
+  cookie, and every object is public anyway. It is wider than the minimum (`ponzu-studio://app`
+  and `https://ponzu.design` with the four headers an upload is signed with) because canvas pages
+  rendered elsewhere, such as in a sandbox's browser, ask for fonts and media with CORS from
+  origins of their own. The check fails if the file ever stops allowing that minimum.
 - The API's R2 token is scoped to exactly those two buckets, Object Read and Write.
 - A Response Header Transform Rule on `assets.ponzu.cloud` sets
   `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and
@@ -219,15 +225,48 @@ whose requests reach two regions could make up to twice a limit; the API runs in
 
 ### The GitHub App `ponzu`
 
-Created from a manifest by `bun scripts/prod/github-app.ts create --env production
---workos-callback <url>` *(not built yet)*, which the founder runs and confirms on GitHub's page.
+Created from `infra/github-app/ponzu.json` by `bun scripts/prod/github-app.ts create --env
+production --workos-callback <url>`, which the founder runs and confirms on GitHub's page.
 
 - Public, with the same permissions and events as `ponzu-dev`.
 - Webhook `https://api.ponzu.design/v1/github/webhook`, JSON, SSL verification on.
 - Setup URL `https://api.ponzu.design/v1/github/setup`, with `setup_on_update`.
 - Callback URL: WorkOS production's GitHub callback. `request_oauth_on_install` off.
-- Its client secret, private key and webhook secret go straight into ponzu-api-prod's env as
-  sensitive values; the script prints only the slug, the App id and the client id.
+
+What the script does, in order:
+
+1. It reads first, and stops before anyone is sent to GitHub if anything is in the way:
+   ponzu-api-prod must exist (D2); none of `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`,
+   `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` and `GITHUB_APP_BOT_USER_ID` may be set on
+   its Production target (it makes a new App and never replaces an App's secrets);
+   `GITHUB_APP_SLUG` may be set only to the slug infra names; and GitHub must show no public
+   App by that slug. It needs `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, as `apply.ts` does).
+2. It serves one page on `127.0.0.1`, on a port the system picks, and opens it in the browser.
+   The page posts GitHub's manifest form to
+   `https://github.com/organizations/north-brook/settings/apps/new?state=<random>`, carrying
+   the file plus `redirect_url` (back to the page) and `callback_urls` (the WorkOS URL). It
+   answers only requests addressed to `127.0.0.1` and its port, so a web page that points its
+   own name at the loopback cannot read the form's state.
+3. GitHub sends the browser back with a code. A request without this run's `state` is answered
+   400 and the page keeps waiting, for up to 30 minutes. The code is exchanged through
+   `POST /app-manifests/{code}/conversions`; every secret in the answer is handed to the
+   redactor before anything else reads it. An App that is not north-brook's is not stored.
+4. It looks up the bot user (`GET /users/ponzu%5Bbot%5D`), then stores, in one request to
+   ponzu-api-prod's Production target, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`
+   and `GITHUB_WEBHOOK_SECRET` as sensitive, and `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_SLUG` and
+   `GITHUB_APP_BOT_USER_ID` as plain (they are public). Then it reads the names and types back.
+5. It prints only the slug, the App id and the client id. WorkOS also needs the client secret
+   (D7), so that one value is written to a file only the founder's user can read, in a new
+   directory under `$TMPDIR`, and deleted when the founder presses Enter.
+
+If GitHub names the App differently (the slug was taken by a private App), the script stores
+the real slug and says that `environments.json` and the manifest's file name must follow. If
+Vercel refuses the write, or takes it but leaves a secret out, it prints what is missing (for a
+refusal, only Vercel's status) and how to finish by hand; the App then needs a new private key
+and client secret from its settings page, because the script never writes them anywhere else.
+
+`bun scripts/prod/github-app.ts create --env dev --dry-run` prints the form for an environment's
+manifest and makes no request at all. It is what an agent may run.
 
 `api.github.com/apps/ponzu` answered 404 when this was written, so the slug is free or held by a
 private App. If GitHub refuses the name, the App takes another slug, and `environments.json`
@@ -241,7 +280,8 @@ and `GITHUB_APP_SLUG` take it too.
 
 The check cannot read WorkOS's configuration, so it proves it instead: it builds an authorize
 URL for each redirect URI and requires a redirect to GitHub carrying the production App's client
-id. WorkOS answers a redirect URI it does not allow with an error page, not a redirect.
+id. WorkOS answers a redirect URI it does not allow with a redirect to its own AuthKit
+`/redirect-uri-invalid` page, never to GitHub, so that fails too.
 
 ### PostHog "Ponzu"
 
@@ -297,13 +337,16 @@ Then production, when the program reports it is ready:
    URL; it is public and goes in `environments.json`.
 4. **D4. Cloudflare.** Create buckets `ponzu-assets` and `ponzu-private` (ENAM). Attach
    `assets.ponzu.cloud` to ponzu-assets and turn r2.dev off. Create an R2 token scoped to those
-   two buckets (Object Read and Write), and a read-only Cloudflare token for the check. Run
+   two buckets (Object Read and Write) as an Account API token, so the check can see its scope,
+   and a read-only Cloudflare token for the check (permissions under "Checking production"). Run
    `bun scripts/prod/apply.ts r2 --env production --yes` and
    `bun scripts/prod/apply.ts cloudflare-headers --env production --yes`.
 5. **D5. WorkOS production.** Activate it, and copy the GitHub OAuth callback URL from
    Authentication › GitHub.
 6. **D6. The GitHub App.** Run `bun scripts/prod/github-app.ts create --env production
-   --workos-callback <the URL from D5>` and click Create on GitHub's page. Upload the logo.
+   --workos-callback <the URL from D5>` with the `VERCEL_TOKEN` from D2, in a browser signed
+   in to GitHub as a north-brook owner, and click Create on GitHub's page. It stores the App's
+   secrets in ponzu-api-prod and prints the slug, the App id and the client id. Upload the logo.
    Install the App on north-brook/ponzu-test for the end-to-end run.
 7. **D7. WorkOS production, continued.** Give GitHub OAuth the App's client id (printed by D6)
    and client secret (in the temporary file D6 names; press Enter afterwards to delete it). Add
@@ -358,23 +401,106 @@ the cutover PR flips `release` to `"production"`, and `assert-release production
 exit 0. Cutover day itself, and how to go back, are in docs/cutover.md, written with the cutover
 work.
 
-Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production` *(not built yet)*.
+Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production`.
 
 ## Checking production
 
-`bun scripts/prod/check.ts --env dev|production [--json] [--deep]` *(not built yet)* is
-read-only and never asks a vendor to decrypt a value.
+`bun scripts/prod/check.ts --env dev|production [--json] [--deep]` is read-only and never asks
+a vendor to decrypt a value.
 
-- It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN`, `NEON_API_KEY`,
-  `CLOUDFLARE_API_TOKEN` (read only), `POSTHOG_PERSONAL_API_KEY` (read only), `gh` auth, and
-  `CRON_SECRET` for the selfcheck. A missing credential makes its section `skipped`, never a
-  pass.
+- It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN` (and
+  `VERCEL_TEAM_ID`, optional for the read-only lines; without it the team is named by its public
+  slug), `NEON_API_KEY` with `NEON_PROJECT_ID`, `CLOUDFLARE_API_TOKEN` (read only) with
+  `CLOUDFLARE_ACCOUNT_ID` (R2's account id), `POSTHOG_PERSONAL_API_KEY` (read only, with
+  `project:read`), `GH_TOKEN` or `GITHUB_TOKEN` (`GH_TOKEN=$(gh auth token)` as a repository
+  admin: it must read the repository's administration, environments, secrets and variables),
+  `RELEASE_TOKEN` (only so its expiry can be read from GitHub's answer to it), and `CRON_SECRET`
+  for the selfcheck. A missing credential makes its section, or its line, `skipped`, never a
+  pass. The GitHub App's lines and WorkOS's need no credential: what they read is public.
+- The read-only Cloudflare token needs, on the account, Workers R2 Storage Read and Account API
+  Tokens Read, and on the zone `ponzu.cloud`, Zone Read and Transform Rules Read. Without the
+  token listing, the R2 token line fails and names the permission.
 - Each line is `ok`, `fail`, `pending`, `manual` or `skipped`, with the runbook step or the
-  `apply.ts` command that fixes it. It exits 0 only when every line is `ok` or `manual`.
-- Every printed line goes through `@ponzu/core/redact`.
-- `--deep` also creates and removes one `pz-test-check-` sandbox from the current image. On
-  production it is the founder's to run.
+  `apply.ts` command that fixes it. It exits 0 only when every line is `ok` or `manual`; a
+  `pending` or `skipped` line exits 1 like a `fail`.
+- Every printed line goes through `@ponzu/core/redact`, with every credential present as a known
+  secret, so even a vendor's error that quoted one would not print it.
+- `--deep` also creates and removes one `pz-test-check-` sandbox from the current image, and
+  needs `VERCEL_TEAM_ID` as well. On production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
+
+What each section checks:
+
+| Section | Lines |
+|---|---|
+| `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, the Preview and Development targets are empty and every secret is stored as sensitive; the environment's API domains are verified on the project (on production, `pending` while dev still lists the domain, before D11); the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready and carries `vercel.json`'s cron. |
+| `neon` | The environment's branch exists (dev's is not the default branch); Realtime is on at `environments.json`'s `realtimeUrl` (on production, `pending`, whether on or off, until D3 sends it). Where `infra/neon.json` asks (production): the read-write compute never sleeps (`-1`) and scales 0.5 to 2 CU; point-in-time history keeps at least 7 days; the backup schedule is daily at 07:00 UTC kept 35 days, and the latest scheduled snapshot is under 26 hours old (a deploy's own snapshot does not count; no schedule is `pending`, never a pass); the branch is protected. |
+| `cloudflare` | The assets bucket exists (production's in ENAM), is served at the environment's assets host with an active certificate and at no other custom domain, has r2.dev off, has `infra/r2/cors.json`'s CORS exactly, and has `infra/r2/lifecycle.json`'s rules (none of them live is `pending`). A live lifecycle rule that would delete under `private/` fails, whatever the file says. Production's private bucket exists in ENAM with no domain, r2.dev off and no delete rule. An account API token reaches exactly the environment's buckets and no other (on dev, a token the account listing cannot show is `manual`). The transform rule on the assets host sets the headers `infra/cloudflare/assets-headers.json` names (dev may go without). |
+| `github` | The environment's App, from GitHub's public answer: it exists and is `north-brook`'s (on production, `pending` until D6), and its permissions, events and homepage are its own manifest's exactly (`infra/github-app/<slug>.json`), so a permission the manifest does not grant fails. With a token: the merge settings are `github/repo.json`'s; each ruleset matches its file (enforcement, branches, no bypass, the same rules with at least the file's settings; `cloud`'s is `pending` until D12); each environment deploys only from its branches, has a required reviewer where the file says so, and holds its secrets (`production` is `pending` until D12); every variable and secret the workflows read is set (`pending` while any is not). A token that cannot read all of that is one `fail` line, and the App's lines are still judged. With `RELEASE_TOKEN`: GitHub accepts it and it expires more than 30 days from now. |
+| `workos` | The client's JWKS has a signing key. For the Mac's loopback and the phone's `ponzu://` redirect URI, an authorize request built with `@workos-inc/node` redirects to GitHub with the environment's App's client id (any other client id, an error page or AuthKit's invalid-redirect page fails). Production is `pending` until D7 puts its client id in `environments.json`. The sign-in methods and default emails are `manual`. |
+| `posthog` | The project `environments.json` names exists (production `pending` until D8), has `infra/posthog.json`'s settings, and has the group type `workspace` once it has had an event (before one, `pending`). |
+| `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. While `api.ponzu.design` is in both environments' `apiDomains` (before D11), production's line is `pending`. |
+| `dns` | Each of the environment's API domains, the assets host and `ponzu.design`: resolves over DNS-over-HTTPS, presents a valid certificate with at least 14 days left, and answers as it should (the API and the site from Vercel; the assets host with the header rule, which dev may go without). A production name not set up yet is `pending` with its founder step. |
+| `spend` | The five spend alerts, each `manual`. |
+| `deep` | With `--deep` only: the throwaway sandbox is made from current.json's image and removed. |
+
+The Vercel section reads through `@vercel/sdk`. On 1.28.53 the SDK's own schema refuses dev's real
+project answer (it requires a `traffic_sources` field the API does not send), so the check falls
+back to the answer the SDK hands over with its validation error. The tests run that path on the
+recorded answers (trimmed to the fields the check reads, which the SDK refuses too); the full
+answer went through it once when it was recorded.
+
+## Applying the desired state
+
+`bun scripts/prod/apply.ts <area> --env dev|production [--yes]` makes one area of an
+environment what `infra/` says.
+
+- Without `--yes` it only reads (GETs, mostly through the check's own readers), then prints
+  what already matches, what it cannot do (a founder step or a dashboard setting), and each
+  change as the exact request it would send: method, URL and body. Nothing is changed.
+- With `--yes` it sends those requests in order and stops at the first that fails. Then it
+  reads the area again and prints the check's lines for it. It exits 0 only when every one of
+  them is `ok`.
+- Credentials come from the environment, with the same names as the check's, but with write
+  access. A missing one stops the area before anything is read. Every printed line goes
+  through the redactor, and a vendor's refusal prints only its status, never its body.
+- Agents run it only without `--yes`. Applying to production is the founder's.
+
+| Area | What it does | Needs |
+|---|---|---|
+| `vercel-project` | Creates the project when it is missing (`apps/api`, `hono`, `iad1`, OIDC with the team issuer, Standard Protection, no Git, no variables), then sets the Node version. On an existing project it updates only the settings that differ. A connected Git repository is a note: disconnect it in the dashboard. | `VERCEL_TOKEN` |
+| `vercel-env` | Adds the public values `environments.json` holds to the Production target as `plain` variables: `PONZU_ENVIRONMENT`, `PONZU_API_URL`, `WORKOS_CLIENT_ID`, `GITHUB_APP_SLUG`, `NEON_REALTIME_URL`, `PONZU_ASSETS_URL`, `R2_BUCKET`, `R2_PRIVATE_BUCKET`, `PONZU_POSTHOG_HOST`, `PONZU_POSTHOG_AI_CONTENT`, `PONZU_MIN_CLIENT_VERSIONS`. A plain value that differs is changed. A value stored as sensitive or encrypted cannot be read back, so it is left alone and named, and the read after `--yes` reports it as `manual` rather than `ok`. A `null` in infra is skipped. It never writes the Preview target. | `VERCEL_TOKEN` |
+| `secrets generate --names PONZU_VAULT_KEY,CRON_SECRET` | Makes 32 random bytes (base64url) for each name that is not set yet and stores it on the Production target as `sensitive`. The value exists only in memory, is sent once, and is never printed or written to disk. A name that is already set is never replaced (rotation is below), and no other name is accepted. | `VERCEL_TOKEN` |
+| `firewall` | When the live firewall differs from `infra/vercel-firewall.json`, one `PUT /v1/security/firewall/config` with the file as its body. A PUT replaces the whole configuration, so IP blocks someone set in the dashboard, which the file does not describe, are read and sent back unchanged. | `VERCEL_TOKEN` |
+| `neon` | Where `infra/neon.json` asks (production): the read-write compute (`suspend_timeout_seconds`, autoscaling), the project's history retention, the branch's backup schedule and its protection, each only when it differs. Realtime is a note: the founder turns it on (D3). | `NEON_API_KEY`, `NEON_PROJECT_ID` |
+| `r2` | The assets bucket's CORS and lifecycle, each replaced with its file when it differs. Replacing the lifecycle also removes any live rule that would delete under `private/`. Buckets, domains and r2.dev are the founder's (D4). | `CLOUDFLARE_API_TOKEN` (R2 write), `CLOUDFLARE_ACCOUNT_ID` |
+| `cloudflare-headers` | The response header rule on the environment's assets host, in the zone's `http_response_headers_transform` phase. The phase is written whole, so every other rule in it is sent back unchanged; a rule already on the host is replaced in place, keeping its id. | `CLOUDFLARE_API_TOKEN` (Zone Read, Transform Rules Edit) |
+| `posthog` | When any of the four settings in `infra/posthog.json` differs, one `PATCH /api/projects/{id}/` with all four. | `POSTHOG_PERSONAL_API_KEY` (`project:write`) |
+| `github-rulesets` | Each `infra/github/ruleset-*.json`, found by name: created when missing, replaced by id when it differs. It belongs to the repository, so `--env` may be left out. | `GH_TOKEN` or `GITHUB_TOKEN`, as an admin |
+
+Two things it does differently from the obvious route, and why:
+
+- **The firewall's PUT is a plain request, not `@vercel/sdk`'s `security.putFirewallConfig`.**
+  On 1.28.53 that method's request schema declares `managedRules` as an empty object, so it
+  strips `bot_protection` and `ai_bots` before sending. A test pins this, so it fails when the
+  SDK is fixed and the area can move back to it. The URL, query and body are the ones the SDK
+  would send.
+- **PostHog has no official SDK for its management API**, so its PATCH is a plain request, as
+  the check's read is.
+
+Not proven yet:
+
+- No write has gone to any vendor. Every area is tested against fakes: for each, the dry run's
+  bodies are asserted exactly, and `--yes` must send exactly what the dry run printed.
+- Live dry runs, which are read-only, have run on dev for `neon` (nothing to change) and
+  `github-rulesets` (`Protect main` matches its file; `Protect cloud` would be created).
+- That `filterProjectEnvs` returns a `plain` variable's value without being asked to decrypt.
+  If it does not, `vercel-env` would propose editing a value that is already right; the read
+  after `--yes` would still show the truth.
+- That PostHog still accepts the four settings on `/api/projects/{id}/`, rather than only on
+  `/api/environments/{id}/`. If it ignores them, the read after `--yes` fails and says so.
+- That Vercel applies a firewall `PUT` at once, rather than as a draft. The read after `--yes`
+  would fail if it does not.
 
 ## Uptime
 
@@ -438,10 +564,17 @@ last step turns off any auto-merge the release PR already had. To release a held
   before every production migration, kept 14 days.
 - R2 has no versioning. Its objects are re-creatable previews or checkpoints; the database is the
   system of record.
-- `bun scripts/prod/restore-drill.ts --env dev|production` *(not built yet)* is non-destructive:
-  it branches from the environment's branch at an hour ago, compares every table's row count
-  with the live branch, prints the result and deletes the branch. The founder runs it monthly on
-  production.
+- `bun scripts/prod/restore-drill.ts --env dev|production [--hours-ago <n>]` leaves the live
+  database alone. With `NEON_API_KEY` and `NEON_PROJECT_ID`, it branches
+  `restore-drill-<env>-<time>` from the environment's branch as it was an hour ago (the branch
+  expires by itself after a day, in case the run is killed), counts the rows of every table on
+  both branches (counts only, never a row), deletes the drill branch and lists the branches
+  again. A table passes when its two counts are within the larger of 100 rows and a quarter of
+  its live rows; a table only one side has passes only when the live branch has more
+  migrations recorded than the restore, so a restore with no tables at all fails. It exits 0 only when every table passes and the branch list is as it
+  was. The orchestrator runs it on dev; the founder runs it monthly on production. It has not
+  yet run against Neon: its tests use a fake Neon, and its row counter was run once on a local
+  Postgres.
 - A real restore, only for a data catastrophe and only after checking with the founder: restore
   from the pre-migration snapshot with `finalize_restore: false` first, look, then finalize.
 - Migrations are expand-only (no drop, rename, type change or new NOT NULL on existing data), so

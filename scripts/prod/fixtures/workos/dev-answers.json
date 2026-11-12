@@ -1,0 +1,22 @@
+{
+  "_recorded": "Recorded on 2026-11-12 from WorkOS staging with no credential: @workos-inc/node 12.0.0 getAuthorizationUrlWithPKCE (GitHubOAuth, dev's public client id) fetched with redirect manual for each redirect URI, getJwksUrl fetched, and GitHub's public GET /apps/ponzu-dev for the App's client id. The WorkOS state, the PKCE challenge and allow_signup are dropped from each Location, WorkOS's GitHub callback id and the AuthKit domain are replaced with 'scrubbed', and only kty, use and alg are kept of the key. refusedHop is the same request with a redirect URI WorkOS does not allow.",
+  "appClientId": "Iv23liHZazTP8ngUY968",
+  "hops": [
+    {
+      "redirectUri": "http://127.0.0.1:53682/auth/callback",
+      "status": 302,
+      "location": "https://github.com/login/oauth/authorize?client_id=Iv23liHZazTP8ngUY968&redirect_uri=https%3A%2F%2Fauth.workos.com%2Fsso%2Foauth%2Fgithub%2Fscrubbed%2Fcallback"
+    },
+    {
+      "redirectUri": "ponzu://auth/callback",
+      "status": 302,
+      "location": "https://github.com/login/oauth/authorize?client_id=Iv23liHZazTP8ngUY968&redirect_uri=https%3A%2F%2Fauth.workos.com%2Fsso%2Foauth%2Fgithub%2Fscrubbed%2Fcallback"
+    }
+  ],
+  "jwks": { "status": 200, "keys": [{ "kty": "RSA", "use": "sig", "alg": "RS256" }] },
+  "refusedHop": {
+    "redirectUri": "https://example.com/not-allowed",
+    "status": 302,
+    "location": "https://scrubbed-staging.authkit.app/redirect-uri-invalid?invalid_redirect_uri=https%3A%2F%2Fexample.com%2Fnot-allowed&client_id=client_01M72Y00K1VV63G6V5D25YCE6K"
+  }
+}
