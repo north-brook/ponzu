@@ -965,24 +965,28 @@ the next API deploy, and each design moves to it at its next wake ("How images r
 
 `image.yml` and `claude-code.yml` need these, once, from a person. Until then they pass with a
 warning that names what is missing, and the bump pull request opens as a draft saying which
-steps did not run. The team and project ids are the repository variables `VERCEL_TEAM_ID` and
-`VERCEL_API_PROJECT_ID`, which exist.
+steps did not run.
 
-1. The repository secret `VERCEL_TOKEN`: a Vercel token for the team, able to use ponzu-api
+1. The repository variables `VERCEL_TEAM_ID` (the team's `team_…` id) and
+   `VERCEL_API_PROJECT_ID` (ponzu-api's `prj_…` id). `deploy-api.yml` reads the same two; on
+   2026-11-11 neither was set on the repository.
+2. The repository secret `VERCEL_TOKEN`: a Vercel token for the team, able to use ponzu-api
    (`deploy-api.yml` reads the same secret). It reads the registry, and makes and removes the
    `pz-test-*` sandboxes of the checks and the turn.
-2. A Container Registry OIDC policy on ponzu-api giving `north-brook/ponzu` read-write, so
+3. A Container Registry OIDC policy on ponzu-api giving `north-brook/ponzu` read-write, so
    `vercel/vcr-action/login` can push (Vercel's docs: container-registry/github-actions).
-3. The repository secret `ANTHROPIC_API_KEY`: the development key. Without it the checks only
+4. The repository secret `ANTHROPIC_API_KEY`: the development key. Without it the checks only
    claim a message and the bump's real turn does not run.
-4. Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
+5. Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"
    on. It is off, so neither workflow can open its pull request yet (each still pushes its
    branch and says so). Their pull requests then get CI by a dispatch of `ci.yml` on the
    branch, with no token of a person's.
 
-Then dispatch the Claude Code workflow once on `cloud` with `pretend` set to the SDK version
+Then dispatch the Claude Code workflow once on `cloud` with `pretend` set to an SDK version
 before the pinned one (`gh workflow run claude-code.yml --ref cloud -f pretend=0.3.<n-1>`): it
-runs every step and writes the body it would open into the run's summary.
+runs every step and writes the body it would open into the run's summary. GitHub accepts a
+dispatch of a workflow that is not on the default branch only once it has run there, which the
+first push to `cloud` after it merges does.
 
 ### Saving the sandbox
 

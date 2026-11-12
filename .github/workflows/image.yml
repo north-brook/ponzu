@@ -80,9 +80,9 @@ jobs:
           [ -n "$TEAM" ] || missing+=("the repository variable VERCEL_TEAM_ID")
           [ -n "$PROJECT" ] || missing+=("the repository variable VERCEL_API_PROJECT_ID")
           if [ ${#missing[@]} -gt 0 ]; then
-            what=$(printf '%s and ' "${missing[@]}"); what=${what% and }
-            echo "::warning title=No image built::$what is not set, so no image was built. What to set up, once: docs/cloud.md, \"Setting up the image workflows\"."
-            { echo "ready=false"; echo "reason=$what is not set"; } >> "$GITHUB_OUTPUT"
+            what=$(printf '%s, ' "${missing[@]}"); what="${what%, } $([ ${#missing[@]} -gt 1 ] && echo are || echo is) not set"
+            echo "::warning title=No image built::$what, so no image was built. What to set up, once: docs/cloud.md, \"Setting up the image workflows\"."
+            { echo "ready=false"; echo "reason=$what"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           [ "$HAS_ANTHROPIC_KEY" = true ] ||
