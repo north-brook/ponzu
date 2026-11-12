@@ -8,7 +8,7 @@ import { run } from "./run.ts";
 /*
  * What a workspace used in a billing period, read for Settings › Plan and usage (docs/cloud.md,
  * "Billing"). The arithmetic is the API's (`billing/credits.ts`): this reads the seconds and
- * credits it works on, by person, design and rate card, and the people and canvases they name.
+ * credits it works on, by person, canvas and rate card, and the people and canvases they name.
  */
 
 /** A rate card's numbers, as working out a period's usage needs them. */
@@ -82,7 +82,7 @@ const card = (alias: string) =>
 
 /**
  * A workspace's usage in the period [`start`, `end`), as of `now`, in one read: awake time and
- * model turns by person, design and rate card, with the stretch awake right now counted up to
+ * model turns by person, canvas and rate card, with the stretch awake right now counted up to
  * `now` under the card in effect, and the people and canvases that names. A stretch counts in
  * the period it began in, as its usage event is dated. Null when there is no such workspace.
  */

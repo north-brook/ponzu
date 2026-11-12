@@ -146,7 +146,7 @@ function redundant(canvasId: string, checkpointSeq: SQL): SQL {
     )
     -- Every op before the first one still inside the retention is older than it. Stopping
     -- there, and not testing each op's age, means a prune reads only the ops it deletes: a
-    -- busy design holds a week of them, and a checkpoint is written every few dozen.
+    -- busy canvas holds a week of them, and a checkpoint is written every few dozen.
     and seq < coalesce(
       (
         select kept.seq

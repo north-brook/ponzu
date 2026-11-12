@@ -19,6 +19,15 @@ every migration in the journal is recorded as applied, and fails if one was pass
 (Drizzle skips a migration that is older than the newest one applied, which is what a
 migration written on one branch and merged after another is).
 
+A rename is written by hand. Run `bunx drizzle-kit generate --custom --name <name>`, write the
+SQL, and replace the body of the snapshot it wrote (a copy of the one before) with
+`generateDrizzleJson(schema, prevId)` from `drizzle-kit/api`, keeping its `id` and `prevId`; a
+plain `db:generate` must then find nothing to do. Never answer drizzle-kit's rename prompts:
+they drop and re-create keys and indexes. `0025_canvases` is one. It gave canvas names to
+every table, column, key and index named for the old word, and refuses to run unless every
+sandbox is asleep. `schema/catalog.test.ts` checks that a database migrated from the first
+migration names everything exactly as one built fresh from the schema does.
+
 ### Tests on a real Postgres
 
 PGlite is one connection. Its races take turns, and its planner never sees a table that was
@@ -66,7 +75,9 @@ const result = await commitOps(db, { canvasId, expectedSeq, actor, ops });
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
   their types and the canvas head. It imports no driver and no Drizzle. The package root
   does, so a browser or phone bundle must not import a value from it.
-- Ids are text with a prefix that says what the row is (`des_…`, `usr_…`), made by `newId`.
+- Ids are text with a prefix that says what the row is (`cnv_…`, `usr_…`), made by `newId`.
+  Canvases made before the rename keep the ids they were made with, `des_…`: nothing checks
+  the prefix, and every link and foreign key holds the id as it is.
 - Columns named `encrypted_…` hold ciphertext. The key is the API's; this package never sees it.
 
 ## Committing ops
@@ -147,9 +158,9 @@ The agent
 
 | Table | What it is for | |
 |---|---|---|
-| `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by design and id: the runner chooses its items' ids, and the same id in another canvas is another row. | live |
+| `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by canvas and id: the runner chooses its items' ids, and the same id in another canvas is another row. | live |
 | `events` | Things that happened to a canvas, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. `claim_id` is the runner's id for the claim that did, so a claim sent again hands out the same events. | |
-| `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by design and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
+| `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by canvas and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
 | `sandboxes` | A canvas's Vercel sandbox, one row per canvas, keyed by `canvas_id` (no row is no sandbox): its state (`asleep`, `waking`, `awake`, `stopping`) and when it got there, the session every call is pinned to and when it started, its port's address and sealed bearer, its deadline, the image it runs, the runner token and Claude credential its runner was started with, its awake-since and who it is put down to. Every move holds to the state it moves from and to the job holding a `waking` or `stopping` row (`waking_by`; `retire:<job>` while a retire holds it), and leaving `awake` meters the stretch under `canvas_id/epoch_ms(awake_since)` (`moveSandbox`). A wake claims it first (`beginSandbox`, `claimSandbox`), counted against the sandboxes up in its workspace and for its owner. | |
 | `canvas_runners` | A canvas's runner now: the lease (`runner_id`) the API takes calls from, what the runner said it is as it took it (`client`, with its image), when it was last heard from, and the Claude session to resume. Its last checkpoint, with `saved_through`: the newest event delivered when it was recorded, which says whether the checkpoint holds the session (`getCheckpointCover`). Apart from `canvases` so the heartbeat does not touch a watched row. | |
 | `runner_tokens` | What a runner signs in with, hashed. Good for one canvas until it expires. | |
