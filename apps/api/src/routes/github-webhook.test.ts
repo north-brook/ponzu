@@ -94,7 +94,7 @@ async function cronRun() {
   });
   expect(response.status).toBe(200);
   await t.backgroundDone();
-  return response.json();
+  return (await response.json()) as { steps: { jobs: { ran: number; abandoned: number } } };
 }
 
 /**
@@ -103,7 +103,7 @@ async function cronRun() {
  */
 async function drainJobs() {
   t.clock.advance(PEOPLE_WINDOW_MS);
-  while ((await cronRun()).ran > 0);
+  while ((await cronRun()).steps.jobs.ran > 0);
 }
 
 const installationPayload = (action: string, installation: FakeInstallation, sender: number) => ({
@@ -250,9 +250,9 @@ describe("what is let in", () => {
 
     // GitHub took the 202 as done: a redelivery is a duplicate, and the job carries the work.
     expect((await deliver("installation", payload, { id: "delivery-flaky" })).status).toBe(204);
-    expect(await cronRun()).toMatchObject({ ran: 0 });
+    expect(await cronRun()).toMatchObject({ steps: { jobs: { ran: 0 } } });
     t.clock.advance(60_000);
-    expect(await cronRun()).toMatchObject({ ran: 1 });
+    expect(await cronRun()).toMatchObject({ steps: { jobs: { ran: 1 } } });
 
     expect(await getWorkspaceByInstallation(t.db, installation.id)).not.toBeNull();
     expect(await jobOf("delivery-flaky")).toMatchObject({

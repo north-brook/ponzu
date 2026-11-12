@@ -544,6 +544,15 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
 one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
+Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), one module per
+area. Other work that must outlive its request and start at once records its job held and runs
+it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
+(`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
+sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+others still run. A step runs every minute, once in every few minutes, or once an hour at a
+given minute. One on a slot runs once in it however many runs overlap, and catches up within
+five minutes when the run it was due in never came.
+
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
 
@@ -2671,15 +2680,22 @@ Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
 session and everything the studio kept: the canvases last opened and their asset keys.
 
-Links into the app (`apps/desktop/README.md`):
+Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
+`@ponzu/core/links`):
 
 ```
-ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
+ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usage&question=&comment=&message=&n=
 ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
+ponzu://billing/card?setup=<setup id>&result=added|cancelled
+ponzu://settings?section=usage|notifications|account
 ```
 
-A link only asks to show something; one that doesn't parse is dropped. A development
-build takes `ponzu-dev://` instead, so it never takes an installed app's links.
+A link only asks to show something; one that doesn't parse is dropped, and an optional
+part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`
+is read as the canvas link, for good. A development build takes `ponzu-dev://` instead,
+so it never takes an installed app's links. A ping carries ids only, as `PushData` v1
+(`@ponzu/core/push`), and a tap goes where `linkOfPush` says, through the same grammar.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
@@ -2782,6 +2798,13 @@ sandbox"): a deployment lists, stops and removes only the names its own database
 begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
 deployment's runners call back; unset, it is production's address, so a dev deployment or a
 preview whose sandboxes must reach it sets it.
+
+A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
+the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
+`observe` or `on`), push (on when `EXPO_ACCESS_TOKEN` is set), email (on when `RESEND_API_KEY`
+is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
+and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
+push and email, so an app shows only what can work.
 
 ### Checking a deploy's sandboxes
 
