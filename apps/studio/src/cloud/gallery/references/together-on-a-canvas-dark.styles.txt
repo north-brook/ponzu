@@ -12,8 +12,8 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Sam] sam.svg
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Maya] maya.svg
@@ -101,7 +101,7 @@ ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 text "Give me three takes on the hero. Keep t…" rgb(244, 243, 239) 400 13px Inter
 ground p[Thread] rgb(27, 27, 26)
 text "You said:" rgb(244, 243, 239) 400 13px Inter
-image img[Thread] bryce.svg
+image img[Thread] ada.svg
 ground img[Thread] shadow rgb(26, 26, 25) 0px 0px 0px 2px
 ground button[Open the comment on Hero] rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 2px 10px 0px
 image img[Open the comment on Hero] comment-hero-dark.webp

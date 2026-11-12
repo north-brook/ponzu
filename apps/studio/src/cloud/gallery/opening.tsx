@@ -151,7 +151,7 @@ function openingChrome(props: {
       team={
         props.team && canvas.project.kind === "repo"
           ? {
-              meId: f.bryce.id,
+              meId: f.ada.id,
               contributors: props.people,
               repo: canvas.project.repo,
               members: f.members,

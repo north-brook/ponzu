@@ -112,7 +112,7 @@ icon svg[Close] 16×16 rgb(142, 138, 130) stroke 1.7px
 text "GitHub App" rgb(118, 115, 105) 600 11px Inter
 icon svg[GitHub App] 18×18 rgb(244, 243, 239) stroke 1px
 text "Installed on north-brook" rgb(244, 243, 239) 500 13px Inter
-text "by brycedbjork · Oct 28" rgb(118, 115, 105) 400 12px Inter
+text "by adapark · Oct 28" rgb(118, 115, 105) 400 12px Inter
 text "Manage on GitHub" rgb(244, 243, 239) 500 13px Inter
 icon svg[GitHub App] 12×12 rgb(183, 179, 169) stroke 2px
 text "Repositories Ponzu can open" rgb(118, 115, 105) 600 11px Inter

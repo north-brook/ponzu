@@ -64,7 +64,7 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
     const w = window as Gallery;
     w.gallerySends = (w.gallerySends ?? 0) + 1;
     setError(null);
-    setItems([said(f.bryce, text)]);
+    setItems([said(f.ada, text)]);
     setSent({ key: crypto.randomUUID(), origin });
     if (failAfter !== null) {
       setTimeout(() => {
@@ -90,7 +90,7 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
         items ? (
           <ThreadRail
             canvasId="cnv_sent"
-            meId={f.bryce.id}
+            meId={f.ada.id}
             repoName={project.kind === "repo" ? project.repo.name : null}
             items={items}
             older="none"

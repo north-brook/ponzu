@@ -13,8 +13,8 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Sam] sam.svg
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Maya] maya.svg

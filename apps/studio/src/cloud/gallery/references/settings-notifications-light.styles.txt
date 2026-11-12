@@ -134,6 +134,6 @@ ground button[iPhone 16 Pro] rgb(17, 17, 16)
 ground span[iPhone 16 Pro] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
 icon svg[Where] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Email" rgb(17, 17, 16) 500 13px Inter
-text "bryce@northbrook.co · a daily digest on…" rgb(169, 165, 155) 400 12px Inter
+text "ada@example.com · a daily digest only" rgb(169, 165, 155) 400 12px Inter
 ground button[Email] rgb(232, 230, 224)
 ground span[Email] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px

@@ -112,7 +112,7 @@ icon svg[Close] 16×16 rgb(142, 138, 130) stroke 1.7px
 text "Connected" rgb(118, 115, 105) 600 11px Inter
 icon svg[Claude] 18×18 rgb(244, 243, 239) stroke 1px
 text "Claude Code" rgb(244, 243, 239) 500 13px Inter
-text "Claude Max · bryce@northbrook.co · conn…" rgb(118, 115, 105) 400 12px Inter
+text "Claude Max · ada@example.com · connecte…" rgb(118, 115, 105) 400 12px Inter
 text "Disconnect" rgb(244, 243, 239) 500 12px Inter
 ground button[Connected] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px
 icon svg[Connected] 16×16 rgb(183, 179, 169) stroke 1.7px
