@@ -133,6 +133,28 @@ describe("apply github-rulesets", () => {
     ]);
   });
 
+  test("a ruleset on the second page is found, not created again", async () => {
+    const others = Array.from({ length: 100 }, (_, i) => ({ id: 1000 + i, name: `other ${i}` }));
+    const cloud = { ...infra["github/ruleset-cloud.json"], id: 9 };
+    const net = fakeNetwork({
+      [`GET ${REPO}`]: (s: { query: string }) =>
+        new URLSearchParams(s.query).get("page") === "2"
+          ? [
+              { id: main.id, name: main.name },
+              { id: 9, name: cloud.name },
+            ]
+          : others,
+      [`GET ${REPO}/${main.id}`]: main,
+      [`GET ${REPO}/9`]: cloud,
+    } as Routes);
+    const plan = await planRulesets(applyContext("dev", { GH_TOKEN: TOKEN }, net.fetch));
+    expect(plan.changes).toEqual([]);
+    expect(plan.notes).toEqual([
+      'the ruleset "Protect main" already matches its file',
+      'the ruleset "Protect cloud" already matches its file',
+    ]);
+  });
+
   test("a refused write says GitHub's status only", async () => {
     const net = fakeNetwork({
       ...routes([{ id: main.id, name: main.name }], { [main.id]: main }),

@@ -46,7 +46,7 @@ function prodVercel(envs: Record<string, unknown>[] = []): Routes {
 }
 
 describe("the command line", () => {
-  test("every area the design names, and nothing else", () => {
+  test("every area docs/production.md names, and nothing else", () => {
     expect(AREAS.map((a) => a.name)).toEqual([
       "vercel-project",
       "vercel-env",

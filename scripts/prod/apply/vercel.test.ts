@@ -140,6 +140,36 @@ describe("vercel-project", () => {
     expect(written(net.seen)).toEqual(plan.changes.map((c) => asSeen(c.request)));
   });
 
+  test("--yes on a project wrong in every way sends every field the dry run printed", async () => {
+    // The SDK checks a request against its own schema and can drop fields it lacks (as
+    // putFirewallConfig does); this proves updateProject keeps every one apply sets.
+    const project = {
+      ...fixture("dev-project.json"),
+      rootDirectory: "apps/web",
+      nodeVersion: "22.x",
+      serverlessFunctionRegion: "sfo1",
+      framework: "nextjs",
+      oidcTokenConfig: { enabled: false, issuerMode: "global" },
+      ssoProtection: null,
+    };
+    const net = fakeNetwork({
+      ...devRoutes(),
+      "GET /v9/projects/ponzu-api": project,
+      "PATCH /v9/projects/ponzu-api": { id: "prj_recorded" },
+    });
+    const plan = await planProject(applyContext("dev", { VERCEL_TOKEN: TOKEN }, net.fetch));
+    expect(Object.keys(plan.changes[0]!.request.body as object).sort()).toEqual([
+      "framework",
+      "nodeVersion",
+      "oidcTokenConfig",
+      "rootDirectory",
+      "serverlessFunctionRegion",
+      "ssoProtection",
+    ]);
+    for (const change of plan.changes) await change.send();
+    expect(written(net.seen)).toEqual(plan.changes.map((c) => asSeen(c.request)));
+  });
+
   test("verify reads the check's settings, OIDC and protection lines", async () => {
     const net = fakeNetwork(devRoutes());
     const lines = await vercelProjectArea.verify!(
@@ -260,6 +290,24 @@ describe("vercel-env", () => {
     );
     expect(line?.status).toBe("fail");
   });
+
+  test("verify does not pass a value it could not read back", async () => {
+    const envs = Object.entries(publicEnv("production", infra))
+      .filter((entry): entry is [string, string] => entry[1] !== null)
+      .map(([key, value], i) => ({
+        id: `env_${i}`,
+        key,
+        value: key === "PONZU_API_URL" ? "" : value,
+        type: key === "PONZU_API_URL" ? "encrypted" : "plain",
+        target: ["production"],
+      }));
+    const net = fakeNetwork(prodRoutes(envs));
+    const [line] = await vercelEnvArea.verify!(
+      applyContext("production", { VERCEL_TOKEN: TOKEN }, net.fetch),
+    );
+    expect(line?.status).toBe("manual");
+    expect(line?.says).toStartWith("PONZU_API_URL could not be compared");
+  });
 });
 
 describe("secrets generate", () => {
@@ -378,6 +426,21 @@ describe("firewall", () => {
     const lines = await firewallArea.verify!(ctx);
     expect(lines.every((l) => l.status === "ok")).toBe(true);
     expect((await planFirewall(ctx)).changes).toEqual([]);
+  });
+
+  test("IP blocks set in the dashboard are sent back, since a PUT replaces everything", async () => {
+    const block = { id: "ip_1", hostname: "*", ip: "203.0.113.7", notes: "abuse", action: "deny" };
+    const net = fakeNetwork({
+      ...devRoutes(),
+      "GET /v1/security/firewall/config/active": { ...fixture("dev-firewall.json"), ips: [block] },
+    });
+    const plan = await planFirewall(applyContext("dev", { VERCEL_TOKEN: TOKEN }, net.fetch));
+    expect(plan.changes[0]!.request.body).toEqual({
+      ...infra["vercel-firewall.json"],
+      ips: [block],
+    });
+    expect(plan.notes.at(-1)).toBe("1 IP block set in the dashboard is sent back unchanged");
+    expect(plan.notes.join("\n")).not.toContain("203.0.113.7");
   });
 
   test("a refused PUT says Vercel's status, never its body", async () => {

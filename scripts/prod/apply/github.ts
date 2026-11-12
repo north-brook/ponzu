@@ -32,14 +32,20 @@ export async function planRulesets(ctx: ApplyContext): Promise<Plan> {
   const desired = githubDesired(ctx);
   const [owner, repo] = desired.repository.split("/") as [string, string];
   const gh = githubClient(ctx, token(ctx));
+  // Every page: a ruleset missed on a later page would be created a second time.
   const listed = await step("the rulesets", async () => {
-    const { data } = await gh.request("GET /repos/{owner}/{repo}/rulesets", {
-      owner,
-      repo,
-      includes_parents: false,
-      per_page: 100,
-    });
-    return data.map((r) => ({ id: r.id, name: r.name }));
+    const all: { id: number; name: string }[] = [];
+    for (let page = 1; ; page++) {
+      const { data } = await gh.request("GET /repos/{owner}/{repo}/rulesets", {
+        owner,
+        repo,
+        includes_parents: false,
+        per_page: 100,
+        page,
+      });
+      all.push(...data.map((r) => ({ id: r.id, name: r.name })));
+      if (data.length < 100) return all;
+    }
   });
   const notes: string[] = [];
   const changes: Change[] = [];

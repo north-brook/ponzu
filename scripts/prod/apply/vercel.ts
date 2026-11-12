@@ -10,11 +10,13 @@
  * after `--yes` is what proves it.
  */
 import { ResponseValidationError } from "@vercel/sdk/models/responsevalidationerror.js";
+import { SDKValidationError } from "@vercel/sdk/models/sdkvalidationerror.js";
 import { VercelError } from "@vercel/sdk/models/vercelerror.js";
 import { z } from "zod";
 import { findings } from "../checks/finding.ts";
 import {
   answer,
+  answerOrMissing,
   evaluateFirewall,
   evaluateVercel,
   fetchVercel,
@@ -53,6 +55,11 @@ async function write(what: string, call: () => Promise<unknown>): Promise<void> 
     // A 2xx the SDK does not recognise (an answer shape it lacks) was still accepted.
     if (error instanceof VercelError && error.statusCode >= 200 && error.statusCode < 300) return;
     if (error instanceof VercelError) throw statusError("Vercel", error.statusCode, what);
+    // The SDK checked the request against its own schema and refused it before sending. Its
+    // message quotes the input, which can be a secret, so only this sentence is kept.
+    if (error instanceof SDKValidationError) {
+      throw new Error(`@vercel/sdk refused the request for ${what} before sending it`);
+    }
     throw statusError("Vercel", null, what);
   }
 }
@@ -256,15 +263,26 @@ export const PUBLIC_ELSEWHERE =
   "R2_ACCOUNT_ID and PONZU_POSTHOG_KEY are set by hand (founder steps D4 and D8); GITHUB_APP_CLIENT_ID and GITHUB_APP_BOT_USER_ID by github-app.ts (D6)";
 
 export async function planEnv(ctx: ApplyContext): Promise<Plan> {
+  return (await planEnvDetailed(ctx)).plan;
+}
+
+/** The plan, and the names whose live value apply could not compare (stored unreadably, or twice). */
+async function planEnvDetailed(ctx: ApplyContext): Promise<{ plan: Plan; unproven: string[] }> {
   const desired = vercelDesired(ctx);
   if (!desired.project) {
-    return { notes: [`infra names no Vercel project for ${ctx.env} yet`], changes: [] };
+    return {
+      plan: { notes: [`infra names no Vercel project for ${ctx.env} yet`], changes: [] },
+      unproven: [],
+    };
   }
   const name = desired.project;
   if ((await readProjectId(ctx, name)) === null) {
     return {
-      notes: [`${name} does not exist yet: run apply.ts vercel-project --env ${ctx.env} first`],
-      changes: [],
+      plan: {
+        notes: [`${name} does not exist yet: run apply.ts vercel-project --env ${ctx.env} first`],
+        changes: [],
+      },
+      unproven: [],
     };
   }
   const vercel = vercelClient(ctx);
@@ -272,6 +290,7 @@ export async function planEnv(ctx: ApplyContext): Promise<Plan> {
   const live = (await readEnv(ctx, name)).filter((e) => e.targets.includes("production"));
   const notes: string[] = [];
   const changes: Change[] = [];
+  const unproven: string[] = [];
   const create: { key: string; value: string; type: "plain"; target: ["production"] }[] = [];
 
   for (const [key, value] of Object.entries(publicEnv(ctx.env, ctx.infra))) {
@@ -286,10 +305,12 @@ export async function planEnv(ctx: ApplyContext): Promise<Plan> {
     if (!entry) {
       create.push({ key, value, type: "plain", target: ["production"] });
     } else if (entries.length > 1) {
+      unproven.push(key);
       notes.push(
         `${key} is set ${entries.length} times on the Production target; remove all but one`,
       );
     } else if (entry.type !== "plain") {
+      unproven.push(key);
       notes.push(
         `${key} is stored as ${entry.type}, so its value cannot be read back to compare; left alone (to make it ${JSON.stringify(value)}, remove it in Vercel and run again)`,
       );
@@ -331,7 +352,7 @@ export async function planEnv(ctx: ApplyContext): Promise<Plan> {
     });
   }
   notes.push(PUBLIC_ELSEWHERE);
-  return { notes, changes };
+  return { plan: { notes, changes }, unproven };
 }
 
 export const vercelEnvArea: ApplyArea = {
@@ -340,12 +361,20 @@ export const vercelEnvArea: ApplyArea = {
   plan: planEnv,
   async verify(ctx) {
     const f = findings("vercel");
-    const left = await planEnv(ctx);
-    return [
-      left.changes.length
-        ? f.fail("env.public", `still to do: ${left.changes.map((c) => c.says).join("; ")}`)
-        : f.ok("env.public", "every public value infra holds is set on the Production target"),
-    ];
+    const { plan: left, unproven } = await planEnvDetailed(ctx);
+    if (left.changes.length) {
+      return [f.fail("env.public", `still to do: ${left.changes.map((c) => c.says).join("; ")}`)];
+    }
+    // A value apply could not read back is not proven right, so it is not a pass.
+    if (unproven.length) {
+      return [
+        f.manual(
+          "env.public",
+          `${unproven.join(", ")} could not be compared (stored unreadably, or set more than once); a person confirms ${unproven.length === 1 ? "it" : "them"}`,
+        ),
+      ];
+    }
+    return [f.ok("env.public", "every public value infra holds is set on the Production target")];
   },
 };
 
@@ -466,6 +495,43 @@ export const secretsArea: ApplyArea = {
  * before sending (a test pins this), so the SDK cannot apply the file. URL, query and body are
  * the ones the SDK would send.
  */
+const RawIps = z.object({
+  ips: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        hostname: z.string(),
+        ip: z.string(),
+        notes: z.string().nullish(),
+        action: z.string(),
+      }),
+    )
+    .nullish(),
+});
+
+/** The live firewall's IP blocks, in the shape a PUT takes them. */
+async function readFirewallIps(ctx: ApplyContext, projectId: string) {
+  const vercel = vercelClient(ctx);
+  let raw: unknown;
+  try {
+    raw = await answerOrMissing(() =>
+      vercel.security.getFirewallConfig({ projectId, configVersion: "active", ...team(ctx) }),
+    );
+  } catch (error) {
+    if (error instanceof VercelError) {
+      throw statusError("Vercel", error.statusCode, "the firewall's IP blocks");
+    }
+    throw statusError("Vercel", null, "the firewall's IP blocks");
+  }
+  return (RawIps.parse(raw ?? {}).ips ?? []).map(({ id, hostname, ip, notes, action }) => ({
+    ...(id ? { id } : {}),
+    hostname,
+    ip,
+    ...(notes ? { notes } : {}),
+    action,
+  }));
+}
+
 export async function planFirewall(ctx: ApplyContext): Promise<Plan> {
   const desired: VercelDesired = vercelDesired(ctx);
   if (!desired.project) {
@@ -489,13 +555,21 @@ export async function planFirewall(ctx: ApplyContext): Promise<Plan> {
       changes: [],
     };
   }
+  // A PUT replaces the whole configuration. infra/ says nothing about IP blocks, which a person
+  // adds in the dashboard (during an attack, say), so the live ones are sent back as they are.
+  const ips = await readFirewallIps(ctx, projectId);
   const request = {
     method: "PUT" as const,
     url: `${VERCEL_API}/v1/security/firewall/config?projectId=${projectId}&${teamQuery(ctx)}`,
-    body: desired.firewall,
+    body: ips.length ? { ...desired.firewall, ips } : desired.firewall,
   };
+  const kept = ips.length
+    ? [
+        `${ips.length} IP block${ips.length === 1 ? "" : "s"} set in the dashboard ${ips.length === 1 ? "is" : "are"} sent back unchanged`,
+      ]
+    : [];
   return {
-    notes: lines.filter((l) => l.status === "ok").map((l) => `${l.id}: ${l.says}`),
+    notes: [...lines.filter((l) => l.status === "ok").map((l) => `${l.id}: ${l.says}`), ...kept],
     changes: [
       {
         says: `${desired.project}'s firewall: ${wrong.map((l) => l.says).join("; ")}. Replace it with infra/vercel-firewall.json`,
