@@ -35,6 +35,10 @@ async function launch(ms: number) {
   await advance(ms);
 }
 
+// The offline launch runs on the real clock, and on a busy CI runner the shared cleanup after it
+// (Testing Library's own afterEach, which waits a tick and unmounts) took over the 5 s default.
+jest.setTimeout(20_000);
+
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.useFakeTimers();
