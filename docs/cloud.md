@@ -240,8 +240,8 @@ Ponzu Local sent no scheme, and the API, taking silence for Ponzu, recorded `pon
 Ponzu Local now says `none`, and silence now means not known.
 
 **Handing back to the app.** Every page a browser is left on is a handoff, the pattern of
-the old product's `/local` page: the site's lockup in the corner (outlined, since the page
-loads no font), the Ponzu mark and one plain line, the app's link opened
+the old product's `/local` page: the site's lockup in the corner (outlined), the Ponzu
+mark, a heading in the display face and one plain line, the app's link opened
 by the page itself, and a watch for the app taking over (launching an app takes the
 page's focus or hides it). When it does, the page says Ponzu has it and closes itself (or
 says the tab can be closed, where the browser won't let a tab it didn't open close).
@@ -253,7 +253,8 @@ shell's own sign-in page), the page says Ponzu has it and closes once Ponzu come
 The API's setup page and the shell's sign-in page are one document
 (`@ponzu/core/handoff`), self-contained: no request of its own, one fixed script and one
 fixed style sheet, allowed by their SHA-256 hashes under `default-src 'none'` (no
-`unsafe-inline`, no nonce). Everything that varies (words, the link) sits in the markup,
+`unsafe-inline`, no nonce). The heading's display face is inside that style sheet as a
+`data:` font, the one thing `font-src` allows, so the page still asks for nothing. Everything that varies (words, the link) sits in the markup,
 escaped, and the link must be one of the apps' schemes. The site's design link page
 (`/designs/<id>`) is the same pattern drawn in React with the site's components; it shares
 the wait and the apps' names, and offers the Ponzu download only for a Ponzu link. The
