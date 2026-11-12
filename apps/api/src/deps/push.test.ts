@@ -12,6 +12,7 @@ import {
   createExpoPush,
   noPush,
   PUSH_DEADLINE_MS,
+  PUSH_RECEIPTS_LIMIT,
   PUSH_SEND_LIMIT,
   PushError,
   type PushMessage,
@@ -37,13 +38,18 @@ type Answer = Response | Error | "hang";
 let seen: Seen[] = [];
 let answers: Answer[] = [];
 let logs: LogLine[] = [];
+/** Requests the stub has been handed and not yet answered, and the most there ever were. */
+let inFlight = 0;
+let mostInFlight = 0;
 const realFetch = globalThis.fetch;
 
 beforeEach(() => {
   seen = [];
   answers = [];
   logs = [];
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  inFlight = 0;
+  mostInFlight = 0;
+  const serve = async (input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     const raw = init?.body as string | Uint8Array;
     const text =
@@ -59,8 +65,18 @@ beforeEach(() => {
     const answer = answers.shift();
     if (answer === undefined) throw new Error("The test served no answer for this request.");
     if (answer === "hang") return new Promise<Response>(() => {});
+    // Answer on a later turn, so a second request sent at once would be seen in flight.
+    await Promise.resolve();
     if (answer instanceof Error) throw answer;
     return answer;
+  };
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    mostInFlight = Math.max(mostInFlight, ++inFlight);
+    try {
+      return await serve(input, init);
+    } finally {
+      inFlight--;
+    }
   }) as typeof fetch;
 });
 
@@ -389,6 +405,42 @@ test("more than 300 receipt ids are read in Expo's chunks and merged", async () 
   );
   expect(await make().receipts(ids)).toEqual({ r0: { ok: true }, r300: { ok: true } });
   expect(seen.map((request) => (request.body as { ids: string[] }).ids.length)).toEqual([300, 1]);
+  // One after another: the SDK holds receipt requests to no concurrency limit of its own.
+  expect(mostInFlight).toBe(1);
+});
+
+test("one receipts call takes at most 1000 ids, and more is refused before anything is asked", async () => {
+  expect(PUSH_RECEIPTS_LIMIT).toBe(1000);
+  const ids = Array.from({ length: PUSH_RECEIPTS_LIMIT + 1 }, (_, index) => `r${index}`);
+  expect(await failure(make().receipts(ids))).toBeInstanceOf(RangeError);
+  expect(await failure(new FakePush().receipts(ids))).toBeInstanceOf(RangeError);
+  expect(seen).toEqual([]);
+});
+
+test("a receipt that is not a receipt is left out, as one not settled yet", async () => {
+  answers.push(json(200, { data: { r1: null, r2: "ok", r3: { status: "ok" } } }));
+  expect(await make().receipts(["r1", "r2", "r3"])).toEqual({ r3: { ok: true } });
+});
+
+test("the SDK's own error text, which quotes what Expo said, reaches no log and no error", async () => {
+  // A 502 from a proxy with an HTML page, which the SDK copies whole into its message and errorText.
+  answers.push(new Response(`<html>bad gateway for ${DEVICE}</html>`, { status: 502 }));
+  const thrown = (await failure(make().send([ping(DEVICE)]))) as PushError;
+  expect(thrown.code).toBe("unavailable");
+  expect(thrown.status).toBe(502);
+  const text = exposed(thrown);
+  expect(text).not.toContain("bad gateway");
+  expect(text).not.toContain("xxxx");
+  expect(logs).toEqual([
+    {
+      level: "warn",
+      event: "push_request_failed",
+      call: "send",
+      failure: "unavailable",
+      status: 502,
+      expoCode: null,
+    },
+  ]);
 });
 
 test("a receipts request that fails maps the same way as a send's", async () => {

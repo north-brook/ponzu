@@ -58,8 +58,9 @@ export interface Push {
    */
   send(messages: PushMessage[]): Promise<PushTicket[]>;
   /**
-   * Receipts for ticket ids, as many as are asked for (read in Expo's chunks, which is safe to
-   * repeat). An id with no receipt yet is missing from the answer. Throws `PushError`.
+   * Receipts for at most `PUSH_RECEIPTS_LIMIT` ticket ids, read in Expo's chunks of 300 one after
+   * another (reading is safe to repeat). More is refused before anything is asked. An id with no
+   * receipt yet is missing from the answer. Throws `PushError`.
    */
   receipts(ids: string[]): Promise<Record<string, PushReceipt>>;
 }
@@ -68,15 +69,27 @@ export interface Push {
 export const PUSH_SEND_LIMIT = Expo.pushNotificationChunkSizeLimit;
 
 /**
- * How long one `send` or `receipts` call may take, the SDK's own retries of a 429 included
- * (two, after one and two seconds). The SDK's `fetch` has no deadline of its own.
+ * The most ticket ids one `receipts` call takes: four of Expo's chunks, which fit in the
+ * deadline one after another. The SDK runs receipt requests outside its concurrency limit, so
+ * the seam keeps them in line itself.
+ */
+export const PUSH_RECEIPTS_LIMIT = 1000;
+
+/**
+ * How long one `send` or `receipts` call may take. For a send that includes the SDK's own two
+ * retries of a 429, after one and two seconds; the SDK does not retry a receipts request. The
+ * SDK's `fetch` has no deadline of its own.
  */
 export const PUSH_DEADLINE_MS = 20_000;
 
 /**
  * Why a request to Expo failed as a whole:
- * - `rate_limited`: Expo answered 429, still, after the SDK's own two retries. Try later.
- * - `unavailable`: Expo answered 5xx, or never answered (the network, or the deadline). Try later.
+ * - `rate_limited`: Expo answered 429 (for a send, still, after the SDK's own two retries).
+ *   Nothing was accepted. Try later.
+ * - `unavailable`: Expo answered 5xx, or never answered (the network, or the deadline). Try
+ *   later. For a send this does not prove nothing went out: Expo may have accepted the messages
+ *   before the deadline passed or before it failed. A caller that sends again should give each
+ *   message a `collapseId`, so that on iOS a repeat replaces the first ping rather than adding one.
  * - `rejected`: Expo refused the request (any other 4xx, the access token's 401 among them), or
  *   answered in a shape the SDK did not expect. Trying the same request again will not help.
  */
@@ -157,15 +170,21 @@ export function createExpoPush({ accessToken, clock, log, retryMinTimeout }: Exp
       return tickets.map(fromTicket);
     },
     async receipts(ids) {
-      if (ids.length === 0) return {};
-      const chunks = expo.chunkPushNotificationReceiptIds(ids);
-      const answers = await call("receipts", () =>
-        Promise.all(chunks.map((chunk) => expo.getPushNotificationReceiptsAsync(chunk))),
-      );
-      const receipts: Record<string, PushReceipt> = {};
-      for (const answer of answers) {
-        for (const [id, receipt] of Object.entries(answer)) receipts[id] = fromReceipt(receipt);
+      if (ids.length > PUSH_RECEIPTS_LIMIT) {
+        throw new RangeError(`Push reads at most ${PUSH_RECEIPTS_LIMIT} receipts at once.`);
       }
+      if (ids.length === 0) return {};
+      const receipts: Record<string, PushReceipt> = {};
+      await call("receipts", async () => {
+        // One chunk at a time: the SDK does not hold receipt requests to maxConcurrentRequests.
+        for (const chunk of expo.chunkPushNotificationReceiptIds(ids)) {
+          const answer = await expo.getPushNotificationReceiptsAsync(chunk);
+          for (const [id, value] of Object.entries(answer)) {
+            const receipt = fromReceipt(value);
+            if (receipt) receipts[id] = receipt;
+          }
+        }
+      });
       return receipts;
     },
   };
@@ -194,7 +213,9 @@ function fromTicket(ticket: ExpoPushTicket): PushTicket {
   return { ok: false, error: codeOf(ticket.details?.error) };
 }
 
-function fromReceipt(receipt: ExpoPushReceipt): PushReceipt {
+function fromReceipt(receipt: ExpoPushReceipt | null): PushReceipt | null {
+  // The SDK checks only that the answer is a map; a value that is not a receipt is not one yet.
+  if (typeof receipt !== "object" || receipt === null) return null;
   if (receipt.status === "ok") return { ok: true };
   return { ok: false, error: codeOf(receipt.details?.error) };
 }

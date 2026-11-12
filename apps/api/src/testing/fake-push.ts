@@ -1,4 +1,5 @@
 import {
+  PUSH_RECEIPTS_LIMIT,
   PUSH_SEND_LIMIT,
   type Push,
   PushError,
@@ -56,6 +57,9 @@ export class FakePush implements Push {
 
   async receipts(ids: string[]): Promise<Record<string, PushReceipt>> {
     if (!this.enabled) throw new Error("Push is off: EXPO_ACCESS_TOKEN is not set.");
+    if (ids.length > PUSH_RECEIPTS_LIMIT) {
+      throw new RangeError(`Push reads at most ${PUSH_RECEIPTS_LIMIT} receipts at once.`);
+    }
     this.receiptRequests.push([...ids]);
     const failure = this.#failures.shift();
     if (failure) throw failure;
