@@ -58,12 +58,7 @@ export interface Sense {
 // 1. Paths the rename never touches (kind C, history, generated, image inputs).
 
 export const EXCLUDE: PathRule[] = [
-  { glob: "packages/server/**", why: "1.x local server (kind C)" },
-  { glob: "packages/mcp/**", why: "1.x MCP (kind C)" },
   { glob: "packages/store/**", why: "1.x .design store (kind C)" },
-  { glob: "apps/cli/**", why: "1.x CLI (kind C)" },
-  { glob: "plugin/**", why: "1.x plugin (kind C)" },
-  { glob: ".claude-plugin/**", why: "1.x marketplace manifest (kind C)" },
   { glob: "apps/mobile/**", why: "1.x phone app (kind C)" },
   { glob: "docs/mobile.md", why: "1.x phone app (kind C)" },
   { glob: "design/**", why: ".design folders (the format)" },
@@ -77,7 +72,7 @@ export const EXCLUDE: PathRule[] = [
   { glob: "packages/tools/src/local/**", why: "the local server's tools (kind C)" },
   {
     glob: "packages/tools/src/guides.ts",
-    why: "the local MCP's guides and SERVER_INSTRUCTIONS: only packages/mcp and local/ read them (kind C)",
+    why: "the local MCP's guides and SERVER_INSTRUCTIONS (kind C)",
   },
   { glob: "packages/db/migrations/**", why: "applied history; 0025 is written by hand" },
   { glob: "apps/*/evals/*/results/**", why: "recorded eval runs; the re-run regenerates them" },
@@ -92,7 +87,6 @@ export const EXCLUDE: PathRule[] = [
   { glob: "THIRD_PARTY_NOTICES.md", why: "third-party licences" },
   { glob: "apps/desktop/src/legacy*.ts", why: "1.x carry-over (~/Designs, design.json)" },
   { glob: "apps/desktop/build/{uninstall.ps1,README.md}", why: "1.x Windows ProgID cleanup" },
-  { glob: "scripts/{npm-smoke,npm-package}.ts", why: "the 1.x npm package" },
   {
     glob: "apps/runner/image/{Dockerfile,provision.sh,pins.json}",
     why: "image inputs: an edit changes the image tag and recreates every sandbox",
@@ -342,7 +336,7 @@ export const NAMES: Name[] = [
     from: '"dsn"',
     to: '"cnv"',
     why: "fixture id prefix",
-    paths: ["packages/client/src/testing/backend.ts", "apps/studio/src/cloud/status.test.ts"],
+    paths: ["packages/client/src/testing/backend.ts", "packages/client/src/model/status.test.ts"],
   },
 ];
 

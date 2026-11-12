@@ -64,9 +64,8 @@ export async function Guide({
         {steps}
         <p className="m-0 max-w-[640px] pt-14 text-center text-[13px]/[19px] text-pretty text-faint">
           {version ? `Version ${version} · ` : ""}
-          {fine} Ponzu sets up Claude Code, Codex and Cursor on its own; for any other MCP client,
-          File › Copy MCP URL copies the address. The source and every release are{" "}
-          <FineLink href={REPO}>on GitHub</FineLink>.
+          {fine} Claude Code runs in Ponzu's cloud, on your own Claude plan, so there's nothing else
+          to install. The source and every release are <FineLink href={REPO}>on GitHub</FineLink>.
         </p>
       </section>
 

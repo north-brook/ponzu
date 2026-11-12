@@ -6,7 +6,7 @@ import { MacSteps } from "../steps";
 
 const TITLE = "Download Ponzu for Mac";
 const DESCRIPTION =
-  "Install Ponzu for Mac: open the disk image, drag it into Applications, and ask your agent for a design.";
+  "Install Ponzu for Mac: open the disk image, drag it into Applications, and sign in with GitHub.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -23,7 +23,7 @@ export default async function Page(props: PageProps<"/download/mac">) {
       os="mac"
       started={query.start === "1"}
       title="Ponzu for Mac."
-      lede="Download it, drag it into Applications, and ask your agent for a design."
+      lede="Download it, drag it into Applications, and sign in with GitHub."
       next={
         <>
           open <span className="text-ink">{INSTALLER}</span> from your Downloads folder.

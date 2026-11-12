@@ -4,9 +4,12 @@ import type { Anthropic } from "../deps/anthropic.ts";
 import type { Poke } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
+  MAX_DELETE_KEYS,
+  MAX_LIST_KEYS,
   type ObjectStorage,
   type PresignedPut,
   type StoredHead,
+  type StoredList,
   type StoredObject,
   uploadHeaders,
 } from "../deps/storage.ts";
@@ -101,6 +104,35 @@ export class MemoryStorage implements ObjectStorage {
 
   async delete(key: string) {
     this.objects.delete(key);
+  }
+
+  /** Every `list` and `deleteMany` call, oldest first, for a test to count round trips. */
+  readonly bulk: { op: "list" | "deleteMany"; prefix?: string; after?: string; keys?: number }[] =
+    [];
+  /**
+   * How many of the next `deleteMany` calls fail after removing half their keys, as R2 does
+   * when it answers some keys with an error.
+   */
+  failDeletes = 0;
+
+  async list(prefix: string, { after }: { after?: string } = {}): Promise<StoredList> {
+    this.bulk.push({ op: "list", prefix, ...(after === undefined ? {} : { after }) });
+    // S3 orders keys by their UTF-8 bytes; for the ASCII keys the API makes, that is this.
+    const all = [...this.objects.keys()]
+      .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
+      .sort();
+    return { keys: all.slice(0, MAX_LIST_KEYS), truncated: all.length > MAX_LIST_KEYS };
+  }
+
+  async deleteMany(keys: readonly string[]): Promise<void> {
+    this.bulk.push({ op: "deleteMany", keys: keys.length });
+    if (keys.length > MAX_DELETE_KEYS) throw new Error("Storage refuses over 1,000 keys.");
+    if (this.failDeletes > 0) {
+      this.failDeletes--;
+      for (const key of keys.slice(0, Math.floor(keys.length / 2))) this.objects.delete(key);
+      throw new UpstreamError("storage", "DELETE MANY could not remove some objects");
+    }
+    for (const key of keys) this.objects.delete(key);
   }
 }
 

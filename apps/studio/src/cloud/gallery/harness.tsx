@@ -72,7 +72,7 @@ const WindowWorkspace = createContext<{
   workspace: Workspace;
   workspaces: Workspace[];
   onSwitch: (workspace: Workspace) => void;
-}>({ workspace: f.northbrook, workspaces: f.workspaces, onSwitch: ignore });
+}>({ workspace: f.thistlewick, workspaces: f.workspaces, onSwitch: ignore });
 
 export interface HarnessProps {
   workspace?: Workspace;
@@ -95,7 +95,7 @@ export interface HarnessProps {
 
 /** The window with a working sidebar around `children`. */
 export function Harness({
-  workspace: initialWorkspace = f.northbrook,
+  workspace: initialWorkspace = f.thistlewick,
   workspaces = f.workspaces,
   canvases,
   openId: initialOpen,
@@ -134,7 +134,7 @@ export function Harness({
                 onToggle: () => setOpen((o) => !o),
                 content: (
                   <Sidebar
-                    me={f.bryce}
+                    me={f.ada}
                     workspace={workspace}
                     workspaces={workspaces}
                     teammates={f.teammates}
@@ -226,7 +226,7 @@ export function CanvasChromeHarness({
       team={
         contributors && canvas.project.kind === "repo"
           ? {
-              meId: f.bryce.id,
+              meId: f.ada.id,
               contributors,
               repo: canvas.project.repo,
               members,

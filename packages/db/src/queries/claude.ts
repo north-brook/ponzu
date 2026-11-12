@@ -6,6 +6,7 @@ import {
   type ClaudeAccountKind,
   type ClaudeModelReport,
   canvases,
+  canvasRunners,
   claudeAccounts,
   users,
 } from "../schema/index.ts";
@@ -98,6 +99,10 @@ export async function getClaudeAccountById(db: Db, id: string): Promise<ClaudeAc
  * only while the credential is still the one connected at `connectedAt`: a report from a runner
  * on a credential since replaced or destroyed says nothing about the one there now. Answers
  * whether it was kept.
+ *
+ * With `throttle`, a report is also not kept when the account's last one was kept after `since`
+ * and after the reporting runner took its lease: each runner's first report goes through, and
+ * then at most one in each window, in one statement, so reports racing each other keep one.
  */
 export async function recordClaudeModels(
   db: Db,
@@ -107,8 +112,19 @@ export async function recordClaudeModels(
     claudeCode: string;
     models: ClaudeModelReport[];
     now: Date;
+    throttle?: { canvasId: string; runnerId: string; since: Date };
   },
 ): Promise<boolean> {
+  const { throttle } = report;
+  const due = throttle
+    ? sql`(${claudeAccounts.modelsReportedAt} is null
+        or ${claudeAccounts.modelsReportedAt} <= ${timeParam(throttle.since)}::timestamptz
+        or ${claudeAccounts.modelsReportedAt} < (
+          select ${canvasRunners.startedAt} from ${canvasRunners}
+          where ${canvasRunners.canvasId} = ${throttle.canvasId}
+            and ${canvasRunners.runnerId} = ${throttle.runnerId}
+        ))`
+    : undefined;
   const rows = await run(
     db
       .update(claudeAccounts)
@@ -122,6 +138,7 @@ export async function recordClaudeModels(
           eq(claudeAccounts.id, report.claudeAccountId),
           sql`${claudeAccounts.connectedAt} = ${timeParam(report.connectedAt)}::timestamptz`,
           ne(claudeAccounts.status, "revoked"),
+          due,
         ),
       )
       .returning({ id: claudeAccounts.id }),
@@ -160,6 +177,7 @@ export async function setClaudeBlocker(
       .update(canvases)
       .set({
         agentBlocker: blocker,
+        agentBlockedUntil: null,
         // With a blocker nothing runs, whatever its runner last said.
         agentState: sql`case when ${canvases.agentState} in ${blocker ? sql`('waking', 'working')` : sql`('waking')`}
                              then 'idle' else ${canvases.agentState} end`,

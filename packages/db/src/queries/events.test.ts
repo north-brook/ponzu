@@ -154,6 +154,27 @@ test("a claim sent again hands out again what it handed out, and nothing new", a
   expect(await runner.claim()).toEqual([]);
 });
 
+test("a claim narrowed to some kinds leaves the rest in the feed for a later claim", async () => {
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "a");
+  await appendEvent(db, { canvasId: canvas.id, kind: "stop", priority: "now", payload: {} });
+  await say(db, canvas.id, "b");
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
+  const claim = async (
+    kinds: readonly ("stop" | "answer" | "edit")[] | "all",
+    claimId = newId("clm"),
+  ) => (await claimEvents(db, { canvasId: canvas.id, runnerId, claimId, kinds }))!.events;
+
+  // Nothing of a kind it may not hand out, and nothing at all when it may hand out none.
+  expect(await claim([])).toEqual([]);
+  const narrowed = newId("clm");
+  expect((await claim(["stop", "answer", "edit"], narrowed)).map((e) => e.kind)).toEqual(["stop"]);
+  // Sent again, it hands out what it handed out, whatever it is allowed now.
+  expect((await claim("all", narrowed)).map((e) => e.kind)).toEqual(["stop"]);
+  // The messages were never claimed: once every kind may go, they do.
+  expect(texts(await claim("all"))).toEqual(["a", "b"]);
+});
+
 test("two claims at once never hand out the same event", async () => {
   const { canvas } = await seedCanvas(db);
   for (const text of ["a", "b", "c", "d"]) await say(db, canvas.id, text);

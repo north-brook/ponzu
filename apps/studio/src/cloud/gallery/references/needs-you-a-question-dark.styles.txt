@@ -12,8 +12,8 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground button[Share] rgb(26, 26, 25) shadow rgb(63, 61, 57) 0px 0px 0px 1px inset, rgb(26, 26, 25) 0px 0px 0px 1.5px
 icon svg[Share] 11×11 rgb(183, 179, 169) stroke 2.2px
 text "#412" rgb(183, 179, 169) 400 11px IBM Plex Mono
@@ -24,9 +24,9 @@ ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
-image img[Workspace: Northbrook] image/png 54474398
-text "Northbrook" rgb(244, 243, 239) 600 13px Inter
-icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px
+image img[Workspace: Thistlewick] image/svg+xml c4cbda20
+text "Thistlewick" rgb(244, 243, 239) 600 13px Inter
+icon svg[Workspace: Thistlewick] 11×11 rgb(142, 138, 130) stroke 2.2px
 icon svg[Search] 16×16 rgb(183, 179, 169) stroke 1.7px
 icon svg[Filter] 16×16 rgb(183, 179, 169) stroke 1.7px
 icon svg[New canvas] 16×16 rgb(183, 179, 169) stroke 1.7px
@@ -58,13 +58,13 @@ icon svg[Autumn drop moodboard, Scratch, lisbon] 11×11 rgb(118, 115, 105) strok
 text "Scratch" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Autumn drop moodboard" rgb(244, 243, 239) 500 13px Inter
 text "lisbon" rgb(118, 115, 105) 400 11px IBM Plex Mono
-ground span[Survey results readout, new activity, l…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-image img[Survey results readout, new activity, l…] image/png 17e1c11f
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(118, 115, 105) stroke 2.2px
-text "lenny" rgb(118, 115, 105) 400 11px IBM Plex Mono
-ground span[Survey results readout, new activity, l…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
+ground span[Survey results readout, new activity, a…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Survey results readout, new activity, a…] image/png 17e1c11f
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(118, 115, 105) stroke 2.2px
+text "almanac" rgb(118, 115, 105) 400 11px IBM Plex Mono
+ground span[Survey results readout, new activity, a…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
 text "Survey results readout" rgb(244, 243, 239) 500 13px Inter
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(118, 115, 105) stroke 2.2px
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(118, 115, 105) stroke 2.2px
 text "pz/survey-readout" rgb(118, 115, 105) 400 11px IBM Plex Mono
 ground span[One-page checkout, fernwood, pz/checkout] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 image img[One-page checkout, fernwood, pz/checkout] image/png daf9d469
@@ -80,12 +80,12 @@ text "brand" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Brand kit for the relaunch" rgb(244, 243, 239) 500 13px Inter
 icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(118, 115, 105) stroke 2.2px
 text "pz/relaunch" rgb(118, 115, 105) 400 11px IBM Plex Mono
-ground span[Support inbox triage, lenny, pz/inbox-t…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-image img[Support inbox triage, lenny, pz/inbox-t…] image/png 166a13e4
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(118, 115, 105) stroke 2.2px
-text "lenny" rgb(118, 115, 105) 400 11px IBM Plex Mono
+ground span[Support inbox triage, almanac, pz/inbox…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Support inbox triage, almanac, pz/inbox…] image/png 166a13e4
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(118, 115, 105) stroke 2.2px
+text "almanac" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(244, 243, 239) 500 13px Inter
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(118, 115, 105) stroke 2.2px
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(118, 115, 105) stroke 2.2px
 text "pz/inbox-triage" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Settled" rgb(183, 179, 169) 400 12px Inter
 text "9" rgb(118, 115, 105) 400 11px IBM Plex Mono

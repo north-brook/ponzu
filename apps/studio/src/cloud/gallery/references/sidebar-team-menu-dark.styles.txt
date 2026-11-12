@@ -12,8 +12,8 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Sam] sam.svg
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 image img[Maya] maya.svg
@@ -30,10 +30,10 @@ ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
-ground button[Workspace: Northbrook] rgba(255, 255, 255, 0.06)
-image img[Workspace: Northbrook] image/png 54474398
-text "Northbrook" rgb(244, 243, 239) 600 13px Inter
-icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px
+ground button[Workspace: Thistlewick] rgba(255, 255, 255, 0.06)
+image img[Workspace: Thistlewick] image/svg+xml c4cbda20
+text "Thistlewick" rgb(244, 243, 239) 600 13px Inter
+icon svg[Workspace: Thistlewick] 11×11 rgb(142, 138, 130) stroke 2.2px
 icon svg[Search] 16×16 rgb(183, 179, 169) stroke 1.7px
 icon svg[Filter] 16×16 rgb(183, 179, 169) stroke 1.7px
 icon svg[New canvas] 16×16 rgb(183, 179, 169) stroke 1.7px
@@ -73,20 +73,20 @@ icon svg[Pricing page, three takes, new activity…] 11×11 rgb(118, 115, 105) s
 text "pz/pricing" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "#405" rgb(118, 115, 105) 400 11px IBM Plex Mono
 icon svg[Pricing page, three takes, new activity…] 11×11 rgb(118, 115, 105) stroke 2.2px
-ground span[Survey results readout, new activity, l…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-image img[Survey results readout, new activity, l…] image/png 17e1c11f
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(118, 115, 105) stroke 2.2px
-text "lenny" rgb(118, 115, 105) 400 11px IBM Plex Mono
-ground span[Survey results readout, new activity, l…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
+ground span[Survey results readout, new activity, a…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Survey results readout, new activity, a…] image/png 17e1c11f
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(118, 115, 105) stroke 2.2px
+text "almanac" rgb(118, 115, 105) 400 11px IBM Plex Mono
+ground span[Survey results readout, new activity, a…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
 text "Survey results readout" rgb(244, 243, 239) 500 13px Inter
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(118, 115, 105) stroke 2.2px
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(118, 115, 105) stroke 2.2px
 text "pz/survey-readout" rgb(118, 115, 105) 400 11px IBM Plex Mono
-ground span[Support inbox triage, lenny, pz/inbox-t…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-image img[Support inbox triage, lenny, pz/inbox-t…] image/png 166a13e4
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(118, 115, 105) stroke 2.2px
-text "lenny" rgb(118, 115, 105) 400 11px IBM Plex Mono
+ground span[Support inbox triage, almanac, pz/inbox…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Support inbox triage, almanac, pz/inbox…] image/png 166a13e4
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(118, 115, 105) stroke 2.2px
+text "almanac" rgb(118, 115, 105) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(244, 243, 239) 500 13px Inter
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(118, 115, 105) stroke 2.2px
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(118, 115, 105) stroke 2.2px
 text "pz/inbox-triage" rgb(118, 115, 105) 400 11px IBM Plex Mono
 ground span[Brand kit for the relaunch, brand, pz/r…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 image img[Brand kit for the relaunch, brand, pz/r…] image/png a8a4c779
@@ -101,13 +101,13 @@ icon svg[Canvases] 11×11 rgb(142, 138, 130) stroke 2.2px
 ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 ground div rgb(27, 27, 26) shadow rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.5) 0px 10px 30px 0px
 ground div rgba(255, 255, 255, 0.06)
-image img image/png 54474398
-text "Northbrook" rgb(244, 243, 239) 400 13px Inter
+image img image/svg+xml c4cbda20
+text "Thistlewick" rgb(244, 243, 239) 400 13px Inter
 icon svg 14×14 rgb(244, 243, 239) stroke 1.9px
-text "F" rgb(255, 255, 255) 600 11px Funnel Display
-ground span rgb(79, 90, 61)
-text "Fablefuel" rgb(244, 243, 239) 400 13px Inter
-image img bryce.svg
+text "Q" rgb(255, 255, 255) 600 11px Funnel Display
+ground span rgb(90, 74, 61)
+text "Quillmoor" rgb(244, 243, 239) 400 13px Inter
+image img ada.svg
 text "Personal" rgb(244, 243, 239) 400 13px Inter
 icon svg 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Set up another on GitHub" rgb(183, 179, 169) 400 13px Inter

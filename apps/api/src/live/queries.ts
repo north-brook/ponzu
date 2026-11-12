@@ -110,7 +110,7 @@ export const LIVE_QUERIES = {
     args: ForCanvas,
     authorize: canvasReader,
     sql: `select ${CANVAS_HEAD_COLUMNS.map((column) => `d.${column}`).join(", ")},
-                 d.agent_blocker, s.state as sandbox_state
+                 d.agent_blocker, d.agent_blocked_until, s.state as sandbox_state
             from canvases d
             left join sandboxes s on s.canvas_id = d.id
            where d.id = $1`,

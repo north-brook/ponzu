@@ -1,7 +1,10 @@
 /* What each composition in compositions.ts draws. */
+import type { Doc } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { type CanvasFilter, repoKey } from "../filter.ts";
 import type { CanvasMember, CanvasSummary, Contributor } from "../model.ts";
+import { BoardsPane, SHOW_BOARDS } from "./boards-pane.tsx";
+import { heroBoards, teamHeroBoards } from "./canvas-fixtures.ts";
 import { CanvasHarness } from "./canvas-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CanvasChromeHarness, CreateHarness, Harness } from "./harness.tsx";
@@ -20,7 +23,7 @@ function quieter(canvases: CanvasSummary[]): CanvasSummary {
   return canvases.find((d) => d.id === "cnv_quieter")!;
 }
 
-/** A canvas open in Northbrook with teammates around: the team boards' window. */
+/** A canvas open in Thistlewick with teammates around: the team boards' window. */
 function CanvasWindow({
   canvases = f.teamCanvases,
   contributors = f.contributors,
@@ -28,6 +31,7 @@ function CanvasWindow({
   sidebar = "open",
   rail: initialRail = true,
   members = f.members,
+  boards,
 }: {
   canvases?: CanvasSummary[];
   contributors?: Contributor[];
@@ -36,6 +40,8 @@ function CanvasWindow({
   rail?: boolean;
   /** Who Share lists. */
   members?: CanvasMember[];
+  /** The canvas's boards, drawn with `&boards` (boards-pane.tsx). */
+  boards?: Doc;
 }) {
   const [rail, setRail] = useState(initialRail);
   return (
@@ -56,7 +62,7 @@ function CanvasWindow({
         />
       )}
     >
-      {null}
+      {boards && SHOW_BOARDS ? <BoardsPane doc={boards} /> : null}
     </Harness>
   );
 }
@@ -122,7 +128,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "shortcuts-filtered": () => (
     <ShortcutsWindow filter={{ person: null, projects: [repoKey(f.fernwood)] }} />
   ),
-  "team-sidebar": () => <CanvasWindow />,
+  "team-sidebar": () => <CanvasWindow boards={teamHeroBoards} />,
   "sidebar-team-menu": () => <CanvasWindow />,
   "sidebar-filter": () => <CanvasWindow />,
   "sidebar-search": () => <CanvasWindow query="" />,
@@ -141,6 +147,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
       agent={t.heroAgent}
       // As the boards go on: board 2's questions follow your next message.
       then={t.boardAsks}
+      boards={heroBoards}
     />
   ),
   "claude-sets-it-up": () => (
@@ -189,12 +196,12 @@ export const BOARDS: Record<string, () => ReactNode> = {
     </Harness>
   ),
   "pick-a-project-workspaces": () => (
-    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.thistlewick, f.brambleSchool]}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} />
     </Harness>
   ),
   "pick-a-project-workspaces-loading": () => (
-    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.northbrook, f.lennyLearning]}>
+    <Harness canvases={f.soloCanvases} openId={null} workspaces={[f.thistlewick, f.brambleSchool]}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.shelves} later />
     </Harness>
   ),
@@ -202,7 +209,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
     <Harness
       canvases={f.soloCanvases}
       openId={null}
-      workspaces={[f.northbrook, f.lennyLearning, f.personal]}
+      workspaces={[f.thistlewick, f.brambleSchool, f.personal]}
     >
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} shelves={f.threeShelves} />
     </Harness>
@@ -264,7 +271,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
     <Harness
       canvases={f.teamCanvases}
       openId={null}
-      initialFilter={{ person: f.alex.id, projects: [repoKey(f.lenny)] }}
+      initialFilter={{ person: f.alex.id, projects: [repoKey(f.almanac)] }}
     >
       {null}
     </Harness>

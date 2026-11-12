@@ -185,15 +185,15 @@ export interface SettingsData {
 }
 
 export const TEAM_SETTINGS: SettingsData = {
-  workspace: f.northbrook,
+  workspace: f.thistlewick,
   workspaces: f.workspaces,
-  teams: [{ workspace: f.northbrook, role: "admin" }],
+  teams: [{ workspace: f.thistlewick, role: "admin" }],
   connection: s.claudeMax,
   entry: null,
   limits: s.limits,
   devices: [s.iphone],
   members: s.members,
-  meId: f.bryce.id,
+  meId: f.ada.id,
   syncFailed: false,
   installation: s.installation,
   repos: s.githubRepos,
@@ -227,7 +227,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
   const content: Record<SettingsSection, () => ReactNode> = {
     account: () => (
       <AccountSection
-        me={f.bryce}
+        me={f.ada}
         email={s.email}
         teams={data.teams}
         onSignOut={ignore}
@@ -391,7 +391,7 @@ export function SettingsWindow({
   return (
     <>
       <Harness
-        workspace={data.workspace.kind === "personal" ? f.personal : f.northbrook}
+        workspace={data.workspace.kind === "personal" ? f.personal : f.thistlewick}
         canvases={f.soloCanvases}
         openId={quieter.id}
         rail

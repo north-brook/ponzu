@@ -6,6 +6,7 @@ import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import type { Env, SandboxConfig } from "../env.ts";
+import type { Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
@@ -17,6 +18,7 @@ import { createGithub, type Github } from "./github.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
+import { type RateLimit, selectRateLimit } from "./rate-limit.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
@@ -75,6 +77,13 @@ export interface Deps {
   analytics: Analytics;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /**
+   * Per-caller rate limits through Vercel's firewall (deps/rate-limit.ts, http/rate-limits.ts).
+   * Off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` on Vercel; fails open.
+   */
+  rateLimit: RateLimit;
+  /** Which features are switched on (features.ts), read from the environment once, in env.ts. */
+  features: Features;
   config: Config;
 }
 
@@ -168,6 +177,11 @@ export function createDeps(env: Env): Deps {
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    rateLimit: selectRateLimit(
+      { mode: env.features.rateLimits, onVercel: env.onVercel },
+      { clock, log },
+    ),
+    features: env.features,
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,

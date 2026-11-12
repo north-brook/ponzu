@@ -148,7 +148,16 @@ opened (with the keys to their files) and the window's remembered state.
 ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>   open a canvas
 ponzu://github/setup?result=installed&workspace=<workspace id>     back from GitHub's install
 ponzu://github/setup?result=requested | pending | sign_in | failed
+ponzu://billing/card?setup=<setup id>&result=added | cancelled     back from adding a card
+ponzu://settings?section=usage | notifications | account
 ```
+
+The grammar is every client's, in `@ponzu/core/links` (docs/cloud.md, "Clients"), and
+`deep-links.ts` only reads it. A canvas link may also carry `open`, `question`, `comment`,
+`message` and `n`, which the studio does not act on yet, and `ponzu://design/<id>` opens the
+same canvas. The studio acts on canvas and GitHub links today; a card's and a settings link
+are heard but nothing answers them until billing and notifications add their listeners. A
+sign-in's way back (`auth/callback`) is the iPhone's, so the Mac drops it.
 
 They arrive on a cold start (`open-url` on the Mac, the command line elsewhere) and while
 running (`second-instance`), and wait until the studio listens, which it does while someone

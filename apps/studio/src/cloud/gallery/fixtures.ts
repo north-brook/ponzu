@@ -17,12 +17,12 @@ import type {
   SearchResults,
   Workspace,
 } from "../model.ts";
+import adaAvatar from "./assets/ada.svg";
 import alexAvatar from "./assets/alex.svg";
-import bryceAvatar from "./assets/bryce.svg";
 import jordanAvatar from "./assets/jordan.svg";
 import mayaAvatar from "./assets/maya.svg";
-import northbrookLogo from "./assets/northbrook.png";
 import samAvatar from "./assets/sam.svg";
+import thistlewickLogo from "./assets/thistlewick.svg";
 import brandPreview from "./previews/brand.png";
 import checkoutPreview from "./previews/checkout.png";
 import heroPreview from "./previews/hero.png";
@@ -35,11 +35,11 @@ import surveyPreview from "./previews/survey.png";
 export const NOW = Date.parse("2026-11-10T16:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
 
-export const bryce: Person = {
-  id: "usr_bryce",
-  name: "Bryce Bjork",
-  login: "brycedbjork",
-  avatarUrl: bryceAvatar,
+export const ada: Person = {
+  id: "usr_ada",
+  name: "Ada Park",
+  login: "adapark",
+  avatarUrl: adaAvatar,
 };
 export const sam: Person = {
   id: "usr_sam",
@@ -80,46 +80,46 @@ export const leo: Person = {
   avatarUrl: null,
 };
 
-export const northbrook: Workspace = {
-  id: "ws_northbrook",
+export const thistlewick: Workspace = {
+  id: "ws_thistlewick",
   kind: "org",
-  name: "Northbrook",
-  login: "north-brook",
-  avatarUrl: northbrookLogo,
+  name: "Thistlewick",
+  login: "thistlewick",
+  avatarUrl: thistlewickLogo,
 };
-export const fablefuel: Workspace = {
-  id: "ws_fablefuel",
+export const quillmoor: Workspace = {
+  id: "ws_quillmoor",
   kind: "org",
-  name: "Fablefuel",
-  login: "fablefuel",
+  name: "Quillmoor",
+  login: "quillmoor",
   avatarUrl: null,
 };
 export const personal: Workspace = {
-  id: "ws_bryce",
+  id: "ws_ada",
   kind: "personal",
-  name: "Bryce Bjork",
-  login: "brycedbjork",
-  avatarUrl: bryceAvatar,
+  name: "Ada Park",
+  login: "adapark",
+  avatarUrl: adaAvatar,
 };
-export const workspaces = [northbrook, fablefuel, personal];
+export const workspaces = [thistlewick, quillmoor, personal];
 
-const repo = (name: string): Repo => ({ id: `repo_${name}`, owner: "north-brook", name });
+const repo = (name: string): Repo => ({ id: `repo_${name}`, owner: "thistlewick", name });
 export const fernwood = repo("fernwood");
-export const lenny = repo("lenny");
+export const almanac = repo("almanac");
 export const brand = repo("brand");
 /** The repo picker's list, pushed-to lately first. */
-export const repos = [fernwood, lenny, repo("ponzu"), repo("fablefuel")];
+export const repos = [fernwood, almanac, repo("ponzu"), repo("quillmoor")];
 /** A workspace with just the one repo installed. */
 export const oneRepo = [repo("ponzu-test")];
 /** Enough to scroll, and a name too long for the row. */
 export const manyRepos = [
   fernwood,
-  lenny,
+  almanac,
   repo("ponzu"),
-  repo("fablefuel"),
+  repo("quillmoor"),
   repo("customer-onboarding-experiments-and-landing-page-variants"),
   repo("brand"),
-  repo("north-brook.com"),
+  repo("thistlewick.com"),
   repo("design-system"),
   repo("mobile"),
   repo("api"),
@@ -131,28 +131,28 @@ export const manyRepos = [
 ];
 
 /** A second organization the person is in, for the picker across workspaces. */
-export const lennyLearning: Workspace = {
-  id: "ws_lennylearning",
+export const brambleSchool: Workspace = {
+  id: "ws_brambleschool",
   kind: "org",
-  name: "Lenny Learning",
-  login: "lennylearning",
+  name: "Bramble School",
+  login: "brambleschool",
   avatarUrl: null,
 };
-const lennyRepo = (name: string): Repo => ({
-  id: `repo_lennylearning_${name}`,
-  owner: "lennylearning",
+const brambleRepo = (name: string): Repo => ({
+  id: `repo_brambleschool_${name}`,
+  owner: "brambleschool",
   name,
 });
-/** Lenny Learning's repos, pushed-to lately first. */
-export const lennyRepos = [lennyRepo("app"), lennyRepo("site"), lennyRepo("curriculum")];
-/** Each workspace's repos, for a person in Northbrook and Lenny Learning. */
+/** Bramble School's repos, pushed-to lately first. */
+export const brambleRepos = [brambleRepo("app"), brambleRepo("site"), brambleRepo("curriculum")];
+/** Each workspace's repos, for a person in Thistlewick and Bramble School. */
 export const shelves: Record<string, Repo[]> = {
-  [northbrook.id]: repos,
-  [lennyLearning.id]: lennyRepos,
+  [thistlewick.id]: repos,
+  [brambleSchool.id]: brambleRepos,
 };
 /** The person's own repos, in their personal workspace. */
 export const personalRepos: Repo[] = [
-  { id: "repo_brycedbjork_dotfiles", owner: "brycedbjork", name: "dotfiles" },
+  { id: "repo_adapark_dotfiles", owner: "adapark", name: "dotfiles" },
 ];
 /** And in their personal workspace too, the switcher's third. */
 export const threeShelves: Record<string, Repo[]> = {
@@ -193,7 +193,7 @@ function canvas(
     unseen: false,
     pullRequest: null,
     hereNow: [],
-    owner: bryce,
+    owner: ada,
     lastActivityAt: minutesAgo(60),
     settledAt: null,
     ...partial,
@@ -228,7 +228,7 @@ const moodboard = canvas({
 const survey = canvas({
   id: "cnv_survey",
   name: "Survey results readout",
-  project: { kind: "repo", repo: lenny, branch: "pz/survey-readout" },
+  project: { kind: "repo", repo: almanac, branch: "pz/survey-readout" },
   preview: preview(surveyPreview),
   unseen: true,
   owner: jordan,
@@ -253,13 +253,13 @@ const brandKit = canvas({
 const inbox = canvas({
   id: "cnv_inbox",
   name: "Support inbox triage",
-  project: { kind: "repo", repo: lenny, branch: "pz/inbox-triage" },
+  project: { kind: "repo", repo: almanac, branch: "pz/inbox-triage" },
   preview: preview(inboxPreview),
   owner: jordan,
   lastActivityAt: minutesAgo(900),
 });
 
-/** Mac boards 1 to 6: Northbrook with nobody else around. */
+/** Mac boards 1 to 6: Thistlewick with nobody else around. */
 export const soloCanvases = [quieter, pricing, moodboard, survey, checkout, brandKit, inbox];
 /** Board 1: the agent at work on the open canvas. */
 export const soloWorking = soloCanvases.map((d) =>
@@ -302,7 +302,7 @@ export const settled: CanvasSummary[] = [
     name,
     project: {
       kind: "repo",
-      repo: i % 3 ? fernwood : lenny,
+      repo: i % 3 ? fernwood : almanac,
       branch: `pz/${name.toLowerCase().replaceAll(" ", "-")}`,
     },
     preview: null,
@@ -331,17 +331,17 @@ export const onboardingPages: PageTab[] = [
 ];
 
 export const contributors: Contributor[] = [
-  { person: bryce, here: true, lastHereAt: null },
+  { person: ada, here: true, lastHereAt: null },
   { person: sam, here: true, lastHereAt: null },
   { person: maya, here: true, lastHereAt: null },
   { person: jordan, here: false, lastHereAt: minutesAgo(60 * 24 * 2) },
 ];
 
 /** A canvas only you have worked on: the spec's default still shows you and the "+". */
-export const justYou: Contributor[] = [{ person: bryce, here: true, lastHereAt: null }];
+export const justYou: Contributor[] = [{ person: ada, here: true, lastHereAt: null }];
 
 export const members: CanvasMember[] = [
-  { person: bryce, access: "owner", joined: true },
+  { person: ada, access: "owner", joined: true },
   { person: sam, access: "edit", joined: true },
   { person: maya, access: "edit", joined: true },
   { person: jordan, access: "edit", joined: true },

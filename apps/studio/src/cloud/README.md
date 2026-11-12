@@ -4,15 +4,21 @@ The Mac app's main window for Ponzu Cloud, as components driven by props: no dat
 API, no Electron. The data layer maps the API and live queries onto the types in `model.ts` and
 passes them in. The local app's screens beside this folder are deleted at cutover.
 
+The product's pure rules live in `@ponzu/client/model` (packages/client/src/model/), so the
+phone shows the same ones; their tests are there too. Each file marked "shared" below is a
+one-line re-export of its module there, kept so the studio's imports did not have to move. A
+new rule with no React and no DOM goes in the shared module, not here.
+
 ```
-model.ts          the product's concepts as the UI takes them (export these to fakes)
-status.ts         a row's indicator and its precedence, the rail toggle's signal, ordering
-filter.ts         the sidebar filter
-search.ts         match highlighting, keyboard selection over results
-pull-request.ts   the next action and the pull request mark's state
-time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the clock they read
-gate.ts           what keeps someone from steering a canvas (read access, the owner's Claude), in words
-claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
+model.ts          shared: the product's concepts as the UI takes them (export these to fakes)
+status.ts         shared: a row's indicator and its precedence, the rail toggle's signal, ordering
+filter.ts         shared: the sidebar filter
+search.ts         shared: match highlighting, keyboard selection over results
+pull-request.ts   shared: the next action and the pull request mark's state
+time.ts           the clock components read (useNow); ages, durations and a time of day are shared
+gate.ts           shared: what keeps someone from steering a canvas (read access, the owner's Claude), in words,
+                  and each wake gate's blocker line (paused, billing, a Claude plan's limit)
+claude.ts         shared: the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
                   popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
@@ -24,13 +30,14 @@ sidebar/          the sidebar: workspace menu, filter, rows, settled tray, searc
 create/           the create page: composer, model picker, repo picker, ideas; a send's travel
                   to the thread and its beat (flight.ts, landing.ts)
 thread/           the thread rail: its lines, a running turn's asides and the working line, and
-                  what leaves when it ends (thread.ts has the rules, thread-view.tsx the motion),
+                  what leaves when it ends (thread.ts, shared, has the rules; thread-view.tsx the motion),
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
+                  (answer.ts, shared)
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
-setup/            guided first run: the gates (setup.ts), sign in, where you build, Connect
+setup/            guided first run: the gates (setup.ts, shared), sign in, where you build, Connect
                   Claude and its card, the iPhone step
-settings/         the Settings modal and its sections, with their rules (billing, members,
+settings/         the Settings modal and its sections, with their rules (billing, shared; members,
                   environments)
 dialogs/          what a send can need first: a card, a higher cap, Claude again; and the
                   account's confirmations
@@ -560,7 +567,7 @@ repaint something or say what isn't so. The usual swaps:
   or repo switches the window to that workspace with its create page open and that project
   chosen, handing the words, images and picked idea over (`CreateHandoff` in `app/create.tsx`)
   in the same render. The selector then reads Scratch (the sidebar says whose) and its label
-  says it, `Project: Scratch in Lenny Learning`. Allow more on GitHub acts for the window's
+  says it, `Project: Scratch in Bramble School`. Allow more on GitHub acts for the window's
   workspace. Its composition masks the picker and says so in `compare`. The picker never moves
   the page: its list shows five and a half rows and scrolls, and in a window too short even for
   that the list gives up height and the picker stays under its selector. A name cut short shows
@@ -606,6 +613,14 @@ compositions against, two ways:
   file it shows, every ground and shadow. It catches what is too small for the picture's
   tolerance: a changed text or icon token, a wrong `text-*` class or weight, the wrong theme's
   picture. A failure prints the lines that changed.
+
+`shots` draws the site's product shots (`SITE_SHOTS` in scripts/visual-lib.ts) into
+apps/web/public/product, with their text, in both themes at twice the size. Those whose main pane
+is the open canvas (`SITE_BOARDS`) are drawn with `&boards`, which puts the canvas's boards
+(gallery/canvas-fixtures.ts, drawn by the canvas package from memory) in the main pane; the
+references leave it out, so they never depend on how the canvas package draws a board. Every
+name in the gallery is invented (Ada Park, Thistlewick, Bramble School, Quillmoor; the plant
+shop Fernwood), so the public pictures show no real person, company or repo.
 
 Redraw them when a change is meant to move pixels or styles, and read the diff before
 committing. The test needs Chrome or Chromium (`PONZU_CHROMIUM`) and skips without one; without

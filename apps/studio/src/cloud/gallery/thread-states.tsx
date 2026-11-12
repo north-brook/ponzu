@@ -10,7 +10,7 @@ const ignore = () => {};
 const WORKING: AgentActivity = { state: "working", status: null };
 const IDLE: AgentActivity = { state: "idle", status: null };
 const WAITING: AgentActivity = { state: "needs_you", status: null };
-const LIMIT: SteerGate = { kind: "claude_limit", owner: f.bryce, until: "2026-11-10T21:00:00Z" };
+const LIMIT: SteerGate = { kind: "claude_limit", owner: f.ada, until: "2026-11-10T21:00:00Z" };
 
 /** A rail at its size, on the chrome, as the window holds it. */
 function Rail({
@@ -35,7 +35,7 @@ function Rail({
       <div className="flex h-[560px] w-[360px] flex-col bg-chrome px-2.5 pb-2.5">
         <ThreadRail
           canvasId={`states_${canvasId}`}
-          meId={f.bryce.id}
+          meId={f.ada.id}
           repoName="fernwood"
           items={thread}
           older="none"
@@ -98,7 +98,7 @@ const unsent: ThreadItem[] = [
       kind: "message",
       payload: {
         text: delivery === "sending" ? "Keep the green." : "And a fourth plan, for teams.",
-        from: f.bryce,
+        from: f.ada,
         attachments: [],
         delivery,
       },
@@ -108,22 +108,22 @@ const unsent: ThreadItem[] = [
 
 /** A comment with its picture, a reply to it, and a short one. */
 const commented: ThreadItem[] = [
-  t.said(f.bryce, "Give me three takes on the hero. Keep the green."),
-  t.comment(f.bryce, "Too many words here. Calmer, and put a quieter take beside it."),
+  t.said(f.ada, "Give me three takes on the hero. Keep the green."),
+  t.comment(f.ada, "Too many words here. Calmer, and put a quieter take beside it."),
   t.reply("Folding that into B: no paragraph, and the photo does the talking."),
-  t.comment(f.bryce, "Yes"),
+  t.comment(f.ada, "Yes"),
 ];
 
 /** The viewer's own comment the moment it is sent, its picture's files still being made. */
 const drawing: ThreadItem[] = [
-  t.said(f.bryce, "Give me three takes on the hero. Keep the green."),
-  t.comment(f.bryce, "Too many words here.", { kind: "drawing", width: 240, height: 160 }),
+  t.said(f.ada, "Give me three takes on the hero. Keep the green."),
+  t.comment(f.ada, "Too many words here.", { kind: "drawing", width: 240, height: 160 }),
 ];
 
 /** Comments with no picture to show: on a board, and on the ground of a page. */
 const placed: ThreadItem[] = [
-  t.comment(f.bryce, "Too many words here. Calmer, and put a quieter take beside it.", null),
-  t.comment(f.bryce, "Something to go between these two", null, {
+  t.comment(f.ada, "Too many words here. Calmer, and put a quieter take beside it.", null),
+  t.comment(f.ada, "Something to go between these two", null, {
     artboardName: null,
     pageName: "Checkout",
   }),
@@ -149,7 +149,7 @@ export function ThreadStates({
         <Rail canvasId="limit" gate={LIMIT} label="the owner's plan at its limit" />
         <Rail
           canvasId="limit-you"
-          gate={{ kind: "claude_disconnected", owner: f.bryce }}
+          gate={{ kind: "claude_disconnected", owner: f.ada }}
           label="your Claude disconnected"
         />
         <Rail
@@ -159,7 +159,7 @@ export function ThreadStates({
         />
         <Rail
           canvasId="expired"
-          gate={{ kind: "claude_expired", owner: f.bryce }}
+          gate={{ kind: "claude_expired", owner: f.ada }}
           label="your Claude sign-in ran out"
         />
         <Rail
@@ -257,12 +257,12 @@ export function ThreadStates({
       <Section title="Next action, blocked">
         <NextActionButton
           action="merge"
-          blocked="Needs write access to north-brook/fernwood"
+          blocked="Needs write access to thistlewick/fernwood"
           onRun={ignore}
         />
         <NextActionButton
           action="fix_checks"
-          blocked="Bryce's plan is at its limit until 4:00 PM. This canvas waits."
+          blocked="Ada's plan is at its limit until 4:00 PM. This canvas waits."
           onRun={ignore}
         />
         <NextActionButton action="update_branch" onRun={ignore} />

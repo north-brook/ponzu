@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseAppLink } from "./link-grammar";
+import { parseAppLink } from "@ponzu/core/links";
 import { incomingPath, parseLink, pathOf } from "./links";
 
-describe("the link grammar", () => {
+describe("the link grammar, as the phone reads it (@ponzu/core/links)", () => {
   test("a canvas link, with everything it can carry", () => {
     expect(
       parseAppLink(

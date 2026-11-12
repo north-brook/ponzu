@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import { EnvError, readEnv, sandboxScope } from "./env.ts";
+import { FEATURES_OFF } from "./features.ts";
 
 const complete = {
   DATABASE_URL: "postgres://user:hunter2@ep-example-pooler.us-east-1.aws.neon.tech/neondb",
@@ -66,7 +67,88 @@ test("a complete environment is read into one typed value", () => {
     posthog: null,
     // Without an Expo access token, push is off.
     push: null,
+    // Every feature switch is off when nothing sets it.
+    features: FEATURES_OFF,
+    // Not on Vercel, so rate limits could not be asked even with PONZU_RATE_LIMITS=vercel.
+    onVercel: false,
   });
+});
+
+test("rate limits are off by default, on Vercel too, and only `vercel` switches them on", () => {
+  const onVercel = readEnv({ ...complete, VERCEL: "1" });
+  expect(onVercel.onVercel).toBe(true);
+  expect(onVercel.features.rateLimits).toBe("off");
+  expect(readEnv({ ...complete, PONZU_RATE_LIMITS: "" }).features.rateLimits).toBe("off");
+  const on = readEnv({ ...complete, PONZU_RATE_LIMITS: "vercel", VERCEL: "1" });
+  expect(on.features.rateLimits).toBe("vercel");
+  expect(on.onVercel).toBe(true);
+  expect(() => readEnv({ ...complete, PONZU_RATE_LIMITS: "on" })).toThrow(
+    "PONZU_RATE_LIMITS is malformed.",
+  );
+});
+
+test("every feature switch is off by default, and an empty value is unset", () => {
+  expect(FEATURES_OFF).toEqual({
+    billing: "off",
+    push: false,
+    email: false,
+    repoBases: false,
+    mergeQueue: false,
+    rateLimits: "off",
+    maintenance: "off",
+  });
+  const empty = Object.fromEntries(
+    [
+      "PONZU_BILLING",
+      "EXPO_ACCESS_TOKEN",
+      "RESEND_API_KEY",
+      "PONZU_REPO_BASES",
+      "PONZU_MERGE_QUEUE",
+      "PONZU_RATE_LIMITS",
+      "PONZU_MAINTENANCE",
+    ].map((name) => [name, ""]),
+  );
+  expect(readEnv({ ...complete, ...empty }).features).toEqual(FEATURES_OFF);
+  // "0" says off as plainly as leaving it out.
+  expect(readEnv({ ...complete, PONZU_REPO_BASES: "0", PONZU_MERGE_QUEUE: "0" }).features).toEqual(
+    FEATURES_OFF,
+  );
+});
+
+test("each switch is read from its own variable", () => {
+  const on = (vars: Record<string, string>) => readEnv({ ...complete, ...vars }).features;
+  expect(on({ PONZU_BILLING: "observe" })).toEqual({ ...FEATURES_OFF, billing: "observe" });
+  expect(on({ PONZU_BILLING: "on" })).toEqual({ ...FEATURES_OFF, billing: "on" });
+  expect(on({ EXPO_ACCESS_TOKEN: "expo-token-for-a-test-0123456789" })).toEqual({
+    ...FEATURES_OFF,
+    push: true,
+  });
+  expect(on({ RESEND_API_KEY: "re_test_example" })).toEqual({ ...FEATURES_OFF, email: true });
+  expect(on({ PONZU_REPO_BASES: "1" })).toEqual({ ...FEATURES_OFF, repoBases: true });
+  expect(on({ PONZU_MERGE_QUEUE: "1" })).toEqual({ ...FEATURES_OFF, mergeQueue: true });
+  expect(on({ PONZU_RATE_LIMITS: "vercel" })).toEqual({ ...FEATURES_OFF, rateLimits: "vercel" });
+  expect(on({ PONZU_MAINTENANCE: "wakes_paused" })).toEqual({
+    ...FEATURES_OFF,
+    maintenance: "wakes_paused",
+  });
+  expect(on({ PONZU_MAINTENANCE: "read_only" })).toEqual({
+    ...FEATURES_OFF,
+    maintenance: "read_only",
+  });
+});
+
+test("a switch set to something it does not know stops the API, named and never quoted", () => {
+  for (const [name, value] of [
+    ["PONZU_BILLING", "yes"],
+    ["PONZU_REPO_BASES", "true"],
+    ["PONZU_MERGE_QUEUE", "on"],
+    ["PONZU_RATE_LIMITS", "cloudflare"],
+    ["PONZU_MAINTENANCE", "paused"],
+  ] as const) {
+    expect(() => readEnv({ ...complete, [name]: value })).toThrow(
+      `The API cannot start. ${name} is malformed.`,
+    );
+  }
 });
 
 test("an Expo access token switches push on, and a malformed one is named and never quoted", () => {
@@ -215,14 +297,20 @@ test(".env.example lists exactly the variables the API reads, with no values", (
   expect(names.filter((name) => !(name in complete)).sort()).toEqual([
     "EXPO_ACCESS_TOKEN",
     "PONZU_API_URL",
+    "PONZU_BILLING",
+    "PONZU_MAINTENANCE",
+    "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",
     "PONZU_POSTHOG_AI_CONTENT",
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
+    "PONZU_RATE_LIMITS",
+    "PONZU_REPO_BASES",
     "PONZU_SANDBOX_IDLE_SECONDS",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",
     "PONZU_VAULT_OLD_KEYS",
+    "RESEND_API_KEY",
     "VERCEL_PROJECT_ID",
     "VERCEL_TEAM_ID",
     "VERCEL_TOKEN",

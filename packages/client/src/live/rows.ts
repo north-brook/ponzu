@@ -88,6 +88,7 @@ export const LIVE_COLUMNS = {
     "pr_auto_merge",
     "last_activity_at",
     "agent_blocker",
+    "agent_blocked_until",
     "sandbox_state",
   ],
   "canvas.thread": [
@@ -211,6 +212,8 @@ export interface CanvasHeadRow {
   lastActivityAt: string;
   /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
   agentBlocker: AgentBlocker | null;
+  /** Until when the blocker holds, when that is known (a Claude plan's limit resets then). */
+  agentBlockedUntil: string | null;
   /** Null while the canvas has no sandbox. */
   sandboxState: string | null;
 }
@@ -328,6 +331,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
+    agentBlockedUntil: maybeTime(r.agent_blocked_until),
     sandboxState: maybeText(r.sandbox_state),
   }),
   "canvas.thread": (r) =>

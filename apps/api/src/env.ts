@@ -5,6 +5,13 @@ import type { VercelCredentials } from "@ponzu/sandbox";
 import { z } from "zod";
 import type { PosthogConfig } from "./analytics/posthog.ts";
 import type { R2Config } from "./deps/storage.ts";
+import {
+  BILLING_MODES,
+  type Features,
+  featuresFrom,
+  MAINTENANCE_MODES,
+  RATE_LIMIT_MODES,
+} from "./features.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
 
 /**
@@ -89,6 +96,27 @@ const schema = z.object({
    * Unset, push is off: nothing is sent to a phone, and the Mac and the inbox work regardless.
    */
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
+
+  // Notifications: the email digest (deps/mail.ts, when it is built).
+  /** Resend's API key. Unset, email is off: no digest is sent and Settings hides its row. */
+  RESEND_API_KEY: z.string().min(1).optional(),
+
+  // Feature switches (features.ts). Each is off when unset.
+  /** off, observe (the gate is computed and what it would refuse is logged), or on. */
+  PONZU_BILLING: z.enum(BILLING_MODES).default("off"),
+  /** "1": repo bases are built, and canvases wake from them. */
+  PONZU_REPO_BASES: z.enum(["0", "1"]).default("0"),
+  /** "1": Merge adds a pull request to its repo's merge queue instead of refusing. */
+  PONZU_MERGE_QUEUE: z.enum(["0", "1"]).default("0"),
+  /**
+   * off, or "vercel": per-caller limits through Vercel's firewall (deps/rate-limit.ts), which
+   * only a deployment on Vercel (`VERCEL=1`) can ask. Turn it on only once the firewall's
+   * rate-limit rules are applied: a check whose rule is missing lets the request through,
+   * logged as `rate_limit_unavailable`.
+   */
+  PONZU_RATE_LIMITS: z.enum(RATE_LIMIT_MODES).default("off"),
+  /** The incident switch: off, wakes_paused (nothing wakes), or read_only (nothing writes). */
+  PONZU_MAINTENANCE: z.enum(MAINTENANCE_MODES).default("off"),
 });
 
 /** How canvases' sandboxes are made and kept. */
@@ -157,6 +185,10 @@ export interface Env {
   posthog: PosthogConfig | null;
   /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
   push: { accessToken: string } | null;
+  /** Which features are switched on (features.ts): all off unless their variables say so. */
+  features: Features;
+  /** Whether this runs as a Vercel deployment (`VERCEL=1`): only there can rate limits be asked. */
+  onVercel: boolean;
 }
 
 /**
@@ -230,6 +262,8 @@ export function readEnv(source: Record<string, string | undefined>): Env {
         }
       : null,
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
+    features: featuresFrom(env),
+    onVercel: env.VERCEL === "1",
   };
 }
 

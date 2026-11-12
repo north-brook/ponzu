@@ -381,12 +381,6 @@ jobs:
           bun run package:dev
           PONZU_SMOKE=1 timeout 120 xvfb-run -a out/dev/linux-unpacked/ponzu-dev --no-sandbox
         working-directory: apps/desktop
-      - name: The npm package installs, creates a design and serves the studio
-        if: env.RUN == 'true'
-        # What the release workflow publishes for `bunx ponzu`, with the studio
-        # the package above built. The desktop app no longer bundles the CLI;
-        # this stays here until apps/cli is deleted at cutover.
-        run: bun scripts/npm-package.ts && bun scripts/npm-smoke.ts
 
   desktop-windows:
     # The same unsigned package and launch check as "Desktop package", on
@@ -432,13 +426,11 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - name: The CLI and the app's own paths, as Windows writes them
+      - name: The app's own paths, as Windows writes them
         if: env.RUN == 'true'
-        # The CLI's tests that need Windows itself ("Tests" runs the rest), and the app's serving of the studio and reading of
-        # links with Windows' separators.
-        run: |
-          bun test apps/cli/src/host.test.ts apps/cli/src/command.test.ts -t "on Windows"
-          bun test apps/desktop/src/studio-files.test.ts apps/desktop/src/deep-links.test.ts
+        # The app's serving of the studio and reading of links with Windows'
+        # separators ("Tests" runs the rest).
+        run: bun test apps/desktop/src/studio-files.test.ts apps/desktop/src/deep-links.test.ts
       - name: Unsigned, unpublished package
         if: env.RUN == 'true'
         run: bun run package:dir

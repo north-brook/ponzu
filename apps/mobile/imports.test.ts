@@ -31,8 +31,8 @@ const PATH_ALLOWED: Record<string, string[]> = {
 const TESTING_ALLOWED = ["lib/cloud/backend.fake.ts"];
 /** Modules only one file may import. */
 const PRIVATE: Record<string, string[]> = {
-  // A stand-in for @ponzu/core/links: lib/links.ts is the one reader of links.
-  "lib/link-grammar.ts": ["lib/links.ts", "lib/links.test.ts"],
+  // lib/links.ts is the one reader of links.
+  "@ponzu/core/links": ["lib/links.ts", "lib/links.test.ts"],
 };
 
 const isTest = (file: string) => /\.(test|rntest)\.tsx?$/.test(file);
@@ -64,7 +64,13 @@ function violations(file: string, source: string): string[] {
       out.push(`${file} imports ${spec}, which only the fake backend may`);
       continue;
     }
-    if (!spec.startsWith(".")) continue;
+    if (!spec.startsWith(".")) {
+      const readers = PRIVATE[spec];
+      if (readers && !readers.includes(file)) {
+        out.push(`${file} imports ${spec}, which only ${readers[0]} may`);
+      }
+      continue;
+    }
     const target = relative(ROOT, resolve(join(ROOT, file, ".."), spec));
     if (target.startsWith("..")) {
       const outside = relative(resolve(ROOT, "../.."), resolve(ROOT, target));
@@ -126,7 +132,7 @@ describe("the imports rule", () => {
       violations("app/x.tsx", 'import { createFakeBackend } from "@ponzu/client/testing";'),
     ).toHaveLength(1);
     expect(
-      violations("app/x.tsx", 'import { parseAppLink } from "../lib/link-grammar";'),
+      violations("app/x.tsx", 'import { parseAppLink } from "@ponzu/core/links";'),
     ).toHaveLength(1);
     // What the rule allows.
     expect(

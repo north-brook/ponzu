@@ -168,8 +168,8 @@ must use this build's own scheme, so `ponzu://` opens nothing in Ponzu Dev and
 
 Anything else opens the launch screen, which goes where the session says; a
 path the build has no screen for does the same (`app/+not-found.tsx`). The
-grammar is `lib/link-grammar.ts`, a stand-in for `@ponzu/core/links` until
-that lands, when `links.ts` imports core's instead.
+grammar is `@ponzu/core/links`, the one the Mac and the API share, and
+`lib/links.ts` is the only file that imports it.
 
 ### The fake backend
 

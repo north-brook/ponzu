@@ -51,9 +51,10 @@ packages/
   client/    typed API client, live queries, the cloud canvas source
 ```
 
-Deleted at cutover: `apps/cli`, `packages/server`, `packages/mcp`, `packages/store`,
-`plugin/`, the marketplace manifests, and the `/gh`, `/local`, `/open`, `/share`
-and badge routes in `apps/web`.
+Deleted at cutover: `packages/store`, `packages/tools/src/local`, core's 1.x modules,
+`examples/`, and the `/gh`, `/local`, `/open`, `/share` and badge routes in `apps/web`.
+The 1.x command line, its local server and MCP packages, the agent plugin and the
+marketplace manifests are already gone from this branch.
 
 Where things run:
 
@@ -543,6 +544,15 @@ Vercel in memory with a clock the test controls. Nothing else imports the SDK
 Waking is a job. The API records it in `jobs`, starts it with `waitUntil`, and a
 one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
+Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), one module per
+area. Other work that must outlive its request and start at once records its job held and runs
+it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
+(`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
+sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+others still run. A step runs every minute, once in every few minutes, or once an hour at a
+given minute. One on a slot runs once in it however many runs overlap, and catches up within
+five minutes when the run it was due in never came.
+
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
 
@@ -561,7 +571,27 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   with. The canvas's head shows `waking` at once, and `agent_blocker` says why a canvas waits:
   `claude_not_connected`, `claude_expired`, `claude_owner_left` (whose Claude it runs on is no
   longer in the workspace), `sandbox_busy` (Vercel limiting the pace, or past the limits below)
-  or `sandbox_failed`.
+  or `sandbox_failed`; and, from the wake gates below, `paused` (wakes paused while Ponzu
+  updates), `credits_used_up`, `cap_reached`, `payment_failed` (the workspace at a billing
+  limit) and `claude_limited` (the owner's plan at its limit). `agent_blocked_until` says until
+  when, when a gate knows; the `canvas.head` live query sends both.
+- **The wake gates** (`sandboxes/gates.ts`) are asked in order before the claim: `owner`,
+  `claude`, `maintenance`, `billing`, `claudeLimit`. The first that refuses sets `agent_blocker`
+  (and `agent_blocked_until` to the time it gave, if any), the rest are not asked, and the wake
+  is over, or, when the gate gave a time, the same wake job is tried again then. A turn already
+  running when `maintenance`, `billing` or `claudeLimit` refuses is left to finish, and the head
+  still says the agent works. A wake that
+  passes every gate lifts a gate's blocker the head still shows. When what a gate waited on
+  changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
+  everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
+  event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
+  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
+  until their features fill them. The runner's claim hands out only the kinds
+  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  neither claimed nor delivered. A person's message, answer or create asks the request gates
+  (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
+  be allowed and before anything is written; each lets everything through until its feature
+  fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -1238,6 +1268,13 @@ holds, came from another Claude Code, or is more than a day old, so a plan that 
 model shows up within a day. The API keeps it on the account (`claude_accounts.models`, with
 `models_reported_at` and `models_claude_code`), only while the sandbox that reported it runs on
 the credential the account holds now; connecting another key or subscription clears it.
+A runner's first report is kept, and after it at most one in ten minutes: the window is held on
+the account (`models_reported_at`), so a report is refused while the account's last was kept in
+the past ten minutes and after this runner took its lease. Runners on one account share the
+window, which only matters when two images report different answers within ten minutes: the
+second is said again at its runner's next start. A refused report is answered 200 with
+`kept: false`, never 429, so the runner does not try again, and logged as
+`claude_models_reported` with `refused: "too_soon"` (or `"old_credential"`).
 
 `supportedModels()` answers aliases, not model ids. For the development API key on Claude Code
 2.1.322 it was `default`, `opus`, `fable`, `sonnet` and `haiku`, each with `resolvedModel` (the
@@ -1269,8 +1306,20 @@ and `POST /v1/canvases` take only a model the account offers and an effort that 
 sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a canvas made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
-never handed a model it would refuse once a runner has reported. Nothing in the canvas's thread
-says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+never handed a model it would refuse once a runner has reported. The canvas's thread says so:
+as that runner's session starts, the API (never the runner, which is refused with 400 if it
+tries) writes a notice `{ type: "model_changed", from, to, fromName, toName, account }` under
+the id `ti_model-` and the first 12 hex digits of the SHA-256 of `from→to`, so each change is
+said once however often the canvas starts (a canvas that goes back to its model and then loses
+it again to the same one is not told twice). It is written only once a runner has reported what
+the account offers: before that (a credential just connected again, or one revoked) the canvas
+still runs on the default in its place, but nobody knows its model is gone, so the thread says
+nothing and only the log does (`reported: false`). The names are the ones the API knows then (what the
+account is offered, else the hand-kept list, else the id), since the model gone is no longer in
+what the account offers; `account` is whose Claude it is, the canvas's owner when they hold the
+account, else null. The apps say it as "Maya's Claude doesn't offer Fable 5.2 any more, so this
+canvas now runs on Opus 5.5." ("Your Claude" to the person whose it is), and it is not an answer
+to anyone's message. The apps hear of a new report only when they read the defaults again (the `me`
 live query does not carry the report): a create or a defaults change refused with
 `model_not_offered` reads them again, as does connecting another credential, so the picker
 then shows what the account offers. Before the first report the hand-kept list is offered as
@@ -1357,7 +1406,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }`; at most one kept in ten minutes after a runner's first, never 429 |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |
@@ -2260,6 +2309,14 @@ never completed. Previews replaced by later ones are deleted. A comment's pictur
 since it is uploaded before its comment is saved (and may never be): it is copied under
 `comments/` only when it is attached to a comment that exists and has no picture yet.
 
+A canvas's files can be deleted together: the job `canvas.files_delete`, keyed by the asset key,
+lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand keys at a time
+(DeleteObjects), up to 2,000 an attempt, coming back ten seconds later while more remain, for at
+most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
+any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
+anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
+bucket. Nothing records the job yet; deleting a canvas or an account will.
+
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
 ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
@@ -2662,15 +2719,22 @@ Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
 session and everything the studio kept: the canvases last opened and their asset keys.
 
-Links into the app (`apps/desktop/README.md`):
+Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
+`@ponzu/core/links`):
 
 ```
-ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
+ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usage&question=&comment=&message=&n=
 ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
+ponzu://billing/card?setup=<setup id>&result=added|cancelled
+ponzu://settings?section=usage|notifications|account
 ```
 
-A link only asks to show something; one that doesn't parse is dropped. A development
-build takes `ponzu-dev://` instead, so it never takes an installed app's links.
+A link only asks to show something; one that doesn't parse is dropped, and an optional
+part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`
+is read as the canvas link, for good. A development build takes `ponzu-dev://` instead,
+so it never takes an installed app's links. A ping carries ids only, as `PushData` v1
+(`@ponzu/core/push`), and a tap goes where `linkOfPush` says, through the same grammar.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
@@ -2731,6 +2795,19 @@ said on that route and nowhere else. Errors leave the API as
 `{ error: { code, message, details? } }` with a stable code and nothing of the
 failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
+**Rate limits per caller.** Each declaration that authenticates also counts the request against
+one rate limit, keyed by the person or by the runner's canvas (`apps/api/src/http/rate-limits.ts`):
+creating a canvas, sending messages and answers, upload addresses, `POST /v1/live`, GitHub sync,
+and a runner's git credentials each have their own, and every other write by a person, and every
+other call by a runner, counts against a catch-all. A read by a person is not counted; the
+firewall's per-address rules cover reads and the public routes. Over the limit is 429
+`rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
+behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
+everywhere today, until its rules are applied. It fails open: a check that takes more than
+500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
+count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
+steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
+
 ## Analytics
 
 PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
@@ -2773,6 +2850,13 @@ sandbox"): a deployment lists, stops and removes only the names its own database
 begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
 deployment's runners call back; unset, it is production's address, so a dev deployment or a
 preview whose sandboxes must reach it sets it.
+
+A feature that waits on a vendor's key or on the founder's say-so has a switch, read once from
+the environment (`apps/api/src/features.ts`) and off when unset: `PONZU_BILLING` (`off`,
+`observe` or `on`), push (on when `EXPO_ACCESS_TOKEN` is set), email (on when `RESEND_API_KEY`
+is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off` or `vercel`)
+and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
+push and email, so an app shows only what can work.
 
 ### Checking a deploy's sandboxes
 

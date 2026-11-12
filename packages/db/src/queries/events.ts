@@ -137,6 +137,10 @@ function leaseHeld(db: Db, canvasId: string, runnerId: string) {
  * Only the canvas's current runner (`canvas_runners.runner_id`) is handed anything: a runner
  * whose lease was taken between its call being let in and this statement gets nothing. Null
  * when there is no such canvas.
+ *
+ * `kinds`, when given, narrows what a new claim hands out to those kinds: the rest stay in the
+ * feed, neither claimed nor delivered, for a later claim. A claim sent again still hands out
+ * exactly what it handed out the first time.
  */
 export async function claimEvents(
   db: Db,
@@ -146,6 +150,7 @@ export async function claimEvents(
     claimId,
     limit = 100,
     now,
+    kinds = "all",
   }: {
     canvasId: string;
     runnerId: string;
@@ -153,6 +158,7 @@ export async function claimEvents(
     limit?: number;
     /** The API's clock, which the wake compares a claim with; the database's when absent. */
     now?: Date;
+    kinds?: readonly FeedEvent["kind"][] | "all";
   },
 ): Promise<{
   events: ClaimedEvent[];
@@ -163,6 +169,12 @@ export async function claimEvents(
   const pending = and(eq(events.canvasId, canvasId), isNull(events.deliveredAt));
   const ofThisClaim = and(eq(events.claimedBy, runnerId), eq(events.claimId, claimId));
   const repeated = db.select({ id: events.id }).from(events).where(and(pending, ofThisClaim));
+  const claimable =
+    kinds === "all"
+      ? undefined
+      : kinds.length === 0
+        ? sql`false`
+        : inArray(events.kind, [...kinds]);
   // In `with`, so that it runs once. As a subquery of the update it is run again for each
   // row whenever the planner joins by nested loop, and each run locks the next `limit` rows.
   const waiting = db.$with("waiting").as(
@@ -178,6 +190,7 @@ export async function claimEvents(
             and(
               sql`not exists (${repeated})`,
               or(isNull(events.claimedBy), sql`${events.claimedBy} <> ${runnerId}`),
+              claimable,
             ),
           ),
         ),

@@ -101,6 +101,18 @@ export function offerFor(account: Pick<ClaudeAccount, "models" | "status"> | nul
   return offeredModels(account && account.status !== "revoked" ? account.models : null);
 }
 
+/**
+ * What people call a model: its name in what the account is offered, else in the hand-kept
+ * list (a model the account no longer offers may still be one of those), else its id.
+ */
+export function modelLabel(offer: ModelOffer, model: string): string {
+  return (
+    offer.models.find((m) => m.id === model)?.label ??
+    CLAUDE_MODELS.find((m) => m.id === model)?.label ??
+    model
+  );
+}
+
 /** A saved choice the account still offers, or what runs in its place. */
 export function modelOrDefault(offer: ModelOffer, model: string | null): string {
   return model && offer.models.some((m) => m.id === model) ? model : offer.defaultModel;

@@ -1,4 +1,4 @@
-import { type AppLink, parseAppLink } from "./link-grammar";
+import { type AppLink, parseAppLink } from "@ponzu/core/links";
 
 /*
  * The app's only reader of links: deep links (app/+native-intent.tsx), and later pushes and the
@@ -7,8 +7,9 @@ import { type AppLink, parseAppLink } from "./link-grammar";
  * (`ponzu`, or Ponzu Dev's `ponzu-dev`); anything else is refused, so a link meant for the
  * other app never opens here.
  *
- * The grammar is lib/link-grammar.ts, a stand-in for `@ponzu/core/links` until that lands;
- * swapping it changes only the import above.
+ * The grammar is `@ponzu/core/links`, the one every client reads. On Hermes its query parsing
+ * uses React Native's URLSearchParams, which can throw on bad percent-encoding;
+ * app/+native-intent.tsx catches that and opens the launch screen.
  */
 
 export type { AppLink };
