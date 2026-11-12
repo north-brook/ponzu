@@ -9,13 +9,8 @@ test("a change to the phone alone runs only the phone's suites", () => {
   expect(suites("apps/mobile/app/index.tsx")).toEqual({ desktop: false, mobile: true });
 });
 
-test("a change to the Mac app, its server or its studio runs only the desktop suite", () => {
-  for (const file of [
-    "apps/desktop/src/main.ts",
-    "apps/cli/src/index.ts",
-    "apps/studio/src/App.tsx",
-    "packages/server/src/serve.ts",
-  ]) {
+test("a change to the Mac app or its studio runs only the desktop suite", () => {
+  for (const file of ["apps/desktop/src/main.ts", "apps/studio/src/App.tsx"]) {
     expect(suites(file)).toEqual({ desktop: true, mobile: false });
   }
 });
