@@ -17,6 +17,11 @@ export interface InFlight {
   uuid: string;
   /** The event it carried, if any. */
   event: string | null;
+  /**
+   * The event that began the turn it is part of (the runner's turn event), which may be an
+   * earlier message's than `event`: a pickup restores this one, never the last taken in.
+   */
+  turn: string | null;
   /** How many times this turn has been picked up already. */
   pickups: number;
 }
@@ -34,6 +39,7 @@ export class TurnMarker {
       return {
         uuid: value.uuid,
         event: typeof value.event === "string" ? value.event : null,
+        turn: typeof value.turn === "string" ? value.turn : null,
         pickups: typeof value.pickups === "number" ? value.pickups : 0,
       };
     } catch {

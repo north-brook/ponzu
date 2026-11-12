@@ -249,6 +249,12 @@ interface Sent {
   pickups?: number;
   /** For a pickup, the event of the turn it picks up, which it does not acknowledge. */
   carries?: string | null;
+  /**
+   * For a pickup, the event that began the turn it picks up (that turn's `turnEvent`), which the
+   * picked-up turn names again: never `carries`, the last words taken in, which may have come in
+   * during a turn an edit, a check or a review began, or from another person than began it.
+   */
+  resumes?: string | null;
 }
 
 /**
@@ -362,7 +368,8 @@ export class Runner {
   /**
    * The event of the turn the agent is in: the one whose message began it, taken into the session
    * as the turn began, other than an edit; null for a turn none began (Ponzu's own note, an edit),
-   * which stays null for the rest of that turn. Its pull request tools
+   * which stays null for the rest of that turn. A pickup restores the one the turn it picks up
+   * began with (the marker's `turn`), never the last words taken in. Its pull request tools
    * name it, and the API decides from it who the agent acts as and whether it may merge.
    */
   private turnEvent: string | null = null;
@@ -849,6 +856,7 @@ export class Runner {
       event: null,
       pickups: broke.pickups + 1,
       carries: broke.event,
+      resumes: broke.turn,
     });
   }
 
@@ -1333,13 +1341,16 @@ export class Runner {
       const sent = this.sent.get(uuid);
       if (sent) {
         this.sent.delete(uuid);
-        const of = sent.event ?? sent.carries ?? null;
+        // A pickup begins its turn with what began the turn it picks up, not with what it
+        // carries (the last words taken in, which may have come in partway through).
+        const of = sent.pickups !== undefined ? (sent.resumes ?? null) : sent.event;
         if (of && !words && this.held.get(of)?.kind !== "edit") words = of;
         if (sent.event) this.ack(sent.event, true);
         // On the disk before the turn can be cut off: the next start picks it up.
         this.marker.write({
           uuid,
           event: sent.event ?? sent.carries ?? null,
+          turn: this.inTurn ? this.turnEvent : words,
           pickups: sent.pickups ?? 0,
         });
       }

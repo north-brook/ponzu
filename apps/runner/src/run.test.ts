@@ -459,7 +459,7 @@ const git = (cwd: string, ...args: string[]) =>
 /** "GitHub" (a bare repository) and the design's checkout of it on pz/hero, with a runner on it. */
 async function onRepo(
   timing: Partial<Timing> = {},
-  more: { flush?: () => void; api?: FakeRunnerApi } = {},
+  more: { flush?: () => void; api?: FakeRunnerApi; agent?: ScriptedAgent } = {},
 ) {
   const root = await temp();
   const origin = join(root, "origin.git");
@@ -823,6 +823,60 @@ test("a turn an edit began names no event, even once a person's message comes in
   await until(() => s.api.delivered.includes(asked.id));
   await s.run.call("read_pull_request");
   expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: asked.id });
+});
+
+/**
+ * A turn on the repo that `first` begins, with a person's message taken in during it; then Claude
+ * Code stops and is started again in the same runner, which picks the turn up and merges.
+ */
+async function pickedUpAfter(first: "edit" | "check" | "message") {
+  const agent = new ScriptedAgent();
+  const s = await onRepo({}, { agent });
+  const history = { messages: new Set<string>(), toolResults: new Set<string>() };
+  agent.sessions.set("sess_1", history);
+  s.run.ready("sess_1");
+  const began =
+    first === "edit"
+      ? s.api.push({ kind: "edit", payload: { summary: "Moved a board", artboards: [] } })
+      : first === "check"
+        ? s.api.push(
+            {
+              kind: "check",
+              payload: { name: "ci", conclusion: "failure", url: null, summary: "" },
+            },
+            { priority: "next", from: null },
+          )
+        : s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const one = await s.run.input();
+  history.messages.add(one.uuid);
+  s.run.take(one);
+  await until(() => s.api.delivered.includes(began.id));
+  const said = s.api.push({ kind: "message", payload: { text: "Merge it" } });
+  s.runner.poke();
+  const two = await s.run.input();
+  history.messages.add(two.uuid);
+  s.run.take(two);
+  await until(() => s.api.delivered.includes(said.id));
+  s.run.crash();
+  const second = await agent.run(2);
+  const pickup = await second.input();
+  expect(pickup.text).toContain("your last turn was cut off");
+  second.take(pickup);
+  await second.call("merge_pull_request");
+  return { s, began };
+}
+
+test("a turn picked up in the same runner names the event that began it, not the last words in it", async () => {
+  // An edit began it: still no person's turn, though Ada spoke in it before the pickup.
+  const edit = await pickedUpAfter("edit");
+  expect(edit.s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: null });
+  // A check began it: still GitHub's.
+  const check = await pickedUpAfter("check");
+  expect(check.s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: check.began.id });
+  // A person began it: still hers, and the API judges what came in after from her message.
+  const own = await pickedUpAfter("message");
+  expect(own.s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: own.began.id });
 });
 
 test("a turn a check or a review begins is told it may fix, not land", async () => {

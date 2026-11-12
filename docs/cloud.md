@@ -1001,7 +1001,8 @@ and the sweep put the sandbox to sleep on top of it. Two things now see to it, a
 enough.
 
 **The runner picks it up** (`apps/runner/src/inflight.ts`). When Claude Code takes a message in,
-the runner writes what it took (its uuid and event) to `~/.ponzu/turn.json`, flushed, and clears
+the runner writes what it took (its uuid and event, and the event that began the turn) to
+`~/.ponzu/turn.json`, flushed, and clears
 it at the turn's result, unless its own shutdown cut the turn off. A runner that starts (or starts
 Claude Code again after it died) and finds it, with the resumed session holding that message, says
 so in the thread (`turn_failed`, "Claude was cut off before it finished this, and is picking it
@@ -1946,11 +1947,14 @@ it doesn't know.
 turn, taken into the session as it began, other than a canvas edit (which is not words to act
 on). It is set once, as the turn begins: a turn that Ponzu's own note or an edit began has none,
 and keeps none when a person's words come in during it, since no person began it. Words that come
-in later in the turn never take it over, and the next turn names its own. The API
+in later in the turn never take it over, and the next turn names its own. A turn picked up after
+Claude Code stopped (A turn that never came) names the event that began it, which the turn marker
+keeps beside the last one taken in, never those last words: they may have come in during a turn an
+edit, a check or a review began, or from someone else. The API
 looks it up in the design's feed (`getTurnOrigin`, packages/db): it must be one of this design's
 events that **this runner** (its lease, `X-Ponzu-Runner`) was handed, or it is none. So a turn
-picked up after a restart, or an old event a runner token in other hands names, is not a person's
-turn.
+picked up after the runner process restarted, or an old event a runner token in other hands names,
+is not a person's turn.
 
 - An event a person sent in Ponzu (`message`, `answer`, `comment`, with its person) is **a
   person's turn**, and the agent acts as that person.
