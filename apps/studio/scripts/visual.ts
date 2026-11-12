@@ -13,6 +13,11 @@
  *     Redraws what the gallery test compares against: a picture of each composition in light with
  *     its text hidden (so it holds on any machine's font rendering), and the styles it paints with
  *     in light and dark (paintedStyles). Look at what changed before committing them.
+ *
+ *   bun scripts/visual.ts shots [--out <dir>] [--only <id>]
+ *     Draws the compositions the site shows (SITE_SHOTS) with their text, in light and dark, at
+ *     twice the size, to <out>/<id>-<theme>.png (apps/web/public/product by default). Look at
+ *     them before committing them.
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -26,6 +31,9 @@ import {
   type Page,
   paintedStyles,
   REFERENCES,
+  SITE_PRODUCT,
+  SITE_SCALE,
+  SITE_SHOTS,
   STUDIO,
   serve,
   shootBoard,
@@ -40,8 +48,10 @@ const { positionals, values } = parseArgs({
   options: { design: { type: "string" }, out: { type: "string" }, only: { type: "string" } },
 });
 const command = positionals[0];
-if (command !== "compare" && command !== "references") {
-  console.error("usage: bun scripts/visual.ts compare --design <dir> | references");
+if (command !== "compare" && command !== "references" && command !== "shots") {
+  console.error(
+    "usage: bun scripts/visual.ts compare --design <dir> | references | shots [--out <dir>]",
+  );
   process.exit(2);
 }
 if (command === "compare" && !values.design) {
@@ -57,7 +67,23 @@ try {
   const tool = await browser.newPage();
   const chosen = COMPOSITIONS.filter((c) => !values.only || c.id === values.only);
 
-  if (command === "references") {
+  if (command === "shots") {
+    const out = resolve(values.out ?? SITE_PRODUCT);
+    mkdirSync(out, { recursive: true });
+    const sharp = await browser.newPage({ deviceScaleFactor: SITE_SCALE });
+    const shots = SITE_SHOTS.filter((id) => !values.only || id === values.only);
+    for (const id of shots) {
+      const c = COMPOSITIONS.find((c) => c.id === id);
+      if (!c) throw new Error(`SITE_SHOTS names ${id}, which isn't a composition.`);
+      for (const theme of THEMES) {
+        const shot = await shootComposition(sharp, server.url, c, theme, { hideText: false });
+        if (!(await fontsLoaded(sharp)))
+          throw new Error("The app's fonts didn't load; the shots would be wrong.");
+        await Bun.write(join(out, `${id}-${theme}.png`), shot);
+        console.log(`${id}-${theme}`);
+      }
+    }
+  } else if (command === "references") {
     mkdirSync(REFERENCES, { recursive: true });
     for (const c of chosen.filter((c) => c.reference)) {
       for (const theme of THEMES) {

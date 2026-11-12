@@ -182,7 +182,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
   test("presence is one Tab stop, and each person's tip shows from the keyboard", async () => {
     await open("team-sidebar");
-    await page.focus('[aria-label="Bryce (you)"]');
+    await page.focus('[aria-label="Ada (you)"]');
     for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
     await focusOn("Jordan · last here 2 days ago");
     await page.waitForSelector('[role="tooltip"]:has-text("Jordan · last here 2 days ago")');

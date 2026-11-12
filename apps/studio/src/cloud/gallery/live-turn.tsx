@@ -24,7 +24,7 @@ const ask: ThreadItem = {
   at: AT,
   streaming: false,
   kind: "message",
-  payload: { text: "Two small boards, and the token file.", from: f.bryce, attachments: [] },
+  payload: { text: "Two small boards, and the token file.", from: f.ada, attachments: [] },
 };
 /** The turn's log as it grows: what it did before it spoke, then after its first message. */
 const LOG = [
@@ -119,7 +119,7 @@ export function LiveTurnRail({ earlier = false }: { earlier?: boolean }) {
       <div className="flex h-[560px] w-[360px] flex-col bg-chrome px-2.5 pb-2.5">
         <ThreadRail
           canvasId="live-turn"
-          meId={f.bryce.id}
+          meId={f.ada.id}
           repoName="fernwood"
           items={items}
           older="none"

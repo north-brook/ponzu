@@ -12,8 +12,8 @@ text "Product" rgb(86, 83, 77) 400 13px Inter
 icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
 text "Care cards" rgb(86, 83, 77) 400 13px Inter
 icon svg[New page] 14×14 rgb(128, 124, 115) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 image img[Sam] sam.svg
 ground img[Sam] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 image img[Maya] maya.svg
@@ -107,7 +107,7 @@ icon svg 14×14 rgb(17, 17, 16) stroke 1.9px
 text "F" rgb(255, 255, 255) 600 11px Funnel Display
 ground span rgb(79, 90, 61)
 text "Fablefuel" rgb(17, 17, 16) 400 13px Inter
-image img bryce.svg
+image img ada.svg
 text "Personal" rgb(17, 17, 16) 400 13px Inter
 icon svg 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Set up another on GitHub" rgb(86, 83, 77) 400 13px Inter

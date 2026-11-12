@@ -12,8 +12,8 @@ import type { PingDevice, PingPrefs } from "../settings/notifications.tsx";
 import type { CanvasUsage } from "../settings/plan.tsx";
 import type { GithubAccount } from "../setup/setup.ts";
 import {
+  ada,
   alex,
-  bryce,
   fernwood,
   jordan,
   lenny,
@@ -29,14 +29,14 @@ import {
 const local = (month: number, day: number, hour = 12, minute = 0, year = 2026) =>
   new Date(year, month - 1, day, hour, minute).toISOString();
 
-export const email = "bryce@northbrook.co";
+export const email = "ada@example.com";
 
 // Where do you build: the person's own account, and the organizations Ponzu is installed on.
 export const personalAccount: GithubAccount = {
   githubAccountId: 1001,
-  login: bryce.login,
-  name: bryce.name,
-  avatarUrl: bryce.avatarUrl,
+  login: ada.login,
+  name: ada.name,
+  avatarUrl: ada.avatarUrl,
   kind: "personal",
   status: "not_installed",
   workspaceId: null,
@@ -99,7 +99,7 @@ export const manyAccounts: GithubAccount[] = [
 ];
 /** The person's own account ready, and an organization whose installation is suspended. */
 export const suspendedAccounts: GithubAccount[] = [
-  { ...personalAccount, status: "ready", workspaceId: "ws_bryce" },
+  { ...personalAccount, status: "ready", workspaceId: "ws_ada" },
   { ...accounts[2]!, suspended: true },
 ];
 
@@ -154,7 +154,7 @@ export const iphone: PingDevice = {
 };
 
 export const members: Member[] = [
-  { person: bryce, joined: true, role: "admin", owner: true },
+  { person: ada, joined: true, role: "admin", owner: true },
   { person: sam, joined: true, role: "admin", owner: false },
   { person: maya, joined: true, role: "member", owner: false },
   { person: jordan, joined: true, role: "member", owner: false },
@@ -171,7 +171,7 @@ export const membersMixed: Member[] = [
 export const installation: Installation = {
   state: "installed",
   accountLogin: northbrook.login,
-  installedBy: bryce.login,
+  installedBy: ada.login,
   installedAt: local(10, 28),
 };
 export const githubRepos = repos;
@@ -263,7 +263,7 @@ export const teamUsage: Usage = {
   card: visa("8831"),
 };
 export const byPerson: PersonUsage[] = [
-  { person: bryce, admin: true, usedCredits: 705 },
+  { person: ada, admin: true, usedCredits: 705 },
   { person: sam, admin: true, usedCredits: 560 },
   { person: maya, admin: false, usedCredits: 480 },
   { person: jordan, admin: false, usedCredits: 205 },

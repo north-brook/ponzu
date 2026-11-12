@@ -134,7 +134,7 @@ export function Harness({
                 onToggle: () => setOpen((o) => !o),
                 content: (
                   <Sidebar
-                    me={f.bryce}
+                    me={f.ada}
                     workspace={workspace}
                     workspaces={workspaces}
                     teammates={f.teammates}
@@ -226,7 +226,7 @@ export function CanvasChromeHarness({
       team={
         contributors && canvas.project.kind === "repo"
           ? {
-              meId: f.bryce.id,
+              meId: f.ada.id,
               contributors,
               repo: canvas.project.repo,
               members,

@@ -12,8 +12,8 @@ text "Product" rgb(86, 83, 77) 400 13px Inter
 icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
 text "Care cards" rgb(86, 83, 77) 400 13px Inter
 icon svg[New page] 14×14 rgb(128, 124, 115) stroke 1.9px
-image img[Bryce (you)] bryce.svg
-ground img[Bryce (you)] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 image img[Sam] sam.svg
 ground img[Sam] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 image img[Maya] maya.svg
@@ -103,11 +103,11 @@ text "Share Quieter shop hero" rgb(17, 17, 16) 600 14px Inter
 icon svg[Share Quieter shop hero] 12×12 rgb(86, 83, 77) stroke 1px
 text "north-brook/fernwood" rgb(86, 83, 77) 400 11px IBM Plex Mono
 icon svg[Share Quieter shop hero] 11×11 rgb(128, 124, 115) stroke 2.2px
-image img[People with access] bryce.svg
+image img[People with access] ada.svg
 ground img[People with access] shadow rgb(255, 255, 255) 0px 0px 0px 1.5px
-text "Bryce Bjork" rgb(17, 17, 16) 500 13px Inter
+text "Ada Park" rgb(17, 17, 16) 500 13px Inter
 text "(you)" rgb(169, 165, 155) 400 13px Inter
-text "brycedbjork" rgb(169, 165, 155) 400 11px IBM Plex Mono
+text "adapark" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Owner" rgb(86, 83, 77) 400 12px Inter
 image img[People with access] sam.svg
 ground img[People with access] shadow rgb(255, 255, 255) 0px 0px 0px 1.5px
