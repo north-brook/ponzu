@@ -67,8 +67,13 @@ bun scripts/prod/desired.ts status production          # every field: ok, none o
 bun scripts/prod/desired.ts assert-release production  # exit 1 unless release is production and nothing is pending
 ```
 
-`assert-release production` exits 1 today, naming `release` and the three production fields the
-founder's steps fill (WorkOS's client id, the Realtime URL, the PostHog project id). The release
+`assert-release production` exits 1 today, naming `release`, the three production fields the
+founder's steps fill (WorkOS's client id, the Realtime URL, the PostHog project id), and
+`api.ponzu.design`, which both environments still name. It also fails when any production value
+that says where to connect (the API, WorkOS, Realtime, assets, the GitHub App, the Vercel
+project, the Neon branch, a bucket, the PostHog project) is the same as dev's, so dev's `apiUrl`
+and `apiDomains` must move to `api-dev.ponzu.design` (founder step D11) before it can pass.
+Production's `r2.private` may be `null` until the bucket exists, but never `false`. The release
 workflow will run it before building, so no release can ship pointing at dev.
 
 ## Every resource, and what is right
@@ -126,7 +131,8 @@ only thing that sets the guard that lets it through.
 - Lifecycle (`infra/r2/lifecycle.json`): objects under `staging/` expire after a day, and
   incomplete multipart uploads abort after a day. **No rule touches `private/`**: a rule cannot
   tell a recorded checkpoint from an unrecorded one, so the API's own sweep deletes unrecorded
-  archives instead. The schema refuses a rule on `private/`.
+  archives instead. The schema refuses any rule whose prefix is inside `private/`, and any
+  delete rule whose prefix contains it (an empty prefix, `p`, `priv`).
 - CORS (`infra/r2/cors.json`): `PUT`, `GET` and `HEAD` from `ponzu-studio://app` and
   `https://ponzu.design`, with the four headers an upload is signed with. This is the minimum the
   API's presigned uploads need; it is reconciled with dev's live rules when the Cloudflare check
@@ -205,6 +211,9 @@ A workspace "Ponzu production" with a monthly spend limit, and a key used only a
   and a test compares the two field by field against a read-only recording.
 - `cloud` gets a ruleset requiring "Conventional commit messages", "Check, typecheck, test",
   "Database on Postgres" and "Desktop package". A test checks each is a job name in `ci.yml`.
+  The ruleset has no bypass, so once it is applied nothing reaches `cloud` by a direct push,
+  a revert included: GitHub refuses a commit that has not passed those four checks. A revert
+  goes through a pull request like any other change.
 - The environment `production`: the founder is the required reviewer, only `main` may deploy,
   and it holds `VERCEL_TOKEN` (for ponzu-api-prod) and `NEON_API_KEY`.
 - The environment `release-signing`, as now.

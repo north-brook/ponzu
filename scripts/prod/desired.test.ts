@@ -66,7 +66,41 @@ describe("assert-release", () => {
       "fail    production.workosClientId is not set in infra/environments.json (founder step D7)",
       "fail    production.realtimeUrl is not set in infra/environments.json (founder step D3)",
       "fail    production.posthog.projectId is not set in infra/environments.json (founder step D8)",
+      "fail    production.apiUrl is the same as dev's, so a release would reach dev",
+      "fail    api.ponzu.design is in both environments' apiDomains; move dev's first",
     ]);
+  });
+
+  test("a production field copied from dev fails, so a release never reaches dev", () => {
+    const shared = {
+      apiUrl: "https://api-dev.ponzu.design",
+      workosClientId: "client_01M72Y00K1VV63G6V5D25YCE6K",
+      realtimeUrl: "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
+      assetsUrl: "https://assets-dev.ponzu.cloud",
+      githubAppSlug: "ponzu-dev",
+      vercelProject: "ponzu-api",
+      neonBranch: "dev",
+      "r2.assets": "example-dev-assets",
+      "posthog.projectId": 728454,
+    } as const;
+    for (const [path, value] of Object.entries(shared)) {
+      const file = read(FILLED);
+      const keys = path.split(".");
+      const last = keys.pop() as string;
+      const parent = keys.reduce((o, k) => o[k], file.environments.production);
+      parent[last] = value;
+      if (path === "apiUrl") file.environments.production.apiDomains = ["api-dev.ponzu.design"];
+      const problems = releaseProblems(EnvironmentsSchema.parse(file), "production");
+      expect(problems).toContain(
+        `production.${path} is the same as dev's, so a release would reach dev`,
+      );
+    }
+  });
+
+  test("production may not go without a private bucket", () => {
+    const file = read(FILLED);
+    file.environments.production.r2.private = false;
+    expect(EnvironmentsSchema.safeParse(file).success).toBe(false);
   });
 
   test("production exits 0 on a filled file", () => {
@@ -250,6 +284,15 @@ describe("neon.json and r2/lifecycle.json", () => {
     const everything = lifecycle();
     everything.rules[0].conditions.prefix = "";
     expect(LifecycleSchema.safeParse(everything).success).toBe(false);
+    // A delete on a short prefix reaches private/ just the same.
+    for (const prefix of ["p", "priv", "private"]) {
+      const short = lifecycle();
+      short.rules[0].conditions.prefix = prefix;
+      expect(LifecycleSchema.safeParse(short).success).toBe(false);
+    }
+    // Aborting unfinished uploads everywhere deletes no finished object, so it stays allowed.
+    expect(lifecycle().rules[1].conditions.prefix).toBe("");
+    expect(LifecycleSchema.safeParse(lifecycle()).success).toBe(true);
   });
 });
 

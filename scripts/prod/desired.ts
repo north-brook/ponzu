@@ -10,8 +10,9 @@
  *       `pending` (not created yet, with the step that creates it). Exit 0 unless a file fails
  *       to parse.
  *   bun scripts/prod/desired.ts assert-release <dev|production> [--file <environments.json>]
- *       exit 0 only when the release build is set to that environment and every one of its
- *       fields is set; otherwise print why, one line each, and exit 1. release.yml runs it with
+ *       exit 0 only when the release build is set to that environment, every one of its fields
+ *       is set, and none of the fields that say where to connect is the other environment's;
+ *       otherwise print why, one line each, and exit 1. release.yml will run it with
  *       `production` so no release can ship pointing at dev.
  *
  * In environments.json, `null` always means "not created yet", and is never read as a pass.
@@ -85,11 +86,17 @@ export const EnvironmentSchema = z
   );
 export type Environment = z.infer<typeof EnvironmentSchema>;
 
-export const EnvironmentsSchema = z.strictObject({
-  /** Which environment a `release` desktop build bakes in. Flipped only by the cutover PR. */
-  release: EnvironmentName,
-  environments: z.strictObject({ dev: EnvironmentSchema, production: EnvironmentSchema }),
-});
+export const EnvironmentsSchema = z
+  .strictObject({
+    /** Which environment a `release` desktop build bakes in. Flipped only by the cutover PR. */
+    release: EnvironmentName,
+    environments: z.strictObject({ dev: EnvironmentSchema, production: EnvironmentSchema }),
+  })
+  // Production keeps checkpoints out of the publicly served assets bucket from its first day.
+  .refine((file) => file.environments.production.r2.private !== false, {
+    message: "production must have a private bucket (r2.private may be null, never false)",
+    path: ["environments", "production", "r2", "private"],
+  });
 export type Environments = z.infer<typeof EnvironmentsSchema>;
 
 /** Why a field is still `null`, and what makes it set. Anything not named is "not created yet". */
@@ -138,7 +145,43 @@ export function releaseProblems(file: Environments, env: EnvironmentName): strin
       problems.push(`${line.path} is not set in infra/environments.json (${line.says})`);
     }
   }
+  const other = env === "dev" ? "production" : "dev";
+  for (const path of SEPARATE_FIELDS) {
+    const mine = at(file.environments[env], path);
+    if (mine !== null && mine !== false && mine === at(file.environments[other], path)) {
+      problems.push(`${env}.${path} is the same as ${other}'s, so a release would reach ${other}`);
+    }
+  }
+  for (const domain of file.environments[env].apiDomains) {
+    if (file.environments[other].apiDomains.includes(domain)) {
+      problems.push(`${domain} is in both environments' apiDomains; move ${other}'s first`);
+    }
+  }
   return problems;
+}
+
+/**
+ * Fields no two environments may share once a release points at one: sharing any of them would
+ * put a production build on dev's API, sign-in, database, files or analytics, or the reverse.
+ * Today dev and production both name api.ponzu.design, and founder step D11 moves dev off it.
+ */
+export const SEPARATE_FIELDS = [
+  "apiUrl",
+  "workosClientId",
+  "realtimeUrl",
+  "assetsUrl",
+  "githubAppSlug",
+  "vercelProject",
+  "neonBranch",
+  "r2.assets",
+  "r2.private",
+  "posthog.projectId",
+] as const;
+
+function at(env: Environment, path: string): unknown {
+  return path
+    .split(".")
+    .reduce<unknown>((value, key) => (value as Record<string, unknown>)[key], env);
 }
 
 // --- vercel-firewall.json -----------------------------------------------------------------------
@@ -285,10 +328,18 @@ export const LifecycleSchema = z
     message: "a delete rule needs a prefix",
   })
   // A rule cannot tell a recorded checkpoint from an unrecorded one (program §5.15); the API's
-  // sweep tidies private/ instead.
-  .refine((lc) => lc.rules.every((r) => !r.conditions.prefix.startsWith("private")), {
-    message: "no lifecycle rule may touch private/: it would delete live checkpoints",
-  });
+  // sweep tidies private/ instead. A prefix covers private/ when it is inside it ("private/x")
+  // or when private/ is inside it ("p", "priv"). Aborting incomplete uploads everywhere is fine:
+  // it never deletes a finished object.
+  .refine(
+    (lc) =>
+      lc.rules.every(
+        (r) =>
+          !r.conditions.prefix.startsWith("private") &&
+          !(r.deleteObjectsTransition && "private/".startsWith(r.conditions.prefix)),
+      ),
+    { message: "no lifecycle rule may touch private/: it would delete live checkpoints" },
+  );
 
 export const CorsSchema = z.strictObject({
   rules: z
