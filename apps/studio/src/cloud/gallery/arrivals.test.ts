@@ -111,7 +111,7 @@ describe.skipIf(!chromiumPath)("a canvas opening, its answers late", () => {
   };
   const MARK = "button[Pull request #412]";
   const MERGE = "button[Merge]";
-  const ME = "img[Bryce (you)]";
+  const ME = "img[Ada (you)]";
   const SHARE = "button[Share]";
 
   test("from the row, the mark is there at the first paint and the action's room is held", async () => {
@@ -214,7 +214,7 @@ describe.skipIf(!chromiumPath)("a canvas opening, its answers late", () => {
       const look = () => {
         const room = document.querySelector('[data-arrival="presence"]')!.getBoundingClientRect();
         const first = document.querySelector('header [role="img"][aria-label]')!;
-        const me = document.querySelector('[aria-label="Bryce (you)"]')!;
+        const me = document.querySelector('[aria-label="Ada (you)"]')!;
         return {
           left: room.x,
           width: room.width,

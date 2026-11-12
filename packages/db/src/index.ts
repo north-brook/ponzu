@@ -1,6 +1,14 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
 export { CANVAS_HEAD_COLUMNS, type CanvasHead, type LiveCanvasHead, toCanvasHead } from "./head.ts";
-export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
+export {
+  ASSET_KEY_LENGTH,
+  type IdPrefix,
+  isAssetKey,
+  isId,
+  newAssetKey,
+  newId,
+  randomString,
+} from "./ids.ts";
 export {
   type AccountDeletionPlan,
   anonymiseUser,

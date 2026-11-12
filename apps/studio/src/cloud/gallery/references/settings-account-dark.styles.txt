@@ -109,14 +109,14 @@ text "Environments" rgb(183, 179, 169) 400 13px Inter
 icon svg[Settings] 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Account" rgb(244, 243, 239) 600 18px Funnel Display
 icon svg[Close] 16×16 rgb(142, 138, 130) stroke 1.7px
-image img bryce.svg
+image img ada.svg
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
-text "Bryce Bjork" rgb(244, 243, 239) 600 18px Funnel Display
-text "bryce@northbrook.co" rgb(183, 179, 169) 400 13px Inter
+text "Ada Park" rgb(244, 243, 239) 600 18px Funnel Display
+text "ada@example.com" rgb(183, 179, 169) 400 13px Inter
 text "Signed in with" rgb(118, 115, 105) 600 11px Inter
 icon svg[Signed in with] 16×16 rgb(244, 243, 239) stroke 1px
 text "GitHub" rgb(244, 243, 239) 500 13px Inter
-text "brycedbjork" rgb(118, 115, 105) 400 12px Inter
+text "adapark" rgb(118, 115, 105) 400 12px Inter
 text "Sign out" rgb(244, 243, 239) 500 12px Inter
 ground button[Signed in with] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px
 text "Your name, avatar and email come from G…" rgb(118, 115, 105) 400 12px Inter

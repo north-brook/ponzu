@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { jobs } from "@ponzu/db";
+import { CANVAS_FILES_DELETE_JOB } from "../canvases/files.ts";
 import { BASE_REBUILD_JOB } from "../environments/rebuild.ts";
 import { PEOPLE_JOB } from "../github/people.ts";
 import { WEBHOOK_JOB } from "../github/webhook.ts";
@@ -19,7 +20,14 @@ const stored = async (id: string) => (await t.db.select().from(jobs)).find((job)
 
 test("the registry runs every kind the API records, each from one module", () => {
   expect(Object.keys(jobHandlers()).sort()).toEqual(
-    [WEBHOOK_JOB, WAKE_JOB, REFRESH_JOB, BASE_REBUILD_JOB, PEOPLE_JOB].sort(),
+    [
+      WEBHOOK_JOB,
+      WAKE_JOB,
+      REFRESH_JOB,
+      BASE_REBUILD_JOB,
+      PEOPLE_JOB,
+      CANVAS_FILES_DELETE_JOB,
+    ].sort(),
   );
   const named = JOB_MODULES.flatMap((kinds) => Object.keys(kinds()));
   expect(named).toHaveLength(new Set(named).size);

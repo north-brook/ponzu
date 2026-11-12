@@ -138,7 +138,7 @@ icon svg[Claude] 11×11 rgb(17, 17, 16) stroke 1px
 text "Claude" rgb(17, 17, 16) 600 12px Inter
 text "· 12m" rgb(169, 165, 155) 400 12px Inter
 text "Done in 4e1c2a0: the comma now uses the…" rgb(17, 17, 16) 400 13px Inter
-image img[Comments] bryce.svg
+image img[Comments] ada.svg
 text "You" rgb(17, 17, 16) 600 12px Inter
 text "· 3m" rgb(169, 165, 155) 400 12px Inter
 text "Ship it once e2e is green." rgb(17, 17, 16) 400 13px Inter

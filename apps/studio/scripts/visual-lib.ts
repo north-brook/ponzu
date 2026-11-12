@@ -19,6 +19,24 @@ export interface Browser {
 export const STUDIO = resolve(import.meta.dir, "..");
 export const REFERENCES = join(STUDIO, "src/cloud/gallery/references");
 
+/**
+ * The compositions ponzu.design shows (`visual.ts shots`), drawn with their text, in light and
+ * dark, at twice the size, into apps/web/public/product as `<id>-<theme>.png`.
+ */
+export const SITE_SHOTS = [
+  "thread-in-the-right-rail",
+  "pull-request-tab",
+  "together-on-a-canvas",
+  "team-sidebar",
+  "create",
+] as const;
+
+/** Where the shots go unless `--out` says otherwise. */
+export const SITE_PRODUCT = resolve(STUDIO, "../web/public/product");
+
+/** The scale the site's shots are drawn at: sharp on a retina screen. */
+export const SITE_SCALE = 2;
+
 export const chromiumPath = findChromium();
 
 export async function launch(): Promise<Browser> {
@@ -79,7 +97,8 @@ const HIDE_TEXT =
 
 /**
  * A gallery composition at its size: fonts loaded, images decoded, and its `open` control (a
- * menu or popover trigger) pressed like a person would.
+ * menu or popover trigger) pressed like a person would. The picture is drawn at the page's
+ * device scale, which is set when the page is made (`browser.newPage({ deviceScaleFactor })`).
  */
 export async function shootComposition(
   page: Page,

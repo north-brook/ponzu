@@ -51,9 +51,10 @@ packages/
   client/    typed API client, live queries, the cloud canvas source
 ```
 
-Deleted at cutover: `apps/cli`, `packages/server`, `packages/mcp`, `packages/store`,
-`plugin/`, the marketplace manifests, and the `/gh`, `/local`, `/open`, `/share`
-and badge routes in `apps/web`.
+Deleted at cutover: `packages/store`, `packages/tools/src/local`, core's 1.x modules,
+`examples/`, and the `/gh`, `/local`, `/open`, `/share` and badge routes in `apps/web`.
+The 1.x command line, its local server and MCP packages, the agent plugin and the
+marketplace manifests are already gone from this branch.
 
 Where things run:
 
@@ -2268,6 +2269,14 @@ completed with its seq, and is copied into place then; a bucket lifecycle rule c
 never completed. Previews replaced by later ones are deleted. A comment's picture waits there too,
 since it is uploaded before its comment is saved (and may never be): it is copied under
 `comments/` only when it is attached to a comment that exists and has no picture yet.
+
+A canvas's files can be deleted together: the job `canvas.files_delete`, keyed by the asset key,
+lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand keys at a time
+(DeleteObjects), up to 2,000 an attempt, coming back ten seconds later while more remain, for at
+most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
+any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
+anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
+bucket. Nothing records the job yet; deleting a canvas or an account will.
 
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
