@@ -1,0 +1,44 @@
+appId: design.ponzu.app.dev
+name: sign-in
+---
+# Continue with GitHub through the real auth session (ASWebAuthenticationSession)
+# onto the fake's authorize page (maestro/authorize.ts), which sends it back on
+# ponzu-dev://auth/callback with the fake's code. Then the canvases, settings
+# from the lockup, and Sign out back to the start.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=signed-out
+- extendedWaitUntil:
+    visible:
+      id: sign-in
+    timeout: 30000
+- tapOn:
+    id: sign-in-github
+# iOS asks before an app's sign-in sheet opens a site: “Ponzu Dev” Wants to
+# Use “127.0.0.1” to Sign In.
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 15000
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible:
+      id: canvases
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Pricing page"
+    timeout: 15000
+- assertVisible: "Onboarding"
+- assertVisible: "Launch poster"
+- tapOn:
+    id: lockup
+- extendedWaitUntil:
+    visible:
+      id: settings
+    timeout: 10000
+- assertVisible: "@maya"
+- tapOn:
+    id: settings-sign-out
+- extendedWaitUntil:
+    visible:
+      id: sign-in
+    timeout: 15000
+- assertNotVisible: ".*Cannot update a component.*"

@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { useEffect, useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Animated, {
@@ -7,39 +8,37 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import type { PhoneFile } from "../lib/files";
-import { useScheme, useTheme } from "../lib/theme";
+import { useTheme } from "../lib/theme";
 import { Glass } from "./glass";
-import { MacImage } from "./preview";
 
 /**
  * What the canvas shows while its page loads: what the phone already has.
- * The design's preview (its Designs card's, from the cache) framed as the
- * canvas frames a page, in the space between the bar and the home indicator,
- * with a board's corners and hairline. It's content, not a loader: the
- * loading signal is the file pill's slice juicing (app/design/[mac]/[key].tsx).
- * With no preview, the canvas's color alone. It cross-fades into the live
- * canvas once the canvas has drawn (`drawn`). A Mac that isn't answering is
- * a problem, so it says so in a glass card over it.
+ * The canvas's preview (its row's, from expo-image's disk cache) framed as
+ * the canvas frames a page, in the space between the bar and the home
+ * indicator, with a board's corners and hairline. It's content, not a
+ * loader: the loading signal is the title pill's slice juicing. With no
+ * preview, the canvas's color alone. It cross-fades into the live canvas
+ * once the canvas has drawn (`drawn`). A canvas that can't be reached says
+ * so in a glass card over it.
  */
 export function CanvasPlaceholder({
-  file,
+  preview,
   drawn,
   top,
   bottom,
   offline,
 }: {
-  file: PhoneFile | null;
+  /** The preview's URL in this scheme, or null for none. */
+  preview: string | null;
   /** The canvas has drawn its first page: fade away. */
   drawn: boolean;
   /** The bar's foot and the home indicator's head, from the screen's edges. */
   top: number;
   bottom: number;
-  /** "<Mac> isn't answering. Trying again…", over it. */
+  /** A line over it, such as "You're offline. This is the last copy Ponzu had." */
   offline: string | null;
 }) {
   const { color, shadow } = useTheme();
-  const scheme = useScheme();
   const fade = useSharedValue(1);
   const [gone, setGone] = useState(false);
   useEffect(() => {
@@ -53,7 +52,7 @@ export function CanvasPlaceholder({
   const [area, setArea] = useState({ w: 0, h: 0 });
   const [aspect, setAspect] = useState(16 / 11);
   if (gone) return null;
-  const url = file?.preview ? `${file.preview}&theme=${scheme}` : null;
+  const url = preview;
   const pad = 24;
   const w = Math.max(0, Math.min(area.w - 2 * pad, (area.h - 2 * pad) * aspect));
   const h = w / aspect;
@@ -81,12 +80,14 @@ export function CanvasPlaceholder({
                 backgroundColor: color.card,
               }}
             >
-              <MacImage
-                mac={file!.mac}
-                url={url}
-                live={!file!.stale}
+              <Image
+                source={{ uri: url }}
+                cachePolicy="disk"
                 contentFit="cover"
-                onSize={(iw, ih) => iw > 0 && ih > 0 && setAspect(iw / ih)}
+                onLoad={(e) => {
+                  const { width: iw, height: ih } = e.source;
+                  if (iw > 0 && ih > 0) setAspect(iw / ih);
+                }}
                 style={{ width: "100%", height: "100%" }}
               />
             </View>

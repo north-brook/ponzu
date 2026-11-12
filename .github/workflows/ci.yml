@@ -463,18 +463,16 @@ jobs:
 
   mobile-checks:
     # The iPhone app on its own: its typecheck ("Lint, typecheck, build" also
-    # runs it) and tests ("Tests" also runs them, with
-    # everything), and an iOS export, which proves Metro, NativeWind and every
-    # import resolve without a Mac. The export is all that is its own, and it
-    # was the last check to finish on a third of pull requests, so pull
-    # requests into `cloud` skip it, as they skip "Mobile iOS": the cloud
-    # rewrite doesn't ship this app. A push to `cloud` still runs it, so a
-    # change there that breaks the bundle shows before `cloud` reaches main.
+    # runs it) and tests ("Tests" also runs them, with everything), its
+    # component tests (jest-expo, `test:rn`), and an iOS export, which proves
+    # Metro, NativeWind and every import resolve without a Mac. It runs for
+    # every pull request the phone's scope covers, into `cloud` too, where
+    # the cloud app is now built (scripts/ci/scope.ts: the phone, the canvas,
+    # and the client and core it runs).
     name: Mobile checks
     needs: scope
     if: >-
-      ${{ !cancelled() && github.base_ref != 'cloud'
-      && needs.scope.outputs.mobile != 'false' }}
+      ${{ !cancelled() && needs.scope.outputs.mobile != 'false' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -491,6 +489,9 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bunx tsc -p apps/mobile/tsconfig.json --noEmit
       - run: bun test apps/mobile
+      - name: Component tests
+        run: bun run test:rn
+        working-directory: apps/mobile
       - name: The JavaScript bundle builds for iOS
         run: bunx expo export --platform ios --output-dir "$RUNNER_TEMP/export"
         working-directory: apps/mobile

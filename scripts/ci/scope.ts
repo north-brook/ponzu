@@ -28,8 +28,9 @@ const SUITES: Record<Suite, string[]> = {
   // shares its job until apps/cli is deleted.
   desktop: ["desktop", "cli", "studio"],
   // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/canvas,
-  // but its canvas and icons import that package's source by path (apps/mobile/canvas).
-  mobile: ["mobile", "canvas"],
+  // but its canvas and icons import that package's source by path (apps/mobile/canvas). It runs
+  // @ponzu/client and @ponzu/core as they are, named here as well as through its dependencies.
+  mobile: ["mobile", "canvas", "client", "core"],
 };
 
 /**

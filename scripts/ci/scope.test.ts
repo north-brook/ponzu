@@ -77,6 +77,12 @@ test("it still runs neither once the apps take its route types through the clien
   });
 });
 
+test("the client and core the phone runs run the phone", () => {
+  for (const file of ["packages/client/src/session.ts", "packages/core/src/replica.ts"]) {
+    expect(suites(file).mobile).toBe(true);
+  }
+});
+
 test("the site runs neither", () => {
   expect(suites("apps/web/app/page.tsx")).toEqual({ desktop: false, mobile: false });
 });

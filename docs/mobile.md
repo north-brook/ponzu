@@ -1,75 +1,223 @@
 # The iPhone app
 
-`apps/mobile` is Ponzu for iPhone and iPad: browse your designs, watch agents
-work and comment, from your phone or tablet. It talks straight to the Ponzu
-server on each of your Macs over your Tailscale tailnet. It's an Expo app (SDK
-58, React Native 0.88, Expo Router, NativeWind), iOS only, with the same bundle
-id as the Mac app, `design.ponzu.app`. The design it builds from is the spec; see the iPhone
-design's `notes/brief.md`.
+`apps/mobile` is Ponzu for iPhone and iPad on Ponzu Cloud: sign in with
+GitHub, see your workspace's canvases, watch Ponzu work on them, steer with
+comments, and answer its questions ([docs/cloud.md](cloud.md), "Clients"). It
+is an Expo app (SDK 58, React Native 0.88, Expo Router, NativeWind), iOS only.
+Everything it says to Ponzu goes through `@ponzu/client`, on the React Native
+side. Its design is `.context/cloud/program/designs/iphone.md`.
+
+This is being rebuilt from the 1.x app, which talked to paired Macs over
+Tailscale. That data layer, pairing, Tailscale and the camera are gone. What
+is built so far: the native modules the cloud app needs, the two app
+variants, the cloud seams (`lib/cloud/`), launch, sign-in, the update screen,
+a plain list of canvases, and a settings sheet that signs out. Setup, the
+canvas, comments and the rest arrive slice by slice.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `app/` | Screens, by Expo Router. `_layout.tsx` is the root. |
-| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `changes.ts`, `telemetry.ts`. |
-| `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets, and `glass.tsx`, the floating controls' Liquid Glass. |
+| `app/` | Screens, by Expo Router. `_layout.tsx` is the root; `+native-intent.tsx` reads every incoming link. |
+| `lib/cloud/` | Everything that talks to Ponzu Cloud (below). |
+| `lib/links.ts` | The one reader of links (below). |
+| `lib/` | The rest: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `polyfills.ts`, `first-launch.ts`, `duo-layout.ts`, `dictation.ts`, `drafts.ts`, `haptics.ts`. |
+| `components/` | Shared views: the canvas web view (`canvas-view.tsx`), the comment composer and sheets, the launch handoff, and `glass.tsx`, the floating controls' Liquid Glass. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
-| `modules/tailnet` | A small Expo module that lists the phone's interface addresses, so `lib/tailnet.ts` can tell whether Tailscale is on. |
 | `canvas/` | The canvas web view's page, a browser bundle with its own tsconfig. |
-| `maestro/` | End-to-end flows. |
-| `app.json`, `app.config.ts` | The app's config. Release Please bumps `app.json`'s version. |
+| `maestro/` | End-to-end flows, against the fake backend. |
+| `app.json`, `app.config.ts` | The app's config. Release Please bumps `app.json`'s version; `app.config.ts` makes the variant. |
 | `eas.json`, `.eas/workflows/` | Builds and releases on EAS. |
+| `metro.config.js`, `metro.resolve.js` | Metro, with the backend swap and one copy of React (below). |
 
 `ios/` is generated (`expo prebuild`) and never committed.
 
-Code here may import `@ponzu/core`, never `@ponzu/canvas`, `@ponzu/render` or
-`@ponzu/server`, which need a browser or Node. `lib/polyfills.ts`, imported
-first, gives core what Hermes lacks.
+### The imports rule
 
-### Data
+Files under `app/`, `lib/` and `components/` may import `@ponzu/core` and
+`@ponzu/client`, any entry but `@ponzu/client/testing`, which only
+`lib/cloud/backend.fake.ts` and tests may use. They never import
+`@ponzu/canvas`, `@ponzu/render`, `@ponzu/server`, `@ponzu/db`,
+`@ponzu/sandbox`, `@ponzu/tools`, `@ponzu/api` or `@ponzu/store`, and never
+another package's source by path: those need a browser or Node, or bring a
+second React. The one exception is `lib/page-icons.ts`, which reads
+`packages/canvas/src/icon-names.ts` (pure data). `canvas/` is the browser page
+and may import packages/canvas source by path. `imports.test.ts` checks it,
+and `lib/polyfills.ts`, imported first, gives the client and core what Hermes
+lacks.
 
-What the phone asks a Mac for goes through one TanStack Query cache
-(`lib/query.tsx`), keyed per Mac (`lib/mac-queries.ts`): `["mac", id,
-"info"]` (`/api/info`), `["mac", id, "macs"]` (`/api/macs`), `["mac", id,
-"catalog"]` (its designs) and `["mac", id, "activity"]` (`/api/activity`,
-what agents changed, for standby's camera). Info, catalogs and changes are kept in AsyncStorage
-for a week (dropped on a new version or protocol), so the app opens onto the
-last list and an asleep Mac keeps its cards, dimmed. While a Mac answers, its
-catalog socket (`/api/catalog/stream`) writes the snapshot and each patch
-into its catalog query; nothing else holds a copy. Search and the cards are
-read from those queries. A Mac's changes are asked again when its catalog
-stream says an agent edited a design.
+`@ponzu/client` runs from source, and its own development copies of React and
+TanStack Query sit beside it. Metro, like Node, would take those for its
+imports, and a second React breaks every hook. `metro.resolve.js` makes
+`react`, `react-native` and `@tanstack/react-query` resolve from the app
+whoever imports them; the component tests' resolver does the same.
 
-Each Mac keeps a history of what agents changed (`packages/server/src/changes.ts`):
-an agent's edits to artboards in one design, a couple of minutes apart at
-most, are one change ("Claude changed 12 artboards"), with the artboards and
-whether they were added, removed or changed. The last 200 per design live in
-the catalog database (`~/.ponzu/ponzu.db`), so a restart keeps them. Pairing and shelf changes (`POST
-/api/shelf`, by holding a card) are mutations; a shelf change moves the card
-at once and puts it back if the Mac refuses.
+## Ponzu Cloud on the phone
 
-Live state stays in small stores (`lib/store.ts`): who answers and the wake
-knock (`reach.ts`, which asks for info through the query cache), which
-catalog sockets are open, the paired Macs (kept on the phone, never asked
-for), what you've seen, and the open design's socket (`design.ts`). Preview
-images are files in `Documents/cache` (`lib/cache.ts`), not in the query
-cache.
+`lib/cloud/` holds the seams, each small enough to read:
 
-### Floating controls
+| File | What it does |
+| --- | --- |
+| `config.ts` | The API URL, the WorkOS client id, the variant and its scheme, the version: from `EXPO_PUBLIC_*` and the app config. |
+| `backend.ts` | The real thing: one `createSession`, `createApi` and, per signed-in person, `createLive`. |
+| `backend.fake.ts` | The in-app fake (below), in `backend.ts`'s place when the bundle is built with `PONZU_BACKEND=fake`. |
+| `storage.ts`, `keychain.ts` | The session in the Keychain (below). |
+| `crypto.ts` | `expo-crypto` as the client's `Randomness` (PKCE and checksums). |
+| `files.ts` | A `KeyValueStorage` over files, for what is large and not secret (the offline canvases' `DocCache`). |
+| `query.tsx` | `CloudProvider`: the signed-in person's QueryClient, its copy on disk, and their `Live`. |
+| `persist.ts` | What of the cache goes to disk: an allow-list. |
+| `gate.ts`, `use-gate.ts` | Where each session state sends the app. |
+| `sign-in.ts`, `sign-out.ts` | Continue with GitHub; signing out in order. |
+| `workspace.ts`, `canvases.ts` | The workspace in view, and its canvases. |
 
-What floats over the canvas (back, the file's title, the page button, the
-agent's session card, the hint, the comment field,
-Resolve) is Liquid Glass (`expo-glass-effect`) on iOS 26, in the app's light
-or dark; a control held open (the title while the session card shows) is
-the glass a step darker, never a ring. Before iOS 26 it falls back to the design's bar:
-`--c-bar`, a hairline and the pop shadow. `components/glass.tsx` has the
-rules: the glass itself is never clipped, its content is.
+### Launch and the gates
 
-### The comment field
+The launch screen (`app/index.tsx`) blooms the slice on yuzu while the session
+reads the Keychain, never leaves before the bloom has landed, then goes where
+the session says (`gateRoute`): `signed_out` and `github_reauth` to sign-in
+(the second with "Sign in again so Ponzu can reach GitHub."), `too_old` (a
+426) to the update screen, `signed_in` to the canvases. After that,
+`use-gate.ts` moves the app whenever the session leaves the screen's gate:
+signed out here or elsewhere, a 426 anywhere, a sign-in. Still loading after
+8 seconds, launch says "Can't reach Ponzu. Trying again." Setup's gates
+(where you design, Claude) come between sign-in and the canvases with the
+setup slice.
+
+### Signing in
+
+Continue with GitHub (`app/sign-in.tsx`, `lib/cloud/sign-in.ts`) is the
+client's PKCE flow: `startSignIn`, then
+`WebBrowser.openAuthSessionAsync(url, "<scheme>://auth/callback")` (the
+system's auth session, which takes the redirect itself), `readRedirect`, and
+`session.completeSignIn`. Closing the sheet, or saying no on GitHub, comes back
+with nothing said; a failure is one line above the button. While the sheet is
+up the button shows the turning slice and a second tap opens nothing. A
+`<scheme>://auth/callback` that arrives as a link signs nobody in.
+
+The client id is WorkOS staging's for Ponzu Dev. WorkOS must list
+`ponzu-dev://auth/callback` among its redirects (a founder step). A build
+with no client id says it can't sign in.
+
+### The Keychain
+
+The session lives in the Keychain through `expo-secure-store`, service
+`design.ponzu.session`, readable after the phone's first unlock (so a push
+handled in the background can read it) and never restored to another device
+(`AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`). `lib/cloud/storage.ts` adds:
+
+- **Chunks.** Some iOS versions refused values over about 2 KB, and a session
+  is about 2.5 KB. A value over 1,800 bytes is written as chunks
+  `<key>.<gen>.<i>`, then a head at `<key>` naming the generation, then the
+  old generation's chunks are deleted. A crash anywhere leaves the head naming
+  chunks that are all there, so the value read is the old one or the new one,
+  whole. Calls run one at a time.
+- **Reinstalls.** A Keychain item outlives deleting the app. The first launch
+  without `Documents/.ponzu-installed` deletes the session, keeps the install
+  id, and writes the marker, so a reinstalled phone starts signed out.
+- **The install id.** 32 random hex characters (`Crypto.randomUUID()` without
+  dashes) at `ponzu.installId`, made once and kept across reinstalls. It goes
+  only to `POST /v1/me/devices`.
+
+That all of this holds on a real Keychain is proven only on the simulator
+runs (spare), not by the unit tests, which use a Map.
+
+### The cache and offline
+
+`CloudProvider` makes a QueryClient (`createQueryClient`) for each signed-in
+person and drops it at sign-out, and keeps a copy on disk in AsyncStorage
+(`ponzu.queries`, written at most every 2 seconds, kept 7 days, started again
+for a new version or another person). Only what `persist.ts` names goes to
+disk: `me`, a workspace, its canvases, a canvas's view, a pull request,
+Claude's defaults, usage and notifications. Never a thread page or a
+question; live queries cover those. The providers stay mounted whoever is
+signed in, so a sign-in never remounts the screens under them.
+
+`Live` is made for each signed-in person, paused when the app goes to the
+background and resumed in front. Offline, it keeps the last rows.
+
+### Signing out
+
+From settings, each step tried whatever the one before did
+(`lib/cloud/sign-out.ts`): this phone's device row (once pings have
+registered one), the session, the cached answers in memory and on disk, the
+live queries, the offline canvases and every `ponzu.*` AsyncStorage key but
+the ping ask's and the cached images, analytics' identity (none yet), then
+the sign-in screen.
+
+### Links
+
+`lib/links.ts` is the only reader of links: deep links (through
+`app/+native-intent.tsx`), and later pushes and the links in a thread. A link
+must use this build's own scheme, so `ponzu://` opens nothing in Ponzu Dev and
+`ponzu-dev://` nothing in Ponzu. It takes:
+
+- `canvas/<id>`, with `page`, `artboard`, `open` (`thread` opens the chat
+  sheet, `pull-request` the PR sheet), `question`, `comment`, `message`;
+- `design/<id>`, the same link as written before canvases had their name,
+  kept for good;
+- `github/setup?result=…&workspace=…`, `auth/callback`, `settings?section=…`;
+- `https://ponzu.design/canvases/<id>`, a universal link, once the site serves
+  the association file.
+
+Anything else opens the launch screen, which goes where the session says; a
+path the build has no screen for does the same (`app/+not-found.tsx`). The
+grammar is `lib/link-grammar.ts`, a stand-in for `@ponzu/core/links` until
+that lands, when `links.ts` imports core's instead.
+
+### The fake backend
+
+`lib/cloud/backend.fake.ts` is Ponzu Cloud in memory: the client's own
+`createFakeBackend`, with Maya in the acme workspace (three canvases) and Sam
+alone in an empty one. Metro puts it in `backend.ts`'s place when started with
+`PONZU_BACKEND=fake` (`metro.config.js`), so a real build never carries it or
+its test code. The component tests always use it.
+
+Signing in on the fake goes through the real auth session when
+`EXPO_PUBLIC_PONZU_FAKE_AUTHORIZE_URL` names a page that sends the browser
+back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
+skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
+state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`. Only a
+fake build takes that link.
+
+```sh
+cd apps/mobile
+APP_VARIANT=dev PONZU_BACKEND=fake bunx expo start --dev-client
+```
+
+## Variants
+
+Two apps build from this project (`app.config.ts`, by `APP_VARIANT`):
+
+| | Production | Ponzu Dev (`APP_VARIANT=dev`) |
+| --- | --- | --- |
+| Name | Ponzu | Ponzu Dev |
+| Bundle id | `design.ponzu.app` | `design.ponzu.app.dev` |
+| Scheme | `ponzu://` | `ponzu-dev://` |
+| API | production's, at cutover | `https://api.ponzu.design`, WorkOS staging |
+| Push tokens | production | development for the dev client, production for preview builds |
+| Built by | `production.yml`, on a phone release | the development profile, and `preview.yml` by hand |
+
+Both take universal links on `ponzu.design` (`associatedDomains`). Until
+cutover only Ponzu Dev is installed from the `cloud` branch, so no cloud build
+ever reaches a phone running the 1.x app or TestFlight's groups. The
+`preview` profile is internal distribution on the `preview` channel and EAS
+environment. `.eas/workflows/preview.yml` runs only by hand (`eas
+workflow:run preview.yml`): agents never deploy, so nothing starts it on a
+push.
+
+## Floating controls
+
+What floats over the canvas (back, the canvas's title, the page button, the
+comment field, Resolve) is Liquid Glass (`expo-glass-effect`) on iOS 26, in
+the app's light or dark; a control held open is the glass a step darker,
+never a ring. Before iOS 26 it falls back to the design's bar: `--c-bar`, a
+hairline and the pop shadow. `components/glass.tsx` has the rules: the glass
+itself is never clipped, its content is.
+
+## The comment field
 
 A comment is written in one glass field and nothing else: no sheet around it.
-It floats over the design, 8pt above the keyboard or clear of the home
+It floats over the canvas, 8pt above the keyboard or clear of the home
 indicator with the keyboard down, and rides the keyboard frame by frame
 (`react-native-keyboard-controller`, `Sheet` with `bare` in
 `components/sheet.tsx`); swiped down, it's cancelled. A thread's reply field
@@ -80,18 +228,15 @@ SwiftUI's own `TextField` (`@expo/ui`, vertical): SwiftUI grows it a line at
 a time and scrolls it past five, and its host takes its height, so nothing in
 JavaScript measures it. The mic inside its trailing edge switches to voice
 until there are words, then Send takes its place. In voice, what's heard is
-written into the field as it's said; the listening disc at its leading edge
-mutes, the keyboard glyph goes back to typing, and a tap on what's been said
-goes back to typing with the words. The glyphs are Hugeicons, as everywhere
-in the app.
+written into the field as it's said, on the phone (`expo-speech-recognition`);
+the listening disc at its leading edge mutes, the keyboard glyph goes back to
+typing, and a tap on what's been said goes back to typing with the words.
 
 On iPhone Duo's inner display held sideways, and on an iPad, the field floats
-centred over the design at most 560pt wide (`SHEET_MAX` in
-`lib/duo-layout.ts`). Sent, a new comment's field leaves at once with the
-keyboard rather than when the Mac answers (a reply's field empties at once);
-a send the Mac refuses brings the words back.
+centred over the canvas at most 560pt wide (`SHEET_MAX` in
+`lib/duo-layout.ts`).
 
-### iPhone Duo and iPad
+## iPhone Duo and iPad
 
 Layouts follow the window's size, never the model (`lib/duo-layout.ts`), so
 iPhone Duo's displays, an iPad and an iPad window in Stage Manager or Split
@@ -100,30 +245,18 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 `app.json`).
 
 - **The canvas.** A window whose shorter side is under 600pt is a phone's:
-  the canvas's own bar and the comment field, and on iPhone Duo's outer
-  display the system's rail. Otherwise the system's bars hold Back, the
-  page and Comments: on a rail at the side where iPhone Duo puts one, and
-  otherwise across the top and the foot (iPhone Duo open upright, an iPad
-  either way up). Comments are an inset panel beside the canvas, between
-  the bars, rather than the sheet, in a window 900 points wide or more,
-  and sideways beside the rail.
-- **The sheet.** With the inner display sideways, and in any window 700pt
-  or wider (an iPad), a comment's or thread's sheet floats centred, at most
-  560pt wide (`sheetMax`), riding 8pt above the keyboard instead of docking
-  into it. Wherever the system's bars are horizontal (iPhone Duo open
-  upright, an iPad), every sheet stays above the bottom bar: the bar takes
-  touches across its band, so Send floating over it went to Comments.
-- **Designs and Search** add columns as the page widens, counting its
-  margins and the gaps between cards: two on an iPhone, three once each
-  card can be 200pt (iPhone Duo's inner display), and more while each stays
-  230pt or wider (an iPad's four or five).
+  the canvas's own bar and the comment field. Otherwise the system's bars hold
+  Back, the page and Comments. Comments are an inset panel beside the canvas
+  in a window 900 points wide or more.
+- **The sheet.** In any window 700pt or wider (an iPad), and on the inner
+  display sideways, a sheet floats centred, at most 560pt wide (`sheetMax`),
+  riding 8pt above the keyboard instead of docking into it.
 - **The tabs** are named on an iPad, where the tab bar is a row of names
   across the top that VoiceOver reads by name; on an iPhone they're marks,
   together in one bar. Search is a plain tab, not the system's search tab
-  (which iOS 26 sets apart from the bar), and opens its header field when
-  chosen.
+  (which iOS 26 sets apart from the bar).
 
-### Haptics
+## Haptics
 
 One vocabulary, `lib/haptics.ts` (as augmenter's): each gesture gets one,
 never a stream, and none for scrolling or for motion the person didn't
@@ -132,17 +265,13 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice; Move on a held draft |
-| `tick` | A design opened (a card or a search row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; an unsent comment's pin held, or put down after Move; pull to refresh |
-| `success` | A comment or reply sent; a thread resolved; a Mac paired; a Mac answering after "Waking Ponzu" |
-| `thud` | A design archived; a draft discarded |
-| `fail` | A pairing error; a comment that didn't send; a shelf change a Mac didn't take; a Mac that didn't wake |
+| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup |
+| `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped |
+| `success` | A comment or reply sent; a thread resolved |
+| `thud` | Sign out; a draft discarded |
+| `fail` | A sign-in that failed; a comment that didn't send |
 
-The filter's native menu opens with the system's own feedback, so it adds
-none. The canvas's gestures come from the web view as messages (`focused`,
-`longpress`, `holdUnsent`, canvas/protocol.ts); the haptic is the app's, never the page's.
-
-### Styling
+## Styling
 
 Class names are NativeWind 5 (`nativewind@5.0.0-rc.0` with
 `react-native-css@3.1.0-rc.0`, both pinned exactly) on Tailwind 4. The
@@ -151,7 +280,7 @@ compiler needs `lightningcss` 1.30.1: newer ones fail to deserialize
 theirs. Light and dark follow the system through `@media
 (prefers-color-scheme: dark)` in `global.css`. For a literal value (an SVG
 fill, the status bar, a shadow), use `lib/tokens.ts`; `lib/tokens.test.ts`
-keeps the two in step.
+keeps the two in step. Ink, never iOS blue.
 
 Fonts are embedded in the binary by the `expo-font` plugin: Inter 400 to 700,
 Funnel Display 700 and IBM Plex Mono 400 and 500. Set `fontFamily` to the
@@ -159,89 +288,35 @@ family (`font-sans`, `font-display`, `font-mono`) and `fontWeight` picks the
 face. Adding a weight is a native change: add its file in `app.json` and
 rebuild.
 
-## Run it in the simulator
+## How to run it
+
+Native builds, the simulator and Maestro run on spare, through the
+network-work job runner, never on a workstation (see
+[`apps/mobile/maestro/README.md`](../apps/mobile/maestro/README.md)). What
+runs anywhere:
 
 ```sh
-cd apps/mobile
-bunx expo run:ios --device "iPhone 17 Pro"
+bunx tsc -p apps/mobile/tsconfig.json --noEmit     # the app
+bunx tsc -p apps/mobile/canvas/tsconfig.json --noEmit   # the canvas page
+bun test apps/mobile                               # pure modules
+cd apps/mobile && bun run test:rn                  # component tests (jest-expo)
+cd apps/mobile && bunx expo export --platform ios  # the bundle
 ```
 
-That prebuilds `ios/`, builds a development client, installs it and starts
-Metro. After the first build, `bun run dev` starts Metro alone, and the
-installed client finds it. Rebuild (`bunx expo run:ios`) after any change to
-native code: a new native dependency, a config plugin, `app.json`'s `ios`
-section, a font, or `modules/`.
+Component tests are `*.rntest.tsx` beside what they test, rendered with
+jest-expo and React Native Testing Library against the fake backend; `bun
+test` skips them by their name. They stand in for the router (`jest.setup.js`)
+and read where a screen sends the app from its calls.
 
-On an iPad simulator (`--device "iPad Pro 13-inch (M5)"`), opening a
-`ponzu://` link asks "Open in “Ponzu”?" first. The Maestro flows are written
-for an iPhone: an iPad's tab bar doesn't carry the tabs' `testID`s, and the
-page menu and thread open in the system's bar and the comments panel there.
-
-A Mac running Ponzu on the tailnet is what the app talks to; the simulator
-uses the Mac's own Tailscale.
-
-To try a branch's server while the installed Ponzu holds port 7777, run it
-on another port and point the app at it in `apps/mobile/.env.local`.
-`PONZU_TAILSCALE=none` keeps it off the tailnet: a server otherwise takes the
-tailnet's port 7777 whenever it's free, and your phone would pair with it.
-
-```sh
-PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bun apps/cli/src/index.ts serve examples/*.design --port 7792
-echo EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792 > apps/mobile/.env.local
-```
-
-Development builds save it as a paired Mac ("This Mac") and learn your other
-Macs from it. Screens open by URL, with `xcrun simctl openurl booted
-ponzu://<route>`: `designs`, `search?q=kettle`, `connect`,
-`connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
-with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
-`artboard=<id>` focuses a frame; with `page` too, only when it's on that
-page). In development a design also takes `comment=<artboard>` (opens a new comment's sheet on that board) and
-`uncomment=<text>` (deletes your threads that start with it). `dev?forget=all` forgets
-every Mac, for a first launch; `forget=dev` or `forget=<id>,<id>` forgets
-those.
-
-## On your iPhone, over the tailnet
-
-Build a development client for your phone once, with EAS (it signs with the
-team's certificates):
-
-```sh
-cd apps/mobile
-eas build --profile development --platform ios
-```
-
-Install it from the link EAS prints. Then start Metro so the phone can reach
-it over Tailscale, not just the Wi-Fi:
-
-```sh
-bunx expo start --dev-client --host tunnel   # anywhere, through Expo's tunnel
-# or, with the phone on your tailnet:
-REACT_NATIVE_PACKAGER_HOSTNAME=<this mac>.<tailnet>.ts.net bunx expo start --dev-client
-```
-
-and open the URL Metro prints in the development client.
-
-## Reaching a Mac
-
-The app asks each Mac's Ponzu at `http://<MagicDNS name>:7777`. It is plain
-http: the tailnet already encrypts and authenticates the connection, and the
-Mac answers by Tailscale identity. iOS's App Transport Security allows plain
-http only to `*.ts.net` (an exception domain in `app.json`) and to the local
-network. A raw tailnet address (`100.x.y.z`) can't be an exception domain, so
-the app always uses a Mac's MagicDNS name, which `/api/info`, `/api/macs` and
-the pairing code all carry. Don't widen this to
-`NSAllowsArbitraryLoads`.
-
-Every request and socket sends `User-Agent: Ponzu-iOS/<version>` (`lib/ua.ts`);
-the server tells the phone from a browser by it.
-
-First launch is two steps, the same for everyone: Tailscale (`tailscale.tsx`),
-then the code from Ponzu › Pair iPhone… on the Mac (`connect/index.tsx`, then
-the camera). iOS doesn't tell an app whether a VPN is up, so the phone looks
-for Tailscale's own address on its interfaces (`modules/tailnet`,
-`lib/tailnet.ts`): 100.64.0.0/10 on a `utun` tunnel, or fd7a:115c:a1e0::/48.
-The phone doesn't browse the Wi-Fi, so it never asks for local network access.
+A development client of Ponzu Dev for a registered phone comes from EAS
+(`APP_VARIANT=dev eas build --profile development --platform ios`), signed
+with the team's certificates; then `bunx expo start --dev-client` from
+`apps/mobile`. Rebuild after any native change: a native dependency, a config
+plugin, `app.json`'s `ios` section, a font. Every native change ships in one
+batch (the fingerprint decides between an update and a build); this one added
+expo-secure-store, expo-web-browser, expo-crypto, expo-clipboard,
+expo-image-picker and expo-device, and removed expo-camera, the Tailscale
+module and the App Transport Security exception.
 
 ## Releases
 
@@ -335,8 +410,10 @@ that changed only `apps/mobile`.
 
 `bun run typecheck` and `bun test` at the root cover the app. CI's `Test
 scope` job (`scripts/ci/scope.ts`) decides what a pull request can affect;
-`Mobile checks` (typecheck, tests and `expo export --platform ios`) runs when
-it touches the phone or what it bundles, and `Mobile` reports for every pull
-request. `Mobile iOS` runs the Maestro flows on the self-hosted Macs
-(`apps/mobile/maestro/run.sh <simulator>` runs them here); see
+`Mobile checks` (typecheck, tests, component tests and `expo export
+--platform ios`) runs when it touches the phone or what it runs (the canvas,
+`@ponzu/client`, `@ponzu/core`), for pull requests into `cloud` too, and
+`Mobile` reports for every pull request. `Mobile iOS` runs the Maestro flows
+on spare's runners, for pull requests into `main` only until the cloud app's
+flows have passed twice on the job runner; see
 [`apps/mobile/maestro/README.md`](../apps/mobile/maestro/README.md).

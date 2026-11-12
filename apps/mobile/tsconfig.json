@@ -5,6 +5,9 @@
     "noUncheckedIndexedAccess": true,
     // @ponzu/core imports its own modules by their .ts names.
     "allowImportingTsExtensions": true,
+    // DOM.Iterable as the root config has it: @ponzu/client's route types reach the API's
+    // source, whose URLs are Node's and need the iterable DOM types to agree with them.
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "types": ["bun"]
   },
   "include": ["**/*.ts", "**/*.tsx", "nativewind-env.d.ts", ".expo/types/**/*.ts", "expo-env.d.ts"],

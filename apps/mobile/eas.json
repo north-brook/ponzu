@@ -15,7 +15,19 @@
       "channel": "development",
       "developmentClient": true,
       "distribution": "internal",
-      "environment": "development"
+      "environment": "development",
+      "env": {
+        "APP_VARIANT": "dev"
+      }
+    },
+    "preview": {
+      "extends": "base",
+      "channel": "preview",
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "APP_VARIANT": "dev"
+      }
     },
     "production": {
       "extends": "base",

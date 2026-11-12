@@ -12,7 +12,7 @@ import { useTheme } from "../../lib/theme";
  * dark alike.
  */
 const MARKS = {
-  designs: {
+  canvases: {
     default: require("../../assets/native/tab-designs.png"),
     selected: require("../../assets/native/tab-designs-fill.png"),
   },
@@ -33,13 +33,13 @@ const NAMES = Platform.OS === "ios" && Platform.isPad;
 const TAB_LISTENERS = { tabPress: select };
 
 /**
- * The app once connected, in the system's tab bar: Designs and Search, by
+ * The signed-in app, in the system's tab bar: Canvases and Search, by
  * their marks alone, together in one bar. Search is a plain tab, not the
  * system's search tab, which iOS 26 sets apart from the bar and would leave
- * Designs alone in it; its field is in its header (search.tsx). Each tab is a
+ * Canvases alone in it; its field is in its header (search.tsx). Each tab is a
  * stack of its own. The canvas isn't a tab: it's pushed over both on the
  * root stack, so the bar goes with the tabs as it comes in, and no tab bar
- * shows over it. Designs pads itself under the status bar and above the
+ * shows over it. Canvases pads itself under the status bar and above the
  * tab bar, so the system's automatic content insets are off for it;
  * Search's native header insets its list.
  */
@@ -55,13 +55,13 @@ export default function TabsLayout() {
       hidden={held}
     >
       <NativeTabs.Trigger
-        name="(designs)"
-        accessibilityLabel="Designs"
-        testID="tab-designs"
+        name="(canvases)"
+        accessibilityLabel="Canvases"
+        testID="tab-canvases"
         disableAutomaticContentInsets
       >
-        <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.designs} />
-        <NativeTabs.Trigger.Label hidden={!NAMES}>Designs</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.canvases} />
+        <NativeTabs.Trigger.Label hidden={!NAMES}>Canvases</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="(search)" accessibilityLabel="Search" testID="tab-search">
         <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.search} />
