@@ -176,6 +176,20 @@ export function ThreadView({
     el.scrollTop = el.scrollHeight;
     ours.current = el.scrollTop;
   }, []);
+  /**
+   * Whether the rail still follows the foot. The person's scroll moves the thread before its event
+   * arrives, and a line streaming in between must not pull them back: away from where the rail
+   * last put it, and from the foot, they have stopped following, heard or not.
+   */
+  const stillFollowing = useCallback(() => {
+    const el = scroller.current;
+    if (!following.current || !el || jumping.current) return following.current;
+    const m = metricsOf(el);
+    if (Math.abs(m.scrollTop - ours.current) < 2 || atFoot(m)) return true;
+    following.current = false;
+    dispatch({ type: "scrolled", metrics: m });
+    return false;
+  }, []);
 
   // New rows at the foot: follow them, or count them for the pill.
   const lastId = useRef(items.at(-1)?.id);
@@ -192,9 +206,10 @@ export function ThreadView({
    * While the person reads, the line at the top of the view stays put whatever changes around
    * it: rows revealed above, a picture loading above, the rail resizing. The browser's own scroll
    * anchoring is off, since it fights following the foot, so the rail anchors by hand: it notes
-   * where the first line in view sits, and after a change scrolls by however far it moved.
+   * where the first line in view sits, and after a change scrolls by however far it moved, less
+   * however far the person scrolled since (their scroll's event may not have arrived yet).
    */
-  const anchor = useRef<{ el: Element; top: number } | null>(null);
+  const anchor = useRef<{ el: Element; top: number; scrollTop: number } | null>(null);
   const noteAnchor = useCallback(() => {
     const el = scroller.current;
     const top = el?.getBoundingClientRect().top ?? 0;
@@ -202,20 +217,23 @@ export function ThreadView({
     const line = [...(content.current?.children ?? [])].find(
       (child) => !child.hasAttribute("data-leaving") && child.getBoundingClientRect().bottom > top,
     );
-    anchor.current = line ? { el: line, top: line.getBoundingClientRect().top } : null;
+    anchor.current =
+      line && el
+        ? { el: line, top: line.getBoundingClientRect().top, scrollTop: el.scrollTop }
+        : null;
   }, []);
   const holdAnchor = useCallback(() => {
     const el = scroller.current;
     const held = anchor.current;
     if (!el || !held?.el.isConnected) return;
-    const moved = held.el.getBoundingClientRect().top - held.top;
+    const moved = held.el.getBoundingClientRect().top - held.top + (el.scrollTop - held.scrollTop);
     if (Math.abs(moved) < 0.5) return;
     el.scrollTop += moved;
     ours.current = el.scrollTop;
   }, []);
 
   useLayoutEffect(() => {
-    if (following.current) toFoot();
+    if (stillFollowing()) toFoot();
     else holdAnchor();
     noteAnchor();
   });
@@ -225,14 +243,14 @@ export function ThreadView({
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => {
       if (jumping.current) return;
-      if (following.current) toFoot();
+      if (stillFollowing()) toFoot();
       else holdAnchor();
       noteAnchor();
     });
     if (content.current) observer.observe(content.current);
     if (scroller.current) observer.observe(scroller.current);
     return () => observer.disconnect();
-  }, [toFoot, holdAnchor, noteAnchor]);
+  }, [stillFollowing, toFoot, holdAnchor, noteAnchor]);
 
   // Back at the foot with a long window drawn: let the oldest go again.
   useEffect(() => {
