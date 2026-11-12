@@ -44,7 +44,10 @@ export interface RateLimitRule {
 }
 
 /**
- * Production's table (docs/production.md, program §5.9). `user-writes` and `runner` are the
+ * Production's table (docs/production.md, program §5.9), with one change the firewall forces:
+ * on Vercel Pro a rate-limit window is at most ten minutes, so the table's hourly limits are
+ * counted in ten-minute windows with the same numbers (looser by up to six times an hour, never
+ * tighter). Only Enterprise allows an hour. `user-writes` and `runner` are the
  * catch-alls: every POST, PATCH or DELETE by a person, and every call by a runner, that no
  * narrower id names. The narrower ids are the only ones such a request counts against.
  *
@@ -56,7 +59,7 @@ export const RATE_LIMITS: Record<RateLimitId, RateLimitRule> = {
   "canvas-creates": {
     key: "user",
     limit: 30,
-    windowSeconds: 3_600,
+    windowSeconds: 600,
     routes: ["POST /v1/canvases"],
   },
   messages: {
@@ -71,21 +74,21 @@ export const RATE_LIMITS: Record<RateLimitId, RateLimitRule> = {
   uploads: {
     key: "user",
     limit: 120,
-    windowSeconds: 3_600,
+    windowSeconds: 600,
     routes: ["POST /v1/canvases/:id/uploads", "POST /v1/canvases/:id/comments/:messageId/picture"],
   },
   live: { key: "user", limit: 120, windowSeconds: 60, routes: ["POST /v1/live"] },
   "github-sync": {
     key: "user",
     limit: 30,
-    windowSeconds: 3_600,
+    windowSeconds: 600,
     routes: ["POST /v1/github/sync", "POST /v1/github/install-link"],
   },
   runner: { key: "canvas", limit: 3_000, windowSeconds: 60, routes: [] },
   "runner-git": {
     key: "canvas",
     limit: 240,
-    windowSeconds: 3_600,
+    windowSeconds: 600,
     routes: ["POST /v1/runner/git-credential", "POST /v1/runner/git-credential/erase"],
   },
 };

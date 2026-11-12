@@ -83,7 +83,7 @@ describe("the firewall's per-caller rules and the code's ids", () => {
     for (const rule of sdkRules) {
       const id = idsOf(rule)[0] as RateLimitId;
       const { key, limit, windowSeconds } = RATE_LIMITS[id];
-      const per = windowSeconds === 60 ? "a minute" : "an hour";
+      const per = windowSeconds === 60 ? "a minute" : "every ten minutes";
       const whose = key === "user" ? "person" : "canvas";
       expect(rule.name).toBe(`${id} per caller`);
       expect(rule.description).toBe(
