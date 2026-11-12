@@ -21,7 +21,8 @@ ui/               primitives: shadcn/ui's components themed with our tokens (but
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
-create/           the create page: composer, model picker, repo picker, ideas
+create/           the create page: composer, model picker, repo picker, ideas; a send's travel
+                  to the thread and its beat (flight.ts, landing.ts)
 thread/           the thread rail: its lines, a running turn's asides and the working line, and
                   what leaves when it ends (thread.ts has the rules, thread-view.tsx the motion),
                   following the foot, the composer, drafts, the keyboard on opening (rail.tsx)
@@ -276,9 +277,9 @@ defined by being quiet.
 | `meta` | 11 mono, faint | repo, branch, pull request, counts, ages |
 | `label` | 11 semibold, faint | a section's label in a menu, Settings, search, the pull request tab |
 
-Display (Funnel Display 600) is a heading's alone: 28 a setup step, 26 the pull request, 18 a
-Settings section, 40 a price, and 22 the create page's project selector, which stands in its
-header beside the logo.
+Display (Funnel Display 600) is a heading's alone: 28 a setup step and the create page's
+statement (its project selector included), 26 the pull request, 18 a Settings section, 40 a
+price.
 
 The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
 cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
@@ -382,28 +383,60 @@ repaint something or say what isn't so. The usual swaps:
   the rail's own scroll anchoring keeps the reader's place. Not a library's exit animation:
   only the rail knows where a line sat and what the reader is anchored on.
 - The create page departs from board 5 (fresh start) on purpose, at the founder's direction:
-  Ponzu's logo stands where the question was (the question is still the page's heading, for a
-  screen reader); the ideas are not tiles under the composer but take turns as its placeholder
+  Ponzu's mark (the slice, 56) over one statement in the display face at 28 stands where the
+  question was, "Make something in owner/name ⌄" or "Make something from scratch ⌄", whose last
+  words are the project selector, about making rather than designing; the ideas are not tiles under the composer but take turns as its placeholder
   (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
   rises in), put away by typing and taken into the field with Tab, to edit and send; and the
   page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
   its boards with `--pz-dot`), since this is where a canvas starts. Nothing on the page moves
   when ideas arrive or don't.
-- The project selector is in the create page's header, not a chip under the composer (the
-  founder's direction): `[logo] | [owner/name ⌄]`, and nothing under the composer. The logo is
-  40 (under the 46 it had alone, so the row balances), the hairline 28 tall, the selector the
-  display face at 22 semibold in ink with the owner and slash faint so the name leads, then a
-  `control` chevron in `icon-soft`. The hairline stands on the column's centre line with the
-  logo 16 before it and the selector's words 16 after, so nothing moves when the label changes
-  (a repo chosen, the repos arriving, a long name): the row is centred on the hairline, not on
-  its own width. Everything is centred on the mark (the lockup is drawn round it), and the
-  selector's words sit on it by their x-height's centre, as the logo's word does, which in
-  Funnel Display at 22 is 2.4 above their line box's middle (`ON_THE_MARK` in
-  `create/repo-picker.tsx`). A long label stays on one line within the column's right half, the
-  owner giving way first. The trigger draws no folder: beside the logo's mark a third glyph
-  competed with it, and at the ladder's largest step it read small against 22px words; the
-  picker's rows keep theirs. While the window's repos load the selector holds its place with a
-  skeleton, never saying Scratch before it knows.
+- The project selector is the statement's last words, not a chip under the composer (the
+  founder's direction): the display face at 28 in ink with the owner and slash faint so the name
+  leads, on the statement's baseline, then a `control` chevron in `icon-soft`. A long label stays
+  on one line, the owner giving way first. The trigger draws no folder; the picker's rows keep
+  theirs. While the window's repos load the selector holds its place with a skeleton, never
+  saying scratch before it knows.
+- The create page's layout (the founder's direction), with its measures in `create/create.ts`:
+  the composer is docked at the foot of the canvas pane, centred at its 660, 10 above the pane's
+  edge (`DOCK_INSET`, the distance the thread's composer keeps from the rail's foot, so a send
+  travels nearly level: the canvas pane ends 6 above the window's edge, so the two feet are 6
+  apart), and grows upward with what is typed or attached. The hero (the mark over the
+  statement) is centred in the room above the composer at rest, 28 high of true centre
+  (`HERO_LIFT`), and holds still as the composer grows. Only once the composer would come
+  within 40 of the statement does the statement rise ahead of it; the mark fades once that would
+  take it within 24 of the pane's top, and the statement stops there, the pane scrolling rather
+  than let the two overlap (`heroPlace`). No window the app allows is that short: at the
+  smallest, with the field grown to its most, the whole hero still has its room.
+- A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
+  The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
+  width as the pane narrows), the design's view comes (its chrome with the name it will have,
+  the canvas pane on the same dotted ground, and the thread's pane opening whatever it was left
+  as, with the sent words as its first line and the agent waking), and the composer travels from
+  the foot of the canvas pane to its home at the foot of the thread, changing size on the way.
+  It is one card that moves: its surface, its + and its send button (which keep their corners
+  and become the thread's +, and Stop in its place); what was written keeps the width it was
+  written at and fades in the first third, the thread composer's words fade in over the last
+  two fifths, and nothing reflows. The travel is 1.75 of the panes' clock (385 at `--dur-pane`
+  220), on `--ease-travel`, a relative of `--ease-out` that starts from rest: it begins with the
+  pane opening and lands once the pane has settled, so it reads as the pane making room and the
+  composer going home. It lands empty with the caret in it; the design the API makes takes the
+  launch's place under it (anything typed meanwhile, and the caret, carried over). After
+  `LANDING_BEAT_MS` (1400) the thread's pane closes on its usual easing and that is remembered as
+  the toggle would; it stays open, remembered so, if since the send the person moved the pointer
+  into it, pressed, focused, typed or scrolled there, and the toggle or ⌘J pressed then is the
+  person's say. Only a send from the create page has a beat; another design opened, or the
+  create page again, before it ends leaves the pane closed. A send that fails comes back to the
+  page as it was (words, images, project, the caret in the field), the error said, and nothing
+  travels back; a second press while it goes does nothing. With reduced motion nothing travels
+  or eases and it ends the same. A window resized or a pane's edge taken hold of mid-way lands
+  it at once. Not the View Transitions API: tried first, its travelling thing is two pictures
+  stretched into one box and cross-faded (`flight.ts` says why in full).
+- With the thread's pane closed after the beat, the thread toggle in the chrome says what the
+  agent is doing in the pane's place (`window/thread-toggle.tsx`, `railSignal`): the count of
+  questions waiting on the person (yuzu), the turning slice while it works, a dot once it has
+  said something since the pane was last open (an answer, or a turn that failed or stopped); and
+  the design's row in the sidebar says the same. Nothing opens the pane by itself.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics, each titled `owner/name` with the owner quieter (no owner heading, no line under
   Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's dashed-folder icon

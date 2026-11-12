@@ -738,9 +738,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // The pane lays itself out for the new window once its opening is over.
     await page.waitForFunction(() => {
       const el = document.querySelector("#thread [data-composer-card]");
-      const r = el?.getBoundingClientRect();
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
       return (
-        r &&
         Math.round(r.right) === 1300 - 10 &&
         Math.round(r.bottom) === 820 - 10 &&
         getComputedStyle(el).visibility === "visible"
