@@ -25,7 +25,7 @@
  * It creates and deletes one branch, so it is not read-only. On production it is the founder's
  * to run, monthly; the orchestrator runs it on dev.
  */
-import { createApiClient } from "@neondatabase/api-client";
+import { createApiClient, EndpointType } from "@neondatabase/api-client";
 import { redactText } from "../../packages/core/src/redact.ts";
 import { pickBranch, plainError, statusOf } from "./checks/neon.ts";
 import { EnvironmentName, loadEnvironments } from "./desired.ts";
@@ -100,7 +100,7 @@ export function neonDrillApi(apiKey: string, projectId: string): DrillNeon {
             parent_timestamp: parentTimestamp,
             expires_at: expiresAt,
           },
-          endpoints: [{ type: "read_write" as never }],
+          endpoints: [{ type: EndpointType.ReadWrite }],
         });
         return {
           branch: { id: data.branch.id, name: data.branch.name, default: data.branch.default },
@@ -135,6 +135,18 @@ export function neonDrillApi(apiKey: string, projectId: string): DrillNeon {
           ).data.uri,
       ),
   };
+}
+
+/** A connection string's password on its own, so an error quoting just the password is redacted. */
+function passwordOf(uri: string): string[] {
+  if (!URL.canParse(uri)) return [];
+  const { password } = new URL(uri);
+  if (!password) return [];
+  try {
+    return [password, decodeURIComponent(password)];
+  } catch {
+    return [password];
+  }
 }
 
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
@@ -183,7 +195,14 @@ export function compareCounts(
   live: Record<string, number>,
   restored: Record<string, number>,
 ): TableLine[] {
-  const migrated = (live[MIGRATIONS_TABLE] ?? 0) !== (restored[MIGRATIONS_TABLE] ?? 0);
+  // A migration in between shows as more migrations live than restored, both sides recording
+  // them. A restore with no migrations table (an empty database) explains nothing.
+  const liveMigrations = live[MIGRATIONS_TABLE];
+  const restoredMigrations = restored[MIGRATIONS_TABLE];
+  const migrated =
+    liveMigrations !== undefined &&
+    restoredMigrations !== undefined &&
+    liveMigrations > restoredMigrations;
   const tables = [...new Set([...Object.keys(live), ...Object.keys(restored)])].sort();
   return tables.map((table) => {
     const a = live[table] ?? null;
@@ -309,15 +328,20 @@ export async function main(argv: readonly string[], io: DrillIo): Promise<number
     });
     // Only a branch that is plainly the drill's is ever deleted: never the default, never a name
     // this run did not ask for.
-    if (made.branch.default || made.branch.name !== name) {
+    if (
+      made.branch.default ||
+      made.branch.name !== name ||
+      before.some((b) => b.id === made.branch.id)
+    ) {
       throw new Error(`Neon answered a branch that is not the drill's (${made.branch.name})`);
     }
     created = made.branch;
     await waitFor(neon, made.operationIds, io, "create the drill branch");
     const database = await neon.database(source.id);
     const liveUri = await neon.connectionUri(source.id, database);
+    secrets.push(liveUri, ...passwordOf(liveUri));
     const drillUri = await neon.connectionUri(created.id, database);
-    secrets.push(liveUri, drillUri);
+    secrets.push(drillUri, ...passwordOf(drillUri));
     const [live, restored] = await Promise.all([count(liveUri), count(drillUri)]);
     lines = compareCounts(live, restored);
     if (!Object.keys(live).length) failure = "the live branch has no tables to compare";

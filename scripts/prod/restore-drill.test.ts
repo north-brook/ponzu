@@ -144,6 +144,18 @@ describe("judging the counts", () => {
     });
   });
 
+  test("an empty restore is never explained by a migration", () => {
+    // The restored side has no tables at all, not even drizzle's: nothing was restored.
+    const lines = compareCounts({ "public.canvases": 1200, [MIGRATIONS_TABLE]: 30 }, {});
+    expect(lines.map((l) => l.ok)).toEqual([false, false]);
+    // Fewer migrations live than restored does not explain a new table either.
+    const [, back] = compareCounts(
+      { "public.new": 0, [MIGRATIONS_TABLE]: 29 },
+      { [MIGRATIONS_TABLE]: 30 },
+    );
+    expect(back?.ok).toBe(false);
+  });
+
   test("the drill branch's name", () => {
     expect(drillName("dev", START)).toBe("restore-drill-dev-20261112t1504");
   });
@@ -228,6 +240,39 @@ describe("the drill on dev, against a fake Neon", () => {
     expect(lines).toContain(
       "fail    the drill could not finish: Neon answered a branch that is not the drill's (restore-drill-dev-20261112t1504)",
     );
+  });
+
+  test("a drill branch that restored nothing fails the drill", async () => {
+    const { io, lines } = harness({ counts: { "br-dev": LIVE, "br-drill": {} } });
+    expect(await main(["--env", "dev"], io)).toBe(1);
+    expect(lines.at(-1)).toBe("the drill failed");
+  });
+
+  test("it never deletes a branch that was there before it ran", async () => {
+    const neon = new FakeNeon();
+    neon.createBranch = async (input) => ({
+      branch: { id: "br-dev", name: input.name, default: false },
+      operationIds: [],
+    });
+    neon.deleteBranch = async () => {
+      throw new Error("must not be called");
+    };
+    const { io, lines } = harness({ neon });
+    expect(await main(["--env", "dev"], io)).toBe(1);
+    expect(lines).toContain(
+      "fail    the drill could not finish: Neon answered a branch that is not the drill's (restore-drill-dev-20261112t1504)",
+    );
+  });
+
+  test("an error quoting only the password does not print it", async () => {
+    const { io, lines } = harness({
+      counts: {},
+    });
+    io.count = async (uri) => {
+      throw new Error(`password ${new URL(uri).password} was refused`);
+    };
+    expect(await main(["--env", "dev"], io)).toBe(1);
+    expect(lines.join("\n")).not.toMatch(/secret-password/);
   });
 
   test("production drills the default branch", async () => {

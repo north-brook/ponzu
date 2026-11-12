@@ -171,6 +171,27 @@ describe("production, as the founder's steps leave it", () => {
     expect(g["neon.snapshot"]?.says).toBe("production has a schedule but no snapshot");
   });
 
+  test("a deploy's own snapshot does not stand in for a schedule that stopped", () => {
+    const { want, answers } = good();
+    answers.snapshots = [
+      { name: "daily", created_at: "2026-11-10T07:00:00Z", manual: false },
+      { name: "pre-0123456789ab", created_at: "2026-11-12T14:00:00Z", manual: true },
+    ];
+    const f = byId(evaluateNeon(want, observeNeon(answers, "@default", NOW)));
+    expect(f["neon.snapshot"]?.status).toBe("fail");
+  });
+
+  test("Realtime off before infra names its URL is pending, after it fails", () => {
+    const { want, answers } = good();
+    answers.realtime = { enabled: false, invocation_url: null };
+    const before = byId(
+      evaluateNeon({ ...want, realtimeUrl: null }, observeNeon(answers, "@default", NOW)),
+    );
+    expect(before["neon.realtime"]?.status).toBe("pending");
+    const after = byId(evaluateNeon(want, observeNeon(answers, "@default", NOW)));
+    expect(after["neon.realtime"]?.status).toBe("fail");
+  });
+
   test("Realtime at another URL than infra's fails", () => {
     const { want, answers } = good();
     answers.realtime = { enabled: true, invocation_url: "https://ep-other.rt.example.neon.tech/" };

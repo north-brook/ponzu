@@ -21,7 +21,7 @@ import { z } from "zod";
 import type { EnvironmentName, Infra } from "../desired.ts";
 import { type CheckContext, type Finding, findings, list, type Section } from "./finding.ts";
 
-/** Where production's buckets are placed (location hint), per the design. Dev's is not judged. */
+/** Where production's buckets are placed (location hint), per docs/production.md. Dev's is not judged. */
 export const PRODUCTION_LOCATION = "enam";
 /** What the API's presigned uploads and the apps need at the least, whatever CORS infra adds. */
 export const CORS_AT_LEAST = {

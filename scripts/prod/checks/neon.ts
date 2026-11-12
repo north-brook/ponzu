@@ -134,7 +134,11 @@ export function observeNeon(raw: unknown, branchName: string, checkedAt: string)
           retentionSeconds: s.retention_seconds ?? null,
         }))
       : null,
-    snapshots: answers.snapshots.map((s) => ({ name: s.name, createdAt: s.created_at })),
+    // Only what the schedule took: a deploy's own `pre-<sha>` snapshot is manual, and counting it
+    // would hide a schedule that stopped on any day something was deployed.
+    snapshots: answers.snapshots
+      .filter((s) => s.manual !== true)
+      .map((s) => ({ name: s.name, createdAt: s.created_at })),
     realtime: answers.realtime
       ? { enabled: answers.realtime.enabled, url: answers.realtime.invocation_url ?? null }
       : null,
@@ -372,7 +376,12 @@ function evaluateRealtime(desired: NeonDesired, observed: NeonObserved): Finding
     return f.ok("realtime", `infra does not ask for Realtime on ${name}`);
   }
   const realtime = observed.realtime;
-  if (!realtime?.enabled) return f.fail("realtime", `Realtime is off on ${name}`, fix);
+  if (!realtime?.enabled) {
+    // With no realtimeUrl in infra, turning Realtime on is the founder's step still to come.
+    return desired.realtimeUrl
+      ? f.fail("realtime", `Realtime is off on ${name}`, fix)
+      : f.pending("realtime", `Realtime is not on for ${name} yet`, fix);
+  }
   if (!desired.realtimeUrl) {
     return f.pending(
       "realtime",
