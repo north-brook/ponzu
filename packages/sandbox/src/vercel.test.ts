@@ -14,12 +14,13 @@
  *   stays mapped to busy from up(), by code alone, as the images docs name it.
  * - An image tag or digest that does not exist: 404 {code:"not_found", message:"Image not found."}
  *   on create, which is rejected (and after an image-change delete the name is simply gone).
- * - SIGTERM grace of stop(): 19.99 and 20.00 s (two runs). stop() sends SIGTERM to running
+ * - SIGTERM grace of stop(): 19.99 s in the committed fixture (found.sigtermGraceMs), and 20.00 s
+ *   in an earlier run that is not kept. stop() sends SIGTERM to running
  *   commands, waits about 20 s for them to exit, then kills them and snapshots: a stop with a
  *   process that ignores SIGTERM took 21.3 to 24.3 s, against 2 to 3 s when everything exits. A
  *   waited command cut off by the stop resolved with exit code 143, not a StreamError.
- * - A name is reusable right after delete: the next create, sent at once, succeeded (628 and
- *   778 ms, the create's own time). So up()'s recreate does not wait.
+ * - A name is reusable right after delete: the next create, sent at once, succeeded (628 ms in
+ *   the committed fixture, 778 ms in an earlier run that is not kept: the create's own time). So up()'s recreate does not wait.
  * - A 64 KB command env is accepted (65,536 bytes read back). 128 KB in one variable is refused,
  *   400 command_failed "fork/exec /usr/bin/sh: argument list too long": Linux's 128 KiB limit on
  *   one argv or env string, so 64 KB is our cap with room, not Vercel's.
@@ -37,9 +38,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { systemClock } from "./clock.ts";
+import { FakeClock, systemClock } from "./clock.ts";
 import { SandboxError } from "./errors.ts";
-import type { Sandboxes, SandboxSpec } from "./sandboxes.ts";
+import { FakeSandboxes } from "./fake.ts";
+import type { At, Sandboxes, SandboxSpec } from "./sandboxes.ts";
 import { vercelSandboxes } from "./vercel.ts";
 
 interface Exchange {
@@ -729,4 +731,179 @@ test("credentials are all three or none", () => {
     }),
   ).toThrow();
   expect(() => vercelSandboxes({ clock: systemClock })).not.toThrow();
+});
+
+/*
+ * One table of behaviours, run against both FakeSandboxes (on which every lifecycle test of the
+ * API sits) and vercelSandboxes replaying the recorded bodies, so the fake cannot drift from what
+ * Vercel was seen to do. Each case makes the same state both ways and answers a plain summary.
+ */
+describe("the fake agrees with the recording", () => {
+  const BIG = "x".repeat(128 * 1024);
+  const OTHER_IMAGE = `ponzu-runner@sha256:${"0".repeat(64)}`;
+  const outcome = async (work: Promise<unknown>, summary: (value: any) => unknown) =>
+    work.then(summary, (error: unknown) =>
+      error instanceof SandboxError ? { error: error.code } : { thrown: String(error) },
+    );
+  const upSummary = (up: any) => ({
+    fresh: up.fresh,
+    recreated: up.recreated,
+    wasRunning: up.wasRunning,
+  });
+
+  interface Case {
+    name: string;
+    /** The state, made on the fake; answers the session the check pins to. */
+    fake: (fake: FakeSandboxes) => Promise<At>;
+    /** The same state as Vercel answered it, pinned to the recording's first session. */
+    replay: () => typeof globalThis.fetch;
+    check: (sandboxes: Sandboxes, at: At) => Promise<unknown>;
+    expected: unknown;
+  }
+
+  const runningFake = async (fake: FakeSandboxes): Promise<At> => {
+    const up = await fake.up(NAME, SPEC);
+    return { name: NAME, sessionId: up.sessionId };
+  };
+  const stoppedFake = async (fake: FakeSandboxes): Promise<At> => {
+    const at = await runningFake(fake);
+    await fake.stop(at);
+    return at;
+  };
+  const upAgain = (sandboxes: Sandboxes, at: At, spec = SPEC) =>
+    outcome(sandboxes.up(NAME, spec), (up) => ({
+      ...upSummary(up),
+      same: up.sessionId === at.sessionId,
+    }));
+
+  const cases: Case[] = [
+    {
+      name: "up on a running sandbox is that session, wasRunning",
+      fake: runningFake,
+      replay: () => server(["GET", SANDBOX, reply(RUNNING)]).fetch,
+      check: (sandboxes, at) => upAgain(sandboxes, at),
+      expected: { fresh: true, recreated: false, wasRunning: true, same: true },
+    },
+    {
+      name: "up on a stopped sandbox resumes a new session on its disk",
+      fake: stoppedFake,
+      replay: () =>
+        (async (input: RequestInfo | URL) => {
+          const url = new URL(String(input));
+          return url.searchParams.get("resume") === "true" ? reply(RESUMED) : reply(STOPPED);
+        }) as typeof globalThis.fetch,
+      check: (sandboxes, at) => upAgain(sandboxes, at),
+      expected: { fresh: false, recreated: false, wasRunning: false, same: false },
+    },
+    {
+      name: "up on another digest deletes and creates, without a resume",
+      fake: stoppedFake,
+      replay: () =>
+        server(
+          ["GET", SANDBOX, reply(STOPPED)],
+          ["DELETE", SANDBOX, reply(DELETED)],
+          [
+            "POST",
+            CREATE,
+            reply(CREATED, (body) => {
+              body.sandbox.image = `northbrook/ponzu-api/${OTHER_IMAGE}`;
+            }),
+          ],
+        ).fetch,
+      check: (sandboxes) => outcome(sandboxes.up(NAME, { ...SPEC, image: OTHER_IMAGE }), upSummary),
+      expected: { fresh: true, recreated: true, wasRunning: false },
+    },
+    {
+      name: "stop on a session that already stopped is stopped:false",
+      fake: stoppedFake,
+      replay: () => server(["GET", SANDBOX, reply(STOPPED)]).fetch,
+      check: (sandboxes, at) => outcome(sandboxes.stop(at), (value) => value),
+      expected: { stopped: false, snapshotBytes: null },
+    },
+    {
+      name: "a pinned call on a stopped session is not_running; extend is null",
+      fake: stoppedFake,
+      replay: () => server(["GET", SANDBOX, reply(STOPPED)]).fetch,
+      check: async (sandboxes, at) => ({
+        exec: await outcome(sandboxes.exec(at, { cmd: "true", timeoutMs: 1_000 }), () => "ran"),
+        start: await outcome(sandboxes.start(at, { cmd: "true" }), () => "ran"),
+        read: await outcome(sandboxes.readFile(at, "/x"), () => "read"),
+        extend: await outcome(sandboxes.extend(at, 1_000), (value) => value),
+      }),
+      expected: {
+        exec: { error: "not_running" },
+        start: { error: "not_running" },
+        read: { error: "not_running" },
+        extend: null,
+      },
+    },
+    {
+      name: "a pinned call on a session that is not the current one is not_running",
+      fake: async (fake) => {
+        const at = await stoppedFake(fake);
+        await fake.up(NAME, SPEC);
+        return at;
+      },
+      replay: () => server(["GET", SANDBOX, reply(RESUMED_RUNNING)]).fetch,
+      check: async (sandboxes, at) => ({
+        exec: await outcome(sandboxes.exec(at, { cmd: "true", timeoutMs: 1_000 }), () => "ran"),
+        stop: await outcome(sandboxes.stop(at), (value) => value),
+      }),
+      expected: { exec: { error: "not_running" }, stop: { stopped: false, snapshotBytes: null } },
+    },
+    {
+      name: "an extend past the 24-hour cap is rejected",
+      fake: runningFake,
+      replay: () =>
+        server(
+          ["GET", SANDBOX, reply(RUNNING)],
+          ["POST", session(FIRST, "extend-timeout"), reply(PAST_CAP)],
+        ).fetch,
+      check: (sandboxes, at) => outcome(sandboxes.extend(at, 25 * 3600_000), (value) => value),
+      expected: { error: "rejected" },
+    },
+    {
+      name: "128 KB in one variable of a command's env is rejected",
+      fake: runningFake,
+      replay: () =>
+        server(
+          ["GET", SANDBOX, reply(RUNNING)],
+          ["POST", session(FIRST, "cmd"), reply(exchange("env_128k", "POST", "/cmd"))],
+        ).fetch,
+      check: (sandboxes, at) =>
+        outcome(sandboxes.exec(at, { cmd: "sh", env: { BIG }, timeoutMs: 1_000 }), () => "ran"),
+      expected: { error: "rejected" },
+    },
+    {
+      name: "remove of a missing name is success, and status is null",
+      fake: async () => ({ name: NAME, sessionId: FIRST }),
+      replay: () => server(["GET", SANDBOX, reply(MISSING)]).fetch,
+      check: async (sandboxes) => ({
+        remove: await outcome(sandboxes.remove(NAME), () => "ok"),
+        status: await sandboxes.status(NAME),
+      }),
+      expected: { remove: "ok", status: null },
+    },
+  ];
+
+  for (const each of cases) {
+    test(each.name, async () => {
+      const fake = new FakeSandboxes(new FakeClock());
+      expect(await each.check(fake, await each.fake(fake))).toEqual(each.expected);
+      const replayed = make(each.replay());
+      expect(await each.check(replayed, { name: NAME, sessionId: FIRST })).toEqual(each.expected);
+    });
+  }
+
+  test("a waited command a stop cuts off resolves with 143, as recorded", async () => {
+    const live = (await Bun.file(join(import.meta.dir, "fixtures", "vercel-live.json")).json()) as {
+      found: { execCutByStop: { value: { exitCode: number } } };
+    };
+    const fake = new FakeSandboxes(new FakeClock());
+    const at = await runningFake(fake);
+    fake.onExec("sleep", () => new Promise(() => {}));
+    const cut = fake.exec(at, { cmd: "sleep", timeoutMs: 60_000 });
+    await fake.stop(at);
+    expect((await cut).exitCode).toBe(live.found.execCutByStop.value.exitCode);
+  });
 });

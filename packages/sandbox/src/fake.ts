@@ -49,6 +49,9 @@ interface FakeSession {
   status: "running" | "stopped" | "failed";
   /** Booted from a snapshot (false: an empty disk). */
   fromSnapshot: boolean;
+  /** Settles once the session stops: what cuts its waited commands off. */
+  halted: Promise<void>;
+  halt: () => void;
 }
 
 interface Box {
@@ -87,7 +90,7 @@ export class FakeSandboxes implements Sandboxes {
     code: SandboxErrorCode;
     retryAfterSeconds?: number;
   }> = [];
-  readonly #handlers = new Map<string, (command: Command) => ExecResult>();
+  readonly #handlers = new Map<string, (command: Command) => ExecResult | Promise<ExecResult>>();
   #ids = 0;
 
   constructor(clock: FakeClock, options: FakeOptions = {}) {
@@ -157,6 +160,7 @@ export class FakeSandboxes implements Sandboxes {
   async start(at: At, command: Command, _options?: CallOptions): Promise<{ commandId: string }> {
     this.#fail("start", at.name);
     this.#running(at);
+    fits(command);
     this.#record(at, "start", command);
     return { commandId: `cmd_${++this.#ids}` };
   }
@@ -167,11 +171,17 @@ export class FakeSandboxes implements Sandboxes {
     _options?: CallOptions,
   ): Promise<ExecResult> {
     this.#fail("exec", at.name);
-    this.#running(at);
+    const box = this.#running(at);
+    fits(command);
     const { timeoutMs: _timeout, ...rest } = command;
     this.#record(at, "exec", rest);
     const handler = this.#handlers.get(command.cmd);
-    return handler ? handler(rest) : { exitCode: 0, stdout: "", stderr: "" };
+    const result = handler ? handler(rest) : { exitCode: 0, stdout: "", stderr: "" };
+    // Recorded: a waited command the session's stop cuts off resolves with SIGTERM's 143.
+    return Promise.race([
+      Promise.resolve(result),
+      box.session.halted.then(() => ({ exitCode: 143, stdout: "", stderr: "" })),
+    ]);
   }
 
   async writeFile(
@@ -282,7 +292,8 @@ export class FakeSandboxes implements Sandboxes {
     });
   }
 
-  onExec(cmd: string, handler: (command: Command) => ExecResult): void {
+  /** What `cmd` answers when run waited: a promise that never settles is cut off by a stop. */
+  onExec(cmd: string, handler: (command: Command) => ExecResult | Promise<ExecResult>): void {
     this.#handlers.set(cmd, handler);
   }
 
@@ -327,18 +338,25 @@ export class FakeSandboxes implements Sandboxes {
   }
 
   #session(config: Config, fromSnapshot: boolean): FakeSession {
+    let resolve = () => {};
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
     return {
       id: `sbx_fake${++this.#ids}`,
       startedAt: this.#clock.now(),
       timeoutMs: config.timeoutMs,
       status: "running",
       fromSnapshot,
+      halted: promise,
+      halt: resolve,
     };
   }
 
   /** Stops the running session; a persistent one leaves a snapshot (one kept). */
   #halt(box: Box): number | null {
     box.session.status = "stopped";
+    box.session.halt();
     if (!box.config.persistent) {
       box.files = new Map();
       return null;
@@ -377,6 +395,20 @@ export class FakeSandboxes implements Sandboxes {
         ? {}
         : { retryAfterSeconds: failure!.retryAfterSeconds }),
     });
+  }
+}
+
+/** Linux's cap on one argv or env string (MAX_ARG_STRLEN), which Vercel's start runs into. */
+const MAX_ARG_BYTES = 128 * 1024;
+
+/** Recorded: 128 KB in one variable is refused, 400 command_failed "argument list too long". */
+function fits(command: Command): void {
+  const strings = [
+    ...(command.args ?? []),
+    ...Object.entries(command.env ?? {}).map(([key, value]) => `${key}=${value}`),
+  ];
+  if (strings.some((each) => encoder.encode(each).byteLength >= MAX_ARG_BYTES)) {
+    throw new SandboxError("rejected", "exec: 400 command_failed: argument list too long");
   }
 }
 
