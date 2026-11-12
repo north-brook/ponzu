@@ -9,16 +9,18 @@
     "./canvas": "./src/canvas/index.ts",
     "./react": "./src/react.ts",
     "./testing": "./src/testing/index.ts",
-    "./query": "./src/query/index.ts"
+    "./query": "./src/query/index.ts",
+    "./model": "./src/model/index.ts",
+    "./model/*": "./src/model/*.ts"
   },
   "dependencies": {
     "@neon/realtime": "0.2.1",
     "@ponzu/core": "workspace:*",
+    "@ponzu/runner": "workspace:*",
     "hono": "^4.13.17"
   },
   "devDependencies": {
     "@ponzu/api": "workspace:*",
-    "@ponzu/runner": "workspace:*",
     "@tanstack/react-query": "^5.102.8",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { CanvasListRow, PresenceRow } from "@ponzu/client";
-import { createFakeBackend } from "@ponzu/client/testing";
+import type { CanvasListRow, PresenceRow } from "../live/rows.ts";
+import { createFakeBackend } from "../testing/index.ts";
 import {
   canvasMembers,
   contributors,

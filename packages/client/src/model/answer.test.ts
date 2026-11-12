@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import type { Ask } from "../model.ts";
 import {
   answerable,
   answerOf,
@@ -9,6 +8,7 @@ import {
   EMPTY_DRAFT,
   pagesOf,
 } from "./answer.ts";
+import type { Ask } from "./model.ts";
 
 const headline: Ask = {
   id: "q_headline",
