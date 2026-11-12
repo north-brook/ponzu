@@ -150,7 +150,10 @@ export function posthogTelemetry(
         // About no one person: under the workspace, as the API keys its events about no one.
         distinctId: feedback.workspaceId ?? feedback.canvasId,
         properties: {
-          ...feedbackProperties(feedback, { content: config.content, known }),
+          ...feedbackProperties(feedback, {
+            content: config.content,
+            known: knownSecrets(options.secrets),
+          }),
           ...(options.client ? { ponzu_runner: options.client } : {}),
         },
         ...(feedback.workspaceId ? { groups: { workspace: feedback.workspaceId } } : {}),
