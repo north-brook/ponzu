@@ -1,10 +1,10 @@
 import {
   appendEvent,
-  type BranchDesign,
-  findDesignByBranch,
+  type BranchCanvas,
+  findCanvasByBranch,
   getUserByGithubId,
   type Json,
-  listPullRequestDesigns,
+  listPullRequestCanvases,
 } from "@ponzu/db";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
@@ -14,7 +14,7 @@ import { type RefreshRequest, refreshSoon } from "../pull-requests/refresh.ts";
 import { queueWake } from "../sandboxes/wake.ts";
 
 /*
- * What GitHub says about a design's pull request. A design owns one branch of its repo
+ * What GitHub says about a canvas's pull request. A canvas owns one branch of its repo
  * (`pz/<topic>`), and a pull request, check or review belongs to it when it is about that
  * branch, in that repo. One from a fork never is, whatever its branch is called.
  */
@@ -27,12 +27,12 @@ export interface PullRequestRef {
 }
 
 /**
- * Read again, as the App, the pull requests a delivery is about, for each design that owns one's
+ * Read again, as the App, the pull requests a delivery is about, for each canvas that owns one's
  * branch, and record them (`refreshSoon`). A delivery says what was true when it was sent, and
  * GitHub sends them late and out of order, so what is recorded is GitHub's word now, never the
  * payload's.
  */
-export async function refreshDesigns(
+export async function refreshCanvases(
   deps: JobDeps,
   { githubRepoId, pullRequests }: { githubRepoId: number; pullRequests: PullRequestRef[] },
 ): Promise<void> {
@@ -40,16 +40,16 @@ export async function refreshDesigns(
   const branches = new Map(ours.map((pr) => [pr.head.ref, pr]));
   const requests: RefreshRequest[] = [];
   for (const [branch, pullRequest] of branches) {
-    const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
-    if (design) requests.push({ designId: design.id, number: pullRequest.number });
+    const canvas = await findCanvasByBranch(deps.db, { githubRepoId, branch });
+    if (canvas) requests.push({ canvasId: canvas.id, number: pullRequest.number });
   }
   await refreshSoon(deps, requests);
 }
 
 /**
- * A push. To a design's branch: its pull request is read again, until GitHub shows it at the
+ * A push. To a canvas's branch: its pull request is read again, until GitHub shows it at the
  * branch's commit and knows whether it can merge. To the branch pull requests merge into: the
- * open ones of the repo's designs are read again (the fifty updated last), since the push may
+ * open ones of the repo's canvases are read again (the fifty updated last), since the push may
  * have given them conflicts.
  */
 export async function refreshAfterPush(
@@ -61,48 +61,48 @@ export async function refreshAfterPush(
   }: { githubRepoId: number; branch: string; defaultBranch: string },
 ): Promise<void> {
   if (branch === defaultBranch) {
-    const designIds = await listPullRequestDesigns(deps.db, { githubRepoId, open: true });
+    const canvasIds = await listPullRequestCanvases(deps.db, { githubRepoId, open: true });
     await refreshSoon(
       deps,
-      designIds.map((designId) => ({ designId, number: null })),
+      canvasIds.map((canvasId) => ({ canvasId, number: null })),
     );
     return;
   }
-  const design = await findDesignByBranch(deps.db, { githubRepoId, branch });
-  if (design) await refreshSoon(deps, [{ designId: design.id, number: null }]);
+  const canvas = await findCanvasByBranch(deps.db, { githubRepoId, branch });
+  if (canvas) await refreshSoon(deps, [{ canvasId: canvas.id, number: null }]);
 }
 
 /**
- * A repo was made public: the pictures in its designs' pull requests' descriptions, which only
+ * A repo was made public: the pictures in its canvases' pull requests' descriptions, which only
  * a private repo's get, are taken out (`withdrawPictures`).
  */
 export async function withdrawRepoPictures(deps: JobDeps, githubRepoId: number): Promise<void> {
-  for (const designId of await listPullRequestDesigns(deps.db, { githubRepoId, open: false })) {
+  for (const canvasId of await listPullRequestCanvases(deps.db, { githubRepoId, open: false })) {
     try {
-      await withdrawPictures(deps, designId);
+      await withdrawPictures(deps, canvasId);
     } catch (error) {
-      // One design's pull request GitHub no longer has does not keep the rest's pictures up.
-      deps.log.warn("pull_request_pictures_kept", { designId, error });
+      // One canvas's pull request GitHub no longer has does not keep the rest's pictures up.
+      deps.log.warn("pull_request_pictures_kept", { canvasId, error });
     }
   }
 }
 
-/** Someone on GitHub who wrote something a design's agent would read, by their GitHub id. */
+/** Someone on GitHub who wrote something a canvas's agent would read, by their GitHub id. */
 export interface GithubAuthor {
   githubUserId: number;
   login: string;
 }
 
 /**
- * Tell the agent of each design these pull requests belong to: an event with priority `next`,
- * taken up after its current step (docs/cloud.md, "Events"). A settled design hears nothing.
+ * Tell the agent of each canvas these pull requests belong to: an event with priority `next`,
+ * taken up after its current step (docs/cloud.md, "Events"). A settled canvas hears nothing.
  *
- * With an `author` (a review), a design hears it only when GitHub says the author can push to
+ * With an `author` (a review), a canvas hears it only when GitHub says the author can push to
  * its repo, asked through `repoPermission` like every other access question: anyone can review
  * a pull request on a public repo, and the agent reads what they wrote. The event names them
  * as a Ponzu person when they are one.
  */
-export async function tellDesigns(
+export async function tellCanvases(
   deps: Pick<Deps, "db" | "github" | "clock" | "log">,
   {
     githubRepoId,
@@ -123,37 +123,37 @@ export async function tellDesigns(
   const branches = new Map(ours.map((pr) => [pr.head.ref, pr]));
   const person = author ? await getUserByGithubId(db, author.githubUserId) : null;
   for (const [branch, pullRequest] of branches) {
-    const design = await findDesignByBranch(db, { githubRepoId, branch });
-    if (design?.status !== "active") continue;
-    if (author && !(await canPushTo(deps, design, author, person?.id ?? null))) {
-      log.info("design_event_dropped", { designId: design.id, kind, reason: "no_write_access" });
+    const canvas = await findCanvasByBranch(db, { githubRepoId, branch });
+    if (canvas?.status !== "active") continue;
+    if (author && !(await canPushTo(deps, canvas, author, person?.id ?? null))) {
+      log.info("canvas_event_dropped", { canvasId: canvas.id, kind, reason: "no_write_access" });
       continue;
     }
     await appendEvent(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind,
       priority: "next",
       payload: payload(pullRequest),
       userId: person?.id ?? null,
     });
     // `next` wakes a sleeping sandbox (docs/cloud.md, "Events").
-    await queueWake(deps, design.id, kind);
-    log.info("design_event_appended", { designId: design.id, kind });
+    await queueWake(deps, canvas.id, kind);
+    log.info("canvas_event_appended", { canvasId: canvas.id, kind });
   }
 }
 
-/** Whether GitHub says `author` can push to the design's repo. */
+/** Whether GitHub says `author` can push to the canvas's repo. */
 async function canPushTo(
   deps: Pick<Deps, "db" | "github" | "clock">,
-  design: BranchDesign,
+  canvas: BranchCanvas,
   author: GithubAuthor,
   userId: string | null,
 ): Promise<boolean> {
   // Without the App, or while it is suspended, nobody can: there is nobody to ask.
   const permission = await repoPermission(deps, {
     user: { id: userId, githubUserId: author.githubUserId, githubLogin: author.login },
-    repo: design.repo,
-    installation: design,
+    repo: canvas.repo,
+    installation: canvas,
   });
   return canWrite(permission);
 }

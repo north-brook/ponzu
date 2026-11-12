@@ -14,7 +14,7 @@
  *   a cap           whole dollars; it may not be set below what the period has billed, rounded
  *                   up to the dollar, nor below $1
  *
- * A breakdown (by person, by design) shares out the rounded total rather than rounding each
+ * A breakdown (by person, by canvas) shares out the rounded total rather than rounding each
  * part on its own, so its parts always add up to the headline: each part gets its own use
  * rounded down, and the credits the fractions add up to go one each to the parts with the
  * largest fractions (`apportion`). A part never gets more than its exact use rounded up. It adds
@@ -103,4 +103,37 @@ export function centsFor(credits: number, creditMicrousd: number): number {
 /** The lowest cap that may be set, in whole dollars, once `billedCents` have been billed. */
 export function lowestCapUsd(billedCents: number): number {
   return Math.max(1, Math.ceil(billedCents / 100));
+}
+
+/*
+ * What a period is charged. Ponzu never charges above the cap: a turn that was already running
+ * when the cap was reached finishes, and what it used past the cap is Ponzu's cost, not the
+ * workspace's. The cap is in cents and a credit may not divide it, so the charge is the whole
+ * credits the cap can pay for, rounded down, and its cents never exceed the cap.
+ */
+
+/** The credits a period is charged: what was billed, but never more than the cap pays for. */
+export function chargedCredits(billed: number, capCents: number, creditMicrousd: number): number {
+  return Math.min(billed, Math.floor((capCents * MICROUSD_PER_CENT) / creditMicrousd));
+}
+
+/** What the charged credits come to, in cents, rounded down. */
+export function chargedCents(charged: number, creditMicrousd: number): number {
+  return centsFor(charged, creditMicrousd);
+}
+
+/** A period whose charge is under this many cents ($1.00) is not invoiced: it is waived. */
+export const MIN_INVOICE_CENTS = 100;
+
+/** The rate card's `cap_warning_fraction` has three decimal places (`numeric(4, 3)`). */
+const FRACTION_SCALE = 1_000;
+
+/**
+ * Whether what is billed has reached the warning share of the cap (0.8 on rate card v1), so
+ * admins are told before the cap stops new turns. It stays true at and past the cap; telling the
+ * warning from the cap itself is the caller's. Compared in whole thousandths of a cent, so 0.8 of
+ * $100 is reached at exactly $80.00 and not a cent before.
+ */
+export function capWarning(billedCents: number, capCents: number, fraction: number): boolean {
+  return billedCents * FRACTION_SCALE >= capCents * Math.round(fraction * FRACTION_SCALE);
 }

@@ -29,6 +29,7 @@
   --text-10: 10px;
   --text-15: 15px;
   --text-18: 18px;
+  --text-22: 22px;
   --text-28: 28px;
   --text-40: 40px;
 
@@ -156,7 +157,7 @@
     color: var(--c-ink);
     font-family: var(--font-sans);
     font-size: 13px;
-    /* The design sets text at the font's own line height unless it says otherwise. */
+    /* The mockup sets text at the font's own line height unless it says otherwise. */
     line-height: normal;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -189,6 +190,15 @@
 }
 
 /*
+ * While the create page's composer travels to the thread (create/flight.ts), the thread's own
+ * composer waits unseen in the place it travels to, and shows the moment it lands. Unseen, not
+ * hidden: it has the caret from the moment of the send, so keys pressed on the way land in it.
+ */
+[data-composer-flight] #thread [data-composer-card] {
+  opacity: 0;
+}
+
+/*
  * While an edge is dragged (`data-pane-drag`): the column-resize cursor wherever the pointer
  * goes, no text selected on the way, and the canvas's frames, which would swallow the pointer,
  * let it through.
@@ -214,7 +224,7 @@
 }
 
 /* The panes' one clock: what moves with the sidebar and the rail as a toggle opens or closes
-   them (the canvas pane's edges, the chrome's divider, name and right block). Name what moves
+   them (the main pane's edges, the chrome's divider, name and right block). Name what moves
    with a `transition-*` utility beside it. It eases only while the window carries
    `data-pane-motion` (a toggle's easing): at any other time, a drag of an edge included, it
    follows at once, so the chrome never trails the pane under the pointer. `:where` keeps it
@@ -410,6 +420,43 @@
   animation: rise var(--dur-pop) var(--ease-out);
 }
 
+/* A suggestion taking its turn as the create composer's placeholder: it rises into place as the
+   one before it lifts away. Under reduced motion one is simply there after the other. */
+@keyframes suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+}
+
+@keyframes suggestion-out {
+  to {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+}
+
+@utility suggestion-in {
+  animation: suggestion-in calc(var(--dur-pane) * 2) var(--ease-out) both;
+}
+
+@utility suggestion-out {
+  animation: suggestion-out var(--dur-pane) var(--ease-out) both;
+}
+
+/* The ground at rest: faint dots a step apart, as design tools draw one. The canvas
+   draws its own under the boards, moving with its camera (the canvas package, --pz-dot); this
+   is the same ground where a canvas starts, on the create page. */
+@utility canvas-dots {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--c-canvas-dot) 0.9px,
+    transparent 1.15px
+  );
+  background-size: 24px 24px;
+  background-attachment: local;
+}
+
 /*
  * A line leaving the thread (a finished turn's asides, the working line): the room it held
  * closes and it fades, so what stays settles into place rather than jumping. Fully faded a
@@ -448,8 +495,8 @@
   animation: settle var(--dur-pane) var(--ease-out);
 }
 
-/* A design's new preview and the one it replaces: a short, quiet cross-fade. The two run on
-   the same timing so, added with plus-lighter, they always sum to one (design-preview.tsx). */
+/* A canvas's new preview and the one it replaces: a short, quiet cross-fade. The two run on
+   the same timing so, added with plus-lighter, they always sum to one (canvas-preview.tsx). */
 @keyframes preview-in {
   from {
     opacity: 0;

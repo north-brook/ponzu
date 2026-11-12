@@ -19,7 +19,7 @@ const COPY: Record<SignInReason, SignInCopy | undefined> = {
   signed_out: undefined,
   github_reauth: {
     title: "Sign in again",
-    body: "GitHub needs you to let Ponzu in again. Your designs are all still here.",
+    body: "GitHub needs you to let Ponzu in again. Your canvases are all still here.",
   },
 };
 

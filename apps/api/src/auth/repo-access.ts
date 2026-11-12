@@ -27,9 +27,9 @@ import { UpstreamError } from "../http/errors.ts";
  * no more. While the App is not installed on a workspace, or is suspended, Ponzu can reach
  * none of its repos for anyone, and the answer is `none`.
  *
- * Every question of "may this person see or steer this repo" reads that table: `requireDesign`
- * (through `repoPermission`), the workspace's repo list, its designs list and the live query
- * over it, and the reviews that reach a design's agent. Each also requires the person's
+ * Every question of "may this person see or steer this repo" reads that table: `requireCanvas`
+ * (through `repoPermission`), the workspace's repo list, its canvases list and the live query
+ * over it, and the reviews that reach a canvas's agent. Each also requires the person's
  * membership of the workspace. Webhooks keep it true between syncs: an access event syncs the
  * person it names, and one that names nobody makes the answers it concerns stale.
  *
@@ -68,8 +68,8 @@ const reachable = ({ installationId, suspendedAt }: AppInstallation) =>
  * answer kept. While GitHub fails, an answer younger than `REPO_ACCESS_FALLBACK_MS` stands in;
  * past that the failure is thrown. Without the App, or while it is suspended, it is `none`.
  *
- * `known` is the kept answer when the caller read it already (`getDesignAccess` reads it with
- * the design); left out, it is read here.
+ * `known` is the kept answer when the caller read it already (`getCanvasAccess` reads it with
+ * the canvas); left out, it is read here.
  */
 export async function repoPermission(
   deps: RepoAccessDeps,
@@ -118,7 +118,7 @@ export async function repoPermission(
   return permission;
 }
 
-/** Whether a permission lets its holder steer a design: send messages, answer, merge. */
+/** Whether a permission lets its holder steer a canvas: send messages, answer, merge. */
 export const canWrite = (permission: RepoPermission) =>
   permission === "admin" || permission === "write";
 
@@ -133,7 +133,7 @@ const canRead = (permission: RepoPermission | null) =>
  * installation at all is given nothing of their own there.
  *
  * A list GitHub cut short says nothing of the repos it left out, so of those whose answer some
- * reader acts on (one that lets them read, or a repo with a design) the oldest are asked about
+ * reader acts on (one that lets them read, or a repo with a canvas) the oldest are asked about
  * one at a time as the App: no list goes on showing a repo nobody asked about since.
  *
  * Answers the listed GitHub ids Ponzu has no repo for, which mean its copy of the installation
@@ -167,7 +167,7 @@ export async function recordReposReachedBy(
   const recorded = await recordReachableRepos(deps.db, {
     workspaceId,
     userId: user.id,
-    // The list says only whether they can push; for what a design needs, that is the difference.
+    // The list says only whether they can push; for what a canvas needs, that is the difference.
     repos: listed.items.map(({ id, canPush }) => ({
       githubRepoId: id,
       permission: canPush ? "write" : "read",
@@ -181,9 +181,9 @@ export async function recordReposReachedBy(
       .filter(
         (repo) =>
           (repo.checkedAt === null || repo.checkedAt < checkedAt) &&
-          (repo.hasDesign || canRead(repo.permission)),
+          (repo.hasCanvas || canRead(repo.permission)),
       )
-      .sort(byDesignThenOldest)
+      .sort(byCanvasThenOldest)
       .slice(0, UNLISTED_ASKED_AT_MOST);
     await Promise.all(
       left.map(({ repoId, githubRepoId, fullName }) =>
@@ -198,17 +198,17 @@ export async function recordReposReachedBy(
   return recorded;
 }
 
-/** Repos with a design first, then the answers asked longest ago, never-asked first of all. */
-function byDesignThenOldest(a: WorkspaceRepoAccess, b: WorkspaceRepoAccess) {
+/** Repos with a canvas first, then the answers asked longest ago, never-asked first of all. */
+function byCanvasThenOldest(a: WorkspaceRepoAccess, b: WorkspaceRepoAccess) {
   return (
-    Number(b.hasDesign) - Number(a.hasDesign) ||
+    Number(b.hasCanvas) - Number(a.hasCanvas) ||
     (a.checkedAt?.getTime() ?? -1) - (b.checkedAt?.getTime() ?? -1)
   );
 }
 
 /**
  * Bring what `repo_access` says about `user` up to the last minute for every repo of the
- * workspace: what its repo list, its design list and `workspace.designs` join on, before any is
+ * workspace: what its repo list, its canvas list and `workspace.canvases` join on, before any is
  * answered or a live query renewed. Nothing is asked when every answer is fresh.
  *
  * When GitHub fails it keeps answers younger than the fallback and throws if any is older,

@@ -2,20 +2,23 @@ import type { PullRequestTab } from "@ponzu/client";
 import type { PullRequestAction } from "@ponzu/client/query";
 import { QueryObserver } from "@tanstack/react-query";
 import type { LoadedDiff } from "../cloud/model.ts";
+import type { PullRequestMenu } from "../cloud/pr-tab/pull-request-view.tsx";
 import type { NextAction } from "../cloud/pull-request.ts";
-import { prActionError, rulesWant } from "./pull-request-map.ts";
+import { bodyForTab, prActionError, rulesWant } from "./pull-request-map.ts";
 import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
- * One open design's pull request: the tab as GitHub has it (read when the design opens, when
+ * One open canvas's pull request: the tab as GitHub has it (read when the canvas opens, when
  * the head's pull request columns or the agent's turn change, and after every action), and the
  * one action the chrome offers. Ready, Auto-merge, Update branch and Merge are the person's, done
  * through the API with the commit they looked at; Create PR opens a draft from what the agent
- * committed, and when GitHub doesn't have those commits yet the API asks the design's sandbox to
+ * committed, and when GitHub doesn't have those commits yet the API asks the canvas's sandbox to
  * push them and the store opens it once they land (or says why they didn't); Fix checks and
  * Resolve are the agent's, asked of it in the thread once for a commit.
  * A merge the repo's rules still hold back is offered only after the person confirms it, and goes
  * out with the commit they confirmed: a push while they decide closes the question.
+ * The tab's menu adds two of the person's own: Turn off auto-merge, and Close pull request, which
+ * is asked first and goes out only while the pull request it named is still the open one.
  *
  * The tab is the client's `pullRequest` query, which an action's answer writes too, and a
  * file's diff its `pullRequestFile`, kept for the commit it was read at. What this keeps beside
@@ -23,15 +26,28 @@ import { mutate, type StorePonzu } from "./store-ponzu.ts";
  * agent was asked.
  */
 
+/**
+ * What the person can be doing to the pull request: the chrome's one action, or one of the tab's
+ * menu (Close pull request, Turn off auto-merge).
+ */
+export type PullRequestBusy = NextAction | "close" | "auto_merge_off";
+
 export interface PullRequestState {
   /** The last read, kept while the next is on its way and when it fails. */
   tab: PullRequestTab | null;
   /** The last read failed, or none has been made. */
   status: "loading" | "ready" | "error";
+  /**
+   * False while `tab` is only the answer kept from an earlier opening, not yet confirmed by a
+   * read since (or just before) this one: what it says may have moved meanwhile.
+   */
+  confirmed: boolean;
   /** The action on its way. */
-  busy: NextAction | null;
+  busy: PullRequestBusy | null;
   /** Merging past what the rules still want at `headSha`, waiting on the person to say so. */
   bypass: { reason: string; headSha: string } | null;
+  /** Closing pull request `number` without merging it, waiting on the person to say so. */
+  closing: { number: number } | null;
   /** The agent's action already asked of it for the head as it stands, until it moves. */
   asked: NextAction | null;
 }
@@ -39,8 +55,10 @@ export interface PullRequestState {
 /** How often Create PR reads the tab while the sandbox pushes, and how long it waits in all. */
 const PUSH_READ_MS = 3_000;
 const PUSH_PATIENCE_MS = 3 * 60_000;
+/** How long a read asked ahead of opening (`askAhead`) stands for the read on opening. */
+export const ASKED_AHEAD_MS = 10_000;
 
-/** No pull request to show yet, and commits only the design's sandbox holds. */
+/** No pull request to show yet, and commits only the canvas's sandbox holds. */
 function waitingOnPush(tab: PullRequestTab): boolean {
   const pr = tab.pullRequest;
   const open = pr && (pr.state === "open" || pr.state === "draft");
@@ -51,8 +69,10 @@ export class PullRequestStore {
   private state: PullRequestState = {
     tab: null,
     status: "loading",
+    confirmed: false,
     busy: null,
     bypass: null,
+    closing: null,
     asked: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -71,23 +91,42 @@ export class PullRequestStore {
   constructor(
     private readonly opts: {
       ponzu: StorePonzu;
-      designId: string;
+      canvasId: string;
       /** Says why an action didn't happen. */
       say: (message: string) => void;
       /** Asks the agent, as a message from the person in the thread. */
       tellAgent: (text: string) => void;
     },
   ) {
-    const { ponzu, designId } = opts;
+    const { ponzu, canvasId } = opts;
     const query = new QueryObserver(ponzu.queryClient, {
-      ...ponzu.queries.pullRequest(designId),
+      ...ponzu.queries.pullRequest(canvasId),
       // Read when what it shows may have moved, not whenever something watches it.
       enabled: false,
     });
     this.query = query;
-    this.stopQuery = query.subscribe(({ data, isError, fetchStatus }) => {
-      if (data && data !== this.state.tab) this.set({ tab: data, status: "ready" });
-      else if (isError && fetchStatus === "idle") this.set({ status: "error" });
+    // A canvas opened before has its last answer in the cache: shown at once, from the first
+    // frame (the chrome's mark and action, the tab), while the read on opening confirms it.
+    // Keyed by the canvas, so one canvas never shows another's.
+    // Until a read confirms it, it is offered only where it agrees with what the canvas's row
+    // and head say now (canvas.tsx): asked ahead a moment ago, it is as good as confirmed.
+    const known = query.getCurrentResult();
+    const keptAt = known.data ? known.dataUpdatedAt : 0;
+    if (known.data) {
+      this.state = {
+        ...this.state,
+        tab: known.data,
+        status: "ready",
+        confirmed: Date.now() - keptAt < ASKED_AHEAD_MS,
+      };
+    }
+    this.stopQuery = query.subscribe(({ data, dataUpdatedAt, isError, fetchStatus }) => {
+      // A read that answers the same as was kept leaves the same object (structural sharing):
+      // nothing on screen changes, it is only confirmed.
+      const confirmed = this.state.confirmed || (data !== undefined && dataUpdatedAt > keptAt);
+      if (data && (data !== this.state.tab || confirmed !== this.state.confirmed)) {
+        this.set({ tab: data, status: "ready", confirmed });
+      } else if (isError && fetchStatus === "idle") this.set({ status: "error" });
     });
   }
 
@@ -110,12 +149,25 @@ export class PullRequestStore {
     void this.query.refetch();
   }
 
+  /**
+   * Reads it as the canvas opens, at once rather than after its head: unless a read is already
+   * on its way, or one answered a moment ago (the sidebar's row, hovered before the click,
+   * asked ahead), which then answers for now.
+   */
+  refreshOnOpen(): void {
+    const { ponzu, canvasId } = this.opts;
+    const state = ponzu.queryClient.getQueryState(ponzu.queries.pullRequest(canvasId).queryKey);
+    if (state?.fetchStatus === "fetching") return;
+    if (state?.data && Date.now() - state.dataUpdatedAt < ASKED_AHEAD_MS) return;
+    this.refresh();
+  }
+
   /** A file's diff at the commit the tab shows, for its card, with where it was if renamed. */
   loadDiff = async (path: string): Promise<LoadedDiff> => {
-    const { ponzu, designId } = this.opts;
+    const { ponzu, canvasId } = this.opts;
     const headSha = this.state.tab?.pullRequest?.head.sha ?? null;
     const { diff, previousPath } = await ponzu.queryClient.fetchQuery(
-      ponzu.queries.pullRequestFile(designId, path, headSha),
+      ponzu.queries.pullRequestFile(canvasId, path, headSha),
     );
     return { diff, previousPath };
   };
@@ -184,6 +236,40 @@ export class PullRequestStore {
     this.set({ bypass: null });
   }
 
+  /**
+   * The tab's Close pull request: asked first, since Ponzu has no Reopen (Create PR opens a new
+   * one instead). Only an open or draft pull request, and nothing else on its way.
+   */
+  askClose(): void {
+    const pr = this.state.tab?.pullRequest;
+    if (this.state.busy || !pr || !isOpen(pr)) return;
+    this.set({ closing: { number: pr.number } });
+  }
+
+  /**
+   * The person said to close it. It goes out only while the pull request the question named is
+   * still the open one: a merge (auto-merge landing) or a newer pull request closes the question.
+   * The API closes whatever is open, so this is the check that it is still the one asked about.
+   */
+  confirmClose(): void {
+    const { closing, busy, tab } = this.state;
+    this.set({ closing: null });
+    const pr = tab?.pullRequest;
+    if (!closing || busy || !pr || pr.number !== closing.number || !isOpen(pr)) return;
+    this.act("close", { kind: "close", number: closing.number });
+  }
+
+  cancelClose(): void {
+    this.set({ closing: null });
+  }
+
+  /** The tab's Turn off auto-merge, for an open pull request that has it on. */
+  turnOffAutoMerge(): void {
+    const pr = this.state.tab?.pullRequest;
+    if (this.state.busy || !pr?.autoMerge || !isOpen(pr)) return;
+    this.act("auto_merge_off", { kind: "auto_merge", on: false });
+  }
+
   /** The agent's turn ended: what it was asked may be asked again, if the head didn't move. */
   agentIdle(): void {
     if (this.state.asked) this.set({ asked: null });
@@ -202,14 +288,14 @@ export class PullRequestStore {
    * in the query (and so here); a refusal reads it again, since whatever turned it away (a push,
    * a teammate's merge) has moved it, and the button follows.
    */
-  private act(action: NextAction, request: PullRequestAction): void {
-    const { ponzu, designId } = this.opts;
+  private act(action: PullRequestBusy, request: PullRequestAction): void {
+    const { ponzu, canvasId } = this.opts;
     this.set({ busy: action });
     // A read on its way would answer from before the action: the action's answer is newer.
     void ponzu.queryClient.cancelQueries({
-      queryKey: ponzu.queries.pullRequest(designId).queryKey,
+      queryKey: ponzu.queries.pullRequest(canvasId).queryKey,
     });
-    mutate(ponzu, ponzu.mutations.pullRequestAction(), { designId, action: request }).then(
+    mutate(ponzu, ponzu.mutations.pullRequestAction(), { canvasId, action: request }).then(
       (tab) => {
         // Create PR with commits GitHub doesn't have yet: the sandbox is pushing them first.
         if (action === "create_pr" && waitingOnPush(tab)) this.awaitPush();
@@ -289,6 +375,42 @@ export class PullRequestStore {
           : null;
     }
     if (next.asked && sha !== this.askedAt) change.asked = null;
+    if (next.closing && !(pr && pr.number === next.closing.number && isOpen(pr))) {
+      change.closing = null;
+    }
     return change;
   }
+}
+
+/**
+ * The agent's kept words, where Create PR is what the person can do next and no pull request is
+ * open: the description the new one opens with. Ponzu's markers around them come out, as from a
+ * description. An API older than the field says nothing.
+ */
+export function opensWith(tab: PullRequestTab): string | null {
+  const summary = tab.summary ?? null;
+  if (!summary || tab.nextAction !== "create_pr") return null;
+  return bodyForTab(summary) || null;
+}
+
+/**
+ * The tab's menu as the read says: Turn off auto-merge while it is on, and Close, for an open or
+ * draft pull request. Null for one that is merged or closed, or none.
+ */
+export function tabMenu(
+  pull: Pick<PullRequestState, "tab" | "busy">,
+  store: Pick<PullRequestStore, "askClose" | "turnOffAutoMerge">,
+): PullRequestMenu | null {
+  const pr = pull.tab?.pullRequest;
+  if (!pr || !isOpen(pr)) return null;
+  return {
+    ...(pr.autoMerge ? { onTurnOffAutoMerge: () => store.turnOffAutoMerge() } : {}),
+    onClose: () => store.askClose(),
+    busy: pull.busy !== null,
+  };
+}
+
+/** Open or a draft: what Close and Turn off auto-merge act on. */
+function isOpen(pr: NonNullable<PullRequestTab["pullRequest"]>): boolean {
+  return pr.state === "open" || pr.state === "draft";
 }

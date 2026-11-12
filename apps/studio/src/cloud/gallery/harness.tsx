@@ -2,16 +2,25 @@
  * Stand-ins for the app around the components: local state where the data layer will be, so
  * every composition can be clicked through.
  */
-import { type ReactNode, useCallback, useState } from "react";
-import type { ProjectChoice } from "../create/create.ts";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import type { ProjectChoice, RepoShelf } from "../create/create.ts";
 import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
-import { type DesignFilter, NO_FILTER } from "../filter.ts";
+import { type CanvasFilter, NO_FILTER } from "../filter.ts";
 import type {
+  CanvasMember,
+  CanvasSummary,
   Contributor,
-  DesignMember,
-  DesignSummary,
   Effort,
   Match,
+  Repo,
   SearchResults,
   Workspace,
 } from "../model.ts";
@@ -19,13 +28,18 @@ import { nextAction } from "../pull-request.ts";
 import { Sidebar } from "../sidebar/sidebar.tsx";
 import { railSignal } from "../status.ts";
 import { AppWindow } from "../window/app-window.tsx";
-import { DesignChrome, type DesignChromeProps } from "../window/design-chrome.tsx";
+import { CanvasChrome, type CanvasChromeProps } from "../window/canvas-chrome.tsx";
+import { PANES } from "../window/panes.ts";
 import * as f from "./fixtures.ts";
+
+/** `?rail=<px>`: the rail's width, in place of the mockup's. */
+const RAIL_WIDTH =
+  typeof location === "undefined" ? 0 : Number(new URLSearchParams(location.search).get("rail"));
 
 const ignore = () => {};
 
 /** Everything matching `query` in the fixtures, the way the API's search answers. */
-function searchFixtures(query: string, designs: DesignSummary[]): SearchResults {
+function searchFixtures(query: string, canvases: CanvasSummary[]): SearchResults {
   const q = query.trim().toLowerCase();
   const find = (text: string): Match[] => {
     const at = text.toLowerCase().indexOf(q);
@@ -38,8 +52,8 @@ function searchFixtures(query: string, designs: DesignSummary[]): SearchResults 
     });
   return {
     query,
-    designs: hits([...designs, ...f.settled], (d) => d.name).map(({ item, matches }) => ({
-      design: item,
+    canvases: hits([...canvases, ...f.settled], (d) => d.name).map(({ item, matches }) => ({
+      canvas: item,
       matches,
     })),
     boards: hits(f.heroResults.boards, (b) => b.name).map(({ item, matches }) => ({
@@ -53,16 +67,25 @@ function searchFixtures(query: string, designs: DesignSummary[]): SearchResults 
   };
 }
 
+/** The workspace the window shows, and those its switcher lists, for what is inside it. */
+const WindowWorkspace = createContext<{
+  workspace: Workspace;
+  workspaces: Workspace[];
+  onSwitch: (workspace: Workspace) => void;
+}>({ workspace: f.thistlewick, workspaces: f.workspaces, onSwitch: ignore });
+
 export interface HarnessProps {
   workspace?: Workspace;
-  designs: DesignSummary[] | null;
+  /** Those the workspace switcher lists. */
+  workspaces?: Workspace[];
+  canvases: CanvasSummary[] | null;
   openId: string | null;
   initialQuery?: string | null;
   initialSettledOpen?: boolean;
-  initialFilter?: DesignFilter;
+  initialFilter?: CanvasFilter;
   settledCount?: number;
   sidebar?: "open" | "closed" | "none";
-  /** Past the left block: a design's chrome, or nothing on the create page. */
+  /** Past the left block: a canvas's chrome, or nothing on the create page. */
   chrome?: (sidebarOpen: boolean) => ReactNode;
   rail?: boolean;
   /** What the open rail holds; an empty rail without it. */
@@ -72,8 +95,9 @@ export interface HarnessProps {
 
 /** The window with a working sidebar around `children`. */
 export function Harness({
-  workspace = f.northbrook,
-  designs,
+  workspace: initialWorkspace = f.thistlewick,
+  workspaces = f.workspaces,
+  canvases,
   openId: initialOpen,
   initialQuery = null,
   initialSettledOpen = false,
@@ -90,65 +114,75 @@ export function Harness({
   const [filter, setFilter] = useState(initialFilter);
   const [query, setQuery] = useState<string | null>(initialQuery);
   const [settledOpen, setSettledOpen] = useState(initialSettledOpen);
-  const results = query?.trim() ? searchFixtures(query, designs ?? []) : null;
-  const openDesign = useCallback((d: DesignSummary) => setOpenId(d.id), []);
+  const results = query?.trim() ? searchFixtures(query, canvases ?? []) : null;
+  const openCanvas = useCallback((d: CanvasSummary) => setOpenId(d.id), []);
+  const [workspace, setWorkspace] = useState(initialWorkspace);
+  const shown = useMemo(
+    () => ({ workspace, workspaces, onSwitch: setWorkspace }),
+    [workspace, workspaces],
+  );
 
   return (
-    <AppWindow
-      lights="drawn"
-      sidebar={
-        sidebar === "none"
-          ? null
-          : {
-              open,
-              onToggle: () => setOpen((o) => !o),
-              content: (
-                <Sidebar
-                  me={f.bryce}
-                  workspace={workspace}
-                  workspaces={f.workspaces}
-                  teammates={f.teammates}
-                  designs={designs}
-                  settled={{ count: settledCount, designs: f.settled, expanded: settledOpen }}
-                  onSettledExpandedChange={setSettledOpen}
-                  openDesignId={openId}
-                  collapsed={!open}
-                  onExpand={() => setOpen(true)}
-                  filter={filter}
-                  onFilterChange={setFilter}
-                  query={query}
-                  onQueryChange={setQuery}
-                  results={results}
-                  onOpenResult={(key) => {
-                    if (key.startsWith("design:")) setOpenId(key.slice("design:".length));
-                    setQuery(null);
-                  }}
-                  onOpen={openDesign}
-                  onAction={ignore}
-                  onRename={ignore}
-                  onNewDesign={() => setOpenId(null)}
-                  onSwitchWorkspace={ignore}
-                  onAddWorkspace={ignore}
-                  onSettings={ignore}
-                  onPlan={ignore}
-                  onSignOut={ignore}
-                />
-              ),
-            }
-      }
-      chrome={chrome?.(open)}
-      rail={rail ? (railContent ?? <div />) : null}
-    >
-      {children}
-    </AppWindow>
+    <WindowWorkspace.Provider value={shown}>
+      <AppWindow
+        lights="drawn"
+        sidebar={
+          sidebar === "none"
+            ? null
+            : {
+                open,
+                onToggle: () => setOpen((o) => !o),
+                content: (
+                  <Sidebar
+                    me={f.ada}
+                    workspace={workspace}
+                    workspaces={workspaces}
+                    teammates={f.teammates}
+                    canvases={canvases}
+                    settled={{ count: settledCount, canvases: f.settled, expanded: settledOpen }}
+                    onSettledExpandedChange={setSettledOpen}
+                    openCanvasId={openId}
+                    collapsed={!open}
+                    onExpand={() => setOpen(true)}
+                    filter={filter}
+                    onFilterChange={setFilter}
+                    query={query}
+                    onQueryChange={setQuery}
+                    results={results}
+                    onOpenResult={(key) => {
+                      if (key.startsWith("canvas:")) setOpenId(key.slice("canvas:".length));
+                      setQuery(null);
+                    }}
+                    onOpen={openCanvas}
+                    onAction={ignore}
+                    onRename={ignore}
+                    onNewCanvas={() => setOpenId(null)}
+                    onSwitchWorkspace={setWorkspace}
+                    onAddWorkspace={ignore}
+                    onSettings={ignore}
+                    onPlan={ignore}
+                    onSignOut={ignore}
+                  />
+                ),
+              }
+        }
+        chrome={chrome?.(open)}
+        rail={rail ? (railContent ?? <div />) : null}
+        // `?rail=<px>`: the thread rail at that width (its limits in panes.ts), for the tests
+        // that look at the thread at its narrowest and widest.
+        {...(RAIL_WIDTH ? { panes: { sidebar: PANES.sidebar.default, rail: RAIL_WIDTH } } : {})}
+      >
+        {children}
+      </AppWindow>
+    </WindowWorkspace.Provider>
   );
 }
 
-type ChromeOverrides = Partial<Omit<DesignChromeProps, "sidebarOpen">>;
+type ChromeOverrides = Partial<Omit<CanvasChromeProps, "sidebarOpen">>;
 
-/** The chrome of an open design, as the boards draw it. */
-export function DesignChromeHarness({
-  design,
+/** The chrome of an open canvas, as the boards draw it. */
+export function CanvasChromeHarness({
+  canvas,
   sidebarOpen,
   contributors,
   railOpen,
@@ -158,17 +192,17 @@ export function DesignChromeHarness({
   members = f.members,
   overrides = {},
 }: {
-  design: DesignSummary;
+  canvas: CanvasSummary;
   sidebarOpen: boolean;
   /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
   contributors: Contributor[] | null;
   /** Who Share lists. */
-  members?: DesignMember[];
+  members?: CanvasMember[];
   railOpen: boolean;
   /** The window's rail follows the toggle: without it, only the toggle does. */
   onToggleRail?: () => void;
   threadUnseen?: boolean;
-  /** The branch has commits, so a design with no pull request offers Create PR. */
+  /** The branch has commits, so a canvas with no pull request offers Create PR. */
   changes?: boolean;
   overrides?: ChromeOverrides;
 }) {
@@ -176,11 +210,11 @@ export function DesignChromeHarness({
   const [prTab, setPrTab] = useState(false);
   const [own, setOwn] = useState(railOpen);
   const rail = onToggleRail ? railOpen : own;
-  const pr = design.pullRequest;
+  const pr = canvas.pullRequest;
   const action = nextAction(pr, changes);
   return (
-    <DesignChrome
-      name={design.name}
+    <CanvasChrome
+      name={canvas.name}
       sidebarOpen={sidebarOpen}
       pages={f.homePages}
       activePageId={prTab ? null : page}
@@ -190,11 +224,11 @@ export function DesignChromeHarness({
       }}
       onAddPage={ignore}
       team={
-        contributors && design.project.kind === "repo"
+        contributors && canvas.project.kind === "repo"
           ? {
-              meId: f.bryce.id,
+              meId: f.ada.id,
               contributors,
-              repo: design.project.repo,
+              repo: canvas.project.repo,
               members,
               onOpenRepo: ignore,
             }
@@ -204,7 +238,7 @@ export function DesignChromeHarness({
       action={action ? { kind: action, onRun: ignore } : null}
       rail={{
         open: rail,
-        signal: railSignal(design, threadUnseen),
+        signal: railSignal(canvas, threadUnseen),
         onToggle: onToggleRail ?? (() => setOwn((o) => !o)),
       }}
       {...overrides}
@@ -212,21 +246,63 @@ export function DesignChromeHarness({
   );
 }
 
-/** The create page with its own prompt, model and project. */
+/**
+ * The create page with its own prompt, model and project. With `shelves` (each workspace's
+ * repos, null for one whose repos failed to load), the person is in several workspaces: the
+ * picker has a group for each, the window's first, and choosing another workspace's Scratch or
+ * repo switches the window's workspace (the sidebar's) as the app does, keeping the words.
+ * `later` (or `?later`) holds the others' repos back until the page calls
+ * `window.galleryArrive()`, as a slow answer would. `?resolve=scratch` or `?resolve=repo` starts
+ * the page not knowing its project (the window's repos loading), and `galleryArrive()` settles it
+ * on Scratch or on the first repo. `?models=reported` offers what an account's Claude Code
+ * reported (a long name, a model that takes no effort) in place of the hand-kept list.
+ */
 export function CreateHarness({
   initialPrompt = "",
   initialProject = { kind: "repo", repo: f.fernwood },
-  repos = f.repos,
+  repos: ownRepos = f.repos,
+  shelves,
+  later = false,
   ideas = null,
 }: {
   initialPrompt?: string;
-  initialProject?: ProjectChoice;
+  /** Null: not known yet (the window's repos are loading). */
+  initialProject?: ProjectChoice | null;
   repos?: CreatePageProps["repos"];
+  shelves?: Record<string, Repo[] | null>;
+  later?: boolean;
   ideas?: CreatePageProps["ideas"];
 }) {
+  const params = new URLSearchParams(location.search);
+  const resolve = params.get("resolve");
+  const offered = params.get("models") === "reported" ? f.reportedModels : f.models;
   const [prompt, setPrompt] = useState(initialPrompt);
-  const [project, setProject] = useState(initialProject);
-  const [model, setModel] = useState({ model: f.models[0]!.id, effort: "high" as Effort });
+  const [project, setProject] = useState(resolve ? null : initialProject);
+  const [model, setModel] = useState({ model: offered[0]!.id, effort: "high" as Effort });
+  const dwell = Number(params.get("dwell")) || 0;
+  const window_ = useContext(WindowWorkspace);
+  const [arrived, setArrived] = useState(!later && !params.has("later") && !resolve);
+  useEffect(() => {
+    (window as { galleryArrive?: () => void }).galleryArrive = () => {
+      setArrived(true);
+      if (resolve) {
+        setProject(
+          resolve === "scratch" ? { kind: "scratch" } : { kind: "repo", repo: f.repos[0]! },
+        );
+      }
+    };
+  }, [resolve]);
+  const repos =
+    resolve && !arrived ? null : shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
+  const elsewhere: RepoShelf[] = shelves
+    ? window_.workspaces
+        .filter((w) => w.id !== window_.workspace.id && w.id in shelves)
+        .map((w) => ({
+          workspaceId: w.id,
+          name: w.name,
+          repos: arrived ? (shelves[w.id] ?? []) : null,
+        }))
+    : [];
   return (
     <CreatePage
       prompt={prompt}
@@ -234,17 +310,25 @@ export function CreateHarness({
       onSend={ignore}
       onAttach={ignore}
       model={{
-        models: f.models,
+        models: offered,
         efforts: ["low", "medium", "high", "xhigh", "max"],
         model: model.model,
         effort: model.effort,
         onChange: (m, e) => setModel({ model: m, effort: e }),
       }}
       project={project}
+      workspaceName={window_.workspace.name}
       repos={repos}
-      onProjectChange={setProject}
+      elsewhere={elsewhere}
+      onProjectChange={(choice, workspaceId) => {
+        const next = workspaceId && window_.workspaces.find((w) => w.id === workspaceId);
+        if (next) window_.onSwitch(next);
+        setProject(choice);
+      }}
       onAllowMore={ignore}
       ideas={ideas}
+      // `?dwell=<ms>`: how long each suggestion shows, so a test needn't wait out the real one.
+      {...(dwell ? { suggestionDwellMs: dwell } : {})}
     />
   );
 }

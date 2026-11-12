@@ -61,3 +61,20 @@ export const asset = (file: string) => `${LATEST}/${file}`;
 
 /** A desktop's install steps, which start its download as they open. */
 export const guide = (os: Os) => `/download/${os}?start=1`;
+
+/** Ponzu for iPhone: a redirect (next.config.ts) to the TestFlight beta today, the App Store later. */
+export const IPHONE_PATH = "/iphone";
+
+/** Every installer a desktop's page links to directly, by its file name. */
+const INSTALLERS = OSES.flatMap((os) => [PLATFORMS[os].file, PLATFORMS[os].alt ?? []].flat());
+
+/**
+ * Whether a link is a way to get Ponzu, for the site's `download clicked` event: an install page
+ * (`/download…`), the iPhone redirect, or an installer itself.
+ */
+export function isDownloadHref(href: string): boolean {
+  if (href === "/download" || href.startsWith("/download/") || href.startsWith("/download?"))
+    return true;
+  if (href === IPHONE_PATH || href.startsWith(`${IPHONE_PATH}?`)) return true;
+  return INSTALLERS.some((file) => href === asset(file));
+}

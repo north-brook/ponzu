@@ -19,7 +19,7 @@ import { readRepository } from "./read-repo.ts";
 type IdeasAnswer = z.infer<typeof IdeasOutput>;
 
 /*
- * A repo's ideas (docs/cloud.md, "Ideas"): four prompts to start a design from, made for the
+ * A repo's ideas (docs/cloud.md, "Ideas"): four prompts to start a canvas from, made for the
  * repo by a small fast model on Ponzu's own key, kept on its row for everyone who can read it.
  * They are made lazily, the first time anyone asks, in the background: the asker hears
  * `generating` at once and asks again. One instance at a time makes them (the claim in the
@@ -27,10 +27,10 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
  * the screen shows no ideas.
  *
  * What reaches a person passes the exact checks (`checkIdeas`) and then the gate (gate.ts), a
- * stronger model that says of each idea whether it is safe and a design. An answer either fails
+ * stronger model that says of each idea whether it is safe and visible. An answer either fails
  * is asked for again once, with Ponzu's own sentence for what failed. Then:
  * - every idea passes: all four are kept;
- * - some fail only as designs: those that pass are kept, one to four;
+ * - some fail only as not visible: those that pass are kept, one to four;
  * - one is unsafe in the last answer the gate read: the repository is steering the ideas, so
  *   none of this generation's are kept (`ideas_withheld`);
  * - nothing passes: none are kept (`ideas_rejected`).
@@ -39,7 +39,7 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
  * or the gate down or out of shape, the deadline) is tried again an hour later.
  *
  * Every repo the App can read gets ideas, however little is in it: a product not built yet gets
- * where to begin designing it (`FRESH_SYSTEM_PROMPT`).
+ * where to begin building it (`FRESH_SYSTEM_PROMPT`).
  */
 
 /**
@@ -65,7 +65,7 @@ export const IDEAS_POLICY = {
   /**
    * Ideas are made again when the repo's default branch has moved since (GitHub's push webhook
    * says when), once `retryMs` has passed since the last try: what they were made from changed.
-   * A push to another branch (a design's own, say) changes nothing they were made from, and is
+   * A push to another branch (a canvas's own, say) changes nothing they were made from, and is
    * only known from the repo list's `pushed_at`; it counts once the ideas are this old, which
    * also catches a default-branch push whose webhook never came. An empty list is made again
    * after any push. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
@@ -311,7 +311,7 @@ export const newTally = (): Tally => ({
 /** An idea the gate failed: its number (1 to 4), what it failed, and the gate's reason. */
 export interface GateFailure {
   idea: number;
-  criteria: ("safe" | "design")[];
+  criteria: ("safe" | "visible")[];
   reason: string;
 }
 
@@ -338,7 +338,7 @@ export async function askForIdeas(
   }: { signal?: AbortSignal; tally: Tally; workspaceId?: string | null },
 ): Promise<Asked> {
   let codes: RejectCode[] = [];
-  /** The answer whose ideas failed only as designs, with the most that passed. */
+  /** The answer whose ideas failed only as not visible, with the most that passed. */
   let best: { ideas: string[]; failures: GateFailure[] } | null = null;
   /** What the gate found in the last answer it read. */
   let last: GateFailure[] | null = null;
@@ -373,7 +373,7 @@ export async function askForIdeas(
     const failures = gated.verdicts.flatMap((verdict, i): GateFailure[] => {
       const criteria = [
         ...(verdict.safe ? [] : (["safe"] as const)),
-        ...(verdict.design ? [] : (["design"] as const)),
+        ...(verdict.visible ? [] : (["visible"] as const)),
       ];
       return criteria.length ? [{ idea: i + 1, criteria, reason: verdict.reason }] : [];
     });
@@ -384,7 +384,7 @@ export async function askForIdeas(
       const passing = checked.ideas.filter((_, i) => !failures.some((f) => f.idea === i + 1));
       if (!best || passing.length >= best.ideas.length) best = { ideas: passing, failures };
     }
-    codes = [unsafe ? "unsafe" : "not_design"];
+    codes = [unsafe ? "unsafe" : "not_visible"];
   }
   if (last?.some((failure) => failure.criteria.includes("safe"))) {
     return { kind: "withheld", failures: last };

@@ -3,7 +3,7 @@ import { AppWindow } from "../cloud/window/app-window.tsx";
 
 /**
  * A shipped studio with no shell under it: the app's own bridge didn't load, so nothing can
- * sign in or reach a design. Said plainly, with nowhere to click but a fresh download.
+ * sign in or reach a canvas. Said plainly, with nowhere to click but a fresh download.
  */
 export function CantStart() {
   return (
@@ -31,7 +31,7 @@ export function CantStart() {
           >
             ponzu.design
           </a>
-          ; your designs are safe in the cloud.
+          ; your canvases are safe in the cloud.
         </p>
       </div>
     </AppWindow>

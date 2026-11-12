@@ -9,9 +9,10 @@ import { Icon } from "../ui/icon.tsx";
 import { JUMP_KEY, jumpNumber, jumpTarget, useJumpShortcuts } from "../ui/shortcut.ts";
 import { HintedLabel, ShortcutHint } from "../ui/shortcut-hint.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
+import { Arrival } from "./arrival.tsx";
 
 /**
- * The open design's pages, as tabs. The active one is raised; the one the agent is drawing on
+ * The open canvas's pages, as tabs. The active one is raised; the one the agent is drawing on
  * shimmers. `activeId` null is the pull request tab open, with no page showing. Arrow keys move
  * between tabs and Return or Space opens one. Too many to fit scroll under a fade, keeping the
  * active tab in view and clear of the fade: the strip gets narrower than it needs for that only
@@ -28,7 +29,7 @@ export function PageTabs({
   pages: PageTab[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  /** Null for someone who can't change the design: no "+". */
+  /** Null for someone who can't change the canvas: no "+". */
   onAdd: (() => void) | null;
 }) {
   const list = useRef<HTMLDivElement>(null);
@@ -111,11 +112,21 @@ export function PageTabs({
           })}
         </TabsList>
       </FadeScroll>
-      {onAdd ? (
-        <IconButton label="New page" onClick={onAdd} className="size-7 text-icon-soft">
-          <Icon icon={PlusSignIcon} step="inline" />
-        </IconButton>
-      ) : null}
+      {/* Offered once the API says the viewer may change the canvas, which can be a moment
+          after the pages: it fades in at the end of them, where nothing moves for it. */}
+      <Arrival
+        show={onAdd !== null}
+        room={false}
+        anchor="start"
+        name="new-page"
+        className="shrink-0"
+      >
+        {onAdd ? (
+          <IconButton label="New page" onClick={onAdd} className="size-7 text-icon-soft">
+            <Icon icon={PlusSignIcon} step="inline" />
+          </IconButton>
+        ) : null}
+      </Arrival>
     </Tabs>
   );
 }

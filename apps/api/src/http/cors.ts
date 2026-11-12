@@ -15,7 +15,7 @@ export const DESKTOP_ORIGIN = "ponzu-studio://app";
  * UI runs:
  *
  * - the desktop app's studio (`DESKTOP_ORIGIN`);
- * - `https://ponzu.design` and its subdomains, for a browser app later. Designs' own content
+ * - `https://ponzu.design` and its subdomains, for a browser app later. Canvases' own content
  *   is served from ponzu.cloud, which is deliberately not here;
  * - `http://localhost` and `http://127.0.0.1` on any port, for the studio's dev server.
  *

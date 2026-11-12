@@ -24,8 +24,8 @@ test("the client knows exactly the queries the API seals, column for column", ()
 });
 
 test("a row as Realtime sends it becomes one the apps read", () => {
-  const raw: RawRow<"design.head"> = {
-    id: "dsn_1",
+  const raw: RawRow<"canvas.head"> = {
+    id: "cnv_1",
     workspace_id: "ws_1",
     name: "Kettle",
     icon: null,
@@ -42,18 +42,20 @@ test("a row as Realtime sends it becomes one the apps read", () => {
     pr_mergeable: true,
     pr_auto_merge: false,
     last_activity_at: new Date("2026-11-10T12:00:00Z"),
-    agent_blocker: null,
+    agent_blocker: "claude_limited",
+    agent_blocked_until: "2026-11-10 16:00:00+00",
     sandbox_state: "awake",
   };
-  const head = DECODE["design.head"](raw);
+  const head = DECODE["canvas.head"](raw);
   expect(head.seq).toBe(10);
-  expect(head.agentBlocker).toBeNull();
+  expect(head.agentBlocker).toBe("claude_limited");
+  expect(head.agentBlockedUntil).toBe("2026-11-10T16:00:00.000Z");
   expect(head.lastActivityAt).toBe("2026-11-10T12:00:00.000Z");
   expect(head.agentArtboards).toEqual(["ab_1"]);
 
-  const thread = DECODE["design.thread"]({
+  const thread = DECODE["canvas.thread"]({
     id: "ti_1",
-    design_id: "dsn_1",
+    canvas_id: "cnv_1",
     seq: "3",
     kind: "assistant",
     user_id: null,
@@ -73,13 +75,13 @@ test("a row as Realtime sends it becomes one the apps read", () => {
 });
 
 test("lists are put in order on the client", () => {
-  const design = (id: string, lastActivityAt: string) =>
+  const canvas = (id: string, lastActivityAt: string) =>
     ({ id, lastActivityAt }) as Parameters<typeof byRecentActivity>[0][number];
   expect(
     byRecentActivity([
-      design("a", "2026-11-01T00:00:00.000Z"),
-      design("c", "2026-11-03T00:00:00.000Z"),
-      design("b", "2026-11-03T00:00:00.000Z"),
+      canvas("a", "2026-11-01T00:00:00.000Z"),
+      canvas("c", "2026-11-03T00:00:00.000Z"),
+      canvas("b", "2026-11-03T00:00:00.000Z"),
     ]).map((d) => d.id),
   ).toEqual(["b", "c", "a"]);
 

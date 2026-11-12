@@ -3,12 +3,13 @@ import type {
   AgentDefaultsBody,
   AnswerBody,
   Api,
-  CreateDesignBody,
+  CreateCanvasBody,
   OnboardingStep,
   PullRequestTab,
   SendMessageBody,
   UploadFile,
 } from "../api.ts";
+import { ApiError } from "../errors.ts";
 import { queryKeys } from "./keys.ts";
 
 type Me = Awaited<ReturnType<Api["me"]>>;
@@ -18,14 +19,14 @@ type PingPrefs = Parameters<Api["notifications"]["set"]>[0];
 type Environments = Awaited<ReturnType<Api["environments"]["list"]>>;
 type EnvironmentAnswer = Awaited<ReturnType<Api["environments"]["get"]>>;
 
-/** What the person does to a design's pull request through the API, as themselves. */
+/** What the person does to a canvas's pull request through the API, as themselves. */
 export type PullRequestAction =
   | { kind: "open" }
   | { kind: "ready" }
   | { kind: "auto_merge"; on: boolean }
   | { kind: "update_branch"; headSha: string }
   | { kind: "merge"; headSha: string; bypass?: boolean }
-  | { kind: "close" };
+  | { kind: "close"; number?: number };
 
 /**
  * The mutation options for what the apps change with a request, bound to one `Api` and the
@@ -36,15 +37,30 @@ export type PullRequestAction =
  *   const connect = useMutation(mutations.connectApiKey());
  */
 export function ponzuMutations(api: Api, queryClient: QueryClient) {
-  /** The person's Claude changed: the account, and `me`, which carries it. */
+  /**
+   * The person's Claude changed: the account, `me`, which carries it, and the defaults, since
+   * what an account is offered is what Claude Code reported for its credential (docs/cloud.md,
+   * "Models") and a new credential starts again from the hand-kept list.
+   */
   const claudeChanged = (answer: ClaudeAnswer | null) => {
     const account = answer?.account ?? null;
     queryClient.setQueryData(queryKeys.claudeAccount(), account);
     queryClient.setQueryData<Me>(queryKeys.me(), (me) =>
       me ? { ...me, claudeAccount: account } : me,
     );
-    return queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.me() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.claudeDefaults() }),
+    ]);
   };
+  /**
+   * A model or effort the account no longer offers was sent: what it offers changed since the
+   * defaults were read (a runner reported), so read them again and the picker shows what it does.
+   */
+  const unlessOffered = (error: unknown) =>
+    error instanceof ApiError && error.code === "model_not_offered"
+      ? queryClient.invalidateQueries({ queryKey: queryKeys.claudeDefaults() })
+      : undefined;
 
   return {
     /**
@@ -102,6 +118,7 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
       mutationOptions({
         mutationFn: (body: AgentDefaultsBody) => api.claude.setDefaults(body),
         onSuccess: (defaults) => queryClient.setQueryData(queryKeys.claudeDefaults(), defaults),
+        onError: unlessOffered,
       }),
     /** Admins only; 409 `owner_is_admin` or `last_admin` when it can't be done. */
     setRole: () =>
@@ -111,12 +128,18 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
         onSettled: (_answer, _error, vars) =>
           queryClient.invalidateQueries({ queryKey: queryKeys.workspace(vars.workspaceId) }),
       }),
-    /** Makes a design; the same `createKey` sent again answers the one it made. */
-    createDesign: () =>
-      mutationOptions({ mutationFn: (body: CreateDesignBody) => api.designs.create(body) }),
+    /**
+     * Makes a canvas; the same `createKey` sent again answers the one it made. 400
+     * `model_not_offered` reads the defaults again, for the picker to show what is offered now.
+     */
+    createCanvas: () =>
+      mutationOptions({
+        mutationFn: (body: CreateCanvasBody) => api.canvases.create(body),
+        onError: unlessOffered,
+      }),
 
     /*
-     * An open design. Its thread and what its agent waits on are live queries; these are what a
+     * An open canvas. Its thread and what its agent waits on are live queries; these are what a
      * person sends it, each answered by the API, with the live rows following.
      */
 
@@ -126,56 +149,72 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
      */
     answerQuestion: () =>
       mutationOptions({
-        mutationFn: (vars: { designId: string; questionId: string; body: AnswerBody }) =>
-          api.designs.answer(vars.designId, vars.questionId, vars.body),
+        mutationFn: (vars: { canvasId: string; questionId: string; body: AnswerBody }) =>
+          api.canvases.answer(vars.canvasId, vars.questionId, vars.body),
+      }),
+    /**
+     * Gives the secret the agent asked for. Never cached: the value is gone from memory once the
+     * mutation settles.
+     */
+    answerSecret: () =>
+      mutationOptions({
+        mutationFn: (vars: { canvasId: string; questionId: string; value: string }) =>
+          api.canvases.answerSecret(vars.canvasId, vars.questionId, vars.value),
+        gcTime: 0,
       }),
     /** Says something to the agent; answers the message's thread item. */
     sendMessage: () =>
       mutationOptions({
-        mutationFn: ({ designId, body }: { designId: string; body: SendMessageBody }) =>
-          api.designs.sendMessage(designId, body),
+        mutationFn: ({ canvasId, body }: { canvasId: string; body: SendMessageBody }) =>
+          api.canvases.sendMessage(canvasId, body),
       }),
     /** Stops the agent's turn; the runner's `stopped` notice follows in the thread. */
     stopAgent: () =>
-      mutationOptions({ mutationFn: (designId: string) => api.designs.stop(designId) }),
-    /** A person's image, straight to storage, as a file of the design. The bytes are not kept. */
+      mutationOptions({ mutationFn: (canvasId: string) => api.canvases.stop(canvasId) }),
+    /**
+     * Takes over a canvas whose owner left, onto the person's Claude. The live rows follow: the
+     * sidebar's names the new owner, the head loses its wait, and the thread says who took it.
+     */
+    takeOver: () =>
+      mutationOptions({ mutationFn: (canvasId: string) => api.canvases.takeOver(canvasId) }),
+    /** A person's image, straight to storage, as a file of the canvas. The bytes are not kept. */
     upload: () =>
       mutationOptions({
-        mutationFn: ({ designId, file }: { designId: string; file: UploadFile }) =>
-          api.designs.upload(designId, file),
+        mutationFn: ({ canvasId, file }: { canvasId: string; file: UploadFile }) =>
+          api.canvases.upload(canvasId, file),
         gcTime: 0,
       }),
     /**
-     * Does something to the design's pull request as the person. The answer is the whole tab as
+     * Does something to the canvas's pull request as the person. The answer is the whole tab as
      * GitHub has it afterwards, which goes into the cache; a refusal asks for it again, since
      * whatever turned it away (a push, a teammate's merge) has moved it.
      */
     pullRequestAction: () =>
       mutationOptions({
-        mutationFn: ({ designId, action }: { designId: string; action: PullRequestAction }) => {
-          const pr = api.designs.pullRequest;
+        mutationFn: ({ canvasId, action }: { canvasId: string; action: PullRequestAction }) => {
+          const pr = api.canvases.pullRequest;
           switch (action.kind) {
             case "open":
-              return pr.open(designId);
+              return pr.open(canvasId);
             case "ready":
-              return pr.ready(designId);
+              return pr.ready(canvasId);
             case "auto_merge":
-              return pr.autoMerge(designId, action.on);
+              return pr.autoMerge(canvasId, action.on);
             case "update_branch":
-              return pr.updateBranch(designId, { headSha: action.headSha });
+              return pr.updateBranch(canvasId, { headSha: action.headSha });
             case "merge":
-              return pr.merge(designId, {
+              return pr.merge(canvasId, {
                 headSha: action.headSha,
                 ...(action.bypass ? { bypass: true } : {}),
               });
             case "close":
-              return pr.close(designId);
+              return pr.close(canvasId, action.number);
           }
         },
-        onSuccess: (tab: PullRequestTab, { designId }) =>
-          queryClient.setQueryData(queryKeys.pullRequest(designId), tab),
-        onError: (_error, { designId }) =>
-          queryClient.invalidateQueries({ queryKey: queryKeys.pullRequest(designId) }),
+        onSuccess: (tab: PullRequestTab, { canvasId }) =>
+          queryClient.setQueryData(queryKeys.pullRequest(canvasId), tab),
+        onError: (_error, { canvasId }) =>
+          queryClient.invalidateQueries({ queryKey: queryKeys.pullRequest(canvasId) }),
       }),
 
     /* Settings. */

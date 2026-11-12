@@ -15,7 +15,7 @@ describe("the links a handoff may open", () => {
   test("only the apps' own, with plain paths", () => {
     for (const href of [
       "ponzu://github/setup?result=installed&workspace=ws_1",
-      "ponzu-dev://design/dsn_1?page=pg_1",
+      "ponzu-dev://canvas/cnv_1?page=pg_1",
       "ponzu-preview://github/setup?result=pending",
     ]) {
       expect(isAppLink(href)).toBe(true);
@@ -75,7 +75,7 @@ describe("the document", () => {
     expect(closes).not.toContain("data-retry>");
   });
 
-  test("every page carries the site's lockup, outlined, so it needs no font", async () => {
+  test("every page carries the site's lockup, outlined, so the corner needs no font", async () => {
     for (const page of [
       withLink("ponzu://github/setup?result=pending"),
       { documentTitle: "Hi", view: opened, link: null },
@@ -92,12 +92,17 @@ describe("the document", () => {
     const { html, csp } = await renderHandoff(withLink("ponzu://github/setup?result=pending"));
     expect(csp).toBe(await handoffPolicy());
     expect(csp).toMatch(
-      /^default-src 'none'; script-src 'sha256-[A-Za-z0-9+/]+=*'; style-src 'sha256-[A-Za-z0-9+/]+=*'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'$/,
+      /^default-src 'none'; script-src 'sha256-[A-Za-z0-9+/]+=*'; style-src 'sha256-[A-Za-z0-9+/]+=*'; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'$/,
     );
     const script = html.match(/<script>([\s\S]*?)<\/script>/)![1]!;
     const style = html.match(/<style>([\s\S]*?)<\/style>/)![1]!;
     expect(csp).toContain(await sha256(script));
     expect(csp).toContain(await sha256(style));
+    // The page asks for nothing: the one address in its style sheet is the display face,
+    // carried inside it.
+    expect(style.match(/url\(/g)).toHaveLength(1);
+    expect(style).toContain("src: url(data:font/woff2;base64,");
+    expect(html).not.toMatch(/<link|<img|src="http/);
     // What varies is never in the script or the style, so the hashes hold for every page.
     const other = await renderHandoff({ documentTitle: "X", view: opened, link: null });
     expect(other.html).toContain(`<script>${script}</script>`);

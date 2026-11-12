@@ -191,7 +191,7 @@ export async function getUser(db: Db, userId: string): Promise<User | null> {
   return user ?? null;
 }
 
-/** A guided setup step that leaves no other trace: "Where do you design?" and the iPhone step. */
+/** A guided setup step that leaves no other trace: "Where do you build?" and the iPhone step. */
 export type OnboardingStep = "where" | "iphone";
 
 /**
@@ -273,7 +273,7 @@ export async function suspendWorkspace(
 }
 
 /**
- * The App was removed from an account: its workspace keeps its row, designs and members but
+ * The App was removed from an account: its workspace keeps its row, canvases and members but
  * loses the installation, and its repos are marked removed, in one statement. The installation
  * is remembered as gone (`wasUninstalled`) even when no workspace holds it (never seen, or
  * already replaced by a reinstall). Answers the workspace's id, or null.
@@ -447,7 +447,7 @@ export async function getMemberWorkspace(
  * each of which may now need an admin (`ensureWorkspaceAdmin`).
  *
  * Their own account's workspace is never one of them: it stays theirs with the App removed
- * from it, as their designs in it do.
+ * from it, as their canvases in it do.
  */
 export async function deleteMembershipsExcept(
   db: Db,
@@ -483,8 +483,8 @@ export interface GithubRepo {
 
 /**
  * The repos an installation can see. A repo that was renamed, moved to another workspace or
- * seen again after it was removed keeps its row, and with it its base, secrets and designs.
- * Its designs move to the new workspace with it, in the same statement: their foreign key is
+ * seen again after it was removed keeps its row, and with it its base, secrets and canvases.
+ * Its canvases move to the new workspace with it, in the same statement: their foreign key is
  * the repo and its workspace together, and cascades.
  */
 export async function upsertRepos(
@@ -602,7 +602,7 @@ export async function getRepoInstallationId(db: Db, githubRepoId: number): Promi
   return row?.installationId ?? null;
 }
 
-/** Mark repos the App can no longer see. Their rows stay, because designs point at them. */
+/** Mark repos the App can no longer see. Their rows stay, because canvases point at them. */
 export async function markReposRemoved(db: Db, githubRepoIds: number[]): Promise<number> {
   if (githubRepoIds.length === 0) return 0;
   const removed = await run(

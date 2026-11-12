@@ -1,8 +1,8 @@
 /*
- * git's credential helper for github.com in a design's sandbox: `bun git-credential.js <socket>
+ * git's credential helper for github.com in a canvas's sandbox: `bun git-credential.js <socket>
  * <op>`, with git's request on stdin. It asks the runner, over the socket the runner listens on
  * (`serveCredentials` in server.ts), and the runner asks the API for a one-hour token for the
- * design's own repository with its own token and lease (docs/cloud.md, "Git"). So the agent's
+ * canvas's own repository with its own token and lease (docs/cloud.md, "Git"). So the agent's
  * git, which runs as the agent's user, holds no runner token, and the helper keeps nothing.
  */
 import type { ErrorBody, GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";

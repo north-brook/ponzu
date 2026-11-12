@@ -2,10 +2,10 @@ import { ShellError, text } from "./save/shell.ts";
 import type { Git } from "./save/work.ts";
 
 /*
- * Getting a design's commits to GitHub without relying on the agent (docs/cloud.md, "Git").
+ * Getting a canvas's commits to GitHub without relying on the agent (docs/cloud.md, "Git").
  * The agent commits and pushes as it goes, but a push can fail (GitHub refused a token it had
  * just minted: "Repository not found"), and an agent can forget, give up or be cut off. So the
- * runner pushes the design's branch itself at the end of every turn, before the sandbox sleeps,
+ * runner pushes the canvas's branch itself at the end of every turn, before the sandbox sleeps,
  * when it starts, and when a person presses Create PR while GitHub lacks the commits. It pushes
  * with plain git through the same credential helper as the agent, never forces, and tries a
  * failure that may pass again a few times, giving the token back between tries so the next one
@@ -17,8 +17,14 @@ import type { Git } from "./save/work.ts";
 export type PushFailureKind =
   /** GitHub's branch has commits this one does not: pushing would throw them away. */
   | "diverged"
-  /** GitHub refused it for good: a rule, a protected branch, a workflow file the App may not write. */
+  /** GitHub refused it for good: a rule, a protected branch, a hook. */
   | "refused"
+  /**
+   * GitHub refused it because a commit changes a file under `.github/workflows/`, which Ponzu's
+   * GitHub App has no permission to write. Nothing pushed again gets past that, so it is told
+   * apart from `refused`: the way on is to leave those files out, not to fix something and retry.
+   */
+  | "workflow_permission"
   /** It may pass on another try: the token, the network, GitHub itself. */
   | "transient";
 
@@ -40,7 +46,7 @@ export interface PushOutcome {
 export interface BranchPushOptions {
   /** The checkout's git, as the agent (`gitIn`). */
   git: Git;
-  /** The design's branch. */
+  /** The canvas's branch. */
   branch: string;
   defaultBranch: string;
   /**
@@ -51,7 +57,7 @@ export interface BranchPushOptions {
   /** A structured line for the journal. */
   event(name: string, fields: Record<string, unknown>): void;
   /**
-   * Whether the design's pull request was merged: a branch GitHub no longer has is then one that
+   * Whether the canvas's pull request was merged: a branch GitHub no longer has is then one that
    * was deleted after its merge, not one to push again.
    */
   merged?(): boolean;
@@ -80,7 +86,7 @@ export class BranchPush {
   }
 
   /**
-   * Commits on the design's branch that GitHub does not have, as the checkout last knew GitHub:
+   * Commits on the canvas's branch that GitHub does not have, as the checkout last knew GitHub:
    * beyond `origin/<branch>` when that is in its history, else beyond the default branch, and
    * none for a branch deleted on GitHub after it was pushed. No network.
    */
@@ -112,19 +118,20 @@ export class BranchPush {
   }
 
   /**
-   * Push the design's branch when it has commits GitHub lacks, trying a failure that may pass
+   * Push the canvas's branch when it has commits GitHub lacks, trying a failure that may pass
    * again (`waitsMs`) until `deadline`. Never forces: a branch GitHub moved on past is reported,
    * not overwritten. A branch GitHub already has at this commit is left alone, so one deleted on
    * GitHub after it was merged is not put back; new commits on it are pushed, as the agent's own
-   * push would.
+   * push would. Nothing is pushed while `held()` says so (a turn began while this looked): what
+   * would have gone is left to the next push.
    */
-  async push(opts: { deadline?: number } = {}): Promise<PushOutcome> {
+  async push(opts: { deadline?: number; held?: () => boolean } = {}): Promise<PushOutcome> {
     const { branch, defaultBranch } = this.opts;
     const local = `refs/heads/${branch}`;
     const nothing: PushOutcome = { unpushed: 0, pushed: 0, failure: null };
     if (!(await this.has(local))) return nothing;
     const base = `refs/remotes/origin/${defaultBranch}`;
-    // Nothing of the design's own yet: nothing to push, and nothing for a pull request.
+    // Nothing of the canvas's own yet: nothing to push, and nothing for a pull request.
     if ((await this.has(base)) && (await this.count(`${base}..${local}`)) === 0) return nothing;
     const remote = `refs/remotes/origin/${branch}`;
     if (await this.has(remote)) {
@@ -136,6 +143,7 @@ export class BranchPush {
     const before = await this.unpushed();
     let failure: PushFailure | null = null;
     for (let attempt = 0; ; attempt++) {
+      if (opts.held?.()) return { unpushed: before, pushed: 0, failure: null };
       const started = this.now();
       try {
         await this.opts.git(["push", "--porcelain", "-u", "origin", `${local}:${local}`]);
@@ -166,7 +174,7 @@ export class BranchPush {
 
   /**
    * The branch was on GitHub once and is not now, as far as the checkout knows: it has an
-   * upstream but no remote-tracking ref (a fetch pruned it), or the design's pull request was
+   * upstream but no remote-tracking ref (a fetch pruned it), or the canvas's pull request was
    * merged (`merged`), after which GitHub or Ponzu deletes the branch.
    */
   private async deletedOnGithub(): Promise<boolean> {
@@ -200,6 +208,14 @@ export class BranchPush {
   }
 }
 
+/**
+ * GitHub's own words when a push changes a workflow file without the permission to: "refusing to
+ * allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows`
+ * permission" (an OAuth App's ends "without `workflow` scope").
+ */
+export const WORKFLOW_REFUSAL =
+  /refusing to allow (?:a GitHub App|an OAuth App|an integration) to create or update workflow/i;
+
 /** What a failed `git push --porcelain` says about whether to try again. */
 export function classify(err: unknown): PushFailure {
   const out = err instanceof ShellError ? `${err.stdout}\n${err.stderr}` : String(err);
@@ -211,6 +227,7 @@ export function classify(err: unknown): PushFailure {
   if (/\[rejected\]|non-fast-forward|fetch first|stale info/i.test(out)) {
     return { kind: "diverged", said };
   }
+  if (WORKFLOW_REFUSAL.test(out)) return { kind: "workflow_permission", said };
   // Another push to the branch landed at the same moment (the agent's): GitHub's ref was locked.
   if (/failed to update ref|cannot lock ref|incorrect old value/i.test(out)) {
     return { kind: "transient", said };
@@ -231,14 +248,34 @@ export function pushFailureText(
   where: { branch: string; repo: string; unpushed: number },
 ): string {
   const commits = where.unpushed === 1 ? "1 commit" : `${where.unpushed} commits`;
-  const safe = `${commits} on ${where.branch} ${where.unpushed === 1 ? "is" : "are"} safe in this design's sandbox`;
+  const safe = `${commits} on ${where.branch} ${where.unpushed === 1 ? "is" : "are"} safe in this canvas's sandbox`;
   const said = failure.said.split("\n").at(-1) ?? "";
   switch (failure.kind) {
     case "diverged":
-      return `${where.branch} on GitHub has commits this design doesn't, so Ponzu didn't push over them. ${safe}. Ask Claude to bring in what's on GitHub and push again.`;
+      return `${where.branch} on GitHub has commits this canvas doesn't, so Ponzu didn't push over them. ${safe}. Ask Claude to bring in what's on GitHub and push again.`;
     case "refused":
       return `GitHub refused the push to ${where.branch} in ${where.repo} (${said}). ${safe}. Ask Claude to fix what GitHub objects to and push again.`;
+    case "workflow_permission":
+      return `GitHub won't let Ponzu push changes to files under .github/workflows/ to ${where.repo}: Ponzu's GitHub App isn't allowed to change workflows. ${safe}. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.`;
     case "transient":
       return `Ponzu couldn't push ${where.branch} to ${where.repo} (${said}). ${safe}: Ponzu tries again when Claude's next turn ends, and Create PR tries again too.`;
+  }
+}
+
+/**
+ * Why a push that the agent's own pull request tool asked for failed, for the agent: what it can
+ * do about it, then git's last line. A workflow file is not something it can push past.
+ */
+export function pushFailureForAgent(failure: PushFailure): string {
+  const said = failure.said.split("\n").at(-1) || "the push failed";
+  switch (failure.kind) {
+    case "workflow_permission":
+      return `GitHub refuses every push from Ponzu that changes a file under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows, so trying again won't get it through. Take those changes out of the branch's commits and push again, and tell the person which workflow change they'll need to make on GitHub themselves. (${said})`;
+    case "diverged":
+      return `The branch on GitHub has commits the checkout doesn't: fetch, bring them in, and push again. (${said})`;
+    case "refused":
+      return `GitHub refused the push. (${said})`;
+    case "transient":
+      return `The push didn't go through after a few tries. (${said})`;
   }
 }

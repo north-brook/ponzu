@@ -162,6 +162,41 @@
       "when": 1794435835920,
       "tag": "0022_turn_owed",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794438544518,
+      "tag": "0023_vercel_sandboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794449137081,
+      "tag": "0024_claude_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794472324144,
+      "tag": "0025_canvases",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794481297762,
+      "tag": "0026_agent_blockers",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794486398505,
+      "tag": "0027_secret_delivery",
+      "breakpoints": true
     }
   ]
 }

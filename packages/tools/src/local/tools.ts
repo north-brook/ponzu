@@ -7,7 +7,7 @@ import { guideTool, listenTools } from "../listen.ts";
 import { organizeTools } from "../organize.ts";
 import { getNode, orientTools, overview } from "../orient.ts";
 import { exportInput, exportTo, seeTools } from "../see.ts";
-import { type ArtboardNote, designOf } from "../util.ts";
+import { type ArtboardNote, canvasOf } from "../util.ts";
 import { createArtboard, writeTools } from "../write.ts";
 import { filesOf, fileTools, onFile } from "./files.ts";
 import { reminding, waitForActivity } from "./watch.ts";
@@ -19,7 +19,7 @@ import { reminding, waitForActivity } from "./watch.ts";
  */
 
 /** An artboard's file, which is on disk by the time this says so. */
-const written: ArtboardNote = async ({ design }, id) => {
+const written: ArtboardNote = async ({ canvas: design }, id) => {
   const files = filesOf(design);
   // On disk before this returns: an agent may write the file next, and a save still
   // waiting would put the empty artboard back over it.
@@ -37,8 +37,8 @@ const getBasicInfo = tool({
     "Start here. Summarizes the open .design: pages with their folders, artboards with sizes and positions, token names, open comments, artboards that overlap each other, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
   input: {},
   async handler(_args, ctx) {
-    const open = await designOf(ctx);
-    const { key, design } = open;
+    const open = await canvasOf(ctx);
+    const { key, canvas: design } = open;
     const files = filesOf(design);
     const folders = files.pageFolders();
     const lines = await overview(
@@ -62,13 +62,13 @@ const getBasicInfo = tool({
       lines.push(
         `Still being written, shown as last read whole (write files whole: a temp file, then rename it into place):\n  ${held.join("\n  ")}`,
       );
-    const rest = ctx.ws.designs().filter((f) => f.key !== key);
+    const rest = ctx.ws.canvases().filter((f) => f.key !== key);
     if (rest.length) {
       const sticks = ctx.session ? " Calls without file use this one." : "";
       lines.push(
         rest.length > 5
           ? `Other open files: ${rest.length} (list_files).${sticks}`
-          : `Other open files: ${rest.map((f) => f.design.doc.name).join(", ")}.${sticks}`,
+          : `Other open files: ${rest.map((f) => f.canvas.doc.name).join(", ")}.${sticks}`,
       );
     }
     return { text: lines.join("\n"), metrics: { held_files: held.length } };
@@ -84,7 +84,7 @@ const exportTool = tool({
     "Export an artboard or node as PNG, JPEG or PDF to a file path on disk (default: the design's exports/ folder). A design with light-dark() colors exports in the theme the person's canvas is in unless you pass colorScheme; the file name says which.",
   input: { ...exportInput, path: z.string().optional().describe("Absolute output path.") },
   async handler({ path, ...args }, ctx) {
-    const { text } = await exportTo(ctx, args, (name, { design }) => {
+    const { text } = await exportTo(ctx, args, (name, { canvas: design }) => {
       if (path) return path;
       const root = filesOf(design).storage.root;
       if (!root) throw new ToolError("This design isn't on disk; pass an absolute path.");
@@ -99,7 +99,11 @@ const LOCAL: Record<string, { description?: string; handler?: ToolDef<any>["hand
   get_basic_info: getBasicInfo,
   get_node: {
     handler: (args: any, ctx) =>
-      getNode(args, ctx, ({ design }, id) => ` · file ${filesOf(design).pathOf(id) ?? "?"}`),
+      getNode(
+        args,
+        ctx,
+        ({ canvas: design }, id) => ` · file ${filesOf(design).pathOf(id) ?? "?"}`,
+      ),
   },
   get_html: {
     description:

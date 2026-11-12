@@ -1,6 +1,6 @@
 /**
  * Cold open: what a board shows before its picture exists. Pictures are made
- * by the server's renderer and cached on disk, so the second open of a design
+ * by the server's renderer and cached on disk, so the second open of a canvas
  * is all pictures; the first can't wait for them (a page of 40 photo boards
  * takes 10+ s to draw). A board cheap enough to render live goes live at
  * once; the rest show a placeholder, the board's own background, until their

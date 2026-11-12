@@ -14,7 +14,7 @@ export interface Generated {
   detail: unknown;
 }
 
-export const PIPELINE = "exact checks, then the gate (Claude Sonnet 5.5) on safe and design";
+export const PIPELINE = "exact checks, then the gate (Claude Sonnet 5.5) on safe and visible";
 
 /** One generation, the way the API makes it (`askForIdeas`), with nothing stored. */
 export async function generate(

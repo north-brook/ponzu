@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
-  createDesign,
-  getDesign,
+  createCanvas,
+  getCanvas,
   getWorkspaceByInstallation,
   listUserWorkspaces,
   listWorkspaceRepos,
@@ -266,14 +266,14 @@ describe("who can take a workspace", () => {
 });
 
 describe("from an earlier sync", () => {
-  test("a reinstall comes back to the same workspace and its designs", async () => {
+  test("a reinstall comes back to the same workspace and its canvases", async () => {
     const bo = await t.signInAs({ login: "bo" });
     const first = installOnOrg("reinstallco", { members: [bo] });
     const [before] = await sync(bo);
     const repo = (await t.db.select().from(repos)).find(
       (candidate) => candidate.workspaceId === before!.id,
     )!;
-    const design = await createDesign(t.db, {
+    const canvas = await createCanvas(t.db, {
       workspaceId: before!.id,
       repoId: repo.id,
       ownerId: bo.userId,
@@ -294,7 +294,7 @@ describe("from an earlier sync", () => {
 
     expect(after!.id).toBe(before!.id);
     expect(after!.installationId).toBe(again.id);
-    expect((await getDesign(t.db, design.id))!.workspaceId).toBe(before!.id);
+    expect((await getCanvas(t.db, canvas.id))!.workspaceId).toBe(before!.id);
     expect(await reposOf(before!.id)).toEqual({ "reinstallco/app": true });
   });
 

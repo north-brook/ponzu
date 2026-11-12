@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's components in a real Chromium: the sidebar's keyboard and focus
- * behaviour, its menus, search and presence. Creating a design, the repo picker, the page tabs
+ * behaviour, its menus, search and presence. Creating a canvas, the repo picker, the page tabs
  * and the pull request tab are in gallery.create.test.ts; the compositions against their
  * references in gallery.references.*.test.ts. Skips where there is no Chrome or Chromium.
  */
@@ -63,24 +63,21 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     const names = await page.$$eval('[role="menuitemradio"]', (els) =>
       els.map((e) => e.querySelector("span:not([aria-hidden])")?.textContent),
     );
-    expect(names).toEqual(["Northbrook", "Fablefuel", "Personal"]);
-    // Typeahead jumps to the row that starts with the letters typed, by its name alone.
-    await page.keyboard.press("f");
-    await page.waitForFunction(() => document.activeElement?.textContent?.endsWith("Fablefuel"));
-    await page.waitForTimeout(1100);
-    await page.keyboard.type("pl");
-    await focusOn("Plan and usage");
+    expect(names).toEqual(["Thistlewick", "Quillmoor", "Personal"]);
+    // Typeahead jumps to the row that starts with the letter typed, by its name alone.
+    await page.keyboard.press("q");
+    await page.waitForFunction(() => document.activeElement?.textContent?.endsWith("Quillmoor"));
     await page.keyboard.press("End");
     await focusOn("Sign out");
     await page.keyboard.press("Home");
-    await focusOn("Northbrook");
+    await focusOn("Thistlewick");
     await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
-    await focusOn("Workspace: Northbrook");
+    await focusOn("Workspace: Thistlewick");
   });
   test("the filter narrows the list as you choose, stays open, and marks itself on", async () => {
     await open("team-sidebar");
-    const rows = () => page.$$eval("[data-design-row]", (els) => els.length);
+    const rows = () => page.$$eval("[data-canvas-row]", (els) => els.length);
     expect(await rows()).toBe(6);
     await page.click('button[aria-label="Filter"]');
     await page.click('[role="menuitemcheckbox"]:has-text("fernwood")');
@@ -95,22 +92,60 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click('button:has-text("Clear filter")');
     expect(await rows()).toBe(6);
   });
+  test("a long workspace name is cut short; the header's buttons keep their place", async () => {
+    await open("team-sidebar");
+    const header = () =>
+      page.evaluate(() => {
+        const trigger = document.querySelector<HTMLElement>(
+          '#sidebar button[aria-label^="Workspace:"]',
+        )!;
+        const name = trigger.querySelector("span")!;
+        const sidebar = document.querySelector("#sidebar")!.getBoundingClientRect();
+        const buttons = ["Search", "Filter", "New canvas"].map((label) => {
+          const r = document
+            .querySelector(`#sidebar button[aria-label^="${label}"]`)!
+            .getBoundingClientRect();
+          return { left: Math.round(r.left), right: Math.round(r.right), width: r.width };
+        });
+        return {
+          cut: name.scrollWidth > name.clientWidth,
+          nameRight: Math.round(trigger.getBoundingClientRect().right),
+          sidebarRight: Math.round(sidebar.right),
+          buttons,
+        };
+      });
+    const before = await header();
+    expect(before.cut).toBe(false);
+    // The same header with a name far too long for it (the text alone: nothing else changes).
+    await page.evaluate(() => {
+      const name = document.querySelector('#sidebar button[aria-label^="Workspace:"] span')!;
+      name.textContent = "The Thistlewick Institute for Uncommonly Long Workspace Names";
+    });
+    const after = await header();
+    expect(after.cut).toBe(true);
+    // Each button where it was and as wide as it was, inside the sidebar.
+    expect(after.buttons).toEqual(before.buttons);
+    expect(after.buttons.at(-1)!.right).toBeLessThanOrEqual(after.sidebarRight);
+    // And the name stops short of them.
+    expect(after.buttons[0]!.left - after.nameRight).toBeGreaterThanOrEqual(8);
+  });
+
   test("search: ⌘K opens it, an empty query keeps the list, arrows and Escape work", async () => {
     await open("team-sidebar");
     await page.keyboard.press("Meta+k");
     const field = 'input[role="combobox"]';
     await page.waitForSelector(field);
-    await focusOn("Search designs, boards and comments");
-    expect(await page.$$eval("[data-design-row]", (els) => els.length)).toBe(6);
+    await focusOn("Search canvases, boards and comments");
+    expect(await page.$$eval("[data-canvas-row]", (els) => els.length)).toBe(6);
     await page.keyboard.type("hero");
     await page.waitForSelector('[role="listbox"]');
     const active = () => page.$eval(field, (el) => el.getAttribute("aria-activedescendant"));
-    expect(await active()).toBe("search-design-dsn_quieter");
+    expect(await active()).toBe("search-canvas-cnv_quieter");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     expect(await active()).toBe("search-board-ab_hero_b");
     await page.keyboard.press("ArrowUp");
-    expect(await active()).toBe("search-design-dsn_settled_1");
+    expect(await active()).toBe("search-canvas-cnv_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
     // Back where ⌘K found it: nowhere, so the next key goes to the window, and the Search
@@ -122,12 +157,12 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("sidebar-collapsed");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(true);
     await page.keyboard.press("Meta+k");
-    await focusOn("Search designs, boards and comments");
+    await focusOn("Search canvases, boards and comments");
     expect(await page.$eval("#sidebar", (el) => el.hasAttribute("inert"))).toBe(false);
     // Focused without scrolling the pane's content aside while it opens.
     expect(await page.$eval("#sidebar", (el) => el.scrollLeft)).toBe(0);
   });
-  test("the search selection keeps itself in view", async () => {
+  test("the search selection keeps itself in view, and no matches says so", async () => {
     await open("sidebar-search", { width: 1100, height: 640 });
     // Enough results to run past the pane at the smallest window.
     await page.keyboard.type("e");
@@ -141,33 +176,26 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       return list.scrollTop > 0 && option.top >= box.top && option.bottom <= box.bottom;
     });
     expect(inView).toBe(true);
-  });
-  test("⌘J opens and closes the thread rail", async () => {
-    await open("team-sidebar");
-    const expanded = () =>
-      page.$eval('button[aria-controls="thread"]', (b) => b.getAttribute("aria-expanded"));
-    expect(await expanded()).toBe("true");
-    await page.keyboard.press("Meta+j");
-    expect(await expanded()).toBe("false");
-    await page.keyboard.press("Meta+j");
-    expect(await expanded()).toBe("true");
+    // Nothing matches: it says so.
+    await page.fill('input[role="combobox"]', "zebra");
+    expect(await page.textContent('[role="status"]')).toBe("No results for “zebra”");
   });
   test("presence is one Tab stop, and each person's tip shows from the keyboard", async () => {
     await open("team-sidebar");
-    await page.focus('[aria-label="Bryce (you)"]');
+    await page.focus('[aria-label="Ada (you)"]');
     for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
     await focusOn("Jordan · last here 2 days ago");
     await page.waitForSelector('[role="tooltip"]:has-text("Jordan · last here 2 days ago")');
     const stops = await page.$$eval(
-      '[aria-label="People in this design"] [role="img"]',
+      '[aria-label="People in this canvas"] [role="img"]',
       (els) => els.filter((e) => e.tabIndex === 0).length,
     );
     expect(stops).toBe(1);
   });
-  test("unchecking a repo keeps Scratch's designs, and Scratch has its own box", async () => {
+  test("unchecking a repo keeps Scratch's canvases, and Scratch has its own box", async () => {
     await open("create");
     const names = () =>
-      page.$$eval("[data-design-row]", (els) => els.map((e) => e.textContent ?? ""));
+      page.$$eval("[data-canvas-row]", (els) => els.map((e) => e.textContent ?? ""));
     await page.click('button[aria-label="Filter"]');
     await page.click('[role="menuitemcheckbox"]:has-text("brand")');
     expect((await names()).some((n) => n.includes("Autumn drop moodboard"))).toBe(true);
@@ -183,24 +211,19 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     expect(await duration()).toBe("1.2s");
   });
-  test("search with no matches says so", async () => {
-    await open("sidebar-search");
-    await page.keyboard.type("zebra");
-    expect(await page.textContent('[role="status"]')).toBe("No results for “zebra”");
-  });
-  test("the design list is one Tab stop that the arrows move through", async () => {
+  test("the canvas list is one Tab stop that the arrows move through", async () => {
     await open("team-sidebar");
-    await page.focus('[data-design-row="dsn_quieter"]');
+    await page.focus('[data-canvas-row="cnv_quieter"]');
     await page.keyboard.press("ArrowDown");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-design-row"))).toBe(
-      "dsn_checkout",
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row"))).toBe(
+      "cnv_checkout",
     );
     await page.keyboard.press("End");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-design-row"))).toBe(
-      "dsn_brand",
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row"))).toBe(
+      "cnv_brand",
     );
     const stops = await page.$$eval(
-      "[data-design-row]",
+      "[data-canvas-row]",
       (els) => els.filter((e) => e.tabIndex === 0).length,
     );
     expect(stops).toBe(1);

@@ -82,7 +82,7 @@ export interface Box {
 }
 
 /**
- * Runs in the page and installs `window.__ponzuMotion`. Designs run no
+ * Runs in the page and installs `window.__ponzuMotion`. Canvases run no
  * scripts, so every animation is CSS, SVG, video or a scene script's Web
  * Animations (act.ts), and can be paused and seeked exactly: frames are
  * repeatable and take no real time to reach.
@@ -105,6 +105,13 @@ function motionRuntime() {
    */
   const VIDEO_STALL_MS = 10_000;
   const stalledVideos = new WeakSet<HTMLVideoElement>();
+  /** Videos asked to a time at least once, so no longer showing their poster. */
+  const movedVideos = new WeakSet<HTMLVideoElement>();
+  /** Each video standing out of the page for now, and the drawing of its frame in its place (still()). */
+  const stills = new Map<HTMLVideoElement, HTMLCanvasElement>();
+  const stillOf = new WeakMap<Element, HTMLVideoElement>();
+  /** Whether the page's selectors read a still as they read its video; worked out once. */
+  let stillsMatch: boolean | null = null;
   let entries: Entry[] = [];
   let trigger = "load";
   let loadSettled = 0;
@@ -137,7 +144,13 @@ function motionRuntime() {
           (s) => !s.parentElement?.closest("svg"),
         ) as SVGSVGElement[])
       : [];
-  const videos = () => (root ? [...root.querySelectorAll("video")] : []);
+  /** The artboard's videos in page order, those stood in for by a still included. */
+  const videos = (): HTMLVideoElement[] =>
+    root
+      ? [...root.querySelectorAll("video, canvas[data-ponzu-still]")].map(
+          (el) => stillOf.get(el) ?? (el as HTMLVideoElement),
+        )
+      : [];
 
   /** SMIL clock values: "2s", "500ms", "1.5" (seconds), "1min". */
   const clock = (v: string | null): number | null => {
@@ -246,7 +259,7 @@ function motionRuntime() {
       for (const v of videos()) {
         const duration = Number.isFinite(v.duration) ? round(v.duration * 1000) : 0;
         out.push({
-          id: idOf(v),
+          id: idOf(stills.get(v) ?? v),
           kind: "video",
           name: /^(data|blob):/.test(v.currentSrc)
             ? "video"
@@ -347,6 +360,7 @@ function motionRuntime() {
       const target = v.loop ? ((s % dur) + dur) % dur : Math.min(Math.max(s, 0), dur);
       // Already there, with its frame decoded: Chrome draws nothing new for a seek to the same time.
       if (Math.abs(v.currentTime - target) < 0.001 && v.readyState >= 2) return resolve();
+      movedVideos.add(v);
       // A video that stalled still moves to each time asked for, without waiting on it again.
       if (stalledVideos.has(v)) {
         v.currentTime = target;
@@ -390,15 +404,186 @@ function motionRuntime() {
   }
 
   async function seek(t: number) {
+    live();
     setTime(t);
     await Promise.all(videos().map((v) => seekVideo(v, t)));
+    still();
     await frame();
     return round(now);
+  }
+
+  /**
+   * Stands a drawing of each video's frame in for the video, until live().
+   *
+   * A seek that has landed (seekVideo) still isn't one a capture is sure to
+   * show. A video's frames reach the screen through a compositor surface of
+   * their own, and nothing a page can observe says when that surface has
+   * the new one: `seeked`, requestVideoFrameCallback and two animation
+   * frames all said the seek was drawn, and Page.captureScreenshot still
+   * came back with the frame from before, about once in 250 captures on a
+   * busy machine. drawImage reads the decoded frame itself, and a canvas is
+   * painted with the rest of the page, so a capture shows what's drawn on it.
+   *
+   * The canvas takes the video's place in the page and every attribute but
+   * its size, and has the video's computed style set on it, so object-fit,
+   * borders, radius and transforms carry over and it lays out where the
+   * video did, at the size the video was laid out at. Its bitmap is the
+   * video's own frame size, so it's as sharp at any device scale as the
+   * video. A canvas a cross-origin video taints still shows the frame; only
+   * reading it back is refused, and nothing does.
+   *
+   * A video is left as it is, its seek waited on as before, where a still
+   * couldn't show what it shows: no frame yet, its poster up, its controls
+   * or captions, or nothing on screen. So is one with CSS animations or transitions of
+   * its own, which end when it leaves the page and start over when it's
+   * back; and every video, when a selector would match the canvas or the
+   * page around it differently than it does the video (stillsAllowed).
+   */
+  function still() {
+    live();
+    const vs = root ? root.querySelectorAll("video") : [];
+    if (!vs.length || !stillsAllowed()) return;
+    // All drawn and styled before any goes in, so none is read with another already out.
+    const ready: [HTMLVideoElement, HTMLCanvasElement][] = [];
+    for (const v of vs) {
+      const c = drawStill(v);
+      if (c) ready.push([v, c]);
+    }
+    for (const [v, c] of ready) {
+      v.replaceWith(c);
+      stills.set(v, c);
+      stillOf.set(c, v);
+    }
+  }
+
+  /** Puts each video stood in for back where its still is. Whether there were any. */
+  function live(): boolean {
+    if (!stills.size) return false;
+    for (const [v, c] of stills) c.replaceWith(v);
+    stills.clear();
+    return true;
+  }
+
+  /** What a still doesn't take from its video's computed style: its own size, pinned below, and motion. */
+  const NOT_STILL =
+    /^(animation|transition)|^(min-|max-)?(width|height|inline-size|block-size)$|^flex(-grow|-shrink|-basis)?$/;
+
+  function drawStill(v: HTMLVideoElement): HTMLCanvasElement | null {
+    if (v.readyState < 2 || !v.videoWidth || !v.videoHeight || v.controls) return null;
+    // Captions are drawn over the frame by the video, and drawImage leaves them out.
+    if ([...v.textTracks].some((t) => t.mode === "showing")) return null;
+    // Neither seeked nor played: the poster is what shows.
+    if (v.poster && !movedVideos.has(v) && !v.played.length) return null;
+    const cs = getComputedStyle(v);
+    if (cs.display === "none" || !v.getClientRects().length) return null;
+    if (cs.animationName.split(",").some((n) => n.trim() !== "none")) return null;
+    if (v.getAnimations().some((a) => a instanceof CSSTransition)) return null;
+    const c = document.createElement("canvas");
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    const g = c.getContext("2d");
+    if (!g) return null;
+    try {
+      g.drawImage(v, 0, 0, c.width, c.height);
+    } catch {
+      return null;
+    }
+    for (const a of [...v.attributes])
+      if (a.name !== "width" && a.name !== "height" && a.name !== "style")
+        c.setAttribute(a.name, a.value);
+    c.setAttribute("data-ponzu-still", "");
+    // Important, so no rule for canvas, or for the video's class, can move it.
+    for (let i = 0; i < cs.length; i++) {
+      const p = cs[i]!;
+      if (p.startsWith("--") || NOT_STILL.test(p)) continue;
+      c.style.setProperty(p, cs.getPropertyValue(p), "important");
+    }
+    const pinned: [string, string][] = [
+      ["width", cs.width],
+      ["height", cs.height],
+      ["min-width", "0"],
+      ["min-height", "0"],
+      ["max-width", "none"],
+      ["max-height", "none"],
+      ["flex", "0 0 auto"],
+      ["animation", "none"],
+      ["transition", "none"],
+    ];
+    for (const [p, value] of pinned) c.style.setProperty(p, value, "important");
+    return c;
+  }
+
+  /**
+   * Whether every selector on the page matches the same elements with stills
+   * in for the videos. A still is a canvas where a video was, with the
+   * video's attributes but its size: a selector that names video or canvas
+   * anywhere but at the start of what it styles (video + p, :has(video)),
+   * counts by type (:nth-of-type), reads width or height attributes, or
+   * looks at a video's children (:empty, source, track) could style something
+   * else differently once it's in. Sheets a sheet @imports are read too.
+   */
+  function stillsAllowed(): boolean {
+    if (stillsMatch !== null) return stillsMatch;
+    let ok = true;
+    const walk = (rules: CSSRuleList) => {
+      for (const rule of [...rules]) {
+        if (!ok) return;
+        if (rule instanceof CSSStyleRule && !stillSafe(rule.selectorText)) ok = false;
+        if (rule instanceof CSSImportRule) sheet(rule.styleSheet);
+        else if ("cssRules" in rule && (rule as CSSGroupingRule).cssRules)
+          walk((rule as CSSGroupingRule).cssRules);
+      }
+    };
+    const sheet = (s: CSSStyleSheet | null) => {
+      if (!s) return;
+      try {
+        walk(s.cssRules);
+      } catch {
+        // Cross-origin sheets (Google Fonts) can't be read, and style no videos.
+      }
+    };
+    for (const s of [...document.styleSheets]) sheet(s);
+    stillsMatch = ok;
+    return ok;
+  }
+
+  /** A selector, as the page serializes it, that reads a still as it reads its video. */
+  function stillSafe(sel: string): boolean {
+    if (/-of-type|\[\s*(width|height)\b/i.test(sel)) return false;
+    // A still has none of its video's children (<source>, <track>): it's :empty where the video
+    // may not be, and a selector that finds them finds nothing while it's in.
+    if (/:empty|(^|[\s>+~,(])(source|track)(?![\w-])/i.test(sel)) return false;
+    let depth = 0;
+    // A video or canvas type that starts the compound being styled, so far.
+    let subject = false;
+    for (let i = 0; i < sel.length; i++) {
+      const ch = sel[i]!;
+      if (ch === "[") {
+        const end = sel.indexOf("]", i);
+        if (end < 0) return false;
+        i = end;
+        continue;
+      }
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      else if (depth === 0 && ch === ",") subject = false;
+      // Serialized, a selector has a space only around a combinator: what follows isn't the video.
+      else if (depth === 0 && ch === " " && subject) return false;
+      if (
+        /^(video|canvas)(?![\w-])/i.test(sel.slice(i)) &&
+        (i === 0 || /[\s>+~,(]/.test(sel[i - 1]!))
+      ) {
+        if (depth > 0) return false;
+        subject = true;
+      }
+    }
+    return true;
   }
 
   /** Restarts everything from its first frame and holds it there. */
   function hold() {
     if (!root) return info();
+    live();
     // Animations that finished while fonts and images loaded are gone;
     // reinserting the artboard starts every one of them, @starting-style too.
     const parent = root.parentNode!;
@@ -453,6 +638,8 @@ function motionRuntime() {
 
   function interact(s: { hover?: string; focus?: string; press?: string }) {
     if (!root) return { error: "No artboard on the page." };
+    // States go on the videos themselves; the seek that follows draws them again.
+    live();
     const chain = (el: Element) => {
       const out: Element[] = [];
       for (let n: Element | null = el; n; n = n.parentElement) out.push(n);
@@ -709,6 +896,16 @@ function motionRuntime() {
 
   /** The area every step covers, inside the artboard, so a moving node stays in frame. */
   function box(arg: { selector: string; steps: FrameStep[] }): Box | null {
+    // Measured on the videos themselves, which move with the timeline; stills are put back after.
+    const stood = live();
+    try {
+      return boxOf(arg);
+    } finally {
+      if (stood) still();
+    }
+  }
+
+  function boxOf(arg: { selector: string; steps: FrameStep[] }): Box | null {
     const el = document.querySelector(arg.selector);
     if (!el || !root) return null;
     const rects: DOMRect[] = [];
@@ -852,7 +1049,20 @@ function motionRuntime() {
     };
   }
 
-  w.__ponzuMotion = { hold, interact, prepare, seek, info, plan, apply, box, settle, lint };
+  w.__ponzuMotion = {
+    hold,
+    interact,
+    prepare,
+    seek,
+    info,
+    plan,
+    apply,
+    box,
+    settle,
+    lint,
+    still,
+    live,
+  };
 }
 
 /** Installs `window.__ponzuMotion` in a page. */
@@ -922,7 +1132,15 @@ img{display:block;background:repeating-conic-gradient(#fff 0 25%,#f4f4f4 0 50%) 
 }
 
 /** Font, layout, motion and theme lint, as one expression. Needs MOTION_SCRIPT installed for the motion part. */
-export const FULL_LINT_SCRIPT = `[...${FONT_LINT_SCRIPT}, ...${LINT_SCRIPT}, ...(window.__ponzuMotion ? ${motionCall("lint")} : []), ...${THEME_LINT_SCRIPT}].slice(0, 30)`;
+export const FULL_LINT_SCRIPT = `(() => {
+  // Lint reads the videos themselves, not the stills a seek stood in for them, and puts the stills back for the capture.
+  const stood = window.__ponzuMotion ? ${motionCall("live")} : false;
+  try {
+    return [...${FONT_LINT_SCRIPT}, ...${LINT_SCRIPT}, ...(window.__ponzuMotion ? ${motionCall("lint")} : []), ...${THEME_LINT_SCRIPT}].slice(0, 30);
+  } finally {
+    if (stood) ${motionCall("still")};
+  }
+})()`;
 
 /** Installs the runtimes, holds the timeline and shows `at`. Evaluates to MotionInfo or { error }. */
 export function prepareScript(opts: { interact?: Interaction; at?: number }): string {

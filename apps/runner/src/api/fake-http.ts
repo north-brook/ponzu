@@ -11,7 +11,7 @@ import { RUNNER_HEADER } from "./protocol.ts";
  */
 export function fakeApiHandler(
   fake: FakeRunnerApi,
-  opts: { designId: string; token: string },
+  opts: { canvasId: string; token: string },
 ): (request: Request) => Promise<Response> {
   const pending = new Map<string, { purpose: string; name: string; contentType: string }>();
   /** A checkpoint's archives, by upload id, until the checkpoint names them. */
@@ -19,7 +19,7 @@ export function fakeApiHandler(
   /** What `/v1/runner/restore` hands out, by download id. */
   const downloads = new Map<string, Uint8Array>();
   let uploads = 0;
-  const design = `/v1/designs/${opts.designId}`;
+  const canvas = `/v1/canvases/${opts.canvasId}`;
   const archive = (purpose: string) => purpose === "session" || purpose === "workspace";
 
   return async (request) => {
@@ -63,6 +63,8 @@ export function fakeApiHandler(
         case "POST /v1/runner/questions/withdraw":
           await fake.withdraw(runner, body.ids);
           return Response.json({ withdrawn: body.ids.length });
+        case "POST /v1/runner/secret":
+          return Response.json(await fake.secret(runner, body.questionId));
         case "POST /v1/runner/uploads":
           // Asking for addresses is a call like the rest; the bytes are counted when they land.
           await fake.upload(runner, []);
@@ -101,6 +103,8 @@ export function fakeApiHandler(
         case "POST /v1/runner/usage":
           await fake.recordUsage(runner, body.turns);
           return Response.json({ recorded: body.turns.length });
+        case "POST /v1/runner/models":
+          return Response.json(await fake.reportModels(runner, body));
         case "POST /v1/runner/checkpoint": {
           const take = (id: string | null) => {
             if (id === null) return null;
@@ -140,14 +144,24 @@ export function fakeApiHandler(
           return new Response(null, { status: 204 });
         case "POST /v1/runner/pull-request-summary":
           return Response.json(await fake.pullRequestSummary(runner, body.summary));
-        case `POST ${design}/ops`:
+        case "GET /v1/runner/pull-request":
+          return Response.json(await fake.readPullRequest(runner, url.searchParams.get("turn")));
+        case "POST /v1/runner/pull-request/open":
+        case "POST /v1/runner/pull-request/ready":
+        case "POST /v1/runner/pull-request/auto-merge":
+        case "POST /v1/runner/pull-request/update-branch":
+        case "POST /v1/runner/pull-request/merge": {
+          const action = url.pathname.slice("/v1/runner/pull-request/".length).replace("-", "_");
+          return Response.json(await fake.actOnPullRequest(runner, action as never, body));
+        }
+        case `POST ${canvas}/ops`:
           return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
-        case `GET ${design}/ops`: {
+        case `GET ${canvas}/ops`: {
           const ops = await fake.fetchOps(runner, Number(url.searchParams.get("after")));
           if (ops === "gone") throw new ApiError(410, "gone", "Those ops are no longer kept.");
           return Response.json(ops);
         }
-        case `GET ${design}/doc`:
+        case `GET ${canvas}/doc`:
           return Response.json(await fake.fetchDoc(runner));
       }
       throw new ApiError(404, "not_found", "There is nothing at this address.");

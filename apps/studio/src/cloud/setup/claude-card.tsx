@@ -110,7 +110,7 @@ export function ClaudeCard(props: ClaudeCardProps) {
           <SetupRow
             mark={<ClaudeTile />}
             title="Claude Subscription"
-            line="Pro or Max. Designs run on your plan."
+            line="Pro or Max. Canvases run on your plan."
           >
             <RowButton tone="primary" leaves busy={state.starting} onClick={props.onSignIn}>
               Sign in

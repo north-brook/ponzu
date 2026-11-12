@@ -34,19 +34,19 @@ export interface TeamUsage {
 }
 
 /**
- * What one design used this period, or one of the two unnamed lines: designs since deleted, and
- * designs the viewer can't open (`id` and `name` null on both).
+ * What one canvas used this period, or one of the two unnamed lines: canvases since deleted, and
+ * canvases the viewer can't open (`id` and `name` null on both).
  */
-export interface DesignUsage {
-  kind: "design" | "deleted" | "hidden";
+export interface CanvasUsage {
+  kind: "canvas" | "deleted" | "hidden";
   id: string | null;
   name: string | null;
   usedCredits: number;
 }
 
-const UNNAMED: Record<Exclude<DesignUsage["kind"], "design">, string> = {
-  deleted: "Deleted designs",
-  hidden: "Designs you can't open",
+const UNNAMED: Record<Exclude<CanvasUsage["kind"], "canvas">, string> = {
+  deleted: "Deleted canvases",
+  hidden: "Canvases you can't open",
 };
 
 export interface PlanSectionProps {
@@ -60,8 +60,8 @@ export interface PlanSectionProps {
   onManageCard?: () => void;
   /** Left out while cards can't be added yet: the row says there is none, and offers nothing. */
   onAddCard?: () => void;
-  /** Use by design, most first, for whoever may see it (an admin); left out, not shown. */
-  byDesign?: DesignUsage[] | null;
+  /** Use by canvas, most first, for whoever may see it (an admin); left out, not shown. */
+  byCanvas?: CanvasUsage[] | null;
 }
 
 const BRAND_NAMES: Record<Brand, string> = {
@@ -83,7 +83,7 @@ export function PlanSection({
   onCapChange,
   onManageCard,
   onAddCard,
-  byDesign,
+  byCanvas,
 }: PlanSectionProps) {
   const billed = billedUsd(usage);
   return (
@@ -151,25 +151,25 @@ export function PlanSection({
           <People label="Your usage" people={[team.mine]} usage={usage} />
         )
       ) : null}
-      {byDesign?.length ? <Designs designs={byDesign} usage={usage} /> : null}
+      {byCanvas?.length ? <Canvases canvases={byCanvas} usage={usage} /> : null}
     </>
   );
 }
 
-/** Use by design, in gross dollars, as the API orders it: most first, the unnamed last. */
-function Designs({ designs, usage }: { designs: DesignUsage[]; usage: Usage }) {
+/** Use by canvas, in gross dollars, as the API orders it: most first, the unnamed last. */
+function Canvases({ canvases, usage }: { canvases: CanvasUsage[]; usage: Usage }) {
   return (
-    <section aria-label="By design" className="flex flex-col">
-      <SectionLabel className="pb-1">By design</SectionLabel>
-      {designs.map(({ kind, id, name, usedCredits }) => (
+    <section aria-label="By canvas" className="flex flex-col">
+      <SectionLabel className="pb-1">By canvas</SectionLabel>
+      {canvases.map(({ kind, id, name, usedCredits }) => (
         <div key={id ?? kind} className="flex h-[38px] items-center gap-2.5 border-rule border-t">
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-13",
-              kind === "design" ? "font-medium text-ink" : "text-muted",
+              kind === "canvas" ? "font-medium text-ink" : "text-muted",
             )}
           >
-            {kind === "design" ? name : UNNAMED[kind]}
+            {kind === "canvas" ? name : UNNAMED[kind]}
           </span>
           <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
             {money(usedCredits * usage.creditUsd)}
@@ -190,7 +190,7 @@ function UsageBar({ usage }: { usage: Usage }) {
   const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
   return (
     <div className="flex flex-col gap-2.5">
-      {/* biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the design's bar */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <meter> can't be drawn as the mockup's bar */}
       <div
         role="meter"
         aria-label="Usage this month"

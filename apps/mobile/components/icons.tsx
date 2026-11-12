@@ -13,6 +13,7 @@ import {
   Folder01Icon,
   FolderGitIcon,
   GitBranchIcon,
+  GithubIcon,
   InboxIcon,
   KeyboardIcon,
   LaptopIcon,
@@ -56,6 +57,7 @@ export const ICONS = {
   search: Search01Icon,
   branch: GitBranchIcon,
   folder: Folder01Icon,
+  github: GithubIcon,
   repo: FolderGitIcon,
   laptop: LaptopIcon,
   desktop: ComputerIcon,
@@ -93,6 +95,7 @@ export const Clock = icon(ICONS.clock, 14, 1.7);
 export const Search = icon(ICONS.search, 18, 1.8);
 export const Branch = icon(ICONS.branch, 13, 1.7);
 export const Folder = icon(ICONS.folder, 13, 1.7);
+export const Github = icon(ICONS.github, 20, 1.8);
 export const Repo = icon(ICONS.repo, 13, 1.7);
 export const Laptop = icon(ICONS.laptop, 13, 1.7);
 export const Desktop = icon(ICONS.desktop, 13, 1.7);

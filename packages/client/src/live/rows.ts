@@ -1,13 +1,13 @@
 import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
 import type { Api } from "../api.ts";
 
-/** The lists a design's columns take, as the API's own answer about a design names them. */
-type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
-type DesignStatus = DesignView["status"];
-type AgentState = DesignView["agentState"];
-type AgentBlocker = NonNullable<DesignView["agentBlocker"]>;
-type PrState = NonNullable<DesignView["prState"]>;
-type PrChecks = DesignView["prChecks"];
+/** The lists a canvas's columns take, as the API's own answer about a canvas names them. */
+type CanvasView = Awaited<ReturnType<Api["canvases"]["get"]>>;
+type CanvasStatus = CanvasView["status"];
+type AgentState = CanvasView["agentState"];
+type AgentBlocker = NonNullable<CanvasView["agentBlocker"]>;
+type PrState = NonNullable<CanvasView["prState"]>;
+type PrChecks = CanvasView["prChecks"];
 type QuestionStatus = "open" | "answered" | "cancelled";
 
 /*
@@ -44,7 +44,7 @@ export const LIVE_COLUMNS = {
     "claude_expires_at",
     "claude_limited_until",
   ],
-  "workspace.designs": [
+  "workspace.canvases": [
     "id",
     "workspace_id",
     "repo_id",
@@ -69,7 +69,7 @@ export const LIVE_COLUMNS = {
     "seen_seq",
     "seen_thread_seq",
   ],
-  "design.head": [
+  "canvas.head": [
     "id",
     "workspace_id",
     "name",
@@ -88,11 +88,12 @@ export const LIVE_COLUMNS = {
     "pr_auto_merge",
     "last_activity_at",
     "agent_blocker",
+    "agent_blocked_until",
     "sandbox_state",
   ],
-  "design.thread": [
+  "canvas.thread": [
     "id",
-    "design_id",
+    "canvas_id",
     "seq",
     "kind",
     "user_id",
@@ -101,9 +102,9 @@ export const LIVE_COLUMNS = {
     "created_at",
     "updated_at",
   ],
-  "design.questions": ["id", "design_id", "seq", "kind", "payload", "status", "created_at"],
-  "design.presence": [
-    "design_id",
+  "canvas.questions": ["id", "canvas_id", "seq", "kind", "payload", "status", "created_at"],
+  "canvas.presence": [
+    "canvas_id",
     "user_id",
     "page_id",
     "joined_at",
@@ -125,11 +126,11 @@ export type RawRow<Name extends LiveQueryName> = Record<
 /** What each query is asked with. */
 export interface LiveArgs {
   me: Record<string, never>;
-  "workspace.designs": { workspaceId: string };
-  "design.head": { designId: string };
-  "design.thread": { designId: string };
-  "design.questions": { designId: string };
-  "design.presence": { designId: string };
+  "workspace.canvases": { workspaceId: string };
+  "canvas.head": { canvasId: string };
+  "canvas.thread": { canvasId: string };
+  "canvas.questions": { canvasId: string };
+  "canvas.presence": { canvasId: string };
 }
 
 /** The person's own row: their settings and their Claude account's state. */
@@ -163,8 +164,8 @@ export interface MeRow {
   } | null;
 }
 
-/** A row of the sidebar: a design and how far the person has looked at it. */
-export interface DesignListRow {
+/** A row of the sidebar: a canvas and how far the person has looked at it. */
+export interface CanvasListRow {
   id: string;
   workspaceId: string;
   repoId: string | null;
@@ -173,7 +174,7 @@ export interface DesignListRow {
   name: string;
   icon: string | null;
   branch: string | null;
-  status: DesignStatus;
+  status: CanvasStatus;
   settledAt: string | null;
   seq: number;
   previewSeq: number | null;
@@ -190,13 +191,13 @@ export interface DesignListRow {
   seenThreadSeq: number | null;
 }
 
-/** A design's head: when `seq` moves, there are ops to fetch. */
-export interface DesignHeadRow {
+/** A canvas's head: when `seq` moves, there are ops to fetch. */
+export interface CanvasHeadRow {
   id: string;
   workspaceId: string;
   name: string;
   icon: string | null;
-  status: DesignStatus;
+  status: CanvasStatus;
   seq: number;
   previewSeq: number | null;
   agentState: AgentState;
@@ -211,22 +212,24 @@ export interface DesignHeadRow {
   lastActivityAt: string;
   /** Why the agent cannot run now: "connect Claude", "waiting for a machine". Null when it can. */
   agentBlocker: AgentBlocker | null;
-  /** Null while the design has no sandbox. */
+  /** Until when the blocker holds, when that is known (a Claude plan's limit resets then). */
+  agentBlockedUntil: string | null;
+  /** Null while the canvas has no sandbox. */
   sandboxState: string | null;
 }
 
 /** An open question the agent is waiting on a person for. */
 export type QuestionRow = {
   id: string;
-  designId: string;
+  canvasId: string;
   seq: number;
   status: QuestionStatus;
   at: string;
 } & QuestionBody;
 
-/** Someone with the design open. Gone after 75 seconds without `seenAt` moving (`presentNow`). */
+/** Someone with the canvas open. Gone after 75 seconds without `seenAt` moving (`presentNow`). */
 export interface PresenceRow {
-  designId: string;
+  canvasId: string;
   userId: string;
   pageId: string | null;
   joinedAt: string;
@@ -238,11 +241,11 @@ export interface PresenceRow {
 
 export interface LiveRows {
   me: MeRow;
-  "workspace.designs": DesignListRow;
-  "design.head": DesignHeadRow;
-  "design.thread": ThreadItem;
-  "design.questions": QuestionRow;
-  "design.presence": PresenceRow;
+  "workspace.canvases": CanvasListRow;
+  "canvas.head": CanvasHeadRow;
+  "canvas.thread": ThreadItem;
+  "canvas.questions": QuestionRow;
+  "canvas.presence": PresenceRow;
 }
 
 const text = (value: unknown) => value as string;
@@ -284,7 +287,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
             limitedUntil: maybeTime(r.claude_limited_until),
           },
   }),
-  "workspace.designs": (r) => ({
+  "workspace.canvases": (r) => ({
     id: text(r.id),
     workspaceId: text(r.workspace_id),
     repoId: maybeText(r.repo_id),
@@ -293,7 +296,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     name: text(r.name),
     icon: maybeText(r.icon),
     branch: maybeText(r.branch),
-    status: r.status as DesignStatus,
+    status: r.status as CanvasStatus,
     settledAt: maybeTime(r.settled_at),
     seq: number(r.seq),
     previewSeq: maybeNumber(r.preview_seq),
@@ -309,12 +312,12 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     seenSeq: maybeNumber(r.seen_seq),
     seenThreadSeq: maybeNumber(r.seen_thread_seq),
   }),
-  "design.head": (r) => ({
+  "canvas.head": (r) => ({
     id: text(r.id),
     workspaceId: text(r.workspace_id),
     name: text(r.name),
     icon: maybeText(r.icon),
-    status: r.status as DesignStatus,
+    status: r.status as CanvasStatus,
     seq: number(r.seq),
     previewSeq: maybeNumber(r.preview_seq),
     agentState: r.agent_state as AgentState,
@@ -328,9 +331,10 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     prAutoMerge: Boolean(r.pr_auto_merge),
     lastActivityAt: time(r.last_activity_at),
     agentBlocker: (r.agent_blocker ?? null) as AgentBlocker | null,
+    agentBlockedUntil: maybeTime(r.agent_blocked_until),
     sandboxState: maybeText(r.sandbox_state),
   }),
-  "design.thread": (r) =>
+  "canvas.thread": (r) =>
     ({
       id: text(r.id),
       seq: number(r.seq),
@@ -339,18 +343,18 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
       kind: r.kind,
       payload: r.payload,
     }) as ThreadItem,
-  "design.questions": (r) =>
+  "canvas.questions": (r) =>
     ({
       id: text(r.id),
-      designId: text(r.design_id),
+      canvasId: text(r.canvas_id),
       seq: number(r.seq),
       status: r.status as QuestionStatus,
       at: time(r.created_at),
       kind: r.kind,
       payload: r.payload,
     }) as QuestionRow,
-  "design.presence": (r) => ({
-    designId: text(r.design_id),
+  "canvas.presence": (r) => ({
+    canvasId: text(r.canvas_id),
     userId: text(r.user_id),
     pageId: maybeText(r.page_id),
     joinedAt: time(r.joined_at),

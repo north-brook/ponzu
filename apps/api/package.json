@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "bun --watch scripts/dev.ts",
     "dev:signin": "bun scripts/dev-signin.ts",
-    "build": "bun build src/index.ts --target=node --format=esm --outdir=dist --external hono --external 'hono/*' --sourcemap=linked",
+    "build": "bun scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -35,7 +35,10 @@
     "@ponzu/runner": "workspace:*",
     "@ponzu/sandbox": "workspace:*",
     "@posthog/ai": "^8.19.2",
+    "@vercel/firewall": "1.2.6",
     "ai": "^7.0.169",
+    "aws4fetch": "1.0.20",
+    "expo-server-sdk": "8.0.0",
     "hono": "^4.13.17",
     "jose": "^6.2.17",
     "posthog-node": "^5.68.2",

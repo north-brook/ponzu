@@ -12,7 +12,7 @@ import type {
   ThreadNotice,
   TurnRecord,
 } from "../model.ts";
-import { bryce, maya, NOW, sam } from "./fixtures.ts";
+import { ada, maya, NOW, sam } from "./fixtures.ts";
 import heroCommentDark from "./previews/comment-hero-dark.webp";
 import heroCommentLight from "./previews/comment-hero-light.webp";
 import heroPreview from "./previews/hero.png";
@@ -125,15 +125,15 @@ const heroTurn = turn(true);
 
 /** Board 1: you alone, the agent mid-run. */
 export const heroThread: ThreadItem[] = [
-  said(bryce, ASK),
+  said(ada, ASK),
   // A turn that was only its answer.
   ended(readTurn, { final: readReply.id }),
   readReply,
-  comment(bryce, "Too many words here. Calmer, and put a quieter take beside it."),
+  comment(ada, "Too many words here. Calmer, and put a quieter take beside it."),
   heroTurn,
   reply("Folding that into B: no paragraph, and the photo does the talking."),
 ];
-/** What board 1's agent is doing: its working state, from the design's head. */
+/** What board 1's agent is doing: its working state, from the canvas's head. */
 export const heroAgent: AgentActivity = {
   state: "working",
   status: "Writing Hero · B's headline",
@@ -144,15 +144,26 @@ export const askingThread: ThreadItem[] = heroThread;
 
 /** Board 6: the moment after send. */
 export const setUpThread: ThreadItem[] = [
-  said(bryce, "I'd like to iterate on the onboarding flow"),
+  said(ada, "I'd like to iterate on the onboarding flow"),
   turn(true),
   reply("Rebuilding onboarding from the app's code. Light and Water are in."),
 ];
 export const setUpAgent: AgentActivity = { state: "working", status: "Rebuilding Welcome · Picks" };
 
-/** Together on a design: three people steer one run. */
+/**
+ * A canvas whose owner left: what was said before, then Maya taking it over (the sweep plan, §8),
+ * and the run going on on her Claude.
+ */
+export const takenOverThread: ThreadItem[] = [
+  said(ada, "I'd like to iterate on the onboarding flow"),
+  reply("Rebuilding onboarding from the app's code. Light and Water are in."),
+  notice({ type: "owner_changed", by: maya }),
+  said(maya, "Carry on with the picks screen, please."),
+];
+
+/** Together on a canvas: three people steer one run. */
 export const teamThread: ThreadItem[] = [
-  said(bryce, ASK),
+  said(ada, ASK),
   comment(sam, "The photo should lead here, not the headline."),
   turn(true),
   reply("Making the photo lead in B for Sam, and keeping your headline in A so you can compare."),
@@ -169,7 +180,7 @@ const flowSaid = [
   "Copied the screen layout to steps 3–5. Now I'm filling in **3 · Experience**.",
   'Now "4 · About you": age, height and weight, with a ruler picker (`WeightRuler`) for weight.',
   'Now "5 · Schedule":\n\n- training days\n- session length\n- time of day',
-  "Next is [1 · Welcome](https://ponzu.design/designs/dsn_quieter?artboard=ab_welcome), a dark intro screen.",
+  "Next is [1 · Welcome](https://ponzu.design/canvases/cnv_quieter?artboard=ab_welcome), a dark intro screen.",
 ];
 const flowFinal =
   "The flow is ready: seven screens from **Welcome** to **Plan ready**, sharing one layout and the app's tokens. The weight picker is a ruler; *Plan ready* summarises the plan with week 1's sessions.";
@@ -198,7 +209,7 @@ function flowTurn(open: boolean) {
 /** A long turn running: its messages so far, no work lines, the working state at the foot. */
 export const runningTurn: ThreadItem[] = (() => {
   const { start, replies } = flowTurn(true);
-  return [said(bryce, FLOW_ASK), start, ...replies];
+  return [said(ada, FLOW_ASK), start, ...replies];
 })();
 
 /** The same turn, ended: only its answer stays. */
@@ -206,7 +217,7 @@ export const completedTurn: ThreadItem[] = (() => {
   const { start, replies, steps } = flowTurn(false);
   const final = reply(flowFinal);
   return [
-    said(bryce, FLOW_ASK),
+    said(ada, FLOW_ASK),
     ended(start, { final: final.id, ms: 252_000, boards: 7, files: 1, steps }),
     ...replies,
     final,
@@ -218,7 +229,7 @@ export const stoppedTurn: ThreadItem[] = (() => {
   const start = turn(false);
   const first = reply("Starting with the pricing cards: three tiers, Pro in the middle.");
   return [
-    said(bryce, "Three pricing cards, Pro in the middle."),
+    said(ada, "Three pricing cards, Pro in the middle."),
     ended(start, {
       ended: "stopped",
       ms: 48_000,
@@ -230,7 +241,7 @@ export const stoppedTurn: ThreadItem[] = (() => {
       ],
     }),
     first,
-    notice({ type: "stopped", by: bryce }),
+    notice({ type: "stopped", by: ada }),
   ];
 })();
 
@@ -239,7 +250,7 @@ export const failedTurn: ThreadItem[] = (() => {
   const start = turn(false);
   const first = reply("Running the app to see the current checkout.");
   return [
-    said(bryce, "Make the checkout one page."),
+    said(ada, "Make the checkout one page."),
     ended(start, {
       ended: "failed",
       ms: 95_000,
@@ -261,13 +272,45 @@ export const failedTurn: ThreadItem[] = (() => {
   ];
 })();
 
+/**
+ * A canvas of Maya's made on Fable, which her Claude no longer offers: the thread says so as
+ * the next turn starts, and that turn runs on Opus 5.5.
+ */
+export const modelChangedTurn: ThreadItem[] = (() => {
+  const start = turn(false);
+  const final = reply("Done: the cards are one size now, and Pro keeps its accent border.");
+  return [
+    said(maya, "Three pricing cards, Pro in the middle."),
+    reply("Drew the three cards on **Pricing**, Pro in the middle."),
+    said(ada, "Make the cards the same height."),
+    notice({
+      type: "model_changed",
+      from: "claude-fable-5-2",
+      to: "claude-opus-5-5",
+      fromName: "Fable 5.2",
+      toName: "Opus 5.5",
+      account: maya,
+    }),
+    ended(start, {
+      final: final.id,
+      ms: 41_000,
+      boards: 1,
+      steps: [
+        [null, "Read the canvas", 1],
+        [null, 'Restyled "Pricing"', 2],
+      ],
+    }),
+    final,
+  ];
+})();
+
 /** Ended on a question: its answer, then the question, which is how it ended. */
 export const askedTurn: ThreadItem[] = (() => {
   const start = turn(false);
   const first = reply("I drew two takes on the hero.");
   const final = reply("Both are on the canvas. One thing before I go on:");
   return [
-    said(bryce, ASK),
+    said(ada, ASK),
     ended(start, {
       final: final.id,
       ms: 70_000,
@@ -293,7 +336,7 @@ export const askedTurn: ThreadItem[] = (() => {
 /** What the founder's thread held: an older runner's stretches, all "Setting direction". */
 export const oldFormatThread: ThreadItem[] = (
   [
-    said(bryce, FLOW_ASK),
+    said(ada, FLOW_ASK),
     work("Setting direction", false, 10, ["ab_3"]),
     reply(flowSaid[0]!),
     work("Setting direction", false, 2, ["ab_3"]),
@@ -382,7 +425,7 @@ export const linkAsk: Ask = {
 /** A thread with something of every kind in it, for the states page. */
 export const everyKind: ThreadItem[] = [
   notice({ type: "started" }),
-  said(bryce, ASK),
+  said(ada, ASK),
   work("Reading the repo", false, 9),
   reply(
     "Here's what I found:\n\n- The hero lives in `src/components/hero.tsx`\n- Tokens are in `tokens.css`; there's no **measure** yet\n\nI'll start with B. See [the PR guide](https://ponzu.design/docs) for how I'll name the branch.",
@@ -406,18 +449,18 @@ export const everyKind: ThreadItem[] = [
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "open",
   }),
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "merged",
   }),
-  reply("Merged. The design settles on its own.", true),
+  reply("Merged. The canvas settles on its own.", true),
 ];
 
 /**
@@ -425,7 +468,7 @@ export const everyKind: ThreadItem[] = [
  * the same way every time, so a picture of it holds.
  */
 export function longThread(count = 1000): ThreadItem[] {
-  const people = [bryce, sam, maya];
+  const people = [ada, sam, maya];
   const items: ThreadItem[] = [];
   for (let i = 0; i < count; i++) {
     const turn = i % 4;
@@ -480,7 +523,7 @@ const check = (
   startedAt: seconds === null ? null : at(20),
   completedAt: seconds === null ? null : new Date(NOW - 20 * 60_000 + seconds * 1000).toISOString(),
   description,
-  url: `https://github.com/north-brook/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
+  url: `https://github.com/thistlewick/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
 });
 
 const theo = { login: "theob", name: "Theo Barrett", avatarUrl: null, agent: false };
@@ -497,7 +540,7 @@ const HERO_PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
 /** Board 3's pull request. */
 export const pullRequest: PullRequestDetail = {
   number: 412,
-  url: "https://github.com/north-brook/fernwood/pull/412",
+  url: "https://github.com/thistlewick/fernwood/pull/412",
   title: "Quieter hero, editorial take",
   body: "Drops the paragraph from the hero and lets the photo carry it. Headline set in Instrument Serif at 38px; tokens get a `--hero-measure`.",
   head: "pz/hero-refresh",
@@ -526,7 +569,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(14),
       path: "src/components/hero.tsx",
       line: 15,
-      url: "https://github.com/north-brook/fernwood/pull/412#discussion_r1",
+      url: "https://github.com/thistlewick/fernwood/pull/412#discussion_r1",
     },
     {
       id: "c2",
@@ -535,16 +578,16 @@ export const pullRequest: PullRequestDetail = {
       at: at(12),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-2",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-2",
     },
     {
       id: "c3",
-      author: { login: bryce.login, name: bryce.name, avatarUrl: bryce.avatarUrl, agent: false },
+      author: { login: ada.login, name: ada.name, avatarUrl: ada.avatarUrl, agent: false },
       body: "Ship it once e2e is green.",
       at: at(3),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-3",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-3",
     },
   ],
   reviews: [{ id: "r1", author: theo, state: "approved", at: at(12) }],
@@ -636,4 +679,26 @@ export const busyPullRequest: PullRequestDetail = {
     },
   ],
   filesTotal: 7,
+};
+
+/** Board 3's pull request, closed without merging two minutes ago. */
+export const closedPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  state: "closed",
+  endedAt: at(2),
+};
+
+/** The agent's kept words on the branch, which the next pull request opens with. */
+export const keptSummary = `Drops the paragraph from the hero and lets the photo carry it.
+
+- Headline set in Instrument Serif at 38px.
+- Tokens get a \`--hero-measure\`, so the measure holds on every page that uses the hero.
+- The CTA moves under the photo on small screens.`;
+
+/** Board 3's pull request with its end-to-end check still running, as auto-merge waits on it. */
+export const runningPullRequest: PullRequestDetail = {
+  ...pullRequest,
+  checks: pullRequest.checks.map((c) =>
+    c.name === "ci / e2e" ? { ...c, state: "running" as const, completedAt: null } : c,
+  ),
 };

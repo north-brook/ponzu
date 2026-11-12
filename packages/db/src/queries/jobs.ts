@@ -53,6 +53,60 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<Job | null> {
 }
 
 /**
+ * Whether a job of `kind` whose payload holds every field of `payload` is still to be run or
+ * being run: for a request that must not go ahead while such a job could still act.
+ */
+export async function hasWaitingJob(
+  db: Db,
+  { kind, payload }: { kind: string; payload: Record<string, string> },
+): Promise<boolean> {
+  const [row] = await run(
+    db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.kind, kind),
+          waiting,
+          sql`${jobs.payload} @> ${JSON.stringify(payload)}::jsonb`,
+        ),
+      )
+      .limit(1),
+  );
+  return row !== undefined;
+}
+
+/** The id of `recordOnce`'s row for `kind` and `key`: a query can look for it by its key. */
+export function onceId(kind: string, key: string): string {
+  return `once:${kind}:${key}`;
+}
+
+/**
+ * Record that `kind` was done for `key`, once ever: true for the first caller, false for
+ * every caller after, including one at the same moment. For work that must happen at most
+ * once per window, like a cron step's hour (`apps/api/src/cron/steps.ts`): the key names the
+ * window.
+ *
+ * The row is a job recorded already completed, so nothing claims or runs it. Its id is made
+ * from the kind and key, so the primary key is what refuses a second: a concurrent insert of
+ * the same id waits for the first to commit and then does nothing.
+ *
+ * "Once ever" holds for 30 days: the retention sweep (`retention.ts`) deletes finished jobs,
+ * these marks among them, 30 days after they were recorded. So the key must name a window
+ * that is over well before then; a mark meant to last longer needs a table of its own.
+ */
+export async function recordOnce(db: Db, { kind, key }: { kind: string; key: string }) {
+  const [row] = await run(
+    db
+      .insert(jobs)
+      .values({ id: onceId(kind, key), kind, key, completedAt: sql`now()` })
+      .onConflictDoNothing()
+      .returning({ id: jobs.id }),
+  );
+  return row !== undefined;
+}
+
+/**
  * Take up to `limit` jobs that are due and that nobody holds, or whose holder's lock has run
  * out, and count an attempt on each, oldest first. A job out of attempts is not taken;
  * `failAbandonedJobs` closes it.
@@ -139,6 +193,32 @@ export async function failJob(
       .returning({ id: jobs.id }),
   );
   return released.length > 0;
+}
+
+/**
+ * Make the waiting job of this kind and key due at `now`, when it was put off to later and
+ * nobody holds it: what it waited for has happened sooner. False when there is no such job.
+ */
+export async function bringJobForward(
+  db: Db,
+  { kind, key, now }: { kind: string; key: string; now: Date },
+): Promise<boolean> {
+  const moved = await run(
+    db
+      .update(jobs)
+      .set({ runAt: now })
+      .where(
+        and(
+          eq(jobs.kind, kind),
+          eq(jobs.key, key),
+          waiting,
+          isNull(jobs.lockedBy),
+          sql`${jobs.runAt} > ${now.toISOString()}::timestamptz`,
+        ),
+      )
+      .returning({ id: jobs.id }),
+  );
+  return moved.length > 0;
 }
 
 /**

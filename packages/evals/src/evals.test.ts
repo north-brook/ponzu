@@ -150,12 +150,12 @@ test("fenced text cannot close its fence", () => {
 });
 
 test("calibration scores labels, counts an unsettled miss against nothing, and is recorded by version", async () => {
-  const examples: Example<number, { safe: boolean; design?: boolean }>[] = [
+  const examples: Example<number, { safe: boolean; visible?: boolean }>[] = [
     { id: "a", note: "", input: 1, expect: { safe: true } },
-    { id: "b", note: "", input: 2, expect: { safe: false, design: true } },
+    { id: "b", note: "", input: 2, expect: { safe: false, visible: true } },
     { id: "c", note: "", unsettled: true, input: 3, expect: { safe: true } },
   ];
-  const run = async (n: number) => ({ safe: n === 1, design: true, reason: `n=${n}` });
+  const run = async (n: number) => ({ safe: n === 1, visible: true, reason: `n=${n}` });
   const result = await calibrate({
     judge: "gate",
     model: "m",
@@ -186,7 +186,7 @@ test("a judge that throws gets every label of its example wrong", async () => {
     model: "m",
     version: "v",
     commit: null,
-    examples: [{ id: "a", note: "", input: 0, expect: { safe: true, design: true } }],
+    examples: [{ id: "a", note: "", input: 0, expect: { safe: true, visible: true } }],
     run: async () => {
       throw new Error("no answer");
     },

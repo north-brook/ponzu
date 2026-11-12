@@ -14,7 +14,7 @@ import { GithubSection, type Installation } from "../settings/github.tsx";
 import type { Member, Role } from "../settings/members.ts";
 import { MembersSection } from "../settings/members.tsx";
 import { NotificationsSection, type PingDevice } from "../settings/notifications.tsx";
-import { type DesignUsage, PlanSection } from "../settings/plan.tsx";
+import { type CanvasUsage, PlanSection } from "../settings/plan.tsx";
 import {
   SettingsModal,
   SettingsPanel,
@@ -29,7 +29,7 @@ import { type SignInState, SignInStep } from "../setup/sign-in.tsx";
 import { type InstallNotice, WhereStep } from "../setup/where.tsx";
 import { AppWindow } from "../window/app-window.tsx";
 import * as f from "./fixtures.ts";
-import { DesignChromeHarness, Harness } from "./harness.tsx";
+import { CanvasChromeHarness, Harness } from "./harness.tsx";
 import * as s from "./setup-fixtures.ts";
 
 const ignore = () => {};
@@ -181,19 +181,19 @@ export interface SettingsData {
   byPerson: PersonUsage[] | null;
   /** Put down to nobody, beside `byPerson`. */
   unattributedCredits?: number;
-  byDesign?: DesignUsage[];
+  byCanvas?: CanvasUsage[];
 }
 
 export const TEAM_SETTINGS: SettingsData = {
-  workspace: f.northbrook,
+  workspace: f.thistlewick,
   workspaces: f.workspaces,
-  teams: [{ workspace: f.northbrook, role: "admin" }],
+  teams: [{ workspace: f.thistlewick, role: "admin" }],
   connection: s.claudeMax,
   entry: null,
   limits: s.limits,
   devices: [s.iphone],
   members: s.members,
-  meId: f.bryce.id,
+  meId: f.ada.id,
   syncFailed: false,
   installation: s.installation,
   repos: s.githubRepos,
@@ -227,7 +227,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
   const content: Record<SettingsSection, () => ReactNode> = {
     account: () => (
       <AccountSection
-        me={f.bryce}
+        me={f.ada}
         email={s.email}
         teams={data.teams}
         onSignOut={ignore}
@@ -300,7 +300,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
               }
             : null
         }
-        byDesign={data.byDesign}
+        byCanvas={data.byCanvas}
         canManage={!team || data.byPerson !== null}
         onCapChange={(capUsd) => set({ usage: { ...data.usage, capUsd } })}
         onManageCard={ignore}
@@ -376,7 +376,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
   };
 }
 
-/** Settings open over a design in its window, as the settings boards draw it. */
+/** Settings open over a canvas in its window, as the settings boards draw it. */
 export function SettingsWindow({
   section,
   data = TEAM_SETTINGS,
@@ -386,18 +386,18 @@ export function SettingsWindow({
 }) {
   const [open, setOpen] = useState(true);
   const { panel } = useSettings(data, section);
-  // The settings boards draw their window over the solo boards' design list.
-  const quieter = f.soloDesigns.find((d) => d.id === "dsn_quieter")!;
+  // The settings boards draw their window over the solo boards' canvas list.
+  const quieter = f.soloCanvases.find((d) => d.id === "cnv_quieter")!;
   return (
     <>
       <Harness
-        workspace={data.workspace.kind === "personal" ? f.personal : f.northbrook}
-        designs={f.soloDesigns}
+        workspace={data.workspace.kind === "personal" ? f.personal : f.thistlewick}
+        canvases={f.soloCanvases}
         openId={quieter.id}
         rail
         chrome={(sidebarOpen) => (
-          <DesignChromeHarness
-            design={quieter}
+          <CanvasChromeHarness
+            canvas={quieter}
             sidebarOpen={sidebarOpen}
             contributors={null}
             railOpen

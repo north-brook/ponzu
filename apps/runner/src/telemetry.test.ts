@@ -30,7 +30,7 @@ const trace = (person: string | null): AiEvent[] => [
   {
     event: "$ai_generation",
     distinctId: person,
-    properties: { $ai_trace_id: "res-1", $ai_model: "claude-haiku-5-5", design_id: "des_1" },
+    properties: { $ai_trace_id: "res-1", $ai_model: "claude-haiku-5-5", canvas_id: "cnv_1" },
     groups: { workspace: "ws_1" },
   },
   { event: "$ai_trace", distinctId: person, properties: { $ai_trace_id: "res-1" } },
@@ -57,7 +57,7 @@ test("a turn's events reach PostHog as one batch on flush, under the project's t
   ]);
   expect(body.batch[0]!.properties).toMatchObject({
     $ai_trace_id: "res-1",
-    design_id: "des_1",
+    canvas_id: "cnv_1",
     $groups: { workspace: "ws_1" },
   });
   await telemetry.shutdown();
@@ -67,13 +67,13 @@ test("every event says which runner, and so which image, its turn ran on", async
   const ph = sink();
   const telemetry = posthogTelemetry(
     { key: "phc_test", host: "https://ph.test", content: false },
-    { fetch: ph.fetch, client: "runner/0.1.0+ponzu-runner-2de5aff8d903" },
+    { fetch: ph.fetch, client: "runner/0.1.0+2de5aff8d903" },
   );
   telemetry.capture(trace("usr_ada"));
   await telemetry.flush();
   expect(ph.batches[0]!.body.batch.map((e) => e.properties.ponzu_runner)).toEqual([
-    "runner/0.1.0+ponzu-runner-2de5aff8d903",
-    "runner/0.1.0+ponzu-runner-2de5aff8d903",
+    "runner/0.1.0+2de5aff8d903",
+    "runner/0.1.0+2de5aff8d903",
   ]);
   await telemetry.shutdown();
 });
@@ -154,5 +154,100 @@ test("with content on, no secret the agent's environment holds leaves in what it
   // What only looks like a secret's name is a count, and stays.
   expect(generation.properties.$ai_input_tokens).toBe(1200);
   expect(generation.properties.$ai_input[0].content[0].content).toBe("it is [redacted]");
+  await telemetry.shutdown();
+});
+
+/* ------------------------------------------------------------------ */
+/* The agent's feedback                                                */
+/* ------------------------------------------------------------------ */
+
+const FEEDBACK = {
+  canvasId: "cnv_1",
+  workspaceId: "ws_1",
+  sentiment: "negative",
+  category: "confusing_tool",
+  summary: "write_html dropped a style without saying why.",
+  details: "It said nothing about the grid-template rule it left out.",
+  tool: "write_html",
+  client: "claude",
+} as const;
+
+test("feedback with content off sends its kinds and tool, never its words, about no one", async () => {
+  const ph = sink();
+  const telemetry = posthogTelemetry(
+    { key: "phc_test", host: "https://ph.test", content: false },
+    { fetch: ph.fetch, client: "runner/0.1.0+2de5aff8d903" },
+  );
+  telemetry.feedback(FEEDBACK);
+  expect(ph.batches).toEqual([]);
+  await telemetry.flush();
+
+  const [event] = ph.batches[0]!.body.batch as [Record<string, any>];
+  expect(event.event).toBe("agent feedback sent");
+  expect(event.distinct_id).toBe("ws_1");
+  expect(event.properties).toMatchObject({
+    canvas_id: "cnv_1",
+    workspace_id: "ws_1",
+    sentiment: "negative",
+    category: "confusing_tool",
+    tool: "write_html",
+    summary: null,
+    details: null,
+    $process_person_profile: false,
+    ponzu_runner: "runner/0.1.0+2de5aff8d903",
+    $groups: { workspace: "ws_1" },
+  });
+  // Which agent sent it is not one of its properties; its words are nowhere in what was sent.
+  expect(event.properties.client).toBeUndefined();
+  const sent = JSON.stringify(ph.batches);
+  expect(sent).not.toContain("dropped a style");
+  expect(sent).not.toContain("grid-template");
+  await telemetry.shutdown();
+});
+
+test("feedback with content on carries its words, scrubbed of every secret the runner knows", async () => {
+  const ph = sink();
+  const telemetry = posthogTelemetry(
+    { key: "phc_test", host: "https://ph.test", content: true },
+    { fetch: ph.fetch, secrets: ["stripe-live-0123456789", "pzr_0123456789abcdefghij"] },
+  );
+  telemetry.feedback({
+    ...FEEDBACK,
+    summary: "The build failed with STRIPE_KEY=stripe-live-0123456789 in its output.",
+    details:
+      "curl said 401 for Bearer pzr_0123456789abcdefghij, and printed sk-ant-oat01-abcdefghijklmnopqrstuvwxyz.",
+  });
+  await telemetry.flush();
+
+  const [event] = ph.batches[0]!.body.batch as [Record<string, any>];
+  expect(event.properties.summary).toBe(
+    "The build failed with STRIPE_KEY=[redacted] in its output.",
+  );
+  expect(event.properties.details).toBe("curl said 401 for [redacted], and printed [redacted].");
+  const sent = JSON.stringify(ph.batches);
+  expect(sent).not.toContain("stripe-live-0123456789");
+  expect(sent).not.toContain("pzr_0123456789abcdefghij");
+  expect(sent).not.toContain("sk-ant-oat01");
+  await telemetry.shutdown();
+});
+
+test("feedback names a tool only by a tool's name, and goes under the canvas without a workspace", async () => {
+  const ph = sink();
+  const telemetry = posthogTelemetry(
+    { key: "phc_test", host: "https://ph.test", content: false },
+    { fetch: ph.fetch },
+  );
+  telemetry.feedback({ ...FEEDBACK, workspaceId: null, tool: "the one at /Users/ada/notes.txt" });
+  telemetry.feedback({ ...FEEDBACK, workspaceId: null, tool: undefined, details: undefined });
+  await telemetry.flush();
+
+  const events = ph.batches[0]!.body.batch as Record<string, any>[];
+  expect(events.map((e) => [e.distinct_id, e.properties.tool])).toEqual([
+    ["cnv_1", null],
+    ["cnv_1", null],
+  ]);
+  expect(events[0]!.properties.workspace_id).toBeUndefined();
+  expect(events[0]!.properties.$groups).toBeUndefined();
+  expect(JSON.stringify(ph.batches)).not.toContain("/Users/ada");
   await telemetry.shutdown();
 });

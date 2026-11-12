@@ -9,7 +9,7 @@
  *                          (--judge <name> for one; --only <ids> tries examples without recording)
  *   rejudge agent          judge the recorded agent turns again, with no new turn
  *   ideas                  the repo ideas suite (apps/api/evals/ideas)
- *   agent                  the design agent's thread messages (apps/runner/evals/agent)
+ *   agent                  the agent's thread messages (apps/runner/evals/agent)
  *   all                    judges, then every suite
  *
  * The Anthropic key is PONZU_ANTHROPIC_API_KEY, or ANTHROPIC_API_KEY. Spend stops before the call

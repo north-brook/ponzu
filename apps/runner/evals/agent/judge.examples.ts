@@ -21,7 +21,7 @@ const GREEN =
   'Comment from Ada on the canvas: "Make the accent a deep green instead of orange, everywhere."';
 const FLOW_FACTS =
   "Made 7 iPhone screen boards on the Onboarding page and a board named 'Note: How the flow works'. Committed a spec and screenshots under docs/onboarding/ and pushed pz/fitness-onboarding. describe_pull_request was called. No pull request is open. Nothing failed.";
-const LINK = "https://ponzu.design/designs/des_q4f8k2trial";
+const LINK = "https://ponzu.design/canvases/cnv_q4f8k2trial";
 
 export const THREAD_JUDGE_EXAMPLES: ThreadExample[] = [
   {
@@ -337,11 +337,38 @@ One decision is yours: whether people make an account before their first workout
       facts:
         "Changed the accent on seven screens. Committed locally. git push failed: 'Repository not found'. No pull request is open.",
       midTurn: [],
-      closing:
-        "The accent is deep green on every screen now. Committed and on GitHub; press Create PR when you're ready.",
+      closing: "The accent is deep green on every screen now. It's committed and on GitHub.",
       prDescription: null,
     },
     // Its closing has the right shape; what it claims is false, which is `failures`' to say.
+    expect: { failures: "fail" },
+  },
+  {
+    id: "draft-called-ready",
+    note: "Made up: the agent opened a draft and the close calls it ready for review.",
+    input: {
+      request: GREEN,
+      facts:
+        "Changed the accent on seven screens. Committed and pushed. open_pull_request opened pull request #4 as a draft; it is still a draft. Nothing failed.",
+      midTurn: [],
+      closing:
+        "The accent is deep green on every screen now. It's committed and pushed, in pull request #4, ready for review.",
+      prDescription: null,
+    },
+    expect: { failures: "fail" },
+  },
+  {
+    id: "sent-to-create-pr",
+    note: "Made up: the work is done and nothing is open, and the close sends the person to Create PR instead of opening it.",
+    input: {
+      request: GREEN,
+      facts:
+        "Changed the accent on seven screens. Committed and pushed. No pull request is open; open_pull_request was not called. Nothing failed.",
+      midTurn: [],
+      closing:
+        "The accent is deep green on every screen now. It's committed and pushed; press Create PR when you're ready.",
+      prDescription: null,
+    },
     expect: { failures: "fail" },
   },
   {
@@ -350,7 +377,7 @@ One decision is yours: whether people make an account before their first workout
     input: {
       request: ONBOARDING,
       facts:
-        "Made 7 iPhone screens on the Onboarding page. Committed and pushed pz/fitness-onboarding. describe_pull_request answered that no pull request is open and the description was saved for the one the person opens. Nothing failed.",
+        "Made 7 iPhone screens on the Onboarding page. Committed and pushed pz/fitness-onboarding. describe_pull_request answered that no pull request is open and the description was saved for the one that opens next. Nothing failed.",
       midTurn: [],
       closing:
         "The seven onboarding screens are on the Onboarding page. I've opened a pull request with the spec and screenshots, so it's ready for review.",
@@ -365,7 +392,7 @@ One decision is yours: whether people make an account before their first workout
       request:
         "Message from Ada: Design a pricing page hero for Stillwater, a meditation app: three options side by side to choose from, and a note board that compares them and says which you'd pick.",
       facts:
-        "Made boards 'Pricing hero' and 'Note: Which plan to pick' on page Home. Scratch design: no repository. Nothing failed.",
+        "Made boards 'Pricing hero' and 'Note: Which plan to pick' on page Home. Scratch canvas: no repository. Nothing failed.",
       midTurn: [],
       closing: `I've built the pricing hero on the canvas, with the note board beside it.
 
@@ -391,7 +418,7 @@ I shortened the Yearly price suffix to "/ mo · $80 a year" after it wrapped ont
       request:
         "Message from Ada: Make a mobile version of the option you recommended, on its own page called Mobile.",
       facts:
-        "Made page 'Mobile' and board 'Yearly plan – mobile' on it. Scratch design. Nothing failed.",
+        "Made page 'Mobile' and board 'Yearly plan – mobile' on it. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `I've made the mobile version of Yearly, the plan I recommended, on a new page called Mobile. The artboard is [Yearly plan – mobile](${LINK}?artboard=ab_bd49f), 390px wide. The screenshot shows no layout problems.
 
@@ -408,7 +435,7 @@ The links in that line are text only, and they don't go anywhere yet. If you'd r
     input: {
       request:
         "Message from Ada: Where can I see why you picked that one, and which board should I look at first on my phone?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `The reasoning is on [Note: Which plan to pick](${LINK}?artboard=ab_6qptl), the board beside the desktop hero on the Home page. It has a comparison table and my reasons for choosing Yearly:
 
@@ -427,7 +454,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: sends the person to a board by name with no link.",
     input: {
       request: "Message from Ada: Where can I see why you picked that plan?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing:
         "The reasoning is on Note: Which plan to pick, beside the hero on the Home page: I'd lead with Yearly because a year gives the habit time to take hold.",
@@ -440,7 +467,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: the link's text is 'here', not the board's name.",
     input: {
       request: "Message from Ada: Which board should I look at first on my phone?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `Start [here](${LINK}?artboard=ab_bd49f): it's the phone version of Yearly, at its real 390px width.`,
       prDescription: null,
@@ -452,7 +479,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: a recap of six boards, every one linked, after a plain request.",
     input: {
       request: ONBOARDING,
-      facts: "Made six iPhone screens on the Onboarding page. Scratch design. Nothing failed.",
+      facts: "Made six iPhone screens on the Onboarding page. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `Here's the flow:
 - [1 Welcome](${LINK}?artboard=ab_a1): the headline and Get started.
@@ -474,7 +501,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
         "Made a board named 'Note: Button color' explaining that the button uses var(--accent). No repository change. Nothing failed.",
       midTurn: [],
       closing:
-        "I've put the answer on [Note: Button color](https://ponzu.design/designs/des_x?artboard=ab_c1).",
+        "I've put the answer on [Note: Button color](https://ponzu.design/canvases/cnv_x?artboard=ab_c1).",
       prDescription: null,
     },
     expect: { canvas_detail: "fail" },
@@ -485,10 +512,10 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     input: {
       request: GREEN,
       facts:
-        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. Nothing failed.",
+        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. open_pull_request opened pull request #4, ready for review. Nothing failed.",
       midTurn: [],
       closing:
-        "The accent is deep green on every screen, with a lighter green for small text on the dark screens. It's committed and pushed; press Create PR when you're ready.",
+        "The accent is deep green on every screen, with a lighter green for small text on the dark screens. It's committed and pushed, in pull request #4, ready for review.",
       prDescription: `## Deep green accent
 
 The onboarding's accent changes from signal orange (#FF5A1F) to deep green (#1C6B45), everywhere it was used: the main button, the selected days on 4 Schedule and the plan label on 7 Your plan.
@@ -506,10 +533,10 @@ Deep green is too dark for small text on the two dark screens (6 Building plan, 
     input: {
       request: GREEN,
       facts:
-        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. Nothing failed.",
+        "Changed the accent to deep green on seven screens and in docs/onboarding/README.md. Committed and pushed. open_pull_request opened pull request #4, ready for review. Nothing failed.",
       midTurn: [],
       closing:
-        "The accent is deep green on every screen. It's committed and pushed; press Create PR when you're ready.",
+        "The accent is deep green on every screen. It's committed and pushed, in pull request #4, ready for review.",
       prDescription: "Updated colors.",
     },
     expect: { pr_description: "fail" },

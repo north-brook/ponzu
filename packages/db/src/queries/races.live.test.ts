@@ -3,16 +3,16 @@
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
+import { actorFor, rename, seedCanvas, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
-import { authStates, designOps, events, jobs, memberships } from "../schema/index.ts";
+import { authStates, canvasOps, events, jobs, memberships } from "../schema/index.ts";
 import { upsertMembership } from "./accounts.ts";
+import { getCanvas, getCanvasHead } from "./canvases.ts";
 import { openClaudeSignIn } from "./claude-sign-ins.ts";
-import { getDesign, getDesignHead } from "./designs.ts";
 import { appendEvent, claimEvents } from "./events.ts";
 import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
-import { claimJobs, enqueueJob } from "./jobs.ts";
+import { claimJobs, enqueueJob, recordOnce } from "./jobs.ts";
 import { ensureWorkspaceAdmin, setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
@@ -28,7 +28,7 @@ describeLive("races on a real Postgres", ({ db, close }) => {
   afterAll(close);
 
   test("of committers racing on one seq exactly one wins, and the log has no gaps", async () => {
-    const { design, user } = await seedDesign(db);
+    const { canvas, user } = await seedCanvas(db);
     const actor = actorFor(user);
     const rounds = 10;
 
@@ -36,7 +36,7 @@ describeLive("races on a real Postgres", ({ db, close }) => {
       const results = await Promise.all(
         times(8, (racer) =>
           commitOps(db, {
-            designId: design.id,
+            canvasId: canvas.id,
             expectedSeq: round * 2,
             actor,
             ops: [rename(`${round}-${racer}-1`, "A"), rename(`${round}-${racer}-2`, "B")],
@@ -47,17 +47,17 @@ describeLive("races on a real Postgres", ({ db, close }) => {
       expect(results.filter((result) => result.kind === "conflict")).toHaveLength(7);
     }
 
-    expect((await getDesign(db, design.id))!.seq).toBe(rounds * 2);
-    const log = await readOps(db, { designId: design.id, after: 0 });
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(rounds * 2);
+    const log = await readOps(db, { canvasId: canvas.id, after: 0 });
     if (log?.kind !== "ok") throw new Error("expected ops");
     expect(log.ops.map((op) => op.seq)).toEqual(times(rounds * 2, (i) => i + 1));
   }, 60_000);
 
   test("one op posted many times at once is stored once and never fails", async () => {
-    const { design, user } = await seedDesign(db);
+    const { canvas, user } = await seedCanvas(db);
     const post = () =>
       commitOps(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         expectedSeq: 0,
         actor: actorFor(user),
         ops: [rename("same", "Same")],
@@ -65,20 +65,20 @@ describeLive("races on a real Postgres", ({ db, close }) => {
 
     const results = await Promise.all(times(6, post));
 
-    // Whoever lost the design's row waited, saw the seq had moved and got a conflict; whoever
+    // Whoever lost the canvas's row waited, saw the seq had moved and got a conflict; whoever
     // started after the winner finished was handed the stored op. Nobody appended it again.
     const committed = results.filter((result) => result.kind === "committed");
     expect(committed.filter((result) => result.replayed.length === 0)).toHaveLength(1);
     for (const result of results) expect(["committed", "conflict"]).toContain(result.kind);
-    expect(await db.$count(designOps, eq(designOps.designId, design.id))).toBe(1);
+    expect(await db.$count(canvasOps, eq(canvasOps.canvasId, canvas.id))).toBe(1);
     expect(await post()).toMatchObject({ kind: "committed", seq: 1, replayed: ["same"] });
   }, 60_000);
 
   test("many undos of one op at once: one lands and the op is taken back once", async () => {
-    const { design, user } = await seedDesign(db);
+    const { canvas, user } = await seedCanvas(db);
     const actor = actorFor(user);
     await commitOps(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       expectedSeq: 0,
       actor,
       ops: [rename("a", "One")],
@@ -87,7 +87,7 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const results = await Promise.all(
       times(6, (racer) =>
         commitReversal(db, {
-          designId: design.id,
+          canvasId: canvas.id,
           expectedSeq: 1,
           actor,
           kind: "undo",
@@ -99,7 +99,7 @@ describeLive("races on a real Postgres", ({ db, close }) => {
 
     expect(results.filter((result) => result.kind === "committed")).toHaveLength(1);
     expect(results.filter((result) => result.kind === "conflict")).toHaveLength(5);
-    const log = await readOps(db, { designId: design.id, after: 0 });
+    const log = await readOps(db, { canvasId: canvas.id, after: 0 });
     if (log?.kind !== "ok") throw new Error("expected ops");
     expect(log.ops.map((op) => [op.seq, op.kind, op.reversedBy])).toEqual([
       [1, "do", 2],
@@ -162,21 +162,36 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     await db.delete(jobs);
   }, 60_000);
 
+  test("cron runs recording one slot at once: exactly one takes it, every round", async () => {
+    await db.delete(jobs);
+    for (let round = 0; round < 10; round++) {
+      const slot = {
+        kind: "cron.step",
+        key: `live@2026-11-12T${String(round).padStart(2, "0")}:00`,
+      };
+      const taken = await Promise.all(times(8, () => recordOnce(db, slot)));
+      expect(taken.filter(Boolean)).toHaveLength(1);
+    }
+    // Recorded as done, so no claim ever takes one.
+    expect(await claimJobs(db, { worker: "w1", limit: 20 })).toEqual([]);
+    await db.delete(jobs);
+  }, 60_000);
+
   test("a claim of events keeps to its limit, and claims at once never share an event", async () => {
-    const { design } = await seedDesign(db);
+    const { canvas } = await seedCanvas(db);
     await db.execute(sql`analyze events`);
     for (const index of times(13, (i) => i)) {
       await appendEvent(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         kind: "message",
         priority: "now",
         payload: { index },
       });
     }
 
-    const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
     const claim = async (limit?: number) =>
-      (await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm"), limit }))!
+      (await claimEvents(db, { canvasId: canvas.id, runnerId, claimId: newId("clm"), limit }))!
         .events;
 
     const first = await claim(2);
@@ -188,7 +203,7 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     expect(new Set(taken).size).toBe(taken.length);
     const rest = await claim();
     expect(first.length + taken.length + rest.length).toBe(13);
-    await db.delete(events).where(eq(events.designId, design.id));
+    await db.delete(events).where(eq(events.canvasId, canvas.id));
   }, 60_000);
 
   test("admins demoting one another at once never leave a workspace without one", async () => {
@@ -248,18 +263,18 @@ describeLive("races on a real Postgres", ({ db, close }) => {
   }, 60_000);
 
   test("many answers to one question at once: the first wins and the count drops once", async () => {
-    const { design, user } = await seedDesign(db);
+    const { canvas, user } = await seedCanvas(db);
     const question = await createQuestion(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "question",
       payload: {},
     });
-    await createQuestion(db, { designId: design.id, kind: "question", payload: {} });
+    await createQuestion(db, { canvasId: canvas.id, kind: "question", payload: {} });
 
     const results = await Promise.all(
       times(6, (choice) =>
         answerQuestion(db, {
-          designId: design.id,
+          canvasId: canvas.id,
           id: question.id,
           answer: { choice },
           userId: user.id,
@@ -268,46 +283,40 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     );
 
     expect(results.filter((result) => result !== null)).toHaveLength(1);
-    expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
-    expect(await countOpenQuestions(db, design.id)).toBe(1);
+    expect((await getCanvasHead(db, canvas.id))!.needsYouCount).toBe(1);
+    expect(await countOpenQuestions(db, canvas.id)).toBe(1);
     const told = await db
       .select()
       .from(events)
-      .where(and(eq(events.designId, design.id), eq(events.kind, "answer")));
+      .where(and(eq(events.canvasId, canvas.id), eq(events.kind, "answer")));
     expect(told).toHaveLength(1);
   }, 60_000);
 
   test("one question raised many times at once is one question, counted once", async () => {
-    const { design } = await seedDesign(db);
+    const { canvas } = await seedCanvas(db);
     const id = newId("q");
 
     const raised = await Promise.all(
-      times(6, () => createQuestion(db, { designId: design.id, id, kind: "plan", payload: {} })),
+      times(6, () => createQuestion(db, { canvasId: canvas.id, id, kind: "plan", payload: {} })),
     );
 
     expect(raised.filter((result) => result.raised)).toHaveLength(1);
     expect(raised.every((result) => result.status === "open")).toBe(true);
-    expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
+    expect((await getCanvasHead(db, canvas.id))!.needsYouCount).toBe(1);
   }, 60_000);
 
   test("wakes claiming one sandbox at once: one holds it, and only it moves it on", async () => {
-    const { design } = await seedDesign(db);
+    const { canvas } = await seedCanvas(db);
     const now = new Date();
     const limits = { perWorkspace: 100, perOwner: 100 };
-    const begun = await beginSandbox(db, {
-      designId: design.id,
-      provider: "boat",
-      now,
-      by: "job_first",
-      limits,
-    });
+    const begun = await beginSandbox(db, { canvasId: canvas.id, now, by: "job_first", limits });
     if (!begun || "full" in begun) throw new Error("expected a sandbox");
-    await moveSandbox(db, { id: begun.sandbox.id, from: ["waking"], to: "asleep", now });
+    await moveSandbox(db, { canvasId: canvas.id, from: ["waking"], to: "asleep", now });
 
     const claims = await Promise.all(
       times(8, (racer) =>
         claimSandbox(db, {
-          id: begun.sandbox.id,
+          canvasId: canvas.id,
           from: ["asleep", "waking"],
           now,
           by: `job_${racer}`,

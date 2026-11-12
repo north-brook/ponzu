@@ -3,11 +3,11 @@ export {
   createFakeBackend,
   type FakeAgent,
   FakeBackend,
+  type FakeCanvas,
   type FakeClient,
-  type FakeDesign,
   type FakePerson,
   fakeSession,
 } from "./backend.ts";
-export { FakeClaude } from "./claude.ts";
+export { FakeClaude, KNOWN_MODELS } from "./claude.ts";
 export { FakeClock, settle } from "./clock.ts";
 export { type FakeQuery, FakeRealtime, FakeSubscription, fakeSeal } from "./realtime.ts";

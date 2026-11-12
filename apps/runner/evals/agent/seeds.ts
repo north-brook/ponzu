@@ -3,7 +3,7 @@ import { type Artboard, type Doc, hashedId, parseArtboardFile, type Thread } fro
 /*
  * What each agent case starts from, made up for the suite: a fitness app's repository and an
  * onboarding flow already on its canvas (as the first case would leave it), and a scratch
- * design with a pricing hero, its note and a phone version. Every case starts from one of these,
+ * canvas with a pricing hero, its note and a phone version. Every case starts from one of these,
  * so no case depends on another's turn.
  */
 
@@ -166,7 +166,7 @@ export function pinnedComment(
   return { doc: { ...doc, threads: [...doc.threads, thread] }, thread, artboard };
 }
 
-/** A scratch design: a pricing hero and its note on Home, a phone version on Mobile. */
+/** A scratch canvas: a pricing hero and its note on Home, a phone version on Mobile. */
 export function pricingDoc(): Doc {
   const plan = (name: string, price: string, featured = false) =>
     `<div style="flex: 1; border-radius: 16px; padding: 24px; ${featured ? "background: #2f6b5a; color: #fff" : "border: 1px solid #d6dbd7"}"><h3>${name}</h3><p style="font-size: 32px; font-weight: 600">${price}</p></div>`;

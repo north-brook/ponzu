@@ -65,12 +65,16 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
           ),
       )
     )[0];
-  /** Waits until the pane has finished closing or opening. */
-  const settled = () => page.waitForTimeout(450);
+  /**
+   * Waits until the pane has finished closing or opening: the window wears `data-pane-motion`
+   * from the toggle's render until its easing ends, and what waits on the move (focus into the
+   * thread) runs as it comes off. Call it once `expanded()` shows the toggle took.
+   */
+  const settled = () => page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
 
-  test("⌘J opens the thread with the caret in the composer, once the pane is open, not scrolled", async () => {
+  test("⌥⌘B opens the thread with the caret in the composer, once the pane is open, not scrolled", async () => {
     await open("thread-in-the-right-rail", "no-preference");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("false");
     await settled();
     // Where focus lands, and how wide the pane is when it does.
@@ -80,14 +84,14 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
       document.addEventListener("focusin", (e) => {
         w.landed!.push({
           name: (e.target as Element).getAttribute("aria-label"),
-          // The rail as the design sizes it: its panel and the 10 of gutter (its edge) before it.
+          // The rail as the mockup sizes it: its panel and the 10 of gutter (its edge) before it.
           width: Math.round(
             document.querySelector("#thread-pane")!.getBoundingClientRect().width + 10,
           ),
         });
       });
     });
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("true");
     await page.waitForFunction(
       (sel) => document.activeElement === document.querySelector(sel),
@@ -118,8 +122,8 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
   test("the toggle's click does the same, and closing gives the keyboard back to the window", async () => {
     await open("thread-in-the-right-rail");
     await page.click(THREAD);
-    await settled();
     expect(await expanded()).toBe("false");
+    await settled();
     expect((await focused()).inThread).toBe(false);
     await page.click(THREAD);
     await page.waitForFunction(
@@ -128,11 +132,12 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
     );
     // Closed with the caret inside: it leaves with the pane, never stuck in what went inert.
     await page.keyboard.type("Calmer");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
+    expect(await expanded()).toBe("false");
     await settled();
     expect(await focused()).toEqual({ name: "BODY", inThread: false });
     // And the draft is kept for when it opens again.
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await page.waitForFunction(
       (sel) => document.activeElement === document.querySelector(sel),
       COMPOSER,
@@ -142,9 +147,10 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
 
   test("with a question in the composer's place, the keyboard lands on its first option", async () => {
     await open("needs-you-a-question");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
+    expect(await expanded()).toBe("false");
     await settled();
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "radio");
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Shorten it");
     expect(
@@ -154,16 +160,17 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
 
   test("a field elsewhere keeps the caret when the thread opens", async () => {
     await open("thread-in-the-right-rail");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
+    expect(await expanded()).toBe("false");
     await settled();
     await page.click("#sidebar [aria-current]", { button: "right" });
     await page.click('[role=menuitem]:has-text("Rename")');
-    await page.waitForSelector('input[aria-label="Design name"]');
+    await page.waitForSelector('input[aria-label="Canvas name"]');
     await page.waitForSelector("[role=menu]", { state: "detached" });
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("true");
     await settled();
-    expect((await focused()).name).toBe("Design name");
+    expect((await focused()).name).toBe("Canvas name");
   });
 
   test("⌘P shows and hides the pull request from anywhere, and not under a menu", async () => {

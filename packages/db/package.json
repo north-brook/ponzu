@@ -5,6 +5,7 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./rate-card": "./src/rate-card.ts",
     "./testing": "./src/testing.ts",
     "./types": "./src/types.ts"
   },

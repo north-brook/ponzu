@@ -19,7 +19,7 @@ import type { LineHandlers } from "./lines.tsx";
 import { ThreadSkeleton, ThreadView } from "./thread-view.tsx";
 
 export interface ThreadRailProps extends LineHandlers {
-  designId: string;
+  canvasId: string;
   meId: string;
   /** The repo a secret is kept with; null for Scratch. */
   repoName: string | null;
@@ -43,16 +43,19 @@ export interface ThreadRailProps extends LineHandlers {
   /** The viewer started answering an ask. */
   onTouchAsk?: (askId: string) => void;
   onConnectClaude?: () => void;
+  /** Takes over a canvas whose owner left, onto the viewer's Claude, when the gate offers it. */
+  onTakeOver?: () => void;
+  takingOver?: boolean;
 }
 
 /**
  * The thread rail's content (AppWindow's `rail`): the thread, and at its foot the composer, or
  * what the agent waits on in the composer's place, or for someone who can only read, one line
- * that says so. No header, no title: the thread is the design's one conversation.
+ * that says so. No header, no title: the thread is the canvas's one conversation.
  */
 export function ThreadRail(props: ThreadRailProps) {
-  const { designId, meId, items, gate, asks, agent } = props;
-  const [draft, setDraft] = useDraft(meId, designId);
+  const { canvasId, meId, items, gate, asks, agent } = props;
+  const [draft, setDraft] = useDraft(meId, canvasId);
 
   // The lines take handlers that never change, so typing a draft redraws none of them. Every
   // address a line opens (a link in a reply, a hand-off, an attachment) is checked once, here.
@@ -71,10 +74,10 @@ export function ThreadRail(props: ThreadRailProps) {
       onRetryMessage: (id) => latest.current.onRetryMessage?.(id),
       // Its words go back in the field, ahead of anything typed since, and the bubble goes.
       onEditMessage: (id) => {
-        const { items, meId, designId, onEditMessage } = latest.current;
+        const { items, meId, canvasId, onEditMessage } = latest.current;
         const item = items?.find((candidate) => candidate.id === id);
         if (item?.kind === "message") {
-          writeDraft(meId, designId, restoreDraft(item.payload.text, readDraft(meId, designId)));
+          writeDraft(meId, canvasId, restoreDraft(item.payload.text, readDraft(meId, canvasId)));
         }
         onEditMessage?.(id);
       },
@@ -86,7 +89,7 @@ export function ThreadRail(props: ThreadRailProps) {
     const text = draft;
     setDraft("");
     Promise.resolve(props.onSend(text)).catch(() =>
-      setDraft(restoreDraft(text, readDraft(meId, designId))),
+      setDraft(restoreDraft(text, readDraft(meId, canvasId))),
     );
   };
 
@@ -98,8 +101,8 @@ export function ThreadRail(props: ThreadRailProps) {
     <div className="flex min-h-0 flex-1 flex-col">
       {items ? (
         <ThreadView
-          // Another design's thread opens at its own foot, following.
-          key={designId}
+          // Another canvas's thread opens at its own foot, following.
+          key={canvasId}
           items={items}
           older={props.older}
           onLoadOlder={props.onLoadOlder}
@@ -110,7 +113,7 @@ export function ThreadRail(props: ThreadRailProps) {
       ) : (
         <ThreadSkeleton />
       )}
-      <Slot key={`${designId}:${slot}`} carry={carry}>
+      <Slot key={`${canvasId}:${slot}`} carry={carry}>
         {gate?.kind === "read_only" ? (
           <ReadOnlyLine
             message={gateMessage(gate, meId)}
@@ -140,6 +143,8 @@ export function ThreadRail(props: ThreadRailProps) {
             onSend={send}
             onStop={props.onStop}
             onConnectClaude={props.onConnectClaude}
+            onTakeOver={props.onTakeOver}
+            takingOver={props.takingOver}
           />
         )}
       </Slot>

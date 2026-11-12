@@ -1,7 +1,16 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
+import { chromium as playwright } from "playwright-core";
+import { BrowserProcess } from "./browser.ts";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
-import { contactSheet, sheetLayout } from "./motion.ts";
+import { ARTBOARD_BASE_CSS } from "./document.ts";
+import {
+  contactSheet,
+  FULL_LINT_SCRIPT,
+  motionCall,
+  prepareScript,
+  sheetLayout,
+} from "./motion.ts";
 
 test("contact sheets keep small frames at 2x and lay them out squarely", () => {
   const small = sheetLayout(9, 150, 50);
@@ -198,6 +207,116 @@ ${Array.from({ length: 6 }, (_, i) => `<div data-id="n_t${i}" style="height:100p
       .render({ ...base, interact: { hover: "n_missing" } })
       .catch((e) => e);
     expect(err.message).toContain("No node n_missing");
+  });
+});
+
+describe.skipIf(!chromium)("video stills", () => {
+  // The renderer's own browser keeper: started on first use, and closed as the renderer closes
+  // one, without waiting on a Chrome slow to answer (a busy Mac takes 10s and more to quit).
+  const browser = new BrowserProcess(
+    () => playwright.launch({ executablePath: chromium ?? undefined, headless: true }),
+    Number.POSITIVE_INFINITY,
+  );
+  afterAll(() => browser.close());
+
+  /** Each node's tag, box and the styles that place a video's picture in it. */
+  const LAYOUT = `Object.fromEntries([...document.querySelectorAll("[data-id]")].map((el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const n = (v) => Math.round(v * 100) / 100;
+    return [el.getAttribute("data-id"), {
+      tag: el.tagName,
+      box: [n(r.x), n(r.y), n(r.width), n(r.height)],
+      style: [cs.objectFit, cs.objectPosition, cs.borderTopLeftRadius, cs.borderTopWidth, cs.transform, cs.opacity],
+    }];
+  }))`;
+
+  /** A page with the artboard on it and its first frame decoded, laid out as it is before any seek. */
+  async function page(artboard: string) {
+    const lease = await browser.open(1);
+    const p = lease.page;
+    const url = "http://stills.test/";
+    await p.route(url, (r) =>
+      r.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><head><style>${ARTBOARD_BASE_CSS}</style></head><body>${artboard}</body></html>`,
+      }),
+    );
+    await p.goto(url);
+    await p.evaluate(`(() => {
+      const v = document.querySelector("video");
+      window.__video = v;
+      return v.readyState >= 2 || new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
+    })()`);
+    return { p, close: lease.close, before: await p.evaluate<Record<string, any>>(LAYOUT) };
+  }
+
+  const board = (css: string) =>
+    `<section data-artboard data-id="ab" style="width:300px;height:160px;padding:10px;flex-direction:row;gap:8px">
+<style>${css}</style>
+<video data-id="n_v" muted src="data:video/webm;base64,${CLIP}" style="width:120px;height:60px;object-fit:cover;object-position:20% 80%;transform:rotate(5deg);border:2px solid #000;opacity:0.9"></video>
+<div data-id="n_rest" style="flex:1;height:40px;background:#ccc"></div>
+</section>`;
+
+  test("a seeked video is captured from a still of its frame, laid out and styled as the video is", async () => {
+    // A rule for video, which a canvas wouldn't match, still styles the still.
+    const { p, close, before } = await page(board("video { border-radius: 9px }"));
+    try {
+      await p.evaluate(prepareScript({ at: 1000 }));
+      const held = await p.evaluate<Record<string, any>>(LAYOUT);
+      expect(held.n_v.tag).toBe("CANVAS");
+      expect({ ...held, n_v: { ...held.n_v, tag: "VIDEO" } } as Record<string, unknown>).toEqual(
+        before,
+      );
+      expect(held.n_v.style[2]).toBe("9px");
+      // Lint reads the video itself, then puts the still back for the capture.
+      await p.evaluate(FULL_LINT_SCRIPT);
+      expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("CANVAS");
+      // Back live, it's the same video, where it was.
+      expect(await p.evaluate(motionCall("live"))).toBe(true);
+      expect(await p.evaluate(`document.querySelector('[data-id="n_v"]') === window.__video`)).toBe(
+        true,
+      );
+      expect(await p.evaluate(LAYOUT)).toEqual(before);
+    } finally {
+      await close();
+    }
+  });
+
+  test.each([
+    ["a sibling of a video", "video + div { outline: 1px solid red }"],
+    [
+      "one in a sheet the page @imports",
+      `@import url("data:text/css,video%2Bdiv{outline:1px solid red}");`,
+    ],
+    ["an empty element", ":empty { outline: 1px solid red }"],
+    ["a video's source", ".x:has(source) { outline: 1px solid red }"],
+  ])(
+    "a video stays itself where a selector would read its still differently: %s",
+    async (_, css) => {
+      const { p, close } = await page(board(css));
+      try {
+        await p.evaluate(prepareScript({ at: 1000 }));
+        expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
+      } finally {
+        await close();
+      }
+    },
+  );
+
+  test("a video showing captions stays itself, since a still would leave them out", async () => {
+    const { p, close } = await page(board(""));
+    try {
+      await p.evaluate(`(() => {
+        const t = document.querySelector("video").addTextTrack("subtitles", "en");
+        t.mode = "showing";
+        t.addCue(new VTTCue(0, 2, "Hello"));
+      })()`);
+      await p.evaluate(prepareScript({ at: 1000 }));
+      expect(await p.evaluate(`document.querySelector('[data-id="n_v"]').tagName`)).toBe("VIDEO");
+    } finally {
+      await close();
+    }
   });
 });
 

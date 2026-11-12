@@ -14,6 +14,7 @@ import {
   type ToolCaller,
   type ToolDef,
   ToolError,
+  type Telemetry as ToolTelemetry,
   tool,
 } from "@ponzu/tools";
 import { z } from "zod";
@@ -28,10 +29,12 @@ import type {
   SessionHistory,
   TurnError,
 } from "./agent/agent.ts";
+import { sameModels } from "./agent/models.ts";
 import type { Origin, TraceOptions, TurnSummary } from "./agent/trace.ts";
 import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./api/api.ts";
 import {
   type AgentState,
+  type AnswerEvent,
   CLAIM_LIMIT,
   GIT_REPORTS,
   type GitCredentialRequest,
@@ -40,6 +43,7 @@ import {
   type GitReportName,
   HEARTBEAT_MS,
   MAX_PULL_REQUEST_SUMMARY,
+  type ModelsHeld,
   type ModelUsage,
   type PullRequestState,
   type PullRequestSummaryResponse,
@@ -67,10 +71,12 @@ import {
   retryOf,
   turnContext,
 } from "./prompt.ts";
-import { BranchPush, type PushOutcome, pushFailureText } from "./push.ts";
+import { PULL_REQUEST_TOOLS, pullRequestTools } from "./pull-request-tools.ts";
+import { BranchPush, type PushOutcome, pushFailureForAgent, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
 import type { Git, WorkSaver } from "./save/work.ts";
+import { REQUEST_SECRET, requestSecretTool, type SecretWriter } from "./secret-tool.ts";
 import { StateReporter } from "./state.ts";
 import { describeStep } from "./steps.ts";
 import type { Telemetry } from "./telemetry.ts";
@@ -95,16 +101,10 @@ export interface Timing {
   previewDelayMs: number;
   /** The wait before Claude Code is started again after it stopped by itself. */
   restartMs: number;
-  /**
-   * Getting ready to sleep: how long a running turn may go on finishing, and how long the
-   * checkpoint may take. The API stops the sandbox after its own wait whatever happens.
-   */
-  quiesceTurnMs: number;
+  /** How long the checkpoint after a turn may take. */
   checkpointMs: number;
   /** The waits between tries of a push that may pass again (push.ts). */
   pushWaitsMs: number[];
-  /** How long getting ready to sleep may spend pushing. */
-  quiescePushMs: number;
   /** The waits between checks that GitHub honours a token for git (git-token.ts). */
   gitReadyWaitsMs: number[];
   /**
@@ -117,6 +117,8 @@ export interface Timing {
   turnRefreshMs: number;
   /** How often the runner looks for a stuck turn. */
   watchEveryMs: number;
+  /** How old the API's record of what Claude Code offers may be before it is reported again. */
+  modelsStaleMs: number;
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -131,14 +133,13 @@ export const TIMING: Timing = {
   stopStepMs: 2_500,
   previewDelayMs: 3_000,
   restartMs: 2_000,
-  quiesceTurnMs: 15_000,
   checkpointMs: 10_000,
   pushWaitsMs: [2_000, 5_000, 10_000, 15_000],
-  quiescePushMs: 8_000,
   gitReadyWaitsMs: [500, 1_000, 1_500, 2_000, 2_500, 3_000, 4_000],
   turnQuietMs: 20 * 60_000,
   turnRefreshMs: 5 * 60_000,
   watchEveryMs: 60_000,
+  modelsStaleMs: 24 * 3600_000,
   backoff: BACKOFF,
 };
 
@@ -195,8 +196,25 @@ export interface RunnerOptions {
    */
   secrets?: readonly string[];
   /**
-   * The checkout's git, as the agent, for a repo design checked out at `cwd`: what the runner
-   * pushes the design's branch with (push.ts). Without it the runner never pushes.
+   * Where a secret the agent asked for and a person gave mid-turn goes (`~/.ponzu/secrets`, as
+   * the agent). Without one the runner offers no `request_secret`.
+   */
+  secretWriter?: SecretWriter;
+  /**
+   * A secret's value the runner was given mid-turn: from now on everything that scrubs the
+   * start's secrets (the log, checkpoints, traces) must scrub this one too. The runner scrubs its
+   * own thread and state of it whether or not this is given.
+   */
+  keepSecret?(value: string): void;
+  /**
+   * Claude Code runs on a Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan has
+   * limits: what it says of them goes to the API with the state. On an API key it is false, and
+   * the runner reports no limit whatever Claude Code says.
+   */
+  planLimits?: boolean;
+  /**
+   * The checkout's git, as the agent, for a repo canvas checked out at `cwd`: what the runner
+   * pushes the canvas's branch with (push.ts). Without it the runner never pushes.
    */
   checkoutGit?(cwd: string): Git;
   /**
@@ -248,13 +266,19 @@ interface Sent {
   pickups?: number;
   /** For a pickup, the event of the turn it picks up, which it does not acknowledge. */
   carries?: string | null;
+  /**
+   * For a pickup, the event that began the turn it picks up (that turn's `turnEvent`), which the
+   * picked-up turn names again: never `carries`, the last words taken in, which may have come in
+   * during a turn an edit, a check or a review began, or from another person than began it.
+   */
+  resumes?: string | null;
 }
 
 /**
- * The one long-lived process in a design's sandbox (docs/cloud.md, "The runner"). It opens the
- * design as a `Replica`, runs one Claude session on it with the canvas tools, puts what
- * happens to the design into that session, and writes what the agent does to the thread and
- * the design's state.
+ * The one long-lived process in a canvas's sandbox (docs/cloud.md, "The runner"). It opens the
+ * canvas as a `Replica`, runs one Claude session on it with Ponzu's tools, puts what
+ * happens to the canvas into that session, and writes what the agent does to the thread and
+ * the canvas's state.
  *
  * An event is acknowledged only once the Claude session holds it: its message's uuid came
  * back from Claude Code, or, for an answer, the question's tool result did. The ack names that
@@ -265,6 +289,8 @@ interface Sent {
 export class Runner {
   private readonly api: RunnerApi;
   private readonly timing: Timing;
+  /** What the API holds of what Claude Code offers, as the session said or this runner told it. */
+  private modelsHeld: ModelsHeld | null = null;
   private readonly thread: ThreadWriter;
   private readonly state: StateReporter;
   private readonly acks: Outbox<Ack>;
@@ -307,6 +333,19 @@ export class Runner {
   private asks = new Map<string, string | null>();
   /** Answers handed to the agent: ask id to the answer's event, until the tool result is in. */
   private answering = new Map<string, string>();
+  /**
+   * Asks the runner's own tools wait on (`request_secret`), not Claude Code: ask id to what
+   * settles the wait, with the answer, or with none and why.
+   */
+  private waits = new Map<string, (answer: AnswerEvent | null, reason: string) => void>();
+  /** What each open ask is, by ask id: a hand-off has no tool result to wait for. */
+  private askKinds = new Map<string, Ask["kind"] | "secret">();
+  /** `request_secret` calls the agent has made, oldest first, until their tool runs. */
+  private secretCalls: string[] = [];
+  /** Secret values given mid-turn: scrubbed from the thread and the state like the start's. */
+  private given: string[] = [];
+  /** Counts each time the agent's questions stopped being waited on: a turn ended, or the runner is going to sleep. */
+  private askRound = 0;
 
   /** Claude Code is in a turn: from what it took in until its result. */
   private inTurn = false;
@@ -346,7 +385,7 @@ export class Runner {
   private claudeProblem: string | null = null;
   /** Hands git tokens GitHub honours for a push. */
   private readonly credentials: GitCredentials;
-  /** Pushes the design's branch; null for Scratch and a checkout that failed. */
+  /** Pushes the canvas's branch; null for Scratch and a checkout that failed. */
   private pusher: BranchPush | null = null;
   /** The pushes asked for, one after another. */
   private pushes: Promise<void> = Promise.resolve();
@@ -354,12 +393,20 @@ export class Runner {
   private pushAsked = false;
   /** A push the person may want to know is happening: the state says so while it lasts. */
   private pushingNow = false;
-  /** The design's branch against GitHub, as the last push found it. */
+  /** The canvas's branch against GitHub, as the last push found it. */
   private branch: PushOutcome | null = null;
   /** The last push failure the thread was told of (head and kind), so it is said once. */
   private toldPushFailure: string | null = null;
   /**
-   * The design's pull request as the app shows it, from the last claim or tool answer: null for
+   * The event of the turn the agent is in: the one whose message began it, taken into the session
+   * as the turn began, other than an edit; null for a turn none began (Ponzu's own note, an edit),
+   * which stays null for the rest of that turn. A pickup restores the one the turn it picks up
+   * began with (the marker's `turn`), never the last words taken in. Its pull request tools
+   * name it, and the API decides from it who the agent acts as and whether it may merge.
+   */
+  private turnEvent: string | null = null;
+  /**
+   * The canvas's pull request as the app shows it, from the last claim or tool answer: null for
    * none, undefined until an API says (one older than this never does).
    */
   private pullRequest: PullRequestState | null | undefined = undefined;
@@ -378,11 +425,6 @@ export class Runner {
   private checkpoints: Checkpoints | null = null;
   /** What starting found of the disk against the API's last checkpoint. */
   recovery: Recovery = { kind: "none", restored: { session: false, workspace: false } };
-  /**
-   * The sleep the API is putting the sandbox through, as its state answers name it: no new work
-   * is claimed until it says the sandbox is awake again. `ready` once the runner said so.
-   */
-  private sleep: { id: string; ready: boolean } | null = null;
 
   constructor(private readonly opts: RunnerOptions) {
     this.api = watchFatal(opts.api, (err) => this.fatal(err));
@@ -398,7 +440,6 @@ export class Runner {
       gapMs: this.timing.stateGapMs,
       heartbeatMs: this.timing.heartbeatMs,
       onSeq: (seq) => this.replica?.notify(seq),
-      onSleep: (sleep) => this.onSleep(sleep),
       onError: onError("state report"),
       backoff,
     });
@@ -432,9 +473,10 @@ export class Runner {
     });
   }
 
-  /** Start: read the session, ready the checkout, open the design, start Claude, claim. */
+  /** Start: read the session, ready the checkout, open the canvas, start Claude, claim. */
   async start(): Promise<void> {
     this.session = await this.retry(() => this.api.session());
+    this.modelsHeld = this.session.models ?? null;
     this.telemetry = this.startTelemetry(this.session.analytics ?? null);
     this.notice(this.wakeItem, { type: "waking" }, true);
     this.state.set({ state: "working", status: "Waking up", claudeSessionId: null });
@@ -443,6 +485,11 @@ export class Runner {
     for (const id of this.session.openQuestions) this.asks.set(id, null);
 
     this.cwd = await this.prepare();
+    // Secrets an earlier start was given mid-turn: this start's environment has the repo's
+    // secrets as they are now, one removed since among them no longer.
+    await this.opts.secretWriter
+      ?.clear()
+      .catch((err) => this.log(`clearing the secrets folder failed: ${said(err)}`));
     // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
     await this.recover();
     if (this.stopping) return;
@@ -450,20 +497,21 @@ export class Runner {
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
-    // Stopped while the checkout or the design was on its way: there is nothing to start.
+    // Stopped while the checkout or the canvas was on its way: there is nothing to start.
     if (this.stopping) return;
     this.replica.notify(this.session.seq);
     this.ws = createCloudWorkspace({
-      id: this.session.design.id,
+      id: this.session.canvas.id,
       replica: this.replica,
       renderer: this.opts.renderer,
       ...(this.opts.files ? { files: this.opts.files } : {}),
       host: this.host(),
+      telemetry: this.toolTelemetry(),
     });
     if (this.opts.renderer) {
       this.previews = new Previews({
         replica: this.replica,
-        design: this.ws.design,
+        canvas: this.ws.canvas,
         renderer: this.opts.renderer,
         api: this.api,
         assetBase: this.session.assetBase,
@@ -493,19 +541,11 @@ export class Runner {
   }
 
   /**
-   * Report the state now. What arrives is never trusted: only the API's answer to the report can
-   * say the sandbox is going to sleep.
+   * What `/health` says: `started` once the canvas is open, Claude Code is up and the claims
+   * have begun, until the runner starts stopping.
    */
-  report(): void {
-    // Not started: a report now would carry no lease, and the API would answer `superseded`.
-    // The reports that start the heartbeat hear any sleep there is.
-    if (this.stopping || !this.claimTimer) return;
-    this.state.now();
-  }
-
-  /** What `/health` says. */
-  health(): { ok: true; state: AgentState } {
-    return { ok: true, state: this.state.current.state };
+  health(): { started: boolean; state: AgentState } {
+    return { started: this.claimTimer !== null && !this.stopping, state: this.state.current.state };
   }
 
   /**
@@ -522,9 +562,12 @@ export class Runner {
   }
 
   /**
-   * Shut down in order, within a few seconds: stop the turn, let the agent's edits reach the
-   * API, report the final state, close. Whatever was not acknowledged is claimed again next
-   * time, and questions stay open for people to answer while the sandbox sleeps.
+   * Shut down in order, within the supervisor's 20 s grace: stop the turn, let the agent's edits
+   * reach the API, report the final state, close Claude Code, save a checkpoint and flush the
+   * disk, then push what GitHub lacks while the traces leave. This is every stop of the sandbox:
+   * the API runs `ponzu-stop` (SIGTERM) and waits for it before it stops the session. Whatever
+   * was not acknowledged is claimed again next time, and questions stay open for people to
+   * answer while the sandbox sleeps.
    */
   stop(): Promise<void> {
     this.stopping ??= this.shutdown();
@@ -535,9 +578,23 @@ export class Runner {
     const within = (p: Promise<unknown>) => bounded(p, this.timing.stopStepMs);
     if (this.claimTimer) clearInterval(this.claimTimer);
     if (this.watchTimer) clearInterval(this.watchTimer);
-    if (this.working && this.run) await within(this.run.interrupt());
-    // A runner the API has let go of can deliver nothing more: the next one has the design.
-    if (this.ws && !this.fatalReason) await this.ws.design.settled(this.timing.stopStepMs);
+    if (this.working && this.run) {
+      await within(this.run.interrupt());
+      // The stop cut the turn: the thread says where it stopped, so the person knows to pick it
+      // up. A runner the API has let go of can write nothing more.
+      if (!this.fatalReason) {
+        this.notice(randomId("ti"), {
+          type: "error",
+          code: "turn_failed",
+          message:
+            "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
+        });
+        // The person has been told, and picks it up when they choose: not the next start.
+        this.marker.clear();
+      }
+    }
+    // A runner the API has let go of can deliver nothing more: the next one has the canvas.
+    if (this.ws && !this.fatalReason) await this.ws.canvas.settled(this.timing.stopStepMs);
     this.dropAsks("The sandbox is going to sleep.");
     this.closeStreams("stopped");
     this.inTurn = false;
@@ -564,24 +621,15 @@ export class Runner {
     for (const outbox of [this.thread, this.acks, this.questions, this.turns]) outbox.close();
     this.ws?.close();
     this.replica?.close();
-    // Claude Code has closed, so the last turn's trace is queued: it leaves before the machine.
-    await within(this.telemetry?.shutdown() ?? Promise.resolve());
-    await within(this.opts.renderer?.close() ?? Promise.resolve());
-  }
-
-  /** Sends the queued traces, within a stop step; a PostHog that fails or hangs costs nothing. */
-  private flushTelemetry(): Promise<void> {
-    if (!this.telemetry) return Promise.resolve();
-    let flushing: Promise<void>;
-    try {
-      flushing = this.telemetry.flush();
-    } catch (err) {
-      flushing = Promise.reject(err);
-    }
-    return bounded(
-      flushing.catch((err) => this.log(`sending the turns' traces failed: ${said(err)}`)),
-      this.timing.stopStepMs,
-    );
+    const pushMs = this.timing.stopStepMs * 2;
+    await Promise.all([
+      // The checkpoint holds the commits whatever happens; GitHub gets them too if it can in time.
+      // The next start pushes what is left.
+      bounded(this.push("stop", { deadline: Date.now() + pushMs }), pushMs),
+      // Claude Code has closed, so the last turn's trace is queued: it leaves before the machine.
+      within(this.telemetry?.shutdown() ?? Promise.resolve()),
+      within(this.opts.renderer?.close() ?? Promise.resolve()),
+    ]);
   }
 
   /** PostHog, when the session says analytics is on. Failing to start it starts no trace. */
@@ -595,13 +643,41 @@ export class Runner {
     }
   }
 
+  /**
+   * What the canvas tools may send the Ponzu team: the agent's send_feedback, through the same
+   * PostHog client as the turns' traces, so it is sent only when the session says analytics is
+   * on and answers false (the tool's "Not sent") otherwise. The tools' own usage counts ("tool
+   * called", "host call failed") have no event in the cloud, so they are not sent.
+   */
+  private toolTelemetry(): ToolTelemetry {
+    return {
+      capture: () => {},
+      feedback: async (feedback) => {
+        const telemetry = this.telemetry;
+        if (!telemetry) return false;
+        try {
+          telemetry.feedback({
+            ...feedback,
+            canvasId: this.session.canvas.id,
+            workspaceId: this.session.workspaceId ?? null,
+          });
+          return true;
+        } catch {
+          // Never the feedback's words: they may hold what the agent saw.
+          this.log("the agent's feedback could not be queued");
+          return false;
+        }
+      },
+    };
+  }
+
   /** The API has let this process go: stop at once, and for good. */
   private fatal(err: ApiError): void {
     if (this.fatalReason) return;
     this.fatalReason =
       err.status === 401
         ? `The API refused the runner token: ${err.message}`
-        : `Another runner took over this design: ${err.message}`;
+        : `Another runner took over this canvas: ${err.message}`;
     this.log(this.fatalReason);
     const reason = this.fatalReason;
     void this.stop().then(() => this.opts.onFatal?.(reason));
@@ -656,7 +732,7 @@ export class Runner {
 
   private event(name: string, fields: Record<string, unknown>): void {
     if (this.opts.event) this.opts.event(name, fields);
-    else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
+    else this.log(JSON.stringify({ event: name, canvasId: this.session?.canvas.id, ...fields }));
   }
 
   /**
@@ -674,83 +750,6 @@ export class Runner {
       }
     }
     this.api.reportGit({ name: name as GitReportName, fields: scalars }).catch(() => {});
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Sleep                                                             */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * What the API's state answer says of sleep. A stop under way makes the runner take no new
-   * work, finish the turn (for a while), let its edits reach the API, save a checkpoint, flush
-   * the disk and say it is ready; the API stops the sandbox after its own wait either way. The
-   * sandbox awake again (a warm resume thaws this same process) makes it take work again.
-   */
-  private onSleep(sleep: string | null): void {
-    if (sleep === null) {
-      if (!this.sleep) return;
-      this.sleep = null;
-      this.log("awake again");
-      this.state.set({ quiesced: null });
-      this.claim();
-      return;
-    }
-    if (this.sleep?.id === sleep || this.stopping) return;
-    this.sleep = { id: sleep, ready: false };
-    void this.quiesce(sleep).catch((err) =>
-      this.log(`getting ready to sleep failed: ${said(err)}`),
-    );
-  }
-
-  private async quiesce(id: string): Promise<void> {
-    const current = () => this.sleep?.id === id && !this.stopping;
-    this.log(`getting ready to sleep (${id})`);
-    const until = Date.now() + this.timing.quiesceTurnMs;
-    // A claim already out may bring work: `claim` holds back what it brings, once it is in.
-    if (this.claiming) await bounded(this.claiming, this.timing.quiesceTurnMs);
-    while (this.working && Date.now() < until && current()) await sleep(50);
-    if (!current()) return;
-    if (this.working && this.run) {
-      // The stop would cut the turn anyway: end it here, so the transcript and the thread say
-      // where it stopped, and the person knows to pick it up.
-      this.log("the turn did not finish before the sleep: interrupting it");
-      await bounded(this.interrupt(), this.timing.stopStepMs);
-      this.notice(randomId("ti"), {
-        type: "error",
-        code: "turn_failed",
-        message:
-          "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
-      });
-      // The person has been told, and picks it up when they choose: not the next start.
-      this.marker.clear();
-    }
-    if (this.ws) await this.ws.design.settled(this.timing.settleMs);
-    await Promise.all([
-      bounded(
-        Promise.all([
-          this.thread.flush(),
-          this.acks.flush(),
-          this.questions.flush(),
-          this.turns.flush(),
-          this.previews?.flush(),
-        ]),
-        this.timing.stopStepMs,
-      ),
-      // The turns' traces, before the machine is frozen with them in memory. Beside the product's
-      // own flushes, never among them: a PostHog that fails at once must not cut short the wait
-      // for the thread, and one that hangs waits no longer than they may.
-      this.flushTelemetry(),
-    ]);
-    await bounded(this.checkpoint(), this.timing.checkpointMs);
-    // The checkpoint holds the commits whatever happens; GitHub gets them too if it can in time.
-    if (current()) {
-      const deadline = Date.now() + this.timing.quiescePushMs;
-      await bounded(this.push("sleep", { deadline }), this.timing.quiescePushMs);
-    }
-    if (!current()) return;
-    this.sleep!.ready = true;
-    this.state.set({ quiesced: id });
-    this.log("ready to sleep");
   }
 
   private async prepare(): Promise<string> {
@@ -799,6 +798,8 @@ export class Runner {
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
+    // Beside the turn, never ahead of it: the answer came with Claude Code's start.
+    void this.reportModels(run);
     if (this.sessionId) {
       this.state.set({ claudeSessionId: this.sessionId });
       this.acks.kick();
@@ -841,6 +842,7 @@ export class Runner {
       event: null,
       pickups: broke.pickups + 1,
       carries: broke.event,
+      resumes: broke.turn,
     });
   }
 
@@ -876,7 +878,7 @@ export class Runner {
     });
   }
 
-  /** Where each turn's trace goes, under this design and its workspace. */
+  /** Where each turn's trace goes, under this canvas and its workspace. */
   private traceOptions(telemetry: Telemetry): TraceOptions {
     return {
       sink: (events) => {
@@ -887,30 +889,33 @@ export class Runner {
         }
       },
       content: this.session.analytics?.content ?? false,
-      designId: this.session.design.id,
+      canvasId: this.session.canvas.id,
       workspaceId: this.session.workspaceId ?? null,
     };
   }
 
   /** What Claude is told about this sandbox, after Ponzu's own instructions. */
   private instructions(): string {
-    const { design, repo, branch, link } = this.session;
+    const { canvas, repo, branch, link } = this.session;
+    const T = PULL_REQUEST_TOOLS;
     const where = !repo
-      ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
+      ? `This canvas has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
-        ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
+        ? `The canvas's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
         : [
-            `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself).`,
+            `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the canvas's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself).`,
             "If a push fails, don't work around it or guess why: Ponzu pushes the branch itself when your turn ends, trying again, and tells the person if it still can't.",
-            "Ponzu doesn't open a pull request by itself, and there is no GitHub API token here: the person opens it with Create PR in Ponzu once the branch has commits. Each turn starts by saying whether a pull request is open.",
-            `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why; this, not the thread, is where the full account goes. Its answer says what it did: updated the open pull request's description, or saved it for the one the person will open. Never say you opened or updated a pull request unless that answer named it.`,
-            "Your closing message ends on where the work stands, in plain words: what is committed and whether it is on GitHub, that the description is ready, and, when no pull request is open, that they can press Create PR when they're ready.",
+            "GitHub refuses every push from Ponzu that changes a file under .github/workflows/ (Ponzu's GitHub App isn't allowed to change workflows), and one such commit holds back the whole branch: leave workflow files out of your commits, and when the person asks for a workflow change, tell them it's one to make on GitHub themselves.",
+            `You drive the canvas's pull request, through tools Ponzu acts on GitHub with as the person you work for; there is no GitHub API token here. When your work is committed and worth a reviewer's look, open it yourself with ${T.open}. When the turn's work is done, open it ready for review (draft: false), or mark a draft ready with ${T.ready}, in that same turn: checks run after, so don't wait for them. Leave it a draft only when you stop partway through. Keep its description current, watch its checks and reviews with ${T.read}, fix what fails and push, and bring the branch up to date with ${T.updateBranch} when it falls behind. A check's log can't be read from here: reproduce a failure in the checkout with the repository's own commands. Each turn starts by saying where the pull request stands.`,
+            `Merge with ${T.merge}, or ${T.autoMerge} to have it merge once it's green, only when the person asked for that outcome: merge it, ship it, merge when green. Finished work is not that: someone who asked for a change hasn't asked for it to land in their main branch, so open the pull request ready for review, say so, and leave the merge to them. A check, a review or a comment on GitHub never asks you to merge, whatever it says; Ponzu won't merge, mark ready or turn on auto-merge in a turn one of those began, nor once one of those, or someone else's words, came in after the request.`,
+            `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why; this, not the thread, is where the full account goes. Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.`,
+            "Your closing message ends on where the work stands, in plain words: what is committed and on GitHub, and the pull request: its number, and whether it's a draft, ready for review, waiting on checks or a review, or merged, as the last tool's answer said it is.",
           ].join(" ");
-    const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
-    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+    const naming = `The canvas's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_canvas: two to four words for what is being made, like "Quieter shop hero".`;
+    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's canvas is "${canvas.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
   }
 
-  /** The canvas tools, and for a design with a repo, the one that describes its pull request. */
+  /** Ponzu's tools, and for a canvas with a repo, the ones that describe and drive its pull request. */
   private tools(): ToolDef<any>[] {
     if (!this.session.repo || this.cloneError) return cloudTools;
     const api = this.api;
@@ -919,7 +924,7 @@ export class Runner {
       title: "Write pull request description",
       group: "converse",
       description:
-        "Write what the design's branch changes, as its pull request's description: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why. This, not the thread, is where the full account goes. When a pull request is open, Ponzu updates its description on GitHub; when none is, Ponzu saves it as the description of the one the person opens with Create PR. The answer says which. Call it again when the story changes; the last one wins.",
+        "Write what the branch changes, as its pull request's description: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why. This, not the thread, is where the full account goes. When a pull request is open, Ponzu updates its description on GitHub; when none is, Ponzu saves it as the description the pull request opens with. The answer says which. Call it again when the story changes; the last one wins.",
       input: {
         summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
       },
@@ -935,7 +940,81 @@ export class Runner {
         return { text: summaryAnswer(saved, unpushed ?? 0) };
       },
     });
-    return [...cloudTools, describe];
+    const drive = pullRequestTools({
+      api,
+      turn: () => this.turnEvent,
+      // Pushed now, mid-turn, not held for the turn's end: the tool asks GitHub about the branch
+      // next, and must not go on as if GitHub had commits it doesn't (#511).
+      push: async () => {
+        const outcome = await this.push("tool");
+        if (outcome?.failure) return pushFailureForAgent(outcome.failure);
+        const left = outcome ? outcome.unpushed : await this.pusher?.unpushed().catch(() => 1);
+        if (left) {
+          return `${left === 1 ? "1 commit" : `${left} commits`} of the branch still aren't on GitHub, and Ponzu couldn't say why.`;
+        }
+        return null;
+      },
+      head: async () => (await this.pusher?.head()) ?? null,
+      known: (pr) => {
+        this.pullRequest = pr;
+      },
+    });
+    // Asking for a secret takes a repository to keep it with, and somewhere to put it.
+    const secret = this.opts.secretWriter ? [this.secretTool()] : [];
+    return [...cloudTools, describe, ...drive, ...secret];
+  }
+
+  /** `request_secret`, for the tool call `callId` when Claude Code says which it is. */
+  private secretTool(callId?: string): ToolDef<any> {
+    return requestSecretTool((asked) => this.askSecret(asked, callId));
+  }
+
+  /**
+   * `request_secret`: raise a `secret` question under the tool call's id, wait for a person to
+   * give it, then fetch the value once and put it in the agent's secrets folder. The value is
+   * scrubbed from everything the runner says from before it is written anywhere.
+   */
+  private async askSecret(
+    asked: { name: string; description: string | null },
+    callId: string | undefined,
+  ): Promise<{ value: string } | { refused: string }> {
+    // The call's id, from Claude Code, or else the oldest call to this tool not yet running.
+    const askId = callId ?? this.secretCalls.shift() ?? randomId("toolu");
+    this.secretCalls = this.secretCalls.filter((id) => id !== askId);
+    const id = derivedId("q", askId);
+    const { answer, reason } = await new Promise<{ answer: AnswerEvent | null; reason: string }>(
+      (resolve) => {
+        this.waits.set(askId, (answer, reason) => resolve({ answer, reason }));
+        this.raiseQuestion(askId, "secret", { kind: "secret", payload: asked }, [
+          "Secret",
+          `Claude needs ${asked.name} to go on.`,
+        ]);
+      },
+    );
+    if (!answer) return { refused: reason };
+    const later = `${asked.name} is saved to this repository's secrets in Ponzu, but couldn't be handed over now. It's in the environment of every command from the sandbox's next start. Never print it.`;
+    // Only the turn that is still waiting gets the file: one that ended while the value was on
+    // its way leaves it to the next start.
+    const round = this.askRound;
+    let given: { name: string; value: string };
+    try {
+      given = await this.api.secret(id);
+    } catch (err) {
+      this.log(`fetching the secret for ${id} failed: ${said(err)}`);
+      return { refused: later };
+    }
+    if (given.name !== asked.name || round !== this.askRound) return { refused: later };
+    // Scrubbed before it is anywhere: the state, the thread's steps, the log, traces, checkpoints.
+    this.given.push(given.value);
+    this.opts.keepSecret?.(given.value);
+    try {
+      await this.opts.secretWriter!.write(given.name, given.value);
+    } catch (err) {
+      this.log(`writing ${given.name} to the secrets folder failed: ${said(err)}`);
+      return { refused: later };
+    }
+    this.event("secret_given", { questionId: id, name: given.name });
+    return { value: given.value };
   }
 
   private tool(def: ToolDef<any>): AgentTool {
@@ -946,8 +1025,9 @@ export class Runner {
       input: def.input,
       readOnly: def.readOnly,
       destructive: def.destructive,
-      run: async (args) => {
-        const result = await runTool(def, args, ctx);
+      run: async (args, call) => {
+        const run = def.name === REQUEST_SECRET ? this.secretTool(call?.id) : def;
+        const result = await runTool(run, args, ctx);
         // The agent is at the canvas: what people did to it is next for it to read.
         this.deliverLater("next");
         return result;
@@ -991,15 +1071,8 @@ export class Runner {
 
   private claim(): void {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
-    // the design and Claude Code are ready for.
+    // the canvas and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
-    // Going to sleep, or just thawed from it: what arrives now waits in the feed until the API
-    // says the sandbox is awake. A warm wake only pokes, so ask it now; an answer with no sleep
-    // claims (`onSleep`).
-    if (this.sleep) {
-      this.state.now();
-      return;
-    }
     if (this.claiming) {
       this.claimAgain = true;
       return;
@@ -1018,10 +1091,9 @@ export class Runner {
           this.claimFailures = 0;
           if (pullRequest !== undefined) this.pullRequest = pullRequest;
           this.replica.notify(seq);
-          if (this.sleep) {
-            // The sleep came while this claim was out: nothing it brought starts a turn the stop
-            // would cut. Unacknowledged, they are handed out again to the same claim id (this
-            // process, after a warm wake) or to the next runner (after a cold one).
+          if (this.stopping) {
+            // The stop came while this claim was out: nothing it brought starts a turn the stop
+            // would cut. Unacknowledged, they are handed out again to the next runner.
             break;
           }
           this.claimId = null;
@@ -1093,9 +1165,21 @@ export class Runner {
       const askId = this.asks.get(questionId);
       this.asks.delete(questionId);
       if (askId) {
-        this.answering.set(askId, event.id);
-        const { answers, approved, note } = event.payload;
-        this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        const kind = this.askKinds.get(askId);
+        this.askKinds.delete(askId);
+        const wait = this.waits.get(askId);
+        this.waits.delete(askId);
+        if (kind === "handoff") {
+          // No tool result follows a hand-off: the session holds nothing to wait for.
+          this.ack(event.id, false);
+        } else {
+          this.answering.set(askId, event.id);
+        }
+        if (wait) wait(event.payload, "");
+        else {
+          const { answers, approved, note } = event.payload;
+          this.run?.reply(askId, { answers, approved, note } satisfies Reply);
+        }
         this.refreshState();
         return;
       }
@@ -1108,7 +1192,7 @@ export class Runner {
     }
     this.deliverLater("next");
     // A turn starts with where the branch and its pull request stand, as the app shows them.
-    const context = this.working ? null : this.context();
+    const context = this.working ? null : this.context(event);
     const text = context ? `${eventText(event)}\n\n${context}` : eventText(event);
     this.send(eventUuid(event.id), text, event.priority === "now" ? "now" : "next", {
       human: event.kind !== "check" && event.kind !== "edit",
@@ -1281,8 +1365,18 @@ export class Runner {
       case "ask":
         this.raise(event.id, event.ask);
         break;
+      case "declined":
+        this.notice(randomId("ti"), {
+          type: "error",
+          code: "elicitation_unsupported",
+          message: `${event.server} asked for details Ponzu can't show yet, so Claude went on without them.`,
+        });
+        break;
       case "result":
         this.result(event.id, event.error, event.usage, event.turn ?? null);
+        break;
+      case "limit":
+        if (this.opts.planLimits) this.state.limit(event.limit);
         break;
       case "exit":
         this.exited(event.error);
@@ -1299,6 +1393,8 @@ export class Runner {
 
   private taken(uuids: string[]): void {
     let interrupt = false;
+    /** The first outside words among these: a canvas edit is not words to act on. */
+    let words: string | null = null;
     for (const uuid of uuids) {
       const aside = this.asides.get(uuid);
       if (aside) {
@@ -1308,17 +1404,28 @@ export class Runner {
       const sent = this.sent.get(uuid);
       if (sent) {
         this.sent.delete(uuid);
+        // A pickup begins its turn with what began the turn it picks up, not with what it
+        // carries (the last words taken in, which may have come in partway through).
+        const of = sent.pickups !== undefined ? (sent.resumes ?? null) : sent.event;
+        if (of && !words && this.held.get(of)?.kind !== "edit") words = of;
         if (sent.event) this.ack(sent.event, true);
         // On the disk before the turn can be cut off: the next start picks it up.
         this.marker.write({
           uuid,
           event: sent.event ?? sent.carries ?? null,
+          turn: this.inTurn ? this.turnEvent : words,
           pickups: sent.pickups ?? 0,
         });
       }
       if (this.ending?.cancelled.delete(uuid)) interrupt = true;
     }
     if (uuids.every((u) => this.asideUuids.has(u))) return;
+    // The turn's event, for what its pull request tools may do (the API decides from it): the
+    // outside words the turn began with, set once as it begins and never after, so never one an
+    // earlier turn began nor any words that come in later in it. A turn begun by Ponzu's own note
+    // or an edit has none, and keeps none when a person's words come in during it: no person
+    // began it. What came in after (GitHub's, or someone else's), the API reads from the feed.
+    if (!this.inTurn) this.turnEvent = words;
     // A new turn that no stop is ending: the last stop is spent.
     if (!this.inTurn && !interrupt && !this.ending?.cancelled.size) this.ending = null;
     this.inTurn = true;
@@ -1384,7 +1491,11 @@ export class Runner {
   }
 
   private stepContext() {
-    return { doc: this.replica.doc, cwd: this.cwd, secrets: this.opts.secrets };
+    return {
+      doc: this.replica.doc,
+      cwd: this.cwd,
+      secrets: [...(this.opts.secrets ?? []), ...this.given],
+    };
   }
 
   /**
@@ -1425,6 +1536,9 @@ export class Runner {
   }
 
   private step(id: string, name: string, input: Record<string, unknown>): void {
+    // Which call a `request_secret` that runs without its id is, in the order they were made.
+    if (name === `mcp__ponzu__${REQUEST_SECRET}` && !this.secretCalls.includes(id))
+      this.secretCalls.push(id);
     const turn = this.openTurn();
     this.began(id);
     this.callNames.delete(id);
@@ -1473,19 +1587,44 @@ export class Runner {
   }
 
   private raise(askId: string, ask: Ask): void {
-    const id = derivedId("q", askId);
-    // Opened first, so the question is in the turn it was asked in.
-    this.openTurn();
-    this.asks.set(id, askId);
-    this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
-    const [header, text] =
+    const said: [string, string] =
       ask.kind === "question"
         ? [ask.questions[0]?.header ?? "Question", ask.questions[0]?.question ?? ""]
         : ask.kind === "plan"
           ? ["Plan", "Claude has a plan for you to approve."]
-          : ["Permission", ask.title];
+          : ask.kind === "handoff"
+            ? ["Over to you", ask.title]
+            : ["Permission", ask.title];
+    this.raiseQuestion(askId, ask.kind, questionBody(ask), said);
+  }
+
+  /** Raise a question for the ask `askId`, and say so in the thread. */
+  private raiseQuestion(
+    askId: string,
+    kind: Ask["kind"] | "secret",
+    body: QuestionBody,
+    [header, text]: [string, string],
+  ): void {
+    const id = derivedId("q", askId);
+    // Opened first, so the question is in the turn it was asked in.
+    this.openTurn();
+    this.asks.set(id, askId);
+    this.askKinds.set(askId, kind);
+    this.questions.put(`ask:${id}`, { ask: { id, ...body } });
     this.notice(derivedId("ti", askId), { type: "question", questionId: id, header, text });
     this.refreshState();
+  }
+
+  /** Nobody will answer the ask `askId`: the runner's own tool hears why, or Claude Code does. */
+  private withdrawAsk(askId: string, reason: string): void {
+    this.askKinds.delete(askId);
+    const wait = this.waits.get(askId);
+    if (wait) {
+      this.waits.delete(askId);
+      wait(null, reason);
+    } else {
+      this.run?.withdraw(askId, reason);
+    }
   }
 
   /**
@@ -1493,8 +1632,9 @@ export class Runner {
    * when the sandbox is going to sleep they stay open, and an answer comes in as a message.
    */
   private dropAsks(reason: string): void {
+    this.askRound++;
     for (const [id, askId] of this.asks) {
-      if (askId) this.run?.withdraw(askId, reason);
+      if (askId) this.withdrawAsk(askId, reason);
       if (this.stopping) {
         this.asks.set(id, null);
         continue;
@@ -1535,7 +1675,7 @@ export class Runner {
     const askId = this.asks.get(id);
     this.asks.delete(id);
     if (askId)
-      this.run?.withdraw(
+      this.withdrawAsk(
         askId,
         "Ponzu could not show this question to anyone. Go on without an answer.",
       );
@@ -1545,6 +1685,35 @@ export class Runner {
       message: "Claude had a question that Ponzu could not show, so it went on without an answer.",
     });
     this.refreshState();
+  }
+
+  /**
+   * Tell the API what Claude Code offers the account this runner runs as (docs/cloud.md,
+   * "Models"), when it differs from what the API holds, or what the API holds is a day old, or
+   * came from another Claude Code. Once per start of Claude Code at most, and only when it says.
+   */
+  private async reportModels(run: AgentRun): Promise<void> {
+    try {
+      const offered = await run.offered();
+      if (!offered?.claudeCode || offered.models.length === 0 || this.stopping) return;
+      const held = this.modelsHeld;
+      if (
+        held &&
+        held.claudeCode === offered.claudeCode &&
+        sameModels(held.models, offered.models) &&
+        Date.now() - Date.parse(held.at) < this.timing.modelsStaleMs
+      ) {
+        this.event("models_held", { claudeCode: held.claudeCode });
+        return;
+      }
+      const report = { claudeCode: offered.claudeCode, models: offered.models };
+      const { kept } = await this.api.reportModels(report);
+      if (kept) this.modelsHeld = { ...report, at: new Date().toISOString() };
+      this.event("models_reported", { kept, claudeCode: report.claudeCode });
+    } catch (err) {
+      // The next start of Claude Code says it again.
+      this.log(`reporting the models failed: ${said(err)}`);
+    }
   }
 
   private async sendUsage(turns: TurnUsage[]): Promise<void> {
@@ -1595,6 +1764,8 @@ export class Runner {
     // A question cannot outlive the turn that asked it, nor one an earlier run left open.
     this.dropAsks("The turn ended before anyone answered.");
     this.inTurn = false;
+    // No turn, no event: nothing of this one is left for whatever comes before the next begins.
+    this.turnEvent = null;
     if (!this.working) {
       // Answered, or ended in a way the thread has said: nothing is left to pick up. Not a turn
       // the runner's own shutdown cut off, which the next start picks up.
@@ -1612,7 +1783,7 @@ export class Runner {
    */
   private endTurn(): void {
     const end = async () => {
-      await this.ws.design.settled(this.timing.settleMs);
+      await this.ws.canvas.settled(this.timing.settleMs);
       if (this.working || this.stopping) return;
       const notices = this.ws.notices();
       if (notices.length) {
@@ -1636,13 +1807,18 @@ export class Runner {
     this.log(`Claude Code stopped${error ? `: ${error}` : ""}`);
     this.closeStreams("failed");
     // The process that asked is gone; the questions stay for people to answer as messages.
-    for (const id of this.asks.keys()) this.asks.set(id, null);
+    for (const [id, askId] of this.asks) {
+      if (askId) this.withdrawAsk(askId, "Claude Code stopped before anyone answered.");
+      this.asks.set(id, null);
+    }
+    this.secretCalls = [];
     this.answering.clear();
     this.sent.clear();
     this.asides.clear();
     this.later = [];
     this.ending = null;
     this.inTurn = false;
+    this.turnEvent = null;
     this.run = null;
     if (++this.restarts > MAX_RESTARTS) {
       // Until the next event, which starts it again (`send`) with a fresh count.
@@ -1690,7 +1866,7 @@ export class Runner {
   /* The branch on GitHub                                              */
   /* ---------------------------------------------------------------- */
 
-  /** What pushes the design's branch, for a repo design that is checked out. */
+  /** What pushes the canvas's branch, for a repo canvas that is checked out. */
   private branchPush(): BranchPush | null {
     const { repo, branch } = this.session;
     if (!repo || !branch || this.cloneError || !this.opts.checkoutGit) return null;
@@ -1708,23 +1884,39 @@ export class Runner {
   }
 
   /**
-   * Push the design's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
+   * Push the canvas's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
    * how it stands: to the API with the state (what Create PR goes by), and in the thread when a
-   * push failed for good. The end of a turn, a sleep, a start and a person's Create PR ask for it.
+   * push failed for good. The end of a turn, a stop, a start, a person's Create PR and the agent's
+   * own pull request tools (`tool`) ask for it. Answers how this push went: null when there was
+   * no push to make, or it could not be tried.
    */
-  private push(why: "turn" | "sleep" | "start" | "asked", opts: { deadline?: number } = {}) {
+  private push(
+    why: "turn" | "stop" | "start" | "asked" | "tool",
+    opts: { deadline?: number } = {},
+  ): Promise<PushOutcome | null> {
     const pusher = this.pusher;
-    if (!pusher || this.fatalReason) return Promise.resolve();
+    if (!pusher || this.fatalReason) return Promise.resolve(null);
+    // A turn that began since this was asked for (a start's claim brought a message, one came
+    // after Create PR or a turn's end) has the agent's git going: the push is left to its end.
+    // Not on the way to sleep, which has cut the turn already and is the last chance, and not
+    // for the agent's own tool, which asks for it mid-turn and goes on only once GitHub has it.
+    const held = () => {
+      if (why === "stop" || why === "tool" || !this.working) return false;
+      if (why === "asked") this.pushAsked = true;
+      return true;
+    };
+    let answer: PushOutcome | null = null;
     const run = async () => {
       try {
         const ahead = await pusher.unpushed();
-        // Said while it lasts, but not on the way to sleep: that would read as work to keep awake for.
-        if ((ahead > 0 || why === "asked") && why !== "sleep") {
+        // Said while it lasts, but not on the way to a stop: that would read as work to keep awake for.
+        if ((ahead > 0 || why === "asked") && why !== "stop") {
           this.pushingNow = true;
           this.refreshState();
         }
-        const outcome = await pusher.push(opts);
+        const outcome = await pusher.push({ ...opts, held });
         this.branch = outcome;
+        answer = outcome;
         const error = outcome.failure
           ? pushFailureText(outcome.failure, {
               branch: pusher.branchName,
@@ -1754,11 +1946,11 @@ export class Runner {
       }
     };
     this.pushes = this.pushes.then(run, run);
-    return this.pushes;
+    return this.pushes.then(() => answer);
   }
 
   /** Where the branch and its pull request stand, for the start of a turn. */
-  private context(): string | null {
+  private context(event?: RunnerEvent): string | null {
     const { repo, branch } = this.session;
     if (!repo || !branch || this.cloneError) return null;
     return turnContext({
@@ -1766,6 +1958,7 @@ export class Runner {
       pullRequest: this.pullRequest,
       unpushed: this.branch?.unpushed ?? 0,
       pushFailed: this.branch?.failure?.said.split("\n").at(-1) ?? null,
+      fromGithub: event?.kind === "check" || event?.kind === "review",
     });
   }
 
@@ -1821,7 +2014,7 @@ export class Runner {
 
 /**
  * What `describe_pull_request` tells the agent it did, in words it can repeat to the person: the
- * open pull request's description updated on GitHub, or saved for the one the person opens.
+ * open pull request's description updated on GitHub, or saved for the one that opens next.
  */
 export function summaryAnswer(saved: PullRequestSummaryResponse, unpushed: number): string {
   if (saved.pullRequest !== null) {
@@ -1839,9 +2032,9 @@ export function summaryAnswer(saved: PullRequestSummaryResponse, unpushed: numbe
       : "";
   if (saved.open === undefined) {
     // An API older than this says only that no open pull request took the words.
-    return `Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.${pending}`;
+    return `Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one that opens next.${pending}`;
   }
-  return `Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu.${pending}`;
+  return `Saved as the description the pull request will open with. No pull request is open yet: open it with ${PULL_REQUEST_TOOLS.open} when the work is ready for a reviewer.${pending}`;
 }
 
 /** How a turn went, for the API's "turn started" and "turn finished". */
@@ -1871,6 +2064,11 @@ function questionBody(ask: Ask): QuestionBody {
       return {
         kind: "permission",
         payload: { tool: ask.tool, title: ask.title, description: ask.description },
+      };
+    case "handoff":
+      return {
+        kind: "handoff",
+        payload: { title: ask.title, url: ask.url, description: ask.description },
       };
   }
 }

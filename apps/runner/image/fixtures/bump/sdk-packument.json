@@ -1,0 +1,24 @@
+{
+  "dist-tags": {
+    "latest": "0.3.322",
+    "next": "0.3.322"
+  },
+  "versions": {
+    "0.3.318": {
+      "version": "0.3.318",
+      "claudeCodeVersion": "2.1.318"
+    },
+    "0.3.319": {
+      "version": "0.3.319",
+      "claudeCodeVersion": "2.1.319"
+    },
+    "0.3.321": {
+      "version": "0.3.321",
+      "claudeCodeVersion": "2.1.321"
+    },
+    "0.3.322": {
+      "version": "0.3.322",
+      "claudeCodeVersion": "2.1.322"
+    }
+  }
+}

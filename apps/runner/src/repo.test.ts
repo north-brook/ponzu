@@ -58,7 +58,7 @@ test("Scratch gets an empty folder and no git at all", async () => {
   expect(readdirSync(dir)).toEqual([]);
 });
 
-test("the first checkout clones and makes the design's branch from the default branch", async () => {
+test("the first checkout clones and makes the canvas's branch from the default branch", async () => {
   const { git, session, opts, root, home } = await world();
   const dir = await checkout(session, opts);
   expect(dir).toBe(join(root, "fern"));

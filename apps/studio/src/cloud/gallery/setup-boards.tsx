@@ -27,7 +27,7 @@ function OnSend({ children }: { children: (dismiss: () => void, open: boolean) =
   const [open, setOpen] = useState(true);
   return (
     <>
-      <Harness designs={f.soloDesigns} openId={null}>
+      <Harness canvases={f.soloCanvases} openId={null}>
         <CreateHarness initialPrompt={PROMPT} />
       </Harness>
       {children(() => setOpen(false), open)}
@@ -127,6 +127,9 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
 
   "settings-account": () => <SettingsWindow section="account" />,
   "settings-agents": () => <SettingsWindow section="agents" />,
+  "agents-limits": () => (
+    <SettingsWindow section="agents" data={{ ...TEAM_SETTINGS, limits: s.limitsAtLimit }} />
+  ),
   "settings-notifications": () => <SettingsWindow section="notifications" />,
   "settings-members": () => <SettingsWindow section="members" />,
   "settings-members-not-joined": () => (
@@ -143,7 +146,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         ...TEAM_SETTINGS,
         byPerson: s.byPersonWithNobody,
         unattributedCredits: s.unattributedCredits,
-        byDesign: s.byDesign,
+        byCanvas: s.byCanvas,
       }}
     />
   ),
@@ -154,7 +157,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard
           card={card}
           cardComplete
@@ -172,7 +175,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard={false}
           card={card}
           cardComplete={false}
@@ -190,7 +193,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard
           card={card}
           cardComplete
@@ -208,7 +211,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <CapReachedDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canRaise
           capUsd={500}
           billedUsd={500}
@@ -226,7 +229,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <CapReachedDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canRaise={false}
           capUsd={500}
           billedUsd={500}
@@ -259,7 +262,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
           open={open}
           onCancel={close}
           onConfirm={close}
-          login={f.bryce.login}
+          login={f.ada.login}
           soleAdmin={false}
         />
       )}

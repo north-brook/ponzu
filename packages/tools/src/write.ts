@@ -18,9 +18,9 @@ import {
   walk,
 } from "@ponzu/core";
 import { z } from "zod";
+import type { ToolCanvas } from "./canvas.ts";
 import type { ToolContext } from "./context.ts";
 import { styleArg, ToolError, type ToolResult, tool } from "./define.ts";
-import type { ToolDesign } from "./design.ts";
 import {
   type Footprint,
   footprints,
@@ -35,7 +35,7 @@ import {
   apply,
   artboardSize,
   autoPlace,
-  designOf,
+  canvasOf,
   droppedNote,
   elementsIn,
   linkNote,
@@ -58,24 +58,33 @@ const createArtboardInput = {
   y: z.number().optional(),
 };
 
+/** Every element's id in the canvas, for the ids new HTML is given to keep clear of. */
+function idsIn(doc: Doc): Set<string> {
+  const ids = new Set<string>();
+  for (const page of doc.pages)
+    for (const artboard of page.artboards)
+      for (const { node } of walk(artboard.root)) ids.add(node.id);
+  return ids;
+}
+
 /** create_artboard. `kept` adds where the host keeps the new artboard. */
 export async function createArtboard(
   args: z.infer<z.ZodObject<typeof createArtboardInput>>,
   ctx: ToolContext,
   kept?: ArtboardNote,
 ): Promise<ToolResult> {
-  const open = await designOf(ctx, [args.page]);
-  const { key, design } = open;
-  /** The page it goes on. Nothing when none is named and the design has none: one is made. */
+  const open = await canvasOf(ctx, [args.page]);
+  const { key, canvas } = open;
+  /** The page it goes on. Nothing when none is named and the canvas has none: one is made. */
   const pageNow = () => {
-    const doc = design.doc;
+    const doc = canvas.doc;
     if (!args.page) return doc.pages[0];
     const page = findPage(doc, args.page);
     if (!page)
       throw new ToolError(
         doc.pages.length
           ? `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`
-          : `No page ${args.page}: this design has no pages yet. Leave page out and the first one is made, or add it with create_page.`,
+          : `No page ${args.page}: this canvas has no pages yet. Leave page out and the first one is made, or add it with create_page.`,
       );
     return page;
   };
@@ -85,18 +94,20 @@ export async function createArtboard(
   );
   const width = style.width ?? "auto";
   const height = style.height ?? "auto";
-  const { nodes, dropped } = args.html ? parseHtml(args.html) : { nodes: [], dropped: [] };
+  const { nodes, dropped } = args.html
+    ? parseHtml(args.html, { taken: idsIn(canvas.doc) })
+    : { nodes: [], dropped: [] };
   const around = pageNow()?.artboards ?? [];
   const pos =
     args.x !== undefined && args.y !== undefined
       ? { x: args.x, y: args.y }
       : autoPlace(
-          await footprints(ctx.ws, key, design.doc, around, { need: rowNeed(around, args.y) }),
+          await footprints(ctx.ws, key, canvas.doc, around, { need: rowNeed(around, args.y) }),
           args.y,
         );
   // Read after the measure, which waits on the renderer: the page may have changed meanwhile.
   const existing = pageNow();
-  // A design can be without a page: a new one in the cloud, or one whose last page a person
+  // A canvas can be without a page: a new one in the cloud, or one whose last page a person
   // deleted. Its first artboard brings the page with it.
   const page = existing ?? { id: newId("pg"), name: "Home", artboards: [] };
   const id = newId("ab");
@@ -123,12 +134,12 @@ export async function createArtboard(
   };
   // One op, so nobody is ever shown the page without its artboard, or refused one of the two.
   const newPage: Op = { op: "page.create", index: 0, page: { id: page.id, name: page.name } };
-  apply(design, existing ? create : { op: "batch", ops: [newPage, create] }, ctx);
-  const made = existing ? "" : ` (${page.id}, made now: the design had no page)`;
+  apply(canvas, existing ? create : { op: "batch", ops: [newPage, create] }, ctx);
+  const made = existing ? "" : ` (${page.id}, made now: the canvas had no page)`;
   ctx.ws.focus?.(key, id);
   const where = (await kept?.(open, id)) ?? "";
   const kids = elementsIn(nodes);
-  const overlap = await pageOverlaps(ctx, key, design, [id]);
+  const overlap = await pageOverlaps(ctx, key, canvas, [id]);
   const link = ctx.ws.linkTo?.(key, { artboard: id });
   return {
     text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${made}${where}.${link ? `\nLink: ${link}` : ""}${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
@@ -164,15 +175,18 @@ export const writeTools = [
         ),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.target]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.target]);
+      const doc = canvas.doc;
       const t = target(doc, args.target);
       const mode = args.mode ?? "append";
       // Parse in the context of the element the HTML lands in, so SVG children
       // written into an <svg> or <g> close themselves like they do in a browser.
       const sibling = mode === "before" || mode === "after" || mode === "replace";
       const parent = sibling ? t.parent : t.node;
-      const { nodes, dropped } = parseHtml(args.html, parent ? { parent } : {});
+      const { nodes, dropped } = parseHtml(args.html, {
+        ...(parent ? { parent } : {}),
+        taken: idsIn(doc),
+      });
       if (!nodes.some((n) => n.kind === "el" || n.value.trim()))
         throw new ToolError("The HTML is empty after cleanup." + droppedNote(dropped));
       let op: Op;
@@ -207,7 +221,7 @@ export const writeTools = [
           break;
         }
       }
-      apply(design, op, ctx);
+      apply(canvas, op, ctx);
       const els = elementsIn(nodes);
       return {
         text: `${mode === "replace" ? "Replaced" : "Wrote"} ${plural(els.length, "element")} in ${t.artboard.id} "${t.artboard.name}".\n${reportIds(nodes)}${droppedNote(dropped)}`,
@@ -226,11 +240,11 @@ export const writeTools = [
       updates: z.array(z.object({ ids: z.array(z.string()).min(1), style: styleArg })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(
+      const { canvas } = await canvasOf(
         ctx,
         args.updates.flatMap((u) => u.ids),
       );
-      const doc = design.doc;
+      const doc = canvas.doc;
       const ops: Op[] = [];
       const pending = new Map<string, Record<string, string>>();
       for (const u of args.updates) {
@@ -241,7 +255,7 @@ export const writeTools = [
         }
       }
       for (const [id, style] of pending) ops.push({ op: "style", id, style });
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       const warnings = styleWarnings(args.updates.flatMap((u) => Object.keys(u.style)));
       return {
         text: `Updated ${plural(pending.size, "node")}.${warnings}${directionNote([...pending.keys()], (id) => findArtboard(doc, id) && pending.get(id))}`,
@@ -259,17 +273,17 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), text: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(
+      const { canvas } = await canvasOf(
         ctx,
         args.updates.map((u) => u.id),
       );
       const ops: Op[] = args.updates.map((u) => {
-        const t = target(design.doc, u.id);
+        const t = target(canvas.doc, u.id);
         if (t.isArtboard)
           throw new ToolError(`${u.id} is an artboard. Set text on a node inside it.`);
         return { op: "children", id: u.id, children: [{ kind: "text", value: u.text }] };
       });
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       return { text: `Set text on ${plural(ops.length, "node")}.` };
     },
   }),
@@ -285,27 +299,27 @@ export const writeTools = [
       attrs: z.record(z.string(), z.union([z.string(), z.null()])),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.id]);
-      const t = target(design.doc, args.id);
+      const { canvas } = await canvasOf(ctx, [args.id]);
+      const t = target(canvas.doc, args.id);
       const next = { ...t.node.attrs };
       for (const [k, v] of Object.entries(args.attrs)) {
         const lower = k.toLowerCase();
         if (lower.startsWith("on"))
-          throw new ToolError("Designs can't run code; event handlers are not allowed.");
+          throw new ToolError("Canvases can't run code; event handlers are not allowed.");
         if (lower === "style") throw new ToolError("Use update_styles for CSS.");
         if (lower === "data-id") throw new ToolError("Ids are managed by Ponzu.");
         if (lower === "data-name" || lower === "layer-name")
           throw new ToolError("A layer's name isn't an attribute. Set it with rename.");
         if (lower === "srcdoc")
           throw new ToolError(
-            "Designs can't hold a document inside an attribute; srcdoc is not allowed.",
+            "Canvases can't hold a document inside an attribute; srcdoc is not allowed.",
           );
         if (v !== null && /^\s*javascript:/i.test(v))
           throw new ToolError("javascript: URLs are not allowed.");
         if (v === null) delete next[k];
         else next[k] = v;
       }
-      apply(design, { op: "attrs", id: args.id, attrs: next }, ctx);
+      apply(canvas, { op: "attrs", id: args.id, attrs: next }, ctx);
       return { text: `Updated attributes on ${args.id}.` };
     },
   }),
@@ -329,12 +343,12 @@ export const writeTools = [
       y: z.number().optional().describe("Row for artboard copies. Default: the original's row."),
     },
     async handler(args, ctx) {
-      const { key, design } = await designOf(ctx, [...args.ids, args.parent]);
+      const { key, canvas } = await canvasOf(ctx, [...args.ids, args.parent]);
       // Each page that holds an original, measured: the originals for their copies' size, and
       // when x is left to autoPlace, what's in the rows the copies join. Measuring waits on
       // the renderer, so it comes before the document is read for the ops.
       const pageBoxes = new Map<string, Footprint[]>();
-      for (const page of design.doc.pages) {
+      for (const page of canvas.doc.pages) {
         const originals = page.artboards.filter((ab) => args.ids.includes(ab.id));
         if (!originals.length) continue;
         const inRow =
@@ -345,9 +359,9 @@ export const writeTools = [
               )
             : () => false;
         const need = (ab: Artboard) => args.ids.includes(ab.id) || inRow(ab);
-        pageBoxes.set(page.id, await footprints(ctx.ws, key, design.doc, page.artboards, { need }));
+        pageBoxes.set(page.id, await footprints(ctx.ws, key, canvas.doc, page.artboards, { need }));
       }
-      const doc = design.doc;
+      const doc = canvas.doc;
       const ops: Op[] = [];
       const map: Record<string, string> = {};
       // Artboard copies so far, at their originals' size on the canvas.
@@ -420,7 +434,7 @@ export const writeTools = [
       // further down never shifts a spot above it.
       for (const s of siblingCopies.reverse())
         ops.push({ op: "insert", parent: s.parent, index: s.index, nodes: [s.copy] });
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       if (placed[0]) ctx.ws.focus?.(key, placed[0].id);
       const copied = Object.keys(map).length;
       const total =
@@ -431,7 +445,7 @@ export const writeTools = [
         ? await pageOverlaps(
             ctx,
             key,
-            design,
+            canvas,
             placed.map((p) => p.id),
             // A copy renders at its original's size, measured above.
             Object.fromEntries(placed.map((p) => [p.id, { w: p.w, h: p.h }])),
@@ -470,11 +484,11 @@ export const writeTools = [
         .min(1),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(
+      const { canvas } = await canvasOf(
         ctx,
         args.moves.flatMap((m) => [m.id, m.before, m.after, m.parent]),
       );
-      const doc = design.doc;
+      const doc = canvas.doc;
       const ops: Op[] = [];
       // Nodes moved so far to each `after` sibling or parent index. Moves that
       // share a spot line up after one another, in the order given, rather than
@@ -521,7 +535,7 @@ export const writeTools = [
           throw new ToolError(`Move for ${m.id} needs before, after or parent.`);
         }
         const op: Op = { op: "move", id: m.id, parent, index };
-        apply(design, op, ctx);
+        apply(canvas, op, ctx);
         ops.push(op);
       }
       return { text: `Moved ${plural(ops.length, "node")}.` };
@@ -536,15 +550,15 @@ export const writeTools = [
     description: "Delete nodes or whole artboards. Undoable from the app.",
     input: { ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, args.ids);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, args.ids);
+      const doc = canvas.doc;
       const ops: Op[] = [];
       for (const id of args.ids) {
         if (findArtboard(doc, id)) ops.push({ op: "artboard.delete", id });
         else if (locate(doc, id)) ops.push({ op: "remove", id });
         else throw new ToolError(`No artboard or node ${id}.`);
       }
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       return { text: `Deleted ${plural(ops.length, "item")}.` };
     },
   }),
@@ -558,16 +572,16 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), name: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(
+      const { canvas } = await canvasOf(
         ctx,
         args.updates.map((u) => u.id),
       );
       const ops: Op[] = args.updates.map((u) =>
-        findArtboard(design.doc, u.id)
+        findArtboard(canvas.doc, u.id)
           ? { op: "artboard.update", id: u.id, name: u.name }
-          : { op: "name", id: target(design.doc, u.id).node.id, name: u.name },
+          : { op: "name", id: target(canvas.doc, u.id).node.id, name: u.name },
       );
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       return { text: `Renamed ${plural(ops.length, "layer")}.` };
     },
   }),
@@ -588,14 +602,14 @@ export const writeTools = [
       page: z.string().optional().describe("Move to this page (id or name)."),
     },
     async handler(args, ctx) {
-      const { key, design } = await designOf(ctx, [args.id, args.page]);
+      const { key, canvas } = await canvasOf(ctx, [args.id, args.page]);
       // Where it lands on another page takes a measure, which waits on the renderer, so it
       // comes before the document is read for the ops.
       const free =
         args.page && args.x === undefined
-          ? await freeSpot(ctx, key, design, args.id, args.page)
+          ? await freeSpot(ctx, key, canvas, args.id, args.page)
           : undefined;
-      const doc = design.doc;
+      const doc = canvas.doc;
       const hit = findArtboard(doc, args.id);
       if (!hit) throw new ToolError(`No artboard ${args.id}.`);
       const ops: Op[] = [];
@@ -622,9 +636,9 @@ export const writeTools = [
         ops.push({ op: "style", id: args.id, style: mergeStyle(hit.artboard.root.style, size) });
       }
       if (!ops.length) return { text: "Nothing to change." };
-      apply(design, { op: "batch", ops }, ctx);
-      const a = findArtboard(design.doc, args.id)!.artboard;
-      const overlap = await pageOverlaps(ctx, key, design, [a.id]);
+      apply(canvas, { op: "batch", ops }, ctx);
+      const a = findArtboard(canvas.doc, args.id)!.artboard;
+      const overlap = await pageOverlaps(ctx, key, canvas, [a.id]);
       return {
         text: `${a.id} "${a.name}" ${a.root.style.width}×${a.root.style.height} at (${a.x}, ${a.y}).${overlap}`,
       };
@@ -734,11 +748,11 @@ function placeCopy(
 async function freeSpot(
   ctx: ToolContext,
   key: string,
-  design: ToolDesign,
+  canvas: ToolCanvas,
   id: string,
   page: string,
 ): Promise<{ x: number; y: number } | undefined> {
-  const doc = design.doc;
+  const doc = canvas.doc;
   const to = findPage(doc, page);
   if (!to || findArtboard(doc, id)?.page.id === to.id) return undefined;
   return autoPlace(
@@ -753,11 +767,11 @@ async function freeSpot(
 async function pageOverlaps(
   ctx: ToolContext,
   key: string,
-  design: ToolDesign,
+  canvas: ToolCanvas,
   ids: string[],
   known: Record<string, { w: number; h: number }> = {},
 ): Promise<string> {
-  const doc = design.doc;
+  const doc = canvas.doc;
   const pages = doc.pages.filter((p) => p.artboards.some((ab) => ids.includes(ab.id)));
   const found = [];
   for (const page of pages)

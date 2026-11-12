@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, cloud]
   pull_request:
+  # The pull requests image.yml and claude-code.yml open with GITHUB_TOKEN start no workflows;
+  # they dispatch this on the branch instead, and it reports on the head commit as a push
+  # would (every suite runs; nothing is cached).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -137,8 +141,9 @@ jobs:
           check web bun run --filter @ponzu/web build
           # Builds the API the way Vercel does and loads the bundle in Node.
           check api bun scripts/ci/api-bundle.ts
-          # Builds the runner and starts it, which must refuse an empty environment.
-          check runner bun apps/runner/scripts/build.ts --smoke
+          # Builds the runner and starts it, which must refuse an empty environment. Its own
+          # outdir, so it never overwrites the dist/ the API build reads.
+          check runner bun apps/runner/scripts/build.ts --smoke --outdir "$RUNNER_TEMP/runner"
           wait
           failed=0
           for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner; do
@@ -376,12 +381,6 @@ jobs:
           bun run package:dev
           PONZU_SMOKE=1 timeout 120 xvfb-run -a out/dev/linux-unpacked/ponzu-dev --no-sandbox
         working-directory: apps/desktop
-      - name: The npm package installs, creates a design and serves the studio
-        if: env.RUN == 'true'
-        # What the release workflow publishes for `bunx ponzu`, with the studio
-        # the package above built. The desktop app no longer bundles the CLI;
-        # this stays here until apps/cli is deleted at cutover.
-        run: bun scripts/npm-package.ts && bun scripts/npm-smoke.ts
 
   desktop-windows:
     # The same unsigned package and launch check as "Desktop package", on
@@ -427,13 +426,11 @@ jobs:
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-      - name: The CLI and the app's own paths, as Windows writes them
+      - name: The app's own paths, as Windows writes them
         if: env.RUN == 'true'
-        # The CLI's tests that need Windows itself ("Tests" runs the rest), and the app's serving of the studio and reading of
-        # links with Windows' separators.
-        run: |
-          bun test apps/cli/src/host.test.ts apps/cli/src/command.test.ts -t "on Windows"
-          bun test apps/desktop/src/studio-files.test.ts apps/desktop/src/deep-links.test.ts
+        # The app's serving of the studio and reading of links with Windows'
+        # separators ("Tests" runs the rest).
+        run: bun test apps/desktop/src/studio-files.test.ts apps/desktop/src/deep-links.test.ts
       - name: Unsigned, unpublished package
         if: env.RUN == 'true'
         run: bun run package:dir
@@ -458,18 +455,16 @@ jobs:
 
   mobile-checks:
     # The iPhone app on its own: its typecheck ("Lint, typecheck, build" also
-    # runs it) and tests ("Tests" also runs them, with
-    # everything), and an iOS export, which proves Metro, NativeWind and every
-    # import resolve without a Mac. The export is all that is its own, and it
-    # was the last check to finish on a third of pull requests, so pull
-    # requests into `cloud` skip it, as they skip "Mobile iOS": the cloud
-    # rewrite doesn't ship this app. A push to `cloud` still runs it, so a
-    # change there that breaks the bundle shows before `cloud` reaches main.
+    # runs it) and tests ("Tests" also runs them, with everything), its
+    # component tests (jest-expo, `test:rn`), and an iOS export, which proves
+    # Metro, NativeWind and every import resolve without a Mac. It runs for
+    # every pull request the phone's scope covers, into `cloud` too, where
+    # the cloud app is now built (scripts/ci/scope.ts: the phone, the canvas,
+    # and the client and core it runs).
     name: Mobile checks
     needs: scope
     if: >-
-      ${{ !cancelled() && github.base_ref != 'cloud'
-      && needs.scope.outputs.mobile != 'false' }}
+      ${{ !cancelled() && needs.scope.outputs.mobile != 'false' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -486,6 +481,9 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bunx tsc -p apps/mobile/tsconfig.json --noEmit
       - run: bun test apps/mobile
+      - name: Component tests
+        run: bun run test:rn
+        working-directory: apps/mobile
       - name: The JavaScript bundle builds for iOS
         run: bunx expo export --platform ios --output-dir "$RUNNER_TEMP/export"
         working-directory: apps/mobile

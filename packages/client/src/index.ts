@@ -5,7 +5,7 @@ export {
   type AnswerBody,
   type Api,
   type ApiOptions,
-  type CreateDesignBody,
+  type CreateCanvasBody,
   createApi,
   type LinkScheme,
   type OnboardingStep,
@@ -21,7 +21,7 @@ export {
   type SessionLender,
 } from "./borrowed-session.ts";
 export { type Clock, systemClock } from "./clock.ts";
-export { type CachedDesign, DocCache } from "./doc-cache.ts";
+export { type CachedCanvas, DocCache } from "./doc-cache.ts";
 export { ApiError, type ClientErrorCode } from "./errors.ts";
 export { IDEAS_RETRY_MS, type Idea, type IdeasState, watchRepoIdeas } from "./ideas.ts";
 export {
@@ -40,8 +40,8 @@ export {
   type Sealed,
 } from "./live/realtime.ts";
 export type {
-  DesignHeadRow,
-  DesignListRow,
+  CanvasHeadRow,
+  CanvasListRow,
   LiveArgs,
   LiveQueryName,
   LiveRows,

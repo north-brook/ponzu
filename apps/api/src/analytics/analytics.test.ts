@@ -18,10 +18,10 @@ function analytics(sink = new MemoryAnalytics(), flushMs?: number) {
 
 const request = (over: Partial<AnalyticsScope> = {}): AnalyticsScope => ({
   userId: () => "usr_ada",
-  designId: () => null,
+  canvasId: () => null,
   sessionId: "0192e0a0-0000-7000-8000-000000000001",
   requestId: "req_1",
-  route: () => "POST /v1/designs/:id/messages",
+  route: () => "POST /v1/canvases/:id/messages",
   workspaceId: null,
   ...over,
 });
@@ -32,14 +32,14 @@ test("inside a request, a capture is the person's, in the workspace they reached
     noteWorkspace("ws_1");
     // The first workspace is the request's: one read on the way does not move it.
     noteWorkspace("ws_other");
-    tracked.capture("turn stopped", { design_id: "des_1" });
+    tracked.capture("turn stopped", { canvas_id: "cnv_1" });
   });
   expect(sink.events).toEqual([
     {
       event: "turn stopped",
       distinctId: "usr_ada",
       properties: {
-        design_id: "des_1",
+        canvas_id: "cnv_1",
         workspace_id: "ws_1",
         $session_id: "0192e0a0-0000-7000-8000-000000000001",
       },
@@ -48,17 +48,17 @@ test("inside a request, a capture is the person's, in the workspace they reached
   ]);
 });
 
-test("an event about no one is kept off every profile, keyed by its workspace or its design", () => {
+test("an event about no one is kept off every profile, keyed by its workspace or its canvas", () => {
   const { tracked, sink } = analytics();
   tracked.capture(
-    "sandbox lost",
-    { design_id: "des_1" },
+    "sandbox restored",
+    { canvas_id: "cnv_1", kind: "rebuilt" },
     { distinctId: null, workspaceId: "ws_1" },
   );
-  tracked.capture("sandbox lost", { design_id: "des_2" });
+  tracked.capture("sandbox restored", { canvas_id: "cnv_2", kind: "rebuilt" });
   expect(sink.events.map((e) => [e.distinctId, e.properties.$process_person_profile])).toEqual([
     ["ws_1", false],
-    ["des_2", false],
+    ["cnv_2", false],
   ]);
 });
 
@@ -68,7 +68,7 @@ test("a fact reported again carries the same id and time, which PostHog keeps on
   for (let i = 0; i < 2; i++) {
     tracked.capture(
       "turn started",
-      { design_id: "des_1", turn_id: "res-1" },
+      { canvas_id: "cnv_1", turn_id: "res-1" },
       { distinctId: "usr_ada", timestamp: at, uuid: stableUuid("res-1/started") },
     );
   }
@@ -127,7 +127,7 @@ test("an exception carries the request's route, id, person, workspace and sessio
   expect(distinctId).toBe("usr_ada");
   expect(properties).toMatchObject({
     status: 500,
-    route: "POST /v1/designs/:id/messages",
+    route: "POST /v1/canvases/:id/messages",
     request_id: "req_1",
     workspace_id: "ws_1",
     $session_id: "0192e0a0-0000-7000-8000-000000000001",

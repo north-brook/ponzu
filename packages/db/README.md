@@ -19,6 +19,15 @@ every migration in the journal is recorded as applied, and fails if one was pass
 (Drizzle skips a migration that is older than the newest one applied, which is what a
 migration written on one branch and merged after another is).
 
+A rename is written by hand. Run `bunx drizzle-kit generate --custom --name <name>`, write the
+SQL, and replace the body of the snapshot it wrote (a copy of the one before) with
+`generateDrizzleJson(schema, prevId)` from `drizzle-kit/api`, keeping its `id` and `prevId`; a
+plain `db:generate` must then find nothing to do. Never answer drizzle-kit's rename prompts:
+they drop and re-create keys and indexes. `0025_canvases` is one. It gave canvas names to
+every table, column, key and index named for the old word, and refuses to run unless every
+sandbox is asleep. `schema/catalog.test.ts` checks that a database migrated from the first
+migration names everything exactly as one built fresh from the schema does.
+
 ### Tests on a real Postgres
 
 PGlite is one connection. Its races take turns, and its planner never sees a table that was
@@ -42,7 +51,7 @@ Neon URL they run over both of Neon's drivers.
 import { commitOps, createDb } from "@ponzu/db";
 
 const db = createDb(process.env.DATABASE_URL); // Neon over HTTP
-const result = await commitOps(db, { designId, expectedSeq, actor, ops });
+const result = await commitOps(db, { canvasId, expectedSeq, actor, ops });
 ```
 
 - Every query is a function that takes the database first. The API writes no SQL of its own.
@@ -64,15 +73,17 @@ const result = await commitOps(db, { designId, expectedSeq, actor, ops });
   hands an event to each runner once.)
 - `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
-  their types and the design head. It imports no driver and no Drizzle. The package root
+  their types and the canvas head. It imports no driver and no Drizzle. The package root
   does, so a browser or phone bundle must not import a value from it.
-- Ids are text with a prefix that says what the row is (`des_…`, `usr_…`), made by `newId`.
+- Ids are text with a prefix that says what the row is (`cnv_…`, `usr_…`), made by `newId`.
+  Canvases made before the rename keep the ids they were made with, `des_…`: nothing checks
+  the prefix, and every link and foreign key holds the id as it is.
 - Columns named `encrypted_…` hold ciphertext. The key is the API's; this package never sees it.
 
 ## Committing ops
 
-`commitOps` appends a batch to `design_ops` and moves `designs.seq` past it in one statement.
-The update of the design's row matches only while `seq` is still the caller's `expectedSeq`,
+`commitOps` appends a batch to `canvas_ops` and moves `canvases.seq` past it in one statement.
+The update of the canvas's row matches only while `seq` is still the caller's `expectedSeq`,
 and the insert takes rows only if that update happened. Two callers racing on one seq: the
 second waits on the row lock, sees `seq` has moved, writes nothing and gets `{ kind: "conflict" }`.
 An op whose id is already in the log is not appended again; the stored op comes back instead.
@@ -82,14 +93,14 @@ An op whose id is already in the log is not appended again; the stored op comes 
 200 (`UNDO_DEPTH`), and older than seven days (`OP_RETENTION_DAYS`). So posting an id again
 within seven days always answers with the original; after that it may be appended as new,
 and a sender must drop a pending op that old. `pruneOps` does the same pruning on its own,
-for a design that stopped changing before its last ops were old enough to go.
+for a canvas that stopped changing before its last ops were old enough to go.
 
 **Text Postgres cannot store.** A NUL (U+0000), or half of a surrogate pair, fails any
 statement that carries it. For ops and documents, which must be stored exactly or not at
 all, `commitOps` answers `{ kind: "unstorable", ids }` and writes nothing; call
 `isStorable(op)` while validating, so one such op is rejected and the rest of its batch
 goes on. For thread, event and question payloads the characters are replaced with U+FFFD.
-A plain text column (a design's name, a thread item's id) is not checked here: a NUL in one
+A plain text column (a canvas's name, a thread item's id) is not checked here: a NUL in one
 is a `QueryError`. `isStorable` takes any json value, so the API can ask it of a request body.
 
 ## Tables
@@ -97,21 +108,21 @@ is a `QueryError`. `isStorable` takes any json value, so the API can ask it of a
 Clients watch the tables marked **live** through Neon Realtime. That puts these rules on them:
 
 - A watched row is sent whole on every change, and one over 4 MiB ends the subscription. So
-  content never lives in one: a design's document is in `design_ops` and `design_checkpoints`,
-  and clients watch only `designs.seq`, then fetch the ops after their own seq from the API.
+  content never lives in one: a canvas's document is in `canvas_ops` and `canvas_checkpoints`,
+  and clients watch only `canvases.seq`, then fetch the ops after their own seq from the API.
 - Every table has a primary key.
 - A live query is a plain filter or join that names its columns, by their own names. Never
-  select an `encrypted_…` column in one, or `designs.asset_key`, and sort on the client.
-- Rows below a design (`thread_items`, `questions`, `presence`, …) carry `design_id`, not a
-  workspace. A live query scoped to a workspace joins through `designs.workspace_id`.
+  select an `encrypted_…` column in one, or `canvases.asset_key`, and sort on the client.
+- Rows below a canvas (`thread_items`, `questions`, `presence`, …) carry `canvas_id`, not a
+  workspace. A live query scoped to a workspace joins through `canvases.workspace_id`.
 - **Everything in a watched row is plaintext that every watcher receives.** A question's
   answer and a thread item's payload are that, and an event's payload is stored in the clear
   too. A secret never goes in one: `answerSecretQuestion` puts the value in `repo_secrets`
   and records only the secret's name, and the table refuses anything else for a secret.
 - Realtime delivers a `bigint` as a string, so two seqs compared raw put "10" before "9".
-  For the design head, select `DESIGN_HEAD_COLUMNS` and decode each row with `toDesignHead`.
+  For the canvas head, select `CANVAS_HEAD_COLUMNS` and decode each row with `toCanvasHead`.
   The other watched `bigint` columns need the same `Number(…)`: `thread_items.seq`,
-  `questions.seq`, `design_reads.seen_seq` and `seen_thread_seq`, and the GitHub ids on
+  `questions.seq`, `canvas_reads.seen_seq` and `seen_thread_seq`, and the GitHub ids on
   `users`, `workspaces` and `repos`.
 
 People and access
@@ -124,35 +135,35 @@ People and access
 | `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
 | `uninstalled_installations` | Installation ids GitHub said are gone. GitHub never reuses one, so a read that began before the uninstall cannot bring it back. | |
 | `memberships` | Who can reach a workspace, as GitHub last said, how (`github_access`: owner, member of its organization, or collaborator on some repos), and their role (admin or member). An owner is always an admin. | live |
-| `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
-| `repo_access` | What GitHub last said each person may do in each repo (`admin`, `write`, `read`, `none`), and when: the one answer to who may see or steer a repo. A person's sync writes a whole workspace of them (`recordReachableRepos`), a question asked as the App writes one (`recordRepoAccess`), and a webhook that cannot say whose access changed makes them stale (`markRepoAccessStale`). The repo list, the designs list and the live queries join it, so a repo and its designs show only to people who can read it. A row is replaced only by a newer answer, and is read only alongside the person's membership. | live |
+| `repos` | A repo the App can see: default branch, the base snapshot new canvases start from, its stack, ideas. | live |
+| `repo_access` | What GitHub last said each person may do in each repo (`admin`, `write`, `read`, `none`), and when: the one answer to who may see or steer a repo. A person's sync writes a whole workspace of them (`recordReachableRepos`), a question asked as the App writes one (`recordRepoAccess`), and a webhook that cannot say whose access changed makes them stale (`markRepoAccessStale`). The repo list, the canvases list and the live queries join it, so a repo and its canvases show only to people who can read it. A row is replaced only by a newer answer, and is read only alongside the person's membership. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
 | `claude_accounts` | A person's own Claude: subscription or API key (encrypted, destroyed on disconnect while the row stays `revoked`), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |
 | `auth_states` | Short-lived: a GitHub install in progress, or a Claude sign-in waiting for its code. A person has one Claude sign-in open at a time and starts so many an hour (`openClaudeSignIn`). | |
 
-Designs
+Canvases
 
 | Table | What it is for | |
 |---|---|---|
-| `designs` | One design: workspace, repo (null for Scratch), owner, branch, status, `seq`, pull request and agent state. Small on purpose. | live |
-| `design_ops` | The ordered log of a design. Each op with its inverse, who made it, and whether it was undone. `json`, not `jsonb`. | |
-| `design_checkpoints` | The whole document as of a seq. The current document is the latest one plus the ops after it. | |
-| `design_reads` | How far each person has looked at each design, for the unseen dot. | live |
-| `presence` | Who has a design open. A row per person per design, refreshed every 30 seconds, stale after 75. | live |
-| `assets` | A file a design uses. The bytes are in R2. | |
+| `canvases` | One canvas: workspace, repo (null for Scratch), owner, branch, status, `seq`, pull request and agent state. Small on purpose. | live |
+| `canvas_ops` | The ordered log of a canvas. Each op with its inverse, who made it, and whether it was undone. `json`, not `jsonb`. | |
+| `canvas_checkpoints` | The whole document as of a seq. The current document is the latest one plus the ops after it. | |
+| `canvas_reads` | How far each person has looked at each canvas, for the unseen dot. | live |
+| `presence` | Who has a canvas open. A row per person per canvas, refreshed every 30 seconds, stale after 75. | live |
+| `assets` | A file a canvas uses. The bytes are in R2. | |
 | `uploads` | Bytes on their way to R2: what a signed address was made for (purpose, name, type, size, SHA-256), until the uploader completes it and the file is recorded where it belongs. | |
 
 The agent
 
 | Table | What it is for | |
 |---|---|---|
-| `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by design and id: the runner chooses its items' ids, and the same id in another design is another row. | live |
-| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. `claim_id` is the runner's id for the claim that did, so a claim sent again hands out the same events. | |
-| `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by design and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
-| `sandboxes` | A design's sandbox at the provider, a generation at a time: its state and when it got there, its address, the environment it runs on (runner token, which Claude credential), its awake-since and who it is put down to, and its auto-stop. At most one of a design's is not `gone`; every move holds to the state it moves from, and leaving `awake` meters the stretch (`moveSandbox`). A wake claims it first (`beginSandbox`, `claimSandbox`): `waking_by` is the wake that holds it, and the claim counts the sandboxes up in its workspace and for its owner. `image` is the snapshot it was made from; `moving_since` holds one of the move slots while a wake moves it onto the current image, and `image_failed` an image a move onto failed for it (`takeMoveSlot`, `moveSandboxOnto`). | |
-| `design_runners` | A design's runner now: the lease (`runner_id`) the API takes calls from, what the runner said it is as it took it (`client`, with its image), when it was last heard from, and the Claude session to resume. Its last checkpoint, with `saved_through`: the newest event delivered when it was recorded, which says whether the checkpoint holds the session (`getCheckpointCover`). Apart from `designs` so the heartbeat does not touch a watched row. | |
-| `runner_tokens` | What a runner signs in with, hashed. Good for one design until it expires. | |
+| `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. Keyed by canvas and id: the runner chooses its items' ids, and the same id in another canvas is another row. | live |
+| `events` | Things that happened to a canvas, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`), with a comment's thread item beside its event. `claimed_by` is the runner each was last handed to: an event goes to each runner once. `claim_id` is the runner's id for the claim that did, so a claim sent again hands out the same events. | |
+| `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. Keyed by canvas and the id the runner chose. Answering one adds its `answer` event in the same statement. | live |
+| `sandboxes` | A canvas's Vercel sandbox, one row per canvas, keyed by `canvas_id` (no row is no sandbox): its state (`asleep`, `waking`, `awake`, `stopping`) and when it got there, the session every call is pinned to and when it started, its port's address and sealed bearer, its deadline, the image it runs, the runner token and Claude credential its runner was started with, its awake-since and who it is put down to. Every move holds to the state it moves from and to the job holding a `waking` or `stopping` row (`waking_by`; `retire:<job>` while a retire holds it), and leaving `awake` meters the stretch under `canvas_id/epoch_ms(awake_since)` (`moveSandbox`). A wake claims it first (`beginSandbox`, `claimSandbox`), counted against the sandboxes up in its workspace and for its owner. | |
+| `canvas_runners` | A canvas's runner now: the lease (`runner_id`) the API takes calls from, what the runner said it is as it took it (`client`, with its image), when it was last heard from, and the Claude session to resume. Its last checkpoint, with `saved_through`: the newest event delivered when it was recorded, which says whether the checkpoint holds the session (`getCheckpointCover`). Apart from `canvases` so the heartbeat does not touch a watched row. | |
+| `runner_tokens` | What a runner signs in with, hashed. Good for one canvas until it expires. | |
 
 Money
 
@@ -169,25 +180,25 @@ Plumbing
 | `jobs` | Work that must finish even if the request that started it does not. The cron takes what is left, and closes what ran out of attempts. | |
 | `webhook_deliveries` | Webhooks already taken, so a redelivery is not processed twice. | |
 
-## Workspaces, repos and designs
+## Workspaces, repos and canvases
 
-A design names its workspace and, unless it is Scratch, its repo. The two cannot disagree:
+A canvas names its workspace and, unless it is Scratch, its repo. The two cannot disagree:
 the foreign key is the repo and its workspace together. When GitHub transfers a repo to
-another account, `upsertRepos` moves the repo and its designs follow in the same statement.
+another account, `upsertRepos` moves the repo and its canvases follow in the same statement.
 Usage already recorded stays with the workspace that was billed for it.
 
-A design's pull request is recorded from reads of GitHub by `recordPullRequestRead`, which keeps
-the read that began last (`designs.pr_read_at`, since a check finishing leaves GitHub's
-`updated_at` alone and reads finish out of order), and settles the design on a merge. A merge
-is the last word on its pull request: nothing about it is recorded after one, so a design
+A canvas's pull request is recorded from reads of GitHub by `recordPullRequestRead`, which keeps
+the read that began last (`canvases.pr_read_at`, since a check finishing leaves GitHub's
+`updated_at` alone and reads finish out of order), and settles the canvas on a merge. A merge
+is the last word on its pull request: nothing about it is recorded after one, so a canvas
 reopened after its merge stays open. A read that finds what the row already holds writes
-nothing, since each write reaches every watcher of the workspace's designs. For the same reason
+nothing, since each write reaches every watcher of the workspace's canvases. For the same reason
 the pull request's thread notice goes in with `appendThreadItemOnce`, which never rewrites an
 item it already has.
 
 ## Deleting
 
-Deleting a design deletes everything that is only its own (ops, checkpoints, thread, events,
+Deleting a canvas deletes everything that is only its own (ops, checkpoints, thread, events,
 questions, sandboxes, tokens, assets). Its usage stays, for the bill. Deleting a person
-leaves their designs to the workspace. A workspace or repo cannot be deleted while it has
-designs, and a workspace cannot be deleted while it has usage or ledger entries.
+leaves their canvases to the workspace. A workspace or repo cannot be deleted while it has
+canvases, and a workspace cannot be deleted while it has usage or ledger entries.

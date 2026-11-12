@@ -1,35 +1,35 @@
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import type { DesignSummary } from "../model.ts";
+import type { CanvasSummary } from "../model.ts";
 import { settledShown } from "../status.ts";
 import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { TEXT } from "../ui/ladder.ts";
-import { DesignList, DesignListSkeleton } from "./design-list.tsx";
-import type { RowHandlers } from "./design-row.tsx";
+import { CanvasList, CanvasListSkeleton } from "./canvas-list.tsx";
+import type { RowHandlers } from "./canvas-row.tsx";
 
 /**
- * Designs whose pull request merged, folded into a section at the sidebar's foot: its header,
- * and under it, when it is open, the settled designs, most recently settled first and without
- * indicators. Closed, it still shows the design that is open in the window if that one is
- * settled, alone under the header, so the row you are in is never out of sight. `designs` is
+ * Canvases whose pull request merged, folded into a section at the sidebar's foot: its header,
+ * and under it, when it is open, the settled canvases, most recently settled first and without
+ * indicators. Closed, it still shows the canvas that is open in the window if that one is
+ * settled, alone under the header, so the row you are in is never out of sight. `canvases` is
  * null while they load.
  */
 export function SettledTray({
   count,
-  designs,
+  canvases,
   expanded,
   onExpandedChange,
   openId,
   ...handlers
 }: RowHandlers & {
   count: number;
-  designs: DesignSummary[] | null;
+  canvases: CanvasSummary[] | null;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   openId: string | null;
 }) {
-  const shown = designs ? settledShown(designs, expanded, openId) : expanded ? null : [];
+  const shown = canvases ? settledShown(canvases, expanded, openId) : expanded ? null : [];
   return (
     <div className="flex min-h-0 shrink-0 flex-col">
       <button
@@ -53,12 +53,12 @@ export function SettledTray({
       </button>
       <FadeScroll id="settled" className={cn("max-h-[45vh]", shown?.length !== 0 && "pt-px")}>
         {shown === null ? (
-          <DesignListSkeleton rows={Math.min(count, 3)} />
+          <CanvasListSkeleton rows={Math.min(count, 3)} />
         ) : shown.length ? (
-          <DesignList
-            designs={shown}
+          <CanvasList
+            canvases={shown}
             openId={openId}
-            label="Settled designs"
+            label="Settled canvases"
             indicators={false}
             {...handlers}
           />

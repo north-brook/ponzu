@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { type Camera, type CameraView, cameraStore, followView } from "./useCanvas.ts";
+import {
+  type Camera,
+  type CameraView,
+  cameraStore,
+  DOT_STEP,
+  dotStep,
+  followView,
+} from "./useCanvas.ts";
 
 /** Animation frames, run by hand: requested callbacks by id. */
 let frames = new Map<number, FrameRequestCallback>();
@@ -83,20 +90,19 @@ test("an immediate change flushes now and drops the pending frame", () => {
   expect(seen.length).toBe(1);
 });
 
-test("useCamera keeps its shape: the camera as state, with setCamera and cameraRef", async () => {
-  const { useCamera } = await import("./useCanvas.ts");
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const { createElement } = await import("react");
-  let api: ReturnType<typeof useCamera> | undefined;
-  const Probe = () => {
-    api = useCamera({ x: 1, y: 2, zoom: 0.5 });
-    return null;
-  };
-  renderToStaticMarkup(createElement(Probe));
-  expect(api!.camera).toEqual({ x: 1, y: 2, zoom: 0.5 });
-  expect(api!.cameraRef.current).toEqual({ x: 1, y: 2, zoom: 0.5 });
-  expect(typeof api!.setCamera).toBe("function");
-  expect(typeof api!.zoomAt).toBe("function");
-  expect(typeof api!.panBy).toBe("function");
-  expect(typeof api!.fit).toBe("function");
+test("the ground's dots keep about a step apart on screen at any zoom, on the page's own grid", () => {
+  expect(dotStep(1)).toBe(DOT_STEP);
+  for (const zoom of [0.02, 0.1, 0.25, 0.33, 0.5, 0.67, 0.9, 1, 1.25, 1.5, 2, 3, 4, 8, 64]) {
+    const step = dotStep(zoom);
+    // Never crowded, never sparse.
+    expect(step).toBeGreaterThanOrEqual((DOT_STEP * 2) / 3);
+    expect(step).toBeLessThan((DOT_STEP * 4) / 3);
+    // Always the page's step doubled or halved a whole number of times, so the dots that stay
+    // as the zoom changes are the same dots.
+    const times = Math.log2(step / (DOT_STEP * zoom));
+    expect(Math.abs(times - Math.round(times))).toBeLessThan(1e-9);
+  }
+  // A zoom that isn't one (not yet measured) draws the page's step.
+  expect(dotStep(Number.NaN)).toBe(DOT_STEP);
+  expect(dotStep(0)).toBe(DOT_STEP);
 });

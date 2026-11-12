@@ -127,8 +127,10 @@ describe.skipIf(!chromiumPath)("the handoff, in a browser", () => {
     await page.close();
   });
 
-  test("when nothing takes the link, it offers it again, and focus leaving later still counts", async () => {
+  // Two pages through the one wait: one retried, one left alone.
+  test("when nothing takes the link, it offers it again, and focus leaving later still counts, retried or left alone", async () => {
     const page = await open("/linked");
+    const alone = await open("/linked");
     await Bun.sleep(HANDOFF_WAIT_MS + 300);
     let now = await read(page);
     expect(now.state).toBe("missed");
@@ -150,18 +152,15 @@ describe.skipIf(!chromiumPath)("the handoff, in a browser", () => {
     expect(now.state).toBe("opened");
     expect(now.violations).toEqual([]);
     await page.close();
-  });
 
-  test("a link nobody answers, left alone past the wait, still turns to 'has it' when the app comes", async () => {
-    const page = await open("/linked");
-    await Bun.sleep(HANDOFF_WAIT_MS + 300);
-    expect((await read(page)).state).toBe("missed");
-    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    // A link nobody answers, left alone past the wait, still turns to "has it" when the app comes.
+    expect((await read(alone)).state).toBe("missed");
+    await alone.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     // Not hidden: nothing happened.
-    expect((await read(page)).state).toBe("missed");
-    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-    expect((await read(page)).state).toBe("opened");
-    await page.close();
+    expect((await read(alone)).state).toBe("missed");
+    await alone.evaluate(() => window.dispatchEvent(new Event("blur")));
+    expect((await read(alone)).state).toBe("opened");
+    await alone.close();
   });
 
   test("with nothing to open and the app already forward, the page closes itself", async () => {

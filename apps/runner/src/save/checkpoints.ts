@@ -7,8 +7,8 @@ import { type Transcripts, TranscriptTooLarge } from "./transcripts.ts";
 import type { SavedWork, WorkSaver } from "./work.ts";
 
 /*
- * Checkpoints (docs/cloud.md, "Saving the sandbox"). A sandbox's disk is a cache: it can be lost,
- * and boat.dev has been seen to bring it back as it was at an earlier stop. So after each turn has
+ * Checkpoints (docs/cloud.md, "Saving the sandbox"). A sandbox's disk is a cache: its snapshot
+ * expires, an image change recreates it, and a host can be lost under it. So after each turn has
  * settled, and before the sandbox sleeps, the runner saves what lives only on that disk (the
  * Claude session's transcript and the checkout's work in progress) where the API keeps it, under
  * a turn marker that only goes up; and keeps the last marker the API confirmed on the disk too.
@@ -25,7 +25,7 @@ export interface Marker {
   at: string;
   claudeSessionId: string | null;
   wipCommit: string | null;
-  /** The boot that wrote it, to tell boat which boot's writes came back. */
+  /** The boot that wrote it, to tell which boot's writes came back. */
   bootId: string | null;
   /**
    * The turn of a checkpoint being sent when this was written: the disk had everything that
@@ -56,7 +56,7 @@ export interface CheckpointOptions {
   transcripts: Transcripts | null;
   work: WorkSaver | null;
   log(message: string): void;
-  /** A structured line for the journal, which is what we would show boat.dev. */
+  /** A structured line for the runner's log. */
   event(name: string, fields: Record<string, unknown>): void;
   boot(): Boot;
   /** Puts everything written on the disk (`sync`). */

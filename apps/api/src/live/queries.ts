@@ -1,7 +1,7 @@
-import { DESIGN_HEAD_COLUMNS } from "@ponzu/db";
+import { CANVAS_HEAD_COLUMNS } from "@ponzu/db";
 import { z } from "zod";
 import type { Actor, UserActor } from "../auth/actor.ts";
-import { requireDesign, requireWorkspace } from "../auth/authorize.ts";
+import { requireCanvas, requireWorkspace } from "../auth/authorize.ts";
 import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
@@ -18,7 +18,7 @@ import { ApiError } from "../http/errors.ts";
  *   and no `now()` (refused). Clients sort, and drop presence older than 75 seconds by
  *   `seen_at` themselves; the sweeper deletes it later.
  * - Every table has a primary key.
- * - Small rows: never a design's content, never an `encrypted_…` column or an asset key. A row
+ * - Small rows: never a canvas's content, never an `encrypted_…` column or an asset key. A row
  *   is sent whole on every change, and one over 4 MiB ends the subscription.
  * - A `bigint` arrives as a string (`seq` and the rest): decode before comparing.
  */
@@ -41,7 +41,7 @@ export interface LiveQueryDefinition<Args extends z.ZodType = z.ZodType> {
 const define = <Args extends z.ZodType>(query: LiveQueryDefinition<Args>) => query;
 
 const Id = z.string().min(1).max(64);
-const ForDesign = z.object({ designId: Id });
+const ForCanvas = z.object({ canvasId: Id });
 
 /** A query about the person themselves or their workspaces is not a runner's to watch. */
 function person({ var: { actor } }: LiveContext): UserActor {
@@ -51,10 +51,10 @@ function person({ var: { actor } }: LiveContext): UserActor {
   return actor;
 }
 
-/** Anyone who may open the design, its runner included. */
-async function designReader(c: LiveContext, { designId }: { designId: string }) {
-  await requireDesign(c, designId, "read");
-  return [designId];
+/** Anyone who may open the canvas, its runner included. */
+async function canvasReader(c: LiveContext, { canvasId }: { canvasId: string }) {
+  await requireCanvas(c, canvasId, "read");
+  return [canvasId];
 }
 
 export const LIVE_QUERIES = {
@@ -76,13 +76,13 @@ export const LIVE_QUERIES = {
   }),
 
   /**
-   * The sidebar: a workspace's designs and how far the person has looked at each. Joined
+   * The sidebar: a workspace's canvases and how far the person has looked at each. Joined
    * through membership, so a member who is dropped sees the rows go at once, and through
-   * `repo_access`, so a design shows only to people GitHub lets read its repo, and goes as soon
+   * `repo_access`, so a canvas shows only to people GitHub lets read its repo, and goes as soon
    * as an answer says they no longer can. Each renewal brings those answers up to the minute.
-   * A Scratch design is its owner's alone.
+   * A Scratch canvas is its owner's alone.
    */
-  "workspace.designs": define({
+  "workspace.canvases": define({
     args: z.object({ workspaceId: Id }),
     authorize: async (c, { workspaceId }) => {
       const actor = person(c);
@@ -95,54 +95,54 @@ export const LIVE_QUERIES = {
                  d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
                  d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
                  dr.seen_seq, dr.seen_thread_seq
-            from designs d
+            from canvases d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1
             left join repos r on r.id = d.repo_id
             left join repo_access ra on ra.repo_id = d.repo_id and ra.user_id = $1
-            left join design_reads dr on dr.design_id = d.id and dr.user_id = $1
+            left join canvas_reads dr on dr.canvas_id = d.id and dr.user_id = $1
            where d.workspace_id = $2
              and (ra.permission in ('admin', 'write', 'read')
                   or (d.repo_id is null and d.owner_id = $1))`,
   }),
 
-  /** A design's head: when `seq` moves, fetch the ops after your own from the API. */
-  "design.head": define({
-    args: ForDesign,
-    authorize: designReader,
-    sql: `select ${DESIGN_HEAD_COLUMNS.map((column) => `d.${column}`).join(", ")},
-                 d.agent_blocker, s.state as sandbox_state
-            from designs d
-            left join sandboxes s on s.id = d.sandbox_id
+  /** A canvas's head: when `seq` moves, fetch the ops after your own from the API. */
+  "canvas.head": define({
+    args: ForCanvas,
+    authorize: canvasReader,
+    sql: `select ${CANVAS_HEAD_COLUMNS.map((column) => `d.${column}`).join(", ")},
+                 d.agent_blocker, d.agent_blocked_until, s.state as sandbox_state
+            from canvases d
+            left join sandboxes s on s.canvas_id = d.id
            where d.id = $1`,
   }),
 
   /** The agent thread. Agent text that is still streaming is updated in place. */
-  "design.thread": define({
-    args: ForDesign,
-    authorize: designReader,
-    sql: `select id, design_id, seq, kind, user_id, payload, streaming, created_at, updated_at
+  "canvas.thread": define({
+    args: ForCanvas,
+    authorize: canvasReader,
+    sql: `select id, canvas_id, seq, kind, user_id, payload, streaming, created_at, updated_at
             from thread_items
-           where design_id = $1`,
+           where canvas_id = $1`,
   }),
 
   /** What the agent is waiting on a person for. An answered one leaves the result. */
-  "design.questions": define({
-    args: ForDesign,
-    authorize: designReader,
-    sql: `select id, design_id, seq, kind, payload, status, created_at
+  "canvas.questions": define({
+    args: ForCanvas,
+    authorize: canvasReader,
+    sql: `select id, canvas_id, seq, kind, payload, status, created_at
             from questions
-           where design_id = $1 and status = 'open'`,
+           where canvas_id = $1 and status = 'open'`,
   }),
 
-  /** Who has the design open, with their name and picture. Drop rows whose `seen_at` is 75 seconds old. */
-  "design.presence": define({
-    args: ForDesign,
-    authorize: designReader,
-    sql: `select p.design_id, p.user_id, p.page_id, p.joined_at, p.seen_at,
+  /** Who has the canvas open, with their name and picture. Drop rows whose `seen_at` is 75 seconds old. */
+  "canvas.presence": define({
+    args: ForCanvas,
+    authorize: canvasReader,
+    sql: `select p.canvas_id, p.user_id, p.page_id, p.joined_at, p.seen_at,
                  u.github_login, u.name, u.avatar_url
             from presence p
             join users u on u.id = p.user_id
-           where p.design_id = $1`,
+           where p.canvas_id = $1`,
   }),
 } satisfies Record<string, LiveQueryDefinition>;
 

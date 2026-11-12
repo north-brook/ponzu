@@ -17,7 +17,7 @@ export function desktopEntry(exec: string): string {
   const argument = `"${exec.replace(/["`$\\]/g, "\\$&")}"`.replace(/%/g, "%%");
   return `[Desktop Entry]
 Name=Ponzu
-Comment=Design with Claude on a canvas, and ship pull requests
+Comment=Build with Claude on a canvas, and ship pull requests
 Exec=${argument.replace(/\\/g, "\\\\")} %U
 Terminal=false
 Type=Application

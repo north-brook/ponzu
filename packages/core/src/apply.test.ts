@@ -54,7 +54,7 @@ describe("an op that fails changes nothing", () => {
 
   test("a failed batch puts back the node it moved, not another with the same id", () => {
     const doc = sampleDoc();
-    // Two nodes with one id: designs have them (a copy keeps its ids).
+    // Two nodes with one id: canvases have them (a copy keeps its ids).
     const root = doc.pages[0]!.artboards[0]!.root;
     root.children.push({ ...el("n_1", "footer", [text("The twin")]) });
     const before = JSON.stringify(doc);

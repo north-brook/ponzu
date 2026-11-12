@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import type { Anthropic } from "../deps/anthropic.ts";
-import type { Poke, RunnerPort } from "../deps/poke.ts";
+import type { Poke } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
+  MAX_DELETE_KEYS,
+  MAX_LIST_KEYS,
   type ObjectStorage,
   type PresignedPut,
   type StoredHead,
+  type StoredList,
   type StoredObject,
   uploadHeaders,
 } from "../deps/storage.ts";
@@ -18,6 +21,11 @@ export interface MemoryObject {
   /** The headers it was stored with, which it is served with. */
   headers: Record<string, string>;
   sha256: string | null;
+  /**
+   * When it was written, by the test's clock: set by a PUT and a copy. One a test puts in
+   * `objects` itself has none unless it gives one, and a list answers it as not said.
+   */
+  modifiedAt?: number;
 }
 
 /**
@@ -78,11 +86,29 @@ export class MemoryStorage implements ObjectStorage {
     if (body.byteLength !== signed.object.size) return refuse(403, "SignatureDoesNotMatch");
     const sha256 = createHash("sha256").update(body).digest("hex");
     if (sha256 !== signed.object.sha256) return refuse(400, "BadDigest");
-    this.objects.set(signed.key, { body, headers: expected, sha256 });
+    this.objects.set(signed.key, {
+      body,
+      headers: expected,
+      sha256,
+      modifiedAt: this.#clock.now(),
+    });
     return new Response(null, { status: 200 });
   };
 
+  /**
+   * The status every `head` fails with, as R2 answers a bad token (403) or a fault (500), or
+   * null to answer from the map. With no status at all (0), it acts out R2 not answering.
+   */
+  headFails: number | null = null;
+
   async head(key: string): Promise<StoredHead | null> {
+    if (this.headFails !== null) {
+      throw new UpstreamError(
+        "storage",
+        "HEAD an object failed",
+        this.headFails === 0 ? {} : { status: this.headFails },
+      );
+    }
     const found = this.objects.get(key);
     if (!found) return null;
     return {
@@ -96,11 +122,45 @@ export class MemoryStorage implements ObjectStorage {
     const found = this.objects.get(from);
     if (!found) throw new Error(`Nothing at ${from} to copy.`);
     // R2 keeps the headers and not the checksum.
-    this.objects.set(to, { ...found, sha256: null });
+    this.objects.set(to, { ...found, sha256: null, modifiedAt: this.#clock.now() });
   }
 
   async delete(key: string) {
     this.objects.delete(key);
+  }
+
+  /** Every `list` and `deleteMany` call, oldest first, for a test to count round trips. */
+  readonly bulk: { op: "list" | "deleteMany"; prefix?: string; after?: string; keys?: number }[] =
+    [];
+  /**
+   * How many of the next `deleteMany` calls fail after removing half their keys, as R2 does
+   * when it answers some keys with an error.
+   */
+  failDeletes = 0;
+
+  async list(prefix: string, { after }: { after?: string } = {}): Promise<StoredList> {
+    this.bulk.push({ op: "list", prefix, ...(after === undefined ? {} : { after }) });
+    // S3 orders keys by their UTF-8 bytes; for the ASCII keys the API makes, that is this.
+    const all = [...this.objects.keys()]
+      .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
+      .sort();
+    const keys = all.slice(0, MAX_LIST_KEYS);
+    const objects = keys.map((key) => {
+      const at = this.objects.get(key)!.modifiedAt;
+      return { key, modifiedAt: at === undefined ? null : new Date(at) };
+    });
+    return { keys, objects, truncated: all.length > MAX_LIST_KEYS };
+  }
+
+  async deleteMany(keys: readonly string[]): Promise<void> {
+    this.bulk.push({ op: "deleteMany", keys: keys.length });
+    if (keys.length > MAX_DELETE_KEYS) throw new Error("Storage refuses over 1,000 keys.");
+    if (this.failDeletes > 0) {
+      this.failDeletes--;
+      for (const key of keys.slice(0, Math.floor(keys.length / 2))) this.objects.delete(key);
+      throw new UpstreamError("storage", "DELETE MANY could not remove some objects");
+    }
+    for (const key of keys) this.objects.delete(key);
   }
 }
 
@@ -117,51 +177,33 @@ export class FakeAnthropic implements Anthropic {
   /** Every key asked about, oldest first. */
   readonly asked: string[] = [];
   failing = false;
+  /** Whether Anthropic takes Ponzu's own key. Set false to act out a revoked one. */
+  ownKeyAccepted = true;
 
   async acceptsApiKey(key: string): Promise<boolean> {
     this.asked.push(key);
     if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
     return this.keys.has(key);
   }
+
+  async acceptsOwnKey(): Promise<boolean> {
+    if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
+    return this.ownKeyAccepted;
+  }
 }
 
 /**
- * Pokes, report requests and health checks, recorded instead of sent. Set `failing` to act out a
- * runner that cannot be reached at all, and `healthy` to false for one whose `/health` does not
- * answer (it exited, or is still booting). `onReport` acts out a runner that answers a request for
- * a report, as it would by calling the state route; without one the request fails as against an
- * old runner that has no such door, so a stop does not wait for a runner no test plays.
+ * Pokes, recorded instead of sent, each with the port's bearer token it carried. Set `failing` to
+ * act out a runner that cannot be reached at all (createPoke's own retry of a 502 or 503 is
+ * tested against a fetch in wake.test.ts).
  */
 export class FakePoke {
-  readonly pokes: { url: string; token: string | null }[] = [];
-  readonly reports: { url: string; token: string | null }[] = [];
-  readonly checks: { url: string; token: string | null }[] = [];
+  readonly pokes: { url: string; token: string }[] = [];
   failing = false;
-  healthy = true;
-  onReport: (() => Promise<void>) | null = null;
 
-  readonly poke: Poke = async (address) => {
-    this.pokes.push(address);
+  readonly poke: Poke = async (target) => {
+    this.pokes.push(target);
     if (this.failing) throw new Error("The runner could not be reached.");
-  };
-
-  readonly port: RunnerPort = {
-    report: async (address) => {
-      this.reports.push(address);
-      if (this.failing) throw new Error("The runner could not be reached.");
-      if (!this.onReport) throw new Error("The runner answered a report with 404.");
-      await this.onReport();
-    },
-    health: async (address) => {
-      this.checks.push(address);
-      const ok = !this.failing && this.healthy;
-      return {
-        ok,
-        status: this.failing ? null : ok ? 200 : 502,
-        error: this.failing ? "The runner could not be reached." : null,
-        ms: 0,
-      };
-    },
   };
 }
 
@@ -178,7 +220,11 @@ export class FakeSealer implements RealtimeSealer {
     this.#clock = clock;
   }
 
+  /** Set to act out a sealer that cannot seal, as with a malformed Realtime secret. */
+  failing = false;
+
   async seal(query: LiveQuery): Promise<SealedQuery> {
+    if (this.failing) throw new Error("The fake sealer was told to fail.");
     this.sealed.push(query);
     const text = JSON.stringify(query);
     return {

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -153,10 +153,10 @@ test("an edit reads back at once, before the API has heard of it, and is committ
   expect((await call("get_basic_info")).text).toContain(`${id} "Sign in"`);
   // None of that waited: the API hasn't answered a single request.
   expect(cloud.api.seq).toBe(0);
-  expect(await ws.design.settled(20)).toBe(false);
+  expect(await ws.canvas.settled(20)).toBe(false);
 
   api.release();
-  expect(await ws.design.settled(2000)).toBe(true);
+  expect(await ws.canvas.settled(2000)).toBe(true);
   expect(cloud.api.seq).toBe(3);
   expect(findArtboard(cloud.api.doc, id)?.artboard.root.style.padding).toBe("24px");
   expect(cloud.api.log.every((c) => c.actor.id === AGENT.id)).toBe(true);
@@ -185,7 +185,7 @@ test("what a person does mid-session is in the agent's next read", async () => {
   expect((await call("list_comments")).text).toBe("No open comments.");
   commitAs(ada, { op: "thread.create", thread: comment("th_ada", "ab_hero", "Tighter?") });
   commitAs(ada, { op: "artboard.update", id: "ab_pricing", x: 2400 });
-  // Still the design as the agent last knew it: nobody has told the replica.
+  // Still the canvas as the agent last knew it: nobody has told the replica.
   expect((await call("list_comments")).text).toBe("No open comments.");
   await synced();
 
@@ -211,15 +211,15 @@ test("what a person does mid-session is in the agent's next read", async () => {
   ]);
 });
 
-test("the first artboard of a design with no pages brings its page with it", async () => {
-  // A design whose pages were all deleted. (A new one starts with one empty page.)
+test("the first artboard of a canvas with no pages brings its page with it", async () => {
+  // A canvas whose pages were all deleted. (A new one starts with one empty page.)
   const { call, replica, api, synced } = setup({}, emptyDoc("Untitled"));
   expect((await call("get_basic_info")).text).toStartWith(
-    "Design: Untitled\nNo pages yet. create_artboard makes the first one, or add one with create_page.",
+    "Canvas: Untitled\nNo pages yet. create_artboard makes the first one, or add one with create_page.",
   );
   const lost = await call("create_artboard", { name: "Sign in", page: "Flows" });
   expect(lost.text).toBe(
-    "No page Flows: this design has no pages yet. Leave page out and the first one is made, or add it with create_page.",
+    "No page Flows: this canvas has no pages yet. Leave page out and the first one is made, or add it with create_page.",
   );
 
   const made = await call("create_artboard", { name: "Sign in", html: "<h1>Welcome back</h1>" });
@@ -227,7 +227,7 @@ test("the first artboard of a design with no pages brings its page with it", asy
   const { id } = made.data as { id: string };
   const page = replica.doc.pages[0]!;
   expect(made.text).toStartWith(
-    `Created artboard ${id} "Sign in" 1440px×900px at (0, 0) on "Home" (${page.id}, made now: the design had no page).`,
+    `Created artboard ${id} "Sign in" 1440px×900px at (0, 0) on "Home" (${page.id}, made now: the canvas had no page).`,
   );
   expect(page).toMatchObject({ name: "Home", artboards: [{ id }] });
   // One edit, so the page never arrives without its artboard, or the other way round.
@@ -240,7 +240,7 @@ test("the first artboard of a design with no pages brings its page with it", asy
   expect(replica.doc.pages).toHaveLength(1);
 });
 
-test("a design whose last page a person deleted takes an artboard all the same", async () => {
+test("a canvas whose last page a person deleted takes an artboard all the same", async () => {
   const { call, commitAs, synced, replica } = setup();
   commitAs(ada, { op: "page.delete", id: "pg_home" });
   await synced();
@@ -296,7 +296,7 @@ test("every kind of edit the tools make is one the API takes, and both sides end
   )![1]!;
   await ok("reply", { thread, text: "Kept.", resolve: true });
   await ok("set_comment_status", { thread, status: "open" });
-  await ok("update_design", { name: "Fern app", icon: "phone" });
+  await ok("update_canvas", { name: "Fern app", icon: "phone" });
   await ok("delete", { ids: [...(copies.data as { ids: string[] }).ids, "n_h"] });
 
   await synced();
@@ -341,7 +341,7 @@ test("an edit the API refuses is reported in the next tool result, once", async 
   expect(next.isError).toBeFalsy();
   expect(next.text).toStartWith('ab_pricing "Pricing"');
   expect(next.text).toContain(
-    "\n\nUndone: an edit you made earlier is not in the design, though the tool said it was.\n- added to n_card: Ponzu refused it (",
+    "\n\nUndone: an edit you made earlier is not in the canvas, though the tool said it was.\n- added to n_card: Ponzu refused it (",
   );
   expect(next.text).toContain("Look at what is there now (get_tree, get_html)");
   // The heading the basics guide tells the agent to look for is the one the notice has.
@@ -368,7 +368,7 @@ test("an edit that stops fitting before it is sent is reported too, with the edi
     "- added to n_plan: it no longer fit once someone else's change landed first (",
   );
   api.release();
-  expect(await cloud.ws.design.settled(2000)).toBe(true);
+  expect(await cloud.ws.canvas.settled(2000)).toBe(true);
   expect(locate(cloud.api.doc, "n_h")?.node.children).toEqual([{ kind: "text", value: "Hello" }]);
   expect(cloud.api.log).toHaveLength(2);
 });
@@ -397,7 +397,7 @@ test("an edit the API would never take is refused before it shows", async () => 
 test("what the API would strip from an edit never shows, and the result says what went", async () => {
   const api = gated();
   const { call, replica, synced, ws, ...cloud } = setup({ transport: api.transport });
-  const removed = (what: string) => `\n\nRemoved (designs can't run code): ${what}.`;
+  const removed = (what: string) => `\n\nRemoved (canvases can't run code): ${what}.`;
 
   const styled = await call("update_styles", {
     updates: [{ ids: ["n_h"], style: { background: "url(javascript:alert(1))", color: "red" } }],
@@ -439,7 +439,7 @@ test("what the API would strip from an edit never shows, and the result says wha
 test("an edit that didn't apply reports nothing as removed from it", () => {
   const { ws } = setup();
   expect(() =>
-    ws.design.apply({ op: "style", id: "n_gone", style: { width: "expression(1)" } }),
+    ws.canvas.apply({ op: "style", id: "n_gone", style: { width: "expression(1)" } }),
   ).toThrow();
   expect(ws.notices()).toEqual([]);
 });
@@ -449,9 +449,9 @@ test("set_attributes refuses what an attribute can't be, before anything shows",
   for (const [name, why] of [
     ["data-name", "A layer's name isn't an attribute. Set it with rename."],
     ["layer-name", "A layer's name isn't an attribute. Set it with rename."],
-    ["srcdoc", "Designs can't hold a document inside an attribute; srcdoc is not allowed."],
+    ["srcdoc", "Canvases can't hold a document inside an attribute; srcdoc is not allowed."],
     ["data-id", "Ids are managed by Ponzu."],
-    ["onclick", "Designs can't run code; event handlers are not allowed."],
+    ["onclick", "Canvases can't run code; event handlers are not allowed."],
   ] as const) {
     const r = await call("set_attributes", { id: "n_h", attrs: { [name]: "x", title: "ok" } });
     expect(r.isError, name).toBe(true);
@@ -479,18 +479,18 @@ test("waiting for edits doesn't sit out the replica's retry wait once the API is
     },
   });
   await call("write_note", { name: "brief", content: "A fitness app." });
-  expect(await ws.design.settled(30)).toBe(false);
+  expect(await ws.canvas.settled(30)).toBe(false);
   expect(cloud.replica.offline).toBe(true);
 
   // Back before the host asks: the wait starts with a try.
   down = false;
-  expect(await ws.design.settled(2000)).toBe(true);
+  expect(await ws.canvas.settled(2000)).toBe(true);
   expect(cloud.api.doc.notes.brief).toBe("A fitness app.");
 
   // Back while the host waits: it keeps trying.
   down = true;
   await call("write_note", { name: "brief", content: "A running app." });
-  const waiting = ws.design.settled(2000);
+  const waiting = ws.canvas.settled(2000);
   setTimeout(() => {
     down = false;
   }, 50);
@@ -512,14 +512,14 @@ test("the host can wait for edits to be committed, and gives up when the API can
       };
     },
   });
-  expect(await ws.design.settled(0)).toBe(true);
+  expect(await ws.canvas.settled(0)).toBe(true);
   await call("write_note", { name: "brief", content: "A fitness app." });
-  expect(await ws.design.settled(30)).toBe(false);
+  expect(await ws.canvas.settled(30)).toBe(false);
   expect(cloud.replica.offline).toBe(true);
   // Still in the agent's view, and still pending: it is sent again once the API answers.
   expect((await call("read_notes", { name: "brief" })).text).toBe("A fitness app.");
   down = false;
-  expect(await ws.design.settled(5000)).toBe(true);
+  expect(await ws.canvas.settled(5000)).toBe(true);
   expect(cloud.api.doc.notes.brief).toBe("A fitness app.");
 });
 
@@ -685,7 +685,7 @@ test("add_asset says plainly what it won't take", async () => {
   );
   expect(await fails({ path: dir, name: "dir.png" })).toBe(`${dir} is not a file.`);
   expect(await fails({ path: join(dir, "notes.txt") })).toContain(
-    "notes.txt isn't a kind of file a design can hold. Assets are images, fonts and video: png, jpg,",
+    "notes.txt isn't a kind of file a canvas can hold. Assets are images, fonts and video: png, jpg,",
   );
   expect(await fails({ path: join(dir, "ok.png"), name: "../ok.png" })).toContain(
     `"../ok.png" can't be an asset's name.`,
@@ -805,7 +805,7 @@ test("write_html and create_artboard take a file of HTML by path, cleaned like a
   });
   expect(wrote.isError).toBeFalsy();
   expect(wrote.text).toContain('Wrote 1 element in ab_hero "Hero".');
-  expect(wrote.text).toContain("Removed (designs can't run code): <script>.");
+  expect(wrote.text).toContain("Removed (canvases can't run code): <script>.");
   const html = (await call("get_html", { id: "ab_hero" })).text;
   expect(html).toContain("Row 399");
   expect(html).not.toContain("alert");
@@ -835,6 +835,34 @@ test("write_html and create_artboard take a file of HTML by path, cleaned like a
   await writeFile(picture, bytesOf(ASSET_HEADS.png!));
   const notText = await call("write_html", { target: "ab_hero", path: picture });
   expect(notText.text).toBe(`${picture} isn't text. HTML is read as UTF-8.`);
+});
+
+test("an id made up for new HTML is never one the canvas already has", async () => {
+  const { call, replica } = setup();
+  await call("write_html", { target: "ab_hero", html: '<p data-id="n_00000">Here first</p>' });
+  // Five random characters: the next one made up comes out n_00000, then as it would.
+  const entropy = spyOn(crypto, "getRandomValues");
+  const clash = () =>
+    entropy.mockImplementationOnce(<T extends ArrayBufferView | null>(bytes: T) => {
+      new Uint8Array(bytes!.buffer).fill(0);
+      return bytes;
+    });
+  try {
+    clash();
+    const wrote = await call("write_html", { target: "ab_hero", html: "<p>Then this</p>" });
+    expect(wrote.isError, wrote.text).toBeFalsy();
+    clash();
+    const made = await call("create_artboard", { name: "Next", html: "<p>And this</p>" });
+    const { id } = made.data as { id: string };
+    expect(findArtboard(replica.doc, id)?.artboard.root.children[0]).not.toMatchObject({
+      id: "n_00000",
+    });
+  } finally {
+    entropy.mockRestore();
+  }
+  expect(locate(replica.doc, "n_00000")?.node.children).toEqual([
+    { kind: "text", value: "Here first" },
+  ]);
 });
 
 test("one call takes what the guide and the tools say it does, by path as in the call", async () => {
@@ -892,7 +920,7 @@ test("export writes where the agent says, and links to the copy the host publish
   const { renderer, calls } = fakeRenderer();
   const { call, host } = setup({ renderer });
   const dir = await tempDir();
-  const path = join(dir, "docs", "design", "hero.png");
+  const path = join(dir, "docs", "canvas", "hero.png");
 
   const out = await call("export", { id: "ab_hero", path });
   expect(out.text).toBe(
@@ -902,7 +930,7 @@ test("export writes where the agent says, and links to the copy the host publish
   expect(host.published).toEqual([
     { name: "hero.png", bytes: new Uint8Array([1, 2, 3]), mime: "image/png" },
   ]);
-  // The render loads the design's assets from where the host keeps them.
+  // The render loads the canvas's assets from where the host keeps them.
   expect(calls[0]).toMatchObject({ format: "png", scale: 2, assetBase: host.assetBase() });
 
   const relative = await call("export", { id: "ab_hero", path: "hero.png" });
@@ -979,12 +1007,12 @@ test("screenshot renders in the theme and from the assets the host names", async
   const { renderer, calls } = fakeRenderer();
   const { call, host } = setup({ renderer });
   await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
-  host.canvasTheme = "dark";
+  host.viewerTheme = "dark";
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(shot.images).toHaveLength(1);
-  expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");
+  expect(shot.text).toContain("Shown in dark, the theme the person sees Ponzu in.");
   expect(calls[0]).toMatchObject({ colorScheme: "dark", assetBase: host.assetBase(), lint: true });
-  expect((await call("get_basic_info")).text).toContain("The person's canvas is in dark mode");
+  expect((await call("get_basic_info")).text).toContain("The person sees Ponzu in dark mode");
 });
 
 test("the tools that need a renderer say so when there is none", async () => {
@@ -1021,7 +1049,7 @@ test("the cloud set is the local one without files and waiting, plus what a sand
   const localNames = new Set(localTools.map((t) => t.name));
   expect([...cloudNames].filter((name) => !localNames.has(name)).sort()).toEqual([
     "add_asset",
-    "update_design",
+    "update_canvas",
   ]);
   expect(cloudNames.size).toBe(cloudTools.length);
 });
@@ -1033,13 +1061,13 @@ test("no cloud tool takes a file argument", () => {
   }
 });
 
-test("update_design names the design and sets its icon", async () => {
+test("update_canvas names the canvas and sets its icon", async () => {
   const { call, synced, api } = setup();
-  const named = await call("update_design", { name: "Fern checkout", icon: "cart" });
-  expect(named.text).toBe('The design is "Fern checkout", with the cart icon.');
-  expect((await call("update_design", { icon: null })).text).toBe('The design is "Fern checkout".');
-  expect((await call("update_design", { icon: "sparkles" })).isError).toBe(true);
-  expect((await call("get_basic_info")).text).toStartWith("Design: Fern checkout\n");
+  const named = await call("update_canvas", { name: "Fern checkout", icon: "cart" });
+  expect(named.text).toBe('The canvas is "Fern checkout", with the cart icon.');
+  expect((await call("update_canvas", { icon: null })).text).toBe('The canvas is "Fern checkout".');
+  expect((await call("update_canvas", { icon: "sparkles" })).isError).toBe(true);
+  expect((await call("get_basic_info")).text).toStartWith("Canvas: Fern checkout\n");
   await synced();
   expect(api.doc).toMatchObject({ name: "Fern checkout" });
   expect(api.doc.icon).toBeUndefined();
@@ -1068,17 +1096,17 @@ test("no cloud tool result names a place inside a .design folder", async () => {
   ];
   for (const r of results) {
     expect(r.isError, r.text).toBeFalsy();
-    expect(r.text).not.toMatch(DESIGN_PATH);
+    expect(r.text).not.toMatch(FOLDER_PATH);
     expect(r.text).not.toMatch(/\bfile\b|\bPath:/);
   }
   expect(made.text).toBe(
-    `Created artboard ${id} "Sign in" 1440px×900px at (1760, 0) on "Home".\nLink: https://ponzu.test/designs/dsn_test?artboard=${id}`,
+    `Created artboard ${id} "Sign in" 1440px×900px at (1760, 0) on "Home".\nLink: https://ponzu.test/canvases/cnv_test?artboard=${id}`,
   );
 });
 
 test("every page and board the agent learns of comes with its own link, ready to paste", async () => {
   const { call } = setup();
-  const link = (at: string) => `https://ponzu.test/designs/dsn_test?${at}`;
+  const link = (at: string) => `https://ponzu.test/canvases/cnv_test?${at}`;
   const made = await call("create_artboard", { name: "Note: Pricing" });
   const { id } = made.data as { id: string };
   expect(made.text).toContain(`\nLink: ${link(`artboard=${id}`)}`);
@@ -1089,7 +1117,7 @@ test("every page and board the agent learns of comes with its own link, ready to
   const copyId = (copy.data as { ids: string[] }).ids[0]!;
   expect(copy.text).toContain(`"Note: Pricing / B" at `);
   expect(copy.text).toContain(` · link: ${link(`artboard=${copyId}`)}`);
-  // The summary lists each beside its id, and says what the design's own Link is for.
+  // The summary lists each beside its id, and says what the canvas's own Link is for.
   const info = (await call("get_basic_info")).text;
   for (const line of [
     `Page pg_home "Home" · link: ${link("page=pg_home")}`,
@@ -1097,7 +1125,7 @@ test("every page and board the agent learns of comes with its own link, ready to
     `Page ${pageId} "Mobile" (empty) · link: ${link(`page=${pageId}`)}`,
   ])
     expect(info).toContain(line);
-  expect(info).toContain("Link: https://ponzu.test/designs/dsn_test (opens this design in Ponzu");
+  expect(info).toContain("Link: https://ponzu.test/canvases/cnv_test (opens this canvas in Ponzu");
   expect((await call("get_tree")).text).toContain(` · link: ${link(`artboard=${id}`)}`);
   // A page's tree gives the page's link, and each of its boards' on the board's own line.
   const pageTree = (await call("get_tree", { id: "pg_home" })).text.split("\n");
@@ -1114,9 +1142,9 @@ test("every page and board the agent learns of comes with its own link, ready to
 /* ------------------------------------------------------------------ */
 
 /** A place inside a .design folder, or the folder itself. `assets/…` is how markup names an asset. */
-const DESIGN_PATH =
+const FOLDER_PATH =
   /\.design\b|design\.json|comments\.json|tokens\.css|\b(?:pages|notes|exports)\/|\.ponzu\b/;
-/** Ways of telling an agent to say which design: there is one. */
+/** Ways of telling an agent to say which canvas: there is one. */
 const FILE_ARGUMENT = /`file`|\bfile argument\b|\b(?:pass|passing|without|omit) file\b|\bfile=/i;
 /** The local world: a Mac app that pairs with agents, which watch the canvas in a loop. */
 const LOCAL_WORLD = /\bMac app\b|\bpair(?:ing|ed)\b|\bwatch(?:ing)? the canvas\b|\bwatch loop\b/i;
@@ -1137,7 +1165,7 @@ test("nothing a cloud agent is told names a tool, an argument or a place the clo
   const topics = new Set(Object.keys(cloudGuides));
   for (const [where, text] of told()) {
     for (const name of localOnly) expect(text, where).not.toContain(name);
-    expect(text, where).not.toMatch(DESIGN_PATH);
+    expect(text, where).not.toMatch(FOLDER_PATH);
     expect(text, where).not.toMatch(FILE_ARGUMENT);
     for (const [, topic] of text.matchAll(/get_guide\('([^']*)'\)/g))
       expect(topics.has(topic!), `${where}: get_guide('${topic}')`).toBe(true);

@@ -6,7 +6,7 @@ export type IdPrefix =
   | "ws"
   | "repo"
   | "cla"
-  | "des"
+  | "cnv"
   | "ti"
   | "evt"
   | "q"
@@ -21,7 +21,7 @@ export type IdPrefix =
   | "job"
   | "auth";
 
-/** A primary key like `des_7k2m9x4q0c8v5n1t`: what the row is, then 80 random bits. */
+/** A primary key like `cnv_7k2m9x4q0c8v5n1t`: what the row is, then 80 random bits. */
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${randomString(16)}`;
 }
@@ -40,6 +40,24 @@ export function isId(prefix: IdPrefix, value: string): boolean {
 }
 
 const ID_TAIL = new RegExp(`^[${ALPHABET}]{16}$`);
+
+/** How long a canvas's asset key is: 160 random bits, all that guards the canvas's files. */
+export const ASSET_KEY_LENGTH = 32;
+
+/** A new asset key: the first segment of every object key under a canvas's files. */
+export function newAssetKey(): string {
+  return randomString(ASSET_KEY_LENGTH);
+}
+
+/**
+ * Whether `value` is an asset key as `newAssetKey` makes them, and nothing more: the guard on
+ * anything that deletes a canvas's files by prefix.
+ */
+export function isAssetKey(value: string): boolean {
+  return ASSET_KEY.test(value);
+}
+
+const ASSET_KEY = new RegExp(`^[${ALPHABET}]{${ASSET_KEY_LENGTH}}$`);
 
 /** `length` random characters, five bits each. */
 export function randomString(length: number): string {

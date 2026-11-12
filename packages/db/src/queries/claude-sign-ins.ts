@@ -7,14 +7,15 @@ import { run } from "./run.ts";
 
 /*
  * A Claude subscription sign-in is an auth state (`claude_sign_in`) with a utility sandbox of
- * its own, which Ponzu pays for. A person has one open at a time (a unique index), and starts
- * only so many an hour.
+ * its own, which Ponzu pays for, named for the state (`pz-<scope>-signin-<id>`); its payload
+ * keeps the Vercel session it runs in (`{ sessionId }`). A person has one open at a time (a
+ * unique index), and starts only so many an hour.
  */
 
 /**
  * Open a sign-in for the person in place of any they had open, unless they have started
- * `perHour` in the hour before `now`. Answers its id, and the sandboxes of the sign-ins it
- * replaced, which are the caller's to destroy; null when they are at the limit, or another
+ * `perHour` in the hour before `now`. Answers its id, and the ids of the sign-ins it replaced,
+ * whose sandboxes are the caller's to remove; null when they are at the limit, or another
  * start of theirs won at the same moment.
  */
 export async function openClaudeSignIn(
@@ -33,7 +34,7 @@ export async function openClaudeSignIn(
       with replaced as (
         update auth_states set consumed_at = ${at}
          where kind = 'claude_sign_in' and user_id = ${userId} and consumed_at is null
-        returning payload ->> 'sandboxId' as sandbox_id
+        returning id
       ),
       made as (
         insert into auth_states (id, kind, user_id, payload, expires_at, created_at)
@@ -50,7 +51,7 @@ export async function openClaudeSignIn(
       select json_build_object(
         'id', (select id from made),
         'replaced', coalesce(
-          (select json_agg(sandbox_id) from replaced where sandbox_id is not null), '[]'::json)
+          (select json_agg(id) from replaced), '[]'::json)
       ) as result
     `,
   );
@@ -58,17 +59,17 @@ export async function openClaudeSignIn(
 }
 
 /**
- * Record the sandbox an open sign-in runs in. False when it is no longer open (a newer start
- * replaced it), and the sandbox is the caller's to destroy.
+ * Record the Vercel session an open sign-in runs in. False when it is no longer open (a newer
+ * start replaced it), and the sandbox is the caller's to remove.
  */
-export async function setClaudeSignInSandbox(
+export async function setClaudeSignInSession(
   db: Db,
-  { id, sandboxId }: { id: string; sandboxId: string },
+  { id, sessionId }: { id: string; sessionId: string },
 ): Promise<boolean> {
   const rows = await run(
     db
       .update(authStates)
-      .set({ payload: { sandboxId } })
+      .set({ payload: { sessionId } })
       .where(
         and(
           eq(authStates.id, id),

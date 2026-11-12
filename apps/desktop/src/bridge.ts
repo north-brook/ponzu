@@ -4,22 +4,27 @@
  * so the studio can import it (`@ponzu/desktop/bridge`) without pulling in Electron.
  */
 import type { SessionState } from "@ponzu/client";
+import type { AppLink } from "@ponzu/core/links";
+
+export type { GithubSetupResult } from "@ponzu/core/links";
 
 /** The studio's origin inside the app: a privileged scheme of our own (studio-protocol.ts). */
 export const STUDIO_ORIGIN = "ponzu-studio://app";
 
 /**
- * A `ponzu://` link the studio acts on (deep-links.ts has the grammar):
+ * A `ponzu://` link the studio may act on, in the grammar every client shares
+ * (@ponzu/core/links; deep-links.ts reads it):
  *
- *   ponzu://design/<design id>?page=<page id>&artboard=<artboard id>
+ *   ponzu://canvas/<canvas id>?page=&artboard=&open=&question=&comment=&message=&n=
  *   ponzu://github/setup?result=installed&workspace=<workspace id>
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
+ *   ponzu://billing/card?setup=<setup id>&result=added | cancelled
+ *   ponzu://settings?section=usage | notifications | account
+ *
+ * A canvas's link from before canvases had their name (`design/<id>`) opens the same way. A
+ * sign-in's way back is the iPhone's, never the Mac's, so it is not among them.
  */
-export type DeepLink =
-  | { kind: "design"; designId: string; pageId?: string; artboardId?: string }
-  | { kind: "github_setup"; result: GithubSetupResult; workspaceId?: string };
-
-export type GithubSetupResult = "installed" | "requested" | "pending" | "sign_in" | "failed";
+export type DeepLink = Exclude<AppLink, { kind: "auth_callback" }>;
 
 /** An error as it crosses the bridge: an `ApiError`'s fields, which the studio rebuilds. */
 export interface BridgeError {
@@ -62,6 +67,12 @@ export interface AnalyticsSetup {
   /** The operating system's version (the user agent's is frozen). */
   osVersion: string;
   /**
+   * Where this build talks to (`dev`, `production`, or `custom` for Ponzu Local pointed
+   * elsewhere) and the commit it was built from: every event's `environment` and `app_commit`.
+   */
+  environment: string;
+  commit: string;
+  /**
    * What this launch follows, for `app opened` and `update installed`; only in the launch's
    * first window. A window opened again later (the Mac's dock icon after its window closed) has
    * null: the launch was reported already.
@@ -89,7 +100,7 @@ export interface UpdateState {
 }
 
 /** A menu item the studio carries out. */
-export type MenuCommand = "new-design" | "settings" | "toggle-sidebar" | "toggle-thread";
+export type MenuCommand = "new-canvas" | "settings" | "toggle-sidebar" | "toggle-thread";
 
 export interface PonzuDesktop {
   platform: string;
@@ -146,6 +157,11 @@ export interface PonzuDesktop {
    * GitHub has come back, as the session does once a sign-in's tab has.
    */
   comeForward(): void;
+  /**
+   * Whether to show the welcome from Ponzu 1.x now (legacy.ts's `takeWelcome1x`): true once, on
+   * a computer that had 1.x, and false from then on, this launch and every later one.
+   */
+  welcome1x(): Promise<boolean>;
 }
 
 /** The IPC channels, by what they carry. `invoke` ones answer; `send` ones don't. */
@@ -167,4 +183,5 @@ export const CHANNELS = {
   updateInstall: "ponzu:update:install",
   openExternal: "ponzu:open-external",
   comeForward: "ponzu:come-forward",
+  welcome1x: "ponzu:welcome-1x",
 } as const;

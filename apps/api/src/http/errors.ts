@@ -47,12 +47,14 @@ export type ErrorCode =
   | "github_token_missing"
   /** Sign-in: this WorkOS user already belongs to a different GitHub account. */
   | "identity_conflict"
+  /** Sign-in: an account on this WorkOS user was just deleted and is still being forgotten. */
+  | "account_being_deleted"
   /** GitHub no longer accepts what Ponzu holds for this person. Sign in again. */
   | "github_reauth_required"
-  /** A design's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
+  /** A canvas's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
   | "ops_pruned"
-  /** A design changed too often while this request tried to commit to it. Nothing was committed; try again. */
-  | "design_busy"
+  /** A canvas changed too often while this request tried to commit to it. Nothing was committed; try again. */
+  | "canvas_busy"
   /** Undo: nothing of the caller's or the agent's is left that can be taken back. */
   | "nothing_to_undo"
   /** Redo: the caller has no undo left to take back. */
@@ -70,8 +72,8 @@ export type ErrorCode =
   /** GitHub says this person owns the workspace's account, so they are always an admin. */
   | "owner_is_admin"
   /**
-   * A runner call without the design's current lease (`X-Ponzu-Runner`): a newer runner has
-   * started for the design. The runner stops for good.
+   * A runner call without the canvas's current lease (`X-Ponzu-Runner`): a newer runner has
+   * started for the canvas. The runner stops for good.
    */
   | "superseded"
   /**
@@ -86,6 +88,11 @@ export type ErrorCode =
   /** Anthropic does not take this API key. */
   | "claude_key_invalid"
   /**
+   * The model, or that effort for it, is not one the person's Claude account offers now. Read
+   * `/v1/claude/defaults` again for what it does.
+   */
+  | "model_not_offered"
+  /**
    * A Claude sign-in's code that is not whole, or that claude.ai turned away (wrong, from an
    * earlier sign-in, or past its time there). Open sign-in again for a new one.
    */
@@ -94,16 +101,18 @@ export type ErrorCode =
   | "claude_sign_in_expired"
   /** A Claude sign-in whose one code was already sent, or that was given up. Open sign-in again. */
   | "claude_sign_in_used"
-  /** A pull request needs a repo, and this design is Scratch. */
+  /** A pull request needs a repo, and this canvas is Scratch. */
   | "no_repository"
-  /** Nothing has been pushed to the design's branch yet, so GitHub does not have it. */
+  /** Nothing has been pushed to the canvas's branch yet, so GitHub does not have it. */
   | "branch_not_pushed"
-  /** The design's branch has no commits that the branch it merges into lacks. */
+  /** The canvas's branch has no commits that the branch it merges into lacks. */
   | "no_changes"
-  /** The design has no open pull request to do this to. */
+  /** The canvas has no open pull request to do this to. */
   | "no_pull_request"
-  /** The design's pull request is merged or closed. */
+  /** The canvas's pull request is merged or closed. */
   | "pull_request_closed"
+  /** A close named a pull request that is no longer the canvas's newest. Look again first. */
+  | "pull_request_changed"
   /** The pull request is a draft: mark it ready first. */
   | "pull_request_draft"
   /** The branch conflicts with the branch it merges into. */
@@ -132,6 +141,25 @@ export type ErrorCode =
   | "already_mergeable"
   /** GitHub refused, for a reason Ponzu cannot name. */
   | "github_refused"
+  /**
+   * It would change a file under `.github/workflows/`, and Ponzu's GitHub App has no `workflows`
+   * permission: it is done on GitHub instead.
+   */
+  | "workflow_permission"
+  /**
+   * The repo merges through a merge queue, and Ponzu does not add to one yet (PONZU_MERGE_QUEUE
+   * is off): it is added to the queue on GitHub.
+   */
+  | "merge_queue"
+  /** GitHub's merge queue turned the pull request down. */
+  | "merge_queue_unmergeable"
+  /**
+   * The agent asked to merge, mark ready or turn on auto-merge in a turn no person in Ponzu began,
+   * or after words from GitHub (a check, a review) went into its session: only a person's turn may.
+   */
+  | "turn_not_from_person"
+  /** The agent did this to its pull request as often as an hour allows. A person can still. */
+  | "agent_limit"
   /** A push token another device of the person's already has. */
   | "push_token_taken"
   /**
@@ -152,6 +180,18 @@ export type ErrorCode =
   | "sole_admin"
   /** The confirmation typed to delete the account is not the person's GitHub login. */
   | "confirmation_mismatch"
+  /**
+   * A take-over of a canvas whose owner is in its workspace: only one whose owner left, or
+   * deleted their account, can be taken over. The owner came back, or a teammate took it first.
+   */
+  | "not_ownerless"
+  /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
+  | "claude_not_connected"
+  /**
+   * Ponzu is read-only while it updates (`PONZU_MAINTENANCE=read_only`): nothing was written.
+   * Reads still work; send it again in a few minutes.
+   */
+  | "maintenance"
   | "internal";
 
 /**

@@ -10,6 +10,9 @@ import {
   type UploadFile,
 } from "./api.ts";
 import {
+  type AgentPullRequestAction,
+  type AgentPullRequestAnswer,
+  type AgentPullRequestRequest,
   type AnswerEvent,
   CLAIM_LIMIT,
   type ClaimRequest,
@@ -18,9 +21,12 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   type GitReport,
+  type ModelsReport,
+  type ModelsResponse,
   type Notice,
   type Person,
   type Priority,
+  type PullRequestStanding,
   type PullRequestState,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -30,6 +36,8 @@ import {
   type RunnerNotice,
   type RunnerSession,
   type SavedPoint,
+  SECRET_DELIVERY_MS,
+  type SecretResponse,
   type StateRequest,
   type StateResponse,
   type ThreadItem,
@@ -52,7 +60,7 @@ const RUNNER_NOTICES = new Set<string>([
 export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
   return {
     runnerId: "rnr_test",
-    design: { id: "des_test", name: "Fern" },
+    canvas: { id: "cnv_test", name: "Fern" },
     repo: null,
     branch: null,
     claudeSessionId: null,
@@ -61,7 +69,7 @@ export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
     author: { name: "Ada", email: "1+ada@users.noreply.github.com" },
     committer: { name: "ponzu[bot]", email: "2+ponzu[bot]@users.noreply.github.com" },
     assetBase: "https://assets.ponzu.test/key",
-    link: "https://ponzu.test/d/des_test",
+    link: "https://ponzu.test/d/cnv_test",
     theme: null,
     openQuestions: [],
     seq: 0,
@@ -104,6 +112,11 @@ export class FakeRunnerApi {
   readonly threadWrites: ThreadWrite[][] = [];
   readonly states: StateRequest[] = [];
   readonly questions = new Map<string, QuestionRequest & { status: QuestionResponse["status"] }>();
+  /** Secrets people gave, by question: fetched once by `secret`, while fresh. */
+  readonly secrets = new Map<
+    string,
+    { name: string; value: string; at: number; delivered: boolean }
+  >();
   readonly uploads: (UploadFile & { seq?: number })[] = [];
   readonly usage = new Map<string, TurnUsage>();
   readonly erased: GitCredentialRequest[] = [];
@@ -121,7 +134,7 @@ export class FakeRunnerApi {
   readonly calls: Call[] = [];
   /** The runner process that holds the lease. */
   runner: string | null = null;
-  /** The design's last checkpoint, and its archives as they were uploaded. */
+  /** The canvas's last checkpoint, and its archives as they were uploaded. */
   saved: SavedPoint | null = null;
   archives: { session: Uint8Array | null; workspace: Uint8Array | null } = {
     session: null,
@@ -131,13 +144,6 @@ export class FakeRunnerApi {
   readonly checkpoints: Omit<Checkpoint, "session" | "workspace">[] = [];
   /** What runners reported restoring. */
   readonly restored: RestoredReport[] = [];
-  /**
-   * The stop the API is putting the sandbox through, which every state answer names; null while
-   * it is awake. Set it to ask the runner to get ready to sleep.
-   */
-  sleep: string | null = null;
-  /** The sleeps the runner said it was ready for, in order. */
-  readonly quiesced: string[] = [];
   /** How long each call of a kind takes before the fake looks at it: a slow API. */
   readonly delays = new Map<Call, number>();
 
@@ -159,7 +165,7 @@ export class FakeRunnerApi {
     this.seq = opts.feedSeq ?? 0;
   }
 
-  /** The last event's seq in the design's feed. */
+  /** The last event's seq in the canvas's feed. */
   get feedSeq(): number {
     return this.seq;
   }
@@ -190,15 +196,21 @@ export class FakeRunnerApi {
       putState: as((r, state: StateRequest) => this.putState(r, state)),
       ask: as((r, question: QuestionRequest) => this.ask(r, question)),
       withdraw: as((r, ids: string[]) => this.withdraw(r, ids)),
+      secret: as((r, questionId: string) => this.secret(r, questionId)),
       upload: as((r, files: UploadFile[], opts?: { seq?: number }) => this.upload(r, files, opts)),
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
       reportGit: as((r, report: GitReport) => this.reportGit(r, report)),
       recordUsage: as((r, turns: TurnUsage[]) => this.recordUsage(r, turns)),
+      reportModels: as((r, report: ModelsReport) => this.reportModels(r, report)),
       saveCheckpoint: as((r, point: Checkpoint) => this.saveCheckpoint(r, point)),
       restore: as((r) => this.restore(r)),
       reportRestored: as((r, report: RestoredReport) => this.reportRestored(r, report)),
       pullRequestSummary: as((r, summary: string) => this.pullRequestSummary(r, summary)),
+      readPullRequest: as((r, turn: string | null) => this.readPullRequest(r, turn)),
+      actOnPullRequest: as((r, action: AgentPullRequestAction, request: AgentPullRequestRequest) =>
+        this.actOnPullRequest(r, action, request),
+      ),
     };
   }
 
@@ -209,7 +221,7 @@ export class FakeRunnerApi {
     return client;
   }
 
-  /** Add something to the design's feed, as the API does when it happens. */
+  /** Add something to the canvas's feed, as the API does when it happens. */
   push(
     body: EventBody,
     opts: { priority?: Priority; from?: Person | null; posthogSessionId?: string | null } = {},
@@ -236,6 +248,24 @@ export class FakeRunnerApi {
     return this.push({ kind: "answer", payload: { ...answer, question: asked } });
   }
 
+  /**
+   * A person gives the secret a `secret` question asked for: the row closes, the value is kept
+   * for the runner to fetch once, and the `answer` event names the secret and nothing else.
+   */
+  giveSecret(questionId: string, value: string): RunnerEvent {
+    const question = this.questions.get(questionId);
+    if (question?.status !== "open" || question.kind !== "secret")
+      throw new Error(`${questionId} is not an open secret question`);
+    const { name } = question.payload;
+    this.secrets.set(questionId, { name, value, at: Date.now(), delivered: false });
+    question.status = "answered";
+    const { id: _, status: __, ...asked } = question;
+    return this.push({
+      kind: "answer",
+      payload: { questionId, question: asked, secret: { name } },
+    });
+  }
+
   /** Ids of the events the runner has acknowledged. */
   get delivered(): string[] {
     return this.events.filter((e) => e.deliveredAt !== undefined).map((e) => e.event.id);
@@ -251,7 +281,7 @@ export class FakeRunnerApi {
   }
 
   /**
-   * The design's branch as the API's row holds it (`design_runners.unpushed`, `push_error`):
+   * The canvas's branch as the API's row holds it (`canvas_runners.unpushed`, `push_error`):
    * what the runner last reported, until it reports again. Create PR clears its error
    * (`askRunnerToPush`), as `askToPush` does here.
    */
@@ -378,15 +408,23 @@ export class FakeRunnerApi {
     // As the API's row: kept until the next report of it.
     if (state.branch !== undefined) this.branch = structuredClone(state.branch);
     if (state.claudeSessionId) this.sessionInfo.claudeSessionId = state.claudeSessionId;
-    if (state.quiesced && state.quiesced !== this.quiesced.at(-1))
-      this.quiesced.push(state.quiesced);
-    return { seq: this.doc.seq, sleep: this.sleep };
+    return { seq: this.doc.seq };
   }
 
   async ask(runner: string, question: QuestionRequest): Promise<void> {
     await this.enter("ask", runner);
     if (!this.questions.has(question.id))
       this.questions.set(question.id, { ...structuredClone(question), status: "open" });
+  }
+
+  /** As `POST /v1/runner/secret`: the value once, while it is fresh; 404 otherwise. */
+  async secret(runner: string, questionId: string): Promise<SecretResponse> {
+    await this.enter("secret", runner);
+    const given = this.secrets.get(questionId);
+    if (!given || given.delivered || Date.now() - given.at > SECRET_DELIVERY_MS)
+      throw new ApiError(404, "not_found", "There is no secret to hand over.");
+    given.delivered = true;
+    return { name: given.name, value: given.value };
   }
 
   async withdraw(runner: string, ids: string[]): Promise<void> {
@@ -419,9 +457,9 @@ export class FakeRunnerApi {
   async gitCredential(runner: string, ask: GitCredentialRequest): Promise<GitCredentialResponse> {
     await this.enter("gitCredential", runner);
     const { repo } = this.sessionInfo;
-    if (!repo) throw new ApiError(404, "not_found", "This design has no repository.");
+    if (!repo) throw new ApiError(404, "not_found", "This canvas has no repository.");
     if (ask.host !== "github.com" || ask.path !== `${repo.owner}/${repo.name}.git`)
-      throw new ApiError(403, "forbidden", "That is not this design's repository.");
+      throw new ApiError(403, "forbidden", "That is not this canvas's repository.");
     return {
       username: "x-access-token",
       password: this.gitToken?.password ?? "ghs_fake",
@@ -447,9 +485,23 @@ export class FakeRunnerApi {
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
   }
 
+  /** Every report of what Claude Code offers, in the order they came. */
+  readonly modelReports: ModelsReport[] = [];
+  /** While false, a report is not kept: the account has another credential now. */
+  keepModels = true;
+
+  /** As the API does: kept, the next session says it holds it, as reported now. */
+  async reportModels(runner: string, report: ModelsReport): Promise<ModelsResponse> {
+    await this.enter("reportModels", runner);
+    this.modelReports.push(structuredClone(report));
+    if (!this.keepModels) return { kept: false };
+    this.sessionInfo.models = { ...structuredClone(report), at: new Date().toISOString() };
+    return { kept: true };
+  }
+
   /** The agent's pull request summaries, in the order they came. */
   readonly summaries: string[] = [];
-  /** The design's pull request as the app shows it: what claims and summaries answer. None here. */
+  /** The canvas's pull request as the app shows it: what claims and summaries answer. None here. */
   pullRequest: PullRequestState | null = null;
   /** Answer as an API older than the pull request's state did: claims without `pullRequest`. */
   older = false;
@@ -462,6 +514,140 @@ export class FakeRunnerApi {
     return written
       ? { pullRequest: open.number, open, kept: null }
       : { pullRequest: null, open, kept: "none_open" };
+  }
+
+  /** What the agent asked of its pull request, in order: each call's action, turn and commit. */
+  readonly prCalls: ({ action: AgentPullRequestAction | "read" } & AgentPullRequestRequest)[] = [];
+  /**
+   * How the API refuses the agent's pull request calls: an error for an action, or null to do it.
+   * By default every action is done, as for a person's turn.
+   */
+  refusePullRequest: (
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ) => ApiError | null = () => null;
+  /** Where the pull request stands beyond its number and state, as GitHub would say it. */
+  prDetail: Partial<NonNullable<PullRequestStanding["pullRequest"]>> = {};
+  /**
+   * The commit GitHub has the canvas's branch at, for a test with a remote to look at (a bare
+   * repository), or null while GitHub has no such branch. Set, the fake answers as the API does
+   * from GitHub: opening finds nothing to open from (`pushing`) while the branch isn't there, and
+   * a merge or a branch update named at another commit is `head_moved`. Unset, the branch is
+   * taken to be on GitHub at whatever commit is asked about.
+   */
+  remoteHead: (() => string | null | Promise<string | null>) | null = null;
+  /**
+   * Whether the turn named is a person's, as the API decides it from the feed: a person's
+   * message, answer or comment. A turn this fake's feed doesn't hold counts as one when named.
+   */
+  personTurn: (turn: string | null) => boolean = (turn) => {
+    const event = this.events.find((held) => held.event.id === turn)?.event;
+    if (!event) return turn !== null;
+    return ["message", "answer", "comment"].includes(event.kind) && event.from !== null;
+  };
+
+  async readPullRequest(runner: string, turn: string | null): Promise<PullRequestStanding> {
+    await this.enter("readPullRequest", runner);
+    this.prCalls.push({ action: "read", turn });
+    return this.standing(turn);
+  }
+
+  async actOnPullRequest(
+    runner: string,
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ): Promise<AgentPullRequestAnswer> {
+    await this.enter("actOnPullRequest", runner);
+    this.prCalls.push({ action, ...structuredClone(request) });
+    const refused = this.refusePullRequest(action, request);
+    if (refused) throw refused;
+    // As the API holds to it: only a person's turn may land the pull request.
+    if (["ready", "auto_merge", "merge"].includes(action) && !this.personTurn(request.turn)) {
+      throw new ApiError(
+        403,
+        "turn_not_from_person",
+        "No person in Ponzu began this turn. Only a person's own message, answer or comment in Ponzu can have Claude do this.",
+      );
+    }
+    // What GitHub has of the branch, when the test gives the fake a remote to look at: never a
+    // claim that it did something to a branch GitHub doesn't have (#511).
+    const remote = this.remoteHead ? await this.remoteHead() : undefined;
+    if (action === "open" && remote === null) {
+      return { did: false, pushing: true, ...this.standing(request.turn, remote) };
+    }
+    if (
+      (action === "merge" || action === "update_branch") &&
+      remote !== undefined &&
+      request.headSha !== remote
+    ) {
+      throw new ApiError(
+        409,
+        "head_moved",
+        "The branch has new commits since you looked. Look again first.",
+      );
+    }
+    const pr = this.pullRequest;
+    const open = pr?.state === "open" || pr?.state === "draft";
+    let did = true;
+    if (action === "open") {
+      if (open) did = false;
+      else this.pullRequest = { number: (pr?.number ?? 0) + 1, state: "draft" };
+    } else if (action === "merge" && pr?.state === "merged") {
+      // Merged already, as by someone else first: answered as it is, done by nobody now.
+      did = false;
+    } else if (!open) {
+      throw new ApiError(409, "no_pull_request", "This canvas has no pull request yet.");
+    } else if (action === "ready") {
+      did = pr!.state === "draft";
+      this.pullRequest = { ...pr!, state: "open" };
+    } else if (action === "merge") {
+      this.pullRequest = { ...pr!, state: "merged" };
+    } else if (action === "auto_merge") {
+      // As the API answers: nothing is left to wait for on one that can merge now.
+      if (this.standing(request.turn).pullRequest?.mergeState === "clean") {
+        throw new ApiError(
+          409,
+          "already_mergeable",
+          "This pull request can merge now; there is nothing for auto-merge to wait for.",
+        );
+      }
+      this.prDetail = { ...this.prDetail, autoMerge: { enabledBy: "ada" } };
+    }
+    return { did, pushing: false, ...this.standing(request.turn, remote) };
+  }
+
+  /** `remote` is the branch's commit on GitHub, as `remoteHead` says; undefined when unknown. */
+  private standing(turn: string | null, remote?: string | null): PullRequestStanding {
+    const pr = this.pullRequest;
+    const branch = this.sessionInfo.branch ?? "pz/branch";
+    const personTurn = this.personTurn(turn);
+    return {
+      branch: { name: branch, base: "main", exists: remote !== null, aheadBy: 1, behindBy: 0 },
+      pullRequest: pr && {
+        number: pr.number,
+        url: `https://github.com/north/fern/pull/${pr.number}`,
+        title: this.sessionInfo.canvas.name,
+        state: pr.state,
+        headSha: remote ?? "a".repeat(40),
+        author: "ada",
+        mergedBy: pr.state === "merged" ? "ada" : null,
+        mergeable: true,
+        mergeState: pr.state === "draft" ? "draft" : "clean",
+        reviewDecision: null,
+        autoMerge: null,
+        checks: { state: "passing", complete: true, items: [] },
+        reviews: [],
+        unresolved: [],
+        mergeHold: null,
+        ...this.prDetail,
+      },
+      mergeMethod: "squash",
+      autoMergeAllowed: true,
+      nextAction: !pr ? "create_pr" : pr.state === "draft" ? "ready" : "merge",
+      actingAs: { name: ADA.name, login: ADA.login! },
+      personTurn,
+      notPersonTurn: personTurn ? null : "No person in Ponzu began this turn.",
+    };
   }
 
   async commit(runner: string, ops: Parameters<SyncTransport["commit"]>[0]) {
@@ -488,7 +674,7 @@ export class FakeRunnerApi {
     if (notice.type !== "stopped") return structuredClone(notice);
     const stop = this.events.find((e) => e.event.id === notice.eventId)?.event;
     if (stop?.kind !== "stop")
-      throw new ApiError(400, "invalid_request", "That is not one of this design's stops.");
+      throw new ApiError(400, "invalid_request", "That is not one of this canvas's stops.");
     return { type: "stopped", by: stop.from } satisfies Notice;
   }
 
@@ -501,6 +687,6 @@ export class FakeRunnerApi {
     const failure = this.failing.get(call);
     if (failure) throw failure;
     if (runner !== undefined && runner !== this.runner)
-      throw new ApiError(409, "superseded", "A newer runner has started for this design.");
+      throw new ApiError(409, "superseded", "A newer runner has started for this canvas.");
   }
 }

@@ -5,9 +5,10 @@ import {
   GitPullRequestIcon,
   LinkSquare02Icon,
   MinusSignIcon,
+  MoreHorizontalIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import type {
   CheckRun,
   GithubAuthor,
@@ -26,6 +27,7 @@ import { Icon, type IconSvgElement } from "../ui/icon.tsx";
 import { TEXT } from "../ui/ladder.ts";
 import { safeHref } from "../ui/markdown.ts";
 import { AgentMark } from "../ui/marks.tsx";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "../ui/menu.tsx";
 import { Prose } from "../ui/prose.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { orderChecks } from "./diff.ts";
@@ -37,6 +39,20 @@ export type PullRequestTabState =
   | { kind: "error"; summary: PullRequestSummary }
   | { kind: "ready"; pr: PullRequestDetail };
 
+/**
+ * What the details column's menu (`…` beside the title) offers the person: each only where it
+ * applies, and the menu only when one does. Both act as the person, so a viewer who can only read
+ * the canvas gets no menu.
+ */
+export interface PullRequestMenu {
+  /** Auto-merge is on: turn it off. */
+  onTurnOffAutoMerge?: () => void;
+  /** The pull request is open or a draft: close it, after a confirmation. */
+  onClose?: () => void;
+  /** An action is on its way: nothing more is pressed until it answers. */
+  busy: boolean;
+}
+
 const STATE_ICON: Record<PrState, { icon: IconSvgElement; color: string }> = {
   draft: { icon: GitPullRequestIcon, color: "text-icon-soft" },
   open: { icon: GitPullRequestIcon, color: "text-pr-open" },
@@ -45,7 +61,7 @@ const STATE_ICON: Record<PrState, { icon: IconSvgElement; color: string }> = {
 };
 
 /**
- * The pull request tab, in the canvas's pane: what it is, whether it is green, what people said
+ * The pull request tab, in the main pane: what it is, whether it is green, what people said
  * and what changed. Details, checks, comments and approvals, then the files and their diffs:
  * stacked in a narrow column, side by side in a wide one (`Columns`). Read-only: replying is
  * GitHub's, or the agent's when asked in the thread, which stays open beside it. Sections with
@@ -57,6 +73,8 @@ export function PullRequestView({
   onOpenLink: open,
   onRetry,
   onLoadDiff,
+  summary = null,
+  menu = null,
 }: {
   state: PullRequestTabState;
   viewerLogin: string;
@@ -64,7 +82,17 @@ export function PullRequestView({
   onRetry: () => void;
   /** Fetches a file's diff when its card first opens. */
   onLoadDiff?: (path: string) => Promise<LoadedDiff>;
+  /**
+   * The agent's kept words on what the branch changes, while Create PR is offered with no pull
+   * request open: what the next one opens with. Untrusted markdown, drawn as every description.
+   */
+  summary?: string | null;
+  menu?: PullRequestMenu | null;
 }) {
+  // Whether this tab waited on GitHub: what it says then settles in. A tab that had it at once
+  // (opened before, its last answer kept) just shows it.
+  const waited = useRef(false);
+  if (state.kind !== "ready") waited.current = true;
   // GitHub's addresses (a check's page, a link in a comment) leave the app only to the web.
   const onOpenLink = (url: string) => {
     const href = safeHref(url);
@@ -105,12 +133,15 @@ export function PullRequestView({
 
   const { pr } = state;
   return (
-    <Columns>
+    <Columns settle={waited.current}>
       <div className={cn(COLUMN, "gap-[26px]")}>
         <div className="flex flex-col gap-3.5">
-          <h1 className="m-0 font-display font-semibold text-26 leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]">
-            {pr.title}
-          </h1>
+          <div className="flex items-start gap-2">
+            <h1 className="m-0 min-w-0 flex-1 font-display font-semibold text-26 leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]">
+              {pr.title}
+            </h1>
+            {menu ? <DetailsMenu menu={menu} /> : null}
+          </div>
           <Subtitle
             state={pr.state}
             number={pr.number}
@@ -126,6 +157,11 @@ export function PullRequestView({
             />
           ) : null}
         </div>
+        {summary?.trim() ? (
+          <Section title="The description it opens with">
+            <Prose text={summary} onOpenLink={onOpenLink} className="text-13 leading-[1.6]" />
+          </Section>
+        ) : null}
         <Section title="Checks">
           {pr.checks.length ? (
             orderChecks(pr.checks).map((check) => (
@@ -195,13 +231,18 @@ export function PullRequestView({
 const COLUMN =
   "flex min-w-0 flex-col @min-[1080px]:min-h-0 @min-[1080px]:overflow-y-auto @min-[1080px]:py-11 @min-[1080px]:[scrollbar-width:thin]";
 
-function Columns({ children }: { children: ReactNode }) {
+function Columns({ children, settle = false }: { children: ReactNode; settle?: boolean }) {
   return (
     <div className="@container absolute inset-0">
       <div className="h-full overflow-y-auto [scrollbar-width:thin] @min-[1080px]:overflow-visible">
         <div
           data-pr-columns
-          className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-8 pb-11 @min-[520px]:px-10 @min-[520px]:pt-11 @min-[1080px]:grid @min-[1080px]:h-full @min-[1080px]:max-w-[1480px] @min-[1080px]:grid-cols-[380px_minmax(0,1fr)] @min-[1080px]:gap-12 @min-[1080px]:py-0 @min-[1080px]:pr-12 @min-[1080px]:pl-14"
+          className={cn(
+            // What GitHub said, come in place of the moment before it: it settles in, on the
+            // panes' clock, over where the skeleton stood.
+            settle && "settle",
+            "mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-8 pb-11 @min-[520px]:px-10 @min-[520px]:pt-11 @min-[1080px]:grid @min-[1080px]:h-full @min-[1080px]:max-w-[1480px] @min-[1080px]:grid-cols-[380px_minmax(0,1fr)] @min-[1080px]:gap-12 @min-[1080px]:py-0 @min-[1080px]:pr-12 @min-[1080px]:pl-14",
+          )}
         >
           {children}
         </div>
@@ -418,6 +459,39 @@ function ReviewRow({ review, viewerLogin }: { review: PrReview; viewerLogin: str
       </span>
       <span className={cn("ml-auto shrink-0", TEXT.meta)}>{ago(review.at, now, "compact")}</span>
     </div>
+  );
+}
+
+/**
+ * The `…` beside the title: what the person may do to the pull request beyond the chrome's one
+ * action. Close asks first (the app's dialog); turning auto-merge off is undone by turning it on.
+ */
+function DetailsMenu({ menu }: { menu: PullRequestMenu }) {
+  const { onTurnOffAutoMerge, onClose, busy } = menu;
+  if (!onTurnOffAutoMerge && !onClose) return null;
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <IconButton
+          label="More actions"
+          className="-mr-1 mt-px size-7 shrink-0 rounded-7 text-icon-soft"
+        >
+          <Icon icon={MoreHorizontalIcon} step="control" />
+        </IconButton>
+      </MenuTrigger>
+      <MenuContent width="max-content" side="bottom" align="end" sideOffset={4}>
+        {onTurnOffAutoMerge ? (
+          <MenuItem disabled={busy} onSelect={onTurnOffAutoMerge}>
+            Turn off auto-merge
+          </MenuItem>
+        ) : null}
+        {onClose ? (
+          <MenuItem disabled={busy} onSelect={onClose}>
+            Close pull request
+          </MenuItem>
+        ) : null}
+      </MenuContent>
+    </Menu>
   );
 }
 

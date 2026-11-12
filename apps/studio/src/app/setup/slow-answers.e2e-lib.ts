@@ -5,8 +5,8 @@
  * action pending, perhaps) and then the next one: never an earlier step, the sign-in screen, an
  * empty window or a wait; the title and the line under it never move, nor does a step's action
  * while it waits; and Fresh start's composer stands still while the repo's ideas come in under
- * it. The walk runs with every answer equally slow, with each answer its own delay, and with
- * `me` far behind the rest. A relaunch at any stage goes straight to where the person belongs,
+ * it. The walk runs with each answer its own delay, and with every answer slow and `me` far
+ * behind the rest (which also holds the case of every answer equally slow). A relaunch at any stage goes straight to where the person belongs,
  * holding a quiet empty window until it knows. Skips where there is no Chrome or Chromium.
  *
  * Each walk runs in its own file (first-run*.e2e.test.ts), so bun's workers walk them at once.
@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { rmSync } from "node:fs";
 import { type Browser, chromiumPath, launch, type Page } from "../../../scripts/visual-lib.ts";
 import { buildApp, serve, waitUntil } from "../e2e-lib.ts";
+import { KETTLE_IDEAS } from "../fake-host.ts";
 
 /** Every answer takes this long: slow enough that any wait in between would be drawn. */
 const LATENCY = 400;
@@ -41,7 +42,7 @@ function record() {
   w.places = new Set();
   w.frames = [];
   const STEPS: Record<string, string> = {
-    "Where do you design?": "where",
+    "Where do you build?": "where",
     "Connect Claude": "claude",
     "Get Ponzu on your iPhone": "iphone",
   };
@@ -51,7 +52,7 @@ function record() {
     const title = h1?.textContent?.trim() ?? "";
     if (document.querySelector('[data-screen="sign-in"]')) screen = "sign-in";
     else if (STEPS[title]) screen = STEPS[title]!;
-    else if (document.body?.textContent?.includes("What do you want to design?")) screen = "create";
+    else if (document.body?.textContent?.includes("Make something")) screen = "create";
     else if (document.querySelector("#sidebar")) screen = "app";
     else if (title) screen = `other: ${title}`;
     if (w.screens.at(-1) !== screen) w.screens.push(screen);
@@ -71,8 +72,15 @@ function record() {
   requestAnimationFrame(look);
 }
 
+/**
+ * The screens seen so far, read on the next frame: what a wait just found in the page is drawn
+ * then, and the recorder, asked for that frame first, has seen it.
+ */
 const screens = (page: Page) =>
-  page.evaluate(() => (window as unknown as { screens: Screen[] }).screens.slice());
+  page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return (window as unknown as { screens: Screen[] }).screens.slice();
+  });
 
 /** Clears what was seen so far, keeping the screen on now as the first. */
 const mark = (page: Page) =>
@@ -175,7 +183,7 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
       await page.waitForSelector('[data-screen="sign-in"]');
       await page.getByRole("button", { name: "Continue with GitHub" }).click();
       // Signing in: the sign-in screen waits on until the first step can show.
-      await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+      await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
       expect(await screens(page)).toEqual(["blank", "sign-in", "where"]);
 
       // Where → Connect Claude.
@@ -238,10 +246,10 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         };
         requestAnimationFrame(look);
       });
-      await page.getByRole("button", { name: "Start designing" }).click();
-      await page.getByText("What do you want to design?").waitFor();
-      const idea = page.getByRole("list", { name: "Ideas" }).getByRole("button").first();
-      await idea.waitFor();
+      await page.getByRole("button", { name: "Start building" }).click();
+      await page.getByText("Make something").waitFor();
+      // The ideas, taking turns as the composer's placeholder.
+      await page.locator("[data-suggestion]").waitFor();
       await settle();
       expect(await screens(page)).toEqual(["iphone", "create"]);
       await actionsHeld(page);
@@ -249,9 +257,9 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         ...new Set((window as unknown as { composer: number[] }).composer),
       ]);
       expect(tops).toHaveLength(1);
-      const picked = await idea.textContent();
-      await idea.click();
-      expect(await page.getByPlaceholder(/Describe a screen/).inputValue()).toBe(picked!);
+      const field = page.getByPlaceholder(/Describe what you want to make/);
+      await field.press("Tab");
+      expect(KETTLE_IDEAS).toContain(await field.inputValue());
 
       // The title and the line under it stood still on every step.
       expect(await places(page)).toHaveLength(1);
@@ -264,7 +272,8 @@ export function slowAnswers(register: (suite: SlowAnswers) => void) {
         const { page, errors } = await open(`&as=${as}`);
         if (screen === "create") await page.getByText(heading).waitFor();
         else await page.getByRole("heading", { name: heading }).waitFor();
-        await page.waitForTimeout(LATENCY * 4);
+        // Every answer the screen set off in, and drawn: nothing after it moves the window on.
+        await quiet(page);
         expect(await screens(page)).toEqual(["blank", screen]);
         expect(errors).toEqual([]);
         await page.close();

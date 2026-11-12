@@ -38,7 +38,7 @@ export function requestContext(deps: Deps): MiddlewareHandler<AppEnv> {
       status: c.res.status,
       ms: deps.clock.now() - started,
       ...(actor?.kind === "user" ? { userId: actor.user.id } : {}),
-      ...(actor?.kind === "runner" ? { designId: actor.designId } : {}),
+      ...(actor?.kind === "runner" ? { canvasId: actor.canvasId } : {}),
       // Only when it is the short thing it should be: a header is the caller's to fill.
       ...(client && CLIENT_NAME.test(client) ? { client } : {}),
     });

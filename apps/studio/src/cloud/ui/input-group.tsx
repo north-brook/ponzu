@@ -1,6 +1,6 @@
 /*
  * shadcn/ui's input-group, themed with our tokens: a one-line field's frame, 40 tall, with an
- * edge at rest and the design's soft halo while focused (never an ink ring). An invalid control
+ * edge at rest and the mockup's soft halo while focused (never an ink ring). An invalid control
  * inside turns the edge danger and keeps the halo. Its addons hold what sits before or after the
  * text: an icon, the faint "$" of an amount, a button.
  *

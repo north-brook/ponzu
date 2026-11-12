@@ -8,7 +8,7 @@ import { guideTool, listenTools } from "../listen.ts";
 import { ICON_HINT, icon, organizeTools } from "../organize.ts";
 import { orientTools } from "../orient.ts";
 import { exportInput, exportTo, seeTools } from "../see.ts";
-import { apply, designOf } from "../util.ts";
+import { apply, canvasOf } from "../util.ts";
 import { writeTools } from "../write.ts";
 import { addAsset } from "./asset.ts";
 import { cloudGuides } from "./guides.ts";
@@ -113,7 +113,7 @@ const exportTool = tool({
   title: "Export",
   group: "see",
   description:
-    "Export an artboard or node as PNG, JPEG or PDF to a file in the sandbox, at the path you choose: inside the repo when it should be committed. The path's ending says the format: .png, .jpg or .pdf. When Ponzu can host the file too, the result also has a link to it, for a pull request description, say. A design with light-dark() colors exports in the theme the person's canvas is in unless you pass colorScheme.",
+    "Export an artboard or node as PNG, JPEG or PDF to a file in the sandbox, at the path you choose: inside the repo when it should be committed. The path's ending says the format: .png, .jpg or .pdf. When Ponzu can host the file too, the result also has a link to it, for a pull request description, say. Work with light-dark() colors exports in the theme the person sees Ponzu in unless you pass colorScheme.",
   input: {
     ...exportInput,
     path: z
@@ -127,7 +127,7 @@ const exportTool = tool({
     const format = exportFormat(absolute(path), args.format);
     const out = await exportTo(ctx, { ...args, format }, () => path);
     if (!ws.publish) return { text: out.text };
-    const { key } = await designOf(ctx);
+    const { key } = await canvasOf(ctx);
     const file = { name: basename(out.path), bytes: out.bytes, mime: out.mime };
     try {
       const link = await ws.publish(key, file);
@@ -140,31 +140,31 @@ const exportTool = tool({
   },
 });
 
-const updateDesign = tool({
-  name: "update_design",
-  title: "Update design",
+const updateCanvas = tool({
+  name: "update_canvas",
+  title: "Update canvas",
   group: "organize",
   description:
-    'Name the design, or change its icon. Give a new design a real name once you know what it is: a few words for what is being designed, like "Checkout flow".',
+    'Name the canvas, or change its icon. Give a new canvas a real name once you know what it is: a few words for what is being made, like "Checkout flow".',
   input: {
     name: z.string().min(1).optional(),
     icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
   },
   async handler(args, ctx) {
-    const { design } = await designOf(ctx);
+    const { canvas } = await canvasOf(ctx);
     const ops: Op[] = [];
     if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
     if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });
     if (!ops.length) return { text: "Nothing to change." };
-    apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
-    const { name, icon } = design.doc;
-    return { text: `The design is "${name}"${icon ? `, with the ${icon} icon` : ""}.` };
+    apply(canvas, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+    const { name, icon } = canvas.doc;
+    return { text: `The canvas is "${name}"${icon ? `, with the ${icon} icon` : ""}.` };
   },
 });
 
 /**
- * Every tool an agent has in a design's sandbox, in the order it should discover them. One
- * design per sandbox, so no tool takes a file; no tool waits for activity, since comments and
+ * Every tool an agent has in a canvas's sandbox, in the order it should discover them. One
+ * canvas per sandbox, so no tool takes a file; no tool waits for activity, since comments and
  * messages arrive as turns; and nothing here names a place inside a .design folder.
  */
 export const cloudTools: ToolDef<any>[] = [
@@ -173,13 +173,13 @@ export const cloudTools: ToolDef<any>[] = [
   addAsset,
   ...seeTools,
   exportTool,
-  updateDesign,
+  updateCanvas,
   ...organizeTools,
   ...converseTools,
   ...listenTools,
   guideTool(
     cloudGuides,
-    "basics, layout, typography, comments (how comments and messages reach you, and what to do with each), variations, code (rebuilding UI that is already in the repo, and building a design in code), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile",
+    "basics, layout, typography, comments (how comments and messages reach you, and what to do with each), variations, code (rebuilding UI that is already in the repo, and turning boards into code), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile",
   ),
 ];
 

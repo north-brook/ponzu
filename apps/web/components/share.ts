@@ -5,17 +5,18 @@ import type { Metadata } from "next";
  * outright rather than merging, so each page builds its own from these, and none silently loses
  * the card type, site name or image.
  *
- * The image is app/opengraph-image.jpg (and twitter-image.jpg), rendered from /share by
- * scripts/share-image.ts, unless a page brings its own (a design in the viewer does).
+ * The image is app/opengraph-image.jpg (and twitter-image.jpg, the same picture), unless a page
+ * brings its own: the headline beside the hero's product shot (public/product), in dark. Its
+ * words are in app/opengraph-image.alt.txt too, which Next reads for the file convention.
  */
 
 /** The site's name and line, used by the layout and the home page. */
-export const TITLE = "Ponzu — the open source canvas for your agent";
+export const TITLE = "Ponzu: make it on the canvas, ship it to your repo";
 export const DESCRIPTION =
-  "Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on your Mac, and you steer with comments.";
+  "Ponzu runs Claude Code in the cloud on your own Claude plan. Steer it with comments on a live canvas, and it ships as a pull request.";
 
 export const SHARE_ALT =
-  "Ponzu: the open source canvas for your agent. Designs made in Ponzu, from a landing page to brand guidelines and an app screen, recede across a dark canvas.";
+  "Ponzu: make it on the canvas, ship it to your repo. The Ponzu window, with three takes on a shop's hero on the canvas, beside the headline.";
 
 const IMAGE = { width: 2400, height: 1260, alt: SHARE_ALT };
 

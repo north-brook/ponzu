@@ -1,0 +1,41 @@
+{
+  "release": "dev",
+  "environments": {
+    "dev": {
+      "apiUrl": "https://api.ponzu.design",
+      "workosClientId": "client_01M72Y00K1VV63G6V5D25YCE6K",
+      "realtimeUrl": "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
+      "assetsUrl": "https://assets-dev.ponzu.cloud",
+      "githubAppSlug": "ponzu-dev",
+      "vercelProject": "ponzu-api",
+      "neonBranch": "dev",
+      "r2": { "assets": null, "private": false },
+      "posthog": {
+        "projectId": 728454,
+        "host": "https://us.i.posthog.com",
+        "replay": "full",
+        "aiContent": true
+      },
+      "apiDomains": ["api.ponzu.design"],
+      "minClientVersions": false
+    },
+    "production": {
+      "apiUrl": "https://api.ponzu.design",
+      "workosClientId": null,
+      "realtimeUrl": null,
+      "assetsUrl": "https://assets.ponzu.cloud",
+      "githubAppSlug": "ponzu",
+      "vercelProject": "ponzu-api-prod",
+      "neonBranch": "@default",
+      "r2": { "assets": "ponzu-assets", "private": "ponzu-private" },
+      "posthog": {
+        "projectId": null,
+        "host": "https://us.i.posthog.com",
+        "replay": "private",
+        "aiContent": false
+      },
+      "apiDomains": ["api.ponzu.design"],
+      "minClientVersions": "macos=2.0.0,windows=2.0.0,linux=2.0.0"
+    }
+  }
+}

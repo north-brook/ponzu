@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { seedDesign } from "../fixtures.ts";
+import { seedCanvas } from "../fixtures.ts";
 import { runnerTokens } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { createRunnerToken, revokeRunnerTokens, verifyRunnerToken } from "./runner-tokens.ts";
@@ -12,12 +12,12 @@ beforeAll(async () => {
 });
 afterAll(() => db.$client.close());
 
-test("a token verifies as its design, and only as its design", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
+test("a token verifies as its canvas, and only as its canvas", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
 
-  const issued = await createRunnerToken(db, { designId: one.design.id, ttlSeconds: 3600 });
-  const theirs = await createRunnerToken(db, { designId: other.design.id, ttlSeconds: 3600 });
+  const issued = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 3600 });
+  const theirs = await createRunnerToken(db, { canvasId: other.canvas.id, ttlSeconds: 3600 });
 
   expect(issued.token).toMatch(/^pzr_[0-9a-z]{52}$/);
   expect(issued.token).not.toBe(theirs.token);
@@ -26,25 +26,25 @@ test("a token verifies as its design, and only as its design", async () => {
   expect(lifetime).toBeLessThan(3700_000);
   expect(await verifyRunnerToken(db, issued.token)).toEqual({
     id: issued.id,
-    designId: one.design.id,
+    canvasId: one.canvas.id,
     leaseRunnerId: null,
   });
-  expect(await verifyRunnerToken(db, theirs.token)).toMatchObject({ designId: other.design.id });
+  expect(await verifyRunnerToken(db, theirs.token)).toMatchObject({ canvasId: other.canvas.id });
 });
 
-test("a token comes back with the runner that holds its design's lease now", async () => {
-  const { design } = await seedDesign(db);
-  const issued = await createRunnerToken(db, { designId: design.id, ttlSeconds: 3600 });
+test("a token comes back with the runner that holds its canvas's lease now", async () => {
+  const { canvas } = await seedCanvas(db);
+  const issued = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 3600 });
 
-  await takeRunnerLease(db, { designId: design.id, now: new Date() });
-  const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+  await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
 
   expect(await verifyRunnerToken(db, issued.token)).toMatchObject({ leaseRunnerId: runnerId });
 });
 
 test("the table holds a hash, never the token", async () => {
-  const { design } = await seedDesign(db);
-  const { id, token } = await createRunnerToken(db, { designId: design.id, ttlSeconds: 60 });
+  const { canvas } = await seedCanvas(db);
+  const { id, token } = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 60 });
 
   const [row] = await db.select().from(runnerTokens).where(eq(runnerTokens.id, id));
 
@@ -60,8 +60,8 @@ test("an unknown token is nobody", async () => {
 });
 
 test("an expired token stops working", async () => {
-  const { design } = await seedDesign(db);
-  const { id, token } = await createRunnerToken(db, { designId: design.id, ttlSeconds: 60 });
+  const { canvas } = await seedCanvas(db);
+  const { id, token } = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 60 });
 
   await db
     .update(runnerTokens)
@@ -71,20 +71,20 @@ test("an expired token stops working", async () => {
   expect(await verifyRunnerToken(db, token)).toBeNull();
 });
 
-test("revoking ends every token a design has, and no other design's", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  const first = await createRunnerToken(db, { designId: one.design.id, ttlSeconds: 60 });
-  const second = await createRunnerToken(db, { designId: one.design.id, ttlSeconds: 60 });
-  const theirs = await createRunnerToken(db, { designId: other.design.id, ttlSeconds: 60 });
+test("revoking ends every token a canvas has, and no other canvas's", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  const first = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
+  const second = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
+  const theirs = await createRunnerToken(db, { canvasId: other.canvas.id, ttlSeconds: 60 });
 
-  expect(await revokeRunnerTokens(db, one.design.id)).toBe(2);
+  expect(await revokeRunnerTokens(db, one.canvas.id)).toBe(2);
 
   expect(await verifyRunnerToken(db, first.token)).toBeNull();
   expect(await verifyRunnerToken(db, second.token)).toBeNull();
   expect(await verifyRunnerToken(db, theirs.token)).not.toBeNull();
-  expect(await revokeRunnerTokens(db, one.design.id)).toBe(0);
+  expect(await revokeRunnerTokens(db, one.canvas.id)).toBe(0);
   // A token made after the revocation works.
-  const fresh = await createRunnerToken(db, { designId: one.design.id, ttlSeconds: 60 });
+  const fresh = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
   expect(await verifyRunnerToken(db, fresh.token)).not.toBeNull();
 });

@@ -31,7 +31,7 @@ export interface Step {
 }
 
 export interface StepContext {
-  /** The design as the runner holds it, to name boards. */
+  /** The canvas as the runner holds it, to name boards. */
   doc: Doc;
   /** The checkout, which paths are said relative to. */
   cwd?: string;
@@ -39,7 +39,7 @@ export interface StepContext {
   secrets?: readonly string[];
 }
 
-const CANVAS = "mcp__ponzu__";
+const PONZU_TOOLS = "mcp__ponzu__";
 /** The longest a board's name, a quoted word or a path is said. */
 const NAME = 40;
 const PATH = 36;
@@ -61,8 +61,8 @@ const step = (
  * phrase for the tool then, which its full input makes specific once it is known.
  */
 export function describeStep(name: string, input: Record<string, unknown>, ctx: StepContext): Step {
-  const said = name.startsWith(CANVAS)
-    ? canvasStep(name.slice(CANVAS.length), input, ctx)
+  const said = name.startsWith(PONZU_TOOLS)
+    ? ponzuStep(name.slice(PONZU_TOOLS.length), input, ctx)
     : name.startsWith("mcp__")
       ? serverStep(name)
       : codeStep(name, input, ctx);
@@ -74,8 +74,8 @@ function guarded(said: Step, name: string, ctx: StepContext): Step {
   const secret = (text: string | null | undefined) =>
     !!text && (ctx.secrets ?? []).some((value) => value.length >= 6 && text.includes(value));
   if (![said.doing, said.done, said.board, said.file, said.intent].some(secret)) return said;
-  const plain = name.startsWith(CANVAS)
-    ? canvasStep(name.slice(CANVAS.length), {}, { doc: emptyish })
+  const plain = name.startsWith(PONZU_TOOLS)
+    ? ponzuStep(name.slice(PONZU_TOOLS.length), {}, { doc: emptyish })
     : name.startsWith("mcp__")
       ? serverStep(name)
       : codeStep(name, {}, {});
@@ -88,7 +88,7 @@ const emptyish = { pages: [] } as unknown as Doc;
 /* The canvas                                                          */
 /* ------------------------------------------------------------------ */
 
-function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepContext): Step {
+function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContext): Step {
   const doc = ctx.doc;
   const on = () => boardIn(input, doc);
   const q = (name: string | null) => (name ? `"${name}"` : null);
@@ -190,16 +190,15 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
     case "add_asset": {
       const file = typeof input.path === "string" ? shown(basename(input.path), NAME) : null;
       return file
-        ? step(`Adding ${file} to the design`, `Added ${file} to the design`, 2)
-        : step("Adding a file to the design", "Added a file to the design", 2);
+        ? step(`Adding ${file} to the canvas`, `Added ${file} to the canvas`, 2)
+        : step("Adding a file to the canvas", "Added a file to the canvas", 2);
     }
-    case "update_design": {
+    case "update_canvas": {
       const name = shown(input.name, NAME);
-      if (name) return step(`Naming the design "${name}"`, `Named the design "${name}"`, 1);
-      if (input.icon !== undefined)
-        return step("Choosing the design's icon", "Chose the design's icon", 1);
+      if (name) return step(`Naming the canvas "${name}"`, `Named the canvas "${name}"`, 1);
+      if (input.icon !== undefined) return step("Choosing an icon", "Chose an icon", 1);
       // Its input still to come, or a name that may not be said.
-      return step("Naming the design", "Named the design", 1);
+      return step("Naming the canvas", "Named the canvas", 1);
     }
     case "create_page": {
       const name = shown(input.name, NAME);
@@ -212,7 +211,7 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
         ? step("Deleting a page", "Deleted a page", 2)
         : step("Arranging pages", "Arranged pages", 2);
     case "set_tokens":
-      return step("Setting the design's tokens", "Set the design's tokens", 2);
+      return step("Setting the tokens", "Set the tokens", 2);
     case "write_note": {
       const name = shown(input.name, NAME);
       return name
@@ -238,20 +237,44 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
       return step("Sending Ponzu feedback", "Sent Ponzu feedback", 1);
     case "describe_pull_request":
       return step("Writing the pull request description", "Wrote the pull request description", 1);
+    case "request_secret": {
+      // A name, never a value: only one a secret may have is said.
+      const name =
+        typeof input.name === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(input.name)
+          ? input.name
+          : null;
+      return name
+        ? step(`Asking for ${name}`, `Asked for ${name}`, 1)
+        : step("Asking for a secret", "Asked for a secret", 1);
+    }
+    // What the agent asked of its pull request, never what came of it: GitHub may have refused,
+    // or found it done already. The API's own line in the thread says what it did.
+    case "open_pull_request":
+      return step("Opening the pull request", "Asked to open the pull request");
+    case "read_pull_request":
+      return step("Reading the pull request", "Read the pull request");
+    case "mark_pull_request_ready":
+      return step("Marking the pull request ready", "Asked to mark the pull request ready");
+    case "update_pull_request_branch":
+      return step("Updating the branch", "Asked to update the branch");
+    case "enable_auto_merge":
+      return step("Turning on auto-merge", "Asked to turn on auto-merge");
+    case "merge_pull_request":
+      return step("Merging the pull request", "Asked to merge the pull request");
     case "wait_for_activity":
       return step("Waiting for comments", "Waited for comments");
-    // The local server's tools for a folder of designs: the cloud has one design a sandbox,
+    // The local server's tools for a folder of canvases: the cloud has one canvas a sandbox,
     // but the same server can be the agent's elsewhere.
     case "list_files":
-      return step("Looking through the designs", "Looked through the designs");
+      return step("Looking through the canvases", "Looked through the canvases");
     case "create_file": {
       const name = shown(input.name, NAME);
       return name
-        ? step(`Starting the design "${name}"`, `Started the design "${name}"`, 2)
-        : step("Starting a new design", "Started a new design", 2);
+        ? step(`Starting the canvas "${name}"`, `Started the canvas "${name}"`, 2)
+        : step("Starting a new canvas", "Started a new canvas", 2);
     }
     case "update_file":
-      return canvasStep("update_design", input, ctx);
+      return ponzuStep("update_canvas", input, ctx);
     case "set_status": {
       // The agent saying what it is about: not a step, but the state until it next speaks.
       const intent = shown(input.status, 60);

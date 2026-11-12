@@ -16,10 +16,10 @@ import { canWrite, refreshWorkspaceRepoAccess, repoPermission } from "../auth/re
 import type { Deps } from "../deps/index.ts";
 import { BASE_REBUILD_JOB, requestBaseRebuild } from "../environments/rebuild.ts";
 import {
-  MAX_SECRET_BYTES,
   MAX_SECRET_NAME,
   reservedReason,
   SECRET_LIMITS,
+  SecretValue,
   secretBinding,
   secretNameProblem,
   valueBytes,
@@ -30,7 +30,7 @@ import type { Logger } from "../http/log.ts";
 import { validate } from "../http/validate.ts";
 
 /*
- * Settings › Environments (docs/cloud.md, "Environments"): per repo, the base its designs
+ * Settings › Environments (docs/cloud.md, "Environments"): per repo, the base its canvases
  * start from and the secrets its sandboxes receive. Anyone who can read the repo sees them, by
  * name; a workspace admin adds, replaces and removes secrets; anyone who can push to the repo
  * may ask for a rebuild. A secret's value goes into the vault and comes out only into a
@@ -85,14 +85,6 @@ const WorkspaceEnvironments = z.object({
 });
 
 const SecretName = z.string().min(1).max(MAX_SECRET_NAME);
-const SecretValue = z
-  .string()
-  .min(1, "A secret needs a value.")
-  .refine((value) => !value.includes("\u0000"), "A secret's value cannot hold a NUL character.")
-  .refine(
-    (value) => valueBytes(value) <= MAX_SECRET_BYTES,
-    `A secret's value is at most ${MAX_SECRET_BYTES / 1024} KB.`,
-  );
 const RepoParam = z.object({ id: z.string().min(1).max(64) });
 const SecretParam = RepoParam.extend({ name: SecretName });
 

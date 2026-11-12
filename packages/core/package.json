@@ -7,11 +7,15 @@
     ".": "./src/index.ts",
     "./github": "./src/github.ts",
     "./handoff": "./src/handoff.ts",
+    "./links": "./src/links.ts",
+    "./push": "./src/push.ts",
+    "./wordmark": "./src/wordmark.ts",
     "./redact": "./src/redact.ts",
     "./fixtures": "./src/fixtures/ops.ts",
     "./testing": "./src/fixtures/sequencer.ts"
   },
   "dependencies": {
-    "parse5": "^8"
+    "parse5": "^8",
+    "zod": "^4"
   }
 }

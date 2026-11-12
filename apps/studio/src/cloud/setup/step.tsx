@@ -10,7 +10,7 @@ import { ExternalLink } from "../ui/external-link.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
 
-/** The guided steps' column in the canvas pane. `below` is drawn behind it: the iPhone. */
+/** The guided steps' column in the main pane. `below` is drawn behind it: the iPhone. */
 export function StepLayout({
   progress,
   title,

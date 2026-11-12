@@ -31,7 +31,7 @@ test("every string in an event, however deep, is scrubbed; the rest is left as i
     event: "$exception",
     properties: {
       token: "phc_project_key",
-      design_id: "dsn_1",
+      canvas_id: "cnv_1",
       count: 3,
       $exception_list: [
         {
@@ -46,7 +46,7 @@ test("every string in an event, however deep, is scrubbed; the rest is left as i
     event: "$exception",
     properties: {
       token: "phc_project_key",
-      design_id: "dsn_1",
+      canvas_id: "cnv_1",
       count: 3,
       $exception_list: [
         {

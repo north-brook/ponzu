@@ -24,9 +24,10 @@ import {
   removeLegacyOnce,
   shimServers,
 } from "./legacy.ts";
+import { built } from "./testing.ts";
 
 /*
- * Each case lays out a home folder the way Ponzu 1.x left it (apps/cli/src/install.ts,
+ * Each case lays out a home folder the way Ponzu 1.x left it (its CLI's install.ts,
  * command.ts, host.ts, wake.ts write these exact forms) and checks what goes and what stays.
  */
 
@@ -417,7 +418,10 @@ test("Ponzu Dev and Ponzu Local never clean up after 1.x; only a release does", 
   put(join(support, "Ponzu/Local State"), "1.x's own");
   const before = snapshot(m.home);
 
-  for (const build of [configFor(true, {}, false, "dev"), configFor(false, {})]) {
+  for (const build of [
+    configFor(true, {}, built({ variant: "dev" })),
+    configFor(false, {}, built()),
+  ]) {
     const record = join(support, build.appName, "legacy-cleanup.json");
     expect(await removeLegacyFor(build, m.host, record, "2.0.0")).toBeNull();
     expect(m.calls).toEqual([]);
@@ -425,7 +429,7 @@ test("Ponzu Dev and Ponzu Local never clean up after 1.x; only a release does", 
     expect(snapshot(m.home)).toEqual(before);
   }
 
-  const release = configFor(true, {}, false, "release");
+  const release = configFor(true, {}, built());
   const record = join(support, release.appName, "legacy-cleanup.json");
   const steps = await removeLegacyFor(release, m.host, record, "2.0.0");
   expect(steps?.some((step) => step.outcome === "removed")).toBe(true);

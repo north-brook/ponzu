@@ -19,7 +19,7 @@ export function threadEvents(op: Op): ThreadEvent[] {
   return [];
 }
 
-/** Whether an op changes the design beyond its artboards: its pages, tokens or name. */
+/** Whether an op changes the canvas beyond its artboards: its pages, tokens or name. */
 export function touchesStructure(op: Op): boolean {
   if (op.op === "batch") return op.ops.some(touchesStructure);
   return op.op.startsWith("page.") || op.op === "tokens" || op.op === "file.rename";

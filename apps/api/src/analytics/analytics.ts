@@ -7,7 +7,7 @@ import { currentScope } from "./scope.ts";
 
 /*
  * Product analytics, error tracking and model-call tracing, as the rest of the API sees them:
- * `deps.analytics.capture("design created", { … })` where the fact became true. This file
+ * `deps.analytics.capture("canvas created", { … })` where the fact became true. This file
  * decides what a capture says (who it is about, which workspace, which app session) and makes
  * sure telemetry can never hurt the product. Where it goes is the sink's: PostHog in a
  * deployment (`posthog.ts`), an array under test.
@@ -169,7 +169,7 @@ export function createAnalytics({
           options.workspaceId === undefined ? (scope?.workspaceId ?? null) : options.workspaceId;
         const person =
           options.distinctId === undefined ? (scope?.userId() ?? null) : options.distinctId;
-        const about = (properties as { design_id?: string }).design_id ?? scope?.designId() ?? null;
+        const about = (properties as { canvas_id?: string }).canvas_id ?? scope?.canvasId() ?? null;
         const sessionId =
           options.sessionId === undefined ? (scope?.sessionId ?? null) : options.sessionId;
         sink.capture({
@@ -214,7 +214,7 @@ export function createAnalytics({
       safely("exception", () => {
         const scope = currentScope();
         const person = scope?.userId() ?? null;
-        const designId = scope?.designId() ?? null;
+        const canvasId = scope?.canvasId() ?? null;
         sink.exception(scrubbed(error), person, {
           ...properties,
           ...(scope
@@ -222,7 +222,7 @@ export function createAnalytics({
                 route: scope.route(),
                 request_id: scope.requestId,
                 ...(scope.workspaceId ? { workspace_id: scope.workspaceId } : {}),
-                ...(designId ? { design_id: designId } : {}),
+                ...(canvasId ? { canvas_id: canvasId } : {}),
                 ...(scope.sessionId ? { $session_id: scope.sessionId } : {}),
               }
             : {}),

@@ -9,34 +9,34 @@ import type { RepoEnvironment } from "../settings/environments.ts";
 import type { Installation } from "../settings/github.tsx";
 import type { Member } from "../settings/members.ts";
 import type { PingDevice, PingPrefs } from "../settings/notifications.tsx";
-import type { DesignUsage } from "../settings/plan.tsx";
+import type { CanvasUsage } from "../settings/plan.tsx";
 import type { GithubAccount } from "../setup/setup.ts";
 import {
+  ada,
   alex,
-  bryce,
+  almanac,
   fernwood,
   jordan,
-  lenny,
   leo,
   maya,
   NOW,
-  northbrook,
   repos,
   sam,
+  thistlewick,
   ting,
 } from "./fixtures.ts";
 
 const local = (month: number, day: number, hour = 12, minute = 0, year = 2026) =>
   new Date(year, month - 1, day, hour, minute).toISOString();
 
-export const email = "bryce@northbrook.co";
+export const email = "ada@example.com";
 
-// Where do you design: the person's own account, and the organizations Ponzu is installed on.
+// Where do you build: the person's own account, and the organizations Ponzu is installed on.
 export const personalAccount: GithubAccount = {
   githubAccountId: 1001,
-  login: bryce.login,
-  name: bryce.name,
-  avatarUrl: bryce.avatarUrl,
+  login: ada.login,
+  name: ada.name,
+  avatarUrl: ada.avatarUrl,
   kind: "personal",
   status: "not_installed",
   workspaceId: null,
@@ -47,23 +47,23 @@ export const accounts: GithubAccount[] = [
   personalAccount,
   {
     githubAccountId: 2001,
-    login: "fablefuel",
-    name: "Fablefuel",
+    login: "quillmoor",
+    name: "Quillmoor",
     avatarUrl: null,
     kind: "org",
     status: "ready",
-    workspaceId: "ws_fablefuel",
+    workspaceId: "ws_quillmoor",
     suspended: false,
     memberCount: 12,
   },
   {
     githubAccountId: 2002,
-    login: northbrook.login,
-    name: northbrook.name,
-    avatarUrl: northbrook.avatarUrl,
+    login: thistlewick.login,
+    name: thistlewick.name,
+    avatarUrl: thistlewick.avatarUrl,
     kind: "org",
     status: "ready",
-    workspaceId: northbrook.id,
+    workspaceId: thistlewick.id,
     suspended: false,
     memberCount: 5,
   },
@@ -99,7 +99,7 @@ export const manyAccounts: GithubAccount[] = [
 ];
 /** The person's own account ready, and an organization whose installation is suspended. */
 export const suspendedAccounts: GithubAccount[] = [
-  { ...personalAccount, status: "ready", workspaceId: "ws_bryce" },
+  { ...personalAccount, status: "ready", workspaceId: "ws_ada" },
   { ...accounts[2]!, suspended: true },
 ];
 
@@ -133,6 +133,11 @@ export const limitsFull: ClaudeLimit[] = [
   { window: "week", utilization: 0.64, resetsAt: local(11, 16, 9) },
   { window: "week_opus", utilization: 1, resetsAt: local(11, 16, 9) },
 ];
+/** The session and the week on Opus used up, with the Sonnet week some plans have. */
+export const limitsAtLimit: ClaudeLimit[] = [
+  ...limitsFull,
+  { window: "week_sonnet", utilization: 0.27, resetsAt: local(11, 16, 9) },
+];
 export const limitsUnseen: ClaudeLimit[] = limits.map((l) => ({
   ...l,
   utilization: null,
@@ -154,7 +159,7 @@ export const iphone: PingDevice = {
 };
 
 export const members: Member[] = [
-  { person: bryce, joined: true, role: "admin", owner: true },
+  { person: ada, joined: true, role: "admin", owner: true },
   { person: sam, joined: true, role: "admin", owner: false },
   { person: maya, joined: true, role: "member", owner: false },
   { person: jordan, joined: true, role: "member", owner: false },
@@ -170,8 +175,8 @@ export const membersMixed: Member[] = [
 
 export const installation: Installation = {
   state: "installed",
-  accountLogin: northbrook.login,
-  installedBy: bryce.login,
+  accountLogin: thistlewick.login,
+  installedBy: ada.login,
   installedAt: local(10, 28),
 };
 export const githubRepos = repos;
@@ -195,7 +200,7 @@ export const environments: RepoEnvironment[] = [
     ],
   },
   {
-    repo: lenny,
+    repo: almanac,
     base: {
       status: "ready",
       builtAt: new Date(NOW - 5 * 24 * 3_600_000).toISOString(),
@@ -263,7 +268,7 @@ export const teamUsage: Usage = {
   card: visa("8831"),
 };
 export const byPerson: PersonUsage[] = [
-  { person: bryce, admin: true, usedCredits: 705 },
+  { person: ada, admin: true, usedCredits: 705 },
   { person: sam, admin: true, usedCredits: 560 },
   { person: maya, admin: false, usedCredits: 480 },
   { person: jordan, admin: false, usedCredits: 205 },
@@ -271,16 +276,16 @@ export const byPerson: PersonUsage[] = [
 ];
 /**
  * The same period with someone's account deleted (30 of Alex's credits put down to nobody) and
- * by design, with deleted designs and designs the viewer can't open: each adds up to 2,060.
+ * by canvas, with deleted canvases and canvases the viewer can't open: each adds up to 2,060.
  */
 export const byPersonWithNobody: PersonUsage[] = byPerson.map((row) =>
   row.person.id === alex.id ? { ...row, usedCredits: 80 } : row,
 );
 export const unattributedCredits = 30;
-export const byDesign: DesignUsage[] = [
-  { kind: "design", id: "des_checkout", name: "Checkout, one page", usedCredits: 940 },
-  { kind: "design", id: "des_onboarding", name: "Onboarding tour", usedCredits: 610 },
-  { kind: "design", id: "des_empty", name: "Empty states", usedCredits: 0 },
+export const byCanvas: CanvasUsage[] = [
+  { kind: "canvas", id: "cnv_checkout", name: "Checkout, one page", usedCredits: 940 },
+  { kind: "canvas", id: "cnv_onboarding", name: "Onboarding tour", usedCredits: 610 },
+  { kind: "canvas", id: "cnv_empty", name: "Empty states", usedCredits: 0 },
   { kind: "deleted", id: null, name: null, usedCredits: 330 },
   { kind: "hidden", id: null, name: null, usedCredits: 180 },
 ];

@@ -31,7 +31,7 @@ export interface WhereStepProps {
 }
 
 /**
- * "Where do you design?": the person's own account, then each organization where Ponzu is
+ * "Where do you build?": the person's own account, then each organization where Ponzu is
  * already installed. Set up installs Ponzu's GitHub App on the account; when the person is back
  * from GitHub the row turns Ready. Any other organization is set up from GitHub's install page.
  */
@@ -49,8 +49,8 @@ export function WhereStep({
   return (
     <StepLayout
       progress={1}
-      title="Where do you design?"
-      body="Design on your real product, with your team, and ship it as a pull request. Pick where your code lives."
+      title="Where do you build?"
+      body="Build on your real product, with your team, and ship it as a pull request. Pick where your code lives."
       actions={
         <StepButton onClick={onContinue} disabled={!list || !canContinue(list)} busy={continuing}>
           Continue

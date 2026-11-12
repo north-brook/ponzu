@@ -443,7 +443,7 @@ describe("other people's ops", () => {
     const { api, timers, open } = setup();
     const a = open(ada);
     const b = open(bo);
-    // Word of another design's head, or of this one before it was reset: nothing is at 5.
+    // Word of another canvas's head, or of this one before it was reset: nothing is at 5.
     a.replica.notify(5);
     await a.line.drain();
     for (let turn = 0; turn < 20; turn++) await tick();
@@ -480,7 +480,7 @@ describe("other people's ops", () => {
     const b = open(bo);
     await b.commit({ op: "file.rename", name: "Name 1" });
     a.replica.notify(1);
-    // The API reads the design a moment before Bo's first op lands in it...
+    // The API reads the canvas a moment before Bo's first op lands in it...
     a.line.waiting[0]!.serve = () => ({ ops: [], seq: 0 });
     // ...and while its answer is on the way, Bo commits again and Ada hears of it.
     await b.commit({ op: "file.rename", name: "Name 2" });
@@ -769,7 +769,7 @@ describe("a failing connection", () => {
   });
 });
 
-describe("fetching the whole design", () => {
+describe("fetching the whole canvas", () => {
   test("when the ops are gone, the document is fetched whole and pending ops go back on top", async () => {
     const { api, open } = setup();
     const a = open(ada);
@@ -920,7 +920,7 @@ describe("fetching the whole design", () => {
     expect(timers.waits).toEqual([]);
   });
 
-  test("Replica.open starts from the design as the API has it", async () => {
+  test("Replica.open starts from the canvas as the API has it", async () => {
     const { api, timers, open } = setup();
     await open(bo).commit(red);
     const line = new Line(api, ada);

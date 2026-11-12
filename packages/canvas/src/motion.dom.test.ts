@@ -211,7 +211,7 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(state.running).toBe(60);
   });
 
-  test("a handoff leaves an animation the design paused paused, after the next thaw too", async () => {
+  test("a handoff leaves an animation the board's CSS paused paused, after the next thaw too", async () => {
     await board(
       `<style>@keyframes spin{to{transform:rotate(1turn)}}.s{width:40px;height:40px;animation:spin 1s linear infinite}.p{animation-play-state:paused}</style><div class=s data-id=n_run></div><div class="s p" data-id=n_paused></div>`,
     );
@@ -228,9 +228,14 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
           { x: 0, y: 40, width: 40, height: 40, period: 1000, src: "", ids: ["n_paused"] },
         ],
       };
-      // The videos have no source: the handoff doesn't wait on them.
-      for (const v of layer.querySelectorAll("video"))
+      // The videos have no source: they say they have metadata, and a seek lands at once, so
+      // the handoff takes its first lead instead of waiting out each seek's fallback.
+      for (const v of layer.querySelectorAll("video")) {
         Object.defineProperty(v, "readyState", { value: 1 });
+        Object.defineProperty(v, "currentTime", {
+          set: () => setTimeout(() => v.dispatchEvent(new Event("seeked"))),
+        });
+      }
       await w.pz.handoffToVideos(
         root,
         layer,
@@ -392,7 +397,7 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     ).toBe(0);
   });
 
-  test("a small loop the design scales up is as big as it's drawn", async () => {
+  test("a small loop the board's CSS scales up is as big as it's drawn", async () => {
     expect(
       await mounted(
         `<style>@keyframes spin{to{rotate:1turn}}.up{transform:scale(10);transform-origin:0 0}.s{width:2px;height:2px;background:red;animation:spin 1s linear infinite}</style><div class=up><div class=s></div></div>`,

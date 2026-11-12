@@ -4,6 +4,7 @@ import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
+import { limitCaller } from "../http/rate-limits.ts";
 import type { Actor, LeasedRunner, RunnerActor, UserActor } from "./actor.ts";
 import { authenticateRunner, authenticateUser, isRunnerToken } from "./authenticate.ts";
 
@@ -49,41 +50,49 @@ export const access = {
    * A signed-in person: a WorkOS access token as the bearer, for a session the sign-in
    * exchange admitted (`authenticateUser`). The handler reads the person from `c.var.actor`.
    * This says who is asking, not what they may touch: see `auth/authorize.ts`.
+   *
+   * Each declaration that authenticates also counts the request against its caller's rate limit
+   * (`http/rate-limits.ts`), so a route cannot forget to be counted.
    */
   user: declare<Declaration<UserActor>>("authenticated", async (c, next) => {
-    c.set("actor", await authenticateUser(c.var.deps, bearer(c)));
+    const actor = await authenticateUser(c.var.deps, bearer(c));
+    c.set("actor", actor);
+    await limitCaller(c, actor);
     return next();
   }),
 
   /**
-   * The runner inside a design's sandbox: a runner token as the bearer, and the design's lease
-   * as `X-Ponzu-Runner` (409 `superseded` without it). The handler reads the one design it may
-   * act on from `c.var.actor.designId`, and must not act on any other.
+   * The runner inside a canvas's sandbox: a runner token as the bearer, and the canvas's lease
+   * as `X-Ponzu-Runner` (409 `superseded` without it). The handler reads the one canvas it may
+   * act on from `c.var.actor.canvasId`, and must not act on any other.
    */
   runner: declare<Declaration<LeasedRunner>>("authenticated", async (c, next) => {
-    c.set("actor", await authenticateRunner(c.var.deps, bearer(c), c.req.header(RUNNER_HEADER)));
+    const actor = await authenticateRunner(c.var.deps, bearer(c), c.req.header(RUNNER_HEADER));
+    c.set("actor", actor);
+    await limitCaller(c, actor);
     return next();
   }),
 
   /** A runner starting, on the one route that takes the lease: no `X-Ponzu-Runner` yet. */
   runnerStarting: declare<Declaration<RunnerActor>>("authenticated", async (c, next) => {
-    c.set("actor", await authenticateRunner(c.var.deps, bearer(c), "taking"));
+    const actor = await authenticateRunner(c.var.deps, bearer(c), "taking");
+    c.set("actor", actor);
+    await limitCaller(c, actor);
     return next();
   }),
 
   /**
-   * Either a person or a runner that holds its lease, for a route both call (a design's ops are
+   * Either a person or a runner that holds its lease, for a route both call (a canvas's ops are
    * posted by people and by its runner). The handler tells them apart by `c.var.actor.kind`.
    */
   userOrRunner: declare<Declaration<Actor>>("authenticated", async (c, next) => {
     const token = bearer(c);
     const { deps } = c.var;
-    c.set(
-      "actor",
-      isRunnerToken(token)
-        ? await authenticateRunner(deps, token, c.req.header(RUNNER_HEADER))
-        : await authenticateUser(deps, token),
-    );
+    const actor = isRunnerToken(token)
+      ? await authenticateRunner(deps, token, c.req.header(RUNNER_HEADER))
+      : await authenticateUser(deps, token);
+    c.set("actor", actor);
+    await limitCaller(c, actor);
     return next();
   }),
 };

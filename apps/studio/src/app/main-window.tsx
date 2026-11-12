@@ -1,26 +1,42 @@
 import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { RepoShelf } from "../cloud/create/create.ts";
+import { focusCreateComposer } from "../cloud/create/focus.ts";
+import { type Sent, useLanding } from "../cloud/create/landing.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
-import type { DesignSummary, Person } from "../cloud/model.ts";
+import type { CanvasSummary, Person, ThreadItem } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
 import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
-import type { RowAction } from "../cloud/sidebar/design-row.tsx";
+import type { RowAction } from "../cloud/sidebar/canvas-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
+import { readDraft, writeDraft } from "../cloud/thread/composer-rules.ts";
+import { ThreadRail } from "../cloud/thread/rail.tsx";
+import { quietFocus } from "../cloud/ui/quiet-focus.ts";
 import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
+import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
-import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
-import { CreateView } from "./create.tsx";
-import { type FreshDesign, useOpenDesign } from "./design.tsx";
-import { useDesignPanes } from "./design-panes.tsx";
+import { type FreshCanvas, useOpenCanvas } from "./canvas.tsx";
+import { useCanvasPanes } from "./canvas-panes.tsx";
+import { DeleteCanvasDialog } from "./confirm-dialogs.tsx";
+import { type CreateHandoff, CreateView, type Launch } from "./create.tsx";
 import type { Host } from "./host.ts";
+import { useMaintenanceNotice } from "./maintenance.ts";
 import {
-  designMembers,
+  canvasMembers,
   hereNow,
   membersById,
   pushableRepos,
@@ -33,6 +49,7 @@ import {
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
+import { ASKED_AHEAD_MS } from "./pull-request-store.ts";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
@@ -41,22 +58,22 @@ import { useOnReturn } from "./use-answer.ts";
 
 /*
  * The main window, signed in: the person's workspaces from `me`, one of them open with its
- * designs live in the sidebar, and in the canvas pane either a design or the create page.
+ * canvases live in the sidebar, and in the main pane either a canvas or the create page.
  * Routing is this state and links; what the window was showing is remembered per person.
  */
 
 type MeWorkspace = Awaited<ReturnType<Api["me"]>>["workspaces"][number];
 
-/** Where a link asked to open a design. */
+/** Where a link asked to open a canvas. */
 interface Opening {
-  designId: string;
+  canvasId: string;
   page?: string;
   artboard?: string;
 }
 
 const RETURN_SYNC_MS = 60_000;
 const NOTICE_MS = 6000;
-/** Ideas show under the composer until the person has made this many designs in a workspace. */
+/** Ideas take turns as the composer's placeholder until the person has made this many canvases in a workspace. */
 const IDEAS_UNTIL = 3;
 
 export function MainWindow({ host, user, badge }: { host: Host; user: Profile; badge: ReactNode }) {
@@ -79,7 +96,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const [opening, setOpening] = useState<Opening | null>(null);
   const [notice, say] = useNotice();
   const analytics = useAnalytics();
-  /** How the next design to open came to be opened: whoever opens one says. */
+  /** How the next canvas to open came to be opened: whoever opens one says. */
   const openedVia = useRef<OpenedVia>("restored");
   /** A notice, said, and counted by what it is (never its words). */
   const tell = useCallback(
@@ -89,6 +106,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     },
     [analytics, say],
   );
+  useMaintenanceNotice(host, tell);
 
   // Signed in without a keychain to keep the session in: say so once, now, when it matters.
   useEffect(() => {
@@ -124,24 +142,24 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     return () => document.removeEventListener("visibilitychange", change);
   }, [host]);
 
-  // A design a link names, opened on its page or board: from the shell, or the thread.
-  const openDesign = useCallback(
-    (link: { designId: string; pageId?: string; artboardId?: string }) => {
-      host.api.designs.get(link.designId).then(
-        (design) => {
+  // A canvas a link names, opened on its page or board: from the shell, or the thread.
+  const openCanvas = useCallback(
+    (link: { canvasId: string; pageId?: string; artboardId?: string }) => {
+      host.api.canvases.get(link.canvasId).then(
+        (canvas) => {
           update((now) => ({
             ...now,
-            workspaceId: design.workspaceId,
-            designs: { ...now.designs, [design.workspaceId]: design.id },
+            workspaceId: canvas.workspaceId,
+            canvases: { ...now.canvases, [canvas.workspaceId]: canvas.id },
           }));
           openedVia.current = "link";
           setOpening({
-            designId: design.id,
+            canvasId: canvas.id,
             ...(link.pageId ? { page: link.pageId } : {}),
             ...(link.artboardId ? { artboard: link.artboardId } : {}),
           });
         },
-        () => tell("design_unavailable", "That design isn't there, or you can't open it."),
+        () => tell("canvas_unavailable", "That canvas isn't there, or you can't open it."),
       );
     },
     [host, update, tell],
@@ -166,10 +184,28 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        openDesign(link);
+        // A card setup's and a settings link have their own listeners, once billing and
+        // notifications add them.
+        if (link.kind === "canvas") openCanvas(link);
       }),
-    [host, sync, update, tell, openDesign],
+    [host, sync, update, tell, openCanvas],
   );
+
+  // A repo chosen on the create page in another workspace: the window switches there, its
+  // create page open (not the canvas it last showed), and the page there takes this over.
+  const [handoff, setHandoff] = useState<CreateHandoff | null>(null);
+  const switchWithCreate = useCallback(
+    (next: CreateHandoff) => {
+      setHandoff(next);
+      update((now) => {
+        const { [next.workspaceId]: _shown, ...canvases } = now.canvases;
+        return { ...now, workspaceId: next.workspaceId, canvases };
+      });
+      focusCreateComposer();
+    },
+    [update],
+  );
+  const handoffTaken = useCallback(() => setHandoff(null), []);
 
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
@@ -185,7 +221,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     if (gone?.suspended) {
       tell(
         "workspace_suspended",
-        `Ponzu is suspended on GitHub for ${toWorkspace(gone).name}. Its designs open again once it's back.`,
+        `Ponzu is suspended on GitHub for ${toWorkspace(gone).name}. Its canvases open again once it's back.`,
       );
     }
   }, [workspace?.id, all, tell]);
@@ -212,10 +248,13 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       update={update}
       badge={badge}
       opening={opening}
-      onOpenDesign={openDesign}
+      onOpenCanvas={openCanvas}
       openedVia={openedVia}
       notice={notice}
       say={say}
+      handoff={handoff}
+      onHandoffTaken={handoffTaken}
+      onSwitchWithCreate={switchWithCreate}
       onLostAccess={() => {
         update((now) => ({ ...now, workspaceId: null }));
         void sync();
@@ -236,10 +275,13 @@ function WorkspaceWindow({
   update,
   badge,
   opening,
-  onOpenDesign,
+  onOpenCanvas,
   openedVia,
   notice,
   say,
+  handoff,
+  onHandoffTaken,
+  onSwitchWithCreate,
   onLostAccess,
 }: {
   host: Host;
@@ -254,15 +296,18 @@ function WorkspaceWindow({
   update: (change: (ui: UiState) => UiState) => void;
   badge: ReactNode;
   opening: Opening | null;
-  /** Opens a design a link names, on its page or board. */
-  onOpenDesign: (link: { designId: string; pageId?: string; artboardId?: string }) => void;
+  /** Opens a canvas a link names, on its page or board. */
+  onOpenCanvas: (link: { canvasId: string; pageId?: string; artboardId?: string }) => void;
   openedVia: { current: OpenedVia };
   notice: string | null;
   say: (notice: string) => void;
+  handoff: CreateHandoff | null;
+  onHandoffTaken: () => void;
+  onSwitchWithCreate: (handoff: CreateHandoff) => void;
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
-  const { queries } = usePonzu();
+  const { queries, queryClient } = usePonzu();
   // Asked again with `me` after each sync with GitHub, as the window comes back to the front.
   const detail = useQuery(queries.workspace(id));
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
@@ -270,14 +315,34 @@ function WorkspaceWindow({
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
     [detail.data],
   );
-  const live = useLiveQuery("workspace.designs", { workspaceId: id });
-  const openId = ui.designs[id] ?? null;
-  // The design the create page just made, as its answer said, for it to open on.
-  const [fresh, setFresh] = useState<FreshDesign | null>(null);
-  const open = useOpenDesign(host, me, openId, say, fresh);
-  // Share's list: everyone GitHub gives access to the open design's repo.
+  // The create page's picker lists every usable workspace, in the switcher's order: each one's
+  // name and Scratch at once (they come with `me`), its repos from the same query as they arrive.
+  // One whose repos fail to load still offers its Scratch. Their answers stay in the cache, so
+  // switching to one of them shows its repos at once.
+  const others = useMemo(() => workspaces.filter((w) => w.id !== id), [workspaces, id]);
+  const elsewhere = useQueries({
+    queries: others.map((w) => queries.workspace(w.id)),
+    combine: useCallback(
+      (
+        results: { data?: { repos: Parameters<typeof pushableRepos>[0] }; isPending: boolean }[],
+      ): RepoShelf[] =>
+        results.map((result, i): RepoShelf => {
+          const workspace = others[i]!;
+          const shelf = { workspaceId: workspace.id, name: toWorkspace(workspace).name };
+          if (result.data) return { ...shelf, repos: pushableRepos(result.data.repos) };
+          return { ...shelf, repos: result.isPending ? null : [] };
+        }),
+      [others],
+    ),
+  });
+  const live = useLiveQuery("workspace.canvases", { workspaceId: id });
+  const openId = ui.canvases[id] ?? null;
+  // The canvas the create page just made, as its answer said, for it to open on.
+  const [fresh, setFresh] = useState<FreshCanvas | null>(null);
+  const open = useOpenCanvas(host, me, openId, say, fresh);
+  // Share's list: everyone GitHub gives access to the open canvas's repo.
   const sharePeople = useQuery({
-    ...queries.designPeople(openId ?? ""),
+    ...queries.canvasPeople(openId ?? ""),
     enabled: openId !== null,
   });
   const [page, setPage] = useState<string | null>(null);
@@ -304,7 +369,7 @@ function WorkspaceWindow({
   // Kept apart from whether it is open, so the dialog's words hold as it closes.
   const [connectingClaude, setConnectingClaude] = useState(false);
   const [claudeExpired, setClaudeExpired] = useState(false);
-  const [deleting, setDeleting] = useState<{ design: DesignSummary; busy: boolean } | null>(null);
+  const [deleting, setDeleting] = useState<{ canvas: CanvasSummary; busy: boolean } | null>(null);
   const assetsUrls = useAssetsUrls(host.api, live.rows ?? null);
   const activeIds = useMemo(
     () =>
@@ -344,14 +409,14 @@ function WorkspaceWindow({
     [summaries],
   );
   const openSummary = summaries?.find((d) => d.id === openId) ?? null;
-  const link = opening && opening.designId === openId ? opening : null;
+  const link = opening && opening.canvasId === openId ? opening : null;
 
-  const openDesign = useCallback(
-    (designId: string | null, via: OpenedVia = "sidebar") => {
+  const openCanvas = useCallback(
+    (canvasId: string | null, via: OpenedVia = "sidebar") => {
       openedVia.current = via;
       update((now) => {
-        const { [id]: _was, ...others } = now.designs;
-        return { ...now, designs: designId ? { ...others, [id]: designId } : others };
+        const { [id]: _was, ...others } = now.canvases;
+        return { ...now, canvases: canvasId ? { ...others, [id]: canvasId } : others };
       });
       setPage(null);
     },
@@ -359,17 +424,17 @@ function WorkspaceWindow({
   );
   useEffect(() => {
     if (!openId) return;
-    analytics.capture("design opened", { design_id: openId, via: openedVia.current });
+    analytics.capture("canvas opened", { canvas_id: openId, via: openedVia.current });
     openedVia.current = "restored";
   }, [analytics, openId, openedVia]);
   const switchPage = useCallback(
     (pageId: string) => {
       setPage(pageId);
-      if (openId) analytics.capture("page switched", { design_id: openId });
+      if (openId) analytics.capture("page switched", { canvas_id: openId });
     },
     [analytics, openId],
   );
-  // Another design opens on its first page, or the one a link names, never the last one's.
+  // Another canvas opens on its first page, or the one a link names, never the last one's.
   useEffect(() => {
     setPage(link?.page ?? null);
   }, [openId, link]);
@@ -382,16 +447,16 @@ function WorkspaceWindow({
   useEffect(
     () =>
       host.onCommand((command) => {
-        if (command === "new-design") openDesign(null);
+        if (command === "new-canvas") openCanvas(null);
         if (command === "settings") openSettings();
-        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again,
+        // The window's own ⌘B and ⌥⌘B take the keys first; a press they just ran isn't run again,
         // and neither toggles under a menu or a modal (paneHeld).
         if (command === "toggle-sidebar" && !ranJustNow("b") && !paneHeld("sidebar"))
           toggles.current.sidebar?.();
-        if (command === "toggle-thread" && !ranJustNow("j") && !paneHeld("thread"))
+        if (command === "toggle-thread" && !ranJustNow("alt+b") && !paneHeld("thread"))
           toggles.current.rail?.();
       }),
-    [host, openDesign, openSettings],
+    [host, openCanvas, openSettings],
   );
 
   const addWorkspace = useCallback(() => {
@@ -399,43 +464,57 @@ function WorkspaceWindow({
     host.installGithub({}).catch(() => say("GitHub's install page couldn't be opened. Try again."));
   }, [host, say]);
 
-  const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
+  const onOpen = useCallback((canvas: CanvasSummary) => openCanvas(canvas.id), [openCanvas]);
+  // About to open a canvas on a repo (the pointer or the keyboard resting on its row):
+  // its pull request is asked for ahead, into the cache its chrome reads from the first frame,
+  // so its action is there as it opens. Asked at most once in ASKED_AHEAD_MS, which the read on
+  // opening then stands on.
+  const onIntent = useCallback(
+    (canvas: CanvasSummary) => {
+      if (canvas.project.kind !== "repo") return;
+      void queryClient.prefetchQuery({
+        ...queries.pullRequest(canvas.id),
+        staleTime: ASKED_AHEAD_MS,
+      });
+    },
+    [queryClient, queries],
+  );
   const onAction = useCallback(
-    (design: DesignSummary, action: Exclude<RowAction, "rename">) => {
-      const failed = () => say(`“${design.name}” couldn't be changed. Try again.`);
+    (canvas: CanvasSummary, action: Exclude<RowAction, "rename">) => {
+      const failed = () => say(`“${canvas.name}” couldn't be changed. Try again.`);
       if (action === "copy_link") {
-        navigator.clipboard.writeText(`ponzu://design/${design.id}`).then(
-          () => say(`Copied the link to “${design.name}”.`),
+        navigator.clipboard.writeText(`ponzu://canvas/${canvas.id}`).then(
+          () => say(`Copied the link to “${canvas.name}”.`),
           () => say("The link couldn't be copied. Try again."),
         );
       } else if (action === "settle" || action === "reopen") {
-        host.api.designs.settle(design.id, action === "settle").catch(failed);
+        host.api.canvases.settle(canvas.id, action === "settle").catch(failed);
       } else if (action === "delete") {
-        setDeleting({ design, busy: false });
+        setDeleting({ canvas, busy: false });
       }
     },
     [host, say],
   );
   const confirmDelete = useCallback(() => {
     if (!deleting || deleting.busy) return;
-    const { design } = deleting;
-    setDeleting({ design, busy: true });
-    host.api.designs.delete(design.id).then(
+    const { canvas } = deleting;
+    setDeleting({ canvas, busy: true });
+    host.api.canvases.delete(canvas.id).then(
       () => {
         setDeleting(null);
-        if (design.id === openId) openDesign(null);
+        if (canvas.id === openId) openCanvas(null);
       },
       () => {
         setDeleting(null);
-        say(`“${design.name}” couldn't be deleted. Try again.`);
+        say(`“${canvas.name}” couldn't be deleted. Try again.`);
       },
     );
-  }, [host, deleting, openId, openDesign, say]);
+  }, [host, deleting, openId, openCanvas, say]);
   const onRename = useCallback(
-    (design: DesignSummary, name: string) => {
-      host.api.designs
-        .rename(design.id, { name })
-        .catch(() => say(`“${design.name}” couldn't be renamed. Try again.`));
+    (canvas: CanvasSummary, name: string) => {
+      host.api.canvases
+        .rename(canvas.id, { name })
+        .catch(() => say(`“${canvas.name}” couldn't be renamed. Try again.`));
     },
     [host, say],
   );
@@ -443,61 +522,151 @@ function WorkspaceWindow({
   const lost =
     live.status === "ended" &&
     (live.error?.code === "not_found" || live.error?.code === "forbidden");
-  // A brand-new personal workspace has no sidebar until its first design (onboarding 3.6), when
+  // A brand-new personal workspace has no sidebar until its first canvas (onboarding 3.6), when
   // it is all the person has: with a team set up too, the sidebar is how they reach it.
-  const firstDesign =
+  const firstCanvas =
     workspace.kind === "personal" && summaries?.length === 0 && workspaces.length === 1;
-  const designs = [...(active ?? []), ...(settled ?? [])];
+  const canvases = [...(active ?? []), ...(settled ?? [])];
   const sidebarOpen = ui.sidebarOpen;
-  const panes = useDesignPanes({
+  // A send from the create page: the thread's pane open for it, whatever it was left as, until
+  // its beat is over (cloud/create/landing.ts); and the canvas's view at once, until it is made.
+  const [launch, setLaunch] = useState<Launch | null>(null);
+  const [sent, setSent] = useState<Sent | null>(null);
+  /** The canvas the send made, once the API has said. */
+  const sentFor = useRef<string | null>(null);
+  const railOpen = sent ? true : ui.railOpen;
+  useLanding(sent, (open) => {
+    setSent(null);
+    update((now) => ({ ...now, railOpen: open }));
+  });
+  const railToggle = {
+    open: railOpen,
+    onToggle: () => {
+      analytics.capture("pane toggled", {
+        pane: "thread",
+        open: !railOpen,
+        ...(openId ? { canvas_id: openId } : {}),
+      });
+      // Pressed during a send's beat: the person's say ends it, and stands.
+      setSent(null);
+      update((now) => ({ ...now, railOpen: !railOpen }));
+    },
+  };
+  // Another canvas opened, or the create page again, before the beat ended: the pane is left
+  // closed, as the beat would have left it.
+  useEffect(() => {
+    if (!sent || openId === sentFor.current || (openId === null && !sentFor.current)) return;
+    setSent(null);
+    setLaunch(null);
+    update((now) => ({ ...now, railOpen: false }));
+  }, [sent, openId, update]);
+  const panes = useCanvasPanes({
     host,
     me,
     open: lost ? null : open,
     summary: openSummary,
     people,
-    members: designMembers(
+    members: canvasMembers(
       detail.data?.members ?? [],
       openSummary?.owner?.id ?? null,
       sharePeople.data?.people,
     ),
     workspaceKind: workspace.kind,
-    sidebarOpen: !firstDesign && sidebarOpen,
-    rail: {
-      open: ui.railOpen,
-      onToggle: () => {
-        analytics.capture("pane toggled", {
-          pane: "thread",
-          open: !ui.railOpen,
-          ...(openId ? { design_id: openId } : {}),
-        });
-        update((now) => ({ ...now, railOpen: !now.railOpen }));
-      },
-    },
+    sidebarOpen: !firstCanvas && sidebarOpen,
+    rail: railToggle,
     page,
     onPage: switchPage,
     link,
-    onOpenDesign: ({ designId, page, artboard }) =>
-      onOpenDesign({
-        designId,
+    onOpenCanvas: ({ canvasId, page, artboard }) =>
+      onOpenCanvas({
+        canvasId,
         ...(page ? { pageId: page } : {}),
         ...(artboard ? { artboardId: artboard } : {}),
       }),
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
-    onClose: () => openDesign(null),
-    // The design waits on the viewer's own Claude: the guided setup's card, in a dialog.
+    onClose: () => openCanvas(null),
+    // The canvas waits on the viewer's own Claude: the guided setup's card, in a dialog.
     onConnectClaude: (expired) => {
       setClaudeExpired(expired);
       setConnectingClaude(true);
     },
   });
 
+  // The canvas made: its own view takes the launch's place. What was typed into the launch's
+  // composer meanwhile, and the caret, carry over to the canvas's.
+  const launchDraft = launch ? `launch:${launch.key}` : null;
+  const swapping = launch !== null && panes !== null;
+  useLayoutEffect(() => {
+    if (!swapping || !launchDraft) return;
+    const canvasId = sentFor.current;
+    const typed = readDraft(me.id, launchDraft);
+    if (typed && canvasId) writeDraft(me.id, canvasId, typed);
+    writeDraft(me.id, launchDraft, "");
+    const caret = document.activeElement?.closest("#thread") != null;
+    setLaunch(null);
+    if (caret) {
+      requestAnimationFrame(() => {
+        const field = document.querySelector<HTMLTextAreaElement>(
+          "#thread [data-composer-card] textarea",
+        );
+        if (field && document.activeElement === document.body) quietFocus(field);
+      });
+    }
+  }, [swapping, launchDraft, me.id]);
+  const launchView =
+    launch && !panes
+      ? {
+          chrome: (
+            <CanvasChrome
+              name={launch.name}
+              sidebarOpen={!firstCanvas && sidebarOpen}
+              pages={[]}
+              activePageId={null}
+              onSelectPage={() => {}}
+              onAddPage={null}
+              team={null}
+              pullRequest={null}
+              action={null}
+              rail={{ ...railToggle, signal: "working" }}
+            />
+          ),
+          rail: railOpen ? (
+            <ThreadRail
+              canvasId={launchDraft!}
+              meId={me.id}
+              repoName={null}
+              items={[launchLine(launch, me)]}
+              older="none"
+              onLoadOlder={() => {}}
+              agent={{ state: "waking", status: null }}
+              asks={[]}
+              gate={null}
+              attachments={[]}
+              onAttach={() => {}}
+              onRemoveAttachment={() => {}}
+              onRetryAttachment={() => {}}
+              // Nothing to send to until the canvas is made: the words stay in the field.
+              onSend={() => Promise.reject(new Error("not made yet"))}
+              onStop={() => {}}
+              onAnswer={() => {}}
+              onDismissAsk={() => {}}
+              renderDrawing={() => null}
+              onOpenComment={() => {}}
+              onOpenArtboards={() => {}}
+              onOpenPullRequest={() => {}}
+              onOpenLink={(url) => host.openExternal(url)}
+            />
+          ) : null,
+        }
+      : null;
+
   const toggleSidebar = () => {
     analytics.capture("pane toggled", { pane: "sidebar", open: !sidebarOpen });
     update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen }));
   };
   toggles.current = {
-    sidebar: firstDesign ? null : toggleSidebar,
+    sidebar: firstCanvas ? null : toggleSidebar,
     rail: panes?.toggleRail ?? null,
   };
   useView(
@@ -506,7 +675,7 @@ function WorkspaceWindow({
       : lost
         ? { name: "no-access" }
         : panes && open
-          ? { name: "design", designId: open.id, tab: panes.tab }
+          ? { name: "canvas", canvasId: open.id, tab: panes.tab }
           : openId
             ? null
             : { name: "create" },
@@ -523,7 +692,7 @@ function WorkspaceWindow({
       lights={host.lights}
       badge={badge}
       sidebar={
-        firstDesign
+        firstCanvas
           ? null
           : {
               open: sidebarOpen,
@@ -534,14 +703,14 @@ function WorkspaceWindow({
                   workspace={toWorkspace(workspace)}
                   workspaces={workspaces.map(toWorkspace)}
                   teammates={[...people.values()].filter((person) => person.id !== me.id)}
-                  designs={active}
+                  canvases={active}
                   settled={{
                     count: settled?.length ?? 0,
-                    designs: settled,
+                    canvases: settled,
                     expanded: settledOpen,
                   }}
                   onSettledExpandedChange={setSettledOpen}
-                  openDesignId={openId}
+                  openCanvasId={openId}
                   collapsed={!sidebarOpen}
                   onExpand={() => update((now) => ({ ...now, sidebarOpen: true }))}
                   filter={filterFor(ui, id)}
@@ -550,29 +719,28 @@ function WorkspaceWindow({
                   }
                   query={query}
                   onQueryChange={setQuery}
-                  results={query?.trim() ? searchByName(query, designs) : null}
+                  results={query?.trim() ? searchByName(query, canvases) : null}
                   onOpenResult={(key: ResultKey) => {
-                    if (key.startsWith("design:")) {
-                      openDesign(key.slice("design:".length), "search");
+                    if (key.startsWith("canvas:")) {
+                      openCanvas(key.slice("canvas:".length), "search");
                     }
                     setQuery(null);
                   }}
                   onOpen={onOpen}
+                  onIntent={onIntent}
                   onAction={onAction}
                   onRename={onRename}
-                  onNewDesign={() => {
-                    openDesign(null);
-                    // New design, by its button or ⌘N, is to start typing one: the caret goes
+                  onNewCanvas={() => {
+                    openCanvas(null);
+                    // New canvas, by its button or ⌘N, is to start typing one: the caret goes
                     // to the create page's composer, whether the page was already showing or not.
-                    requestAnimationFrame(() =>
-                      requestAnimationFrame(() =>
-                        document
-                          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
-                          ?.focus({ preventScroll: true }),
-                      ),
-                    );
+                    focusCreateComposer();
                   }}
-                  onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
+                  onSwitchWorkspace={(next) => {
+                    update((now) => ({ ...now, workspaceId: next.id }));
+                    // A workspace that opens on its create page is for typing into at once.
+                    focusCreateComposer();
+                  }}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
                   onPlan={openPlan}
@@ -581,8 +749,8 @@ function WorkspaceWindow({
               ),
             }
       }
-      chrome={panes?.chrome}
-      rail={panes?.rail ?? null}
+      chrome={panes?.chrome ?? launchView?.chrome}
+      rail={panes?.rail ?? launchView?.rail ?? null}
       panes={{
         sidebar: ui.sidebarWidth,
         rail: ui.railWidth,
@@ -602,18 +770,33 @@ function WorkspaceWindow({
         <CreateView
           host={host}
           workspaceId={id}
+          workspaceName={toWorkspace(workspace).name}
           repos={repos}
+          elsewhere={elsewhere}
+          handoff={handoff}
+          onHandoffTaken={onHandoffTaken}
+          onSwitchWorkspace={onSwitchWithCreate}
           showIdeas={
             summaries !== null &&
             summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
           }
           onAllowMore={addWorkspace}
-          onCreated={(design, messageFailed) => {
-            setFresh(design);
-            openDesign(design.id, "created");
+          onLaunch={(next) => {
+            sentFor.current = null;
+            setLaunch(next);
+            setSent({ key: next.key, origin: next.origin });
+          }}
+          onLaunchFailed={() => {
+            setLaunch(null);
+            setSent(null);
+          }}
+          onCreated={(canvas, messageFailed) => {
+            sentFor.current = canvas.id;
+            setFresh(canvas);
+            openCanvas(canvas.id, "created");
             if (messageFailed) {
               analytics.capture("notice shown", { notice: "first_message_not_sent" });
-              say("The design is made, but your message didn't reach Claude. Send it again.");
+              say("The canvas is made, but your message didn't reach Claude. Send it again.");
             }
           }}
         />
@@ -640,8 +823,8 @@ function WorkspaceWindow({
         onClose={() => setConnectingClaude(false)}
       />
       {notice ? <Banner>{notice}</Banner> : null}
-      <DeleteDesignDialog
-        name={deleting?.design.name ?? ""}
+      <DeleteCanvasDialog
+        name={deleting?.canvas.name ?? ""}
         open={deleting !== null}
         busy={deleting?.busy ?? false}
         onCancel={() => setDeleting(null)}
@@ -649,6 +832,18 @@ function WorkspaceWindow({
       />
     </AppWindow>
   );
+}
+
+/** The first line of a canvas being made: the words just sent, on their way, as the thread shows them. */
+function launchLine(launch: Launch, me: Person): ThreadItem {
+  return {
+    id: `launch_${launch.key}`,
+    seq: 1,
+    at: new Date().toISOString(),
+    streaming: false,
+    kind: "message",
+    payload: { text: launch.text, from: me, attachments: launch.attachments, delivery: "sending" },
+  };
 }
 
 /** A sentence over the window for a few seconds. */

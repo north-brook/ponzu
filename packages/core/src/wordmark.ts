@@ -1,0 +1,27 @@
+/*
+ * The word of Ponzu's lockup as a drawing, for where its font isn't loaded (a page that loads
+ * none; the app, which ships Funnel Display at 600 only).
+ */
+
+/**
+ * "ponzu" in Funnel Display Bold at 100px with the lockup's -0.05em tracking, outlined from
+ * apps/web/assets/og/FunnelDisplay-Bold.ttf. Baseline at y 0.
+ */
+export const WORDMARK =
+  "M22.9 20.0L9.1 20.0L9.1-36.3L2.3-36.3L2.3-50.0L16.3-50.0L16.3-41.8L19.8-41.8Q22.4-46.2 26.9-48.6Q31.3-51.0 37.7-51.0L37.7-51.0Q45.4-51.0 50.8-47.8Q56.1-44.5 58.8-38.7Q61.6-32.8 61.6-25.0L61.6-25.0Q61.6-17.2 58.9-11.3Q56.3-5.4 51.2-2.2Q46.1 1 38.8 1L38.8 1Q33.3 1 29.4-1.0Q25.5-3.1 23.3-6.8L23.3-6.8L22.9-6.8L22.9 20.0ZM35.1-11.0L35.1-11.0Q41.4-11.0 44.6-14.8Q47.8-18.5 47.8-25.0L47.8-25.0Q47.8-31.5 44.6-35.3Q41.4-39.0 35.1-39.0L35.1-39.0Q29.5-39.0 26.2-35.9Q22.9-32.8 22.9-27.3L22.9-27.3L22.9-22.8Q22.9-17.3 26.2-14.1Q29.5-11.0 35.1-11.0ZM89 1L89 1Q80.8 1 74.8-2.2Q68.8-5.4 65.4-11.3Q62.1-17.1 62.1-25.1L62.1-25.1Q62.1-33.0 65.4-38.8Q68.7-44.7 74.8-47.8Q80.8-51.0 89.1-51.0L89.1-51.0Q97.3-51.0 103.3-47.8Q109.3-44.7 112.5-38.8Q115.8-33.0 115.8-25.0L115.8-25.0Q115.8-17.1 112.5-11.2Q109.3-5.3 103.2-2.2Q97.2 1 89 1ZM89-11.0L89-11.0Q95.3-11.0 98.6-14.8Q101.9-18.6 101.9-25.1L101.9-25.1Q101.9-31.6 98.6-35.3Q95.3-39.0 89-39.0L89-39.0Q82.7-39.0 79.3-35.3Q75.9-31.6 75.9-25.1L75.9-25.1Q75.9-18.6 79.3-14.8Q82.7-11.0 89-11.0ZM136.4 0L122.6 0L122.6-36.3L115.8-36.3L115.8-50.0L129.8-50.0L129.8-41.8L133.3-41.8Q136.2-46.2 140.6-48.5Q145-50.9 151.6-50.9L151.6-50.9Q162-50.9 167.7-45.2Q173.4-39.5 173.4-29.9L173.4-29.9L173.4 0L159.6 0L159.6-27.3Q159.6-32.8 156.6-35.7Q153.7-38.6 148-38.6L148-38.6Q142.3-38.6 139.4-35.7Q136.4-32.8 136.4-27.3L136.4-27.3L136.4 0ZM220 0L176 0L176-8.3L202-39.0L177.5-39.0L177.5-50.0L219.5-50.0L219.5-41.7L193.5-11.0L220-11.0L220 0ZM244.2 0.9L244.2 0.9Q233.8 0.9 228.2-4.6Q222.6-10.1 222.6-19.6L222.6-19.6L222.6-50.0L236.4-50.0L236.4-22.3Q236.4-16.8 239.2-14.1Q242-11.4 247.6-11.4L247.6-11.4Q253.3-11.4 256.5-14.3Q259.6-17.3 259.6-22.7L259.6-22.7L259.6-50.0L273.4-50.0L273.4-13.7L280.3-13.7L280.3 0L266.3 0L266.3-8.2L262.8-8.2Q259.8-3.8 255.5-1.4Q251.2 0.9 244.2 0.9Z";
+
+/**
+ * The lockup at a font size of 100, as a view box: the slice 1.18em wide (its 64-unit drawing
+ * scaled by `slice.scale` from `slice.x`, `slice.y`), 0.32em before the word, which starts at
+ * `word.x`. The slice is centred on the word's x-height (the letters run from the baseline at 0
+ * up to 51; the p's tail hangs below and has no say), so mark and word sit on one line to the
+ * eye. The site's `Lockup` (apps/web/components/icons.tsx) centres it on the line box instead,
+ * 8 higher, which shows at a large size.
+ */
+export const LOCKUP = {
+  viewBox: "0 -84.5 432.5 118",
+  width: 432.5,
+  height: 118,
+  slice: { x: 0, y: -84.5, scale: 1.84375 },
+  word: { x: 150 },
+} as const;

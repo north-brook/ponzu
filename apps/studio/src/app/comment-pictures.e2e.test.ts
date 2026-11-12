@@ -1,8 +1,8 @@
 /*
  * A comment's picture, in the studio as it ships, in a real Chromium, on Ponzu Cloud in memory
- * (fake-host.ts): a comment on a board's headline, one on the open canvas between two boards,
+ * (fake-host.ts): a comment on a board's headline, one on the ground between two boards,
  * and a reply each show in the thread with a picture of where they were left the moment they
- * appear there, and keep it with the comment; a teammate's comes from the design's files; one
+ * appear there, and keep it with the comment; a teammate's comes from the canvas's files; one
  * with no picture says where it was left; and the picture goes to the comment, resolved or
  * deleted since. Skips where there is no Chrome or Chromium.
  *
@@ -157,13 +157,13 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
     page.on("pageerror", (error) => errors.push(String(error)));
-    // The design's files, served from what the in-memory API holds.
+    // The canvas's files, served from what the in-memory API holds.
     await page.route("https://assets.test/**", async (route) => {
       const url = route.request().url();
       const bytes = await page.evaluate((asked) => {
-        for (const design of window.ponzuFake!.backend.designs.values()) {
-          for (const { ref, bytes } of design.pictures.values()) {
-            if (asked.endsWith(`/${design.id}/${ref}`)) return [...bytes];
+        for (const canvas of window.ponzuFake!.backend.canvases.values()) {
+          for (const { ref, bytes } of canvas.pictures.values()) {
+            if (asked.endsWith(`/${canvas.id}/${ref}`)) return [...bytes];
           }
         }
         return null;
@@ -171,7 +171,8 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
       if (!bytes) return route.fulfill({ status: 404, body: "" });
       return route.fulfill({ status: 200, contentType: "image/webp", body: Buffer.from(bytes) });
     });
-    await page.goto(server.url);
+    // Signed in past setup: the first run is app.e2e's and the slow-answer walks'.
+    await page.goto(`${server.url}?as=returning`);
   });
   afterAll(async () => {
     if (SHOTS && page) await page.screenshot({ path: join(SHOTS, "last.png") }).catch(() => {});
@@ -195,13 +196,13 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     }
     await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
   };
-  let designId = "";
+  let canvasId = "";
 
   /** The comments' pictures as the in-memory API keeps them, by message. */
   const kept = () =>
     fake(
       (id: string) =>
-        window.ponzuFake!.backend.design(id).thread.flatMap(({ item }) =>
+        window.ponzuFake!.backend.canvas(id).thread.flatMap(({ item }) =>
           item.kind === "comment"
             ? [
                 {
@@ -212,7 +213,7 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
               ]
             : [],
         ),
-      designId,
+      canvasId,
     );
 
   /**
@@ -236,37 +237,24 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     });
   const bare = () => fake(() => (window as unknown as { bare: string[] }).bare);
 
-  test("into the team's design, with two boards drawn", async () => {
-    await page.getByRole("button", { name: "Continue with GitHub" }).click();
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
-    await page.getByRole("button", { name: "Set up" }).click();
-    await fake(() =>
-      window.ponzuFake!.link({
-        kind: "github_setup",
-        result: "installed",
-        workspaceId: window.ponzuFake!.personalId,
-      }),
-    );
-    await waitUntil(async () => (await page.getByText("Ready").count()) === 2);
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await page.getByLabel("Paste the code from claude.ai").fill("k7Hq2-Rw9xT-pL4mZ#state");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await page.getByRole("button", { name: "Start designing" }).click();
-    await page.getByRole("button", { name: "Workspace: Personal" }).click();
-    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
-    await page.getByRole("button", { name: /Onboarding flow/ }).click();
-    designId = await fake(
-      () =>
-        [...window.ponzuFake!.backend.designs.values()].find(
-          (d) => d.sequencer.doc.name === "Onboarding flow",
-        )!.id,
-    );
+  test("into the team's canvas, with two boards drawn", async () => {
+    await page.locator("#sidebar").waitFor();
+    const find = () =>
+      fake(
+        () =>
+          [...window.ponzuFake!.backend.canvases.values()].find(
+            (d) => d.sequencer.doc.name === "Onboarding flow",
+          )?.id ?? "",
+      );
+    await waitUntil(async () => (await find()) !== "");
+    canvasId = await find();
+    // Opened as its link opens it.
+    await fake((id: string) => window.ponzuFake!.link({ kind: "canvas", canvasId: id }), canvasId);
     // Its boards, as the agent draws them: a hero and the plans beside it, a gap between.
     await fake(
       ({ id, boards }: { id: string; boards: Artboard[] }) => {
         const backend = window.ponzuFake!.backend;
-        const doc = backend.design(id).sequencer.doc;
+        const doc = backend.canvas(id).sequencer.doc;
         const page = doc.pages[0]!;
         backend.agent(id).commit([
           ...page.artboards.map((ab) => ({ op: "artboard.delete" as const, id: ab.id })),
@@ -278,7 +266,7 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
           })),
         ]);
       },
-      { id: designId, boards: [hero(0), plans(1440)] },
+      { id: canvasId, boards: [hero(0), plans(1440)] },
     );
     await page.locator('[data-board-name][title="Plans"]').waitFor();
     await rail().waitFor();
@@ -308,7 +296,8 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
         .locator("img")
         .evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight]),
     ).toEqual([480, 320]);
-    expect(await picture.boundingBox()).toMatchObject({ width: 240, height: 160 });
+    // Drawn at 240 by 160, shown as a glance at three fifths of that (lines.tsx).
+    expect(await picture.boundingBox()).toMatchObject({ width: 144, height: 96 });
     // And it is kept with the comment, for everyone.
     await waitUntil(async () => (await kept()).some((c) => c.picture !== null));
     const [first] = await kept();
@@ -320,7 +309,7 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     await shoot("1-comment-on-a-board");
   });
 
-  test("one on the open canvas between the boards shows both, and a reply shows too", async () => {
+  test("one on the ground between the boards shows both, and a reply shows too", async () => {
     // Both boards in view.
     await page.keyboard.press("Shift+1");
     await page.waitForTimeout(300);
@@ -350,11 +339,11 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
           const ref = comment.picture![theme];
           const bytes = await fake(
             ({ id, ref }: { id: string; ref: string }) => [
-              ...[...window.ponzuFake!.backend.design(id).pictures.values()].find(
+              ...[...window.ponzuFake!.backend.canvas(id).pictures.values()].find(
                 (p) => p.ref === ref,
               )!.bytes,
             ],
-            { id: designId, ref },
+            { id: canvasId, ref },
           );
           if (SHOTS)
             writeFileSync(join(SHOTS, `picture-${index + 1}-${theme}.webp`), Buffer.from(bytes));
@@ -367,12 +356,12 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     }
   });
 
-  test("a teammate's comes from the design's files; one with none says where it was", async () => {
+  test("a teammate's comes from the canvas's files; one with none says where it was", async () => {
     // Sam leaves one, and his app attaches a picture; and one from before there were pictures.
     await fake(async (id: string) => {
       const world = window.ponzuFake!;
       const sam = world.backend.connect(world.teammate).api;
-      const doc = world.backend.design(id).sequencer.doc;
+      const doc = world.backend.canvas(id).sequencer.doc;
       const [heroBoard, plansBoard] = doc.pages[0]!.artboards;
       const author = { kind: "user" as const, id: world.teammate.id, name: "Sam Lee" };
       const thread = (tid: string, artboardId: string, mid: string, words: string) => ({
@@ -388,18 +377,18 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
           messages: [{ id: mid, author, text: words, createdAt: Date.now() }],
         },
       });
-      await sam.designs.commit(id, [
+      await sam.canvases.commit(id, [
         { id: "op_sam1", op: thread("th_sam1", heroBoard!.id, "m_sam1", "The photo should lead") },
         { id: "op_sam2", op: thread("th_sam2", plansBoard!.id, "m_sam2", "Make Grower stand out") },
       ]);
       // His picture is a copy of the first one drawn here: what matters is where it comes from.
-      const [mine] = [...world.backend.design(id).pictures.values()];
-      const uploads = await sam.designs.uploadCommentPicture(id, "m_sam1", {
+      const [mine] = [...world.backend.canvas(id).pictures.values()];
+      const uploads = await sam.canvases.uploadCommentPicture(id, "m_sam1", {
         light: mine!.bytes,
         dark: mine!.bytes,
       });
-      await sam.designs.attachCommentPicture(id, "m_sam1", uploads);
-    }, designId);
+      await sam.canvases.attachCommentPicture(id, "m_sam1", uploads);
+    }, canvasId);
     const his = rail().getByRole("button", { name: "Open the comment on Hero" }).nth(2);
     await waitUntil(async () =>
       Boolean(
@@ -428,20 +417,20 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     await fake(async (id: string) => {
       const world = window.ponzuFake!;
       const sam = world.backend.connect(world.teammate).api;
-      const threads = world.backend.design(id).sequencer.doc.threads;
+      const threads = world.backend.canvas(id).sequencer.doc.threads;
       const [hero, open] = threads;
-      await sam.designs.commit(id, [
+      await sam.canvases.commit(id, [
         {
           id: "op_res",
           op: { op: "thread.update", id: hero!.id, status: "resolved", updatedAt: Date.now() },
         },
         { id: "op_del", op: { op: "thread.delete", id: open!.id } },
       ]);
-    }, designId);
+    }, canvasId);
     expect(first && between).toBeTruthy();
     await rail().getByRole("button", { name: "Open the comment on Hero" }).first().click();
     await page.getByPlaceholder("Reply to reopen…").waitFor();
-    // The pin is in the middle of the canvas's pane.
+    // The pin is in the middle of the main pane.
     const pane = (await page.locator(".pz-root").first().boundingBox())!;
     const pin = (await page.locator("[data-comment-open] button").first().boundingBox())!;
     expect(Math.abs(pin.x + pin.width / 2 - (pane.x + pane.width / 2))).toBeLessThan(40);

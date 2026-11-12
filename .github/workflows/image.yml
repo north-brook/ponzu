@@ -1,0 +1,198 @@
+# Builds the sandbox image (apps/runner/image) on an amd64 runner, pushes it to the ponzu-api
+# project's Vercel Container Registry as ponzu-runner, checks it in a Vercel Sandbox and records
+# it in current.json, which ships with the next API deploy.
+#
+# On its own (a push touching the image's inputs, or a dispatch) it opens a pull request with
+# current.json and dispatches CI on it. Called by the Claude Code workflow (claude-code.yml), it
+# lays that run's bumped files over the checkout first, and hands back current.json and its log
+# as the artifact `sandbox-image` instead of opening a pull request.
+#
+# What it needs from a person is in docs/cloud.md, "Setting up the image workflows". Without it
+# the run passes with one warning saying what is missing; nothing fails on an action's input.
+# A registry login that fails is red, because a missing OIDC policy and an outage look alike.
+# The ids are the repository variables VERCEL_TEAM_ID and VERCEL_API_PROJECT_ID (deploy-api.yml
+# reads the same); the only secrets are VERCEL_TOKEN and, for a real Haiku turn in the checks,
+# ANTHROPIC_API_KEY (the development key). Each is given only to the step that uses it.
+name: Image
+
+on:
+  push:
+    branches: [main, cloud]
+    paths:
+      - apps/runner/image/Dockerfile
+      - apps/runner/image/provision.sh
+      - apps/runner/image/pins.json
+      - apps/runner/image/libexec/**
+      - packages/render/sandbox-fonts.json
+      - .github/workflows/image.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      overlay:
+        description: An artifact of the calling run whose files are laid over the checkout.
+        type: string
+        required: true
+    outputs:
+      result:
+        description: built, failed or skipped
+        value: ${{ jobs.build.outputs.result }}
+      reason:
+        description: Why it was skipped, in a few words.
+        value: ${{ jobs.build.outputs.reason }}
+    secrets:
+      VERCEL_TOKEN:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}-${{ inputs.overlay || 'own' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      # The pull request (on its own), the registry's OIDC login, and dispatching CI on it.
+      contents: write
+      pull-requests: write
+      id-token: write
+      actions: write
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+      reason: ${{ steps.result.outputs.reason }}
+    steps:
+      # This job's token can write; build.ts runs the bumped SDK's code, so the token is not left
+      # in .git/config (create-pull-request sets up its own).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: The person's setup
+        id: setup
+        # Only whether each secret is set reaches this step, never its value.
+        env:
+          HAS_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
+          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          TEAM: ${{ vars.VERCEL_TEAM_ID }}
+          PROJECT: ${{ vars.VERCEL_API_PROJECT_ID }}
+        run: |
+          missing=()
+          [ "$HAS_VERCEL_TOKEN" = true ] || missing+=("the repository secret VERCEL_TOKEN")
+          [ -n "$TEAM" ] || missing+=("the repository variable VERCEL_TEAM_ID")
+          [ -n "$PROJECT" ] || missing+=("the repository variable VERCEL_API_PROJECT_ID")
+          if [ ${#missing[@]} -gt 0 ]; then
+            what=$(printf '%s, ' "${missing[@]}"); what="${what%, } $([ ${#missing[@]} -gt 1 ] && echo are || echo is) not set"
+            echo "::warning title=No image built::$what, so no image was built. What to set up, once: docs/cloud.md, \"Setting up the image workflows\"."
+            { echo "ready=false"; echo "reason=$what"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$HAS_ANTHROPIC_KEY" = true ] ||
+            echo "::notice::ANTHROPIC_API_KEY is not set: the image's checks claim a message instead of running a real Haiku turn."
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: The calling run's files, over the checkout
+        if: inputs.overlay && steps.setup.outputs.ready == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.overlay }}
+          path: .
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.setup.outputs.ready == 'true'
+        with:
+          bun-version-file: package.json
+      - if: steps.setup.outputs.ready == 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+      # The CLI deploy-api.yml uses. An older one (57.0.0) cannot use a token scoped to the team
+      # or the project: it asks who the token's user is, and such a token has none. No install
+      # scripts run.
+      - if: steps.setup.outputs.ready == 'true'
+        run: npm install --global --ignore-scripts vercel@65.14.0
+      - if: steps.setup.outputs.ready == 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to VCR
+        id: vcr
+        if: steps.setup.outputs.ready == 'true'
+        # A failed login is a failure, not missing setup: a missing OIDC policy cannot be told
+        # apart from a registry outage here. Called, the caller's pull request reports it.
+        continue-on-error: ${{ !!inputs.overlay }}
+        uses: vercel/vcr-action/login@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
+        with:
+          team: ${{ vars.VERCEL_TEAM_ID }}
+      - name: Why the login failed
+        if: always() && steps.vcr.outcome == 'failure'
+        run: echo "::error title=No image built::Docker could not log in to the Vercel Container Registry with this repository's OIDC token, so no image was built. If ponzu-api has no OIDC policy for this repository yet, see docs/cloud.md, \"Setting up the image workflows\"; otherwise the registry may be down."
+      - name: Build, push, check and record
+        id: build
+        if: steps.vcr.outcome == 'success'
+        # Called, a failure is reported to the caller's pull request rather than stopping it.
+        continue-on-error: ${{ !!inputs.overlay }}
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # The log is kept for the caller's pull request body, which is public: scrub takes out
+        # every secret value this step holds and every key shape.
+        run: |
+          mkdir -p "$RUNNER_TEMP/image"
+          bun apps/runner/image/build.ts 2>&1 | bun apps/runner/image/bump.ts scrub | tee "$RUNNER_TEMP/image/image.log"
+      - name: Result
+        id: result
+        if: always()
+        env:
+          READY: ${{ steps.setup.outputs.ready }}
+          WHY: ${{ steps.setup.outputs.reason }}
+          VCR: ${{ steps.vcr.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        run: |
+          if [ "$BUILD" = success ]; then echo "result=built" >> "$GITHUB_OUTPUT"
+          elif [ "$BUILD" = failure ]; then echo "result=failed" >> "$GITHUB_OUTPUT"
+          elif [ "$READY" != true ]; then { echo "result=skipped"; echo "reason=$WHY"; } >> "$GITHUB_OUTPUT"
+          elif [ "$VCR" = failure ]; then { echo "result=failed"; echo "reason=docker could not log in to the registry (no OIDC policy for this repository yet, or the registry is down)"; } >> "$GITHUB_OUTPUT"
+          else echo "result=failed" >> "$GITHUB_OUTPUT"; fi
+          if [ -f apps/runner/image/current.json ] && [ "$BUILD" = success ]; then cp apps/runner/image/current.json "$RUNNER_TEMP/image/"; fi
+      - name: Hand the image back to the caller
+        if: always() && inputs.overlay && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sandbox-image
+          path: ${{ runner.temp }}/image
+          if-no-files-found: ignore
+
+      # On its own: the pull request recording current.json.
+      - name: The image's tag
+        id: tag
+        if: ${{ !inputs.overlay && steps.build.outcome == 'success' }}
+        run: echo "tag=$(jq -r .tag apps/runner/image/current.json)" >> "$GITHUB_OUTPUT"
+      - name: Open a pull request with current.json
+        id: pr
+        if: ${{ !inputs.overlay && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
+        with:
+          branch: image/ponzu-runner-${{ steps.tag.outputs.tag }}
+          base: ${{ github.ref_name }}
+          add-paths: apps/runner/image/current.json
+          commit-message: "chore(runner): record sandbox image ${{ steps.tag.outputs.tag }}"
+          title: "chore(runner): record sandbox image ${{ steps.tag.outputs.tag }}"
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          body: |
+            build.ts built ponzu-runner:${{ steps.tag.outputs.tag }}, the registry has it Ready, and checks.ts passed in a Vercel Sandbox made from it ([the run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})). Merging ships it with the next API deploy.
+
+            CI was dispatched on this branch's head, so its checks show here.
+      - name: No pull request
+        if: steps.pr.outcome == 'failure'
+        run: echo "::warning title=No pull request::current.json is recorded, but the pull request could not be opened. The usual cause is that GitHub Actions may not create pull requests in this repository; see docs/cloud.md, \"Setting up the image workflows\"."
+      - name: Run CI on the pull request
+        # A pull request opened with GITHUB_TOKEN starts no workflows; a dispatch does, and its
+        # checks report on the branch's head commit, which is the pull request's.
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.pr.outputs.pull-request-branch }}
+        run: gh workflow run ci.yml --ref "$BRANCH"

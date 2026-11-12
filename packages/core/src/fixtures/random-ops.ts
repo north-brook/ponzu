@@ -105,7 +105,7 @@ export function randomOp(r: Random, doc: Doc, fresh: () => string): Op {
   ];
   const one = (): Op => {
     const op = r.pick(makers)();
-    // Deleting a page or an artboard takes most of a small design with it: make it rarer,
+    // Deleting a page or an artboard takes most of a small canvas with it: make it rarer,
     // so there is something left for the other ops to aim at.
     const sweeping = op.op === "page.delete" || op.op === "artboard.delete";
     return sweeping && r.chance(0.7) ? r.pick(makers)() : op;

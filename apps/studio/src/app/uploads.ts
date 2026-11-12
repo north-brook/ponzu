@@ -2,14 +2,14 @@ import type { Attachment, PendingAttachment } from "../cloud/model.ts";
 import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
- * The images on their way into the next message of one design. Each uploads straight to
+ * The images on their way into the next message of one canvas. Each uploads straight to
  * storage the moment it is added (the API's presign, PUT and complete), showing a local picture
  * of itself meanwhile; one that fails can be tried again. Sending takes the uploaded ones.
  */
 
 interface Upload extends PendingAttachment {
   file: File;
-  /** Once uploaded: the design's file it became. */
+  /** Once uploaded: the canvas's file it became. */
   done: Attachment | null;
 }
 
@@ -24,7 +24,7 @@ export class Uploads {
   constructor(
     private readonly opts: {
       ponzu: StorePonzu;
-      designId: string;
+      canvasId: string;
       /** A local picture of a file: an object URL in the browser. */
       preview?: (file: File) => string;
       release?: (url: string) => void;
@@ -93,9 +93,9 @@ export class Uploads {
     if (!upload) return;
     try {
       const bytes = new Uint8Array(await upload.file.arrayBuffer());
-      const { ponzu, designId } = this.opts;
+      const { ponzu, canvasId } = this.opts;
       const stored = await mutate(ponzu, ponzu.mutations.upload(), {
-        designId,
+        canvasId,
         file: { name: upload.file.name, type: upload.file.type, bytes },
       });
       if (!stored.ref) throw new Error("The upload has no reference.");

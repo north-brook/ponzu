@@ -5,7 +5,8 @@
  *
  * Changed from shadcn's: the field is a label, so a click on its icon focuses it, and its rule
  * under it is the caller's; the field and the rows take the menus' one-line metrics (32 tall, the
- * mark 9px before the text, a 16px icon), so a command reads as one of the menus' family;
+ * mark 9px before the text, a 16px icon), and a group's heading is a menu's section label, so a
+ * command reads as one of the menus' family;
  * shadcn's CommandDialog (a palette in a dialog) isn't used yet.
  */
 import { Search01Icon } from "@hugeicons/core-free-icons";
@@ -13,6 +14,7 @@ import { Command as CommandPrimitive } from "cmdk";
 import type * as React from "react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "./cn.ts";
+import { menuLabelClass } from "./dropdown-menu.tsx";
 import { Icon } from "./icon.tsx";
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
@@ -108,17 +110,30 @@ function CommandEmpty({
   );
 }
 
+/**
+ * Rows under a heading. The heading is a menu's section label (`menuLabelClass`, cut short on one
+ * line): cmdk keeps it out of the options, the arrows pass over it, and it names its rows' group
+ * for assistive tech.
+ */
 function CommandGroup({
   className,
+  heading,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Group>) {
   return (
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        "flex flex-col [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-0.5 [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-11 [&_[cmdk-group-heading]]:text-faint",
+        "flex flex-col [&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-col",
         className,
       )}
+      heading={
+        heading == null ? undefined : (
+          <div data-slot="command-group-heading" className={cn(menuLabelClass, "truncate")}>
+            {heading}
+          </div>
+        )
+      }
       {...props}
     />
   );

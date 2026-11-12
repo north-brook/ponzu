@@ -17,7 +17,7 @@ export { ICON, type IconStep, ON_FILL } from "@ponzu/canvas/ladder";
 export const TEXT = {
   /** What a person reads: messages, a dialog's words, a row's own text. */
   body: "text-13",
-  /** A name: a design's, a page tab's, a setting's. */
+  /** A name: a canvas's, a page tab's, a setting's. */
   name: "text-13 font-medium",
   /** The heading of a small surface: the workspace, a dialog's row. (Share's heading is 14, as drawn.) */
   title: "text-13 font-semibold",

@@ -9,7 +9,7 @@ import {
 } from "@ponzu/core";
 import { z } from "zod";
 import { ToolError, tool } from "./define.ts";
-import { apply, designOf } from "./util.ts";
+import { apply, canvasOf } from "./util.ts";
 
 export function threadLine(doc: Doc, t: Thread): string {
   const node = t.nodeId ? locate(doc, t.nodeId)?.node : undefined;
@@ -34,14 +34,14 @@ export const converseTools = [
     group: "converse",
     readOnly: true,
     description:
-      "Comment threads in the design. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on the open canvas of a page, beside the artboards.",
+      "Comment threads in the canvas. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on a page, off any board, beside the artboards.",
     input: {
       status: z.enum(["open", "resolved", "all"]).optional(),
       artboard: z.string().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.artboard]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.artboard]);
+      const doc = canvas.doc;
       const status = args.status ?? "open";
       const threads = doc.threads.filter(
         (t) =>
@@ -62,11 +62,11 @@ export const converseTools = [
     description: "A thread with every message, and what its pin points at.",
     input: { id: z.string() },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.id]);
-      const t = design.doc.threads.find((x) => x.id === args.id);
+      const { canvas } = await canvasOf(ctx, [args.id]);
+      const t = canvas.doc.threads.find((x) => x.id === args.id);
       if (!t) throw new ToolError(`No thread ${args.id}.`);
       const lines = [
-        threadLine(design.doc, t),
+        threadLine(canvas.doc, t),
         ...t.messages.map(
           (m) =>
             `  ${m.author.name} (${m.author.kind}), ${new Date(m.createdAt).toISOString()}${m.editedAt ? " (edited)" : ""}: ${m.text}`,
@@ -87,8 +87,8 @@ export const converseTools = [
       text: z.string().min(1),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.on]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.on]);
+      const doc = canvas.doc;
       const hit = locate(doc, args.on);
       if (!hit) throw new ToolError(`No node or artboard ${args.on}.`);
       const now = Date.now();
@@ -104,7 +104,7 @@ export const converseTools = [
         updatedAt: now,
         messages: [{ id: newId("m"), author: ctx.caller.author, text: args.text, createdAt: now }],
       };
-      apply(design, { op: "thread.create", thread }, ctx);
+      apply(canvas, { op: "thread.create", thread }, ctx);
       return { text: `Created thread ${thread.id}.` };
     },
   }),
@@ -121,8 +121,8 @@ export const converseTools = [
       resolve: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { key, design } = await designOf(ctx, [args.thread]);
-      const t = design.doc.threads.find((x) => x.id === args.thread);
+      const { key, canvas } = await canvasOf(ctx, [args.thread]);
+      const t = canvas.doc.threads.find((x) => x.id === args.thread);
       if (!t) throw new ToolError(`No thread ${args.thread}.`);
       // Their reply would land in a thread gone from the canvas: it stays open for it.
       const resolve = args.resolve && !ctx.ws.writing?.(key, t.id);
@@ -133,7 +133,7 @@ export const converseTools = [
         createdAt: Date.now(),
       };
       apply(
-        design,
+        canvas,
         resolve
           ? {
               op: "batch",
@@ -161,8 +161,8 @@ export const converseTools = [
       "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
     input: { thread: z.string(), status: z.enum(["open", "resolved"]) },
     async handler(args, ctx) {
-      const { key, design } = await designOf(ctx, [args.thread]);
-      if (!design.doc.threads.some((t) => t.id === args.thread))
+      const { key, canvas } = await canvasOf(ctx, [args.thread]);
+      if (!canvas.doc.threads.some((t) => t.id === args.thread))
         throw new ToolError(`No thread ${args.thread}.`);
       if (args.status === "resolved" && ctx.ws.writing?.(key, args.thread))
         throw new ToolError(
@@ -170,7 +170,7 @@ export const converseTools = [
           "person_writing",
         );
       apply(
-        design,
+        canvas,
         { op: "thread.update", id: args.thread, status: args.status, updatedAt: Date.now() },
         ctx,
       );
@@ -183,7 +183,7 @@ export const converseTools = [
     title: "Send feedback to the Ponzu team",
     group: "converse",
     description:
-      "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no design content, names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
+      "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no canvas content, names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
     input: {
       sentiment: z.enum(["positive", "neutral", "negative", "mixed"]),
       category: z.enum(["bug", "missing_capability", "confusing_tool", "praise", "other"]),
@@ -193,7 +193,7 @@ export const converseTools = [
         .max(4000)
         .optional()
         .describe(
-          "What happened, which tool, and what would have helped. Leave design content, names, paths and personal details out of any argument or error you quote.",
+          "What happened, which tool, and what would have helped. Leave canvas content, names, paths and personal details out of any argument or error you quote.",
         ),
       tool: z.string().optional().describe("The Ponzu tool it's about, if any."),
     },

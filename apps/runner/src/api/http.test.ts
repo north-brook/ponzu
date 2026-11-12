@@ -25,7 +25,7 @@ function api(reply: (seen: Seen) => Response) {
   }) as typeof fetch;
   const http = new HttpRunnerApi({
     baseUrl: "https://api.test",
-    designId: "des_1",
+    canvasId: "cnv_1",
     token: "pzr_secret",
     client: "runner/0.1.0",
     fetch: fake,
@@ -79,6 +79,26 @@ test("each method is its route", async () => {
   ]);
 });
 
+test("what Claude Code offers goes to its route as it was given, and the answer says if it was kept", async () => {
+  const { http, seen } = api(() => json({ kept: true }));
+  const report = {
+    claudeCode: "2.1.322",
+    models: [
+      {
+        value: "opus",
+        resolvedModel: "claude-opus-5-5",
+        displayName: "Opus",
+        description: "Opus 5.5",
+        efforts: ["low" as const],
+      },
+    ],
+  };
+  expect(await http.reportModels(report)).toEqual({ kept: true });
+  expect(seen.map((s) => [`${s.method} ${new URL(s.url).pathname}`, s.body])).toEqual([
+    ["POST /v1/runner/models", report],
+  ]);
+});
+
 test("an error answer becomes an ApiError with its code, and says whether to try again", async () => {
   const { http } = api(() => error(401, "token_invalid"));
   const err = await http.session().catch((e) => e);
@@ -104,9 +124,9 @@ test("the document routes speak the replica's transport", async () => {
   expect(await http.sync.fetchOps(7)).toBe("gone");
   expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname}${new URL(s.url).search}`)).toEqual(
     [
-      "POST /v1/designs/des_1/ops",
-      "POST /v1/designs/des_1/ops",
-      "GET /v1/designs/des_1/ops?after=7",
+      "POST /v1/canvases/cnv_1/ops",
+      "POST /v1/canvases/cnv_1/ops",
+      "GET /v1/canvases/cnv_1/ops?after=7",
     ],
   );
 });

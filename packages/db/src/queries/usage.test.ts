@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { seedDesign, seedUser } from "../fixtures.ts";
+import { seedCanvas, seedUser } from "../fixtures.ts";
 import { creditLedger, usageEvents } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import {
@@ -23,13 +23,13 @@ const december = new Date("2026-12-01T00:00:00Z");
 let events = 0;
 /** Twelve awake minutes: one credit at five credits an hour. */
 function awake(
-  seeded: Awaited<ReturnType<typeof seedDesign>>,
+  seeded: Awaited<ReturnType<typeof seedCanvas>>,
   overrides: Partial<NewUsageEvent> = {},
 ): NewUsageEvent {
   return {
     id: `use_test_${++events}`,
     workspaceId: seeded.workspace.id,
-    designId: seeded.design.id,
+    canvasId: seeded.canvas.id,
     userId: seeded.user.id,
     kind: "sandbox",
     seconds: 720,
@@ -47,7 +47,7 @@ const ledgerOf = (workspaceId: string) =>
   db.select().from(creditLedger).where(eq(creditLedger.workspaceId, workspaceId));
 
 test("awake time is recorded and its credits leave the ledger", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   const event = awake(seeded, { seconds: 1800, credits: 2.5 });
 
   expect(await recordUsage(db, event)).toBe(true);
@@ -74,7 +74,7 @@ test("awake time is recorded and its credits leave the ledger", async () => {
 });
 
 test("reporting an event again counts it once", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   const event = awake(seeded);
 
   expect(await recordUsage(db, event)).toBe(true);
@@ -87,7 +87,7 @@ test("reporting an event again counts it once", async () => {
 });
 
 test("a model turn on the person's own plan is recorded and costs no credits", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   const event = awake(seeded, {
     kind: "model",
     model: "claude-opus",
@@ -119,7 +119,7 @@ test("a model turn on the person's own plan is recorded and costs no credits", a
 });
 
 test("the usage and the ledger entry are written together or not at all", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   // No such rate card: the event cannot be stored, so nothing may be spent either.
   await expect(recordUsage(db, awake(seeded, { rateCardVersion: 99 }))).rejects.toThrow();
 
@@ -127,7 +127,7 @@ test("the usage and the ledger entry are written together or not at all", async 
 });
 
 test("a member's allowance is granted once a period", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   const teammate = await seedUser(db, "maya");
   const grant = (userId: string, periodStart: Date) =>
     addLedgerEntry(db, {
@@ -151,8 +151,8 @@ test("a member's allowance is granted once a period", async () => {
 });
 
 test("the balance is what was granted less what was used, a period at a time", async () => {
-  const seeded = await seedDesign(db);
-  const other = await seedDesign(db);
+  const seeded = await seedCanvas(db);
+  const other = await seedCanvas(db);
   const workspaceId = seeded.workspace.id;
   await addLedgerEntry(db, {
     workspaceId,
@@ -187,14 +187,14 @@ test("the balance is what was granted less what was used, a period at a time", a
 });
 
 test("a workspace with no entries stands at zero", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   expect(
     await ledgerBalance(db, { workspaceId: seeded.workspace.id, periodStart: november }),
   ).toEqual({ granted: 0, used: 0, balance: 0 });
 });
 
 test("the ledger refuses entries that make no sense", async () => {
-  const seeded = await seedDesign(db);
+  const seeded = await seedCanvas(db);
   const entry = { workspaceId: seeded.workspace.id, periodStart: november };
 
   await expect(addLedgerEntry(db, { ...entry, delta: -100, reason: "grant" })).rejects.toThrow();
@@ -206,8 +206,8 @@ test("the ledger refuses entries that make no sense", async () => {
 });
 
 test("a runner's turns are recorded per model, once, on the owner's plan", async () => {
-  const { design, user, workspace } = await seedDesign(db);
-  const other = await seedDesign(db);
+  const { canvas, user, workspace } = await seedCanvas(db);
+  const other = await seedCanvas(db);
   const model = (name: string, input: number) => ({
     model: name,
     inputTokens: input,
@@ -222,17 +222,17 @@ test("a runner's turns are recorded per model, once, on the owner's plan", async
     models: [model("claude-opus-5-5", 10), model("claude-haiku-5-5", 3)],
   };
 
-  expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(1);
+  expect(await recordTurnUsage(db, { canvasId: canvas.id, turns: [turn] })).toBe(1);
   expect(
     await recordTurnUsage(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       turns: [turn, { id: "8f0c2b1e-0000-4000-8000-000000000002", at: december, models: [] }],
     }),
   ).toBe(0);
-  // Another design's turn of the same id is its own.
-  expect(await recordTurnUsage(db, { designId: other.design.id, turns: [turn] })).toBe(1);
+  // Another canvas's turn of the same id is its own.
+  expect(await recordTurnUsage(db, { canvasId: other.canvas.id, turns: [turn] })).toBe(1);
 
-  const rows = await db.select().from(usageEvents).where(eq(usageEvents.designId, design.id));
+  const rows = await db.select().from(usageEvents).where(eq(usageEvents.canvasId, canvas.id));
   expect(rows).toHaveLength(2);
   expect(rows.find((row) => row.model === "claude-opus-5-5")).toMatchObject({
     workspaceId: workspace.id,

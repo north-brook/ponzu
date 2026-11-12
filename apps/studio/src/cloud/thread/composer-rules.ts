@@ -5,10 +5,19 @@ import type { PendingAttachment, SteerGate } from "../model.ts";
 export type ComposerButton = "stop" | "send" | "waiting";
 
 /**
+ * Whether a gate keeps the composer from sending. A plan at its limit does not: the message
+ * waits in the feed and goes in when the plan resets, as the line under the gate says. Any other
+ * wait on the owner's Claude does, until someone acts on it.
+ */
+export function composerHolds(gate: SteerGate | null): boolean {
+  return gate !== null && gate.kind !== "claude_limit";
+}
+
+/**
  * Stop while the agent works and there is nothing to say; Send as soon as there is, even
  * mid-run: the message goes straight into the run. A message needs words (an image alone says
  * nothing to the agent) and every attachment uploaded. While the run waits on its owner's
- * Claude nothing sends, but a run still going can be stopped.
+ * Claude being connected nothing sends, but a run still going can be stopped.
  */
 export function composerButton({
   working,
@@ -23,19 +32,19 @@ export function composerButton({
 }): ComposerButton {
   const said = text.trim().length > 0;
   if (working && !said) return "stop";
-  if (gate || !said) return "waiting";
+  if (composerHolds(gate) || !said) return "waiting";
   return attachments.every((a) => a.status === "ready") ? "send" : "waiting";
 }
 
 /*
- * Drafts: what someone started typing to a design stays with that design, through switching
- * designs and restarting the app. Kept in the browser's storage, one key per person and design,
+ * Drafts: what someone started typing to a canvas stays with that canvas, through switching
+ * canvases and restarting the app. Kept in the browser's storage, one key per person and canvas,
  * and nowhere else: a draft is the person's own until they send it, so someone else signing in
  * on the same Mac never sees it, and signing out clears them all.
  */
 
 const PREFIX = "ponzu.draft.";
-const keyOf = (meId: string, designId: string) => `${PREFIX}${meId}.${designId}`;
+const keyOf = (meId: string, canvasId: string) => `${PREFIX}${meId}.${canvasId}`;
 const listeners = new Set<() => void>();
 
 function storage(): Storage | null {
@@ -49,8 +58,8 @@ function storage(): Storage | null {
 /** Without storage (a locked-down window), drafts last as long as the page. */
 const memory = new Map<string, string>();
 
-export function readDraft(meId: string, designId: string): string {
-  const key = keyOf(meId, designId);
+export function readDraft(meId: string, canvasId: string): string {
+  const key = keyOf(meId, canvasId);
   try {
     return storage()?.getItem(key) ?? memory.get(key) ?? "";
   } catch {
@@ -58,8 +67,8 @@ export function readDraft(meId: string, designId: string): string {
   }
 }
 
-export function writeDraft(meId: string, designId: string, text: string): void {
-  const key = keyOf(meId, designId);
+export function writeDraft(meId: string, canvasId: string, text: string): void {
+  const key = keyOf(meId, canvasId);
   const empty = !text.trim();
   if (empty) memory.delete(key);
   else memory.set(key, text);
@@ -85,16 +94,16 @@ export function clearDrafts(): void {
   for (const listener of listeners) listener();
 }
 
-/** The viewer's draft for a design, and a setter that keeps it. */
-export function useDraft(meId: string, designId: string): [string, (text: string) => void] {
+/** The viewer's draft for a canvas, and a setter that keeps it. */
+export function useDraft(meId: string, canvasId: string): [string, (text: string) => void] {
   const text = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => readDraft(meId, designId),
+    () => readDraft(meId, canvasId),
   );
-  const set = useCallback((next: string) => writeDraft(meId, designId, next), [meId, designId]);
+  const set = useCallback((next: string) => writeDraft(meId, canvasId, next), [meId, canvasId]);
   return [text, set];
 }
 

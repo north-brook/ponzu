@@ -5,5 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@vercel/sandbox": "3.9.1"
   }
 }

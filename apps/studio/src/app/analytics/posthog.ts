@@ -22,7 +22,7 @@ import {
  * - Persistence in localStorage under the studio's own origin, which outlives restarts (there
  *   are no cookies on `ponzu-studio://`). Signing out clears it, and resets PostHog first.
  * - No location: the page is `ponzu-studio://app/` in a release and a dev server elsewhere, so
- *   every event and recording says the view's synthetic URL instead (`ponzu://app/design`), and
+ *   every event and recording says the view's synthetic URL instead (`ponzu://app/canvas`), and
  *   a `$pageview` is captured when the view changes, not when the page loads.
  * - The session id reaches the API on every request to it (`tracing_headers`), so the API can
  *   put `$session_id` on what it captures and a recording links to its server events.
@@ -71,8 +71,8 @@ export function startPosthog(
     capture_pageleave: false,
     save_referrer: false,
     // Clicks, changes and submits, for heatmaps and paths; never an element's text nor its
-    // attributes, which are so often a design's name or someone's words (a sidebar row's
-    // `aria-label` names its design, repo and branch; a board's `title` is its name). What is
+    // attributes, which are so often a canvas's name or someone's words (a sidebar row's
+    // `aria-label` names its canvas, repo and branch; a board's `title` is its name). What is
     // left is the elements' tags and places, which is what heatmaps and dead clicks need.
     autocapture: true,
     mask_all_text: true,
@@ -121,6 +121,8 @@ export function startPosthog(
     channel: setup.channel,
     platform: context.platform,
     os_version: setup.osVersion,
+    environment: setup.environment,
+    app_commit: setup.commit,
   });
 
   return {

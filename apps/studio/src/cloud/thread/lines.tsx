@@ -5,14 +5,28 @@ import {
   GitPullRequestIcon,
 } from "@hugeicons/core-free-icons";
 import { memo, type ReactNode, useState } from "react";
-import type { Attachment, Person, PrState, ThreadItem, ThreadNotice } from "../model.ts";
+import type {
+  AgentPrAction,
+  Attachment,
+  Person,
+  PrState,
+  ThreadItem,
+  ThreadNotice,
+} from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
 import { useColorScheme } from "../ui/color-scheme.ts";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
-import { ERROR_COPY, ERROR_DETAIL, type ThreadRow, who } from "./thread.ts";
+import {
+  ERROR_COPY,
+  ERROR_DETAIL,
+  modelChangedLine,
+  ownerChangedLine,
+  type ThreadRow,
+  who,
+} from "./thread.ts";
 
 /** What a line can lead to: the canvas, the pull request tab, the browser. */
 export interface LineHandlers {
@@ -248,7 +262,7 @@ function Attachments({
   );
 }
 
-/** Where a comment was left, in words: its board, or the open canvas (and its page). */
+/** Where a comment was left, in words: its board, or the ground (and its page). */
 function placeOf(comment: Extract<ThreadItem, { kind: "comment" }>["payload"]): string {
   if (comment.artboardName) return comment.artboardName;
   if (comment.artboardId) return "a board";
@@ -256,10 +270,30 @@ function placeOf(comment: Extract<ThreadItem, { kind: "comment" }>["payload"]): 
 }
 
 /**
+ * How wide a comment's picture is shown: a glance at where the comment was left, not the message
+ * itself, so its words lead. Three fifths of the size it is drawn at (240 by 160, at 2x: twice
+ * the pixels a 2x screen needs at this size, so it stays sharp), the same at every width of the
+ * rail.
+ */
+export const COMMENT_PICTURE_WIDTH = 144;
+/** A tall picture is cut to this height (from its middle, where its pin is), not shown taller. */
+export const COMMENT_PICTURE_MAX_HEIGHT = 108;
+
+/** The size a picture drawn at `width` by `height` is shown at in the thread. */
+export function commentPictureSize(width: number, height: number) {
+  const shownWidth = Math.min(COMMENT_PICTURE_WIDTH, width);
+  return {
+    width: shownWidth,
+    height: Math.min(COMMENT_PICTURE_MAX_HEIGHT, Math.round((shownWidth * height) / width)),
+  };
+}
+
+/**
  * The picture of where a comment was left, above its words as a photo sits above the text sent
- * with it in Messages: the same rounding, the corner that meets the bubble tucked in. It holds
- * its size from the first frame, on the canvas's ground, and the image comes up over it once it
- * has loaded. Pressing it takes the canvas there.
+ * with it in Messages: the corner that meets the bubble tucked in to the bubble's own (5), the
+ * others a step under the bubble's 14 as its smaller size wants. It holds its size from the
+ * first frame, on the canvas's ground, and the image comes up over it once it has loaded.
+ * Pressing it takes the canvas there.
  */
 function CommentPictureButton({
   src,
@@ -280,13 +314,14 @@ function CommentPictureButton({
   children: ReactNode;
 }) {
   const [loaded, setLoaded] = useState<string | null>(null);
+  const shown = commentPictureSize(width, height);
   return (
     <button
       type="button"
       aria-label={`Open the comment on ${place}`}
       onClick={onOpen}
-      style={{ width, height }}
-      className="relative block shrink-0 cursor-default overflow-hidden rounded-14 rounded-br-[5px] bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.97] active:brightness-[0.94]"
+      style={shown}
+      className="relative block shrink-0 cursor-default overflow-hidden rounded-10 rounded-br-[5px] bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.97] active:brightness-[0.94]"
     >
       {src ? (
         <img
@@ -297,7 +332,7 @@ function CommentPictureButton({
           onLoad={() => setLoaded(src)}
           onError={onFailed}
           className={cn(
-            "block size-full transition-opacity duration-(--dur-hover)",
+            "block size-full object-cover transition-opacity duration-(--dur-hover)",
             loaded === src ? "opacity-100" : "opacity-0",
           )}
         />
@@ -333,6 +368,22 @@ const PR_ICON: Record<PrState, { icon: typeof GitPullRequestIcon; color: string;
   open: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "opened" },
   merged: { icon: GitMergeIcon, color: "text-pr-merged", verb: "merged" },
   closed: { icon: GitPullRequestClosedIcon, color: "text-muted", verb: "closed" },
+};
+
+/** The agent's own pull request lines: what it did, in the words the line says it with. */
+const AGENT_PR: Record<
+  AgentPrAction,
+  { icon: typeof GitPullRequestIcon; color: string; verb: string }
+> = {
+  opened: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "opened" },
+  ready: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "marked ready" },
+  updated_branch: {
+    icon: GitPullRequestIcon,
+    color: "text-icon-soft",
+    verb: "updated the branch of",
+  },
+  auto_merge: { icon: GitMergeIcon, color: "text-icon-soft", verb: "turned on auto-merge for" },
+  merged: { icon: GitMergeIcon, color: "text-pr-merged", verb: "merged" },
 };
 
 /** What happened to the run that isn't anyone's words: quiet lines, an error in plain words. */
@@ -405,13 +456,62 @@ function NoticeLine({
         </button>
       );
     }
+    case "pull_request_agent": {
+      const { icon, color, verb } = AGENT_PR[notice.action];
+      const as = notice.as ? (notice.as.id === meId ? "you" : who(notice.as, meId)) : null;
+      const said =
+        notice.action === "ready" ? (
+          <>
+            Claude marked <span className="font-mono text-11">#{notice.number}</span> ready
+          </>
+        ) : (
+          <>
+            Claude {verb} <span className="font-mono text-11">#{notice.number}</span>
+          </>
+        );
+      return (
+        <button
+          type="button"
+          onClick={handlers.onOpenPullRequest}
+          className={cn(
+            quiet,
+            "-mx-1 -my-0.5 min-w-0 max-w-full cursor-default self-start rounded-6 px-1.5 py-0.5 text-left text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover",
+          )}
+        >
+          <Icon icon={icon} step="small" className={color} />
+          <span className="shrink-0">
+            {said}
+            {as ? ` as ${as}` : ""}
+          </span>
+          <span className="truncate text-faint">{notice.title}</span>
+        </button>
+      );
+    }
+    case "owner_changed":
+      return (
+        <div className={quiet}>
+          <span aria-hidden className="size-[7px] shrink-0 rounded-pill bg-dry" />
+          <span className="min-w-0">{ownerChangedLine(notice.by, meId)}</span>
+        </div>
+      );
+    case "model_changed":
+      // A sentence, not a label: it wraps, its mark beside its first line.
+      return (
+        <div
+          role="note"
+          className="flex min-w-0 items-start gap-2 px-[2px] text-12 text-faint leading-[1.4]"
+        >
+          <span aria-hidden className="mt-[5px] size-[7px] shrink-0 rounded-pill bg-dry" />
+          <span className="min-w-0">{modelChangedLine(notice, meId)}</span>
+        </div>
+      );
     default:
       return null;
   }
 }
 
 /**
- * The thread's newest line while the design's sandbox can't run: a quiet still slice while it
+ * The thread's newest line while the canvas's sandbox can't run: a quiet still slice while it
  * waits its turn for a machine, or the error mark when starting one failed.
  */
 export function SandboxLine({ text, failed }: { text: string; failed: boolean }) {

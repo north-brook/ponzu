@@ -1,10 +1,10 @@
 import {
   AGENT_STATES,
-  DESIGN_STATUSES,
+  CANVAS_STATUSES,
   GITHUB_ACCESS,
   getWorkspace,
   listUserWorkspaces,
-  listWorkspaceDesigns,
+  listWorkspaceCanvases,
   listWorkspaceMembers,
   listWorkspacePeople,
   listWorkspaceRepos,
@@ -125,8 +125,8 @@ const WorkspaceProfile = z.object({
   people: z.array(WorkspacePersonView),
 });
 
-/** A row of the sidebar: what `workspace.designs` delivers live, plus how far the person has looked. */
-const DesignRow = z.object({
+/** A row of the sidebar: what `workspace.canvases` delivers live, plus how far the person has looked. */
+const CanvasRow = z.object({
   id: z.string(),
   workspaceId: z.string(),
   repoId: z.string().nullable(),
@@ -135,7 +135,7 @@ const DesignRow = z.object({
   name: z.string(),
   icon: z.string().nullable(),
   branch: z.string().nullable(),
-  status: z.enum(DESIGN_STATUSES),
+  status: z.enum(CANVAS_STATUSES),
   settledAt: z.date().nullable(),
   seq: z.number(),
   previewSeq: z.number().nullable(),
@@ -151,7 +151,7 @@ const DesignRow = z.object({
   seenThreadSeq: z.number().nullable(),
 });
 
-const DesignList = z.object({ designs: z.array(DesignRow) });
+const CanvasList = z.object({ canvases: z.array(CanvasRow) });
 
 const WorkspaceParam = z.object({ id: z.string().max(64) });
 const MemberParam = WorkspaceParam.extend({ userId: z.string().max(64) });
@@ -181,7 +181,7 @@ export const workspaces = new Hono<AppEnv>()
     const { user } = c.var.actor;
     const member = await requireWorkspace(c, c.req.valid("param").id);
     // The repos are listed from `repo_access`, so what it says is brought up to the minute
-    // first, as for the design list: a repo they lost leaves the list within it.
+    // first, as for the canvas list: a repo they lost leaves the list within it.
     await refreshWorkspaceRepoAccess(
       { ...c.var.deps, log: c.var.log },
       { user, workspace: member },
@@ -222,19 +222,19 @@ export const workspaces = new Hono<AppEnv>()
   })
 
   /**
-   * The workspace's designs, for a first paint; the `workspace.designs` live query keeps them
-   * fresh. Like the live query, it lists the designs in repos GitHub lets the person read, as
-   * of the last minute, and their own Scratch designs.
+   * The workspace's canvases, for a first paint; the `workspace.canvases` live query keeps them
+   * fresh. Like the live query, it lists the canvases in repos GitHub lets the person read, as
+   * of the last minute, and their own Scratch canvases.
    */
-  .get("/:id/designs", validate("param", WorkspaceParam), async (c) => {
+  .get("/:id/canvases", validate("param", WorkspaceParam), async (c) => {
     const { user } = c.var.actor;
     const workspace = await requireWorkspace(c, c.req.valid("param").id);
     await refreshWorkspaceRepoAccess({ ...c.var.deps, log: c.var.log }, { user, workspace });
-    const designs = await listWorkspaceDesigns(c.var.deps.db, {
+    const canvases = await listWorkspaceCanvases(c.var.deps.db, {
       workspaceId: workspace.id,
       userId: user.id,
     });
-    return c.json(DesignList.parse({ designs }));
+    return c.json(CanvasList.parse({ canvases }));
   })
 
   /**

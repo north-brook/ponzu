@@ -260,9 +260,9 @@ export const Icons = {
   folderOpen: FolderOpenIcon,
   /** Every project at once. */
   folders: FoldersIcon,
-  /** Designs outside any project: loose pages. */
+  /** Canvases outside any project: loose pages. */
   loose: FilesIcon,
-  /** The Archived view: the tray designs are put away in. */
+  /** The Archived view: the tray canvases are put away in. */
   shelved: Archive02Icon,
   /** A git repository: a project. */
   repo: FolderGitIcon,

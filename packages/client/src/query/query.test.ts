@@ -191,15 +191,40 @@ test("a pull request action's answer is the tab the query holds", async () => {
     members: { [maya.id]: "admin" },
     repos: [{ name: "site" }],
   });
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: team.id,
     repoId: team.repos[0]!.id,
     name: "Pricing",
   });
-  backend.agent(design.id).push();
-  await queryClient.fetchQuery(queries.pullRequest(design.id));
-  await mutate(mutations.pullRequestAction(), { designId: design.id, action: { kind: "open" } });
-  const tab = queryClient.getQueryData(queries.pullRequest(design.id).queryKey);
+  backend.agent(canvas.id).push();
+  await queryClient.fetchQuery(queries.pullRequest(canvas.id));
+  await mutate(mutations.pullRequestAction(), { canvasId: canvas.id, action: { kind: "open" } });
+  const tab = queryClient.getQueryData(queries.pullRequest(canvas.id).queryKey);
   expect(tab?.pullRequest?.state).toBe("draft");
   expect(tab?.nextAction).toBe("ready");
+});
+
+test("a model the account stopped offering since the picker read it reads the defaults again", async () => {
+  const { backend, maya, own, queryClient, queries, mutations, mutate } = device();
+  backend.claude.connect(maya.id, "api_key");
+  const before = await queryClient.fetchQuery(queries.claudeDefaults());
+  expect(before.models.map((m) => m.id)).toContain("claude-fable-5-2");
+
+  // A runner reported since: this account is offered Opus 5.5 alone.
+  const opus = before.models.find((m) => m.id === "claude-opus-5-5")!;
+  backend.claude.offer(maya.id, [opus]);
+  const refused = await mutate(mutations.createCanvas(), {
+    workspaceId: own.id,
+    model: "claude-fable-5-2",
+  }).catch((e: unknown) => e);
+  expect((refused as ApiError).code).toBe("model_not_offered");
+  expect(queryClient.getQueryState(queryKeys.claudeDefaults())?.isInvalidated).toBe(true);
+  const after = await queryClient.fetchQuery(queries.claudeDefaults());
+  expect(after.models.map((m) => m.id)).toEqual(["claude-opus-5-5"]);
+
+  // Another key: nothing is reported for it yet, so the hand-kept list, read again.
+  await mutate(mutations.connectApiKey(), "sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
+  expect(queryClient.getQueryState(queryKeys.claudeDefaults())?.isInvalidated).toBe(true);
+  const reconnected = await queryClient.fetchQuery(queries.claudeDefaults());
+  expect(reconnected.models.map((m) => m.id)).toEqual(before.models.map((m) => m.id));
 });

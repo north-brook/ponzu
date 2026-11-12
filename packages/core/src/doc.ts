@@ -55,7 +55,7 @@ export type Op =
       offset?: { x: number; y: number } | null;
       x?: number;
       y?: number;
-      /** null moves the pin off its artboard, onto the open canvas of `pageId`. */
+      /** null moves the pin off its artboard, onto the ground of `pageId`. */
       artboardId?: string | null;
       pageId?: string | null;
       /**
@@ -234,7 +234,7 @@ export function applyOp(doc: Doc, op: Op): Op {
 /**
  * What puts back, exactly, everything a batch has changed so far. A batch that fails partway
  * must leave the doc as it found it, and the inverse ops can't promise that: they find nodes
- * by id, which a design may hold twice, and a deleted thread comes back at the end of the list.
+ * by id, which a canvas may hold twice, and a deleted thread comes back at the end of the list.
  */
 type Undo = (() => void)[];
 

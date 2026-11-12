@@ -437,7 +437,7 @@ describe("trees that never were HTML", () => {
       expect(runs(serializeNodes(sanitized))).toEqual([]);
       expect(payloadCameAlive(serializeNodes(sanitized))).toBe(false);
 
-      // Written out as it is, the way a `move` can leave a design without any op carrying
+      // Written out as it is, the way a `move` can leave a canvas without any op carrying
       // the nodes: text and attribute values still come out as text and attribute values.
       const unsanitized = parseHtml(serializeNodes(nodes));
       expect(elements(unsanitized.nodes).filter((n) => !known.has(n.id))).toEqual([]);

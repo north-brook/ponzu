@@ -21,7 +21,7 @@ export interface RepoEnvironment {
   repo: Repo;
   base: {
     /**
-     * `none`: Claude sets the repo up on its first design there. `requested`: a rebuild was
+     * `none`: Claude sets the repo up on its first canvas there. `requested`: a rebuild was
      * asked for and happens at the repo's next start.
      */
     status: "none" | "requested" | "ready" | "building" | "failed";

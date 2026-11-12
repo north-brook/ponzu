@@ -8,7 +8,7 @@ import { muxH264 } from "./mp4.ts";
  * a board drawn small can keep moving as a picture instead of as thousands
  * of composited layers.
  *
- * Every animation a design can have at rest is CSS, SVG (SMIL) or video, and
+ * Every animation a canvas can have at rest is CSS, SVG (SMIL) or video, and
  * one that repeats forever is periodic once its delay has passed: past the
  * moment every finite animation has settled (t0), the board at t0 + P looks
  * like it does at t0, where P is the least common multiple of its looping
@@ -35,7 +35,7 @@ export interface LoopRequest extends LoopRequestOptions {
   tokens: string;
   colorScheme?: "light" | "dark";
   assetBase?: string;
-  /** Load the design's big images as copies sized to the film, as a thumbnail render does. */
+  /** Load the canvas's big images as copies sized to the film, as a thumbnail render does. */
   thumbnail?: boolean;
   /** Gives up: the film stops and its page closes. */
   signal?: AbortSignal;

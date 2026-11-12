@@ -9,7 +9,7 @@ export type NewUsageEvent = {
   /** Chosen by whoever reports it, so reporting it again changes nothing. */
   id: string;
   workspaceId: string;
-  designId: string | null;
+  canvasId: string | null;
   /** Who the usage is put down to. */
   userId: string | null;
   /** What it costs the workspace. Zero for a model turn on the person's own plan. */
@@ -75,7 +75,7 @@ export interface TurnModelUsage {
   costMicrousd: number;
 }
 
-/** One turn of a design's agent, as its runner reports it. */
+/** One turn of a canvas's agent, as its runner reports it. */
 export interface TurnUsage {
   /** Claude Code's id for the turn's result: what makes reporting it again change nothing. */
   id: string;
@@ -84,22 +84,22 @@ export interface TurnUsage {
 }
 
 /**
- * Record what a design's agent used, a usage event per turn and model, put down to the
- * design's workspace and owner, paid from the owner's own Claude plan (no credits), priced by
+ * Record what a canvas's agent used, a usage event per turn and model, put down to the
+ * canvas's workspace and owner, paid from the owner's own Claude plan (no credits), priced by
  * the rate card in effect. One statement. A turn recorded before changes nothing, and its id
- * is the design's own: another design's turn of the same id is another event. Answers how many
+ * is the canvas's own: another canvas's turn of the same id is another event. Answers how many
  * of the turns were new.
  */
 export async function recordTurnUsage(
   db: Db,
-  { designId, turns }: { designId: string; turns: TurnUsage[] },
+  { canvasId, turns }: { canvasId: string; turns: TurnUsage[] },
 ): Promise<number> {
   const rows = turns.flatMap((turn) =>
     turn.models.map((usage) => ({
       ...usage,
-      // A turn id is Claude Code's uuid and a design id has no slash, so the turn is the
+      // A turn id is Claude Code's uuid and a canvas id has no slash, so the turn is the
       // second part of this, which is how the statement counts what was new.
-      id: `${designId}/${turn.id}/${usage.model}`,
+      id: `${canvasId}/${turn.id}/${usage.model}`,
       at: timeParam(turn.at),
     })),
   );
@@ -109,7 +109,7 @@ export async function recordTurnUsage(
     sql`
       with recorded as (
         insert into usage_events (
-          id, workspace_id, design_id, user_id, kind, model, input_tokens, output_tokens,
+          id, workspace_id, canvas_id, user_id, kind, model, input_tokens, output_tokens,
           cache_read_tokens, cache_write_tokens, cost_microusd, credits, payer,
           rate_card_version, occurred_at
         )
@@ -127,7 +127,7 @@ export async function recordTurnUsage(
                  "outputTokens" bigint, "cacheReadTokens" bigint, "cacheWriteTokens" bigint,
                  "costMicrousd" bigint
                )
-          join designs d on d.id = ${designId}
+          join canvases d on d.id = ${canvasId}
         on conflict (id) do nothing
         returning id
       )

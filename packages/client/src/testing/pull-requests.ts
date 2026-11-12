@@ -2,7 +2,7 @@ import type { PullRequestFile, PullRequestTab } from "../api.ts";
 import { ApiError } from "../errors.ts";
 
 /*
- * A design's branch and pull request, in memory, as the API answers about them
+ * A canvas's branch and pull request, in memory, as the API answers about them
  * (apps/api/src/pull-requests): the tab, its `nextAction`, and the actions with the refusals
  * they name before GitHub hears of them. GitHub's side is played by hand: `push` commits to the
  * branch, `setChecks`, `review`, `comment`, `conflict` and `protect` change what GitHub says.
@@ -50,7 +50,7 @@ interface FakePull {
   conversation: Pull["conversation"];
 }
 
-/** What a merge or an opening tells the design: a notice for its thread, a settling. */
+/** What a merge or an opening tells the canvas: a notice for its thread, a settling. */
 export interface PullRequestEvents {
   notice(number: number, url: string, title: string, state: Pull["state"]): void;
   merged(): void;
@@ -70,12 +70,14 @@ export class FakePullRequests {
   private conflicting = false;
   /** What the repo's rules want before a merge. */
   rules = { review: false, upToDate: false };
-  /** Commits only the design's sandbox holds, as its runner said, and why their push failed. */
+  /** Commits only the canvas's sandbox holds, as its runner said, and why their push failed. */
   private unpushed: FakeFileInput[][] = [];
   private pushError: string | null = null;
   /** How many times Create PR asked the sandbox to push. */
   pushesAsked = 0;
   autoMergeAllowed = true;
+  /** The agent's kept words on what the branch changes (`describe`). */
+  private summary: string | null = null;
 
   constructor(
     private readonly repo: string,
@@ -108,6 +110,14 @@ export class FakePullRequests {
   /** The runner's push failed, and it said why. */
   failPush(error: string): void {
     this.pushError = error;
+    this.events.changed();
+  }
+
+  /** The agent keeps its words on what the branch changes, as `describe_pull_request` does. */
+  describe(summary: string): void {
+    this.summary = summary;
+    const pull = this.pull;
+    if (pull && (pull.state === "open" || pull.state === "draft")) pull.body = summary;
     this.events.changed();
   }
 
@@ -190,7 +200,7 @@ export class FakePullRequests {
   /* What the API answers                                              */
   /* ---------------------------------------------------------------- */
 
-  /** The design's row's columns, as a read records them. */
+  /** The canvas's row's columns, as a read records them. */
   get row() {
     const pull = this.pull;
     return {
@@ -205,6 +215,7 @@ export class FakePullRequests {
   tab(): Tab {
     const exists = this.commits.length > 0;
     const pull = this.pull;
+    const open = pull?.state === "open" || pull?.state === "draft";
     return {
       branch: {
         name: this.branch,
@@ -216,6 +227,8 @@ export class FakePullRequests {
         pushError: this.pushError,
       },
       pullRequest: pull && this.view(pull),
+      // As the API answers it: the kept words, while no pull request is open.
+      summary: open || !this.summary?.trim() ? null : this.summary,
       mergeMethod: "squash",
       autoMergeAllowed: this.autoMergeAllowed,
       nextAction: this.nextAction(),
@@ -238,7 +251,7 @@ export class FakePullRequests {
   }
 
   /**
-   * A draft by `author`, titled with the design's name. Commits only the sandbox holds are asked
+   * A draft by `author`, titled with the canvas's name. Commits only the sandbox holds are asked
    * for first; with nothing on GitHub to open it from yet, the answer says the push is under way.
    */
   open(author: string, title: string): { tab: Tab; opened: boolean; pushing?: boolean } {
@@ -271,7 +284,7 @@ export class FakePullRequests {
     this.pull = {
       number: ++pullNumbers,
       title,
-      body: "",
+      body: this.summary ?? "",
       state: "draft",
       headSha: this.commits.at(-1)!,
       author: who(author),
@@ -338,8 +351,15 @@ export class FakePullRequests {
     return this.tab();
   }
 
-  close(): Tab {
+  close(number?: number): Tab {
     const pull = this.current();
+    if (number !== undefined && number !== pull.number) {
+      throw new ApiError(
+        409,
+        "pull_request_changed",
+        `This canvas's pull request is #${pull.number} now, not #${number}. Look again first.`,
+      );
+    }
     if (pull.state === "merged") throw closed(pull);
     if (pull.state !== "closed") {
       pull.state = "closed";
@@ -500,7 +520,7 @@ export class FakePullRequests {
 
   private current(): FakePull {
     if (!this.pull) {
-      throw new ApiError(409, "no_pull_request", "This design has no pull request yet.");
+      throw new ApiError(409, "no_pull_request", "This canvas has no pull request yet.");
     }
     return this.pull;
   }

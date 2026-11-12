@@ -1,5 +1,5 @@
 /*
- * The wire protocol between a design's runner and the API (docs/cloud.md, "The runner
+ * The wire protocol between a canvas's runner and the API (docs/cloud.md, "The runner
  * protocol"): every body that crosses it, as JSON. The apps import the thread's types from here
  * (`@ponzu/runner/protocol`) to render what the runner writes; this file imports nothing, so
  * it adds nothing to a client's bundle.
@@ -17,6 +17,51 @@ export interface Person {
 }
 
 /* ------------------------------------------------------------------ */
+/* Starting                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The runner's one port, which the sandbox makes public at `https://<sub>.vercel.run`. Every
+ * route answers 401 without `authorization: Bearer <PONZU_PORT_TOKEN>`: `POST /poke` (204) and
+ * `GET /health` (200 `{ started }`).
+ */
+export const RUNNER_PORT = 4600;
+
+/**
+ * The image's own commands for the runner, root-owned, which the API runs as root
+ * (`runCommand({ sudo: true })`).
+ */
+export const IMAGE_COMMANDS = {
+  /**
+   * Detached, at every start of the sandbox: fetch the runner bundle `PONZU_RUNNER_BUNDLE` names
+   * if it is missing, then the supervisor behind its lock, its output in /var/log/ponzu/runner.log.
+   */
+  start: "/opt/ponzu/bin/ponzu-start",
+  /** Waited (30 s): SIGTERM the supervisor, wait up to 25 s for its lock, sync. Idempotent. */
+  stop: "/opt/ponzu/bin/ponzu-stop",
+} as const;
+
+/**
+ * The environment of `IMAGE_COMMANDS.start`, the one place the runner's secrets go: never the
+ * sandbox's own environment, never a file. Exactly one Claude credential.
+ */
+export type StartEnv = {
+  PONZU_API_URL: string;
+  PONZU_CANVAS_ID: string;
+  /** `pzr_…`, 25 h, new at every start. */
+  PONZU_RUNNER_TOKEN: string;
+  /** 32 random bytes, base64url: the bearer of the runner's port. */
+  PONZU_PORT_TOKEN: string;
+  /** The sha256 (hex) of the runner bundle this API serves (`@ponzu/runner/bundle`). */
+  PONZU_RUNNER_BUNDLE: string;
+  /** The repo's secrets (`REPO_SECRETS_VARIABLE`), at most 64 KB: our own cap. */
+  PONZU_REPO_SECRETS?: string;
+} & (
+  | { ANTHROPIC_API_KEY: string; CLAUDE_CODE_OAUTH_TOKEN?: never }
+  | { CLAUDE_CODE_OAUTH_TOKEN: string; ANTHROPIC_API_KEY?: never }
+);
+
+/* ------------------------------------------------------------------ */
 /* Session                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -29,11 +74,11 @@ export const RUNNER_HEADER = "x-ponzu-runner";
 /** `POST /v1/runner/session`: everything the runner needs to start, and its lease. */
 export interface RunnerSession {
   /**
-   * This process, `rnr_` and 16 characters: minted by this call, which makes it the design's
+   * This process, `rnr_` and 16 characters: minted by this call, which makes it the canvas's
    * one runner. Sent as `X-Ponzu-Runner` on every later call.
    */
   runnerId: string;
-  design: { id: string; name: string };
+  canvas: { id: string; name: string };
   /** Null for Scratch. */
   repo: { owner: string; name: string; defaultBranch: string } | null;
   /** The branch to work on, `pz/<topic>`. Null for Scratch. */
@@ -49,7 +94,7 @@ export interface RunnerSession {
   committer: { name: string; email: string };
   /** What `assets/<name>` resolves against, `https://assets.ponzu.cloud/<asset key>`. */
   assetBase: string;
-  /** Opens the design in Ponzu. */
+  /** Opens the canvas in Ponzu. */
   link: string;
   /** The theme of the canvas of the person the agent works for, once known. */
   theme: Theme | null;
@@ -58,20 +103,64 @@ export interface RunnerSession {
    * a message. They stay open until the next turn ends.
    */
   openQuestions: string[];
-  /** The design's head: its latest committed op. */
+  /** The canvas's head: its latest committed op. */
   seq: number;
   /**
-   * The design's last checkpoint, as the API recorded it: a runner whose disk is behind it
+   * The canvas's last checkpoint, as the API recorded it: a runner whose disk is behind it
    * (a rollback) or holds none of it (a new sandbox) restores from it before it resumes.
    */
   saved: SavedPoint | null;
-  /** The workspace the design is in: the group its turns are reported under. */
+  /** The workspace the canvas is in: the group its turns are reported under. */
   workspaceId?: string;
   /**
    * Where the runner reports each turn's trace to PostHog's LLM analytics, or null (or absent,
    * from an older API) when analytics is off (docs/analytics.md).
    */
   analytics?: RunnerAnalytics | null;
+  /**
+   * What the API holds of the models Claude Code offers the Claude account the canvas runs on,
+   * as a runner on its credential last reported them: the runner reports again only when what
+   * its Claude Code says differs, or this is stale. Null when nothing is held; absent from an
+   * older API.
+   */
+  models?: ModelsHeld | null;
+}
+
+/** One model Claude Code offers, as `supportedModels()` said it (docs/cloud.md, "Models"). */
+export interface ReportedModel {
+  /** What Claude Code takes as a model: an alias (`opus`, `default`) or a full id. */
+  value: string;
+  /** The full id `value` runs as now, when Claude Code says. */
+  resolvedModel: string | null;
+  displayName: string;
+  description: string;
+  /** The effort levels it takes; empty when it takes none, null when Claude Code did not say. */
+  efforts: Effort[] | null;
+}
+
+/**
+ * `POST /v1/runner/models`: what Claude Code offers the account this runner runs as, and which
+ * Claude Code said so. Answered 200 with whether the API kept it (`ModelsResponse`). Safe to
+ * repeat: the last one kept wins. A runner's first report is kept, then at most one in ten
+ * minutes; one sent sooner is answered `kept: false`, never 429.
+ */
+export interface ModelsReport {
+  claudeCode: string;
+  models: ReportedModel[];
+}
+
+export interface ModelsResponse {
+  /**
+   * False when the account the canvas runs on is no longer the credential this runner holds, or
+   * the report came within ten minutes of the account's last one kept since this runner started.
+   */
+  kept: boolean;
+}
+
+/** What the API holds of a report. */
+export interface ModelsHeld extends ModelsReport {
+  /** When it was reported. ISO 8601. */
+  at: string;
 }
 
 /** PostHog, as the API hands it to a runner. Every value is public. */
@@ -100,17 +189,17 @@ export interface SavedPoint {
   /** The Claude session whose transcript is stored, if one is. */
   claudeSessionId: string | null;
   /**
-   * A repo design's work in progress: a commit on `refs/ponzu/wip/<design id>` whose parent is
+   * A repo canvas's work in progress: a commit on `refs/ponzu/wip/<canvas id>` whose parent is
    * the checkout's HEAD and whose tree is its working tree, untracked files included.
    */
   wipCommit: string | null;
-  /** Whether the transcript, and a Scratch design's files, are stored with it. */
+  /** Whether the transcript, and a Scratch canvas's files, are stored with it. */
   session: boolean;
   workspace: boolean;
 }
 
-/** The hidden ref a repo design's work in progress is pushed to. Never a branch. */
-export const wipRef = (designId: string) => `refs/ponzu/wip/${designId}`;
+/** The hidden ref a repo canvas's work in progress is pushed to. Never a branch. */
+export const wipRef = (canvasId: string) => `refs/ponzu/wip/${canvasId}`;
 
 /** The names and type of the two archives a checkpoint uploads. */
 export const SESSION_ARCHIVE = "session.tar.gz";
@@ -154,7 +243,7 @@ export interface SavedArchive {
   sha256: string;
 }
 
-/** `POST /v1/runner/restore`: the design's last checkpoint and where to read its archives. */
+/** `POST /v1/runner/restore`: the canvas's last checkpoint and where to read its archives. */
 export interface RestoreResponse {
   saved: SavedPoint | null;
   session: SavedArchive | null;
@@ -162,7 +251,7 @@ export interface RestoreResponse {
 }
 
 /**
- * `POST /v1/runner/restored`: the runner found its disk behind the design's last checkpoint and
+ * `POST /v1/runner/restored`: the runner found its disk behind the canvas's last checkpoint and
  * restored from it. The API logs it with the sandbox it happened in, and counts a rollback.
  */
 export interface RestoredReport {
@@ -183,10 +272,10 @@ export interface RestoredReport {
 
 export type Priority = "now" | "next" | "later";
 
-/** Something that happened to the design, for the agent to take up. */
+/** Something that happened to the canvas, for the agent to take up. */
 export type RunnerEvent = {
   id: string;
-  /** Its place in the design's feed. Increasing, with gaps. */
+  /** Its place in the canvas's feed. Increasing, with gaps. */
   seq: number;
   /** When it happened, as an ISO 8601 time. */
   at: string;
@@ -230,10 +319,15 @@ export interface AnswerEvent {
    * several), the person's own words, or both. A client folds a note into the answer it goes with.
    */
   answers?: Record<string, string>;
-  /** For a `plan` or a `permission`: whether the person said yes. */
+  /** For a `plan`, a `permission` or a `handoff`: whether the person said yes (done, for a hand-off). */
   approved?: boolean;
   /** For a `plan` or a `permission`: what the person wrote beside their answer. */
   note?: string;
+  /**
+   * For a `secret`: which secret was given, and never its value, which the runner fetches once
+   * with `POST /v1/runner/secret`.
+   */
+  secret?: { name: string };
 }
 
 /** A comment on the canvas: a new thread, or a reply in one. */
@@ -243,7 +337,7 @@ export interface CommentEvent {
   text: string;
   /** False for the first message of a thread. */
   reply: boolean;
-  /** The artboard the pin is on, with its name when the comment was made. Null on the open canvas. */
+  /** The artboard the pin is on, with its name when the comment was made. Null for a pin off any board. */
   artboardId: string | null;
   artboardName: string | null;
   /** The node the pin points at, if any. */
@@ -303,16 +397,16 @@ export const CLAIM_LIMIT = 100;
 
 export interface ClaimResponse {
   events: RunnerEvent[];
-  /** The design's head, so the runner's replica can catch up. */
+  /** The canvas's head, so the runner's replica can catch up. */
   seq: number;
   /**
-   * The design's pull request as the app shows it (the design's row): what the agent is told
+   * The canvas's pull request as the app shows it (the canvas's row): what the agent is told
    * when a turn starts. Null when it has none; absent from an API that does not say.
    */
   pullRequest?: PullRequestState | null;
 }
 
-/** A design's pull request, as the app shows it. */
+/** A canvas's pull request, as the app shows it. */
 export interface PullRequestState {
   number: number;
   state: "draft" | "open" | "merged" | "closed";
@@ -322,7 +416,7 @@ export interface PullRequestState {
 export interface AckRequest {
   ids: string[];
   /**
-   * The Claude session that holds them, stored as the design's session in the same
+   * The Claude session that holds them, stored as the canvas's session in the same
    * transaction, so the next runner resumes the session its events went into. Null only when
    * none of them went into a session (a stop, a kind this runner does not know).
    */
@@ -338,7 +432,7 @@ export interface AckResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * One item of a design's thread, as clients read it. People's messages and comments are the
+ * One item of a canvas's thread, as clients read it. People's messages and comments are the
  * API's to write; the runner writes the rest. A client renders the thread from these alone.
  */
 export type ThreadItem = {
@@ -397,10 +491,10 @@ export interface CommentItem {
 
 /**
  * A comment's picture: the area round its pin, the pin drawn in, in each theme. Each is a WebP
- * under the design's assets address, `COMMENT_PICTURE.scale` times its size as shown.
+ * under the canvas's assets address, `COMMENT_PICTURE.scale` times its size as shown.
  */
 export interface CommentPicture {
-  /** `comments/<message id>-light.webp`, relative to the design's assets address. */
+  /** `comments/<message id>-light.webp`, relative to the canvas's assets address. */
   light: string;
   dark: string;
   /** Its size as shown, in CSS px. */
@@ -483,14 +577,46 @@ export type Notice =
   | Exclude<RunnerNotice, { type: "stopped" }>
   /** A person stopped the run: the API names them from the stop event the runner wrote. */
   | { type: "stopped"; by: Person | null }
-  /** Written by the API: the design's pull request opened, merged or closed. */
+  /** Written by the API: the canvas's pull request opened, merged or closed. */
   | {
       type: "pull_request";
       number: number;
       url: string;
       title: string;
       state: "draft" | "open" | "merged" | "closed";
+    }
+  /** Written by the API: the agent did this to the pull request, as `as` on GitHub. */
+  | {
+      type: "pull_request_agent";
+      action: AgentPullRequestDone;
+      number: number;
+      url: string;
+      title: string;
+      as: Person | null;
+    }
+  /**
+   * Written by the API: `by` took the canvas over once its owner had left the workspace or
+   * deleted their account. It runs on their Claude from then on.
+   */
+  | { type: "owner_changed"; by: Person }
+  /**
+   * Written by the API, once per change, as a runner session starts: the model the canvas was
+   * made with is no longer one the Claude account offers, so it runs on `to` in its place
+   * ("Models"). Both are model ids, each with the name Ponzu knew it by then (the id itself when
+   * it knew none). `account` is whose Claude it is, as they were then; null when the canvas's
+   * owner is gone or is not the account's holder.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
     };
+
+/** What the agent did to its pull request, as its thread's line says. */
+export type AgentPullRequestDone = "opened" | "ready" | "updated_branch" | "auto_merge" | "merged";
 
 /**
  * The notices a runner may write. The API refuses any other type with 400: what only the API
@@ -500,9 +626,9 @@ export type Notice =
 export type RunnerNotice =
   /** The runner is starting; it becomes `resumed` or `started` once Claude is up. */
   | { type: "waking" }
-  /** Claude picked up the design's session where it left off. */
+  /** Claude picked up the canvas's session where it left off. */
   | { type: "resumed" }
-  /** Claude started a new session for the design. */
+  /** Claude started a new session for the canvas. */
   | { type: "started" }
   /** The agent asked something; the question itself is a question row. */
   | { type: "question"; questionId: string; header: string; text: string }
@@ -529,8 +655,10 @@ export type RunErrorCode =
   | "message_refused"
   /** The API would not take a question, so nobody could answer it and the agent went on. */
   | "question_failed"
-  /** Commits on the design's branch could not be pushed to GitHub; the message says why. */
-  | "push_failed";
+  /** Commits on the canvas's branch could not be pushed to GitHub; the message says why. */
+  | "push_failed"
+  /** An MCP server asked for details in a form Ponzu can't show, so Claude went on without them. */
+  | "elicitation_unsupported";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
 export const MAX_TEXT = 32_000;
@@ -546,7 +674,7 @@ export type ThreadWrite = {
 );
 
 /**
- * `POST /v1/runner/thread`. Each item is written by id within the design: an id the thread
+ * `POST /v1/runner/thread`. Each item is written by id within the canvas: an id the thread
  * does not have is appended, one that is still streaming has its payload replaced, and one
  * that has finished stays as it is.
  */
@@ -568,7 +696,7 @@ export const MAX_THREAD_WRITE = 32;
 export type AgentState = "working" | "needs_you" | "idle";
 
 /**
- * `PUT /v1/runner/state`: what the agent is doing, as the design's row shows it. Sent when it
+ * `PUT /v1/runner/state`: what the agent is doing, as the canvas's row shows it. Sent when it
  * changes and at least every `HEARTBEAT_MS` while the runner is alive.
  */
 export interface StateRequest {
@@ -584,19 +712,37 @@ export interface StateRequest {
   /** The Claude session, once Claude Code has said which it is. Stored for the next resume. */
   claudeSessionId: string | null;
   /**
-   * The sleep this runner is ready for: the `sleep` an answer named, once it has finished its
-   * turn, let its edits reach the API, saved a checkpoint and flushed the disk.
-   */
-  quiesced?: string | null;
-  /**
-   * The design's branch in this sandbox against GitHub, once the runner has looked: what Create
+   * The canvas's branch in this sandbox against GitHub, once the runner has looked: what Create
    * PR goes by while GitHub lacks commits. Absent: unchanged. Null for Scratch, or a checkout
    * that failed.
    */
   branch?: BranchReport | null;
+  /**
+   * What Claude Code last said of the Claude plan's limits, once it changes: news, sent once,
+   * like `branch`, and absent on heartbeats. Absent too from a runner on an API key, which has
+   * no plan, and from an older runner. The API keeps it on the Claude account only while the
+   * sandbox runs on the account's current credential (docs/cloud.md, "Claude plan limits").
+   */
+  claudeLimit?: ClaudeLimitReport | null;
 }
 
-/** The design's branch in the sandbox against GitHub. */
+/**
+ * One of the Agent SDK's `rate_limit_event`s, as the runner passes it on: whether requests go
+ * through, which of the plan's windows it is about, when that window resets, and how much of it
+ * is used.
+ */
+export interface ClaudeLimitReport {
+  /** `rejected`: the plan is at its limit, and turns fail until `resetsAt`. */
+  status: "allowed" | "allowed_warning" | "rejected";
+  /** The SDK's `rateLimitType`: `five_hour`, `seven_day`, `seven_day_opus`, …; null if unsaid. */
+  window: string | null;
+  /** ISO 8601; null if unsaid. */
+  resetsAt: string | null;
+  /** The share of the window used, from 0 (it can run a little past 1); null if unsaid. */
+  utilization: number | null;
+}
+
+/** The canvas's branch in the sandbox against GitHub. */
 export interface BranchReport {
   /** Commits on the branch that GitHub does not have. */
   unpushed: number;
@@ -605,14 +751,8 @@ export interface BranchReport {
 }
 
 export interface StateResponse {
-  /** The design's head, so the runner's replica can catch up. */
+  /** The canvas's head, so the runner's replica can catch up. */
   seq: number;
-  /**
-   * While the API is putting the sandbox to sleep: which stop (an ISO 8601 time). The runner
-   * takes no new work and gets ready, then says so with `quiesced`. Null otherwise; absent from
-   * an API that does not ask.
-   */
-  sleep?: string | null;
 }
 
 /** How often a live runner reports its state, changed or not. */
@@ -624,7 +764,7 @@ export const RUNNER_TIMEOUT_MS = 90_000;
 /* Questions                                                           */
 /* ------------------------------------------------------------------ */
 
-export type QuestionKind = "question" | "plan" | "permission";
+export type QuestionKind = "question" | "plan" | "permission" | "secret" | "handoff";
 
 export interface AskedQuestion {
   header: string;
@@ -639,7 +779,18 @@ export type QuestionBody =
   /** Claude wants a plan approved before it goes on (ExitPlanMode). */
   | { kind: "plan"; payload: { plan: string } }
   /** Claude wants to do something only a person can allow. */
-  | { kind: "permission"; payload: { tool: string; title: string; description: string | null } };
+  | { kind: "permission"; payload: { tool: string; title: string; description: string | null } }
+  /**
+   * The agent asked for one of the repo's secrets by name (`request_secret`). Answered with
+   * `POST /v1/canvases/:id/questions/:questionId/secret`: the value goes to the repo's secrets,
+   * never into this row or the answer event. Raised only for a canvas with a repository.
+   */
+  | { kind: "secret"; payload: { name: string; description: string | null } }
+  /**
+   * Something only a person can do at a web address (an MCP server's sign-in): opened in their
+   * browser, then answered `approved: true` once done there, or false for not now.
+   */
+  | { kind: "handoff"; payload: { title: string; url: string; description: string | null } };
 
 /**
  * `POST /v1/runner/questions`. The runner chooses the id (`q_` and 16 characters), so raising
@@ -666,9 +817,9 @@ export interface WithdrawResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * `asset`: one of the design's files. `export`: a file a link reaches. `preview`: the sidebar's
+ * `asset`: one of the canvas's files. `export`: a file a link reaches. `preview`: the sidebar's
  * picture. `session` and `workspace`: a checkpoint's archives (the transcript, a Scratch
- * design's files), stored where no client reads them and recorded only by `/v1/runner/checkpoint`.
+ * canvas's files), stored where no client reads them and recorded only by `/v1/runner/checkpoint`.
  */
 export type UploadPurpose = "asset" | "export" | "preview" | "session" | "workspace";
 
@@ -697,7 +848,7 @@ export interface UploadResponse {
 /** `POST /v1/runner/uploads/complete`: the bytes are there. */
 export interface CompleteRequest {
   ids: string[];
-  /** For previews: the design's seq they show. */
+  /** For previews: the canvas's seq they show. */
   seq?: number;
 }
 
@@ -774,7 +925,7 @@ export interface PullRequestSummaryResponse {
   /** The open pull request whose description now says it; null while it waits for one. */
   pullRequest: number | null;
   /**
-   * The design's pull request as the app shows it, whether or not the summary reached it: so the
+   * The canvas's pull request as the app shows it, whether or not the summary reached it: so the
    * agent can say truly whether one exists. Absent from an API that does not say.
    */
   open?: PullRequestState | null;
@@ -784,6 +935,91 @@ export interface PullRequestSummaryResponse {
    * be read (`unreadable`). Null when it was written in.
    */
   kept?: "none_open" | "rewritten" | "unreadable" | null;
+}
+
+/**
+ * What the agent does to its canvas's pull request through the API, which acts as a person
+ * (docs/cloud.md, "The agent's pull request"): `POST /v1/runner/pull-request/<action>`.
+ */
+export type AgentPullRequestAction = "open" | "ready" | "update_branch" | "auto_merge" | "merge";
+
+export const AGENT_PULL_REQUEST_ACTIONS: readonly AgentPullRequestAction[] = [
+  "open",
+  "ready",
+  "update_branch",
+  "auto_merge",
+  "merge",
+];
+
+export interface AgentPullRequestRequest {
+  /**
+   * The event of the turn the agent is in: the last one the runner put into the session (not an
+   * edit). The API decides from it who the agent acts as, and whether it may merge.
+   */
+  turn: string | null;
+  /** For `merge` and `update_branch`: the commit the agent's checkout is at. */
+  headSha?: string;
+}
+
+/** Where the canvas's pull request stands, for the agent: `GET /v1/runner/pull-request?turn=`. */
+export interface PullRequestStanding {
+  branch: { name: string; base: string; exists: boolean; aheadBy: number; behindBy: number };
+  pullRequest: {
+    number: number;
+    url: string;
+    /** Untrusted: what someone on GitHub may have written. */
+    title: string;
+    state: "draft" | "open" | "merged" | "closed";
+    headSha: string;
+    author: string | null;
+    mergedBy: string | null;
+    /** False when it conflicts with its base; null while GitHub works it out. */
+    mergeable: boolean | null;
+    mergeState: string;
+    reviewDecision: "approved" | "changes_requested" | "review_required" | null;
+    autoMerge: { enabledBy: string | null } | null;
+    checks: {
+      state: "none" | "running" | "passing" | "failing";
+      complete: boolean;
+      /** Untrusted names: whoever posts a check chooses its name. */
+      items: { name: string; state: string; required: boolean; url: string | null }[];
+    };
+    reviews: { author: string | null; state: "approved" | "changes_requested" | "dismissed" }[];
+    /** Line comments whose threads are not resolved. Untrusted text. */
+    unresolved: { author: string | null; path: string; line: number | null; body: string }[];
+    /** Why Merge would not ask GitHub now, as the API would refuse it; null when it would. */
+    mergeHold: { code: string; message: string } | null;
+    /**
+     * Whether its base merges through a merge queue, and its entry while it is in one (its
+     * place, from 1). Absent from an API older than merge queues.
+     */
+    mergeQueue?: {
+      enabled: boolean;
+      entry: { state: string; position: number | null } | null;
+    };
+  } | null;
+  mergeMethod: "squash" | "merge" | "rebase" | null;
+  autoMergeAllowed: boolean;
+  /** The one thing the app's action button offers. */
+  nextAction: string;
+  /** Who Ponzu acts as on GitHub for the agent in this turn. */
+  actingAs: { name: string; login: string };
+  /** A person in Ponzu began this turn, so it may merge, mark ready and turn on auto-merge. */
+  personTurn: boolean;
+  /** Why not, when it is not. */
+  notPersonTurn: string | null;
+}
+
+export interface AgentPullRequestAnswer extends PullRequestStanding {
+  /** This call is what did it; false when there was nothing to do, or someone did it first. */
+  did: boolean;
+  /** `open` only: GitHub has nothing to open it from yet, and the runner was asked to push. */
+  pushing: boolean;
+  /**
+   * `merge` only: the repository merges through a merge queue, and this added it to the queue
+   * rather than merging it. GitHub merges it once the queue's checks pass. Absent otherwise.
+   */
+  queued?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -856,7 +1092,7 @@ export interface ErrorBody {
 /* ------------------------------------------------------------------ */
 
 /**
- * The one variable a design's repo's secrets reach its sandbox in. The runner, a Bun process
+ * The one variable a canvas's repo's secrets reach its sandbox in. The runner, a Bun process
  * that holds the runner token, never has them as variables of its own: a name like
  * `BUN_OPTIONS` would load code into it before it starts. It hands them only to the agent's
  * side, beside what it has itself (`agentEnv`). And whatever writes the sandbox's environment
@@ -886,6 +1122,116 @@ export function decodeRepoSecrets(encoded: string | undefined): Record<string, s
   }
   return secrets;
 }
+
+/** Capitals, digits and underscores, starting with a letter, as Settings writes them. */
+export const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+export const MAX_SECRET_NAME = 64;
+
+/**
+ * Prefixes a secret's name may not start with: Ponzu's own (`PONZU_RUNNER_TOKEN`, …), Claude
+ * Code's and Anthropic's (a second credential, or one that points Claude elsewhere: Claude Code
+ * would use `ANTHROPIC_API_KEY` over the owner's plan, or send their token to
+ * `ANTHROPIC_BASE_URL`), an old sandbox provider's, git's (its credential helper is Ponzu's), and
+ * those that load code into a program as it starts: the dynamic loader's, Bun's (`BUN_OPTIONS`
+ * is extra flags, `--preload` among them), Node's and npm's, and bash's.
+ */
+const RESERVED_SECRET_PREFIXES = [
+  "PONZU_",
+  "CLAUDE_",
+  "ANTHROPIC_",
+  "ASCII_",
+  "GIT_",
+  "LD_",
+  "DYLD_",
+  "BUN_",
+  "NODE_",
+  "NPM_CONFIG_",
+  "BASH_",
+];
+
+/** Names under a reserved prefix that only say how a repo's own code runs or installs. */
+const ALLOWED_SECRET_NAMES = new Set(["NODE_ENV", "NODE_AUTH_TOKEN"]);
+
+/**
+ * Names a secret may not have: what the runner's process depends on; what a shell runs or
+ * reads as it starts; where git and other tools find their configuration; and what would send
+ * traffic, the Claude credential with it, through someone else's proxy or certificate.
+ */
+const RESERVED_SECRET_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "PWD",
+  "TMPDIR",
+  "ENV",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "PS4",
+  "IFS",
+  "PROMPT_COMMAND",
+  "PYTHONSTARTUP",
+  "XDG_CONFIG_HOME",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "CURL_CA_BUNDLE",
+  "REQUESTS_CA_BUNDLE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+]);
+
+/**
+ * Why a name can't be a secret's, or null when it can: one rule for Settings, a secret the
+ * agent asks for (on the runner's side before it asks, and the API's when it is answered), and
+ * the sandbox's environment as it is made.
+ */
+export function checkSecretName(name: string): "invalid" | "reserved" | null {
+  if (name.length > MAX_SECRET_NAME || !SECRET_NAME.test(name)) return "invalid";
+  if (ALLOWED_SECRET_NAMES.has(name)) return null;
+  if (
+    RESERVED_SECRET_NAMES.has(name) ||
+    RESERVED_SECRET_PREFIXES.some((prefix) => name.startsWith(prefix))
+  ) {
+    return "reserved";
+  }
+  return null;
+}
+
+/**
+ * Why a reserved name is, in words for whoever chose it: the prefix it starts with, or that the
+ * sandbox itself depends on the name.
+ */
+export function reservedSecretReason(name: string): string {
+  const prefix = RESERVED_SECRET_PREFIXES.find((p) => name.startsWith(p));
+  return prefix
+    ? `Names starting with ${prefix} are kept for Ponzu, Claude and the sandbox's own tools. Use another name.`
+    : `${name} is a name the sandbox itself depends on. Use another name.`;
+}
+
+/**
+ * `POST /v1/runner/secret`: the value a person gave for a `secret` question this runner raised,
+ * for the turn that asked for it. Answered once, within `SECRET_DELIVERY_MS` of the answer, and
+ * only to the runner holding the lease: 404 `not_found` otherwise. The value goes into the file
+ * `~/.ponzu/secrets/<NAME>` as the agent and nowhere else: never an event, a log line, the
+ * thread, the state or analytics.
+ */
+export interface SecretRequest {
+  questionId: string;
+}
+
+export interface SecretResponse {
+  name: string;
+  value: string;
+}
+
+/** How long after a person gives a secret the runner may fetch it for the running turn. */
+export const SECRET_DELIVERY_MS = 15 * 60_000;
+
+/** Where in the agent's home a secret given mid-turn is put, one file per name. */
+export const SECRETS_FOLDER = ".ponzu/secrets";
 
 function toBase64(value: string): string {
   let binary = "";

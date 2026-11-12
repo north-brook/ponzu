@@ -1,5 +1,5 @@
 /**
- * Keeps a design's CSS animations cheap to show on the canvas without
+ * Keeps a canvas's CSS animations cheap to show on the canvas without
  * changing what they look like, and keeps the list of them that the level of
  * detail (lod.ts) works from.
  *
@@ -679,7 +679,7 @@ function holdsLastFrame(a: CSSAnimation): boolean {
 /**
  * A finished animation that fills forwards keeps its layer for good. Once it
  * ends, drop it if the element looks the same without it. The rest keep
- * filling: writing their end state inline would outrank the design's :hover
+ * filling: writing their end state inline would outrank the board's own :hover
  * rules.
  */
 function releaseWhenDone(a: CSSAnimation) {

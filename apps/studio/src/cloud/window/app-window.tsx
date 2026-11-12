@@ -21,10 +21,16 @@ import { enterThread } from "../thread/rail.tsx";
 import { cn } from "../ui/cn.ts";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable.tsx";
 import { TipProvider } from "../ui/tooltip.tsx";
-import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
 import {
-  CANVAS_MIN,
+  type DividerGrip,
+  DividerGrips,
+  type Lights,
+  SidebarToggle,
+  TrafficLights,
+} from "./chrome.tsx";
+import {
   fitPanes,
+  MAIN_MIN,
   PANE_STEP,
   PANE_STEP_LARGE,
   PANES,
@@ -51,7 +57,7 @@ export interface PaneWidths {
 const BOTH: readonly Pane[] = ["sidebar", "rail"];
 /** The panels' ids in the group (and on their elements); the panes' own ids stay theirs. */
 const PANEL: Record<Pane, string> = { sidebar: "sidebar-pane", rail: "thread-pane" };
-const CANVAS_PANEL = "canvas-pane";
+const MAIN_PANEL = "main-pane";
 /** The custom property each pane's width is kept in on the window, for the chrome and its content. */
 const WIDTH_VAR: Record<Pane, `--pane-${string}`> = {
   sidebar: "--pane-sidebar",
@@ -61,13 +67,13 @@ const WIDTH_VAR: Record<Pane, `--pane-${string}`> = {
 const NAME: Record<Pane, string> = { sidebar: "Sidebar", rail: "Thread" };
 /**
  * The gutter between a pane and the canvas, which is the edge's grab area: the sidebar's right
- * padding (8) and the rail's left (10), as the design pads them. A pane's width, as the design
+ * padding (8) and the rail's left (10), as the mockup pads them. A pane's width, as the mockup
  * gives it and as it's kept, takes in its gutter: its panel is that much narrower.
  */
 const GUTTER: Record<Pane, number> = { sidebar: 8, rail: 10 };
 
 /**
- * A panel's size limits, for a pane's (panes.ts). Collapsing is the toggles' (and ⌘B, ⌘J): an
+ * A panel's size limits, for a pane's (panes.ts). Collapsing is the toggles' (and ⌘B, ⌥⌘B): an
  * open pane's panel can't collapse, so a drag, even one that leaves the window, stops it at its
  * minimum (the library collapses any collapsible panel dragged to nothing). The window says
  * when it may.
@@ -86,25 +92,25 @@ function panelLimits(pane: Pane, collapsible: boolean) {
 
 /**
  * The main window: a 38px chrome over three panes. The sidebar and the thread rail open at the
- * widths the person last dragged them to (the design's 300 and 360 at first; panes.ts has the
- * limits); the pane between them, the canvas's, takes the rest.
+ * widths the person last dragged them to (the mockup's 300 and 360 at first; panes.ts has the
+ * limits); the main pane between them takes the rest.
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
- * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
+ * - `chrome` is everything past the left block (CanvasChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
- * - `children` fill the canvas pane.
+ * - `children` fill the main pane.
  * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
  *   when there is one.
  * - `panes`: the widths to open the panes at, and where a new one goes when an edge is moved.
  *
  * The chrome draws no lockup, in any state (the founder asked for it gone; the boards still
  * draw one). The sidebar toggle comes first at the left, just past the traffic lights, and
- * DesignChrome ends with the thread toggle at the window's right edge.
+ * CanvasChrome ends with the thread toggle at the window's right edge.
  *
  * The panes are react-resizable-panels' (shadcn's Resizable, ui/resizable.tsx), in pixels. Each
  * edge between a pane and the canvas is a separator: the gutter there is its grab area, it
  * follows the pointer, takes focus in tab order and moves with the arrow keys, and a double-click
- * returns the pane to the design's width. Moving one edge never moves the other pane: it stops
+ * returns the pane to the mockup's width. Moving one edge never moves the other pane: it stops
  * where the canvas would go under 400. The toggles collapse and expand the panes through the
  * same panels, easing (`data-pane-motion`); a drag never eases. Whenever the window lays the
  * panes out itself (when it opens, on a toggle, when it's resized) each open pane takes the
@@ -115,23 +121,23 @@ function panelLimits(pane: Pane, collapsible: boolean) {
 /**
  * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
  * at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
- * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌘J, the
- * View menu, or anything else that opens it while the design shows. Not when it came with a
- * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
+ * (`enterThread`), when it opened on a canvas that was already showing: the toggle, ⌥⌘B, the
+ * View menu, or anything else that opens it while the canvas shows. Not when it came with a
+ * canvas being opened, which leaves the keyboard where the person was (a row of the sidebar).
  * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the
  * window, so it never sits in a pane that has gone inert.
  */
 function useThreadFocus(
   open: boolean,
-  onDesign: boolean,
+  canvasShowing: boolean,
   box: RefObject<HTMLElement | null>,
   motion: PaneMotion,
 ) {
-  const was = useRef({ open, onDesign });
+  const was = useRef({ open, canvasShowing });
   const before = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     const prev = was.current;
-    was.current = { open, onDesign };
+    was.current = { open, canvasShowing };
     const pane = box.current;
     if (!pane || prev.open === open) return;
     if (!open) {
@@ -144,7 +150,7 @@ function useThreadFocus(
       before.current = null;
       return;
     }
-    if (!prev.onDesign || !onDesign) return;
+    if (!prev.canvasShowing || !canvasShowing) return;
     let live = true;
     // After the toggle's own layout effect has started the easing (a microtask on).
     queueMicrotask(() =>
@@ -158,7 +164,7 @@ function useThreadFocus(
     return () => {
       live = false;
     };
-  }, [open, onDesign, box, motion]);
+  }, [open, canvasShowing, box, motion]);
 }
 
 export function AppWindow({
@@ -212,7 +218,7 @@ export function AppWindow({
   const groupWidth = useRef(0);
 
   // The rail's content stays while it closes, as it last was, so it slides away rather than
-  // emptying first. Only while there's a chrome: what leaves with the whole view (the design it
+  // emptying first. Only while there's a chrome: what leaves with the whole view (the canvas it
   // showed) goes at once.
   const holdRail = chrome != null;
   const lastRail = useRef(rail);
@@ -262,7 +268,7 @@ export function AppWindow({
       const size = axis();
       if (size <= 0) return null;
       const wanted: Partial<Record<Pane, number>> = {};
-      let room = size - CANVAS_MIN;
+      let room = size - MAIN_MIN;
       for (const pane of present()) {
         if (!opened[pane]) continue;
         wanted[pane] = now.current.remembered[pane];
@@ -277,7 +283,7 @@ export function AppWindow({
         layout[PANEL[pane]] = share;
         rest -= share;
       }
-      layout[CANVAS_PANEL] = rest;
+      layout[MAIN_PANEL] = rest;
       return layout;
     },
     [axis, present],
@@ -419,16 +425,16 @@ export function AppWindow({
 
   /**
    * Puts `pane`'s edge at `width`, within its limits and short of the canvas's minimum (the other
-   * pane stays as it is), and keeps what it came to.
+   * pane stays as it is), and keeps what it came to (`keep`: not for each step of a drag).
    */
-  const moveEdge = (pane: Pane, width: number) => {
+  const moveEdge = (pane: Pane, width: number, keep = true) => {
     const panel = panels[pane].current;
     if (!panel) return;
     const other: Pane = pane === "sidebar" ? "rail" : "sidebar";
     const otherPanel = present().includes(other)
       ? (panels[other].current?.getSize().inPixels ?? 0)
       : 0;
-    const room = axis() - CANVAS_MIN - otherPanel;
+    const room = axis() - MAIN_MIN - otherPanel;
     const size = Math.max(
       PANES[pane].min - GUTTER[pane],
       Math.min(paneWidth(pane, width) - GUTTER[pane], room),
@@ -436,7 +442,45 @@ export function AppWindow({
     panel.resize(`${size}px`);
     // What the canvas's room let it have (the panel's own size reads the old one until its
     // layout lands).
-    onResize.current?.(pane, Math.round(size + GUTTER[pane]));
+    if (keep) onResize.current?.(pane, Math.round(size + GUTTER[pane]));
+    return size + GUTTER[pane];
+  };
+
+  /**
+   * The chrome's divider over an open pane's edge, as a handle for it (chrome.tsx): the pane
+   * follows the pointer from where the press began, within the edge's own limits, and what it
+   * came to is kept on release. Nothing takes focus, and the chrome doesn't drag the window.
+   */
+  const dividerGrip = (pane?: Pane): DividerGrip | null => {
+    if (!pane || !(pane === "sidebar" ? sidebarOpen : railOpen)) return null;
+    return {
+      onPointerDown: (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        held.current = pane;
+        motion.stop();
+        const grip = event.currentTarget;
+        const from = widthNow(pane);
+        const pressed = event.clientX;
+        let came = from;
+        const move = (moved: globalThis.PointerEvent) => {
+          const by = moved.clientX - pressed;
+          came = moveEdge(pane, from + (pane === "sidebar" ? by : -by), false) ?? came;
+        };
+        grip.setPointerCapture(event.pointerId);
+        grip.addEventListener("pointermove", move);
+        grip.setAttribute("data-held", "");
+        dragging(frame.current, () => {
+          grip.removeEventListener("pointermove", move);
+          grip.removeAttribute("data-held");
+          if (came !== from) onResize.current?.(pane, Math.round(came));
+        });
+      },
+      onDoubleClick: () => {
+        held.current = pane;
+        moveEdge(pane, PANES[pane].default);
+      },
+    };
   };
 
   // Where focus was before a press on an edge took it (the library focuses the separator), to
@@ -551,7 +595,7 @@ export function AppWindow({
             {badge}
             <span className="flex-1" />
           </div>
-          {chrome}
+          <DividerGrips value={dividerGrip}>{chrome}</DividerGrips>
         </header>
         <ResizablePanelGroup
           elementRef={group}
@@ -576,7 +620,7 @@ export function AppWindow({
             >
               <aside
                 id="sidebar"
-                aria-label="Designs"
+                aria-label="Canvases"
                 inert={!sidebar.open}
                 // Its width less the gutter past it (the edge), which is its right padding.
                 className="flex h-full w-[calc(var(--pane-sidebar)-8px)] shrink-0 flex-col pt-[2px] pb-2.5 pl-2"
@@ -587,8 +631,8 @@ export function AppWindow({
           ) : null}
           {sidebar ? edge("sidebar", "Resize sidebar", sidebarOpen, "w-2") : null}
           <ResizablePanel
-            id={CANVAS_PANEL}
-            minSize={CANVAS_MIN}
+            id={MAIN_PANEL}
+            minSize={MAIN_MIN}
             className="flex flex-col"
             style={{ overflow: "visible" }}
           >

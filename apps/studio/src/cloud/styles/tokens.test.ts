@@ -1,7 +1,7 @@
 /*
  * Contrast of the tokens, read from tokens.css, in both themes. Text that carries meaning holds
  * WCAG AA (4.5:1) on every ground it sits on; icons, the focus ring and control edges hold 3:1.
- * `faint` (metadata, placeholders, section labels) is the design's deliberate exception and is
+ * `faint` (metadata, placeholders, section labels) is the mockup's deliberate exception and is
  * pinned at what it is, so it can't drift lower unnoticed.
  */
 import { expect, test } from "bun:test";
@@ -101,13 +101,14 @@ for (const [theme, i] of [
     }
   });
 
-  test(`faint stays where the design puts it in ${theme}`, () => {
-    // Dark's lowest is on the open row's ground, which the design doesn't draw.
+  test(`faint stays where the mockup puts it in ${theme}`, () => {
+    // Dark's lowest is on the open row's ground, which the mockup doesn't draw.
     expect(worst("faint", i)).toBeGreaterThanOrEqual(i === 0 ? 1.8 : 2.75);
   });
 }
 
-// Light's open row is the design's canvas; dark's is derived, and must outrank a hovered row.
+// Light's open row is the ground colour (`--c-canvas`); dark's is derived, and must outrank a
+// hovered row.
 test("in dark the open row reads above a hovered one", () => {
   const chrome = token("chrome")[1];
   const lift = (c: string) => contrast(c, chrome);

@@ -1,8 +1,8 @@
 # Judge calibration
 
-## thread: 43/43 labels right, passed
+## thread: 50/50 labels right, passed
 
-`claude-opus-5-5`, version `cfec7d6e92ed`, 2026-11-11T19:45:08.925Z at e615e839995c, $0.4203.
+`claude-opus-5-5`, version `8ea38ad1fde6`, 2026-11-12T09:37:05.111Z at 398914845a6f, $0.5027.
 
 | Example | Labels | Misses |
 |---|---|---|
@@ -18,7 +18,11 @@
 | 448-s5-before | 3 | none |
 | 448-s5-first-after | 3 | none |
 | 448-s5-final (hard) | 3 | none |
+| terse-enough (hard) | 3 | none |
+| long-and-needed (hard) | 2 | none |
 | push-refused-claimed | 1 | none |
+| draft-called-ready | 1 | none |
+| sent-to-create-pr | 1 | none |
 | pull-request-claimed | 1 | none |
 | 451-r1-t1 | 1 | none |
 | 451-r1-t2 (hard) | 1 | none |

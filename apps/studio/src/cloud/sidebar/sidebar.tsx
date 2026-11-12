@@ -2,21 +2,21 @@ import { PencilEdit02Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useMemo, useRef } from "react";
 import {
   applyFilter,
-  type DesignFilter,
+  type CanvasFilter,
   isFiltering,
   NO_FILTER,
   projectCounts,
 } from "../filter.ts";
-import type { DesignSummary, Person, SearchResults, Workspace } from "../model.ts";
+import type { CanvasSummary, Person, SearchResults, Workspace } from "../model.ts";
 import type { ResultKey } from "../search.ts";
-import { orderDesigns, settledShown } from "../status.ts";
+import { orderCanvases, settledShown } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { focusNow, giveFocusBack } from "../ui/quiet-focus.ts";
 import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
-import { DesignList, DesignListSkeleton } from "./design-list.tsx";
-import type { RowHandlers } from "./design-row.tsx";
+import { CanvasList, CanvasListSkeleton } from "./canvas-list.tsx";
+import type { RowHandlers } from "./canvas-row.tsx";
 import { FilterMenu } from "./filter-menu.tsx";
 import { useRowMotion } from "./row-motion.ts";
 import { SearchField, SearchResultsView, useResultSelection } from "./search.tsx";
@@ -30,23 +30,23 @@ export interface SidebarProps extends RowHandlers {
   workspaces: Workspace[];
   /** Everyone else in the workspace, for the filter. */
   teammates: Person[];
-  /** The workspace's active designs; null while they load. */
-  designs: DesignSummary[] | null;
-  settled: { count: number; designs: DesignSummary[] | null; expanded: boolean };
+  /** The workspace's active canvases; null while they load. */
+  canvases: CanvasSummary[] | null;
+  settled: { count: number; canvases: CanvasSummary[] | null; expanded: boolean };
   onSettledExpandedChange: (expanded: boolean) => void;
-  openDesignId: string | null;
+  openCanvasId: string | null;
   /** The window's sidebar is collapsed; ⌘K expands it before it searches. */
   collapsed: boolean;
   onExpand: () => void;
-  filter: DesignFilter;
-  onFilterChange: (filter: DesignFilter) => void;
+  filter: CanvasFilter;
+  onFilterChange: (filter: CanvasFilter) => void;
   /** Null while search is closed; "" open and empty. */
   query: string | null;
   onQueryChange: (query: string | null) => void;
   /** The answer for `query`, or null while it is on its way. */
   results: SearchResults | null;
   onOpenResult: (key: ResultKey) => void;
-  onNewDesign: () => void;
+  onNewCanvas: () => void;
   onSwitchWorkspace: (workspace: Workspace) => void;
   onAddWorkspace: () => void;
   onSettings: () => void;
@@ -55,16 +55,16 @@ export interface SidebarProps extends RowHandlers {
 }
 
 /**
- * The sidebar: the workspace switcher and Search, Filter and New design over the workspace's
- * designs by recency, the settled tray at the foot. Search takes the header row's place; with a
+ * The sidebar: the workspace switcher and Search, Filter and New canvas over the workspace's
+ * canvases by recency, the settled tray at the foot. Search takes the header row's place; with a
  * query its results take the list's. It holds the shortcuts for what it offers: ⌘K, ⌘N, ⌘, and
- * the numbers: ⌘1–9 open the designs in the order the list shows them (filtered; 9 the last;
+ * the numbers: ⌘1–9 open the canvases in the order the list shows them (filtered; 9 the last;
  * settled ones aren't counted) and ⌘0 the create page. They work with the sidebar collapsed,
  * with no numbers to show; while search's results take the list's place ⌘1–9 rest, so a number
- * never opens a design you can't see.
+ * never opens a canvas you can't see.
  */
 export function Sidebar(props: SidebarProps) {
-  const { me, workspace, designs, filter, query, results } = props;
+  const { me, workspace, canvases, filter, query, results } = props;
   const searchField = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useResultSelection(results);
@@ -83,7 +83,7 @@ export function Sidebar(props: SidebarProps) {
     // takes focus as it mounts.
     else requestAnimationFrame(() => searchField.current?.focus({ preventScroll: true }));
   });
-  useShortcut("n", props.onNewDesign);
+  useShortcut("n", props.onNewCanvas);
   useShortcut(",", props.onSettings);
 
   // Closing search gives focus back where search found it: the composer after ⌘K there, nowhere
@@ -100,46 +100,47 @@ export function Sidebar(props: SidebarProps) {
   const searching = query !== null && query.trim() !== "";
   const team = workspace.kind === "org";
   const shown = useMemo(
-    () => (designs ? orderDesigns(applyFilter(designs, filter), workspace.kind) : null),
-    [designs, filter, workspace.kind],
+    () => (canvases ? orderCanvases(applyFilter(canvases, filter), workspace.kind) : null),
+    [canvases, filter, workspace.kind],
   );
-  const projects = useMemo(() => projectCounts(designs ?? []), [designs]);
-  const hint = useJumpShortcuts("design", (n) => {
+  const projects = useMemo(() => projectCounts(canvases ?? []), [canvases]);
+  const hint = useJumpShortcuts("canvas", (n) => {
     if (n === 0) {
-      props.onNewDesign();
+      props.onNewCanvas();
       return true;
     }
     if (searching) return false;
-    const design = jumpTarget(shown ?? [], n);
-    if (design && design.id !== props.openDesignId) props.onOpen(design);
-    return design !== undefined;
+    const canvas = jumpTarget(shown ?? [], n);
+    if (canvas && canvas.id !== props.openCanvasId) props.onOpen(canvas);
+    return canvas !== undefined;
   });
   // Which rows show, and in what order: when this changes, what moved slides (row-motion.ts).
   const lists = useRef<HTMLDivElement>(null);
   const settledRows = settledShown(
-    props.settled.designs ?? [],
+    props.settled.canvases ?? [],
     props.settled.expanded,
-    props.openDesignId,
+    props.openCanvasId,
   );
   useRowMotion(
     lists,
     [
-      ...(shown ?? []).map((design) => design.id),
+      ...(shown ?? []).map((canvas) => canvas.id),
       "|",
-      ...settledRows.map((design) => design.id),
+      ...settledRows.map((canvas) => canvas.id),
     ].join(" "),
   );
   const handlers: RowHandlers = {
     onOpen: props.onOpen,
     onAction: props.onAction,
     onRename: props.onRename,
+    ...(props.onIntent ? { onIntent: props.onIntent } : {}),
   };
 
   return (
     <div ref={lists} className="flex min-h-0 flex-1 flex-col">
       {query === null ? (
         <div
-          // Search and New design take no focus from a click, as the window's chrome doesn't
+          // Search and New canvas take no focus from a click, as the window's chrome doesn't
           // (installFocusRule): focus stays where it was, and search gives it back there.
           data-toolbar
           className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5"
@@ -153,13 +154,14 @@ export function Sidebar(props: SidebarProps) {
             onPlan={props.onPlan}
             onSignOut={props.onSignOut}
           />
-          <span className="flex-1" />
+          {/* The name's room ends 8 before the buttons, which keep theirs whatever its length. */}
+          <span className="min-w-2 flex-1" />
           <IconButton
             ref={searchButton}
             label="Search"
             keys={["⌘", "K"]}
             onClick={openSearch}
-            className="h-[26px] w-6"
+            className="h-[26px] w-6 shrink-0"
           >
             <Icon icon={Search01Icon} step="control" />
           </IconButton>
@@ -171,10 +173,10 @@ export function Sidebar(props: SidebarProps) {
             projects={projects}
           />
           <IconButton
-            label="New design"
+            label="New canvas"
             keys={["⌘", "N"]}
-            onClick={props.onNewDesign}
-            className="h-[26px] w-6"
+            onClick={props.onNewCanvas}
+            className="h-[26px] w-6 shrink-0"
           >
             <Icon icon={PencilEdit02Icon} step="control" />
           </IconButton>
@@ -204,19 +206,19 @@ export function Sidebar(props: SidebarProps) {
         <>
           <FadeScroll className="flex-1">
             {shown === null ? (
-              <DesignListSkeleton />
+              <CanvasListSkeleton />
             ) : shown.length ? (
-              <DesignList
-                designs={shown}
-                openId={props.openDesignId}
-                label="Designs"
+              <CanvasList
+                canvases={shown}
+                openId={props.openCanvasId}
+                label="Canvases"
                 shortcuts
                 hint={hint && !props.collapsed}
                 {...handlers}
               />
             ) : isFiltering(filter) ? (
               <EmptyNote>
-                No designs match this filter.
+                No canvases match this filter.
                 <Button
                   variant="quiet"
                   className="-ml-2 px-2"
@@ -227,17 +229,17 @@ export function Sidebar(props: SidebarProps) {
               </EmptyNote>
             ) : (
               <EmptyTrace
-                label={props.settled.count ? "No designs in progress" : "No designs yet"}
+                label={props.settled.count ? "No canvases in progress" : "No canvases yet"}
               />
             )}
           </FadeScroll>
           {props.settled.count ? (
             <SettledTray
               count={props.settled.count}
-              designs={props.settled.designs}
+              canvases={props.settled.canvases}
               expanded={props.settled.expanded}
               onExpandedChange={props.onSettledExpandedChange}
-              openId={props.openDesignId}
+              openId={props.openCanvasId}
               {...handlers}
             />
           ) : null}

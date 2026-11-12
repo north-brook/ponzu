@@ -1,14 +1,14 @@
-import { and, eq, getTableColumns, isNotNull, ne, type SQL, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { newId } from "../ids.ts";
 import {
   type AgentBlocker,
   type AgentState,
+  authStates,
+  type CanvasStatus,
   type ClaudeAccountKind,
   type ClaudeAccountStatus,
-  type DesignStatus,
-  designs,
-  type SandboxStatus,
+  canvases,
+  type SandboxState,
   sandboxes,
 } from "../schema/index.ts";
 import { TURN_KINDS } from "./events.ts";
@@ -16,61 +16,21 @@ import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
 /*
- * A design's sandbox as the API drives it (docs/cloud.md, "The sandbox"). The database decides
- * every move: a design has at most one sandbox that is not `gone` (a unique index), and each
- * move between states holds to the states it moves from, so of two function instances racing
- * on one sandbox only one moves it. Leaving `awake` meters the stretch it was awake for, in the
- * statement that moves it, so awake time is never lost and never counted twice.
+ * A canvas's sandbox as the API drives it (docs/cloud.md, "The sandbox"). The database decides
+ * every move: a canvas has at most one row (its primary key), and each move between states holds
+ * to the states it moves from, and to the job holding a `waking` or `stopping` row, so of two
+ * function instances racing on one sandbox only one moves it. Leaving `awake` meters the stretch
+ * it was awake for, in the statement that moves it, so awake time is never lost and never
+ * counted twice.
  */
 
-export type Sandbox = typeof sandboxes.$inferSelect;
-
-/** Where the API reaches the runner of a design whose sandbox is awake, its token sealed. */
-export async function getAwakeSandboxAddress(
-  db: Db,
-  designId: string,
-): Promise<{ sandboxId: string; address: string; encryptedAddressToken: string | null } | null> {
-  const [row] = await run(
-    db
-      .select({
-        sandboxId: sandboxes.id,
-        address: sandboxes.address,
-        encryptedAddressToken: sandboxes.encryptedAddressToken,
-      })
-      .from(designs)
-      .innerJoin(sandboxes, eq(sandboxes.id, designs.sandboxId))
-      .where(
-        and(eq(designs.id, designId), eq(sandboxes.state, "awake"), isNotNull(sandboxes.address)),
-      ),
-  );
-  return row ? { ...row, address: row.address! } : null;
-}
-
-/** The design's sandbox that is not gone, if it has one. */
-export async function getLiveSandbox(db: Db, designId: string): Promise<Sandbox | null> {
-  const [row] = await run(
-    db
-      .select()
-      .from(sandboxes)
-      .where(and(eq(sandboxes.designId, designId), ne(sandboxes.state, "gone"))),
-  );
-  return row ?? null;
-}
-
-/** The design's sandboxes that are not gone. At most one, unless something is badly wrong. */
-export function listLiveSandboxes(db: Db, designId: string): Promise<Sandbox[]> {
-  return run(
-    db
-      .select()
-      .from(sandboxes)
-      .where(and(eq(sandboxes.designId, designId), ne(sandboxes.state, "gone"))),
-  );
-}
+export type SandboxRow = typeof sandboxes.$inferSelect;
 
 /**
- * How long a wake holds a `waking` sandbox without moving it before another may take it over:
- * longer than one attempt of a wake can take, so a wake still trying is never taken for one
- * that died. The minute's sweep repairs a row left this long.
+ * How long a job holds a `waking` or `stopping` row without moving it before another may take
+ * it over: longer than one attempt of a wake (an `up()`, a stop exec and a start) or a stop can
+ * take, so a job still at it is never taken for one that died. The minute's sweep repairs a row
+ * left this long.
  */
 export const WAKING_LEASE_MS = 6 * 60_000;
 
@@ -81,55 +41,68 @@ export interface SandboxLimits {
 }
 
 /**
- * What a wake's claim on a sandbox came to: the sandbox, now `waking` and held by the wake;
- * `full` when its workspace or its owner has as many sandboxes up as `SandboxLimits` allow; or
- * null when another wake holds it, or it is in no state a wake takes it from.
+ * What a wake's claim on a sandbox came to: the row, now `waking` and held by the wake; `full`
+ * when its workspace or its owner has as many sandboxes up as `SandboxLimits` allow; or null
+ * when another job holds it, or it is in no state a wake takes it from.
  */
-export type SandboxClaim = { sandbox: Sandbox } | { full: true } | null;
+export type SandboxClaim = { sandbox: SandboxRow } | { full: true } | null;
+
+/** The canvas's sandbox row, if it has one. */
+export async function getSandbox(db: Db, canvasId: string): Promise<SandboxRow | null> {
+  const [row] = await run(db.select().from(sandboxes).where(eq(sandboxes.canvasId, canvasId)));
+  return row ?? null;
+}
+
+/** Where the API reaches the runner of a canvas whose sandbox is awake, its port token sealed. */
+export async function getAwakeSandboxAddress(
+  db: Db,
+  canvasId: string,
+): Promise<{ canvasId: string; address: string; encryptedPortToken: string | null } | null> {
+  const [row] = await run(
+    db
+      .select({
+        canvasId: sandboxes.canvasId,
+        address: sandboxes.address,
+        encryptedPortToken: sandboxes.encryptedPortToken,
+      })
+      .from(sandboxes)
+      .where(
+        and(
+          eq(sandboxes.canvasId, canvasId),
+          eq(sandboxes.state, "awake"),
+          isNotNull(sandboxes.address),
+        ),
+      ),
+  );
+  return row ? { ...row, address: row.address! } : null;
+}
 
 /**
- * Begin the design's next sandbox for the wake `by`: a row of the next generation, `waking`,
- * with no provider sandbox yet, which the design now points at. Null when the design already
- * has one that is not gone: whoever made that one makes the sandbox.
+ * The canvas's first sandbox row, `waking` and held by the wake `by`, under the limits. Null
+ * when the canvas already has one: whoever holds that one decides.
  */
 export async function beginSandbox(
   db: Db,
-  {
-    designId,
-    provider,
-    now,
-    by,
-    limits,
-  }: {
-    designId: string;
-    provider: Sandbox["provider"];
-    now: Date;
-    by: string;
-    limits: SandboxLimits;
-  },
+  { canvasId, now, by, limits }: { canvasId: string; now: Date; by: string; limits: SandboxLimits },
 ): Promise<SandboxClaim> {
   const at = timeParam(now);
   const result = await queryJson<MoveResult>(
     db,
     sql`
       with made as (
-        insert into sandboxes (id, design_id, generation, provider, state, state_at, waking_by,
-                               last_activity_at, awake_user_id)
-        select ${newId("sbx")}, d.id,
-               coalesce((select max(generation) from sandboxes where design_id = d.id), 0) + 1,
-               ${provider}, 'waking', ${at}::timestamptz, ${by}, ${at}::timestamptz,
-               (${newestPerson(designId)})
-          from designs d
-         where d.id = ${designId} and ${roomFor(sql`d.id`, limits)}
-        on conflict (design_id) where state <> 'gone' do nothing
+        insert into sandboxes (canvas_id, state, state_at, waking_by, last_activity_at,
+                               awake_user_id, created_at, updated_at)
+        select d.id, 'waking', ${at}::timestamptz, ${by}, ${at}::timestamptz,
+               (${newestPerson(canvasId)}), ${at}::timestamptz, ${at}::timestamptz
+          from canvases d
+         where d.id = ${canvasId} and ${roomFor(sql`d.id`, limits)}
+        on conflict (canvas_id) do nothing
         returning *
-      ),
-      pointed as (
-        update designs set sandbox_id = made.id from made where designs.id = made.design_id
       )
       select json_build_object(
         'row', (select row_to_json(made) from made),
-        'full', not ${roomFor(sql`${designId}`, limits)}
+        'full', not ${roomFor(sql`${canvasId}`, limits)}
+          and not exists (select 1 from sandboxes where canvas_id = ${canvasId})
       ) as result
     `,
   );
@@ -137,28 +110,27 @@ export async function beginSandbox(
 }
 
 /**
- * Take the sandbox for the wake `by`, moving it into `waking` from one of `from`. A wake takes
- * one that is `waking` only if it holds it already, or it was left unmoved for a lease. Counted
- * against `limits` in the same statement, beside every other sandbox up in the design's
- * workspace and for its owner.
+ * Take the canvas's sandbox for the wake `by`, moving it into `waking` from one of `from`. A
+ * row that is `waking` is taken only by the wake that holds it, or once it was left unmoved for
+ * a lease. Counted against `limits` in the same statement.
  */
 export async function claimSandbox(
   db: Db,
   {
-    id,
+    canvasId,
     from,
     now,
     by,
     limits,
   }: {
-    id: string;
-    from: readonly SandboxStatus[];
+    canvasId: string;
+    from: readonly SandboxState[];
     now: Date;
     by: string;
     limits: SandboxLimits;
   },
 ): Promise<SandboxClaim> {
-  return claimFrom(await move(db, { id, from, to: "waking", now, by, limits }));
+  return claimFrom(await move(db, { canvasId, from, to: "waking", now, by, limits }));
 }
 
 type MoveResult = { row: Record<string, unknown> | null; full: boolean };
@@ -169,107 +141,131 @@ function claimFrom(result: MoveResult | null): SandboxClaim {
 }
 
 /**
- * Whether the design `design` may have one more sandbox up: fewer than the limits are waking or
+ * Whether the canvas `canvas` may have one more sandbox up: fewer than the limits are waking or
  * awake in its workspace, and for its owner, leaving its own aside.
  */
-function roomFor(design: SQL, limits: SandboxLimits) {
+function roomFor(canvas: SQL, limits: SandboxLimits) {
   const up = (match: SQL) => sql`(
-    select count(*) from sandboxes o join designs od on od.id = o.design_id
+    select count(*) from sandboxes o join canvases od on od.id = o.canvas_id
      where o.state in ('waking', 'awake') and od.id <> r.id and ${match})`;
   return sql`coalesce((
     select ${up(sql`od.workspace_id = r.workspace_id`)} < ${limits.perWorkspace}
        and (r.owner_id is null or ${up(sql`od.owner_id = r.owner_id`)} < ${limits.perOwner})
-      from designs r where r.id = ${design}), false)`;
+      from canvases r where r.id = ${canvas}), false)`;
 }
 
-/** What a move can set beside the state, for the states that carry it. */
+/** What a move can set beside the state. */
 export interface SandboxChanges {
-  providerId?: string;
+  sessionId?: string | null;
+  sessionStartedAt?: Date | null;
   address?: string | null;
-  encryptedAddressToken?: string | null;
+  encryptedPortToken?: string | null;
+  expiresAt?: Date | null;
+  image?: string | null;
   runnerTokenId?: string | null;
   claudeCredential?: string | null;
-  autoStopAt?: Date | null;
+  /** Why the wake gave up: only on a move to `asleep`. */
   failure?: string | null;
-  /** The image it was created from. */
-  image?: string | null;
-  /** An image a move onto failed to start (`sandboxes.image_failed`). */
-  imageFailed?: string | null;
-  /** Gives up the slot a move took (`takeMoveSlot`). Any move out of `waking` does so anyway. */
-  movingSince?: null;
 }
 
 /** A move of a sandbox, and what it holds to beside the states it moves from. */
-interface Move {
-  id: string;
-  from: readonly SandboxStatus[];
-  to: SandboxStatus;
+export interface Move {
+  canvasId: string;
+  from: readonly SandboxState[];
+  to: SandboxState;
   now: Date;
   /**
-   * The wake making the move. One that is `waking` moves only for the wake that holds it, or
-   * once it has sat unmoved for a lease.
+   * The job making the move. A row that is `waking` or `stopping` moves only for the job that
+   * holds it (`waking_by`), or once it has sat unmoved for a lease. Without it, nothing is held to
+   * (a retire takes the row whoever has it).
    */
   by?: string;
+  /** Who holds the row once it is `waking` or `stopping`: `by` unless said. */
+  hold?: string;
   /** Only if it has been in its state since before then: a repair of a move left halfway. */
   stateBefore?: Date;
   /** Only if nobody has kept it awake since then, so a stop never wins over a fresh message. */
   idleBefore?: Date;
+  /** Only if the row holds this session. */
+  sessionId?: string;
+  /** Only while the canvas is settled: a retire never takes the row of a canvas reopened. */
+  whileSettled?: boolean;
+  /** Not from another retire still inside its lease: two retires of one canvas never overlap. */
+  unlessRetiring?: boolean;
   changes?: SandboxChanges;
-  /** Only if there is room for one more sandbox up (`claimSandbox`). */
-  limits?: SandboxLimits;
 }
 
 /**
- * Move a sandbox from one of `from` to `to` as of `now`, with `changes`, and answer the row as
- * it is now; null when it was in none of `from` (someone else moved it first) or a condition of
- * the move did not hold. A wake moves into `waking` with `claimSandbox`, which says why it
- * could not. Moving into `awake` starts its meter; moving out of it records the stretch as a
- * usage event, put down to the person who woke it or last kept it awake, in the same statement.
+ * Move a sandbox from one of `from` to `to` as of `now`, with `changes`, and answer the row as it
+ * is now; null when it was in none of `from` (someone else moved it first) or a condition of the
+ * move did not hold. Moving into `awake` starts its meter; moving out of it records the stretch as
+ * a usage event, put down to the person who woke it or last kept it awake, in the same statement.
+ * A move to `asleep` forgets the session's address and port token: nothing of it runs.
  */
-export async function moveSandbox(db: Db, request: Omit<Move, "limits">): Promise<Sandbox | null> {
+export async function moveSandbox(db: Db, request: Move): Promise<SandboxRow | null> {
   const result = await move(db, request);
   return result?.row ? toSandbox(result.row) : null;
 }
 
+const CHANGE_COLUMNS = {
+  sessionId: "session_id",
+  address: "address",
+  encryptedPortToken: "encrypted_port_token",
+  image: "image",
+  runnerTokenId: "runner_token_id",
+  claudeCredential: "claude_credential",
+} as const;
+const TIME_COLUMNS = { sessionStartedAt: "session_started_at", expiresAt: "expires_at" } as const;
+
 async function move(
   db: Db,
-  { id, from, to, now, by, stateBefore, idleBefore, changes = {}, limits }: Move,
+  {
+    canvasId,
+    from,
+    to,
+    now,
+    by,
+    hold,
+    stateBefore,
+    idleBefore,
+    sessionId,
+    whileSettled,
+    unlessRetiring,
+    changes = {},
+    limits,
+  }: Move & { limits?: SandboxLimits },
 ): Promise<MoveResult | null> {
   const at = sql`${timeParam(now)}::timestamptz`;
+  const held = to === "waking" || to === "stopping";
   const set = [
     sql`state = ${to}`,
     sql`state_at = ${at}`,
     sql`updated_at = ${at}`,
-    sql`waking_by = ${to === "waking" ? (by ?? null) : null}`,
+    sql`waking_by = ${held ? (hold ?? by ?? null) : null}`,
     to === "awake"
       ? sql`awake_since = case when s.state = 'awake' then s.awake_since else ${at} end`
       : sql`awake_since = null`,
     // A wake is activity: the idle clock starts again from it.
     ...(to === "awake" || to === "waking" ? [sql`last_activity_at = ${at}`] : []),
-    to === "failed" || to === "gone"
-      ? sql`failure = ${changes.failure ?? null}`
-      : sql`failure = null`,
-    // A move onto a new image holds its slot only while its wake does.
-    ...(to === "waking" && changes.movingSince === undefined ? [] : [sql`moving_since = null`]),
+    sql`failure = ${to === "asleep" ? (changes.failure ?? null) : null}`,
   ];
-  const column = {
-    providerId: "provider_id",
-    address: "address",
-    encryptedAddressToken: "encrypted_address_token",
-    runnerTokenId: "runner_token_id",
-    claudeCredential: "claude_credential",
-    image: "image",
-    imageFailed: "image_failed",
-  } as const;
-  for (const [key, name] of Object.entries(column) as [keyof typeof column, string][]) {
-    if (changes[key] !== undefined) set.push(sql`${sql.raw(name)} = ${changes[key]}`);
+  const given = { ...changes };
+  if (to === "asleep") {
+    given.address ??= null;
+    given.encryptedPortToken ??= null;
+    given.expiresAt ??= null;
   }
-  if (changes.autoStopAt !== undefined) {
-    set.push(
-      sql`auto_stop_at = ${changes.autoStopAt ? timeParam(changes.autoStopAt) : null}::timestamptz`,
-    );
-  } else if (to !== "awake" && to !== "waking") {
-    set.push(sql`auto_stop_at = null`);
+  for (const [key, name] of Object.entries(CHANGE_COLUMNS) as [
+    keyof typeof CHANGE_COLUMNS,
+    string,
+  ][]) {
+    if (given[key] !== undefined) set.push(sql`${sql.raw(name)} = ${given[key]}`);
+  }
+  for (const [key, name] of Object.entries(TIME_COLUMNS) as [keyof typeof TIME_COLUMNS, string][]) {
+    const value = given[key];
+    if (value !== undefined) {
+      set.push(sql`${sql.raw(name)} = ${value ? timeParam(value) : null}::timestamptz`);
+    }
   }
   const conditions = [
     sql`s.state in (${sql.join(
@@ -280,30 +276,44 @@ async function move(
   if (by !== undefined) {
     const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
     conditions.push(
-      sql`(s.state <> 'waking' or s.waking_by = ${by} or s.state_at < ${leaseOver}::timestamptz)`,
+      sql`(s.state not in ('waking', 'stopping') or s.waking_by = ${by}
+           or s.state_at < ${leaseOver}::timestamptz)`,
     );
   }
   if (stateBefore) conditions.push(sql`s.state_at < ${timeParam(stateBefore)}::timestamptz`);
   if (idleBefore) {
     conditions.push(sql`s.last_activity_at < ${timeParam(idleBefore)}::timestamptz`);
   }
-  if (limits) conditions.push(roomFor(sql`s.design_id`, limits));
+  if (sessionId !== undefined) conditions.push(sql`s.session_id = ${sessionId}`);
+  if (whileSettled) {
+    conditions.push(
+      sql`exists (select 1 from canvases d where d.id = s.canvas_id and d.status = 'settled')`,
+    );
+  }
+  if (unlessRetiring) {
+    const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
+    conditions.push(
+      sql`not (s.state = 'stopping' and s.waking_by like 'retire:%'
+               and s.state_at >= ${leaseOver}::timestamptz)`,
+    );
+  }
+  if (limits) conditions.push(roomFor(sql`s.canvas_id`, limits));
   return queryJson<MoveResult>(
     db,
     sql`
       with before as (
-        select id, design_id, state, awake_since from sandboxes where id = ${id}
+        select canvas_id, state, awake_since from sandboxes where canvas_id = ${canvasId}
       ),
       moved as (
         update sandboxes s
            set ${sql.join(set, sql`, `)}
-         where s.id = ${id} and ${sql.join(conditions, sql` and `)}
+         where s.canvas_id = ${canvasId} and ${sql.join(conditions, sql` and `)}
         returning s.*
       ),
       metered as (
-        insert into usage_events (id, workspace_id, design_id, user_id, kind, seconds, payer,
+        insert into usage_events (id, workspace_id, canvas_id, user_id, kind, seconds, payer,
                                   rate_card_version, occurred_at)
-        select b.id || '/' || floor(extract(epoch from b.awake_since) * 1000)::bigint,
+        select b.canvas_id || '/' || floor(extract(epoch from b.awake_since) * 1000)::bigint,
                d.workspace_id, d.id, m.awake_user_id, 'sandbox',
                greatest(0, round(extract(epoch from (${at} - b.awake_since))))::int,
                'ponzu',
@@ -313,102 +323,200 @@ async function move(
                ),
                b.awake_since
           from moved m
-          join before b on b.id = m.id
-          join designs d on d.id = m.design_id
+          join before b on b.canvas_id = m.canvas_id
+          join canvases d on d.id = m.canvas_id
          where b.state = 'awake' and m.state <> 'awake'
         on conflict (id) do nothing
       )
       select json_build_object(
         'row', (select row_to_json(moved) from moved),
-        'full', ${limits ? sql`not ${roomFor(sql`(select design_id from before)`, limits)}` : sql`false`}
+        'full', ${limits ? sql`not ${roomFor(sql`${canvasId}`, limits)}` : sql`false`}
       ) as result
     `,
   );
 }
 
 /**
- * Something kept the design's sandbox awake as of `now`: a person did something, or its agent
+ * Delete the canvas's row once the retire `by` that holds it has removed its sandbox. False when
+ * it no longer holds it.
+ */
+export async function deleteSandboxRow(
+  db: Db,
+  { canvasId, by }: { canvasId: string; by: string },
+): Promise<boolean> {
+  const rows = await run(
+    db
+      .delete(sandboxes)
+      .where(
+        and(
+          eq(sandboxes.canvasId, canvasId),
+          eq(sandboxes.state, "stopping"),
+          eq(sandboxes.wakingBy, by),
+        ),
+      )
+      .returning({ canvasId: sandboxes.canvasId }),
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Something kept the canvas's sandbox awake as of `now`: a person did something, or its agent
  * reported working. Its awake time is put down to the person behind the newest event in the
- * design's feed. Answers the sandbox's state, or null when it has none that is not gone.
+ * canvas's feed. Answers the sandbox's state, or null when it has none.
  */
 export async function touchSandbox(
   db: Db,
-  { designId, now }: { designId: string; now: Date },
-): Promise<SandboxStatus | null> {
+  { canvasId, now }: { canvasId: string; now: Date },
+): Promise<SandboxState | null> {
   const [row] = await run(
     db
       .update(sandboxes)
       .set({
         lastActivityAt: sql`greatest(${sandboxes.lastActivityAt}, ${timeParam(now)}::timestamptz)`,
-        awakeUserId: sql`coalesce((${newestPerson(designId)}), ${sandboxes.awakeUserId})`,
+        awakeUserId: sql`coalesce((${newestPerson(canvasId)}), ${sandboxes.awakeUserId})`,
       })
-      .where(and(eq(sandboxes.designId, designId), ne(sandboxes.state, "gone")))
+      .where(eq(sandboxes.canvasId, canvasId))
       .returning({ state: sandboxes.state }),
   );
   return row?.state ?? null;
 }
 
-/** Record the provider's auto-stop deadline after moving it out. */
-export async function setSandboxAutoStop(
+/** Record the session's new deadline after extending it, while the row still holds that session. */
+export async function setSandboxExpiry(
   db: Db,
-  { id, autoStopAt }: { id: string; autoStopAt: Date },
-): Promise<void> {
-  await run(
+  { canvasId, sessionId, expiresAt }: { canvasId: string; sessionId: string; expiresAt: Date },
+): Promise<boolean> {
+  const rows = await run(
     db
       .update(sandboxes)
-      .set({ autoStopAt: sql`${timeParam(autoStopAt)}::timestamptz` })
-      .where(and(eq(sandboxes.id, id), eq(sandboxes.state, "awake"))),
+      .set({ expiresAt: sql`${timeParam(expiresAt)}::timestamptz` })
+      .where(
+        and(
+          eq(sandboxes.canvasId, canvasId),
+          eq(sandboxes.state, "awake"),
+          eq(sandboxes.sessionId, sessionId),
+        ),
+      )
+      .returning({ canvasId: sandboxes.canvasId }),
   );
+  return rows.length > 0;
 }
 
 /** Count a restart of a runner that was found dead. Answers how many there have been in a row. */
-export async function countSandboxRestart(db: Db, id: string): Promise<number> {
+export async function countSandboxRestart(db: Db, canvasId: string): Promise<number> {
   const [row] = await run(
     db
       .update(sandboxes)
       .set({ restarts: sql`${sandboxes.restarts} + 1` })
-      .where(eq(sandboxes.id, id))
+      .where(eq(sandboxes.canvasId, canvasId))
       .returning({ restarts: sandboxes.restarts }),
   );
   return row?.restarts ?? 0;
 }
 
 /**
- * Show on the design's head why its agent is waiting, and whether a wake is under way. `waking`
+ * Show on the canvas's head why its agent is waiting, and whether a wake is under way. `waking`
  * turns an idle agent to `waking`; without it, a `waking` agent goes back to idle, and so does a
- * `working` one when there is a blocker: nothing runs then, whatever its runner last said. The
- * row clients watch is written only when this changes what it shows.
+ * `working` one when there is a blocker: nothing runs then, whatever its runner last said.
+ * `turnRuns` says otherwise for a blocker that lets a running turn finish (a wake gate's, such
+ * as billing's or a Claude plan's limit): a `working` agent stays `working`.
+ * `blockedUntil` is until when the blocker holds, when that is known; any other call clears it.
+ * The row clients watch is written only when this changes what it shows.
  */
 export async function showAgentWaiting(
   db: Db,
   {
-    designId,
+    canvasId,
     waking,
     blocker,
-  }: { designId: string; waking: boolean; blocker: AgentBlocker | null },
+    blockedUntil = null,
+    turnRuns = false,
+  }: {
+    canvasId: string;
+    waking: boolean;
+    blocker: AgentBlocker | null;
+    blockedUntil?: Date | null;
+    turnRuns?: boolean;
+  },
 ): Promise<void> {
-  const stopped = blocker ? sql`('waking', 'working')` : sql`('waking')`;
+  const stopped = blocker && !turnRuns ? sql`('waking', 'working')` : sql`('waking')`;
   const state = waking
-    ? sql`case when ${designs.agentState} in ('idle', 'limited') then 'waking' else ${designs.agentState} end`
-    : sql`case when ${designs.agentState} in ${stopped} then 'idle' else ${designs.agentState} end`;
+    ? sql`case when ${canvases.agentState} in ('idle', 'limited') then 'waking' else ${canvases.agentState} end`
+    : sql`case when ${canvases.agentState} in ${stopped} then 'idle' else ${canvases.agentState} end`;
+  const until = blocker && blockedUntil ? blockedUntil : null;
+  const untilParam = until ? sql`${timeParam(until)}::timestamptz` : sql`null::timestamptz`;
   await run(
     db
-      .update(designs)
-      .set({ agentBlocker: blocker, agentState: state })
+      .update(canvases)
+      .set({ agentBlocker: blocker, agentBlockedUntil: until, agentState: state })
       .where(
         and(
-          eq(designs.id, designId),
-          sql`(${designs.agentBlocker}, ${designs.agentState}) is distinct from (${blocker}::text, ${state})`,
+          eq(canvases.id, canvasId),
+          sql`(${canvases.agentBlocker}, ${canvases.agentBlockedUntil}, ${canvases.agentState})
+              is distinct from (${blocker}::text, ${untilParam}, ${state})`,
         ),
       ),
   );
 }
 
-/** What waking a design takes: the design, whose Claude it runs on, and its sandbox now. */
+/**
+ * Lift `blockers` from the active canvases they hold: one canvas, the canvases of a workspace,
+ * those on a Claude account (that run on it, and its owner's that have not run on one yet), or
+ * every canvas when none of these is given. What a gate does once what it waited for has
+ * changed; the rest of the head is left as it is. Answers each canvas whose head changed, most
+ * recently active first, and whether it has something in its feed its agent must take up.
+ */
+export async function liftAgentBlockers(
+  db: Db,
+  {
+    blockers,
+    canvasId,
+    workspaceId,
+    claudeAccountId,
+  }: {
+    blockers: readonly AgentBlocker[];
+    canvasId?: string;
+    workspaceId?: string;
+    claudeAccountId?: string;
+  },
+): Promise<{ id: string; pending: boolean }[]> {
+  if (blockers.length === 0) return [];
+  const onAccount = sql`(${canvases.claudeAccountId} = ${claudeAccountId ?? null}
+    or (${canvases.claudeAccountId} is null and ${canvases.ownerId} =
+        (select a.user_id from claude_accounts a where a.id = ${claudeAccountId ?? null})))`;
+  const rows = await run(
+    db
+      .update(canvases)
+      .set({ agentBlocker: null, agentBlockedUntil: null })
+      .where(
+        and(
+          eq(canvases.status, "active"),
+          inArray(canvases.agentBlocker, [...blockers]),
+          canvasId === undefined ? undefined : eq(canvases.id, canvasId),
+          workspaceId === undefined ? undefined : eq(canvases.workspaceId, workspaceId),
+          claudeAccountId === undefined ? undefined : onAccount,
+        ),
+      )
+      .returning({
+        id: canvases.id,
+        lastActivityAt: canvases.lastActivityAt,
+        // Named in full: inside a `returning`, Drizzle writes a column without its table.
+        pending: sql<boolean>`exists (
+          select 1 from events e
+           where e.canvas_id = "canvases"."id" and e.delivered_at is null
+             and e.priority in ('now', 'next'))`.mapWith(Boolean),
+      }),
+  );
+  return rows
+    .toSorted((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime())
+    .map(({ id, pending }) => ({ id, pending }));
+}
+
+/** What waking a canvas takes: the canvas, whose Claude it runs on, and its sandbox now. */
 export interface WakeContext {
-  designId: string;
+  canvasId: string;
   workspaceId: string;
-  status: DesignStatus;
+  status: CanvasStatus;
   ownerId: string | null;
   /** The Claude account it runs on: the one it was started on, else its owner's now. */
   claude: {
@@ -419,32 +527,39 @@ export interface WakeContext {
     connectedAt: Date;
     expiresAt: Date | null;
     encryptedCredential: string | null;
+    /** Until when its plan is at a limit, as a runner on its credential last said; else null. */
+    limitedUntil: Date | null;
   } | null;
-  sandbox: Sandbox | null;
+  sandbox: SandboxRow | null;
   /**
    * Whether the owner, whose Claude it runs on, is still a member of its workspace. Someone who
    * has left lends their Claude to nothing there.
    */
   ownerMember: boolean;
-  /**
-   * Whether the runner token the sandbox's environment carries is still good for a day, by
-   * Postgres's clock, which is what the token's expiry is checked against.
-   */
-  runnerTokenGood: boolean;
+  /** What the canvas's head says its agent waits on now, and until when. */
+  agentBlocker: AgentBlocker | null;
+  agentBlockedUntil: Date | null;
 }
 
-/** Whether the design `d`'s owner is still a member of its workspace. */
+/** Whether the canvas `d`'s owner is still a member of its workspace. */
 const ownerMember = sql`exists (
   select 1 from memberships m where m.user_id = d.owner_id and m.workspace_id = d.workspace_id)`;
 
-/** Whether the Claude account `a` is the one the design `d` runs on. */
+/** Whether the Claude account `a` is the one the canvas `d` runs on. */
 const runsOn = sql`(a.id = d.claude_account_id
                     or (d.claude_account_id is null and a.user_id = d.owner_id))`;
 
-/** Everything a wake decides on, in one read. Null when there is no such design. */
-export async function getWakeContext(db: Db, designId: string): Promise<WakeContext | null> {
+/** Everything a wake decides on, in one read. Null when there is no such canvas. */
+export async function getWakeContext(db: Db, canvasId: string): Promise<WakeContext | null> {
   const result = await queryJson<{
-    design: { id: string; workspace_id: string; status: DesignStatus; owner_id: string | null };
+    canvas: {
+      id: string;
+      workspace_id: string;
+      status: CanvasStatus;
+      owner_id: string | null;
+      agent_blocker: AgentBlocker | null;
+      agent_blocked_until: string | null;
+    };
     claude: {
       id: string;
       user_id: string;
@@ -453,40 +568,36 @@ export async function getWakeContext(db: Db, designId: string): Promise<WakeCont
       connected_at: string;
       expires_at: string | null;
       encrypted_credential: string | null;
+      limited_until: string | null;
     } | null;
     sandbox: Record<string, unknown> | null;
     owner_member: boolean;
-    token_good: boolean;
   }>(
     db,
     sql`
       select json_build_object(
-        'design', json_build_object('id', d.id, 'workspace_id', d.workspace_id,
-                                    'status', d.status, 'owner_id', d.owner_id),
+        'canvas', json_build_object('id', d.id, 'workspace_id', d.workspace_id,
+                                    'status', d.status, 'owner_id', d.owner_id,
+                                    'agent_blocker', d.agent_blocker,
+                                    'agent_blocked_until', d.agent_blocked_until),
         'claude', (select row_to_json(a) from claude_accounts a
                     where a.id = d.claude_account_id
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
                     order by (a.id = d.claude_account_id) desc limit 1),
-        'sandbox', (select row_to_json(s) from sandboxes s
-                     where s.design_id = d.id and s.state <> 'gone'),
-        'owner_member', ${ownerMember},
-        'token_good', exists (
-          select 1 from sandboxes s join runner_tokens t on t.id = s.runner_token_id
-           where s.design_id = d.id and s.state <> 'gone' and t.revoked_at is null
-             and t.expires_at > now() + interval '1 day'
-        )
+        'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
+        'owner_member', ${ownerMember}
       ) as result
-        from designs d
-       where d.id = ${designId}
+        from canvases d
+       where d.id = ${canvasId}
     `,
   );
   if (!result) return null;
-  const { design, claude } = result;
+  const { canvas, claude } = result;
   return {
-    designId: design.id,
-    workspaceId: design.workspace_id,
-    status: design.status,
-    ownerId: design.owner_id,
+    canvasId: canvas.id,
+    workspaceId: canvas.workspace_id,
+    status: canvas.status,
+    ownerId: canvas.owner_id,
     claude: claude && {
       id: claude.id,
       userId: claude.user_id,
@@ -495,65 +606,68 @@ export async function getWakeContext(db: Db, designId: string): Promise<WakeCont
       connectedAt: new Date(claude.connected_at),
       expiresAt: claude.expires_at ? new Date(claude.expires_at) : null,
       encryptedCredential: claude.encrypted_credential,
+      limitedUntil: claude.limited_until ? new Date(claude.limited_until) : null,
     },
     sandbox: result.sandbox ? toSandbox(result.sandbox) : null,
     ownerMember: result.owner_member,
-    runnerTokenGood: result.token_good,
+    agentBlocker: canvas.agent_blocker,
+    agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
   };
 }
 
 /**
- * The designs with a sandbox that is not gone whose environment may carry this Claude account's
- * credential: those that run on it, and its owner's that have not run yet.
+ * The awake sandboxes whose runner may hold this Claude account's credential: those of the
+ * canvases that run on it, and its owner's that have not run yet. The credential lives only in
+ * the running runner's memory, so an asleep one holds nothing.
  */
-export async function listDesignsWithSandboxOn(
+export async function listCanvasesWithSandboxOn(
   db: Db,
   { claudeAccountId, userId }: { claudeAccountId: string; userId: string },
-): Promise<string[]> {
+): Promise<SandboxRow[]> {
   const rows = await run(
     db
-      .selectDistinct({ id: designs.id })
-      .from(designs)
-      .innerJoin(sandboxes, eq(sandboxes.designId, designs.id))
+      .select({ sandbox: sandboxes })
+      .from(sandboxes)
+      .innerJoin(canvases, eq(canvases.id, sandboxes.canvasId))
       .where(
         and(
-          ne(sandboxes.state, "gone"),
-          sql`(${designs.claudeAccountId} = ${claudeAccountId}
-               or (${designs.claudeAccountId} is null and ${designs.ownerId} = ${userId}))`,
+          eq(sandboxes.state, "awake"),
+          sql`(${canvases.claudeAccountId} = ${claudeAccountId}
+               or (${canvases.claudeAccountId} is null and ${canvases.ownerId} = ${userId}))`,
         ),
       ),
   );
-  return rows.map((row) => row.id);
+  return rows.map((row) => row.sandbox);
 }
 
-/** Record the Claude account a design runs on, if it records none yet. */
-export async function recordDesignClaudeAccount(
+/** Record the Claude account a canvas runs on, if it records none yet. */
+export async function recordCanvasClaudeAccount(
   db: Db,
-  { designId, claudeAccountId }: { designId: string; claudeAccountId: string },
+  { canvasId, claudeAccountId }: { canvasId: string; claudeAccountId: string },
 ): Promise<void> {
   await run(
     db
-      .update(designs)
+      .update(canvases)
       .set({ claudeAccountId })
-      .where(and(eq(designs.id, designId), sql`${designs.claudeAccountId} is null`)),
+      .where(and(eq(canvases.id, canvasId), sql`${canvases.claudeAccountId} is null`)),
   );
 }
 
 /** A sandbox as the minute's sweep weighs it. */
 export interface SweptSandbox {
-  sandbox: Sandbox;
-  designStatus: DesignStatus;
-  /** When the design's runner last took the lease or reported its state. */
+  sandbox: SandboxRow;
+  canvasStatus: CanvasStatus;
+  /** When the canvas's runner last took the lease or reported its state. */
   heardAt: Date | null;
-  /** When the design's current runner took the lease. */
+  /** When the canvas's current runner took the lease. */
   runnerStartedAt: Date | null;
   /** The runner that holds the lease. */
   runnerId: string | null;
   /** When a runner last wrote something of a turn to the thread. */
   saidAt: Date | null;
-  /** What the design's head says its agent is doing. */
+  /** What the canvas's head says its agent is doing. */
   agentState: AgentState;
-  /** Whether the design's feed has something its agent must take up (`now` or `next`). */
+  /** Whether the canvas's feed has something its agent must take up (`now` or `next`). */
   pending: boolean;
   /**
    * The events that are owed a turn (docs/cloud.md, "A turn that never came"): the ones that begin
@@ -563,19 +677,13 @@ export interface SweptSandbox {
   owed: { id: string; deliveredAt: Date }[];
   /** Whether the Claude account it runs on can run it now. */
   claudeUsable: boolean;
-  /**
-   * Whether its environment may keep the Claude credential it carries: the account it runs on
-   * is still connected (or only expired), and its owner is still in the design's workspace.
-   */
-  claudeHeld: boolean;
-  /** Whether the design's owner is still a member of its workspace. */
+  /** Whether the canvas's owner is still a member of its workspace. */
   ownerMember: boolean;
 }
 
 /**
- * What the minute's sweep acts on: every sandbox that is moving or awake, and every sandbox
- * that is not gone of a settled design, or whose environment may no longer keep the Claude
- * credential it carries. Asleep sandboxes of active designs cost nothing and are left out.
+ * What the minute's sweep acts on: every sandbox that is moving or awake, and every sandbox of a
+ * settled canvas. Asleep sandboxes of active canvases cost almost nothing and are left out.
  */
 export async function listSandboxesToSweep(
   db: Db,
@@ -584,7 +692,7 @@ export async function listSandboxesToSweep(
   const result = await queryJson<{
     rows: {
       sandbox: Record<string, unknown>;
-      design_status: DesignStatus;
+      canvas_status: CanvasStatus;
       heard_at: string | null;
       runner_started_at: string | null;
       runner_id: string | null;
@@ -593,7 +701,6 @@ export async function listSandboxesToSweep(
       pending: boolean;
       owed: { id: string; delivered_at: string }[] | null;
       claude_usable: boolean;
-      claude_revoked: boolean;
       owner_member: boolean;
     }[];
   }>(
@@ -601,7 +708,7 @@ export async function listSandboxesToSweep(
     sql`
       select json_build_object('rows', coalesce(json_agg(json_build_object(
         'sandbox', row_to_json(s),
-        'design_status', d.status,
+        'canvas_status', d.status,
         'heard_at', r.heard_at,
         'runner_started_at', r.started_at,
         'runner_id', r.runner_id,
@@ -609,13 +716,13 @@ export async function listSandboxesToSweep(
         'agent_state', d.agent_state,
         'pending', exists (
           select 1 from events e
-           where e.design_id = d.id and e.delivered_at is null and e.priority in ('now', 'next')
+           where e.canvas_id = d.id and e.delivered_at is null and e.priority in ('now', 'next')
         ),
         'owed', case when s.state = 'awake' then (
           select json_agg(json_build_object('id', e.id, 'delivered_at', e.delivered_at)
                           order by e.seq)
             from events e
-           where e.design_id = d.id and e.delivered_at is not null and e.lapsed_at is null
+           where e.canvas_id = d.id and e.delivered_at is not null and e.lapsed_at is null
              and (r.said_at is null or e.delivered_at > r.said_at)
              and e.priority in ('now', 'next')
              and e.kind in (${sql.join(
@@ -625,7 +732,7 @@ export async function listSandboxesToSweep(
              -- A person's stop after it says not to answer it: never sent again.
              and not exists (
                select 1 from events s
-                where s.design_id = e.design_id and s.kind = 'stop' and s.seq > e.seq
+                where s.canvas_id = e.canvas_id and s.kind = 'stop' and s.seq > e.seq
              )
         ) end,
         'claude_usable', exists (
@@ -634,25 +741,17 @@ export async function listSandboxesToSweep(
              and a.status = 'connected'
              and (a.expires_at is null or a.expires_at > ${timeParam(now)}::timestamptz)
         ),
-        'claude_revoked', f.claude_revoked,
-        'owner_member', f.owner_member
+        'owner_member', ${ownerMember}
       )), '[]'::json)) as result
         from sandboxes s
-        join designs d on d.id = s.design_id
-        cross join lateral (
-          select exists (select 1 from claude_accounts a where ${runsOn} and a.status = 'revoked')
-                   as claude_revoked,
-                 ${ownerMember} as owner_member
-        ) f
-        left join design_runners r on r.design_id = s.design_id
-       where s.state <> 'gone'
-         and (s.state in ('waking', 'awake', 'stopping') or d.status = 'settled'
-              or f.claude_revoked or not f.owner_member)
+        join canvases d on d.id = s.canvas_id
+        left join canvas_runners r on r.canvas_id = s.canvas_id
+       where s.state in ('waking', 'awake', 'stopping') or d.status = 'settled'
     `,
   );
   return (result?.rows ?? []).map((row) => ({
     sandbox: toSandbox(row.sandbox),
-    designStatus: row.design_status,
+    canvasStatus: row.canvas_status,
     heardAt: row.heard_at ? new Date(row.heard_at) : null,
     runnerStartedAt: row.runner_started_at ? new Date(row.runner_started_at) : null,
     runnerId: row.runner_id,
@@ -661,50 +760,101 @@ export async function listSandboxesToSweep(
     pending: row.pending,
     owed: (row.owed ?? []).map((e) => ({ id: e.id, deliveredAt: new Date(e.delivered_at) })),
     claudeUsable: row.claude_usable,
-    claudeHeld: !row.claude_revoked && row.owner_member,
     ownerMember: row.owner_member,
   }));
 }
 
-/**
- * Whether the provider sandbox `providerId`, which carries the design's label, is one the
- * database still owns: the provider id of a sandbox of a design that exists and is not gone, or
- * possibly one being made right now (a design whose sandbox has been `waking` for less than a
- * lease: without a provider id yet, or moving onto a new image, whose new machine the row
- * records only once it is up). Past that the sweep's repair has found or given up on it.
- */
-export async function isSandboxKnown(
-  db: Db,
-  { designId, providerId, now }: { designId: string; providerId: string; now: Date },
-): Promise<boolean> {
-  const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
-  const [row] = await run(
-    db
-      .select({ id: sandboxes.id })
-      .from(sandboxes)
-      .where(
-        and(
-          eq(sandboxes.designId, designId),
-          ne(sandboxes.state, "gone"),
-          sql`(${sandboxes.providerId} = ${providerId}
-               or ((${sandboxes.providerId} is null or ${sandboxes.movingSince} is not null)
-                   and ${sandboxes.state} = 'waking'
-                   and ${sandboxes.stateAt} >= ${leaseOver}::timestamptz))`,
-        ),
-      ),
-  );
-  return row !== undefined;
+/** What reconcile knows of a canvas a sandbox at Vercel is named for. */
+export interface ReconciledCanvas {
+  /** False when the canvas was deleted: its id never comes back. */
+  exists: boolean;
+  status: CanvasStatus | null;
+  sandbox: SandboxRow | null;
+}
+
+/** What reconcile knows of a sign-in a sandbox at Vercel is named for. */
+export interface ReconciledSignIn {
+  /** False when there is no such auth state (deleted with its person). */
+  exists: boolean;
+  consumedAt: Date | null;
+  createdAt: Date | null;
 }
 
 /**
- * Whether the design's last checkpoint holds everything its sandbox has done (docs/cloud.md,
+ * For reconcile: the canvases and the sign-ins the sandboxes at Vercel are named for, as the
+ * database has them. Every id asked for is in the answer.
+ */
+export async function getSandboxOwners(
+  db: Db,
+  { canvasIds, signInIds }: { canvasIds: string[]; signInIds: string[] },
+): Promise<{
+  canvases: Map<string, ReconciledCanvas>;
+  signIns: Map<string, ReconciledSignIn>;
+}> {
+  const [found, rows, states] = await Promise.all([
+    canvasIds.length
+      ? run(
+          db
+            .select({ id: canvases.id, status: canvases.status })
+            .from(canvases)
+            .where(inArray(canvases.id, canvasIds)),
+        )
+      : [],
+    canvasIds.length
+      ? run(db.select().from(sandboxes).where(inArray(sandboxes.canvasId, canvasIds)))
+      : [],
+    signInIds.length
+      ? run(
+          db
+            .select({
+              id: authStates.id,
+              consumedAt: authStates.consumedAt,
+              createdAt: authStates.createdAt,
+            })
+            .from(authStates)
+            .where(and(inArray(authStates.id, signInIds), eq(authStates.kind, "claude_sign_in"))),
+        )
+      : [],
+  ]);
+  const statuses = new Map(found.map((canvas) => [canvas.id, canvas.status]));
+  const byCanvas = new Map(rows.map((row) => [row.canvasId, row]));
+  const byState = new Map(states.map((state) => [state.id, state]));
+  return {
+    canvases: new Map(
+      canvasIds.map((id) => [
+        id,
+        {
+          exists: statuses.has(id),
+          status: statuses.get(id) ?? null,
+          sandbox: byCanvas.get(id) ?? null,
+        },
+      ]),
+    ),
+    signIns: new Map(
+      signInIds.map((id) => {
+        const state = byState.get(id);
+        return [
+          id,
+          {
+            exists: state !== undefined,
+            consumedAt: state?.consumedAt ?? null,
+            createdAt: state?.createdAt ?? null,
+          },
+        ];
+      }),
+    ),
+  };
+}
+
+/**
+ * Whether the canvas's last checkpoint holds everything its sandbox has done (docs/cloud.md,
  * "How images roll out"): `covered` when no event went into its session after the checkpoint
  * was recorded, `behind` when one did, `none` when its runner has saved none though events went
- * in (a runner older than checkpoints, or one that never managed to).
+ * in.
  */
 export type CheckpointCover = "covered" | "behind" | "none";
 
-export async function getCheckpointCover(db: Db, designId: string): Promise<CheckpointCover> {
+export async function getCheckpointCover(db: Db, canvasId: string): Promise<CheckpointCover> {
   const result = await queryJson<{
     saved_turn: number | null;
     through: number | null;
@@ -713,13 +863,13 @@ export async function getCheckpointCover(db: Db, designId: string): Promise<Chec
     db,
     sql`
       select json_build_object(
-        'saved_turn', (select saved_turn from design_runners where design_id = ${designId}),
-        'through', (select saved_through from design_runners where design_id = ${designId}),
+        'saved_turn', (select saved_turn from canvas_runners where canvas_id = ${canvasId}),
+        'through', (select saved_through from canvas_runners where canvas_id = ${canvasId}),
         -- A stop and a push are acknowledged without going into the session, and a push after
         -- the turn's checkpoint changes nothing the sleep's would save: neither is work a
         -- checkpoint must hold.
         'last', (select max(seq) from events
-                  where design_id = ${designId} and delivered_at is not null
+                  where canvas_id = ${canvasId} and delivered_at is not null
                     and kind not in ('stop', 'push'))
       ) as result
     `,
@@ -731,168 +881,56 @@ export async function getCheckpointCover(db: Db, designId: string): Promise<Chec
   return through !== null && through >= last ? "covered" : "behind";
 }
 
-/**
- * Take one of the deployment's slots for moving a design onto a new image, for the wake `by`
- * that holds the sandbox `waking`: fewer than `max` other sandboxes are moving (each for at
- * most a lease). The row as it is now, or null when the slots are taken. Like the other limits,
- * the count is the statement's view, so moves claimed in the same instant can pass it by one or
- * two: it keeps the provider's starts in hand, it is not a quota.
- */
-export async function takeMoveSlot(
-  db: Db,
-  { id, by, now, max }: { id: string; by: string; now: Date; max: number },
-): Promise<Sandbox | null> {
-  const at = timeParam(now);
-  const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
-  const result = await queryJson<{ row: Record<string, unknown> | null }>(
-    db,
-    sql`
-      with taken as (
-        update sandboxes s set moving_since = ${at}::timestamptz
-         where s.id = ${id} and s.state = 'waking' and s.waking_by = ${by}
-           and (select count(*) from sandboxes o
-                 where o.id <> s.id and o.state = 'waking'
-                   and o.moving_since >= ${leaseOver}::timestamptz) < ${max}
-        returning s.*
-      )
-      select json_build_object('row', (select row_to_json(taken) from taken)) as result
-    `,
-  );
-  return result?.row ? toSandbox(result.row) : null;
-}
-
-/** The sandbox a design moved onto, and the one it moved from, now gone. */
-export interface MovedSandbox {
-  sandbox: Sandbox;
-  from: Sandbox;
-}
-
-/**
- * The design moved onto a new sandbox, in one statement: the sandbox `id`, `waking` and held by
- * the wake `by`, is marked gone, and a row of the next generation takes its place, `waking` for
- * the same wake, on the provider's sandbox `changes.providerId` made from `changes.image`, which
- * the design now points at. Its awake time goes on being put down to whoever it was. Null when
- * the wake no longer holds the sandbox.
- */
-export async function moveSandboxOnto(
-  db: Db,
-  {
-    id,
-    nextId,
-    by,
-    now,
-    changes,
-  }: {
-    id: string;
-    /** The new row's id, which its sealed address is bound to. */
-    nextId: string;
-    by: string;
-    now: Date;
-    changes: Required<
-      Pick<
-        SandboxChanges,
-        | "providerId"
-        | "image"
-        | "address"
-        | "encryptedAddressToken"
-        | "runnerTokenId"
-        | "claudeCredential"
-      >
-    >;
-  },
-): Promise<MovedSandbox | null> {
-  const at = sql`${timeParam(now)}::timestamptz`;
-  const leaseOver = timeParam(new Date(now.getTime() - WAKING_LEASE_MS));
-  const result = await queryJson<{
-    from: Record<string, unknown> | null;
-    made: Record<string, unknown> | null;
-  }>(
-    db,
-    sql`
-      with gone as (
-        update sandboxes s
-           set state = 'gone', state_at = ${at}, updated_at = ${at}, waking_by = null,
-               moving_since = null, auto_stop_at = null,
-               failure = ${`Moved onto ${changes.image}.`}
-         where s.id = ${id} and s.state = 'waking'
-           and (s.waking_by = ${by} or s.state_at < ${leaseOver}::timestamptz)
-        returning s.*
-      ),
-      made as (
-        insert into sandboxes (id, design_id, generation, provider, provider_id, state, state_at,
-                               waking_by, last_activity_at, awake_user_id, address,
-                               encrypted_address_token, runner_token_id, claude_credential, image)
-        select ${nextId}, g.design_id, g.generation + 1, g.provider, ${changes.providerId},
-               'waking', ${at}, ${by}, ${at}, g.awake_user_id, ${changes.address},
-               ${changes.encryptedAddressToken}, ${changes.runnerTokenId},
-               ${changes.claudeCredential}, ${changes.image}
-          from gone g
-        returning *
-      ),
-      pointed as (
-        update designs set sandbox_id = made.id from made where designs.id = made.design_id
-      )
-      select json_build_object(
-        'from', (select row_to_json(gone) from gone),
-        'made', (select row_to_json(made) from made)
-      ) as result
-    `,
-  );
-  if (!result?.from || !result.made) return null;
-  return { sandbox: toSandbox(result.made), from: toSandbox(result.from) };
-}
-
-/** A design's sandbox with what says which image it runs, for a report on a rollout. */
+/** A canvas's sandbox with what says which image it runs, for a report on a rollout. */
 export interface SandboxImage {
-  sandbox: Sandbox;
-  designStatus: DesignStatus;
-  /** What its runner said it is when it last started (`design_runners.client`). */
+  sandbox: SandboxRow;
+  canvasStatus: CanvasStatus;
+  /** What its runner said it is when it last started (`canvas_runners.client`). */
   client: string | null;
 }
 
-/** Every sandbox that is not gone, oldest first, with what says which image it runs. */
+/** Every sandbox row, oldest first, with what says which image it runs. */
 export async function listSandboxImages(db: Db): Promise<SandboxImage[]> {
   const result = await queryJson<{
     rows: {
       sandbox: Record<string, unknown>;
-      design_status: DesignStatus;
+      canvas_status: CanvasStatus;
       client: string | null;
     }[];
   }>(
     db,
     sql`
       select json_build_object('rows', coalesce(json_agg(json_build_object(
-        'sandbox', row_to_json(s), 'design_status', d.status, 'client', r.client
+        'sandbox', row_to_json(s), 'canvas_status', d.status, 'client', r.client
       ) order by s.created_at), '[]'::json)) as result
         from sandboxes s
-        join designs d on d.id = s.design_id
-        left join design_runners r on r.design_id = s.design_id
-       where s.state <> 'gone'
+        join canvases d on d.id = s.canvas_id
+        left join canvas_runners r on r.canvas_id = s.canvas_id
     `,
   );
   return (result?.rows ?? []).map((row) => ({
     sandbox: toSandbox(row.sandbox),
-    designStatus: row.design_status,
+    canvasStatus: row.canvas_status,
     client: row.client,
   }));
 }
 
-/** The person behind the newest event in a design's feed that a person is behind. */
-function newestPerson(designId: string) {
+/** The person behind the newest event in a canvas's feed that a person is behind. */
+function newestPerson(canvasId: string) {
   return sql`select e.user_id from events e
-              where e.design_id = ${designId} and e.user_id is not null
+              where e.canvas_id = ${canvasId} and e.user_id is not null
               order by e.seq desc limit 1`;
 }
 
 const COLUMNS = Object.entries(getTableColumns(sandboxes));
 
 /** A row as `row_to_json` writes it, back to what Drizzle would have read. */
-function toSandbox(json: Record<string, unknown>): Sandbox {
+function toSandbox(json: Record<string, unknown>): SandboxRow {
   const row: Record<string, unknown> = {};
   for (const [key, column] of COLUMNS) {
     const value = json[column.name] ?? null;
     row[key] =
       value !== null && column.columnType === "PgTimestamp" ? new Date(String(value)) : value;
   }
-  return row as Sandbox;
+  return row as SandboxRow;
 }

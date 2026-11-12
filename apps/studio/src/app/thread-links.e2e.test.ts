@@ -1,7 +1,7 @@
 /*
  * Links in the agent's words to a page or board, in the studio as it ships, in a real Chromium,
  * on Ponzu Cloud in memory (fake-host.ts): a board on the page showing and one on another page,
- * a page, a board since deleted, another design, an ordinary link and one dressed as ours, a
+ * a page, a board since deleted, another canvas, an ordinary link and one dressed as ours, a
  * link mid-stream, by keyboard, in light and dark. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves a picture of each there.
@@ -15,7 +15,7 @@ import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
 setDefaultTimeout(60_000);
 
 const SHOTS = process.env.PONZU_SHOTS;
-const SITE = "https://ponzu.design/designs";
+const SITE = "https://ponzu.design/canvases";
 
 describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words", () => {
   let dir: string;
@@ -23,7 +23,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   let browser: Browser;
   let page: Page;
   const errors: string[] = [];
-  /** The seeded design, its boards, a second page and another design. */
+  /** The seeded canvas, its boards, a second page and another canvas. */
   let world: {
     id: string;
     other: string;
@@ -50,16 +50,18 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  const shoot = async (name: string) => {
+  /** A picture of the window, once what is easing in has had `settleMs` to settle. */
+  const shoot = async (name: string, settleMs = 0) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
+    if (settleMs) await page.waitForTimeout(settleMs);
     await page.screenshot({ path: join(SHOTS, `${name}.png`) });
   };
   const rail = () => page.locator("#thread");
   const opened = () => page.evaluate(() => [...window.ponzuFake!.opened]);
   const activeTab = () =>
     page.getByRole("tablist", { name: "Pages" }).locator('[aria-selected="true"]').textContent();
-  /** The board's box on screen, and whether all of it is in the canvas's pane. */
+  /** The board's box on screen, and whether all of it is in the main pane. */
   const inView = async (name: string) => {
     const board = page.locator(`[data-board-name][title="${name}"]`);
     if (!(await board.count())) return false;
@@ -68,20 +70,20 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     return box.x > 0 && box.x + box.width < thread.x && box.y > 0 && box.y < 900;
   };
 
-  test("a design opens with the agent's reply naming its boards and pages as links", async () => {
+  test("a canvas opens with the agent's reply naming its boards and pages as links", async () => {
     await page.locator("#sidebar").waitFor();
     world = await page.evaluate(async () => {
       const fake = window.ponzuFake!;
       const { backend } = fake;
-      const design = [...backend.designs.values()].find(
+      const canvas = [...backend.canvases.values()].find(
         (d) => d.sequencer.doc.name === "Onboarding flow",
       )!;
-      const doc = design.sequencer.doc;
+      const doc = canvas.sequencer.doc;
       const [welcome, picker] = doc.pages[0]!.artboards.map((a) => a.id);
-      // A second page with a board, as the agent makes it; and another design of the team's.
+      // A second page with a board, as the agent makes it; and another canvas of the team's.
       const mobile = "pg_mobile";
       const phone = "ab_phone";
-      backend.agent(design.id).commit([
+      backend.agent(canvas.id).commit([
         { op: "page.create", index: 1, page: { id: mobile, name: "Mobile" } },
         {
           op: "artboard.create",
@@ -104,22 +106,22 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
         },
       ]);
       const api = backend.connect(fake.me).api;
-      const other = await api.designs.create({
+      const other = await api.canvases.create({
         workspaceId: fake.workspaceId,
-        repoId: design.repoId!,
+        repoId: canvas.repoId!,
         name: "Checkout",
       });
       fake.drawBoard(other.id, "Cart");
-      return { id: design.id, other: other.id, welcome: welcome!, picker: picker!, mobile, phone };
+      return { id: canvas.id, other: other.id, welcome: welcome!, picker: picker!, mobile, phone };
     });
-    await page.evaluate((id) => window.ponzuFake!.link({ kind: "design", designId: id }), world.id);
+    await page.evaluate((id) => window.ponzuFake!.link({ kind: "canvas", canvasId: id }), world.id);
     await page.locator('[data-board-name][title="Welcome"]').waitFor();
     if (!(await rail().count())) await page.getByRole("button", { name: /thread/i }).click();
     await rail().waitFor();
 
     const { id, other, picker, mobile, phone } = world;
     await page.evaluate(
-      ([designId, text]) => window.ponzuFake!.backend.agent(designId!).say(text!),
+      ([canvasId, text]) => window.ponzuFake!.backend.agent(canvasId!).say(text!),
       [
         id,
         [
@@ -127,7 +129,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
           `Everything for small screens is on [Mobile](${SITE}/${id}?page=${mobile}), and the rest of [Onboarding flow](${SITE}/${id}) is as it was.`,
           `I dropped [Hero / B](${SITE}/${id}?artboard=ab_gone1) in favour of A.`,
           `The cart is in [Checkout](${SITE}/${other}?artboard=ab_x).`,
-          "See [the docs](https://ponzu.design/docs) and [this](https://ponzu.design.evil.test/designs/x?artboard=ab_1).",
+          "See [the docs](https://ponzu.design/docs) and [this](https://ponzu.design.evil.test/canvases/x?artboard=ab_1).",
         ].join("\n\n"),
       ],
     );
@@ -147,16 +149,14 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     // Off somewhere else first, so the jump is seen.
     await page.mouse.move(400, 400);
     await page.mouse.wheel(0, 3000);
-    await page.waitForTimeout(200);
+    await waitUntil(async () => !(await inView("Pick a repo")));
     const before = page.url();
     await rail().getByRole("link", { name: "Pick a repo" }).hover();
-    await page.waitForTimeout(250);
-    await shoot("2-hover");
+    await shoot("2-hover", 250);
     await rail().getByRole("link", { name: "Pick a repo" }).click();
     await page.locator("[data-beacon]").waitFor();
     await waitUntil(() => inView("Pick a repo"));
-    await page.waitForTimeout(300);
-    await shoot("3-board-marked");
+    await shoot("3-board-marked", 300);
     expect(await opened()).toEqual([]);
     expect(page.url()).toBe(before);
     // The mark goes by itself.
@@ -180,14 +180,13 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   test("by keyboard: focus shows a ring, Enter follows it", async () => {
     await page.getByRole("tablist", { name: "Pages" }).getByRole("tab").first().click();
     await rail().getByRole("link", { name: "Phone home" }).focus();
-    await page.waitForTimeout(150);
-    await shoot("5-focus");
+    await shoot("5-focus", 150);
     await page.keyboard.press("Enter");
     await waitUntil(async () => (await activeTab())?.includes("Mobile") ?? false);
     expect(await opened()).toEqual([]);
   });
 
-  test("a link to the design itself shows the page that's open, whole", async () => {
+  test("a link to the canvas itself shows the page that's open, whole", async () => {
     await page.getByRole("tablist", { name: "Pages" }).getByRole("tab").first().click();
     await waitUntil(() => inView("Welcome"));
     await page.mouse.move(400, 400);
@@ -201,12 +200,12 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
 
   test("a board since deleted is muted text that says what happened", async () => {
     await rail().locator('[data-place="gone"]').hover();
-    await page.getByRole("tooltip").getByText("This board isn't in the design any more").waitFor();
+    await page.getByRole("tooltip").getByText("This board isn't in the canvas any more").waitFor();
     await shoot("6-gone");
     // And one that goes while the reply is on screen turns muted then.
     await page.evaluate(
-      ([designId, board]) =>
-        window.ponzuFake!.backend.agent(designId!).commit([{ op: "artboard.delete", id: board! }]),
+      ([canvasId, board]) =>
+        window.ponzuFake!.backend.agent(canvasId!).commit([{ op: "artboard.delete", id: board! }]),
       [world.id, world.picker],
     );
     await waitUntil(async () => (await rail().locator('[data-place="gone"]').count()) === 2);
@@ -217,15 +216,15 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     await rail().getByRole("link", { name: "this" }).click();
     expect(await opened()).toEqual([
       "https://ponzu.design/docs",
-      "https://ponzu.design.evil.test/designs/x?artboard=ab_1",
+      "https://ponzu.design.evil.test/canvases/x?artboard=ab_1",
     ]);
   });
 
   test("while a reply streams, a half-written link shows only its words", async () => {
     const say = (text: string, streaming: boolean) =>
       page.evaluate(
-        ([designId, t, s]) =>
-          window.ponzuFake!.backend.agent(designId as string).say(t as string, {
+        ([canvasId, t, s]) =>
+          window.ponzuFake!.backend.agent(canvasId as string).say(t as string, {
             id: "ti_stream00000001",
             streaming: s as boolean,
           }),
@@ -237,7 +236,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     const text = (await rail().textContent()) ?? "";
     expect(text).not.toContain("[Phone");
     expect(text).not.toContain("](");
-    expect(text).not.toContain("ponzu.design/des");
+    expect(text).not.toContain("ponzu.design/can");
     await shoot("7-streaming");
     // Closed while still streaming, it works at once.
     await say(`${line}, and`, true);
@@ -245,22 +244,21 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     await rail().getByRole("link", { name: "Phone home" }).last().click();
     await waitUntil(async () => (await activeTab())?.includes("Mobile") ?? false);
     await say(`${line}, and I'd pick A.`, false);
+
+    // In dark, the two kinds of link still read apart: a picture to look at, nothing to assert.
+    if (SHOTS) {
+      await page.emulateMedia({ colorScheme: "dark" });
+      await shoot("8-links-dark", 300);
+      await rail().getByRole("link", { name: "Phone home" }).first().hover();
+      await shoot("9-hover-dark", 250);
+      await page.emulateMedia({ colorScheme: "light" });
+    }
   });
 
-  test("in dark, the two kinds of link still read apart", async () => {
-    await page.emulateMedia({ colorScheme: "dark" });
-    await page.waitForTimeout(300);
-    await shoot("8-links-dark");
-    await rail().getByRole("link", { name: "Phone home" }).first().hover();
-    await page.waitForTimeout(250);
-    await shoot("9-hover-dark");
-    await page.emulateMedia({ colorScheme: "light" });
-  });
-
-  test("another design's board opens that design, in the app", async () => {
+  test("another canvas's board opens that canvas, in the app", async () => {
     // The turn has ended, so only its answer is left in the thread: the agent says it again.
     await page.evaluate(
-      ([designId, text]) => window.ponzuFake!.backend.agent(designId!).say(text!),
+      ([canvasId, text]) => window.ponzuFake!.backend.agent(canvasId!).say(text!),
       [world.id, `The cart is in [Checkout](${SITE}/${world.other}?artboard=ab_x).`],
     );
     await rail().getByRole("link", { name: "Checkout" }).click();

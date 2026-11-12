@@ -1,305 +1,14 @@
 import { expect, test } from "bun:test";
-import { ApiError, type PullRequestTab } from "@ponzu/client";
 import { createFakeBackend, settle } from "@ponzu/client/testing";
-import {
-  bodyForTab,
-  chromeAction,
-  prActionError,
-  prSummary,
-  rulesWant,
-  toPullRequestDetail,
-} from "./pull-request-map.ts";
-import { PullRequestStore } from "./pull-request-store.ts";
+import { chromeAction } from "./pull-request-map.ts";
+import { opensWith, PullRequestStore, tabMenu } from "./pull-request-store.ts";
 import { storePonzu } from "./store-ponzu.ts";
 
 /*
- * A design's pull request: the API's answer mapped onto the tab, and each state and action on
- * Ponzu Cloud in memory, which keeps the API's next action and refusals.
+ * A canvas's pull request on Ponzu Cloud in memory, which keeps the API's next action and
+ * refusals: each state and action. How the API's answer maps onto the tab is tested with the
+ * mapping, in packages/client/src/model/pull-request-map.test.ts.
  */
-
-type Pull = NonNullable<PullRequestTab["pullRequest"]>;
-
-const API_PULL: Pull = {
-  number: 412,
-  url: "https://github.com/north-brook/fernwood/pull/412",
-  title: "Quieter hero",
-  body: "Drops the paragraph. <img src=x onerror=alert(1)>",
-  state: "open",
-  head: { ref: "pz/hero", sha: "a".repeat(40) },
-  base: { ref: "main" },
-  author: { login: "maya", avatarUrl: null, bot: false, ponzu: false },
-  mergedBy: null,
-  createdAt: "2026-11-10T10:00:00.000Z",
-  updatedAt: "2026-11-10T11:00:00.000Z",
-  mergedAt: null,
-  closedAt: null,
-  mergeable: true,
-  mergeState: "blocked",
-  reviewDecision: "review_required",
-  autoMerge: null,
-  checks: {
-    state: "running",
-    complete: false,
-    items: [
-      {
-        name: "ci / test",
-        app: "GitHub Actions",
-        required: true,
-        state: "running",
-        url: "https://ci.example/test",
-        startedAt: "2026-11-10T10:01:00.000Z",
-        completedAt: null,
-      },
-      {
-        name: "deploy",
-        app: null,
-        required: false,
-        state: "cancelled",
-        url: null,
-        startedAt: null,
-        completedAt: null,
-      },
-      {
-        name: "lint",
-        app: "GitHub Actions",
-        required: false,
-        state: "neutral",
-        url: null,
-        startedAt: null,
-        completedAt: null,
-      },
-    ],
-  },
-  reviews: [
-    {
-      id: "r1",
-      author: {
-        login: "theo",
-        avatarUrl: "https://avatars.example/theo",
-        bot: false,
-        ponzu: false,
-      },
-      state: "approved",
-      at: "2026-11-10T10:30:00.000Z",
-      url: "https://github.com/x",
-    },
-    { id: "r2", author: null, state: "dismissed", at: null, url: "https://github.com/y" },
-  ],
-  conversation: [
-    {
-      id: "c1",
-      author: null,
-      body: "Can the comma match?",
-      at: "2026-11-10T10:20:00.000Z",
-      url: "https://github.com/z",
-      path: "src/hero.tsx",
-      line: 15,
-    },
-    {
-      id: "c2",
-      author: { login: "ponzu-dev", avatarUrl: null, bot: true, ponzu: true },
-      body: "Done.",
-      at: "2026-11-10T10:25:00.000Z",
-      url: "https://github.com/w",
-      path: null,
-      line: null,
-    },
-    {
-      id: "c3",
-      author: { login: "vercel", avatarUrl: null, bot: true, ponzu: false },
-      body: "Preview ready.",
-      at: "2026-11-10T10:26:00.000Z",
-      url: "https://github.com/v",
-      path: null,
-      line: null,
-    },
-  ],
-  files: {
-    total: 340,
-    additions: 30,
-    deletions: 4,
-    items: [
-      { path: "src/hero.tsx", change: "modified", additions: 20, deletions: 4 },
-      { path: "src/old.tsx", change: "deleted", additions: 0, deletions: 0 },
-    ],
-  },
-  commits: { total: 1, items: [] },
-};
-
-test("the API's pull request, field by field, as the tab draws it", () => {
-  expect(toPullRequestDetail(API_PULL)).toEqual({
-    number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
-    title: "Quieter hero",
-    // Untrusted, and passed on as text: the tab draws it through Prose.
-    body: "Drops the paragraph. <img src=x onerror=alert(1)>",
-    head: "pz/hero",
-    headSha: "a".repeat(40),
-    base: "main",
-    state: "open",
-    endedAt: null,
-    additions: 30,
-    deletions: 4,
-    checks: [
-      {
-        id: "GitHub Actions:ci / test:0",
-        name: "ci / test",
-        state: "running",
-        startedAt: "2026-11-10T10:01:00.000Z",
-        completedAt: null,
-        description: null,
-        url: "https://ci.example/test",
-      },
-      {
-        id: "status:deploy:1",
-        name: "deploy",
-        state: "failing",
-        startedAt: null,
-        completedAt: null,
-        description: null,
-        url: null,
-      },
-      {
-        id: "GitHub Actions:lint:2",
-        name: "lint",
-        state: "skipped",
-        startedAt: null,
-        completedAt: null,
-        description: null,
-        url: null,
-      },
-    ],
-    // GitHub has more than the hundred it listed.
-    checksComplete: false,
-    comments: [
-      {
-        id: "c1",
-        author: { login: "ghost", name: null, avatarUrl: null, agent: false },
-        body: "Can the comma match?",
-        at: "2026-11-10T10:20:00.000Z",
-        path: "src/hero.tsx",
-        line: 15,
-        url: "https://github.com/z",
-      },
-      // The Ponzu App's bot is the agent; another bot is itself.
-      {
-        id: "c2",
-        author: { login: "ponzu-dev", name: null, avatarUrl: null, agent: true },
-        body: "Done.",
-        at: "2026-11-10T10:25:00.000Z",
-        path: null,
-        line: null,
-        url: "https://github.com/w",
-      },
-      {
-        id: "c3",
-        author: { login: "vercel", name: null, avatarUrl: null, agent: false },
-        body: "Preview ready.",
-        at: "2026-11-10T10:26:00.000Z",
-        path: null,
-        line: null,
-        url: "https://github.com/v",
-      },
-    ],
-    // A dismissed review no longer stands.
-    reviews: [
-      {
-        id: "r1",
-        author: {
-          login: "theo",
-          name: null,
-          avatarUrl: "https://avatars.example/theo",
-          agent: false,
-        },
-        state: "approved",
-        at: "2026-11-10T10:30:00.000Z",
-      },
-    ],
-    files: [
-      {
-        path: "src/hero.tsx",
-        previousPath: null,
-        status: "modified",
-        additions: 20,
-        deletions: 4,
-        diff: null,
-      },
-      {
-        path: "src/old.tsx",
-        previousPath: null,
-        status: "removed",
-        additions: 0,
-        deletions: 0,
-        diff: null,
-      },
-    ],
-    filesTotal: 340,
-  });
-  const merged = { ...API_PULL, state: "merged" as const, mergedAt: "2026-11-10T12:00:00.000Z" };
-  expect(toPullRequestDetail(merged).endedAt).toBe("2026-11-10T12:00:00.000Z");
-});
-
-test("the chrome's mark comes from the design's head, and its button from the API's next action", () => {
-  expect(prSummary(undefined)).toBeNull();
-  const head = {
-    prNumber: 412,
-    prState: "open" as const,
-    prChecks: "passing" as const,
-    prMergeable: true,
-    prAutoMerge: false,
-  };
-  expect(prSummary(head)).toEqual({
-    number: 412,
-    state: "open",
-    checks: "passing",
-    mergeable: true,
-    autoMerge: false,
-  });
-  expect(prSummary({ ...head, prNumber: null, prState: null })).toBeNull();
-
-  const tab = (nextAction: PullRequestTab["nextAction"], pull: Pull | null = API_PULL) => ({
-    branch: {
-      name: "pz/hero",
-      base: "main",
-      exists: true,
-      aheadBy: 1,
-      behindBy: 0,
-      unpushed: 0,
-      pushError: null,
-    },
-    pullRequest: pull,
-    mergeMethod: "squash" as const,
-    autoMergeAllowed: true,
-    nextAction,
-  });
-  expect(chromeAction(tab("none"))).toBeNull();
-  expect(chromeAction(tab("merge"))).toBe("merge");
-  expect(chromeAction(tab("blocked"))).toBe("blocked");
-  expect(chromeAction(tab("update_branch"))).toBe("update_branch");
-  expect(chromeAction(tab("auto_merge"))).toBe("auto_merge");
-  const waiting = { ...API_PULL, autoMerge: { method: "squash" as const, enabledBy: null } };
-  expect(chromeAction(tab("auto_merge", waiting))).toBe("auto_merge_on");
-
-  expect(rulesWant(API_PULL)).toBe("The repo's rules want an approving review.");
-  expect(rulesWant({ ...API_PULL, reviewDecision: null })).toBe(
-    "Checks the repo's rules require haven't finished.",
-  );
-});
-
-test("each refusal says why in a sentence: the API's own where it writes one", () => {
-  const conflict = new ApiError(409, "merge_conflicts", "pz/hero conflicts with main.");
-  expect(prActionError(conflict)).toBe("pz/hero conflicts with main.");
-  expect(prActionError(new ApiError(0, "network", "x"))).toBe(
-    "Ponzu can't be reached. Check your connection and try again.",
-  );
-  expect(prActionError(new ApiError(401, "github_reauth_required", "x"))).toBe(
-    "GitHub needs you to sign in to Ponzu again before it acts for you.",
-  );
-  expect(prActionError(new ApiError(500, "internal", "Stack trace"))).toBe(
-    "That didn't work. Try again.",
-  );
-  expect(prActionError(new Error("boom"))).toBe("That didn't work. Try again.");
-});
 
 async function world() {
   const backend = createFakeBackend();
@@ -310,20 +19,21 @@ async function world() {
     repos: [{ name: "site" }],
   });
   const client = backend.connect(maya);
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: ws.id,
     repoId: ws.repos[0]!.id,
     name: "Pricing",
   });
   const said: string[] = [];
   const told: string[] = [];
+  const ponzu = storePonzu(client.api);
   const store = new PullRequestStore({
-    ponzu: storePonzu(client.api),
-    designId: design.id,
+    ponzu,
+    canvasId: canvas.id,
     say: (m) => said.push(m),
     tellAgent: (t) => told.push(t),
   });
-  const github = backend.design(design.id).github!;
+  const github = backend.canvas(canvas.id).github!;
   const read = async () => {
     store.refresh();
     await settle();
@@ -334,14 +44,14 @@ async function world() {
     await settle();
     return store.getSnapshot();
   };
-  return { backend, client, design, store, github, said, told, read, run };
+  return { backend, client, ponzu, canvas, store, github, said, told, read, run };
 }
 
-test("from changes on the branch to a merge: create, ready, merge, and the design settles", async () => {
+test("from changes on the branch to a merge: create, ready, merge, and the canvas settles", async () => {
   const w = await world();
   expect((await w.read()).tab?.nextAction).toBe("none");
 
-  w.backend.agent(w.design.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
   const pushed = await w.read();
   expect(chromeAction(pushed.tab!)).toBe("create_pr");
 
@@ -353,22 +63,69 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
   expect(opened.tab?.pullRequest).toMatchObject({ state: "draft", title: "Pricing" });
   expect(chromeAction(opened.tab!)).toBe("ready");
   // GitHub's word is said in the thread once, and the head follows.
-  const head = await w.client.api.designs.get(w.design.id);
+  const head = await w.client.api.canvases.get(w.canvas.id);
   expect([head.prNumber, head.prState]).toEqual([opened.tab!.pullRequest!.number, "draft"]);
 
   expect(chromeAction((await w.run("ready")).tab!)).toBe("merge");
   const merged = await w.run("merge");
   expect(merged.tab?.pullRequest?.state).toBe("merged");
   expect(chromeAction(merged.tab!)).toBeNull();
-  expect((await w.client.api.designs.get(w.design.id)).status).toBe("settled");
+  expect((await w.client.api.canvases.get(w.canvas.id)).status).toBe("settled");
   const notices = w.backend
-    .design(w.design.id)
+    .canvas(w.canvas.id)
     .thread.map((e) => e.item)
     .filter((i) => i.kind === "notice");
   expect(
     notices.map((n) => n.kind === "notice" && n.payload.type === "pull_request" && n.payload.state),
   ).toEqual(["draft", "merged"]);
   expect(w.said).toEqual([]);
+});
+
+test("a canvas opened again starts from its last answer; a read asked ahead stands for the one on opening", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  await w.read();
+  w.store.close();
+  // Opened again, on the same cache: the tab is there before anything is read.
+  const { ponzu } = w;
+  const again = new PullRequestStore({ ponzu, canvasId: w.canvas.id, say() {}, tellAgent() {} });
+  expect(again.getSnapshot()).toMatchObject({ status: "ready" });
+  expect(chromeAction(again.getSnapshot().tab!)).toBe("create_pr");
+  // Another canvas never shows this one's.
+  const other = await w.client.api.canvases.create({
+    workspaceId: w.canvas.workspaceId,
+    repoId: w.canvas.repo!.id,
+    name: "Other",
+  });
+  const elsewhere = new PullRequestStore({ ponzu, canvasId: other.id, say() {}, tellAgent() {} });
+  expect(elsewhere.getSnapshot()).toMatchObject({ tab: null, status: "loading" });
+  // Just answered (as a read on the row's hover would be): the read on opening stands on it.
+  let reads = 0;
+  const get = w.client.api.canvases.pullRequest.get;
+  w.client.api.canvases.pullRequest.get = (id) => {
+    reads++;
+    return get(id);
+  };
+  again.refreshOnOpen();
+  expect(reads).toBe(0);
+  // Asked a moment ago, it is as good as confirmed.
+  expect(again.getSnapshot().confirmed).toBe(true);
+  again.close();
+  // Kept from longer ago: shown, but not yet confirmed, and the read on opening goes out.
+  ponzu.queryClient.setQueryData(ponzu.queries.pullRequest(w.canvas.id).queryKey, (tab) => tab, {
+    updatedAt: Date.now() - 60_000,
+  });
+  const later = new PullRequestStore({ ponzu, canvasId: w.canvas.id, say() {}, tellAgent() {} });
+  expect(later.getSnapshot()).toMatchObject({ status: "ready", confirmed: false });
+  const kept = later.getSnapshot().tab;
+  later.refreshOnOpen();
+  await settle();
+  expect(reads).toBeGreaterThan(0);
+  // The same answer again: the same tab (nothing on screen changes), now confirmed.
+  expect(later.getSnapshot()).toMatchObject({ confirmed: true });
+  expect(later.getSnapshot().tab).toBe(kept);
+  later.close();
+  elsewhere.close();
 });
 
 test("commits only the sandbox holds: Create PR is offered, waits for the push, then opens", async () => {
@@ -404,17 +161,17 @@ test("a push Create PR waits on that fails says why, and the button comes back",
   await settle();
   expect(w.store.getSnapshot().busy).toBe("create_pr");
 
-  w.github.failPush("pz/pricing on GitHub has commits this design doesn't.");
+  w.github.failPush("pz/pricing on GitHub has commits this canvas doesn't.");
   await w.read();
   expect(w.store.getSnapshot().busy).toBeNull();
-  expect(w.said).toEqual(["pz/pricing on GitHub has commits this design doesn't."]);
+  expect(w.said).toEqual(["pz/pricing on GitHub has commits this canvas doesn't."]);
   expect(chromeAction(w.store.getSnapshot().tab!)).toBe("create_pr");
   w.store.close();
 });
 
 test("checks running offer auto-merge; failing ones and conflicts are asked of the agent", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -440,7 +197,7 @@ test("checks running offer auto-merge; failing ones and conflicts are asked of t
 
 test("behind its base, Update branch; held by the rules without auto-merge, Merge asks first", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -471,7 +228,7 @@ test("behind its base, Update branch; held by the rules without auto-merge, Merg
 
 test("Merge anyway goes out with the commit the person confirmed, never one pushed since", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -481,7 +238,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
   const asked = (await w.run("blocked")).bypass!;
 
   // The agent pushes while the dialog is open, and the next read has the new head.
-  w.backend.agent(w.design.id).push([{ path: "src/x.ts", additions: 3 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/x.ts", additions: 3 }]);
   const moved = await w.read();
   expect(moved.tab?.pullRequest?.head.sha).not.toBe(asked.headSha);
   // The question was about a commit that isn't the head now: it closes.
@@ -492,7 +249,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
 
   // Asked again, and confirmed after a push the store hasn't read: the API refuses it.
   const again = (await w.run("blocked")).bypass!;
-  w.backend.agent(w.design.id).push([{ path: "src/y.ts", additions: 1 }]);
+  w.backend.agent(w.canvas.id).push([{ path: "src/y.ts", additions: 1 }]);
   w.store.confirmBypass();
   await settle();
   expect(w.said.at(-1)).toBe("The branch has new commits since you looked. Look again first.");
@@ -503,7 +260,7 @@ test("Merge anyway goes out with the commit the person confirmed, never one push
 
 test("the bypass question keeps its reason true, and closes once the rules let the merge go", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -519,7 +276,7 @@ test("the bypass question keeps its reason true, and closes once the rules let t
 
 test("Fix checks and Resolve ask the agent once for a commit", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -536,7 +293,7 @@ test("Fix checks and Resolve ask the agent once for a commit", async () => {
   expect(w.told).toHaveLength(2);
 
   // A push moves the head: the question is new.
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   w.github.setChecks([{ name: "ci / e2e", state: "failed" }]);
   expect((await w.read()).asked).toBeNull();
   await w.run("fix_checks");
@@ -545,7 +302,7 @@ test("Fix checks and Resolve ask the agent once for a commit", async () => {
 
 test("a merge GitHub's rules refuse says why, and the button follows what is true now", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
   await w.run("ready");
@@ -560,25 +317,186 @@ test("a merge GitHub's rules refuse says why, and the button follows what is tru
   // A push since the person looked.
   w.github.protect({ review: false });
   await w.read();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.run("merge");
   expect(w.said[1]).toBe("The branch has new commits since you looked. Look again first.");
 });
 
 test("a closed pull request offers to open another once the branch has changes", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push();
+  w.backend.agent(w.canvas.id).push();
   await w.read();
   await w.run("create_pr");
-  await w.client.api.designs.pullRequest.close(w.design.id);
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
   const closed = await w.read();
   expect(closed.tab?.pullRequest?.state).toBe("closed");
   expect(chromeAction(closed.tab!)).toBe("create_pr");
 });
 
+test("Close asks first, closes the one it asked about, and Create PR comes back", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  const draft = (await w.run("create_pr")).tab!.pullRequest!;
+  // A draft can be closed too; nothing is said to GitHub until the person confirms.
+  expect(tabMenu(w.store.getSnapshot(), w.store)).toMatchObject({ busy: false });
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.onTurnOffAutoMerge).toBeUndefined();
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toEqual({ number: draft.number });
+  w.store.cancelClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  expect((await w.read()).tab?.pullRequest?.state).toBe("draft");
+
+  w.store.askClose();
+  w.store.confirmClose();
+  expect(w.store.getSnapshot()).toMatchObject({ busy: "close", closing: null });
+  await settle();
+  const closed = w.store.getSnapshot();
+  expect(closed.busy).toBeNull();
+  expect(closed.tab?.pullRequest?.state).toBe("closed");
+  expect(chromeAction(closed.tab!)).toBe("create_pr");
+  // Nothing more to do to a closed one.
+  expect(tabMenu(closed, w.store)).toBeNull();
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  expect(w.said).toEqual([]);
+
+  // Create PR opens a new one from the same branch.
+  const again = (await w.run("create_pr")).tab!.pullRequest!;
+  expect(again.state).toBe("draft");
+  expect(again.number).not.toBe(draft.number);
+});
+
+test("a Close asked before an auto-merge landed closes nothing, read or not", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.setChecks([{ name: "ci / test", state: "running", required: true }]);
+  await w.read();
+  await w.run("auto_merge");
+
+  // The read shows it merged while the dialog is open: the question closes, and so does nothing.
+  w.store.askClose();
+  w.github.setChecks([{ name: "ci / test", state: "passed", required: true }]);
+  await w.client.api.canvases.pullRequest.merge(w.canvas.id, {
+    headSha: w.store.getSnapshot().tab!.pullRequest!.head.sha,
+  });
+  expect((await w.read()).closing).toBeNull();
+  w.store.confirmClose();
+  await settle();
+  expect(w.store.getSnapshot().tab?.pullRequest?.state).toBe("merged");
+  expect(w.said).toEqual([]);
+});
+
+test("a Close confirmed after a merge the store hasn't read is refused by the API, and says so", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  const number = w.store.getSnapshot().tab!.pullRequest!.number;
+  w.store.askClose();
+  await w.client.api.canvases.pullRequest.merge(w.canvas.id, {
+    headSha: w.store.getSnapshot().tab!.pullRequest!.head.sha,
+  });
+  w.store.confirmClose();
+  await settle();
+  expect(w.said).toEqual([`#${number} is merged.`]);
+  // The refusal reads it again: the tab shows it merged.
+  expect(w.store.getSnapshot()).toMatchObject({
+    busy: null,
+    tab: { pullRequest: { state: "merged" } },
+  });
+});
+
+test("a Close confirmed after a newer pull request opened, unread, leaves the newer one open", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  const first = (await w.run("create_pr")).tab!.pullRequest!;
+  w.store.askClose();
+  // Someone closes it and a new one opens from the branch before the store reads either.
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
+  const second = (await w.client.api.canvases.pullRequest.open(w.canvas.id)).pullRequest!;
+  expect(second.number).not.toBe(first.number);
+
+  w.store.confirmClose();
+  await settle();
+  expect(w.said).toEqual([
+    `This canvas's pull request is #${second.number} now, not #${first.number}. Look again first.`,
+  ]);
+  expect(w.store.getSnapshot()).toMatchObject({
+    busy: null,
+    tab: { pullRequest: { number: second.number, state: "draft" } },
+  });
+});
+
+test("Turn off auto-merge, from the menu while it is on; the button offers it again", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.setChecks([{ name: "ci / test", state: "running", required: true }]);
+  await w.read();
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.onTurnOffAutoMerge).toBeUndefined();
+  // Off already: nothing goes to the API.
+  w.store.turnOffAutoMerge();
+  expect(w.store.getSnapshot().busy).toBeNull();
+
+  expect(chromeAction((await w.run("auto_merge")).tab!)).toBe("auto_merge_on");
+  const menu = tabMenu(w.store.getSnapshot(), w.store)!;
+  menu.onTurnOffAutoMerge!();
+  expect(w.store.getSnapshot().busy).toBe("auto_merge_off");
+  // One thing at a time: Close waits while it is on its way.
+  expect(tabMenu(w.store.getSnapshot(), w.store)?.busy).toBe(true);
+  w.store.askClose();
+  expect(w.store.getSnapshot().closing).toBeNull();
+  await settle();
+  const off = w.store.getSnapshot();
+  expect(off.busy).toBeNull();
+  expect(off.tab?.pullRequest?.autoMerge).toBeNull();
+  expect(chromeAction(off.tab!)).toBe("auto_merge");
+  expect((await w.client.api.canvases.get(w.canvas.id)).prState).toBe("open");
+  expect(w.said).toEqual([]);
+});
+
+test("the description it opens with: the agent's kept words while Create PR is offered", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  w.github.describe(
+    "<!-- ponzu:summary -->\nShortens **pricing** to one table.\n<!-- /ponzu:summary -->",
+  );
+  const before = (await w.read()).tab!;
+  expect(before.pullRequest).toBeNull();
+  expect(opensWith(before)).toBe("Shortens **pricing** to one table.");
+
+  // Open, its description says them: the tab doesn't say them twice.
+  const opened = (await w.run("create_pr")).tab!;
+  expect(opened.summary).toBeNull();
+  expect(opensWith(opened)).toBeNull();
+
+  // Closed with the branch still ahead: what Create PR opens the next one with.
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
+  const closed = (await w.read()).tab!;
+  expect(chromeAction(closed)).toBe("create_pr");
+  expect(opensWith(closed)).toBe("Shortens **pricing** to one table.");
+
+  // Merged with nothing since: nothing to open, so nothing it opens with.
+  await w.run("create_pr");
+  await w.run("ready");
+  const merged = (await w.run("merge")).tab!;
+  expect(merged.summary).not.toBeNull();
+  expect(opensWith(merged)).toBeNull();
+  // An API older than the field.
+  expect(opensWith({ ...closed, summary: undefined as unknown as null })).toBeNull();
+});
+
 test("a file's diff is asked for when its card opens, with where a renamed one was", async () => {
   const w = await world();
-  w.backend.agent(w.design.id).push([
+  w.backend.agent(w.canvas.id).push([
     { path: "src/a.tsx", patch: "@@ -1 +1 @@\n-a\n+b" },
     { path: "logo.png", patch: null },
     { path: "src/hero-copy.tsx", change: "renamed", previousPath: "src/copy.tsx" },
@@ -597,27 +515,11 @@ test("a file's diff is asked for when its card opens, with where a renamed one w
   await expect(w.store.loadDiff("nope.ts")).rejects.toMatchObject({ code: "not_found" });
 });
 
-test("a Scratch design has no pull request to read", async () => {
+test("a Scratch canvas has no pull request to read", async () => {
   const w = await world();
-  const scratch = await w.client.api.designs.create({
-    workspaceId: (await w.client.api.designs.get(w.design.id)).workspaceId,
+  const scratch = await w.client.api.canvases.create({
+    workspaceId: (await w.client.api.canvases.get(w.canvas.id)).workspaceId,
   });
-  const refused = await w.client.api.designs.pullRequest.get(scratch.id).catch((e) => e);
+  const refused = await w.client.api.canvases.pullRequest.get(scratch.id).catch((e) => e);
   expect(refused.code).toBe("no_repository");
-});
-
-test("the tab shows a description without what Ponzu wrote for GitHub's own page", () => {
-  const body = [
-    "<!-- ponzu:summary -->\nAdds the **Pro** pricing card.\n<!-- /ponzu:summary -->",
-    '<!-- ponzu:picture --><a href="https://ponzu.design/designs/des_1"><picture><source media="(prefers-color-scheme: dark)" srcset="https://assets/d.png"><img src="https://assets/l.png" alt="Pricing card" width="720"></picture></a><!-- /ponzu:picture -->',
-    "Designed in Ponzu: [Pricing card](https://ponzu.design/designs/des_1)",
-    "Reviewer note: <b>kept</b>.",
-  ].join("\n\n");
-  expect(bodyForTab(body)).toBe("Adds the **Pro** pricing card.\n\nReviewer note: <b>kept</b>.");
-  // An empty summary leaves nothing.
-  expect(
-    bodyForTab(
-      "<!-- ponzu:summary -->\n\n<!-- /ponzu:summary -->\n\nDesigned in Ponzu: [A](https://ponzu.design/designs/des_1)",
-    ),
-  ).toBe("");
 });

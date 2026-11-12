@@ -79,7 +79,7 @@ export function docSummary(
     linkOf?: (at: { page: string } | { artboard: string }) => string | undefined;
   } = {},
 ): string {
-  const lines = [`Design: ${doc.name}`];
+  const lines = [`Canvas: ${doc.name}`];
   const link = (at: { page: string } | { artboard: string }) => {
     const to = opts.linkOf?.(at);
     return to ? ` · link: ${to}` : "";

@@ -6,7 +6,7 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
 
 /*
  * A board whose root has a border-radius, drawn by the canvas in a real browser: its corners are
- * the design's, not squared off by the canvas's own few px, and its sheet, shadow and working
+ * the board's own, not squared off by the view's few px, and its sheet, shadow and working
  * ring follow them. The second run of the Mac app drew a 16px card square while the sandbox's
  * screenshot showed it round.
  */
@@ -148,15 +148,12 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     await page.close();
   });
 
-  test("a root with no radius, or a smaller one, takes the canvas's few px", async () => {
+  // A smaller radius than the canvas's is cornersCss's max(), in corners.test.ts.
+  test("a root with no radius takes the canvas's few px", async () => {
     await mount("width:320px;height:200px;background:#fff6b3");
     const plain = await drawn();
     expect(Number.parseFloat(plain.root)).toBeGreaterThan(0);
     expect(plain.root).toBe(plain.sheet);
-    await page.close();
-    await mount("width:320px;height:200px;background:#fff6b3;border-radius:1px");
-    const tight = await drawn();
-    expect(tight.root).toBe(plain.root);
     await page.close();
   });
 
@@ -195,23 +192,14 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     await page.close();
   });
 
-  test("a radius in a calc() rounds the sheet under the card too", async () => {
-    await mount("width:320px;height:200px;background:#fff6b3;border-radius:calc(8px * 3)");
+  test("a radius in a token (var()) and a calc() rounds the sheet as the content", async () => {
+    await mount(
+      "--radius-lg:20px;width:320px;height:200px;background:#fff6b3;border-radius:calc(var(--radius-lg) + 4px)",
+    );
     const d = await drawn();
     expect(d.root).toBe("24px");
     expect(d.sheet).toBe("24px");
     await cornerIsRound(24, 24);
-    await page.close();
-  });
-
-  test("a radius in a token (var()) rounds the sheet as the content", async () => {
-    await mount(
-      "--radius-lg:20px;width:320px;height:200px;background:#fff6b3;border-radius:var(--radius-lg)",
-    );
-    const d = await drawn();
-    expect(d.root).toBe("20px");
-    expect(d.sheet).toBe("20px");
-    await cornerIsRound(20, 20);
     await page.close();
   });
 

@@ -4,8 +4,9 @@ import type { AppPermissions, GithubTransport } from "./github.ts";
 import { answer, bearer, type GithubAnswer, graphql, repoParams, send } from "./github-octokit.ts";
 
 /*
- * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
- * writes its description, with a token for the one repository; the person opens it, merges it,
+ * A canvas's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
+ * writes its description, with a token for the one repository; the person (or the agent, as the
+ * person its turn is for) opens it, merges it,
  * marks it ready, sets auto-merge, closes it and updates its branch with their own user token,
  * so GitHub holds them to the repo's rules as they apply to them and names them as who did it.
  *
@@ -84,6 +85,16 @@ export interface GithubRemark {
   /** For a line comment, the file and line it is on. */
   path: string | null;
   line: number | null;
+  /**
+   * For a line comment, whether its thread was marked resolved on GitHub; null for any other, and
+   * for one whose thread GitHub didn't answer for (it isn't known, so it is not called unresolved).
+   */
+  resolved: boolean | null;
+  /**
+   * For a line comment, its author's GitHub id when the author is a person: what the agent's read
+   * of it asks GitHub whether they can push by, as for a review that reaches it as an event.
+   */
+  authorId?: number | null;
 }
 
 export interface GithubChangedFile {
@@ -99,6 +110,23 @@ export interface GithubCommit {
   at: Date;
   /** Their GitHub login, or the name in the commit when they have none. */
   author: string | null;
+}
+
+/** GitHub's word on a pull request's entry in a merge queue (`MergeQueueEntryState`). */
+export const MERGE_QUEUE_STATES = [
+  "queued",
+  "awaiting_checks",
+  "mergeable",
+  "unmergeable",
+  "locked",
+] as const;
+export type MergeQueueState = (typeof MERGE_QUEUE_STATES)[number];
+
+export interface GithubMergeQueue {
+  /** The base branch's rules send every merge through a merge queue. */
+  enabled: boolean;
+  /** Its entry while it is in the queue: where, from 1, and how it stands. */
+  entry: { state: MergeQueueState; position: number | null } | null;
 }
 
 export interface GithubPullRequest {
@@ -123,13 +151,18 @@ export interface GithubPullRequest {
   reviewDecision: ReviewDecision | null;
   autoMerge: { method: MergeMethod; enabledBy: GithubWho | null } | null;
   checks: { state: PrChecks; items: GithubCheck[]; complete: boolean };
+  /**
+   * Whether its base merges through a merge queue (docs/cloud.md, "Pull requests"), and its place
+   * in the queue while it is in one.
+   */
+  mergeQueue: GithubMergeQueue;
   reviews: GithubReview[];
   conversation: GithubRemark[];
   files: { total: number; additions: number; deletions: number; items: GithubChangedFile[] };
   commits: { total: number; items: GithubCommit[] };
 }
 
-/** What one read finds about a design's branch and the pull request asked for. */
+/** What one read finds about a canvas's branch and the pull request asked for. */
 export interface GithubPullRequestRead {
   /** The ways the repo lets a pull request merge, the one to use first. */
   mergeMethods: MergeMethod[];
@@ -162,6 +195,11 @@ export type PersonResult =
   | "head_moved"
   /** GitHub does not let this person do this here. */
   | "forbidden"
+  /**
+   * It would change a file under `.github/workflows/`, which GitHub refuses to Ponzu's App (and
+   * so to a person's token through it) without the `workflows` permission.
+   */
+  | "workflow_permission"
   /** GitHub refused it for some other reason. */
   | "refused";
 
@@ -222,6 +260,11 @@ export interface GithubPullRequests {
     method: MergeMethod,
   ): Promise<PersonResult>;
   disableAutoMerge(userToken: string, pullRequestId: string): Promise<PersonResult>;
+  /**
+   * As the person: adds it to its base's merge queue, only while its head is at `sha`. GitHub
+   * merges it once the queue's checks pass.
+   */
+  enqueuePullRequest(userToken: string, pullRequestId: string, sha: string): Promise<PersonResult>;
   /** As the person: merges only while the branch is at `sha`. */
   mergePullRequest(
     userToken: string,
@@ -275,6 +318,7 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
     pullRequest(number: $number) @include(if: $known) {
       id number url title body state isDraft createdAt updatedAt mergedAt closedAt
       mergeable mergeStateStatus reviewDecision
+      isMergeQueueEnabled mergeQueueEntry { state position }
       headRefName headRefOid baseRefName
       headRepository { databaseId }
       author { ${WHO} }
@@ -290,14 +334,31 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
       } } } } } }
       comments(last: 100) { nodes { id url body createdAt author { ${WHO} } } }
       reviews(last: 100) { nodes { id url state body submittedAt author { ${WHO} }
-        comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} } } } } }
+        comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} ... on User { databaseId } } } } } }
+      reviewThreads(last: 100) { nodes { isResolved comments(first: 30) { nodes { id } } } }
     }
   }
 }`;
 
+/** The tab query's merge queue fields, which GitHub may refuse alone (`readPullRequest`). */
+const QUEUE_FIELDS = ["isMergeQueueEnabled", "mergeQueueEntry"];
+
 const MARK_READY = `mutation MarkReady($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`;
 const ENABLE_AUTO_MERGE = `mutation EnableAutoMerge($id: ID!, $mergeMethod: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $mergeMethod }) { clientMutationId } }`;
 const DISABLE_AUTO_MERGE = `mutation DisableAutoMerge($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`;
+/**
+ * `EnqueuePullRequestInput` is `pullRequestId`, `expectedHeadOid` and `jump`, as GitHub's schema
+ * answered an introspection on 12 Nov 2026. `jump` (the front of the queue) is never sent.
+ */
+const ENQUEUE = `mutation EnqueuePullRequest($id: ID!, $expectedHeadOid: GitObjectID) { enqueuePullRequest(input: { pullRequestId: $id, expectedHeadOid: $expectedHeadOid }) { mergeQueueEntry { state position } } }`;
+
+/**
+ * GitHub's own words when something would change a workflow file without the permission to:
+ * "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml`
+ * without `workflows` permission". The runner's push.ts reads a push's refusal the same way.
+ */
+export const WORKFLOW_REFUSAL =
+  /refusing to allow (?:a GitHub App|an OAuth App|an integration) to create or update workflow|without `?workflows?`? (?:permission|scope)/i;
 
 export function createPullRequestCalls({ octokit, asApp }: GithubTransport): GithubPullRequests {
   const target = ({ installationId, repository }: PullRequestRepo) => ({
@@ -305,9 +366,16 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
     repositoryId: repository.id,
   });
 
-  async function mutate(userToken: string, query: string, variables: Record<string, unknown>) {
+  async function mutate(
+    userToken: string,
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<PersonResult> {
     const { errors } = await graphql(octokit, "user", userToken, query, variables);
     if (errors.length === 0) return "done";
+    if (errors.some((error) => WORKFLOW_REFUSAL.test(String(error.message ?? "")))) {
+      return "workflow_permission";
+    }
     return errors.some((error) => error.type === "FORBIDDEN") ? "forbidden" : "refused";
   }
 
@@ -326,7 +394,15 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
         // A number GitHub does not have is an error about that part alone; the rest still holds.
         const noSuchNumber = (error: { type?: string; path?: unknown[] }) =>
           error.type === "NOT_FOUND" && error.path?.[1] === "pullRequest";
-        if (!data?.repository || !errors.every(noSuchNumber)) {
+        // The merge queue's fields can be refused to an App without the "Merge queues"
+        // permission, which Ponzu's tokens don't ask for: read as no queue, never as a failed
+        // tab. A merge GitHub then sends to its queue is refused by GitHub, never merged past it.
+        const queueUnreadable = (error: { path?: unknown[] }) =>
+          error.path?.[1] === "pullRequest" && QUEUE_FIELDS.includes(String(error.path?.[2] ?? ""));
+        if (
+          !data?.repository ||
+          !errors.every((error) => noSuchNumber(error) || queueUnreadable(error))
+        ) {
           const notFound = errors.some((error) => error.type === "NOT_FOUND");
           throw new UpstreamError("github", "the pull request query was refused", {
             status: notFound ? 404 : 502,
@@ -401,6 +477,8 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
     enableAutoMerge: (userToken, id, method) =>
       mutate(userToken, ENABLE_AUTO_MERGE, { id, mergeMethod: method.toUpperCase() }),
     disableAutoMerge: (userToken, id) => mutate(userToken, DISABLE_AUTO_MERGE, { id }),
+    enqueuePullRequest: (userToken, id, sha) =>
+      mutate(userToken, ENQUEUE, { id, expectedHeadOid: sha }),
 
     async mergePullRequest(userToken, { fullName, number, method, sha }) {
       const merged = await answer("user", () =>
@@ -412,6 +490,7 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
           headers: bearer(userToken),
         }),
       );
+      if (refusesWorkflows(merged)) return "workflow_permission";
       if (merged.status === 405) return mergeRefusal(messageOf(merged));
       return personResult(merged, { 409: "head_moved" });
     },
@@ -427,7 +506,10 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
       );
       // GitHub says a moved head with a 422 and these words; any other 422 is something else.
       const moved = updated.status === 422 && /expected head sha/i.test(messageOf(updated));
-      return moved ? "head_moved" : personResult(updated, {});
+      if (moved) return "head_moved";
+      // Merging the base in would bring a workflow file the App may not write onto the branch.
+      if (refusesWorkflows(updated)) return "workflow_permission";
+      return personResult(updated, {});
     },
 
     async closePullRequest(userToken, { fullName, number }) {
@@ -462,6 +544,11 @@ function messageOf(answer: GithubAnswer): string {
   return [answer.body?.message, ...errors.map((error) => error?.message ?? error?.field)]
     .filter((part) => typeof part === "string")
     .join(" ");
+}
+
+/** Whether GitHub refused it for a workflow file the App may not write, in its own words. */
+function refusesWorkflows(answer: GithubAnswer): boolean {
+  return answer.status >= 400 && WORKFLOW_REFUSAL.test(messageOf(answer));
 }
 
 /** What GitHub's words for a merge it refused (a 405) say the repo's rules still want. */
@@ -531,15 +618,28 @@ function toRead(repository: any): GithubPullRequestRead {
 function toPullRequest(pr: any): GithubPullRequest {
   const rollup = pr.head.nodes[0]?.commit.statusCheckRollup ?? null;
   const reviews: any[] = pr.reviews.nodes;
+  // Whether each line comment's thread is resolved, by the comment's id: GitHub keeps that on
+  // the thread, not the comment.
+  const resolved = new Map<string, boolean>(
+    (pr.reviewThreads?.nodes ?? []).flatMap((thread: any) =>
+      (thread.comments?.nodes ?? []).map((comment: any) => [
+        comment.id,
+        thread.isResolved === true,
+      ]),
+    ),
+  );
   const conversation: GithubRemark[] = [
     ...pr.comments.nodes.map((comment: any) => remark(comment, null, null)),
     ...reviews
       .filter((review) => review.body?.trim())
       .map((review) => remark({ ...review, createdAt: review.submittedAt }, null, null)),
     ...reviews.flatMap((review) =>
-      review.comments.nodes.map((comment: any) =>
-        remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
-      ),
+      review.comments.nodes.map((comment: any) => ({
+        ...remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
+        // Unknown (null) for one whose thread the query's last 100 left out: never unresolved.
+        resolved: resolved.get(comment.id) ?? null,
+        authorId: typeof comment.author?.databaseId === "number" ? comment.author.databaseId : null,
+      })),
     ),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
   return {
@@ -587,6 +687,10 @@ function toPullRequest(pr: any): GithubPullRequest {
       items: (rollup?.contexts.nodes ?? []).map(toCheck),
       complete: !rollup || rollup.contexts.totalCount <= rollup.contexts.nodes.length,
     },
+    mergeQueue: {
+      enabled: pr.isMergeQueueEnabled === true,
+      entry: queueEntry(pr.mergeQueueEntry),
+    },
     reviews: reviews
       .filter((review) => REVIEW_STATES.includes(review.state))
       .map((review) => ({
@@ -633,6 +737,18 @@ const MERGE_STATES = [
 /** The reviews that are a verdict; a review that only comments is in the conversation. */
 const REVIEW_STATES = ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"];
 
+/** A merge queue entry, or null for none; a state GitHub adds later reads as `queued`. */
+function queueEntry(entry: any): GithubMergeQueue["entry"] {
+  if (!entry) return null;
+  const state = String(entry.state).toLowerCase();
+  return {
+    state: (MERGE_QUEUE_STATES as readonly string[]).includes(state)
+      ? (state as MergeQueueState)
+      : "queued",
+    position: typeof entry.position === "number" ? entry.position : null,
+  };
+}
+
 function who(actor: any): GithubWho | null {
   if (!actor?.login) return null;
   return {
@@ -665,6 +781,7 @@ function remark(node: any, path: string | null, line: number | null): GithubRema
     url: node.url,
     path,
     line,
+    resolved: null,
   };
 }
 

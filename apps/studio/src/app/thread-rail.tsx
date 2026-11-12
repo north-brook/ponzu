@@ -6,13 +6,14 @@ import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
 import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
 import { useNow } from "../cloud/time.ts";
+import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
-import type { DesignAddress } from "../cloud/ui/design-address.ts";
-import { type DesignPlaces, DesignPlacesProvider } from "../cloud/ui/place-link.tsx";
+import { type CanvasPlaces, CanvasPlacesProvider } from "../cloud/ui/place-link.tsx";
+import { type OpenCanvas, useAccess, useSourceState } from "./canvas.tsx";
 import { CommentScene } from "./comment-picture.tsx";
-import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
+import { takeOverRefusal } from "./take-over.ts";
 import {
   agentActivity,
   answerLine,
@@ -34,12 +35,12 @@ export interface CommentLink {
 }
 
 /*
- * The thread rail of an open design on live data (AppWindow's `rail`): its thread, what its agent
+ * The thread rail of an open canvas on live data (AppWindow's `rail`): its thread, what its agent
  * is doing, what it waits on in the composer's place, and the composer, with every send, answer,
- * upload and stop going to the API through the open design's stores.
+ * upload and stop going to the API through the open canvas's stores.
  */
 
-export function DesignRail({
+export function CanvasRail({
   host,
   open,
   me,
@@ -54,7 +55,7 @@ export function DesignRail({
   say,
 }: {
   host: Host;
-  open: OpenDesign;
+  open: OpenCanvas;
   me: Person;
   /** The workspace's members by id. */
   people: ReadonlyMap<string, Person>;
@@ -65,20 +66,21 @@ export function DesignRail({
   onOpenArtboards: (artboardIds: string[]) => void;
   /** Takes the canvas to a comment, or to where it was when its thread is gone. */
   onOpenComment: (to: CommentLink) => void;
-  /** Shows a page or board a link in the agent's words points at, in this design or another. */
-  onOpenPlace: (at: DesignAddress) => void;
+  /** Shows a page or board a link in the agent's words points at, in this canvas or another. */
+  onOpenPlace: (at: CanvasAddress) => void;
   onOpenPullRequest: () => void;
   /**
-   * Connects the viewer's own Claude, when the design waits on it; absent until it can. Says
+   * Connects the viewer's own Claude, when the canvas waits on it; absent until it can. Says
    * whether its sign-in ran out, so the dialog puts it as the strip did.
    */
   onConnectClaude?: (expired: boolean) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
 }) {
-  const designId = open.id;
+  const canvasId = open.id;
   const { queries, mutations } = usePonzu();
   const stop = useMutation(mutations.stopAgent());
+  const takeOver = useMutation(mutations.takeOver());
   const state = useSourceState(open.source);
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
@@ -95,7 +97,7 @@ export function DesignRail({
   );
   const attachments = useSnapshot(open.uploads);
   const pictures = useSnapshot(open.pictures);
-  const head = useLiveQuery("design.head", { designId }).rows?.[0];
+  const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
   const theme = useColorScheme();
   const now = useNow();
@@ -115,7 +117,7 @@ export function DesignRail({
   const closedIds = useMemo(() => closedQuestions(shown), [shown]);
   const picked = useQueries({
     queries: closedIds.map((id) => ({
-      ...queries.question(designId, id),
+      ...queries.question(canvasId, id),
       // A closed question stays as it closed; one read while still open is read again.
       staleTime: (q: { state: { data?: { status: string } } }) =>
         q.state.data?.status === "open" ? 0 : Number.POSITIVE_INFINITY,
@@ -129,7 +131,7 @@ export function DesignRail({
     return new Map(closedIds.map((id, i) => [id, lines[i] ?? null] as const));
   }, [picked, closedIds]);
   const items = useMemo(() => {
-    // A design just made shows its first message while its thread is read.
+    // A canvas just made shows its first message while its thread is read.
     if (!thread.items && !thread.pending.length) return null;
     const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc, pictures };
     return [
@@ -143,11 +145,11 @@ export function DesignRail({
   useEffect(() => {
     if (newest === undefined || access === null) return;
     const timer = setTimeout(
-      () => void host.api.designs.seen(designId, { threadSeq: newest }).catch(() => {}),
+      () => void host.api.canvases.seen(canvasId, { threadSeq: newest }).catch(() => {}),
       1000,
     );
     return () => clearTimeout(timer);
-  }, [host, designId, newest, access]);
+  }, [host, canvasId, newest, access]);
 
   // To the comment, resolved or not; to where it was, once its thread has been deleted.
   const openComment = useCallback(
@@ -168,14 +170,14 @@ export function DesignRail({
     [shown, doc, onOpenComment, say],
   );
 
-  // What a link in the agent's words can find: the design as it is now, while it streams too.
-  const places = useMemo<DesignPlaces>(
+  // What a link in the agent's words can find: the canvas as it is now, while it streams too.
+  const places = useMemo<CanvasPlaces>(
     () => ({
-      designId,
+      canvasId,
       has: (at) => (doc ? linkTarget(doc, at) !== null : undefined),
       open: onOpenPlace,
     }),
-    [designId, doc, onOpenPlace],
+    [canvasId, doc, onOpenPlace],
   );
 
   // Until the API says what the viewer may do, nothing offers to steer.
@@ -188,9 +190,9 @@ export function DesignRail({
   }
   const gate = steerGate({ access, repo, head, owner, me: meRow, now });
   return (
-    <DesignPlacesProvider value={places}>
+    <CanvasPlacesProvider value={places}>
       <ThreadRail
-        designId={designId}
+        canvasId={canvasId}
         meId={me.id}
         repoName={repo?.name ?? null}
         items={items}
@@ -205,7 +207,7 @@ export function DesignRail({
         onRetryAttachment={(id) => open.uploads.retry(id)}
         onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
         onStop={() =>
-          stop.mutate(designId, { onError: () => say("Claude couldn't be stopped. Try again.") })
+          stop.mutate(canvasId, { onError: () => say("Claude couldn't be stopped. Try again.") })
         }
         onAnswer={(id, answer) => open.asks.answer(id, answer)}
         onDismissAsk={(id) => open.asks.dismiss(id)}
@@ -215,6 +217,10 @@ export function DesignRail({
         {...(onConnectClaude
           ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
           : {})}
+        onTakeOver={() =>
+          takeOver.mutate(canvasId, { onError: (error) => say(takeOverRefusal(error)) })
+        }
+        takingOver={takeOver.isPending}
         renderDrawing={(messageId) => {
           const local = pictures.get(messageId);
           return local?.state === "drawing" ? (
@@ -232,7 +238,7 @@ export function DesignRail({
         onOpenPullRequest={onOpenPullRequest}
         onOpenLink={(url) => host.openExternal(url)}
       />
-    </DesignPlacesProvider>
+    </CanvasPlacesProvider>
   );
 }
 

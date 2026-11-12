@@ -10,8 +10,8 @@ import {
 } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { parseCanvasAddress } from "./canvas-address.ts";
 import { cn } from "./cn.ts";
-import { parseDesignAddress } from "./design-address.ts";
 import { Icon } from "./icon.tsx";
 import { parts, prepare, remarkGfm, remarkUntrusted, safeHref, settled } from "./markdown.ts";
 import { PlaceLink } from "./place-link.tsx";
@@ -178,8 +178,8 @@ function elements(onOpenLink?: (url: string) => void): Components {
           {children}
         </a>
       );
-      // A design's own address, a page or board of it: followed in place where a design is open.
-      const address = parseDesignAddress(href);
+      // A canvas's own address, a page or board of it: followed in place where a canvas is open.
+      const address = parseCanvasAddress(href);
       return address ? (
         <PlaceLink address={address} href={href} external={external}>
           {children}

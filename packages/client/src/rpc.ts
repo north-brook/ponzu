@@ -1,7 +1,7 @@
 import type { AppType } from "@ponzu/api/types";
 import { hc, type InferResponseType } from "hono/client";
 
-/** The API's routes as a typed client: `rpc.v1.designs[":id"].$get(…)`. */
+/** The API's routes as a typed client: `rpc.v1.canvases[":id"].$get(…)`. */
 export type Rpc = ReturnType<typeof hc<AppType>>;
 
 /** `fetch` as this package takes it: without the extras a runtime's own may carry. */

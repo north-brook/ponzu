@@ -4,7 +4,7 @@ import { mutate, type StorePonzu } from "./store-ponzu.ts";
 import { toAsk } from "./thread-map.ts";
 
 /*
- * What the agent waits on in one open design: the `design.questions` live query, which holds
+ * What the agent waits on in one open canvas: the `canvas.questions` live query, which holds
  * the open questions alone, and the viewer's answers on their way. The first answer wins.
  *
  * A question that leaves while the viewer is on it (chose something, typed a note, or sent an
@@ -34,7 +34,7 @@ export class AskStore {
     private readonly opts: {
       ponzu: StorePonzu;
       live: Pick<Live, "subscribe">;
-      designId: string;
+      canvasId: string;
       /** Says, in a sentence, that an answer didn't go. */
       onError: (message: string) => void;
     },
@@ -42,8 +42,8 @@ export class AskStore {
 
   start(): this {
     this.stopLive = this.opts.live.subscribe(
-      "design.questions",
-      { designId: this.opts.designId },
+      "canvas.questions",
+      { canvasId: this.opts.canvasId },
       ({ rows }) => {
         const before = this.rows;
         this.rows = rows ?? [];
@@ -77,24 +77,30 @@ export class AskStore {
   answer(id: string, answer: AskAnswer): void {
     const body = bodyOf(answer);
     const row = this.rows.find((r) => r.id === id);
-    if (!body || !row || this.sending.has(id)) return;
+    const secret = "secret" in answer && row?.kind === "secret" ? answer.secret : null;
+    if ((!body && secret === null) || !row || this.sending.has(id)) return;
     // As it was asked: it may leave the live rows before the API answers.
     const asked = toAsk(row);
     this.sending.add(id);
     this.emit();
-    const { ponzu, designId } = this.opts;
-    mutate(ponzu, ponzu.mutations.answerQuestion(), { designId, questionId: id, body }).then(
+    const { ponzu, canvasId } = this.opts;
+    // A secret's value goes by its own route, never the generic answer's body.
+    const sent =
+      secret !== null
+        ? mutate(ponzu, ponzu.mutations.answerSecret(), { canvasId, questionId: id, value: secret })
+        : mutate(ponzu, ponzu.mutations.answerQuestion(), {
+            canvasId,
+            questionId: id,
+            body: body!,
+          });
+    sent.then(
       () => this.emit(),
       (error: unknown) => {
         this.sending.delete(id);
         if (error instanceof ApiError && error.code === "question_closed") {
           this.settle(asked, answeredBy(error));
         } else {
-          this.opts.onError(
-            error instanceof ApiError && error.code === "network"
-              ? "Your answer didn't reach Ponzu. Check your connection and send it again."
-              : "Your answer didn't go through. Send it again.",
-          );
+          this.opts.onError(refusal(error));
         }
         this.emit();
       },
@@ -118,10 +124,10 @@ export class AskStore {
    * closed, then kept as that. `by` is who the API's refusal named, if it did.
    */
   private settle(asked: Ask, by: Person | null): void {
-    const { ponzu, designId } = this.opts;
+    const { ponzu, canvasId } = this.opts;
     this.touched.delete(asked.id);
     this.settling.set(asked.id, asked);
-    ponzu.queryClient.fetchQuery(ponzu.queries.question(designId, asked.id)).then(
+    ponzu.queryClient.fetchQuery(ponzu.queries.question(canvasId, asked.id)).then(
       (question) => {
         // The rail resolves them to the member they are, picture and all.
         const who = question.answeredBy ? { ...question.answeredBy, avatarUrl: null } : by;
@@ -156,6 +162,23 @@ export class AskStore {
       });
     this.snapshot = [...open, ...kept, ...this.closed];
     for (const listener of this.listeners) listener();
+  }
+}
+
+/** Why an answer didn't go, in a sentence. */
+function refusal(error: unknown): string {
+  if (!(error instanceof ApiError)) return "Your answer didn't go through. Send it again.";
+  switch (error.code) {
+    case "network":
+      return "Your answer didn't reach Ponzu. Check your connection and send it again.";
+    case "secrets_full":
+      return "This repo has no room for another secret. Remove one in Settings › Environments, then send it again.";
+    case "secret_name_reserved":
+      return "Claude asked for a name Ponzu keeps for itself, so it can't be a secret. Tell Claude to use another name.";
+    case "no_repository":
+      return "A Scratch canvas has no repository to keep a secret with.";
+    default:
+      return "Your answer didn't go through. Send it again.";
   }
 }
 

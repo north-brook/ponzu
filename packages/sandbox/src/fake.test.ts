@@ -1,534 +1,296 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { FakeClock } from "./clock.ts";
 import { SandboxError } from "./errors.ts";
-import { FakeProvider } from "./fake.ts";
-import type { ExecEvent } from "./provider.ts";
+import { FakeSandboxes } from "./fake.ts";
+import type { At, SandboxSpec } from "./sandboxes.ts";
 
-const MINUTE = 60_000;
+const IMAGE = `ponzu-runner@sha256:${"a".repeat(64)}`;
+const OTHER = `ponzu-runner@sha256:${"b".repeat(64)}`;
+const SPEC: SandboxSpec = {
+  image: IMAGE,
+  persistent: true,
+  timeoutMs: 30 * 60_000,
+  ports: [4600],
+  vcpus: 2,
+  snapshotExpirationMs: 30 * 24 * 3600_000,
+};
+const NAME = "pz-0123456789ab-canvas1";
+const text = (bytes: Uint8Array | null | undefined) =>
+  bytes ? new TextDecoder().decode(bytes) : null;
 
-/** A fake with one sandbox, already awake. */
-async function awake(options: { env?: Record<string, string>; autoStopSeconds?: number } = {}) {
-  const fake = new FakeProvider();
-  const { sandbox } = await fake.create({
-    idempotencyKey: "design-d1",
-    labels: { design: "d1" },
-    env: options.env ?? { TOKEN: "t1" },
-    autoStopSeconds: options.autoStopSeconds ?? 3600,
-  });
-  await fake.ensureAwake(sandbox.id);
-  return { fake, id: sandbox.id };
+function setup() {
+  const clock = new FakeClock();
+  return { clock, sandboxes: new FakeSandboxes(clock) };
 }
 
-async function code(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise;
-  } catch (error) {
-    if (error instanceof SandboxError) return error.code;
-    throw error;
-  }
-  return "no error";
+async function notRunning(work: Promise<unknown>) {
+  const error = await work.then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(SandboxError);
+  expect((error as SandboxError).code).toBe("not_running");
 }
 
-test("a new sandbox starts, then is awake", async () => {
-  const fake = new FakeProvider();
-  const { sandbox, addresses } = await fake.create({
-    idempotencyKey: "design-d1",
-    labels: { design: "d1" },
-    ports: [4500],
-    autoStopSeconds: 600,
+describe("FakeSandboxes", () => {
+  test("up creates a fresh sandbox with a running session and a URL per port", async () => {
+    const { clock, sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    expect(up).toMatchObject({ name: NAME, fresh: true, recreated: false, wasRunning: false });
+    expect(up.expiresAt).toBe(up.startedAt + SPEC.timeoutMs);
+    expect(up.startedAt).toBe(clock.now());
+    expect(up.urls[4600]).toStartWith("https://");
+    expect(up.image).toEndWith(IMAGE.slice("ponzu-runner".length));
+    expect(sandboxes.resumes(NAME)).toBe(0);
+    expect((await sandboxes.status(NAME))?.status).toBe("running");
   });
-  expect(sandbox).toMatchObject({
-    state: "starting",
-    labels: { design: "d1" },
-    autoStopAt: fake.clock.now() + 600_000,
+
+  test("names are unique: a second up on a running sandbox is the same session, wasRunning", async () => {
+    const { sandboxes } = setup();
+    const first = await sandboxes.up(NAME, SPEC);
+    const again = await sandboxes.up(NAME, SPEC);
+    expect(again.sessionId).toBe(first.sessionId);
+    expect(again.wasRunning).toBe(true);
+    expect(await sandboxes.list("pz-")).toHaveLength(1);
+    expect(sandboxes.config(NAME).updates).toBe(0);
   });
-  expect(addresses).toHaveLength(1);
-  expect(addresses[0]!.url).not.toContain(addresses[0]!.token!);
 
-  fake.clock.advance(2_999);
-  expect((await fake.get(sandbox.id)).state).toBe("starting");
-  fake.clock.advance(1);
-  expect((await fake.get(sandbox.id)).state).toBe("awake");
-});
+  test("a stop then up: new session, files kept, processes and commands gone, one resume", async () => {
+    const { sandboxes } = setup();
+    const first = await sandboxes.up(NAME, SPEC);
+    const at: At = { name: NAME, sessionId: first.sessionId };
+    await sandboxes.writeFile(at, "/vercel/a.txt", "kept");
+    await sandboxes.start(at, { cmd: "/opt/ponzu/bin/ponzu-start", sudo: true });
+    const stopped = await sandboxes.stop(at);
+    expect(stopped.stopped).toBe(true);
+    expect(stopped.snapshotBytes).toBe(4);
+    expect((await sandboxes.status(NAME))?.status).toBe("stopped");
 
-test("a retried create returns the first sandbox, and changed options are a conflict", async () => {
-  const fake = new FakeProvider();
-  const options = { idempotencyKey: "design-d1", env: { TOKEN: "t1" }, autoStopSeconds: 600 };
-  const first = await fake.create(options);
-  const again = await fake.create(options);
-  expect(again.sandbox.id).toBe(first.sandbox.id);
-  expect(await fake.list()).toHaveLength(1);
-  expect(await code(fake.create({ ...options, env: { TOKEN: "t2" } }))).toBe("conflict");
-});
-
-test("a retried create matches on what the options say, not the order they were built in", async () => {
-  const fake = new FakeProvider();
-  const first = await fake.create({
-    idempotencyKey: "design-d1",
-    labels: { design: "d1", env: "dev" },
-    env: { A: "1", B: "2" },
-    autoStopSeconds: 600,
+    const second = await sandboxes.up(NAME, SPEC);
+    expect(second.sessionId).not.toBe(first.sessionId);
+    expect(second).toMatchObject({ fresh: false, wasRunning: false, recreated: false });
+    expect(sandboxes.resumes(NAME)).toBe(1);
+    const at2 = { name: NAME, sessionId: second.sessionId };
+    expect(text(await sandboxes.readFile(at2, "/vercel/a.txt"))).toBe("kept");
+    // The start belonged to the old session.
+    expect(sandboxes.commands(NAME).map((each) => each.sessionId)).toEqual([first.sessionId]);
   });
-  const again = await fake.create({
-    autoStopSeconds: 600,
-    env: { B: "2", A: "1" },
-    labels: { env: "dev", design: "d1" },
-    idempotencyKey: "design-d1",
+
+  test("pinned calls on another session, or a stopped one, are not_running and resume nothing", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    const at = { name: NAME, sessionId: up.sessionId };
+    await notRunning(
+      sandboxes.exec({ name: NAME, sessionId: "sbx_other" }, { cmd: "true", timeoutMs: 1 }),
+    );
+    await sandboxes.stop(at);
+    await notRunning(sandboxes.exec(at, { cmd: "true", timeoutMs: 1 }));
+    await notRunning(sandboxes.start(at, { cmd: "true" }));
+    await notRunning(sandboxes.writeFile(at, "/x", "x"));
+    await notRunning(sandboxes.readFile(at, "/x"));
+    await notRunning(
+      sandboxes.exec(
+        { name: "pz-0123456789ab-missing", sessionId: "s" },
+        { cmd: "true", timeoutMs: 1 },
+      ),
+    );
+    expect(await sandboxes.extend(at, 60_000)).toBeNull();
+    expect(await sandboxes.stop(at)).toEqual({ stopped: false, snapshotBytes: null });
+    expect(sandboxes.resumes(NAME)).toBe(0);
+    expect((await sandboxes.status(NAME))?.status).toBe("stopped");
   });
-  expect(again.sandbox.id).toBe(first.sandbox.id);
-});
 
-test("an idempotency key guards a retry, not a design: it is forgotten after a day", async () => {
-  const fake = new FakeProvider();
-  const options = { idempotencyKey: "design-d1", labels: { design: "d1" }, autoStopSeconds: 600 };
-  const first = await fake.create(options);
-  fake.clock.advance(24 * 60 * MINUTE - 1);
-  expect((await fake.create(options)).sandbox.id).toBe(first.sandbox.id);
-
-  fake.clock.advance(1);
-  const second = await fake.create(options);
-  expect(second.sandbox.id).not.toBe(first.sandbox.id);
-  // The first is still there: a caller that leans on the key for longer ends up with two.
-  expect(await fake.list({ labels: { design: "d1" } })).toHaveLength(2);
-});
-
-test("destroying a sandbox frees its idempotency key", async () => {
-  const fake = new FakeProvider();
-  const options = { idempotencyKey: "design-d1", autoStopSeconds: 600 };
-  const first = await fake.create(options);
-  await fake.destroy(first.sandbox.id);
-  const second = await fake.create(options);
-  expect(second.sandbox.id).not.toBe(first.sandbox.id);
-  expect(await fake.list()).toHaveLength(1);
-});
-
-test("list filters on every label given", async () => {
-  const fake = new FakeProvider();
-  await fake.create({
-    idempotencyKey: "a",
-    labels: { design: "d1", env: "dev" },
-    autoStopSeconds: 60,
+  test("a session stops by itself at its deadline; extend moves the deadline, capped at 24 h", async () => {
+    const { clock, sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    const at = { name: NAME, sessionId: up.sessionId };
+    expect(await sandboxes.extend(at, 20 * 60_000)).toBe(up.expiresAt + 20 * 60_000);
+    const error = await sandboxes.extend(at, 24 * 3600_000).catch((caught) => caught);
+    expect((error as SandboxError).code).toBe("rejected");
+    clock.advance(SPEC.timeoutMs + 20 * 60_000);
+    expect((await sandboxes.status(NAME))?.status).toBe("stopped");
+    await notRunning(sandboxes.exec(at, { cmd: "true", timeoutMs: 1 }));
   });
-  await fake.create({
-    idempotencyKey: "b",
-    labels: { design: "d2", env: "dev" },
-    autoStopSeconds: 60,
+
+  test("an image change deletes and recreates: an empty disk, no resume", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.writeFile({ name: NAME, sessionId: up.sessionId }, "/vercel/a", "old");
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    const moved = await sandboxes.up(NAME, { ...SPEC, image: OTHER });
+    expect(moved).toMatchObject({ fresh: true, recreated: true, wasRunning: false });
+    expect(sandboxes.files(NAME).size).toBe(0);
+    expect(sandboxes.resumes(NAME)).toBe(0);
+    expect(sandboxes.config(NAME).image).toEndWith(OTHER.slice("ponzu-runner".length));
   });
-  expect(await fake.list({ labels: { env: "dev" } })).toHaveLength(2);
-  expect(await fake.list({ labels: { env: "dev", design: "d2" } })).toHaveLength(1);
-  expect(await fake.list({ labels: { design: "d3" } })).toHaveLength(0);
-});
 
-test("ensureAwake waits out a first start and reports it cold", async () => {
-  const fake = new FakeProvider();
-  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 600 });
-  const wake = await fake.ensureAwake(sandbox.id);
-  // The create started it, not this call.
-  expect(wake).toMatchObject({
-    start: "cold",
-    resumed: false,
-    ms: 3_000,
-    sandbox: { state: "awake" },
-  });
-  expect(await fake.ensureAwake(sandbox.id)).toMatchObject({
-    start: "none",
-    resumed: false,
-    ms: 0,
-  });
-});
-
-test("a resume soon after an explicit stop is warm: processes and /tmp survive", async () => {
-  const { fake, id } = await awake();
-  await fake.writeFile(id, "/tmp/scratch", "x");
-  const { pid } = await fake.spawn(id, "bun run dev");
-
-  expect((await fake.stop(id)).state).toBe("stopping");
-  fake.clock.advance(9 * MINUTE);
-  expect((await fake.get(id)).state).toBe("asleep");
-
-  const wake = await fake.ensureAwake(id);
-  expect(wake).toMatchObject({ start: "warm", ms: 1_000 });
-  expect((await fake.process(id, pid)).state).toBe("running");
-  expect(new TextDecoder().decode(await fake.readFile(id, "/tmp/scratch"))).toBe("x");
-});
-
-test("a resume after the warm window is cold: processes and /tmp are lost, the disk is kept", async () => {
-  const { fake, id } = await awake();
-  await fake.writeFile(id, "/tmp/scratch", "x");
-  await fake.writeFile(id, "repo/README.md", "kept");
-  const { pid } = await fake.spawn(id, "bun run dev");
-
-  await fake.stop(id);
-  fake.clock.advance(11 * MINUTE);
-  const wake = await fake.ensureAwake(id);
-
-  expect(wake).toMatchObject({ start: "cold", ms: 3_000 });
-  expect((await fake.process(id, pid)).state).toBe("lost");
-  expect(await code(fake.readFile(id, "/tmp/scratch"))).toBe("not_found");
-  expect(new TextDecoder().decode(await fake.readFile(id, "/home/user/repo/README.md"))).toBe(
-    "kept",
-  );
-});
-
-test("an auto-stop is never warm, however soon the resume", async () => {
-  const { fake, id } = await awake({ autoStopSeconds: 300 });
-  // An explicit stop a minute ago, whose warm window is still open.
-  await fake.stop(id);
-  fake.clock.advance(MINUTE);
-  expect((await fake.ensureAwake(id)).start).toBe("warm");
-
-  fake.clock.advance(5 * MINUTE);
-  expect(await fake.get(id)).toMatchObject({ state: "asleep", autoStopAt: null });
-  expect((await fake.ensureAwake(id)).start).toBe("cold");
-});
-
-test("extend pushes the auto-stop out", async () => {
-  const { fake, id } = await awake({ autoStopSeconds: 300 });
-  fake.clock.advance(4 * MINUTE);
-  const extended = await fake.extend(id, 300);
-  expect(extended.autoStopAt).toBe(fake.clock.now() + 300_000);
-  fake.clock.advance(4 * MINUTE);
-  expect((await fake.get(id)).state).toBe("awake");
-  fake.clock.advance(MINUTE);
-  expect((await fake.get(id)).state).toBe("asleep");
-});
-
-test("a new environment forces a cold start and replaces the old one whole", async () => {
-  const { fake, id } = await awake({ env: { TOKEN: "t1", KEEP: "no" } });
-  expect(await code(fake.resume(id, { env: { TOKEN: "t2" } }))).toBe("conflict");
-  expect(fake.env(id)).toEqual({ TOKEN: "t1", KEEP: "no" });
-
-  await fake.stop(id);
-  fake.clock.advance(5_000);
-  const wake = await fake.ensureAwake(id, { env: { TOKEN: "t2" }, autoStopSeconds: 120 });
-  expect(wake.start).toBe("cold");
-  expect(fake.env(id)).toEqual({ TOKEN: "t2" });
-  expect(wake.sandbox.autoStopAt).toBe(fake.clock.now() - 3_000 + 120_000);
-});
-
-test("resuming a sandbox that is still stopping is busy, and ensureAwake waits it out", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  await expect(fake.resume(id)).rejects.toMatchObject({ code: "busy", retryAfterSeconds: 2 });
-  const wake = await fake.ensureAwake(id);
-  expect(wake).toMatchObject({ start: "warm", resumed: true, ms: 2_000 + 1_000 });
-});
-
-test("a stop can hold the machine past the point the sandbox reads asleep", async () => {
-  const { fake, id } = await awake();
-  fake.stopLingerMs = 1_500;
-  await fake.stop(id);
-  fake.clock.advance(2_000);
-  expect((await fake.get(id)).state).toBe("asleep");
-  await expect(fake.resume(id)).rejects.toMatchObject({ code: "busy", retryAfterSeconds: 2 });
-  // ensureAwake asks again when the provider said to, two seconds on, and the thaw takes one.
-  expect(await fake.ensureAwake(id)).toMatchObject({ start: "warm", resumed: true, ms: 3_000 });
-});
-
-test("two wakes at once with different environments: only one of them gets its own", async () => {
-  const { fake, id } = await awake({ env: { TOKEN: "t0" } });
-  await fake.stop(id);
-  fake.clock.advance(20 * MINUTE);
-  const [first, second] = await Promise.allSettled([
-    fake.ensureAwake(id, { env: { TOKEN: "t1" } }),
-    fake.ensureAwake(id, { env: { TOKEN: "t2" } }),
-  ]);
-  expect(first).toMatchObject({ status: "fulfilled", value: { start: "cold", resumed: true } });
-  // The loser must not go on to run anything believing its token is in place.
-  expect(second).toMatchObject({ status: "rejected", reason: { code: "conflict" } });
-  expect(fake.env(id)).toEqual({ TOKEN: "t1" });
-});
-
-test("a wake that finds the sandbox awake does not claim its options took effect", async () => {
-  const { fake, id } = await awake({ env: { TOKEN: "t1" }, autoStopSeconds: 600 });
-  const before = (await fake.get(id)).autoStopAt;
-  const wake = await fake.ensureAwake(id, { autoStopSeconds: 3600 });
-  expect(wake).toMatchObject({ start: "none", resumed: false });
-  expect(wake.sandbox.autoStopAt).toBe(before);
-  expect(await code(fake.ensureAwake(id, { env: { TOKEN: "t2" } }))).toBe("conflict");
-  expect(fake.env(id)).toEqual({ TOKEN: "t1" });
-});
-
-test("a resume the provider keeps refusing ends the wake at once", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  fake.clock.advance(MINUTE);
-  const refused = new SandboxError("conflict", "the restore failed");
-  fake.failNext("resume", refused, 3);
-  const before = fake.clock.now();
-  await expect(fake.ensureAwake(id)).rejects.toBe(refused);
-  expect(fake.clock.now()).toBe(before);
-  // One of the three was spent: the wake did not go back for more.
-  await expect(fake.resume(id)).rejects.toBe(refused);
-  await expect(fake.resume(id)).rejects.toBe(refused);
-  expect((await fake.resume(id)).coldStart).toBe(false);
-});
-
-test("a start that fails leaves the sandbox asleep with the reason, and the wake says so", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  fake.clock.advance(20 * MINUTE);
-  fake.failNextStart(id, "machine lost");
-  const before = fake.clock.now();
-  await expect(fake.ensureAwake(id)).rejects.toMatchObject({
-    code: "unavailable",
-    message: expect.stringContaining("machine lost"),
-  });
-  // Known as soon as the start ended, not after the 90 s a wake may take.
-  expect(fake.clock.now() - before).toBe(3_000);
-  expect(await fake.get(id)).toMatchObject({ state: "asleep", reason: "machine lost" });
-  expect((await fake.usage(id)).awake).toBe(false);
-
-  expect(await fake.ensureAwake(id)).toMatchObject({
-    start: "cold",
-    resumed: true,
-    sandbox: { state: "awake", reason: null },
-  });
-});
-
-test("usage meters awake time only, at the size's price", async () => {
-  const fake = new FakeProvider();
-  const { sandbox } = await fake.create({
-    idempotencyKey: "k",
-    size: "medium",
-    autoStopSeconds: 7200,
-  });
-  const id = sandbox.id;
-  expect(await fake.usage(id)).toEqual({ awakeSeconds: 0, costUsd: 0, awake: false });
-
-  await fake.ensureAwake(id);
-  fake.clock.advance(30 * MINUTE);
-  await fake.stop(id);
-  fake.clock.advance(60 * MINUTE);
-  expect(await fake.usage(id)).toEqual({ awakeSeconds: 1800, costUsd: 0.018, awake: false });
-
-  await fake.ensureAwake(id);
-  fake.clock.advance(30 * MINUTE);
-  expect(await fake.usage(id)).toEqual({ awakeSeconds: 3600, costUsd: 0.036, awake: true });
-});
-
-test("an auto-stop ends the meter at the deadline, not when someone next looks", async () => {
-  const { fake, id } = await awake({ autoStopSeconds: 600 });
-  fake.clock.advance(60 * MINUTE);
-  // Awake from the end of the 3 s start until the deadline, 600 s after the create.
-  expect((await fake.usage(id)).awakeSeconds).toBe(597);
-});
-
-test("a command sent during a start is held until the start lands, then runs", async () => {
-  const fake = new FakeProvider();
-  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 600 });
-  const before = fake.clock.now();
-  expect((await fake.exec(sandbox.id, "true")).exitCode).toBe(0);
-  expect(fake.clock.now() - before).toBe(3_000);
-  expect((await fake.get(sandbox.id)).state).toBe("awake");
-});
-
-test("a start slower than a minute refuses the held call, which did not run", async () => {
-  const fake = new FakeProvider();
-  fake.startMs.cold = 5 * MINUTE;
-  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 3600 });
-  const before = fake.clock.now();
-  expect(await code(fake.writeFile(sandbox.id, "a", "b"))).toBe("not_running");
-  expect(fake.clock.now() - before).toBe(MINUTE);
-  expect(await code(fake.exec(sandbox.id, "true"))).toBe("not_running");
-  expect(fake.commands).toHaveLength(0);
-});
-
-test("a command's time limit must be a whole number from 1 to 600", async () => {
-  const { fake, id } = await awake();
-  for (const timeoutSeconds of [0, 601, 9999, 1.5]) {
-    expect(await code(fake.exec(id, "true", { timeoutSeconds }))).toBe("rejected");
-  }
-  expect(fake.commands).toHaveLength(0);
-  expect((await fake.exec(id, "true", { timeoutSeconds: 600 })).exitCode).toBe(0);
-});
-
-test("an injected failure hits the next call once", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  fake.clock.advance(5_000);
-  fake.failNext(
-    "resume",
-    new SandboxError("rate_limited", "start limit full", { retryAfterSeconds: 30 }),
-  );
-  await expect(fake.ensureAwake(id)).rejects.toMatchObject({
-    code: "rate_limited",
-    retryAfterSeconds: 30,
-  });
-  expect((await fake.ensureAwake(id)).start).toBe("warm");
-});
-
-test("an expired sandbox cannot be resumed", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  fake.clock.advance(15 * 24 * 60 * MINUTE);
-  fake.expire(id);
-  expect(await code(fake.ensureAwake(id))).toBe("snapshot_expired");
-  expect((await fake.get(id)).state).toBe("asleep");
-});
-
-test("a start that hangs times the wake out", async () => {
-  const fake = new FakeProvider();
-  fake.startMs.cold = 10 * MINUTE;
-  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 3600 });
-  const before = fake.clock.now();
-  expect(await code(fake.ensureAwake(sandbox.id, { timeoutMs: 20_000 }))).toBe("unavailable");
-  expect(fake.clock.now() - before).toBe(20_000);
-});
-
-test("exec records the command with the environment it ran in", async () => {
-  const { fake, id } = await awake({ env: { TOKEN: "t1" } });
-  fake.onExec = ({ command }) =>
-    command.startsWith("git")
-      ? { exitCode: 128, stderr: "fatal: not a git repository\n" }
-      : undefined;
-
-  expect(await fake.exec(id, "git status", { cwd: "repo" })).toEqual({
-    exitCode: 128,
-    stdout: "",
-    stderr: "fatal: not a git repository\n",
-    timedOut: false,
-    truncated: false,
-  });
-  expect((await fake.exec(id, "true")).exitCode).toBe(0);
-  expect(fake.commands).toEqual([
-    { id, command: "git status", cwd: "repo", env: { TOKEN: "t1" }, detached: false },
-    { id, command: "true", cwd: undefined, env: { TOKEN: "t1" }, detached: false },
-  ]);
-});
-
-test("execStream yields the handler's output, then the exit", async () => {
-  const { fake, id } = await awake();
-  fake.onExec = () => ({ stdout: "building\n", stderr: "warning\n", exitCode: 2 });
-  const events: ExecEvent[] = [];
-  for await (const event of fake.execStream(id, "bun run build")) events.push(event);
-  expect(events).toEqual([
-    { type: "stdout", data: "building\n" },
-    { type: "stderr", data: "warning\n" },
-    { type: "exit", exitCode: 2, timedOut: false },
-  ]);
-});
-
-test("commands, files and addresses need the sandbox awake", async () => {
-  const { fake, id } = await awake();
-  await fake.stop(id);
-  expect(await code(fake.exec(id, "true"))).toBe("not_running");
-  expect(await code(fake.spawn(id, "true"))).toBe("not_running");
-  expect(await code(fake.readFile(id, "a"))).toBe("not_running");
-  expect(await code(fake.writeFile(id, "a", "b"))).toBe("not_running");
-  expect(await code(fake.address(id, 4500))).toBe("not_running");
-  expect(fake.commands).toHaveLength(0);
-});
-
-test("files round-trip as bytes and are copied, not shared", async () => {
-  const { fake, id } = await awake();
-  const written = new Uint8Array([0, 255, 128]);
-  await fake.writeFile(id, "raw.bin", written);
-  written[0] = 7;
-  const read = await fake.readFile(id, "/home/user/raw.bin");
-  expect(read).toEqual(new Uint8Array([0, 255, 128]));
-  read[1] = 7;
-  expect(await fake.readFile(id, "raw.bin")).toEqual(new Uint8Array([0, 255, 128]));
-  expect(await code(fake.readFile(id, "none.txt"))).toBe("not_found");
-});
-
-test("a killed process has exited, and killing it again is fine", async () => {
-  const { fake, id } = await awake();
-  const { pid } = await fake.spawn(id, "bun run dev", { cwd: "repo" });
-  expect((await fake.process(id, pid)).state).toBe("running");
-  await fake.kill(id, pid);
-  await fake.kill(id, pid);
-  expect(await fake.process(id, pid)).toMatchObject({ state: "exited", exitCode: 143 });
-  expect((await fake.process(id, 1)).state).toBe("lost");
-  expect(fake.commands.at(-1)).toMatchObject({ command: "bun run dev", detached: true });
-});
-
-test("an address is stable across sleep and wake", async () => {
-  const fake = new FakeProvider();
-  const { sandbox, addresses } = await fake.create({
-    idempotencyKey: "k",
-    ports: [4500],
-    autoStopSeconds: 600,
-  });
-  await fake.ensureAwake(sandbox.id);
-  await fake.stop(sandbox.id);
-  fake.clock.advance(20 * MINUTE);
-  await fake.ensureAwake(sandbox.id);
-  expect(await fake.address(sandbox.id, 4500)).toEqual(addresses[0]!);
-});
-
-test("a snapshot takes time to save, then new sandboxes start from its files", async () => {
-  const { fake, id } = await awake();
-  await fake.writeFile(id, "repo/package.json", "{}");
-
-  expect(await fake.saveSnapshot(id, "repo-42")).toMatchObject({
-    name: "repo-42",
-    state: "saving",
-    sandboxId: id,
-    sizeBytes: null,
-  });
-  expect(await code(fake.saveSnapshot(id, "repo-42"))).toBe("conflict");
-  expect(
-    await code(fake.create({ idempotencyKey: "early", from: "repo-42", autoStopSeconds: 60 })),
-  ).toBe("not_found");
-
-  fake.clock.advance(4_000);
-  expect(await fake.getSnapshot("repo-42")).toMatchObject({ state: "ready", sizeBytes: 2 });
-  expect((await fake.listSnapshots()).map((s) => s.name)).toEqual(["repo-42"]);
-
-  // The snapshot is of that moment: later writes to the source do not reach it.
-  await fake.writeFile(id, "repo/package.json", '{"name":"later"}');
-  const { sandbox } = await fake.create({
-    idempotencyKey: "d2",
-    from: "repo-42",
-    autoStopSeconds: 60,
-  });
-  await fake.ensureAwake(sandbox.id);
-  expect(new TextDecoder().decode(await fake.readFile(sandbox.id, "repo/package.json"))).toBe("{}");
-
-  await fake.deleteSnapshot("repo-42");
-  await fake.deleteSnapshot("repo-42");
-  expect(await fake.getSnapshot("repo-42")).toBeNull();
-  expect(
-    await code(fake.create({ idempotencyKey: "d3", from: "repo-42", autoStopSeconds: 60 })),
-  ).toBe("not_found");
-});
-
-test("saving over a snapshot keeps the old one serving until the new one is ready", async () => {
-  const { fake, id } = await awake();
-  await fake.writeFile(id, "repo/v.txt", "one");
-  await fake.saveSnapshot(id, "repo-42");
-  fake.clock.advance(4_000);
-
-  await fake.writeFile(id, "repo/v.txt", "three");
-  expect(await fake.saveSnapshot(id, "repo-42")).toMatchObject({ state: "saving", sizeBytes: 3 });
-  const read = async (key: string) => {
-    const { sandbox } = await fake.create({
-      idempotencyKey: key,
-      from: "repo-42",
-      autoStopSeconds: 60,
+  test("drift is recorded as one update and applies from the next session", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    const longer = { ...SPEC, timeoutMs: 45 * 60_000, vcpus: 4 as const };
+    const next = await sandboxes.up(NAME, longer);
+    expect(sandboxes.config(NAME)).toMatchObject({
+      updates: 1,
+      spec: { timeoutMs: 45 * 60_000, vcpus: 4 },
     });
-    return new TextDecoder().decode(await fake.readFile(sandbox.id, "repo/v.txt"));
-  };
-  expect(await read("during")).toBe("one");
-
-  fake.clock.advance(4_000);
-  expect(await fake.getSnapshot("repo-42")).toMatchObject({ state: "ready", sizeBytes: 5 });
-  expect(await read("after")).toBe("three");
-});
-
-test("a destroyed sandbox is gone", async () => {
-  const { fake, id } = await awake();
-  await fake.destroy(id);
-  await fake.destroy(id);
-  expect(await fake.get(id)).toEqual({
-    id,
-    state: "gone",
-    labels: {},
-    autoStopAt: null,
-    reason: null,
+    expect(next.expiresAt - next.startedAt).toBe(45 * 60_000);
+    await sandboxes.up(NAME, longer);
+    expect(sandboxes.config(NAME).updates).toBe(1);
   });
-  expect(await fake.list()).toEqual([]);
-  expect(await code(fake.exec(id, "true"))).toBe("not_found");
-  expect(await code(fake.ensureAwake(id))).toBe("not_found");
-  expect(await code(fake.usage(id))).toBe("not_found");
+
+  test("drift on a running sandbox keeps its session's timeout until the next one", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    const again = await sandboxes.up(NAME, { ...SPEC, timeoutMs: 60 * 60_000 });
+    expect(again.wasRunning).toBe(true);
+    expect(again.expiresAt).toBe(up.expiresAt);
+    expect(sandboxes.config(NAME).updates).toBe(1);
+  });
+
+  test("expire: the next up is a fresh disk under the same name", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.writeFile({ name: NAME, sessionId: up.sessionId }, "/vercel/a", "x");
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    sandboxes.expire(NAME);
+    const next = await sandboxes.up(NAME, SPEC);
+    expect(next).toMatchObject({ fresh: true, recreated: false, wasRunning: false });
+    expect(sandboxes.files(NAME).size).toBe(0);
+  });
+
+  test("retain: Vercel removed it, so the next up is a create (fresh), not a resume", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    sandboxes.retain(NAME);
+    expect(await sandboxes.status(NAME)).toBeNull();
+    const next = await sandboxes.up(NAME, SPEC);
+    expect(next).toMatchObject({ fresh: true, recreated: false, wasRunning: false });
+    expect(sandboxes.resumes(NAME)).toBe(0);
+  });
+
+  test("lose: the session fails and the next up boots the stop before the last", async () => {
+    const { sandboxes } = setup();
+    let up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.writeFile({ name: NAME, sessionId: up.sessionId }, "/vercel/v", "1");
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.writeFile({ name: NAME, sessionId: up.sessionId }, "/vercel/v", "2");
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    up = await sandboxes.up(NAME, SPEC);
+    sandboxes.lose(NAME);
+    expect((await sandboxes.status(NAME))?.status).toBe("failed");
+    const next = await sandboxes.up(NAME, SPEC);
+    expect(
+      text(await sandboxes.readFile({ name: NAME, sessionId: next.sessionId }, "/vercel/v")),
+    ).toBe("1");
+  });
+
+  test("resumeBehindOurBack: a session we did not start; up then reports wasRunning", async () => {
+    const { sandboxes } = setup();
+    const up = await sandboxes.up(NAME, SPEC);
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    sandboxes.resumeBehindOurBack(NAME);
+    const info = await sandboxes.status(NAME);
+    expect(info?.status).toBe("running");
+    expect(info?.sessionId).not.toBe(up.sessionId);
+    expect(sandboxes.resumes(NAME)).toBe(1);
+    const next = await sandboxes.up(NAME, SPEC);
+    expect(next.wasRunning).toBe(true);
+    expect(next.sessionId).toBe(info!.sessionId!);
+    expect(sandboxes.resumes(NAME)).toBe(1);
+  });
+
+  test("a non-persistent sandbox loses its disk at every stop", async () => {
+    const { sandboxes } = setup();
+    const spec = { image: IMAGE, persistent: false, timeoutMs: 15 * 60_000, ports: [] };
+    const up = await sandboxes.up("pz-0123456789ab-signin-a1", spec);
+    const at = { name: up.name, sessionId: up.sessionId };
+    await sandboxes.writeFile(at, "/tmp/driver", "x");
+    expect((await sandboxes.stop(at)).snapshotBytes).toBeNull();
+    const next = await sandboxes.up(up.name, spec);
+    expect(next.fresh).toBe(true);
+    expect(next.urls).toEqual({});
+  });
+
+  test("failNext fails one call of one op on one name, with its code", async () => {
+    const { sandboxes } = setup();
+    sandboxes.failNext("up", NAME, "rate_limited", 7);
+    const error = (await sandboxes.up(NAME, SPEC).catch((caught) => caught)) as SandboxError;
+    expect(error.code).toBe("rate_limited");
+    expect(error.retryAfterSeconds).toBe(7);
+    const up = await sandboxes.up(NAME, SPEC);
+    sandboxes.failNext("exec", NAME, "unavailable");
+    const failed = await sandboxes
+      .exec({ name: NAME, sessionId: up.sessionId }, { cmd: "true", timeoutMs: 1 })
+      .catch((caught) => caught);
+    expect((failed as SandboxError).code).toBe("unavailable");
+    expect(
+      await sandboxes.exec({ name: NAME, sessionId: up.sessionId }, { cmd: "true", timeoutMs: 1 }),
+    ).toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+  });
+
+  test("onExec answers a command; commands records env and sudo per session", async () => {
+    const { sandboxes } = setup();
+    sandboxes.onExec("/opt/ponzu/bin/ponzu-stop", () => ({
+      exitCode: 0,
+      stdout: "stopped\n",
+      stderr: "",
+    }));
+    const up = await sandboxes.up(NAME, SPEC);
+    const at = { name: NAME, sessionId: up.sessionId };
+    await sandboxes.start(at, { cmd: "/opt/ponzu/bin/ponzu-start", env: { A: "1" }, sudo: true });
+    const result = await sandboxes.exec(at, {
+      cmd: "/opt/ponzu/bin/ponzu-stop",
+      sudo: true,
+      timeoutMs: 30_000,
+    });
+    expect(result.stdout).toBe("stopped\n");
+    expect(sandboxes.commands(NAME)).toEqual([
+      {
+        sessionId: up.sessionId,
+        kind: "start",
+        command: { cmd: "/opt/ponzu/bin/ponzu-start", env: { A: "1" }, sudo: true },
+      },
+      {
+        sessionId: up.sessionId,
+        kind: "exec",
+        command: { cmd: "/opt/ponzu/bin/ponzu-stop", sudo: true },
+      },
+    ]);
+  });
+
+  test("list filters by prefix and sorts by name; remove is idempotent", async () => {
+    const { sandboxes } = setup();
+    await sandboxes.up("pz-0123456789ab-b", SPEC);
+    await sandboxes.up("pz-0123456789ab-a", SPEC);
+    await sandboxes.up("pz-ffffffffffff-c", SPEC);
+    expect((await sandboxes.list("pz-0123456789ab-")).map((each) => each.name)).toEqual([
+      "pz-0123456789ab-a",
+      "pz-0123456789ab-b",
+    ]);
+    await sandboxes.remove("pz-0123456789ab-a");
+    await sandboxes.remove("pz-0123456789ab-a");
+    expect((await sandboxes.list("pz-")).map((each) => each.name)).toEqual([
+      "pz-0123456789ab-b",
+      "pz-ffffffffffff-c",
+    ]);
+  });
+
+  test("time: creates, resumes and stops take what the options say", async () => {
+    const clock = new FakeClock();
+    const sandboxes = new FakeSandboxes(clock, { createMs: 1_000, resumeMs: 2_000, stopMs: 3_000 });
+    const t0 = clock.now();
+    const up = await sandboxes.up(NAME, SPEC);
+    expect(clock.now() - t0).toBe(1_000);
+    await sandboxes.stop({ name: NAME, sessionId: up.sessionId });
+    expect(clock.now() - t0).toBe(4_000);
+    await sandboxes.up(NAME, SPEC);
+    expect(clock.now() - t0).toBe(6_000);
+  });
 });

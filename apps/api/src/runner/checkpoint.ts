@@ -1,7 +1,6 @@
 import {
   completeUpload,
-  countSandboxRollback,
-  getLiveSandbox,
+  getSandbox,
   getSavedPoint,
   getUploads,
   listUploadKeys,
@@ -22,7 +21,7 @@ import { ApiError } from "../http/errors.ts";
 
 /*
  * A runner's checkpoints (docs/cloud.md, "Saving the sandbox"): the session's transcript and a
- * Scratch design's files, uploaded as archives where no client reads them, and a turn marker that
+ * Scratch canvas's files, uploaded as archives where no client reads them, and a turn marker that
  * only goes up. A runner whose disk is behind the marker reads them back; one that finds its disk
  * went back says so, and the API logs it with the sandbox and counts it.
  */
@@ -31,6 +30,13 @@ type CheckpointDeps = Pick<Deps, "db" | "archives" | "clock" | "background" | "l
 
 /** How long an address that reads an archive back lasts. */
 export const RESTORE_SECONDS = 600;
+
+/**
+ * How long after its upload address runs out an archive can still be recorded. The orphan
+ * archive sweep (cron/steps/archives.ts) deletes an unrecorded archive once it is a day old; an
+ * archive this much younger can never be one it is deleting.
+ */
+export const ARCHIVE_RECORD_HOURS = 12;
 
 /** The checkpoint as the runner protocol carries it. */
 export function savedView(point: SavedRow): SavedPoint {
@@ -47,7 +53,7 @@ export function savedView(point: SavedRow): SavedPoint {
 /**
  * Record the runner's checkpoint: its archives must be this runner's uploads of the right
  * purpose and in storage as declared. Recorded only over an older turn; the archives of the one
- * it replaces, or of one that was not recorded, are deleted. Answers the checkpoint the design has
+ * it replaces, or of one that was not recorded, are deleted. Answers the checkpoint the canvas has
  * now. Safe to repeat.
  */
 export async function recordRunnerCheckpoint(
@@ -55,15 +61,19 @@ export async function recordRunnerCheckpoint(
   actor: LeasedRunner,
   body: CheckpointRequest,
 ): Promise<SavedPoint> {
-  const { designId, runnerId } = actor;
+  const { canvasId, runnerId } = actor;
   const wanted = { session: body.session, workspace: body.workspace } as const;
   const ids = [wanted.session, wanted.workspace].filter((id): id is string => id !== null);
-  const rows = await getUploads(deps.db, { designId, ids });
+  const rows = await getUploads(deps.db, { canvasId, ids });
   const notArrived = new ApiError(404, "not_found", "Those bytes never arrived.");
   for (const [purpose, id] of Object.entries(wanted)) {
     if (id === null) continue;
     const row = rows.find((r) => r.id === id);
     if (!row || row.userId !== null || row.purpose !== purpose) throw notArrived;
+    // Uploaded so long ago that the orphan sweep may be deleting it: the runner saves anew.
+    if (deps.clock.now() > row.expiresAt.getTime() + ARCHIVE_RECORD_HOURS * 3_600_000) {
+      throw new ApiError(404, "not_found", "Those bytes were uploaded too long ago to record.");
+    }
   }
   const arrived = await Promise.all(
     rows.map(async (row) => {
@@ -75,11 +85,11 @@ export async function recordRunnerCheckpoint(
   if (arrived.includes(false)) throw notArrived;
   // Recorded where they are; nothing serves them.
   await Promise.all(
-    rows.map((row) => completeUpload(deps.db, { designId, id: row.id, servedKey: row.objectKey })),
+    rows.map((row) => completeUpload(deps.db, { canvasId, id: row.id, servedKey: row.objectKey })),
   );
 
   const recorded = await recordCheckpoint(deps.db, {
-    designId,
+    canvasId,
     runnerId,
     now: new Date(deps.clock.now()),
     turn: body.turn,
@@ -92,7 +102,7 @@ export async function recordRunnerCheckpoint(
     keepWorkspace: wanted.workspace === null && body.keep?.workspace === true,
   });
   if (!recorded?.saved)
-    throw new ApiError(409, "superseded", "A newer runner has started for this design.");
+    throw new ApiError(409, "superseded", "A newer runner has started for this canvas.");
   const kept = new Set(
     [recorded.saved.sessionUploadId, recorded.saved.workspaceUploadId].filter(Boolean),
   );
@@ -101,44 +111,44 @@ export async function recordRunnerCheckpoint(
     recorded.replaced?.sessionUploadId,
     recorded.replaced?.workspaceUploadId,
   ].filter((id): id is string => !!id && !kept.has(id));
-  if (stale.length) deps.background("checkpoint_cleared", clear(deps, designId, stale));
+  if (stale.length) deps.background("checkpoint_cleared", clear(deps, canvasId, stale));
   return savedView(recorded.saved);
 }
 
-async function clear(deps: CheckpointDeps, designId: string, ids: string[]): Promise<void> {
-  const rows = await getUploads(deps.db, { designId, ids: [...new Set(ids)] });
+async function clear(deps: CheckpointDeps, canvasId: string, ids: string[]): Promise<void> {
+  const rows = await getUploads(deps.db, { canvasId, ids: [...new Set(ids)] });
   await Promise.all(rows.map((row: Upload) => deps.archives.delete(row.objectKey)));
 }
 
 /**
- * Before a design is deleted: where its checkpoints' archives are, every one (recorded or not),
- * and a promise that deletes them, to hand to `background` once the design's row is gone. The
- * rows go with the design; the bytes would otherwise stay in the bucket for good.
+ * Before a canvas is deleted: where its checkpoints' archives are, every one (recorded or not),
+ * and a promise that deletes them, to hand to `background` once the canvas's row is gone. The
+ * rows go with the canvas; the bytes would otherwise stay in the bucket for good.
  */
 export async function forgetCheckpoints(
   deps: Pick<Deps, "db" | "archives" | "log">,
-  designId: string,
+  canvasId: string,
 ): Promise<() => Promise<void>> {
   const keys = await listUploadKeys(deps.db, {
-    designId,
+    canvasId,
     purposes: ["session", "workspace"],
   });
   return async () => {
     const failed = (await Promise.allSettled(keys.map((key) => deps.archives.delete(key)))).filter(
       (result) => result.status === "rejected",
     ).length;
-    if (failed) deps.log.warn("checkpoint_delete_failed", { designId, failed });
+    if (failed) deps.log.warn("checkpoint_delete_failed", { canvasId, failed });
   };
 }
 
-/** The design's last checkpoint, with addresses that read its archives for ten minutes. */
-export async function restoreFor(deps: CheckpointDeps, designId: string): Promise<RestoreResponse> {
-  const saved = await getSavedPoint(deps.db, designId);
+/** The canvas's last checkpoint, with addresses that read its archives for ten minutes. */
+export async function restoreFor(deps: CheckpointDeps, canvasId: string): Promise<RestoreResponse> {
+  const saved = await getSavedPoint(deps.db, canvasId);
   if (!saved) return { saved: null, session: null, workspace: null };
   const ids = [saved.sessionUploadId, saved.workspaceUploadId].filter(
     (id): id is string => id !== null,
   );
-  const rows = await getUploads(deps.db, { designId, ids });
+  const rows = await getUploads(deps.db, { canvasId, ids });
   const offer = async (id: string | null): Promise<SavedArchive | null> => {
     const row = id ? rows.find((r) => r.id === id) : undefined;
     if (!row) return null;
@@ -156,26 +166,22 @@ export async function restoreFor(deps: CheckpointDeps, designId: string): Promis
 }
 
 /**
- * The runner found its disk behind the design's last checkpoint and restored from it. Logged
- * with the sandbox it happened in, its generation and how often it has happened there, which is
- * what to show boat.dev; a rollback is counted on the sandbox's row.
+ * The runner found its disk behind the canvas's last checkpoint and restored from it. Logged
+ * with the session it happened in and the image: an empty disk (`rebuilt`) is what a new
+ * sandbox, a new image or an expired snapshot gives; a disk that came back old (`rollback`)
+ * should not happen with one snapshot kept, and is what to show Vercel.
  */
 export async function recordRestored(
   deps: CheckpointDeps,
-  designId: string,
+  canvasId: string,
   report: RestoredReport,
 ): Promise<void> {
-  const sandbox =
-    report.kind === "rollback"
-      ? await countSandboxRollback(deps.db, designId)
-      : await getLiveSandbox(deps.db, designId);
+  const sandbox = await getSandbox(deps.db, canvasId);
   const fields = {
-    designId,
-    sandboxId: sandbox?.id ?? null,
-    providerId: sandbox?.providerId ?? null,
-    generation: sandbox?.generation ?? null,
+    canvasId,
+    sessionId: sandbox?.sessionId ?? null,
+    image: sandbox?.image ?? null,
     sandboxState: sandbox?.state ?? null,
-    rollbacks: sandbox && "rollbacks" in sandbox ? sandbox.rollbacks : null,
     diskTurn: report.disk?.turn ?? null,
     diskSavedAt: report.disk?.at ?? null,
     diskBootId: report.disk?.bootId ?? null,

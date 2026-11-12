@@ -10,6 +10,7 @@ import {
 import type { PonzuDesktop } from "@ponzu/desktop/bridge";
 import type { Host } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
+import { apiErrors } from "./maintenance.ts";
 
 /**
  * The studio inside the Mac app. The main process holds the session; this borrows an access
@@ -17,6 +18,7 @@ import { linksWithInstalls } from "./installs.ts";
  * origin, which the API allows.
  */
 export function desktopHost(desktop: PonzuDesktop): Host {
+  const errors = apiErrors();
   const session = borrowSession({
     apiUrl: desktop.config.apiUrl,
     client: { platform: desktop.config.client, version: desktop.version },
@@ -29,8 +31,11 @@ export function desktopHost(desktop: PonzuDesktop): Host {
         const { status, code, message, details } = lent.error;
         throw new ApiError(status, code as ApiError["code"], message, details);
       },
-      report: ({ status, code, message, details }) =>
-        desktop.session.report({ status, code, message, ...(details ? { details } : {}) }),
+      report: (error) => {
+        const { status, code, message, details } = error;
+        desktop.session.report({ status, code, message, ...(details ? { details } : {}) });
+        errors.heard(error);
+      },
       signOut: () => desktop.session.signOut(),
     },
   });
@@ -58,6 +63,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),
     docStorage: signedInCache(session, window.localStorage),
+    onApiError: errors.listen,
+    welcome1x: () => desktop.welcome1x(),
   };
 }
 
@@ -72,9 +79,9 @@ export function linkSchemeOf(scheme: string | undefined): LinkScheme | "none" {
 const CACHE = "ponzu.cache.";
 
 /**
- * The designs last opened, kept to show offline while someone is signed in and only then: they
+ * The canvases last opened, kept to show offline while someone is signed in and only then: they
  * are whole documents of private repos with the keys that open their files. Nothing is written
- * once the session ends (a design closing as its window unmounts would), and what was kept
+ * once the session ends (a canvas closing as its window unmounts would), and what was kept
  * goes with it. The main process clears the studio's storage then too.
  */
 export function signedInCache(
@@ -89,7 +96,7 @@ export function signedInCache(
   session.subscribe(() => {
     if (!signedIn()) forget();
   });
-  // Opened already signed out, with designs kept from before (Ponzu Dev's first launch, when the
+  // Opened already signed out, with canvases kept from before (Ponzu Dev's first launch, when the
   // main process keeps what came from Ponzu Preview for the window state's sake): drop them now.
   if (!signedIn() && session.getState().status !== "loading") forget();
   return {

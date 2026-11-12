@@ -140,6 +140,24 @@ test("a user token GitHub refuses is github_reauth_required", async () => {
   });
 });
 
+test("revoking a person's grant ends their tokens; one already gone is done; 422 throws", async () => {
+  const nia = await t.signInAs({ login: "nia" });
+  const niasToken = await githubUserToken(t.deps, nia.userId);
+  await t.deps.github.deleteAuthorization(niasToken);
+  expect(t.github.accepts(niasToken)).toBe(false);
+  // Again, with the token now dead: GitHub answers 404, which is what was wanted.
+  await t.deps.github.deleteAuthorization(niasToken);
+  expect(t.github.grantRevocations.slice(-2).map((request) => request.body)).toEqual([
+    { access_token: niasToken },
+    { access_token: niasToken },
+  ]);
+
+  t.github.failNext(`/applications/${t.github.credentials.clientId}/grant`, 422);
+  const refused = await t.deps.github.deleteAuthorization(niasToken).catch((error) => error);
+  expect(refused).toMatchObject({ name: "UpstreamError", status: 422 });
+  expect(String(refused)).not.toContain(niasToken);
+});
+
 test("the App gets an installation token by signing a JWT with its private key", async () => {
   const issued = await t.deps.github.createInstallationToken({
     installationId: 9002,

@@ -1,0 +1,11 @@
+#!/bin/sh
+# bundle-fits <manifest.json> <image.json>: whether a runner bundle was built for what this image
+# has. The bundle's manifest says the Claude Code its Agent SDK speaks to and the playwright-core
+# it was built against; image.json says what the image installed. Exit 0 when both match.
+set -eu
+jq -e --slurpfile image "$2" '
+  .requires.claude == $image[0].claude and .requires.playwrightCore == $image[0].playwrightCore
+' "$1" >/dev/null || {
+  echo "bundle needs $(jq -c .requires "$1"), image has $(jq -c . "$2")" >&2
+  exit 1
+}

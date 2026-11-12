@@ -1,6 +1,6 @@
 /*
  * Where the window may go. It shows the studio and nothing else: a navigation anywhere else is
- * stopped, and a link meant for the browser goes there only once it checks out. Designs are
+ * stopped, and a link meant for the browser goes there only once it checks out. Canvases are
  * written by agents and anyone can comment, so nothing in the window gets to choose otherwise.
  */
 

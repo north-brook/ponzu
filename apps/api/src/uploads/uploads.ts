@@ -15,7 +15,7 @@ import { checkUpload, type Declared, PRIVATE_PURPOSES, type UploadKind } from ".
  * Uploads (docs/cloud.md, "The runner protocol", "Uploads"): bytes go straight to storage at an
  * address signed for exactly them, never through a function, and nothing is recorded until the
  * uploader says they are there and storage agrees. The runner uploads assets, exports and
- * previews; a person uploads images to a design they can write to.
+ * previews; a person uploads images to a canvas they can write to.
  */
 
 type UploadDeps = Pick<
@@ -27,7 +27,7 @@ type UploadDeps = Pick<
 export const UPLOAD_SECONDS = 600;
 
 export interface UploadTarget {
-  designId: string;
+  canvasId: string;
   assetKey: string;
 }
 
@@ -41,7 +41,7 @@ export interface Presigned {
  * Check each file and hand back where to put it: every file is checked before any address is
  * made, so a refusal leaves nothing behind. `userId` is the person uploading; null for the
  * runner. A person's image is kept under its own name with a few random characters added, so
- * it never replaces a file the design already has; a comment's picture under its comment's
+ * it never replaces a file the canvas already has; a comment's picture under its comment's
  * message id (`comment`) as well, so each try at one is a file of its own.
  */
 export async function presignUploads(
@@ -64,7 +64,7 @@ export async function presignUploads(
     return {
       row: {
         id,
-        designId: target.designId,
+        canvasId: target.canvasId,
         purpose,
         name,
         objectKey: uploadKey(target.assetKey, purpose, id, name),
@@ -97,16 +97,16 @@ export interface Completed {
   id: string;
   /**
    * An asset's reference, `assets/<name>`, or a comment's picture's, `comments/<name>`, under
-   * the design's assets address; null for the rest.
+   * the canvas's assets address; null for the rest.
    */
   ref: string | null;
   url: string;
 }
 
 /**
- * Record the files whose bytes have arrived: an asset in the design's files, an export as a
- * link, previews as the design's pictures of `previewSeq`. Each must be an upload of the
- * design by the same uploader (`userId`, null for the runner) and be in storage as declared,
+ * Record the files whose bytes have arrived: an asset in the canvas's files, an export as a
+ * link, previews as the canvas's pictures of `previewSeq`. Each must be an upload of the
+ * canvas by the same uploader (`userId`, null for the runner) and be in storage as declared,
  * or the whole call is 404 `not_found` and records nothing more. Completing one again answers
  * as the first time did.
  */
@@ -117,7 +117,7 @@ export async function completeUploads(
   { userId, previewSeq }: { userId: string | null; previewSeq?: number },
 ): Promise<Completed[]> {
   const wanted = [...new Set(ids)];
-  const found = await getUploads(deps.db, { designId: target.designId, ids: wanted });
+  const found = await getUploads(deps.db, { canvasId: target.canvasId, ids: wanted });
   const rows = found.filter((row) => row.userId === userId);
   const notArrived = new ApiError(404, "not_found", "Those bytes never arrived.");
   if (rows.length !== wanted.length) throw notArrived;
@@ -134,7 +134,7 @@ export async function completeUploads(
     throw new ApiError(
       400,
       "invalid_request",
-      "Previews are completed with the design's seq they show, which it has reached.",
+      "Previews are completed with the canvas's seq they show, which it has reached.",
     );
   }
   // Each is checked before any is recorded.
@@ -154,7 +154,7 @@ export async function completeUploads(
       // A person's file, the first time it is completed: completing it again is no new fact.
       if (userId) {
         deps.analytics.capture("file uploaded", {
-          design_id: target.designId,
+          canvas_id: target.canvasId,
           content_type: row.contentType,
           bytes: row.size,
         });
@@ -168,7 +168,7 @@ export async function completeUploads(
       if (key !== row.objectKey) await deps.storage.copy(row.objectKey, key);
       const asset = row.purpose === "asset" ? { path: assetRef(row.name) } : undefined;
       await completeUpload(deps.db, {
-        designId: target.designId,
+        canvasId: target.canvasId,
         id: row.id,
         servedKey: key,
         asset,
@@ -203,7 +203,7 @@ export async function completeUploads(
 }
 
 /**
- * Make `seq`'s previews the design's, unless it shows later ones, and clear away what is no
+ * Make `seq`'s previews the canvas's, unless it shows later ones, and clear away what is no
  * longer served: the uploaded copies, and the previews these replaced.
  */
 async function showPreviews(
@@ -212,7 +212,7 @@ async function showPreviews(
   previews: Upload[],
   seq: number,
 ) {
-  const moved = await advancePreviewSeq(deps.db, { designId: target.designId, seq });
+  const moved = await advancePreviewSeq(deps.db, { canvasId: target.canvasId, seq });
   const stale = previews.map((row) => row.objectKey);
   // Previews only move forward, so the ones replaced are always of an earlier seq.
   const previous = moved?.previous;
@@ -231,7 +231,7 @@ export const commentRef = (name: string) => `comments/${name}`;
  * Where an upload's bytes go. An asset and an export go where they are served from. A preview's
  * place depends on the seq it is completed with, and a comment's picture is asked for before its
  * comment is saved (which may never happen: refused, undone, the app closed), so both wait under
- * `staging/`, apart from every design's files (where a bucket lifecycle rule clears what is
+ * `staging/`, apart from every canvas's files (where a bucket lifecycle rule clears what is
  * never completed), and are copied into place when completed.
  */
 function uploadKey(assetKey: string, purpose: Upload["purpose"], id: string, name: string): string {
@@ -249,7 +249,7 @@ export function storeFor(deps: Pick<Deps, "storage" | "archives">, purpose: Uplo
 
 /**
  * Where a checkpoint's archives go (a session's transcript holds the whole conversation and every
- * tool's output): at the bucket's root, never under a design's asset key, which people hold, and
+ * tool's output): at the bucket's root, never under a canvas's asset key, which people hold, and
  * each under 32 random characters of its own that no answer to any client carries. The assets
  * domain serves any key it is asked for, so the key is the only thing between it and the world;
  * a bucket with no public domain at all is the better home (docs/cloud.md, "Saving the

@@ -1,560 +1,245 @@
 #!/usr/bin/env bun
 /**
- * What a sandbox keeps across sleeps and lost disks, for real, in sandboxes made from the image
- * (docs/cloud.md, "Saving the sandbox"), with real Claude Code on the cheapest model:
+ * What a canvas keeps across a sleep and across losing its sandbox altogether, for real, in a
+ * Vercel Sandbox made from the image (docs/cloud.md, "Saving the sandbox"), with real Claude
+ * Code on Haiku:
  *
- *   bun apps/runner/image/durability.ts proof [snapshot]        a repo design: a turn leaves an
- *       uncommitted file, the sandbox sleeps as the API puts it to sleep (warm, then cold), and
- *       if boat does not roll the disk back by itself the checkout, the transcripts and the
- *       runner's marker are put back as they were before that turn; the next turn must see the
- *       file and remember the turn.
- *   bun apps/runner/image/durability.ts double-cold [snapshot]  a Scratch design woken cold twice
- *       in a row, the sequence that rolled boat's disks back: whether it happens, and whether
- *       the runner gets everything back.
+ *   bun apps/runner/image/durability.ts [image]     current.json's image by default
  *
- * The fake API holds the runner off after every start until this machine hands back its memory,
- * because the real API is never on the sandbox's disk (trial.ts, `wakeLikeTheApi`). Both need
- * BOAT_API_KEY and ANTHROPIC_API_KEY; `proof` also GITHUB_TEST_REPO, GITHUB_APP_ID,
- * GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY_PATH and E2E_PERSON, as e2e.ts's `repo`.
- * What each step saw is printed as JSON and kept in .context/durability/. Every sandbox and the
- * branch are deleted.
+ * A repo canvas on GITHUB_TEST_REPO. Turn one gives Claude something to remember; turn two
+ * writes a file and does not commit it. Each turn's checkpoint goes to the fake API (R2's
+ * stand-in), with the work in progress and nothing of it on GitHub. Then:
+ *   1. a sleep as the API's (ponzu-stop, then stop) and a wake (up, ponzu-start): the snapshot
+ *      brings the disk back as it was, and the runner restores nothing;
+ *   2. the sandbox is removed, as an image change, Vercel's 14-day removal or an expired
+ *      snapshot leave it; up() makes a new one on an empty disk, the fake API starts from the
+ *      memory this machine kept (the real API is never on the sandbox's disk), and the runner
+ *      rebuilds from the checkpoint and git: the file is back,
+ *      uncommitted, on the same HEAD, the session's folder is back, and turn three remembers
+ *      both turns.
+ * Vercel keeps one snapshot ({count: 1, deleteEvicted: true}), so no rollback is manufactured.
+ *
+ * Needs VERCEL_TOKEN, VERCEL_TEAM_ID, VERCEL_PROJECT_ID, ANTHROPIC_API_KEY, GITHUB_TEST_REPO,
+ * GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID and GITHUB_APP_PRIVATE_KEY_PATH (E2E_PERSON as
+ * e2e.ts's repo). Every line is kept in .context/image/durability.jsonl. The sandbox
+ * (pz-test-durability-*) and the branch are deleted, on Ctrl-C too.
  */
-import { createSign } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import type { RunnerSession, ThreadItem } from "../src/api/protocol.ts";
-import { destroyOnSignal, provider, sh, until } from "./harness.ts";
+import { IMAGE_COMMANDS } from "../src/api/protocol.ts";
+import { readCurrent } from "./image.ts";
 import {
+  afterTurn,
+  assistantText,
+  type Box,
+  buildRunnerBundle,
   control,
-  endTrial,
-  firstClaim,
-  health,
+  FAKE_STATE,
+  gh,
+  idle,
+  installationToken,
+  installFakeApi,
+  mark,
   message,
-  type Recorded,
+  need,
+  newer,
+  newStart,
+  note,
   record,
+  removeAll,
+  removeOnSignal,
+  repoSession,
+  reUp,
+  runnerLog,
+  STOP_COMMAND_MS,
+  type Start,
+  sandboxes,
+  secs,
+  sh,
   sleepLikeTheApi,
-  startTrial,
-  type Trial,
-  wakeLikeTheApi,
-} from "./trial.ts";
+  startFakeApi,
+  startRunner,
+  testSpec,
+  until,
+  upBox,
+} from "./live.ts";
 
-const OUT = join(import.meta.dir, "..", "..", "..", ".context", "durability");
-const TURN_MS = 5 * 60_000;
-/** boat keeps a stopped sandbox's memory for ten minutes; past that a resume boots. */
-const COLD_AFTER_MS = 11 * 60_000;
-const WARM_AFTER_MS = 60_000;
+const image = process.argv[2] ?? readCurrent().image;
+const say = (event: string, data: Record<string, unknown> = {}) => note("durability", event, data);
 
-const [phase, snapshotArg] = process.argv.slice(2);
-const snapshot: string =
-  snapshotArg ?? JSON.parse(readFileSync(join(import.meta.dir, "current.json"), "utf8")).snapshot;
-const boat = provider();
-destroyOnSignal();
-const report: Record<string, unknown> = { phase, snapshot, at: new Date().toISOString() };
-mkdirSync(OUT, { recursive: true });
-const name = `${phase}-${Date.now().toString(36)}`;
-
+removeOnSignal();
+const bundle = buildRunnerBundle();
+const [, repoName] = need("GITHUB_TEST_REPO").split("/") as [string, string];
+const github = await installationToken(repoName);
+const gitToken = { password: github.token, expiresAt: github.expiresAt };
+const branch = `pz/durability-${Date.now().toString(36)}`;
+const { owner, name, session } = await repoSession(github, branch);
+let box: Box | null = null;
 try {
-  if (phase === "proof") await proof();
-  else if (phase === "double-cold") await doubleCold();
-  else throw new Error("say proof or double-cold");
+  await proof();
+  say("passed", { image });
+} catch (err) {
+  say("failed", { error: String(err).slice(0, 3000) });
+  if (box) say("log", { log: await runnerLog(box) });
+  process.exitCode = 1;
 } finally {
-  writeFileSync(join(OUT, `${name}.json`), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify(report, null, 2));
+  await removeAll();
+  await gh(github.token, `/repos/${owner}/${name}/git/refs/heads/${branch}`, "DELETE").catch(
+    () => {},
+  );
+  await gh(github.token, "/installation/token", "DELETE").catch(() => {});
+  const left = await sandboxes().list("pz-test-durability-");
+  say("cleanup", { left: left.map((s) => `${s.name}:${s.status}`) });
 }
 
 async function proof(): Promise<void> {
-  const [owner, repoName] = need("GITHUB_TEST_REPO").split("/") as [string, string];
-  const github = await installationToken(repoName);
-  const branch = `pz/durability-${Date.now().toString(36)}`;
-  const gitToken = { password: github.token, expiresAt: github.expiresAt };
-  try {
-    const person = await gh<{ login: string; id: number }>("", `/users/${need("E2E_PERSON")}`);
-    const { slug } = await gh<{ slug: string }>(github.jwt, "/app");
-    const bot = await gh<{ login: string; id: number }>("", `/users/${slug}%5Bbot%5D`);
-    const repository = await gh<{ default_branch: string }>(
-      github.token,
-      `/repos/${owner}/${repoName}`,
-    );
-    const noreply = (u: { login: string; id: number }) => ({
-      name: u.login,
-      email: `${u.id}+${u.login}@users.noreply.github.com`,
-    });
-    const session: Partial<RunnerSession> = {
-      repo: { owner, name: repoName, defaultBranch: repository.default_branch },
-      branch,
-      author: noreply(person),
-      committer: noreply(bot),
-    };
-    const trial = await startTrial(boat, snapshot, {
-      name: "durability-proof",
-      label: "image-e2e",
-      credential: { ANTHROPIC_API_KEY: need("ANTHROPIC_API_KEY") },
-      session,
-      gitToken,
-      hold: true,
-    });
-    report.sandbox = trial.id;
-    report.designId = trial.designId;
-    try {
-      const work = `/home/agent/work/${repoName}`;
-      await idle(trial, "the runner to check out the branch");
-      const head = (
-        await sh(boat, trial.id, `sudo -u agent git -C ${work} rev-parse HEAD`, { quiet: true })
-      ).trim();
+  const start = newStart(bundle, need("ANTHROPIC_API_KEY"));
+  box = await upBox("durability", testSpec(image));
+  const b = box;
+  say("up", { name: b.name, fresh: b.up.fresh });
+  await installFakeApi(b, bundle);
+  await startFakeApi(b, start);
+  await control(b, start, "PUT", "session", session);
+  await control(b, start, "PUT", "git-token", gitToken);
+  await startRunner(b, start);
+  await idle(b, start, "the runner to check out the branch");
+  const work = `/home/agent/work/${name}`;
+  const head = await agentSh(b, `git -C ${work} rev-parse HEAD`);
 
-      // Turn one: something to remember, and a checkpoint of it.
-      report.turn1 = await turn(
-        trial,
-        "Remember the code word apricot for later. Reply with just: noted.",
-      );
-      const one = await checkpointAfter(trial, 0);
-      // The disk as it is before turn two: what a rollback brings back.
-      await sh(
-        boat,
-        trial.id,
-        "sudo rm -rf /root/rollback && sudo mkdir -p /root/rollback && sudo cp -a /home/agent/work /home/agent/.claude /home/user/.ponzu /root/rollback/",
-        { quiet: true },
-      );
-      // A folder beside the transcript, as Claude Code makes for subagents: it goes into turn
-      // two's checkpoint, and the rollback below takes it away again.
-      const sessionId = (await record(trial)).session.claudeSessionId;
-      if (!sessionId) throw new Error("no Claude session after turn one");
-      await sh(
-        boat,
-        trial.id,
-        `sudo -u agent sh -c 'f=$(ls /home/agent/.claude/projects/*/${sessionId}.jsonl | head -1) && d="\${f%.jsonl}" && mkdir -p "$d/subagents" && echo "{}" > "$d/subagents/agent-probe.jsonl"'`,
-        { quiet: true },
-      );
-      // Turn two: a file written and not committed.
-      report.turn2 = await turn(
-        trial,
-        "In the repository, create the file notes/plan.md holding exactly one line: juniper 42. Do not commit it and do not push. Then reply with just: done.",
-      );
-      const two = await checkpointAfter(trial, one.turn);
-      report.checkpoints = { one, two };
-      // The work in progress is with the checkpoint, and nothing of it is on GitHub: no ref
-      // for the design, and the branch was never pushed.
-      const wipRefOnGithub = await gh(
-        github.token,
-        `/repos/${owner}/${repoName}/git/ref/ponzu/wip/${trial.designId}`,
-      ).then(
-        () => true,
-        () => false,
-      );
-      const branchOnGithub = await gh(
-        github.token,
-        `/repos/${owner}/${repoName}/branches/${encodeURIComponent(branch)}`,
-      ).then(
-        () => true,
-        () => false,
-      );
-      // A session with a folder beside its transcript (subagents, kept tool results), which
-      // the restore must bring back as well.
-      const probe = `/home/agent/.claude/projects/*/${sessionId}/subagents/agent-probe.jsonl`;
-      const sessionFolder = (
-        await sh(boat, trial.id, `sudo sh -c 'ls ${probe}' || true`, { quiet: true })
-      ).trim();
-      report.workInProgress = {
-        commit: two.wipCommit,
-        archived: two.workspace,
-        wipRefOnGithub,
-        branchPushed: branchOnGithub,
-        sessionFolder: sessionFolder || null,
-      };
-      if (!two.wipCommit || !two.workspace || wipRefOnGithub)
-        throw new Error("the work in progress was not kept with the checkpoint alone");
-
-      // A warm sleep and wake, as the API does them.
-      const warmSleep = await sleepLikeTheApi(trial);
-      await Bun.sleep(WARM_AFTER_MS);
-      const warmWake = await wakeWithToken(trial, warmSleep.memory, gitToken);
-      report.warm = { sleep: without(warmSleep, "memory"), wake: warmWake };
-      await idle(trial, "the runner after the warm wake");
-
-      // A cold one.
-      const coldSleep = await sleepLikeTheApi(trial);
-      console.log(`cold: asleep; resuming in ${COLD_AFTER_MS / 1000} s`);
-      await Bun.sleep(COLD_AFTER_MS);
-      const coldWake = await wakeWithToken(trial, coldSleep.memory, gitToken);
-      await idle(trial, "the runner after the cold wake");
-      const afterCold = await record(trial);
-      const boatRolledBack = afterCold.restored.some((r) => r.kind === "rollback");
-      report.cold = {
-        sleep: without(coldSleep, "memory"),
-        wake: coldWake,
-        boatRolledBack,
-        restored: afterCold.restored,
-      };
-
-      // boat did not do it this time: do it deterministically, as it was seen to.
-      if (!boatRolledBack) {
-        await sh(
-          boat,
-          trial.id,
-          [
-            "sudo systemctl stop ponzu-runner",
-            "sudo rm -rf /home/agent/work /home/agent/.claude /home/user/.ponzu",
-            "sudo cp -a /root/rollback/work /root/rollback/.claude /home/agent/",
-            "sudo cp -a /root/rollback/.ponzu /home/user/",
-            "sync",
-            "sudo systemctl start ponzu-runner",
-          ].join(" && "),
-          { quiet: true },
-        );
-        await until("the runner's /health", () => health(trial.runner), 120_000, 200);
-        await idle(trial, "the runner after the simulated rollback");
-      }
-      const recovered = await record(trial);
-      report.rollback = {
-        simulated: !boatRolledBack,
-        restored: recovered.restored,
-        events: await journal(
-          trial,
-          "sandbox_rollback|sandbox_rebuilt|work in progress|checkpoint",
-        ),
-      };
-      if (!recovered.restored.some((r) => r.kind === "rollback"))
-        throw new Error("the runner did not see its disk was behind the checkpoint");
-
-      // The checkout has the file back, uncommitted, on the same HEAD.
-      const disk = await sh(
-        boat,
-        trial.id,
-        `sudo -u agent cat ${work}/notes/plan.md; sudo -u agent git -C ${work} rev-parse HEAD; sudo -u agent git -C ${work} status --porcelain`,
-        { quiet: true },
-      );
-      const [planLine = "", headNow = "", ...status] = disk.trim().split("\n");
-      const folderBack = (
-        await sh(boat, trial.id, `sudo sh -c 'ls ${probe}' || true`, { quiet: true })
-      ).trim();
-      report.checkout = {
-        plan: planLine,
-        sameHead: headNow === head,
-        status,
-        sessionFolderRestored: !!folderBack,
-      };
-      if (planLine.trim() !== "juniper 42") throw new Error(`notes/plan.md is "${planLine}"`);
-      if (!folderBack) throw new Error("the session's folder did not come back");
-
-      // And the session remembers both turns.
-      const asked = await turn(
-        trial,
-        "Without using any tools, answer in one line: what code word did I ask you to remember, and what single line did you write into notes/plan.md?",
-      );
-      report.turn3 = asked;
-      const reply = String(asked.reply).toLowerCase();
-      if (!reply.includes("apricot") || !reply.includes("juniper"))
-        throw new Error(`the session forgot: ${asked.reply}`);
-      report.ok = true;
-    } catch (err) {
-      report.journal = await journal(trial, ".").catch((e) => String(e));
-      throw err;
-    } finally {
-      await endTrial(trial);
-    }
-  } finally {
-    await gh(github.token, `/repos/${owner}/${repoName}/git/refs/heads/${branch}`, "DELETE").catch(
-      () => {},
-    );
-    await gh(github.token, "/installation/token", "DELETE").catch(() => {});
-  }
-}
-
-async function doubleCold(): Promise<void> {
-  const trial = await startTrial(boat, snapshot, {
-    name: "durability-double-cold",
-    label: "image-e2e",
-    credential: { ANTHROPIC_API_KEY: need("ANTHROPIC_API_KEY") },
-    hold: true,
-  });
-  report.sandbox = trial.id;
-  report.designId = trial.designId;
-  const notes = "/home/agent/work/scratch/notes.txt";
-  try {
-    await idle(trial, "the runner to start");
-    report.turn1 = await turn(
-      trial,
-      "Remember the word apricot. Write it as the only line of notes.txt in your working folder. Reply with just: ok.",
-    );
-    const one = await checkpointAfter(trial, 0);
-    const wakes: unknown[] = [];
-    report.wakes = wakes;
-
-    // First cold stop and start.
-    wakes.push(await coldCycle(trial, "first"));
-    report.turn2 = await turn(
-      trial,
-      "Also remember the word juniper, and add it as a second line of notes.txt. Reply with just: ok.",
-    );
-    const two = await checkpointAfter(trial, one.turn);
-    report.checkpoints = { one, two };
-
-    // Second cold stop and start: where boat's disk went back to the first.
-    wakes.push(await coldCycle(trial, "second"));
-    const file = (await sh(boat, trial.id, `sudo -u agent cat ${notes}`, { quiet: true })).trim();
-    const asked = await turn(
-      trial,
-      "Without using any tools, answer in one line: which two words did I ask you to remember?",
-    );
-    report.turn3 = asked;
-    const reply = String(asked.reply).toLowerCase();
-    report.after = {
-      notes: file,
-      remembersBoth: reply.includes("apricot") && reply.includes("juniper"),
-      fileHasBoth: file.includes("apricot") && file.includes("juniper"),
-    };
-    if (!(report.after as { remembersBoth: boolean }).remembersBoth)
-      throw new Error(`the session forgot: ${asked.reply}`);
-    if (!(report.after as { fileHasBoth: boolean }).fileHasBoth)
-      throw new Error(`notes.txt lost a line: ${file}`);
-    report.ok = true;
-  } catch (err) {
-    report.journal = await journal(trial, ".").catch((e) => String(e));
-    throw err;
-  } finally {
-    await endTrial(trial);
-  }
-}
-
-/**
- * Sleeps as the API does, waits out the warm window, wakes cold, and says what came back: the
- * runner's own verdict, a flushed and an unflushed probe file, and the fake API's own state file.
- */
-async function coldCycle(trial: Trial, which: string) {
-  const nonce = Date.now().toString(36);
+  // Turn one: something to remember, and its checkpoint.
+  const turn1 = await turn(
+    b,
+    start,
+    "Remember the code word apricot for later. Reply with just: noted.",
+  );
+  say("turn1", turn1);
+  const one = await checkpointAfter(b, start, 0);
+  // A folder beside the transcript, as Claude Code makes for subagents: it must come back too.
+  const sessionId = (await record(b, start)).session.claudeSessionId;
+  if (!sessionId) throw new Error("no Claude session after turn one");
   await sh(
-    boat,
-    trial.id,
-    `echo ${nonce} > ~/.ponzu-probe-synced && sync ~/.ponzu-probe-synced && echo ${nonce} > ~/.ponzu-probe-unsynced`,
-    { quiet: true },
+    b,
+    `sudo -u agent sh -c 'f=$(ls /home/agent/.claude/projects/*/${sessionId}.jsonl | head -1) && d="\${f%.jsonl}" && mkdir -p "$d/subagents" && echo "{}" > "$d/subagents/agent-probe.jsonl"'`,
   );
-  const before = await record(trial);
-  const slept = await sleepLikeTheApi(trial);
-  console.log(`${which} cold: asleep; resuming in ${COLD_AFTER_MS / 1000} s`);
-  await Bun.sleep(COLD_AFTER_MS);
-  const woke = await wake(trial, slept.memory);
-  const probes = await sh(
-    boat,
-    trial.id,
-    'printf "%s\\n%s\\n%s\\n" "$(cat ~/.ponzu-probe-synced)" "$(cat ~/.ponzu-probe-unsynced 2>/dev/null)" "$(cat /proc/sys/kernel/random/boot_id)"',
-    { quiet: true },
+  const probe = `/home/agent/.claude/projects/*/${sessionId}/subagents/agent-probe.jsonl`;
+
+  // Turn two: a file written and not committed.
+  const turn2 = await turn(
+    b,
+    start,
+    "In the repository, create the file notes/plan.md holding exactly one line: juniper 42. Do not commit it and do not push. Then reply with just: done.",
   );
-  const [synced = "", unsynced = "", boot = ""] = probes.split("\n").map((l) => l.trim());
-  await idle(trial, `the runner after the ${which} cold wake`);
-  const after = await record(trial);
-  const savedTurn = (slept.memory.saved as { turn: number } | null)?.turn ?? null;
-  const result = {
-    which,
-    coldStart: woke.coldStart,
-    boot,
-    sleep: without(slept, "memory"),
-    healthSeconds: woke.healthSeconds,
-    claimSeconds: woke.claimSeconds,
-    disk: {
-      syncedProbeKept: synced === nonce,
-      unsyncedProbeKept: unsynced === nonce,
-      // The fake flushes its own file before every answer: older than what this machine kept
-      // means the disk went back.
-      fakeFileSavedTurn: woke.fakeFileSavedTurn,
-      apiSavedTurn: savedTurn,
-      fakeFileWentBack: woke.fakeFileSavedTurn !== savedTurn,
-      fakeFileWrites: woke.fakeFileWrites,
-      fakeWritesBeforeStop: before.kept.writes,
-    },
-    runner: after.restored.slice(before.restored.length),
-    events: await journal(trial, "sandbox_rollback|sandbox_rebuilt|this disk|work in progress"),
+  say("turn2", turn2);
+  const two = await checkpointAfter(b, start, one.turn);
+  const onGithub = (path: string) =>
+    gh(github.token, `/repos/${owner}/${name}${path}`).then(
+      () => true,
+      () => false,
+    );
+  const wip = {
+    commit: two.wipCommit,
+    archived: two.workspace,
+    wipRefOnGithub: await onGithub(`/git/ref/ponzu/wip/${start.canvasId}`),
+    branchOnGithub: await onGithub(`/branches/${encodeURIComponent(branch)}`),
   };
-  console.log(JSON.stringify(result));
-  return result;
-}
+  say("checkpoints", { one, two, wip });
+  if (!two.wipCommit || !two.workspace || wip.wipRefOnGithub)
+    throw new Error("the work in progress was not kept with the checkpoint alone");
 
-/* Turns, as the fake API saw them. */
+  // 1. A sleep and a wake, as the API does them: the snapshot is the disk.
+  const slept = await sleepLikeTheApi(b);
+  const w0 = performance.now();
+  const up = await reUp(b);
+  if (up.fresh || up.wasRunning) throw new Error(`the wake: ${JSON.stringify(up)}`);
+  await startFakeApi(b, start);
+  // The fake never writes the git token down, where the real API always has one to mint.
+  await control(b, start, "PUT", "git-token", gitToken);
+  await startRunner(b, start);
+  const woke = await idle(b, start, "the runner after the wake");
+  say("wake", { ...slept, idleSeconds: secs(performance.now() - w0), restored: woke.restored });
+  if (woke.restored.length) throw new Error(`a wake restored: ${JSON.stringify(woke.restored)}`);
+  if ((await agentSh(b, `cat ${work}/notes/plan.md`)) !== "juniper 42")
+    throw new Error("the wake lost notes/plan.md");
 
-function since(from: Recorded, at: number): ThreadItem[] {
-  return from.items.filter((i) => Date.parse(i.at) > at);
-}
+  // 2. The sandbox goes: what the API keeps (the fake's memory, taken after the runner's own
+  // shutdown checkpoint) stays on this machine.
+  const stopped = await sandboxes().exec(b.at, {
+    cmd: IMAGE_COMMANDS.stop,
+    sudo: true,
+    timeoutMs: STOP_COMMAND_MS,
+  });
+  if (stopped.exitCode !== 0) throw new Error(`ponzu-stop exited ${stopped.exitCode}`);
+  const memory = await control<Record<string, unknown>>(b, start, "GET", "memory");
+  await sandboxes().stop(b.at);
+  await sandboxes().remove(b.name);
+  const gone = await sandboxes().status(b.name);
+  if (gone) throw new Error(`still there after remove: ${gone.status}`);
+  const r0 = performance.now();
+  const fresh = await reUp(b);
+  say("recreate", { upSeconds: secs(performance.now() - r0), fresh: fresh.fresh });
+  if (!fresh.fresh) throw new Error("up() after a remove did not start on an empty disk");
+  await installFakeApi(b, bundle);
+  // What the API remembers, feed position included, is there before the runner asks: the fake
+  // starts from it. A git token is never in it; the API mints one.
+  await sandboxes().writeFile(b.at, FAKE_STATE, JSON.stringify(memory));
+  await startFakeApi(b, start);
+  await control(b, start, "PUT", "git-token", gitToken);
+  await startRunner(b, start);
+  const rebuilt = await idle(b, start, "the runner after the rebuild", 300_000);
+  say("rebuild", {
+    seconds: secs(performance.now() - r0),
+    restored: rebuilt.restored,
+    bundlesServed: rebuilt.bundles,
+  });
+  if (!rebuilt.restored.some((r) => r.kind === "rebuilt"))
+    throw new Error(`the runner did not rebuild: ${JSON.stringify(rebuilt.restored)}`);
 
-function assistantText(r: Recorded, at: number): string | null {
-  const item = since(r, at).find(
-    (i) => i.kind === "assistant" && (i.payload as { text: string }).text.trim(),
+  // The checkout has the file back, uncommitted, on the same HEAD; the session's folder is back.
+  const plan = await agentSh(b, `cat ${work}/notes/plan.md`);
+  const headNow = await agentSh(b, `git -C ${work} rev-parse HEAD`);
+  const status = await agentSh(b, `git -C ${work} status --porcelain`);
+  const folder = (await sh(b, `sudo sh -c 'ls ${probe}' || true`)).stdout.trim();
+  say("checkout", { plan, sameHead: headNow === head, status, sessionFolderRestored: !!folder });
+  if (plan !== "juniper 42") throw new Error(`notes/plan.md is "${plan}"`);
+  if (headNow !== head) throw new Error(`HEAD moved: ${head} to ${headNow}`);
+  if (!folder) throw new Error("the session's folder did not come back");
+
+  // And the session remembers both turns.
+  const turn3 = await turn(
+    b,
+    start,
+    "Without using any tools, answer in one line: what code word did I ask you to remember, and what single line did you write into notes/plan.md?",
   );
-  return item ? (item.payload as { text: string }).text : null;
+  say("turn3", turn3);
+  const reply = turn3.reply.toLowerCase();
+  if (!reply.includes("apricot") || !reply.includes("juniper"))
+    throw new Error(`the session forgot: ${turn3.reply}`);
 }
 
-async function idle(trial: Trial, what: string): Promise<Recorded> {
-  return until(
-    what,
-    async () => {
-      const r = await record(trial);
-      const up = r.items.some(
-        (i) =>
-          i.kind === "notice" &&
-          ["started", "resumed"].includes((i.payload as { type: string }).type),
-      );
-      return up && !r.held && r.states.at(-1)?.state === "idle" ? r : null;
-    },
-    180_000,
-    500,
-  );
+async function agentSh(b: Box, command: string): Promise<string> {
+  return (await sh(b, `sudo -u agent sh -c ${JSON.stringify(command)}`)).stdout.trim();
 }
 
-async function turn(trial: Trial, text: string) {
-  const at = (await record(trial)).now;
-  const asked = await message(trial, text);
-  const done = await until(
-    "the turn to end",
-    async () => {
-      const r = await record(trial);
-      const states = r.states.filter((s) => s.at > at).map((s) => s.state);
-      const ended =
-        r.delivered.includes(asked.id) &&
-        states.includes("working") &&
-        states.at(-1) === "idle" &&
-        assistantText(r, at) !== null &&
-        !r.items.some((i) => i.streaming);
-      return ended ? r : null;
-    },
-    TURN_MS,
-    500,
-  );
+async function turn(b: Box, start: Start, text: string) {
+  const from = mark(await record(b, start));
+  const asked = await message(b, start, text);
+  const done = await afterTurn(b, start, asked.id, from);
   return {
-    reply: (assistantText(done, at) ?? "").slice(0, 300),
-    tools: since(done, at)
+    reply: (assistantText(done, from) ?? "").slice(0, 300),
+    tools: newer(done, from)
       .filter((i) => i.kind === "tool")
       .map((i) => (i.payload as { label: string }).label),
   };
 }
 
 /** The checkpoint the turn just ended saved: one past `after`. */
-async function checkpointAfter(trial: Trial, after: number) {
+async function checkpointAfter(b: Box, start: Start, after: number) {
   const r = await until(
     "the turn's checkpoint",
     async () => {
-      const got = await record(trial);
+      const got = await record(b, start);
       return got.saved && got.saved.turn > after ? got : null;
     },
     60_000,
     500,
   );
   return r.saved!;
-}
-
-async function journal(trial: Trial, pattern: string): Promise<string[]> {
-  const out = await sh(
-    boat,
-    trial.id,
-    `sudo journalctl -u ponzu-runner -u ponzu-fake-api -b 0 --no-pager -o short-iso | grep -E '${pattern}' | grep -v -e pam_unix -e 'sudo\\[' | tail -40`,
-    { quiet: true },
-  ).catch(() => "");
-  return out.trim().split("\n").filter(Boolean);
-}
-
-/**
- * A wake of a repo design: as `wakeLikeTheApi`, but the fake is handed the git token first. It
- * never writes the token down, so a cold boot forgets it, where the real API always has one to
- * mint; the runner is held until the memory comes back, so it fetches with the token.
- */
-async function wakeWithToken(
-  trial: Trial,
-  memory: Parameters<typeof wakeLikeTheApi>[1],
-  gitToken: { password: string; expiresAt: string },
-) {
-  const began = performance.now();
-  const resumed = await until(
-    "boat to take the resume",
-    () =>
-      boat.resume(trial.id).catch((err) => {
-        if (err?.code === "busy") return null;
-        throw err;
-      }),
-    120_000,
-    500,
-  );
-  await until("the fake API", () => record(trial), 180_000, 200);
-  const before = await record(trial);
-  await control(trial, "PUT", "git-token", gitToken);
-  await control(trial, "PUT", "memory", memory);
-  // As the API's wake: the row says awake, and the runner is poked.
-  await control(trial, "PUT", "sleep", { sleep: null });
-  await until("the runner's /health", () => health(trial.runner), 180_000, 200);
-  const healthSeconds = Math.round((performance.now() - began) / 10) / 100;
-  await firstClaim(trial, before.now);
-  return {
-    coldStart: resumed.coldStart,
-    healthSeconds,
-    claimSeconds: Math.round((performance.now() - began) / 10) / 100,
-    fakeFileSavedTurn: before.kept.restored.savedTurn,
-  };
-}
-
-/**
- * `wakeLikeTheApi`, and when the fake API's address does not answer, what the sandbox says of
- * its two units from the inside, kept in the report; then once more through the addresses.
- */
-async function wake(trial: Trial, memory: Parameters<typeof wakeLikeTheApi>[1]) {
-  try {
-    return await wakeLikeTheApi(trial, memory);
-  } catch (err) {
-    const seen = await sh(
-      boat,
-      trial.id,
-      "systemctl is-active ponzu-fake-api ponzu-runner; curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8790/control/record; curl -s http://127.0.0.1:4600/health; echo; cat /proc/sys/kernel/random/boot_id",
-      { quiet: true },
-    ).catch((e) => String(e));
-    report.wakeFailure = { error: String(err), seen: seen.trim().split("\n") };
-    // Through the addresses, once more, now that the sandbox has had longer.
-    return await wakeLikeTheApi(trial, memory);
-  }
-}
-
-function without<T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> {
-  const { [key]: _, ...rest } = o;
-  return rest;
-}
-
-/* GitHub, as the App: a one-hour token for one repository, as the API would mint it. */
-
-async function installationToken(repo: string) {
-  const jwt = appJwt();
-  const response = await fetch(
-    `https://api.github.com/app/installations/${need("GITHUB_APP_INSTALLATION_ID")}/access_tokens`,
-    {
-      method: "POST",
-      headers: { authorization: `Bearer ${jwt}`, accept: "application/vnd.github+json" },
-      body: JSON.stringify({
-        repositories: [repo],
-        permissions: { contents: "write", metadata: "read" },
-      }),
-    },
-  );
-  if (!response.ok) throw new Error(`GitHub refused an installation token: ${response.status}`);
-  const body = (await response.json()) as { token: string; expires_at: string };
-  return { jwt, token: body.token, expiresAt: body.expires_at };
-}
-
-function appJwt(): string {
-  const now = Math.floor(Date.now() / 1000);
-  const part = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  const claims = { iat: now - 60, exp: now + 540, iss: need("GITHUB_APP_ID") };
-  const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part(claims)}`;
-  const key = readFileSync(need("GITHUB_APP_PRIVATE_KEY_PATH"), "utf8");
-  return `${unsigned}.${createSign("RSA-SHA256").update(unsigned).sign(key, "base64url")}`;
-}
-
-async function gh<T = unknown>(token: string, path: string, method = "GET"): Promise<T> {
-  const response = await fetch(`https://api.github.com${path}`, {
-    method,
-    headers: {
-      accept: "application/vnd.github+json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!response.ok) throw new Error(`GitHub ${method} ${path}: ${response.status}`);
-  return (response.status === 204 ? undefined : await response.json()) as T;
-}
-
-function need(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set`);
-  return value;
 }

@@ -1,6 +1,14 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
-export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
-export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
+export { CANVAS_HEAD_COLUMNS, type CanvasHead, type LiveCanvasHead, toCanvasHead } from "./head.ts";
+export {
+  ASSET_KEY_LENGTH,
+  type IdPrefix,
+  isAssetKey,
+  isId,
+  newAssetKey,
+  newId,
+  randomString,
+} from "./ids.ts";
 export {
   type AccountDeletionPlan,
   anonymiseUser,
@@ -51,6 +59,26 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  BRANCH_TAKEN,
+  type Canvas,
+  type CanvasAccess,
+  type CanvasListItem,
+  CREATE_KEY_TAKEN,
+  createCanvas,
+  deleteCanvas,
+  findCanvasByCreateKey,
+  getCanvas,
+  getCanvasAccess,
+  getCanvasAssetKey,
+  getCanvasHead,
+  getWorkspaceRepo,
+  listRepoBranches,
+  listWorkspaceCanvases,
+  markCanvasSeen,
+  type NewCanvas,
+  settleCanvas,
+} from "./queries/canvases.ts";
+export {
   type DocSource,
   OP_RETENTION_DAYS,
   pruneOps,
@@ -59,39 +87,24 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ClaudeLimitSeen,
   type ConnectedClaude,
   claudeAccountIdFor,
+  claudeLimitedUntil,
   connectClaudeAccount,
   disconnectClaudeAccount,
+  getClaudeAccountById,
+  recordClaudeLimit,
+  recordClaudeModels,
   setAgentDefaults,
   setClaudeBlocker,
 } from "./queries/claude.ts";
-export { openClaudeSignIn, setClaudeSignInSandbox } from "./queries/claude-sign-ins.ts";
-export {
-  BRANCH_TAKEN,
-  CREATE_KEY_TAKEN,
-  createDesign,
-  type Design,
-  type DesignAccess,
-  type DesignListItem,
-  deleteDesign,
-  findDesignByCreateKey,
-  getDesign,
-  getDesignAccess,
-  getDesignAssetKey,
-  getDesignHead,
-  getWorkspaceRepo,
-  listRepoBranches,
-  listWorkspaceDesigns,
-  markDesignSeen,
-  type NewDesign,
-  settleDesign,
-} from "./queries/designs.ts";
+export { openClaudeSignIn, setClaudeSignInSession } from "./queries/claude-sign-ins.ts";
 export {
   addRepoSecret,
   deleteRepoSecret,
   getRepoEnvironment,
-  listDesignSecrets,
+  listCanvasSecrets,
   listWorkspaceEnvironments,
   markBaseForRebuild,
   type RepoEnvironmentRow,
@@ -104,11 +117,11 @@ export {
   appendEvent,
   type ClaimedEvent,
   claimEvents,
-  type DesignEvent,
   type EventPerson,
+  type FeedEvent,
   findStops,
   getEventOrigins,
-  hasHeldEvents,
+  hasPendingEvents,
   type LapsedEvent,
   lapseEvents,
   markEventsDelivered,
@@ -126,14 +139,18 @@ export {
   saveGithubUserToken,
 } from "./queries/github-tokens.ts";
 export {
+  bringJobForward,
   claimJobs,
   completeJob,
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  hasWaitingJob,
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  onceId,
+  recordOnce,
 } from "./queries/jobs.ts";
 export {
   countJoinedMembers,
@@ -145,6 +162,7 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export { countAppliedMigrations, EXPECTED_MIGRATIONS } from "./queries/migrations.ts";
 export {
   type Device,
   type DeviceChanges,
@@ -194,13 +212,15 @@ export {
   touchPresence,
 } from "./queries/presence.ts";
 export {
-  type BranchDesign,
-  findDesignByBranch,
+  type BranchCanvas,
+  findCanvasByBranch,
   getPullRequestContext,
-  listPullRequestDesigns,
+  listPullRequestCanvases,
+  listStalePullRequests,
   type PullRequestContext,
   type PullRequestRead,
   recordPullRequestRead,
+  type StalePullRequest,
   setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {
@@ -212,6 +232,7 @@ export {
   getQuestion,
   listOpenQuestions,
   type Question,
+  takeSecretAnswer,
 } from "./queries/questions.ts";
 export {
   getRepoAccess,
@@ -236,6 +257,14 @@ export {
   releaseRepoIdeas,
   saveRepoIdeas,
 } from "./queries/repo-ideas.ts";
+export {
+  AUTH_STATE_RETENTION_MS,
+  JOB_RETENTION_DAYS,
+  RETENTION_BATCH,
+  type SweptRows,
+  sweepOldRows,
+  WEBHOOK_RETENTION_DAYS,
+} from "./queries/retention.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
@@ -245,8 +274,6 @@ export {
 } from "./queries/runner-tokens.ts";
 export {
   askRunnerToPush,
-  countSandboxRollback,
-  getQuiescedFor,
   getRunnerContext,
   getSavedPoint,
   noteRunnerSaid,
@@ -264,38 +291,49 @@ export {
   type CheckpointCover,
   claimSandbox,
   countSandboxRestart,
+  deleteSandboxRow,
   getAwakeSandboxAddress,
   getCheckpointCover,
-  getLiveSandbox,
+  getSandbox,
+  getSandboxOwners,
   getWakeContext,
-  isSandboxKnown,
-  listDesignsWithSandboxOn,
-  listLiveSandboxes,
+  liftAgentBlockers,
+  listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,
-  type MovedSandbox,
+  type Move,
   moveSandbox,
-  moveSandboxOnto,
-  recordDesignClaudeAccount,
-  type Sandbox,
+  type ReconciledCanvas,
+  type ReconciledSignIn,
+  recordCanvasClaudeAccount,
   type SandboxChanges,
   type SandboxClaim,
   type SandboxImage,
   type SandboxLimits,
+  type SandboxRow,
   type SweptSandbox,
-  setSandboxAutoStop,
+  setSandboxExpiry,
   showAgentWaiting,
-  takeMoveSlot,
   touchSandbox,
   WAKING_LEASE_MS,
   type WakeContext,
 } from "./queries/sandboxes.ts";
+export {
+  countSealedValues,
+  listSealedNotUnder,
+  replaceSealedValue,
+  SEALED_COLUMNS,
+  type SealedColumn,
+  type SealedCount,
+  type SealedValue,
+} from "./queries/sealed.ts";
 export {
   admitSession,
   endSession,
   endUserSessions,
   getSessionUser,
 } from "./queries/sessions.ts";
+export { type TakeOver, takeOverCanvas } from "./queries/take-over.ts";
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
@@ -310,6 +348,13 @@ export {
   type WrittenItem,
   writeThreadItems,
 } from "./queries/thread.ts";
+export {
+  countAgentPullRequestActions,
+  GITHUB_KINDS,
+  getTurnOrigin,
+  PERSON_KINDS,
+  type TurnOrigin,
+} from "./queries/turn-origin.ts";
 export { commitReversal, nextRedo, nextUndo } from "./queries/undo.ts";
 export {
   type Asset,
@@ -320,6 +365,7 @@ export {
   listAssets,
   listUploadKeys,
   type NewUpload,
+  recordedArchiveKeys,
   type Upload,
 } from "./queries/uploads.ts";
 export {
@@ -339,7 +385,7 @@ export {
   type RateCardNumbers,
   readWorkspaceUsage,
   setMonthlyCap,
-  type UsageDesign,
+  type UsageCanvas,
   type UsagePerson,
   type UsageRow,
   type WorkspaceUsageRead,

@@ -1,18 +1,20 @@
 /*
  * The window's chrome and panes in a real Chromium, frame by frame: the sidebar and the rail
- * open and close on one clock, the chrome over them moves on it too, ⌘B and ⌘J work from
+ * open and close on one clock, the chrome over them moves on it too, ⌘B and ⌥⌘B work from
  * anywhere, and a click never leaves a ring. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
   type Browser,
   buildGallery,
+  type Clock,
   chromiumPath,
   type Frame,
   launch,
   type Page,
   sampleToggle,
   serve,
+  stepToggle,
 } from "../../../scripts/visual-lib.ts";
 
 setDefaultTimeout(60_000);
@@ -31,21 +33,22 @@ function drift(frames: Frame[], clock: number[], key: keyof Frame): number {
   return Math.max(...frames.map((f, i) => Math.abs(f[key] - (from + (to - from) * clock[i]!))));
 }
 
-/** From the first frame that moved to the first that rested, in ms. */
-function duration(frames: Frame[], key: keyof Frame): number {
-  const end = frames.at(-1)![key];
-  const start = frames.findIndex((f) => f[key] !== frames[0]![key]);
-  // Within a layout unit (1/64px) of where it ends: the panes are laid out as shares of the
-  // window, and the last unit can land with the easing's end rather than its last frame.
-  const rest = frames.findIndex((f, i) => i >= start && Math.abs(f[key] - end) <= 1 / 64 + 0.001);
-  return frames[rest]!.t - frames[start - 1]!.t;
+/** What moves things along (not the name's fade, which is on the hover clock). */
+const GEOMETRY = new Set(["width", "min-width", "margin-left", "margin-right", "flex-grow"]);
+
+/**
+ * A toggle's clocks: each of `moving` eased, and everything that moved eased on one clock, the
+ * panes' own: `ms` (`--dur-pane`), no delay, one curve.
+ */
+function expectOneClock(clocks: Clock[], moving: string[], ms: number) {
+  const moved = clocks.filter((c) => GEOMETRY.has(c.property));
+  expect(moved.map((c) => c.target)).toEqual(expect.arrayContaining(moving));
+  const one = new Set(moved.map((c) => `${c.duration}ms ${c.delay}ms ${c.easing}`));
+  expect([...one]).toEqual([`${ms}ms 0ms ${moved[0]!.easing}`]);
 }
 
-/** The longest time between two frames while the pane moved, in ms. */
-function gap(frames: Frame[]): number {
-  const moving = frames.slice(1, -1);
-  return Math.max(0, ...moving.slice(1).map((f, i) => f.t - moving[i]!.t));
-}
+/** How far along the move the middle frame is (the easing's halfway point when stepped). */
+const halfway = (clock: number[]) => clock[(clock.length - 1) >> 1]!;
 
 describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
   let built: Awaited<ReturnType<typeof buildGallery>>;
@@ -76,21 +79,25 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
 
   test("each pane opens and closes on one clock, and the chrome moves on it within a pixel", async () => {
     await open("team-sidebar", "no-preference");
-    // The panes' clock slowed to a second, so even a busy machine (CI) draws many frames of each
-    // move; the hover clock with it, in proportion (the name's fade).
-    await page.addStyleTag({
-      content: ":root { --dur-pane: 1000ms !important; --dur-hover: 545ms !important; }",
+    // Each toggle walked on the easing's own clock (stepToggle): the same frames on any machine,
+    // however few a busy one would have painted.
+    const ms = await page.evaluate(() => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
+      return Number.parseFloat(value) * (/\ds\s*$/.test(value) ? 1000 : 1);
     });
-    const times: number[] = [];
-    const gaps: number[] = [];
+    expect(ms).toBeGreaterThan(0);
     for (const state of ["closing", "opening"]) {
-      const sidebar = await sampleToggle(page, SIDEBAR);
+      const { frames: sidebar, clocks } = await stepToggle(page, SIDEBAR);
+      // The pane, the canvas's edge, and the chrome's block and name over it, on one clock.
+      expectOneClock(
+        clocks,
+        ["#sidebar-pane", "main", "header > div:first-child", "[data-chrome-title]"],
+        ms,
+      );
       const clock = progress(sidebar, "left");
-      // Frames between, not a jump (a busy CI machine draws fewer of them).
-      expect(
-        sidebar.filter((_, i) => clock[i]! > 0.05 && clock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(5);
-      gaps.push(gap(sidebar));
+      // It eases rather than jumps: halfway along its clock, the pane is partway.
+      expect(halfway(clock)).toBeGreaterThan(0.05);
+      expect(halfway(clock)).toBeLessThan(0.95);
       expect(drift(sidebar, clock, "divider")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "tab")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "title")).toBeLessThanOrEqual(1);
@@ -103,14 +110,12 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(drift(sidebar, clock, "thread")).toBeLessThanOrEqual(1 / 64);
       expect(drift(sidebar, clock, "right")).toBeLessThanOrEqual(1 / 64);
       expect(drift(sidebar, clock, "railDivider")).toBeLessThanOrEqual(1 / 64);
-      times.push(duration(sidebar, "left"));
 
-      const rail = await sampleToggle(page, THREAD);
+      const { frames: rail, clocks: railClocks } = await stepToggle(page, THREAD);
+      expectOneClock(railClocks, ["#thread-pane", "main", "[data-chrome-rail]"], ms);
       const railClock = progress(rail, "right");
-      expect(
-        rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
-      ).toBeGreaterThanOrEqual(5);
-      gaps.push(gap(rail));
+      expect(halfway(railClock)).toBeGreaterThan(0.05);
+      expect(halfway(railClock)).toBeLessThan(0.95);
       // The rail's divider is on the canvas's right edge (its pixel the canvas's last) in every
       // frame, until the edge passes where the divider rests with the rail closed, 12 before
       // the toggle; there it holds.
@@ -120,7 +125,6 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(drift(rail, railClock, "left")).toBeLessThanOrEqual(1 / 64);
       expect(drift(rail, railClock, "tab")).toBeLessThanOrEqual(1 / 64);
       expect(drift(rail, railClock, "thread")).toBeLessThanOrEqual(1 / 64);
-      times.push(duration(rail, "right"));
       if (state === "opening") {
         // Open, the tabs' divider is on the sidebar's edge.
         const last = rail.at(-1)!;
@@ -148,19 +152,12 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       return read;
     });
     expect(new Set(clocks).size).toBe(1);
-    // And measured, they take the same time: within a frame at either end. Only where the machine
-    // drew frames steadily; a busy one (CI) can stall long enough to say nothing.
-    if (Math.max(...gaps) <= 34) {
-      expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(
-        2 * Math.max(10, ...gaps),
-      );
-    }
   });
 
   test("with reduced motion a pane is open or closed from the next frame", async () => {
     await open("team-sidebar");
     for (const selector of [SIDEBAR, THREAD]) {
-      const frames = await sampleToggle(page, selector);
+      const { frames } = await sampleToggle(page, selector);
       const moved = frames.filter(
         (f) => f.left !== frames[0]!.left || f.right !== frames[0]!.right,
       );
@@ -276,7 +273,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     }
   });
 
-  test("⌘B toggles the sidebar from the window and from a composer, ⌘J the rail", async () => {
+  test("⌘B toggles the sidebar from the window and from a composer, ⌥⌘B the rail", async () => {
     await open("thread-in-the-right-rail");
     const expanded = (s: string) => page.getAttribute(s, "aria-expanded");
     expect(await expanded(SIDEBAR)).toBe("true");
@@ -289,19 +286,19 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     expect(await page.inputValue("#thread textarea")).toBe("Make it");
     await page.keyboard.press("Control+b");
     expect(await expanded(SIDEBAR)).toBe("false");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(THREAD)).toBe("false");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(THREAD)).toBe("true");
   });
 
-  test("⌘B and ⌘J leave the panes alone under a menu, and while a row's name is edited", async () => {
+  test("⌘B and ⌥⌘B leave the panes alone under a menu, and while a row's name is edited", async () => {
     await open("team-sidebar");
     const expanded = (s: string) => page.getAttribute(s, "aria-expanded");
     await page.click('#sidebar button[aria-label^="Workspace:"]');
     await page.waitForSelector("[role=menu]");
     await page.keyboard.press("Meta+b");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded(SIDEBAR)).toBe("true");
     expect(await expanded(THREAD)).toBe("true");
     expect(await page.$("[role=menu]")).not.toBeNull();
@@ -310,18 +307,28 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
 
     await page.click("#sidebar [aria-current]", { button: "right" });
     await page.click('[role=menuitem]:has-text("Rename")');
-    await page.waitForSelector('input[aria-label="Design name"]');
+    await page.waitForSelector('input[aria-label="Canvas name"]');
     await page.waitForSelector("[role=menu]", { state: "detached" });
     await page.keyboard.press("Meta+b");
     expect(await expanded(SIDEBAR)).toBe("true");
-    expect(await page.$('input[aria-label="Design name"]')).not.toBeNull();
+    expect(await page.$('input[aria-label="Canvas name"]')).not.toBeNull();
     await page.keyboard.press("Escape");
     await page.keyboard.press("Meta+b");
     expect(await expanded(SIDEBAR)).toBe("false");
   });
 
-  test("after a click on a toolbar control, the canvas's keys light no ring and press nothing", async () => {
+  test("a click leaves no ring on any control and the canvas's keys press nothing after it; the keyboard brings the ring back", async () => {
     await open("team-sidebar");
+    const ring = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLElement;
+        return {
+          name: el.getAttribute("aria-label") ?? el.textContent?.trim(),
+          // What focus-ring (cloud.css) draws on.
+          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
+        };
+      });
+    /** The ring, and the panes' state: what a key pressed after the click must leave alone. */
     const state = () =>
       page.evaluate(() => {
         const el = document.activeElement as HTMLElement;
@@ -333,6 +340,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
           thread: document.querySelector('[aria-controls="thread"]')!.getAttribute("aria-expanded"),
         };
       });
+    // After a click on a toolbar control, the canvas's keys light no ring and press nothing.
     for (const selector of [SIDEBAR, THREAD, 'header [role="tab"]:nth-child(2)']) {
       await page.click(selector);
       const after = await state();
@@ -342,19 +350,6 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
         expect(await state()).toEqual(after);
       }
     }
-  });
-
-  test("a click leaves no ring on any control; the keyboard brings it back", async () => {
-    await open("team-sidebar");
-    const ring = () =>
-      page.evaluate(() => {
-        const el = document.activeElement as HTMLElement;
-        return {
-          name: el.getAttribute("aria-label") ?? el.textContent?.trim(),
-          // What focus-ring (cloud.css) draws on.
-          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
-        };
-      });
     for (const selector of [
       SIDEBAR,
       THREAD,
@@ -412,10 +407,19 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(await rings()).toEqual([]);
       await page.keyboard.up(key);
     }
-    // A click on a control that keeps its focus (a design's row), then shortcuts, Return and
+    // A click on a control that keeps its focus (a canvas's row), then shortcuts, Return and
     // the modifiers: quiet throughout, and no tip.
-    await page.click('#sidebar [data-design-row="dsn_pricing"]');
-    for (const key of ["Meta", "Alt", "Meta+j", "Meta+j", "Meta+b", "Meta+b", "Enter", "Space"]) {
+    await page.click('#sidebar [data-canvas-row="cnv_pricing"]');
+    for (const key of [
+      "Meta",
+      "Alt",
+      "Meta+Alt+b",
+      "Meta+Alt+b",
+      "Meta+b",
+      "Meta+b",
+      "Enter",
+      "Space",
+    ]) {
       await page.keyboard.press(key);
       expect(await rings()).toEqual([]);
     }
@@ -430,7 +434,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     await page.keyboard.up("Meta");
     // Focus our own code moves after a key (a row back from renaming) is quiet too.
     await page.evaluate(() => {
-      document.querySelector<HTMLElement>('[data-design-row="dsn_pricing"]')!.focus();
+      document.querySelector<HTMLElement>('[data-canvas-row="cnv_pricing"]')!.focus();
     });
     expect(await rings()).toEqual([]);
   });
@@ -457,13 +461,13 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       () => document.activeElement?.getAttribute("aria-label") === "Search",
     );
     expect(await rings()).toEqual(["Search"]);
-    // Arrows in the design list move the ring with them.
-    await page.focus('[data-design-row="dsn_quieter"]');
+    // Arrows in the canvas list move the ring with them.
+    await page.focus('[data-canvas-row="cnv_quieter"]');
     await page.keyboard.press("ArrowDown");
     expect((await rings()).length).toBe(1);
     expect(
-      await page.evaluate(() => document.activeElement?.getAttribute("data-design-row")),
-    ).not.toBe("dsn_quieter");
+      await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row")),
+    ).not.toBe("cnv_quieter");
   });
 
   test("a popover the keyboard opens rings where it puts focus; one a click opens doesn't", async () => {

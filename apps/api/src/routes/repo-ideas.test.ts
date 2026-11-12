@@ -10,7 +10,7 @@ import { CLAUDE_HAIKU, CLAUDE_SONNET } from "../deps/model.ts";
 import { GATE_SYSTEM_PROMPT } from "../ideas/gate.ts";
 import { IDEAS_POLICY } from "../ideas/ideas.ts";
 import { FRESH_SYSTEM_PROMPT, IDEAS_SYSTEM_PROMPT, RETRY_REASONS } from "../ideas/prompt.ts";
-import { call, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import type { FakeRepository } from "../testing/fake-github.ts";
 import { createTestApp, type TestApp, verdict } from "../testing/index.ts";
 
@@ -203,7 +203,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     const named = [
       "Open Ponzu Test on a first screen with one clear thing to start",
       "Pitch Ponzu Test on one page that says who it is for",
-      "Design the main screen people come back to every day",
+      "Build the main screen people come back to every day",
       "Find a mark and palette for Ponzu Test, as directions to compare",
     ];
     t.model.reply({ output: { ideas: named } });
@@ -216,19 +216,19 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(t.model.requests).toHaveLength(1);
   });
 
-  test("ideas the gate finds are not designs are dropped after a second ask, and the rest kept", async () => {
-    const notDesign = verdict({ notDesign: [2] });
-    t.reviewer.reply({ output: notDesign }, { output: notDesign });
+  test("ideas the gate finds are not visible are dropped after a second ask, and the rest kept", async () => {
+    const notVisible = verdict({ notVisible: [2] });
+    t.reviewer.reply({ output: notVisible }, { output: notVisible });
     await ideasOf("maya");
     await t.backgroundDone();
     expect(t.model.requests).toHaveLength(2);
-    expect(t.model.requests[1]!.instructions).toContain(RETRY_REASONS.not_design);
+    expect(t.model.requests[1]!.instructions).toContain(RETRY_REASONS.not_visible);
     expect((await ideasOf("maya")).body).toEqual({
       status: "ready",
       ideas: [IDEAS[0], IDEAS[2], IDEAS[3]].map((prompt) => ({ prompt })),
     });
     expect(logged("ideas_generated")).toMatchObject([
-      { ideas: 3, failures: [{ idea: 2, criteria: ["design"] }] },
+      { ideas: 3, failures: [{ idea: 2, criteria: ["visible"] }] },
     ]);
   });
 
@@ -615,7 +615,7 @@ describe("GET /v1/repos/:id/ideas", () => {
       suspendedAt: now,
       reconciledAt: now,
     });
-    // As for a design in it: GitHub's answer is `none` for everyone, so a 404.
+    // As for a canvas in it: GitHub's answer is `none` for everyone, so a 404.
     t.clock.advance(2 * 60_000);
     expect((await ideasOf("maya")).status).toBe(404);
     await t.backgroundDone();

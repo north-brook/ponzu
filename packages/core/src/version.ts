@@ -3,7 +3,7 @@ export const DRAW_VERSION = 4;
 
 /**
  * Which version of a board a picture shows, as a short name: how pictures are
- * drawn, its HTML and the design's tokens, hashed (FNV-1a). The canvas names
+ * drawn, its HTML and the canvas's tokens, hashed (FNV-1a). The view names
  * the picture it wants by this, and the server says which version it drew, so
  * a picture is only kept under the URL of the content it shows.
  */

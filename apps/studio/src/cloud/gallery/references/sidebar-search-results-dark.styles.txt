@@ -12,11 +12,15 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.9px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
-ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Ada (you)] ada.svg
+ground img[Ada (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Sam] sam.svg
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Maya] maya.svg
 ground img[Maya] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
+image img[Jordan · last here 2 days ago] jordan.svg
 ground img[Jordan · last here 2 days ago] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
-ground button[Share] shadow rgb(63, 61, 57) 0px 0px 0px 1px inset
+ground button[Share] rgb(26, 26, 25) shadow rgb(63, 61, 57) 0px 0px 0px 1px inset, rgb(26, 26, 25) 0px 0px 0px 1.5px
 icon svg[Share] 11×11 rgb(183, 179, 169) stroke 2.2px
 text "#412" rgb(183, 179, 169) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(183, 179, 169) stroke 2.2px
@@ -26,12 +30,13 @@ ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
-ground div[Designs] rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px
-icon svg[Designs] 16×16 rgb(142, 138, 130) stroke 1.7px
+ground div[Canvases] rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px
+icon svg[Canvases] 16×16 rgb(142, 138, 130) stroke 1.7px
 icon svg[Close search] 14×14 rgb(142, 138, 130) stroke 1.9px
-text "Designs" rgb(118, 115, 105) 600 11px Inter
+text "Canvases" rgb(118, 115, 105) 600 11px Inter
 ground div[Search results] rgb(48, 48, 46)
 ground span[Search results] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
+image img[Search results] hero.png
 text "Quieter shop" rgb(244, 243, 239) 500 13px Inter
 text "hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)
@@ -40,7 +45,7 @@ ground span[Search results] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255,
 text "Three takes on the" rgb(244, 243, 239) 500 13px Inter
 text "hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)
-text "fernwood · Bryce · 3 weeks ago" rgb(118, 115, 105) 400 11px Inter
+text "fernwood · Ada · 3 weeks ago" rgb(118, 115, 105) 400 11px Inter
 text "Boards" rgb(118, 115, 105) 600 11px Inter
 ground span[Search results] rgba(255, 255, 255, 0.06)
 icon svg[Search results] 14×14 rgb(142, 138, 130) stroke 1.9px
@@ -55,6 +60,7 @@ text "Hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)
 text "in Brand kit for the relaunch" rgb(118, 115, 105) 400 11px Inter
 text "Comments" rgb(118, 115, 105) 600 11px Inter
+image img[Search results] maya.svg
 text "“Can C try the serif at a smaller size …" rgb(244, 243, 239) 500 13px Inter
 text "hero" rgb(244, 243, 239) 500 13px Inter
 ground mark[Search results] rgb(46, 42, 28)

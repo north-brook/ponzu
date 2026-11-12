@@ -19,7 +19,7 @@ import { reconcileInstallation } from "./installations.ts";
 /*
  * Who can reach a workspace, as GitHub says: everyone with access to at least one repo of its
  * installation, whether or not they have opened Ponzu. It is the team the "Where do you
- * design?" count, Settings › Members and Share show (docs/cloud.md, "Identity and access").
+ * build?" count, Settings › Members and Share show (docs/cloud.md, "Identity and access").
  * What a person may do in Ponzu is still their own sync's answer (`memberships`,
  * `repo_access`); this only says who is there, and grants nothing.
  *

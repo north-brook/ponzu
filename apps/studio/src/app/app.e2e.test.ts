@@ -1,12 +1,12 @@
 /*
  * The studio as it ships, built and in a real Chromium, on Ponzu Cloud in memory
- * (fake-host.ts): a whole first run (the sign-in gate, setting up where to design, connecting
- * Claude by code, the iPhone, Fresh start with ideas, the first design), Settings, the sidebar
- * on live data, making a design, the canvas drawing what its agent commits, and a comment there
+ * (fake-host.ts): a whole first run (the sign-in gate, setting up where to build, connecting
+ * Claude by code, the iPhone, Fresh start with ideas, the first canvas), Settings, the sidebar
+ * on live data, making a canvas, its boards drawing what its agent commits, and a comment there
  * and back. Skips where there is no Chrome or Chromium.
  *
  * With PONZU_SHOTS set to a folder, it leaves a picture of each first-run step and each
- * Settings section there, to look at beside the design's boards.
+ * Settings section there, to look at beside the mockup's boards.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
@@ -20,22 +20,24 @@ import {
 } from "../../scripts/visual-lib.ts";
 import { nameFor } from "./create.tsx";
 import { buildApp, serve, waitUntil } from "./e2e-lib.ts";
+import { KETTLE_IDEAS } from "./fake-host.ts";
 
 setDefaultTimeout(60_000);
 
 const PROMPT = "A pricing page with three plans";
-/** What the design made from it is called until its agent names it. */
+/** What the canvas made from it is called until its agent names it. */
 const NAME = nameFor(PROMPT);
 const SHOTS = process.env.PONZU_SHOTS;
 
 /**
  * Where a guided step's shared parts sit: each one's top and the line it is centred on, the
- * same on every step to the pixel (their words, and so their widths, differ).
+ * same on every step to the pixel (their words, and so their widths, differ). To the pixel, not
+ * finer: centring a word of another width can land a fraction of a layout unit off.
  */
 async function stepFrame(page: Page) {
   const box = async (selector: string) => {
     const found = await page.locator(selector).first().boundingBox();
-    return found && { top: found.y, centre: found.x + found.width / 2 };
+    return found && { top: Math.round(found.y), centre: Math.round(found.x + found.width / 2) };
   };
   return {
     progress: await box('[role="progressbar"]'),
@@ -66,22 +68,39 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** The design the test made, as the in-memory API holds it. */
+  /** The canvas the test made, as the in-memory API holds it. */
   const made = () =>
     page.evaluate((name) => {
-      const designs = [...window.ponzuFake!.backend.designs.values()];
-      const design = designs.find((d) => d.sequencer.doc.name === name)!;
+      const canvases = [...window.ponzuFake!.backend.canvases.values()];
+      const canvas = canvases.find((d) => d.sequencer.doc.name === name)!;
       return {
-        id: design.id,
-        said: design.thread.flatMap(({ item }) =>
+        id: canvas.id,
+        said: canvas.thread.flatMap(({ item }) =>
           item.kind === "message" ? [item.payload.text] : [],
         ),
-        threads: design.sequencer.doc.threads.map((t) => ({
+        threads: canvas.sequencer.doc.threads.map((t) => ({
           id: t.id,
           texts: t.messages.map((m) => m.text),
         })),
       };
     }, NAME);
+
+  /** Whether the caret is in the create page's composer. */
+  const caretInCreate = () =>
+    page.evaluate(
+      () =>
+        document.activeElement?.tagName === "TEXTAREA" &&
+        document.activeElement.closest("[data-create-composer]") !== null,
+    );
+  /**
+   * The caret comes to the create page's composer and stays there: past the menu or popover the
+   * choice was made in handing focus back as it goes (its exit runs 90ms), it is still there.
+   */
+  const caretStaysInCreate = async () => {
+    await waitUntil(caretInCreate);
+    await page.waitForTimeout(400);
+    expect(await caretInCreate()).toBe(true);
+  };
 
   const shoot = async (name: string) => {
     if (!SHOTS) return;
@@ -92,14 +111,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   };
   const frames: Awaited<ReturnType<typeof stepFrame>>[] = [];
 
-  test("signed out, it asks to sign in, and shows nothing else", async () => {
-    await page.waitForSelector('[data-screen="sign-in"]');
-    expect(await page.textContent("h1")).toBe("Sign in to Ponzu");
-    expect(await page.locator("#sidebar").count()).toBe(0);
-    await shoot("1-sign-in");
-  });
-
   test("a sign-in outlives the window coming forward; the button waits a moment, then is ready", async () => {
+    // Signed out, the built app opens on the sign-in screen (app.test.tsx: and nothing else).
+    await page.waitForSelector('[data-screen="sign-in"]');
+    await shoot("1-sign-in");
     const button = page.getByRole("button", { name: "Continue with GitHub" });
     const busy = () => button.getAttribute("aria-busy");
     await page.evaluate(() => window.ponzuFake!.holdSignIn());
@@ -130,14 +145,14 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(2);
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
     await page.evaluate(() => window.ponzuFake!.finishSignIn());
-    // Both held attempts finish and the person is in: first run asks where they design.
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+    // Both held attempts finish and the person is in: first run asks where they build.
+    await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(2);
     expect(errors).toEqual([]);
   });
 
-  test("first run: where they design, set up on GitHub and Ready on the way back", async () => {
-    await page.getByRole("heading", { name: "Where do you design?" }).waitFor();
+  test("first run: where they build, set up on GitHub and Ready on the way back", async () => {
+    await page.getByRole("heading", { name: "Where do you build?" }).waitFor();
     // The team's account is set up already; their own is not.
     await page.getByText("Ready").waitFor();
     await shoot("2-where-do-you-design");
@@ -186,19 +201,16 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // and pressing it again starts nothing more.
     const tabs = () => page.evaluate(() => window.ponzuFake!.opened.length);
     const before = await tabs();
-    await page.evaluate(() => {
-      window.ponzuFake!.backend.claude.startTakesMs = 1500;
-    });
+    // Held until the second press is in, so it lands while the first start is out.
+    await page.evaluate(() => window.ponzuFake!.backend.claude.holdStarts());
     const reopen = page.getByRole("button", { name: "Open sign-in again" });
     await reopen.click();
     await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === "true");
     expect(await reopen.isDisabled()).toBe(true);
     await shoot("3c-open-sign-in-again-waiting");
     await reopen.click({ force: true });
+    await page.evaluate(() => window.ponzuFake!.backend.claude.releaseStarts());
     await waitUntil(async () => (await reopen.getAttribute("aria-busy")) === null);
-    await page.evaluate(() => {
-      window.ponzuFake!.backend.claude.startTakesMs = 0;
-    });
     expect((await tabs()) - before).toBe(1);
     await waitUntil(async () => (await field.inputValue()) === "");
     await field.fill("k7Hq2-Rw9xT-pL4mZ#state");
@@ -212,29 +224,42 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // Moving between the steps moves nothing they share.
     for (const frame of frames.slice(1)) expect(frame).toEqual(frames[0]!);
 
-    await page.getByRole("button", { name: "Start designing" }).click();
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByRole("button", { name: "Start building" }).click();
+    await page.getByText("Make something").waitFor();
     // A brand-new personal workspace hides the sidebar only when it is all the person has:
     // with the team Ready, the switcher is how they reach it.
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
-    expect(await page.getByRole("button", { name: "Project: kettle" }).count()).toBe(1);
-    const idea = page.getByRole("button", { name: /Make checkout one page/ });
-    await idea.waitFor();
+    expect(await page.getByRole("button", { name: "Project: maya/kettle" }).count()).toBe(1);
+    // Its ideas take turns as the composer's placeholder: Tab takes the one showing.
+    await page.locator("[data-suggestion]").waitFor();
     await shoot("5-fresh-start");
-    await idea.click();
-    expect(await page.getByPlaceholder(/Describe a screen/).inputValue()).toBe(
-      "Make checkout one page, with the order summary on the right",
-    );
+    const field = page.getByPlaceholder(/Describe what you want to make/);
+    await field.press("Tab");
+    expect(KETTLE_IDEAS).toContain(await field.inputValue());
   });
 
-  test("Fresh start makes one design however often send is pressed, and opens it", async () => {
-    await page.getByPlaceholder(/Describe a screen/).fill("A quieter checkout");
+  test("Fresh start makes one canvas however often send is pressed, and opens it", async () => {
+    await page.getByPlaceholder(/Describe what you want to make/).fill("A quieter checkout");
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
+    // The composer travels to the thread: one, however often it was pressed.
+    expect(await page.locator('[data-flight="surface"]').count()).toBeLessThanOrEqual(1);
     await page.locator("#sidebar").waitFor();
     await page.getByRole("button", { name: /Quieter checkout/ }).waitFor();
+    // The words are the thread's first line, the composer there is empty and has the caret,
+    // and after the beat, untouched, the thread's pane closes, and stays closed.
+    await page.locator("#thread").getByText("A quieter checkout").waitFor();
+    await waitUntil(
+      async () =>
+        (await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) ===
+        "Message",
+    );
+    expect(await page.locator("#thread").getByPlaceholder("Steer, or ask more").inputValue()).toBe(
+      "",
+    );
+    await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
     const made = await page.evaluate(() =>
-      [...window.ponzuFake!.backend.designs.values()]
+      [...window.ponzuFake!.backend.canvases.values()]
         .filter((d) => d.sequencer.doc.name === "Quieter checkout")
         .map((d) => ({
           workspaceId: d.workspaceId,
@@ -250,7 +275,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       {
         workspaceId: personalId,
         model: "claude-opus-5-5",
-        effort: "high",
+        effort: "medium",
         said: ["A quieter checkout"],
       },
     ]);
@@ -276,7 +301,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByText("Signed in with").waitFor();
     await shoot("settings-account");
     await nav.getByRole("button", { name: "Agents" }).click();
-    await page.getByText("Defaults for new designs").waitFor();
+    await page.getByText("Defaults for new canvases").waitFor();
     await shoot("settings-agents");
 
     // Switching ways, pressed anywhere along the row: a key first, then back to a subscription,
@@ -323,40 +348,149 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await nav.waitFor({ state: "detached" });
   });
 
-  test("the team menu switches to the team's workspace, where the sidebar lists its designs", async () => {
+  test("the team menu switches to the team's workspace, where the sidebar lists its canvases", async () => {
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
     await page.getByRole("button", { name: /Onboarding flow/ }).waitFor();
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
-    // The create page fills the canvas pane until a design is opened.
-    await page.getByText("What do you want to design?").waitFor();
+    // The create page fills the main pane until a canvas is opened, with the caret in its
+    // composer: a workspace that opens on its create page is for typing into at once.
+    await page.getByText("Make something").waitFor();
+    await caretStaysInCreate();
   });
 
-  test("a design made on the create page opens, and the canvas draws what its agent commits", async () => {
-    await page.getByPlaceholder(/Describe a screen/).fill(PROMPT);
-    await page.keyboard.press("Enter");
-    await page.getByRole("button", { name: new RegExp(NAME) }).waitFor();
-    const design = await made();
-    // The first message went to the agent.
-    expect(design.said).toEqual([PROMPT]);
+  test("the create page's picker groups both workspaces; the other's repo or Scratch switches the window there in one step", async () => {
+    const selector = page.locator("[data-project-selector]");
+    await selector.click();
+    const options = page.getByRole("option");
+    // Northbrook's group first, then Personal's, each its Scratch and its repos by full name.
+    await waitUntil(async () => (await options.count()) === 5);
+    // Each group is named by its heading, which is not an option.
+    expect(await options.allTextContents()).toEqual([
+      "Scratch",
+      "north-brook/ponzu",
+      "north-brook/site",
+      "Scratch",
+      "maya/kettle",
+    ]);
+    for (const [name, rows] of [
+      ["Northbrook", ["Scratch", "north-brook/ponzu", "north-brook/site"]],
+      ["Personal", ["Scratch", "maya/kettle"]],
+    ] as const) {
+      const group = page.getByRole("group", { name, exact: true });
+      expect(await group.getByRole("option").allTextContents()).toEqual([...rows]);
+    }
+    await page.keyboard.press("Escape");
+    const field = page.getByPlaceholder(/Describe what you want to make/);
+    // Every name the selector shows from here on: no other project on the way to the one chosen.
+    const watchSelector = () =>
+      page.evaluate(() => {
+        const seen: string[] = [];
+        (window as { selectorSaid?: string[] }).selectorSaid = seen;
+        const note = () => {
+          const label = document
+            .querySelector("[data-project-selector]")
+            ?.getAttribute("aria-label");
+          if (label && seen.at(-1) !== label) seen.push(label);
+        };
+        note();
+        new MutationObserver(note).observe(document.body, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["aria-label"],
+        });
+      });
+    const selectorSaid = () =>
+      page.evaluate(() => (window as { selectorSaid?: string[] }).selectorSaid);
 
-    await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), design.id);
+    await field.fill("A kettle that whistles");
+    await watchSelector();
+    await selector.click();
+    await page.getByRole("option", { name: "maya/kettle" }).click();
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
+    await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
+    expect(await field.inputValue()).toBe("A kettle that whistles");
+    // The create page, not the canvas last open there, with the caret in its composer.
+    await page.getByText("Make something").waitFor();
+    expect((await selectorSaid())?.slice(1)).toEqual(["Project: maya/kettle"]);
+    await caretStaysInCreate();
+
+    // Back to the team, and from there Personal's Scratch: the window switches with Scratch
+    // chosen, never showing a repo or Northbrook's choice on the way.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page.getByRole("button", { name: "Project: north-brook/ponzu" }).waitFor();
+    await field.fill("A kettle in the dark");
+    await watchSelector();
+    await selector.click();
+    await page
+      .getByRole("group", { name: "Personal" })
+      .getByRole("option", { name: "Scratch" })
+      .click();
+    await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
+    await page.getByRole("button", { name: "Project: Scratch in Personal" }).waitFor();
+    expect(await selector.textContent()).toBe("scratch");
+    expect(await field.inputValue()).toBe("A kettle in the dark");
+    await page.getByText("Make something").waitFor();
+    expect((await selectorSaid())?.slice(1)).toEqual(["Project: Scratch in Personal"]);
+
+    // Back to the team for what follows.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page.getByRole("button", { name: "Project: north-brook/ponzu" }).waitFor();
+  });
+
+  test("a canvas made on the create page opens, and its boards draw what its agent commits", async () => {
+    await page.getByPlaceholder(/Describe what you want to make/).fill(PROMPT);
+    // The thread's pane was left closed by the last send's beat: a send opens it all the same.
+    await page.keyboard.press("Enter");
+    await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
+    await page.getByRole("button", { name: new RegExp(NAME) }).waitFor();
+    const canvas = await made();
+    // The first message went to the agent.
+    expect(canvas.said).toEqual([PROMPT]);
+    // The pointer goes to the thread before the beat is out: it stays open, and is kept open.
+    await page.locator("#thread").getByText(PROMPT).waitFor();
+    await page.mouse.move(1300, 500);
+    await page.mouse.move(1310, 520);
+    await waitUntil(() =>
+      page.evaluate(() =>
+        Object.keys(localStorage).some(
+          (key) =>
+            key.startsWith("ponzu.ui.") &&
+            JSON.parse(localStorage.getItem(key) ?? "{}").railOpen === true,
+        ),
+      ),
+    );
+
+    await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), canvas.id);
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
-    // The thread came with the design rather than being opened: the caret isn't put there.
-    await page.waitForTimeout(400);
-    expect(await page.evaluate(() => !!document.activeElement?.closest("#thread"))).toBe(false);
+    expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe("true");
+    // Landed, and the panes at rest.
+    await waitUntil(() =>
+      page.evaluate(
+        () => !document.querySelector("[data-flight], [data-pane-motion], [data-composer-flight]"),
+      ),
+    );
   });
 
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
     await page.mouse.move(700, 500);
     for (const pane of ["sidebar", "thread", "thread", "sidebar"]) {
-      const frames = await sampleToggle(page, `button[aria-controls="${pane}"]`);
+      const { frames, clocks } = await sampleToggle(page, `button[aria-controls="${pane}"]`);
       const edge = pane === "sidebar" ? "left" : "right";
-      const moving = frames.filter((f) => f[edge] !== frames[0]![edge]);
-      // It eased, rather than jumped…
-      expect(moving.length).toBeGreaterThan(5);
-      // …and the board stayed where it was on screen throughout: no swim, no refit.
+      // It eased, rather than jumped: the pane and the canvas's edge each on the panes' clock…
+      const eased = (target: string) =>
+        clocks.filter((c) => c.target === target && c.duration > 0).map((c) => c.duration);
+      expect(eased(`#${pane}-pane`)).toHaveLength(1);
+      const ms = eased(`#${pane}-pane`)[0]!;
+      expect(eased("main").length).toBeGreaterThan(0);
+      expect(new Set([...eased(`#${pane}-pane`), ...eased("main")])).toEqual(new Set([ms]));
+      expect(frames.at(-1)![edge]).not.toBe(frames[0]![edge]);
+      // …and the board stayed where it was on screen in every frame painted (however many a
+      // busy machine paints): no swim, no refit.
       for (const f of frames) {
         expect(Math.abs(f.boardX - frames[0]!.boardX)).toBeLessThanOrEqual(1);
         expect(f.boardY).toBe(frames[0]!.boardY);
@@ -379,7 +513,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.evaluate(() => document.documentElement.style.removeProperty("--dur-pane"));
   });
 
-  test("a comment left on the canvas reaches the design, and a teammate's reply comes back", async () => {
+  test("a comment left on a board reaches the canvas, and a teammate's reply comes back", async () => {
     // The thread opened last, with the caret in its composer: back to the canvas's keys first.
     expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
       "Message",
@@ -398,7 +532,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     const { id } = await made();
     await page.evaluate(
-      ([designId, threadId]) => window.ponzuFake!.reply(designId!, threadId!, "On it"),
+      ([canvasId, threadId]) => window.ponzuFake!.reply(canvasId!, threadId!, "On it"),
       [id, thread!.id],
     );
     await page.locator('button[title="Drag to move"]', { hasText: "2" }).waitFor();
@@ -416,30 +550,30 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     const field = rail().getByPlaceholder("Steer, or ask more");
     await field.fill("Add a yearly toggle");
     await field.press("Enter");
-    // The bubble is there at once, and the message reached the design's feed.
+    // The bubble is there at once, and the message reached the canvas's feed.
     await rail().getByText("Add a yearly toggle").waitFor();
     await waitUntil(async () => (await made()).said.includes("Add a yearly toggle"));
 
     // The agent works: the working line, then its reply streaming in, and a board drawn.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.work([], "Drawing Yearly toggle");
       agent.tool("Drawing Yearly toggle", { id: "ti_work0000000001" });
     }, id);
     await rail().getByRole("status").getByText("Drawing Yearly toggle").waitFor();
     await rail().getByRole("button", { name: "Stop" }).waitFor();
-    await page.evaluate((designId) => {
+    await page.evaluate((canvasId) => {
       const world = window.ponzuFake!;
-      const agent = world.backend.agent(designId);
+      const agent = world.backend.agent(canvasId);
       agent.tool("Drew Yearly toggle", { id: "ti_work0000000001", streaming: false, steps: 3 });
       agent.say("Adding a toggle", { id: "ti_reply000000001", streaming: true });
-      world.drawBoard(designId, "Yearly toggle", "#e8efe4");
+      world.drawBoard(canvasId, "Yearly toggle", "#e8efe4");
     }, id);
     await rail().getByText("Adding a toggle").waitFor();
     await page.locator('[data-board-name][title="Yearly toggle"]').waitFor();
-    await page.evaluate((designId) => {
+    await page.evaluate((canvasId) => {
       window
-        .ponzuFake!.backend.agent(designId)
+        .ponzuFake!.backend.agent(canvasId)
         .say("Adding a toggle above the plans. Yearly saves 20%.", {
           id: "ti_reply000000001",
           streaming: false,
@@ -452,8 +586,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     // It asks; the question takes the composer's place, and the answer goes to the API.
     const question = await page.evaluate(
-      (designId) =>
-        window.ponzuFake!.backend.agent(designId).ask(
+      (canvasId) =>
+        window.ponzuFake!.backend.agent(canvasId).ask(
           {
             kind: "question",
             payload: {
@@ -483,8 +617,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await asked.getByRole("button", { name: "Send" }).click();
     await waitUntil(() =>
       page.evaluate(
-        ([designId, q]) =>
-          window.ponzuFake!.backend.design(designId!).questions.find((x) => x.id === q)?.status ===
+        ([canvasId, q]) =>
+          window.ponzuFake!.backend.canvas(canvasId!).questions.find((x) => x.id === q)?.status ===
           "answered",
         [id, question],
       ),
@@ -494,8 +628,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await rail().getByText("Asked:").waitFor();
 
     // It pushes and its turn ends: Create PR, then Ready, then Merge.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.push([{ path: "src/pricing.tsx", additions: 42, deletions: 3 }]);
       agent.idle();
     }, id);
@@ -517,7 +651,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await draft.fill("Half typed");
     const railBox = await rail().boundingBox();
 
-    // The pull request tab takes the canvas's pane, with the file's diff on demand, and leaves
+    // The pull request tab takes the main pane, with the file's diff on demand, and leaves
     // the thread as it was beside it.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: NAME }).waitFor();
@@ -530,13 +664,13 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // into the thread to take back the draft.
     await page.keyboard.press("Meta+z");
     expect(await draft.inputValue()).toBe("Half typed");
-    // ⌘J closes and opens the thread on this tab as on any other, and the draft survives.
+    // ⌥⌘B closes and opens the thread on this tab as on any other, and the draft survives.
     const threadShown = () =>
       page.locator('button[aria-controls="thread"]').getAttribute("aria-expanded");
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await waitUntil(async () => (await threadShown()) === "false");
     expect(await page.getByRole("heading", { name: NAME }).count()).toBe(1);
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     await waitUntil(async () => (await threadShown()) === "true");
     await rail().getByPlaceholder("Steer, or ask more").waitFor();
     expect(await rail().getByPlaceholder("Steer, or ask more").inputValue()).toBe("Half typed");
@@ -546,14 +680,24 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await card.getAttribute("aria-expanded")).toBe("true");
     await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
     // The agent pushes again while the file is open: the diff shown is the new head's.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.push([
         { path: "src/pricing.tsx", patch: "@@ -1 +1,2 @@\n context\n+const yearly = true;" },
       ]);
       agent.tool("Pushed the toggle", { streaming: false });
     }, id);
     await page.getByText("const yearly = true;").waitFor();
+
+    // The details' menu: Close asks first. Cancelled, nothing reaches GitHub, the pull request
+    // stays open, and the window takes clicks again (Merge, below).
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: "Close pull request" }).click();
+    const closing = page.getByRole("dialog", { name: /^Close #\d+ without merging\?$/ });
+    await closing.getByText("The branch and its commits stay.", { exact: false }).waitFor();
+    await closing.getByRole("button", { name: "Cancel" }).click();
+    await closing.waitFor({ state: "detached" });
+    expect(await page.getByText("Closed", { exact: true }).count()).toBe(0);
 
     await action("Merge").click();
     await page
@@ -562,11 +706,11 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       .waitFor();
     await waitUntil(() =>
       page.evaluate(
-        (designId) => window.ponzuFake!.backend.design(designId).settledAt !== null,
+        (canvasId) => window.ponzuFake!.backend.canvas(canvasId).settledAt !== null,
         id,
       ),
     );
-    // Merged: no button, and the design settled on its own.
+    // Merged: no button, and the canvas settled on its own.
     expect(await action("Merge").count()).toBe(0);
     await page.getByRole("tab", { name: "Page 1" }).click();
     await rail()
@@ -577,15 +721,42 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator('[data-board-name][title="Yearly toggle"]').count()).toBe(1);
   });
 
-  test("a design deleted while it's open says so calmly, and leads back", async () => {
+  test("a workspace switched to from the sidebar takes the caret to its create page, and not where it opens on a canvas", async () => {
+    // From Northbrook, with the canvas open, to Personal, which opens on its create page.
+    await page
+      .locator("[data-artboard-host]")
+      .first()
+      .waitFor({ state: "attached", timeout: 5000 });
+    await page.getByRole("button", { name: "Workspace: Northbrook" }).click();
+    await page.getByRole("menuitemradio", { name: "Personal" }).click();
+    await page.getByText("Make something").waitFor();
+    await caretStaysInCreate();
+    // Back to Northbrook, which opens on the canvas: no create page, and the caret stays out of
+    // anything until the person puts it somewhere.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page
+      .locator("[data-artboard-host]")
+      .first()
+      .waitFor({ state: "attached", timeout: 5000 });
+    // Past the frames the hand-off waits for before it looks.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+    expect(await page.locator("[data-create-composer]").count()).toBe(0);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
+  });
+
+  test("a canvas deleted while it's open says so calmly, and leads back", async () => {
     const { id } = await made();
-    await page.evaluate(async (designId) => {
+    await page.evaluate(async (canvasId) => {
       const world = window.ponzuFake!;
-      await world.backend.connect(world.me).api.designs.delete(designId);
+      await world.backend.connect(world.me).api.canvases.delete(canvasId);
     }, id);
-    await page.getByText("This design isn't here any more").waitFor();
-    await page.getByRole("button", { name: "Back to designs" }).click();
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("This canvas isn't here any more").waitFor();
+    await page.getByRole("button", { name: "Back to canvases" }).click();
+    await page.getByText("Make something").waitFor();
     expect(await page.getByRole("button", { name: new RegExp(NAME) }).count()).toBe(0);
     expect(errors).toEqual([]);
   });

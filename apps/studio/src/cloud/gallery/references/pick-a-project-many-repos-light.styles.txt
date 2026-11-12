@@ -3,12 +3,14 @@ ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
 icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "Northbrook" rgb(17, 17, 16) 600 13px Inter
-icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
+image img[Workspace: Thistlewick] image/svg+xml c4cbda20
+text "Thistlewick" rgb(17, 17, 16) 600 13px Inter
+icon svg[Workspace: Thistlewick] 11×11 rgb(128, 124, 115) stroke 2.2px
 icon svg[Search] 16×16 rgb(86, 83, 77) stroke 1.7px
 icon svg[Filter] 16×16 rgb(86, 83, 77) stroke 1.7px
-icon svg[New design] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[New canvas] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span[Quieter shop hero, fernwood, pz/hero-re…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Quieter shop hero, fernwood, pz/hero-re…] hero.png
 icon svg[Quieter shop hero, fernwood, pz/hero-re…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Quieter shop hero" rgb(17, 17, 16) 500 13px Inter
@@ -17,6 +19,7 @@ text "pz/hero-refresh" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "#412" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Quieter shop hero, fernwood, pz/hero-re…] 11×11 rgb(169, 165, 155) stroke 2.2px
 ground span[Pricing page, three takes, new activity…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Pricing page, three takes, new activity…] image/png 7d6393b4
 icon svg[Pricing page, three takes, new activity…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
 ground span[Pricing page, three takes, new activity…] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
@@ -26,90 +29,128 @@ text "pz/pricing" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "#405" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Pricing page, three takes, new activity…] 11×11 rgb(169, 165, 155) stroke 2.2px
 ground span[Autumn drop moodboard, Scratch, lisbon] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Autumn drop moodboard, Scratch, lisbon] image/png 78beb17b
 icon svg[Autumn drop moodboard, Scratch, lisbon] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "Scratch" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Autumn drop moodboard" rgb(17, 17, 16) 500 13px Inter
 text "lisbon" rgb(169, 165, 155) 400 11px IBM Plex Mono
-ground span[Survey results readout, new activity, l…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(169, 165, 155) stroke 2.2px
-text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
-ground span[Survey results readout, new activity, l…] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
+ground span[Survey results readout, new activity, a…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Survey results readout, new activity, a…] image/png 17e1c11f
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(169, 165, 155) stroke 2.2px
+text "almanac" rgb(169, 165, 155) 400 11px IBM Plex Mono
+ground span[Survey results readout, new activity, a…] rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
 text "Survey results readout" rgb(17, 17, 16) 500 13px Inter
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(169, 165, 155) stroke 2.2px
+icon svg[Survey results readout, new activity, a…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/survey-readout" rgb(169, 165, 155) 400 11px IBM Plex Mono
 ground span[One-page checkout, fernwood, pz/checkout] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[One-page checkout, fernwood, pz/checkout] image/png daf9d469
 icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "One-page checkout" rgb(17, 17, 16) 500 13px Inter
 icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/checkout" rgb(169, 165, 155) 400 11px IBM Plex Mono
 ground span[Brand kit for the relaunch, brand, pz/r…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Brand kit for the relaunch, brand, pz/r…] image/png a8a4c779
 icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "brand" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Brand kit for the relaunch" rgb(17, 17, 16) 500 13px Inter
 icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/relaunch" rgb(169, 165, 155) 400 11px IBM Plex Mono
-ground span[Support inbox triage, lenny, pz/inbox-t…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 2.2px
-text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
+ground span[Support inbox triage, almanac, pz/inbox…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+image img[Support inbox triage, almanac, pz/inbox…] image/png 166a13e4
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(169, 165, 155) stroke 2.2px
+text "almanac" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 2.2px
+icon svg[Support inbox triage, almanac, pz/inbox…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
-icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
+icon svg[Canvases] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
-text "What do you want to design?" rgb(17, 17, 16) 600 34px Funnel Display
+icon svg 56×56 rgb(17, 17, 16) stroke 3.4px
+text "Make something in" rgb(17, 17, 16) 600 28px Funnel Display
+text "thistlewick/fernwood" rgb(17, 17, 16) 600 28px Funnel Display
+ground button[Project: thistlewick/fernwood] rgba(17, 17, 16, 0.08)
+text "thistlewick" rgb(169, 165, 155) 600 28px Funnel Display
+text "/" rgb(169, 165, 155) 600 28px Funnel Display
+text "fernwood" rgb(17, 17, 16) 600 28px Funnel Display
+icon svg[Project: thistlewick/fernwood] 16×16 rgb(128, 124, 115) stroke 1.7px
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(17, 17, 16) 400 16px Inter
 icon svg[Attach] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "Opus 5.5" rgb(86, 83, 77) 500 12px Inter
-icon svg[Claude] 13×13 rgb(86, 83, 77) stroke 1px
-text "· High" rgb(169, 165, 155) 400 12px Inter
-icon svg[Model: Opus 5.5, effort High] 11×11 rgb(86, 83, 77) stroke 2.2px
+text "Opus 5.5" rgb(86, 83, 77) 500 14px Inter
+icon svg[Claude] 14×14 rgb(86, 83, 77) stroke 1px
+text "High" rgb(169, 165, 155) 400 14px Inter
+icon svg[Model: Opus 5.5, effort High] 12×12 rgb(86, 83, 77) stroke 2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
-text "fernwood" rgb(86, 83, 77) 500 12px Inter
-ground button[Project: fernwood] rgba(17, 17, 16, 0.08)
-icon svg[Project: fernwood] 12×12 rgb(86, 83, 77) stroke 2px
-icon svg[Project: fernwood] 11×11 rgb(86, 83, 77) stroke 2.2px
 ground div[Choose a repo] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.1) 0px 8px 28px 0px
 text "Choose a repo" rgb(17, 17, 16) 400 13px Inter
 icon svg[Choose a repo] 14×14 rgb(128, 124, 115) stroke 1.9px
 ground div[Choose a repo] rgb(232, 230, 224)
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[Scratch] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Scratch" rgb(17, 17, 16) 400 13px Inter
-ground div[Repositories] rgba(17, 17, 16, 0.05)
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+ground div[thistlewick/fernwood] rgba(17, 17, 16, 0.05)
+icon svg[thistlewick/fernwood] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "fernwood" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 14×14 rgb(17, 17, 16) stroke 1.9px
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "lenny" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/fernwood] 14×14 rgb(17, 17, 16) stroke 1.9px
+icon svg[thistlewick/almanac] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
+text "almanac" rgb(17, 17, 16) 400 13px Inter
+icon svg[thistlewick/ponzu] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "ponzu" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "fablefuel" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/quillmoor] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
+text "quillmoor" rgb(17, 17, 16) 400 13px Inter
+icon svg[thistlewick/customer-onboarding-experim…] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "customer-onboarding-experiments-and-lan…" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/brand] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "brand" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "north-brook.com" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/thistlewick.com] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
+text "thistlewick.com" rgb(17, 17, 16) 400 13px Inter
+icon svg[thistlewick/design-system] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "design-system" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/mobile] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "mobile" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/api] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "api" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/docs] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "docs" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/sandbox-images] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "sandbox-images" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/press-kit] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "press-kit" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/dotfiles] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "dotfiles" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[thistlewick/infra] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "thistlewick" rgb(169, 165, 155) 400 13px Inter
+text "/" rgb(169, 165, 155) 400 13px Inter
 text "infra" rgb(17, 17, 16) 400 13px Inter
 ground div[Choose a repo] rgb(232, 230, 224)
 icon svg[Choose a repo] 16×16 rgb(169, 165, 155) stroke 1px

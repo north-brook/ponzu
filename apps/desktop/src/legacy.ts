@@ -21,7 +21,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
  * Code, Codex and Cursor. The update took the server away, so each of those now starts nothing.
  *
  * Each is removed only when it is provably 1.x's and provably dead: written in the exact form
- * 1.x wrote (apps/cli/src/install.ts, command.ts, host.ts and wake.ts), and pointing at a server
+ * 1.x wrote (its CLI's install.ts, command.ts, host.ts and wake.ts), and pointing at a server
  * binary that no longer exists. Anything else is the person's and stays, and so does everything
  * when a 1.x Ponzu is still installed somewhere the command can find. Nothing outside these
  * entries is touched: no design, no folder of the person's, nothing else in ~/.ponzu.
@@ -136,6 +136,60 @@ export async function removeLegacyFor(
 ): Promise<Step[] | null> {
   if (!build.cleansUpLegacy) return null;
   return removeLegacyOnce(host, record, version);
+}
+
+/*
+ * The welcome from Ponzu 1.x: a sheet the studio shows once, on a computer that had 1.x, to say
+ * Ponzu works in the cloud now and the .design folders 1.x made stay where they are (the
+ * production design, "Someone on 1.x today"). Reading whether 1.x was here touches nothing of
+ * it: only whether `~/.ponzu` exists, and the cleanup's own record.
+ */
+
+/**
+ * Whether this computer had Ponzu 1.x: its folder (`~/.ponzu`, or `PONZU_HOME`) is there, or the
+ * cleanup's record (`legacyRecord`, legacy-cleanup.json) says it did something, whether it
+ * removed, kept or failed. A clean computer has neither: no folder, and a record with no steps.
+ */
+export function hadPonzu1x(
+  host: Pick<LegacyHost, "home" | "env" | "exists">,
+  legacyRecord: string,
+): boolean {
+  if (host.exists(host.env.PONZU_HOME || join(host.home, ".ponzu"))) return true;
+  const record = readJson(legacyRecord) as { steps?: unknown } | null;
+  return Array.isArray(record?.steps) && record.steps.length > 0;
+}
+
+/**
+ * Whether the studio shows the welcome from 1.x now: true once, on a computer that had 1.x, and
+ * written to `welcomeRecord` (welcome-1x.json in the data folder) as it answers, so it is never
+ * shown twice, not after a reload and not on the next launch. Only a release shows it, the one
+ * build that cleans up after 1.x: Ponzu Dev and Ponzu Local run beside a 1.x still in use, and
+ * the smoke check and a test build are driven by a machine with no one to read it. When the
+ * record can't be written, it isn't shown either: a sheet that came back every launch is worse
+ * than one that never came.
+ */
+export function takeWelcome1x(opts: {
+  build: { cleansUpLegacy: boolean };
+  /** The smoke check, or a test build: nobody to show it to. */
+  driven: boolean;
+  host: Pick<LegacyHost, "home" | "env" | "exists">;
+  legacyRecord: string;
+  welcomeRecord: string;
+  version: string;
+  now?: () => Date;
+}): boolean {
+  if (!opts.build.cleansUpLegacy || opts.driven) return false;
+  if (existsSync(opts.welcomeRecord)) return false;
+  if (!hadPonzu1x(opts.host, opts.legacyRecord)) return false;
+  const at = (opts.now?.() ?? new Date()).toISOString();
+  try {
+    writeFileSync(opts.welcomeRecord, `${JSON.stringify({ version: opts.version, at })}\n`, {
+      flag: "wx",
+    });
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 /** The server binaries a 1.x shim runs, in the order it tries them; null if 1.x didn't write it. */

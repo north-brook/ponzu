@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 
 /** Where a new comment's unsent words sit: a Thread's place, before it is one. */
 export interface DraftPin {
-  /** Absent for a comment on the open canvas. */
+  /** Absent for a comment on the ground. */
   artboardId?: string;
   pageId: string;
   nodeId?: string;
@@ -13,7 +13,7 @@ export interface DraftPin {
 }
 
 export interface Draft {
-  /** The design it's in, by its key. */
+  /** The canvas it's in, by its key. */
   file: string;
   text: string;
   /** The thread a reply or an edit is in. */
@@ -97,7 +97,7 @@ export function useDraft(
   return [text ?? initial, set];
 }
 
-/** Every draft, in every design. */
+/** Every draft, in every canvas. */
 export function useDrafts(): Draft[] {
   return useSyncExternalStore(
     subscribe,

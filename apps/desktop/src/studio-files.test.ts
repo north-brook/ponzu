@@ -22,7 +22,7 @@ test("the studio's files, by their path", () => {
 });
 
 test("a route is the app's own: it gets index.html", () => {
-  for (const url of ["ponzu-studio://app/", "ponzu-studio://app/design/dsn_1?page=pg_1"]) {
+  for (const url of ["ponzu-studio://app/", "ponzu-studio://app/canvas/cnv_1?page=pg_1"]) {
     expect(studioFile(root, url)?.path).toBe(join(root, "index.html"));
   }
 });

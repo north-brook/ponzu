@@ -11,7 +11,7 @@ import type { Detail } from "./lod.ts";
 /**
  * Images on the canvas load as copies sized to how they're drawn.
  *
- * A design's images are often far bigger than they're shown (a 4000 px photo
+ * A canvas's images are often far bigger than they're shown (a 4000 px photo
  * in a 300 px slot), and a board zoomed out shows them smaller still. Decoded
  * at full size they stall the canvas for seconds and take gigabytes. So each
  * image asks Ponzu's server for a copy (`?w=`, or /api/image for a remote
@@ -43,7 +43,7 @@ const DOWN = 1.5;
 
 /**
  * The server sends the original for a copy at least this share of its width
- * (packages/server/src/renditions.ts): asking wider changes nothing.
+ * (1.x's local server, its renditions.ts): asking wider changes nothing.
  */
 const ORIGINAL = 0.8;
 

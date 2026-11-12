@@ -9,7 +9,8 @@
  *       check the release of <version>'s files, downloaded into <dir>, for those platforms (all
  *       three when none is named): each feed is there and names <version>, each file it names
  *       is there with its size and sha512, and so are the downloads, which the feed names too,
- *       and release-notes.json
+ *       and release-notes.json. changelog.json, which the site's /changelog reads, is checked
+ *       when it's there: a release built before the publish job wrote it still passes.
  */
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -25,6 +26,62 @@ export const PLATFORMS: Record<Platform, { feed: string; downloads: string[] }> 
 
 /** What every app about to update reads beside the build (docs/release-notes.md). */
 export const NOTES = "release-notes.json";
+
+/** Both apps' dated notes, which the site's /changelog reads (scripts/release-notes.ts --changelog). */
+export const CHANGELOG = "changelog.json";
+
+const VERSION = /^\d+\.\d+\.\d+$/;
+/** `git log --format=%cI`'s date with its offset, the only date the site accepts (zod's iso.datetime). */
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+
+/**
+ * Whether a date is `%cI`'s form and a real moment, as zod's iso.datetime holds it: a day that
+ * exists in its month (Date.parse would roll 30 February into March), and a time on the clock.
+ */
+function realDate(date: string): boolean {
+  const m = ISO_DATE.exec(date);
+  if (!m) return false;
+  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+  if (month === undefined || month < 1 || month > 12 || day === undefined || day < 1) return false;
+  // Day 0 of the next month is this month's last day.
+  if (day > new Date(Date.UTC(year ?? 0, month, 0)).getUTCDate()) return false;
+  if ((hour ?? 0) > 23 || (minute ?? 0) > 59 || (second ?? 0) > 59) return false;
+  return m[8] === "Z" || (Number(m[9]) <= 23 && Number(m[10]) <= 59);
+}
+
+/** What's wrong with a changelog.json's text: nothing when the site can read it. */
+export function changelogProblems(text: string): string[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return [`${CHANGELOG} isn't JSON`];
+  }
+  if (!data || typeof data !== "object") return [`${CHANGELOG} isn't an object`];
+  const out: string[] = [];
+  const { incomplete } = data as { incomplete?: unknown };
+  if (incomplete !== undefined && incomplete !== true)
+    out.push(`${CHANGELOG}'s incomplete is neither true nor left out`);
+  for (const app of ["mac", "iphone"] as const) {
+    const list = (data as Record<string, unknown>)[app];
+    if (!Array.isArray(list)) {
+      out.push(`${CHANGELOG} has no ${app} list`);
+      continue;
+    }
+    list.forEach((entry, i) => {
+      const r = (entry ?? {}) as { version?: unknown; date?: unknown; notes?: unknown };
+      const ok =
+        typeof r.version === "string" &&
+        VERSION.test(r.version) &&
+        typeof r.date === "string" &&
+        realDate(r.date) &&
+        Array.isArray(r.notes) &&
+        r.notes.every((n) => typeof n === "string");
+      if (!ok) out.push(`${CHANGELOG}'s ${app} release ${i + 1} isn't a version, date and notes`);
+    });
+  }
+  return out;
+}
 
 export interface File {
   size: number;
@@ -44,6 +101,7 @@ export function problems(
   platforms: Platform[],
   feeds: Record<string, string>,
   files: Map<string, File>,
+  changelog?: string,
 ): string[] {
   const out: string[] = [];
   const need = (name: string) => {
@@ -84,6 +142,7 @@ export function problems(
         out.push(`${download} isn't in ${name}, so nothing installed from it updates`);
   }
   need(NOTES);
+  if (changelog !== undefined) out.push(...changelogProblems(changelog));
   return out;
 }
 
@@ -103,13 +162,15 @@ if (import.meta.main) {
   const platforms = (named.length ? named : Object.keys(PLATFORMS)) as Platform[];
   const files = new Map<string, File>();
   const feeds: Record<string, string> = {};
+  let changelog: string | undefined;
   for (const name of existsSync(dir) ? readdirSync(dir) : []) {
     const path = join(dir, name);
     if (!statSync(path).isFile()) continue;
     files.set(name, { size: statSync(path).size, sha512: await sha512(path) });
     if (name.endsWith(".yml")) feeds[name] = readFileSync(path, "utf8");
+    if (name === CHANGELOG) changelog = readFileSync(path, "utf8");
   }
-  const found = problems(version, platforms, feeds, files);
+  const found = problems(version, platforms, feeds, files, changelog);
   for (const p of found) console.error(`::error::${p}`);
   if (found.length) process.exit(1);
   console.log(`Ponzu ${version} has every file for ${platforms.join(", ")}:`);

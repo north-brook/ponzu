@@ -1,7 +1,9 @@
-// The tools on a replica, in a design's sandbox.
+// The tools on a replica, in a canvas's sandbox.
+
+export * from "./canvas.ts";
 export { MAX_ASSET_BYTES } from "./cloud/asset.ts";
 export { CLOUD_INSTRUCTIONS, type CloudGuideTopic, cloudGuides } from "./cloud/guides.ts";
-export { ReplicaDesign } from "./cloud/replica-design.ts";
+export { ReplicaCanvas } from "./cloud/replica-canvas.ts";
 export { cloudTools, getCloudTool } from "./cloud/tools.ts";
 export {
   type AgentStatus,
@@ -10,12 +12,10 @@ export {
   type CloudWorkspaceOptions,
   createCloudWorkspace,
 } from "./cloud/workspace.ts";
-
 // What every host of the tools builds on.
 export * from "./context.ts";
 export { threadLine } from "./converse.ts";
 export * from "./define.ts";
-export * from "./design.ts";
 export { type AgentFiles, FileError, type FileProblem, localFiles } from "./disk.ts";
 
 // The tools on folders of files, on the local server until it is deleted.

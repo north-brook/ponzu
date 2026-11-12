@@ -9,7 +9,7 @@ import type { Actor } from "./types.ts";
 import { InvalidOpError } from "./validate.ts";
 
 /**
- * Several replicas of one design, each making random ops, over a network that delays, loses
+ * Several replicas of one canvas, each making random ops, over a network that delays, loses
  * and repeats things. Time is simulated and every choice comes from one seed, so a run that
  * fails fails the same way again.
  */

@@ -42,7 +42,7 @@ export interface NewOp {
 export type CommitResult =
   | {
       kind: "committed";
-      /** The design's seq afterwards. */
+      /** The canvas's seq afterwards. */
       seq: number;
       /** One per op given, in the order given. */
       ops: StoredOp[];
@@ -50,7 +50,7 @@ export type CommitResult =
       replayed: string[];
     }
   /**
-   * Nothing was written: the design is not at `expectedSeq` (or is gone). Read the ops after
+   * Nothing was written: the canvas is not at `expectedSeq` (or is gone). Read the ops after
    * the seq you have, apply them, and commit again.
    */
   | { kind: "conflict" }
@@ -62,10 +62,10 @@ export type CommitResult =
   | { kind: "unstorable"; ids: string[] };
 
 /**
- * Append ops to a design's log and move `designs.seq` past them, or do neither.
+ * Append ops to a canvas's log and move `canvases.seq` past them, or do neither.
  *
  * It is one statement, so it is atomic over Neon's HTTP driver, which has no interactive
- * transactions. The update of the design's row is the gate: it matches only while `seq` is
+ * transactions. The update of the canvas's row is the gate: it matches only while `seq` is
  * still `expectedSeq`, and the insert takes its rows only if that update happened. Of two
  * callers racing on one `expectedSeq`, the second waits on the row lock, looks again, finds
  * `seq` moved and writes nothing.
@@ -74,8 +74,8 @@ export type CommitResult =
  * place. A batch made only of such ops succeeds whatever `expectedSeq` says, so a retry is
  * safe for as long as the log keeps the op: `OP_RETENTION_DAYS` at least (see `writeCheckpoint`).
  *
- * `events` go into the design's feed with the ops they are about, in the same statement, so
- * an op is never in the log without them (see `OpEvent`). `head` is the design's name and icon
+ * `events` go into the canvas's feed with the ops they are about, in the same statement, so
+ * an op is never in the log without them (see `OpEvent`). `head` is the canvas's name and icon
  * after the ops, for its row to follow the document, when they changed them.
  */
 export function commitOps(db: Db, input: CommitInput & { ops: NewOp[] }): Promise<CommitResult> {
@@ -87,7 +87,7 @@ export function commitOps(db: Db, input: CommitInput & { ops: NewOp[] }): Promis
 }
 
 export interface CommitInput {
-  designId: string;
+  canvasId: string;
   expectedSeq: number;
   actor: Actor;
   events?: OpEvent[];
@@ -99,7 +99,7 @@ export interface CommitInput {
  * as `payload.seq`, and an op that was in the log already appends none: whoever appended it
  * appended its events.
  */
-export interface OpEvent extends Omit<NewEvent, "designId"> {
+export interface OpEvent extends Omit<NewEvent, "canvasId"> {
   /** The sender's id for the op it is about. */
   opId: string;
   /**
@@ -117,7 +117,7 @@ export interface LogEntry extends NewOp {
 /** The statement behind `commitOps` and `commitReversal`. */
 export async function commit(
   db: Db,
-  { designId, expectedSeq, actor, events = [], head }: CommitInput,
+  { canvasId, expectedSeq, actor, events = [], head }: CommitInput,
   entries: LogEntry[],
 ): Promise<CommitResult> {
   if (entries.length === 0) throw new Error("A commit needs at least one op.");
@@ -156,7 +156,7 @@ export async function commit(
       replayed as (
         select i.ord, o.*
           from input i
-          join design_ops o on o.design_id = ${designId} and o.client_op_id = i.client_op_id
+          join canvas_ops o on o.canvas_id = ${canvasId} and o.client_op_id = i.client_op_id
       ),
       fresh as (
         select i.*, row_number() over (order by i.ord) as n
@@ -164,12 +164,12 @@ export async function commit(
          where not exists (select 1 from replayed r where r.ord = i.ord)
       ),
       bumped as (
-        update designs
+        update canvases
            set seq = seq + (select count(*) from fresh),
                ${head ? sql`name = ${head.name}, icon = ${head.icon},` : sql.empty()}
                last_activity_at = now(),
                updated_at = now()
-         where id = ${designId}
+         where id = ${canvasId}
            and seq = ${expectedSeq}
            and exists (select 1 from fresh)
            -- An undo takes back a do or a redo, a redo takes back an undo, and only once.
@@ -179,8 +179,8 @@ export async function commit(
               where f.reverses_seq is not null
                 and not exists (
                   select 1
-                    from design_ops target
-                   where target.design_id = ${designId}
+                    from canvas_ops target
+                   where target.canvas_id = ${canvasId}
                      and target.seq = f.reverses_seq
                      and target.reversed_by_seq is null
                      and (target.kind = 'undo') = (f.kind = 'redo')
@@ -189,25 +189,25 @@ export async function commit(
         returning seq
       ),
       appended as (
-        insert into design_ops (
-          design_id, seq, client_op_id, op, inverse, kind, reverses_seq,
+        insert into canvas_ops (
+          canvas_id, seq, client_op_id, op, inverse, kind, reverses_seq,
           actor_kind, actor_id, actor_name, actor_avatar_url
         )
-        select ${designId}, ${expectedSeq} + f.n, f.client_op_id, f.op, f.inverse, f.kind,
+        select ${canvasId}, ${expectedSeq} + f.n, f.client_op_id, f.op, f.inverse, f.kind,
                f.reverses_seq, ${actor.kind}, ${actor.id}, ${actor.name}, ${actor.avatarUrl ?? null}
           from fresh f
          where exists (select 1 from bumped)
         returning *
       ),
       reversed as (
-        update design_ops target
+        update canvas_ops target
            set reversed_by_seq = a.seq
           from appended a
-         where target.design_id = ${designId} and target.seq = a.reverses_seq
+         where target.canvas_id = ${canvasId} and target.seq = a.reverses_seq
       ),
       logged as (
-        insert into events (id, design_id, kind, priority, payload, user_id, posthog_session_id)
-        select t.e->>'id', ${designId}, t.e->>'kind', t.e->>'priority',
+        insert into events (id, canvas_id, kind, priority, payload, user_id, posthog_session_id)
+        select t.e->>'id', ${canvasId}, t.e->>'kind', t.e->>'priority',
                jsonb_set((t.e->'payload')::jsonb, '{seq}', to_jsonb(a.seq)), t.e->>'userId',
                t.e->>'posthogSessionId'
           from json_array_elements(${feed}::json) with ordinality as t(e, ord)
@@ -215,15 +215,15 @@ export async function commit(
          order by t.ord
       ),
       threaded as (
-        insert into thread_items (id, design_id, kind, user_id, payload)
-        select t.e->>'itemId', ${designId}, 'comment', t.e->>'userId', (t.e->'comment')::jsonb
+        insert into thread_items (id, canvas_id, kind, user_id, payload)
+        select t.e->>'itemId', ${canvasId}, 'comment', t.e->>'userId', (t.e->'comment')::jsonb
           from json_array_elements(${feed}::json) with ordinality as t(e, ord)
           join appended a on a.client_op_id = t.e->>'opId'
          where t.e->'comment' is not null
          order by t.ord
       )
       select json_build_object(
-        'seq', coalesce((select seq from bumped), (select seq from designs where id = ${designId})),
+        'seq', coalesce((select seq from bumped), (select seq from canvases where id = ${canvasId})),
         'conflict', exists (select 1 from fresh) and not exists (select 1 from bumped),
         'ops', (
           select coalesce(json_agg(json_build_object('replayed', x.replayed, 'op', x.op) order by x.ord), '[]'::json)
@@ -250,7 +250,7 @@ export async function commit(
 export type ReadOpsResult =
   | {
       kind: "ok";
-      /** The design's seq. When the last op read is below it, read again from there. */
+      /** The canvas's seq. When the last op read is below it, read again from there. */
       seq: number;
       ops: StoredOp[];
     }
@@ -259,16 +259,16 @@ export type ReadOpsResult =
 
 /**
  * The ops after `after`, oldest first: at most `limit` of them, and no more of them than fit in
- * `maxBytes` of op text, though always the first. Null when there is no such design.
+ * `maxBytes` of op text, though always the first. Null when there is no such canvas.
  */
 export async function readOps(
   db: Db,
   {
-    designId,
+    canvasId,
     after,
     limit = 500,
     maxBytes = Number.MAX_SAFE_INTEGER,
-  }: { designId: string; after: number; limit?: number; maxBytes?: number },
+  }: { canvasId: string; after: number; limit?: number; maxBytes?: number },
 ): Promise<ReadOpsResult | null> {
   const result = await queryJson<{ seq: number; ops: OpJson[] }>(
     db,
@@ -285,8 +285,8 @@ export async function readOps(
                          sum(octet_length(head.op::text)) over (order by head.seq) as bytes
                     from (
                       select *
-                        from design_ops
-                       where design_id = d.id and seq > ${after}
+                        from canvas_ops
+                       where canvas_id = d.id and seq > ${after}
                        order by seq
                        limit ${limit}
                     ) head
@@ -295,8 +295,8 @@ export async function readOps(
             ) o
         )
       ) as result
-        from designs d
-       where d.id = ${designId}
+        from canvases d
+       where d.id = ${canvasId}
     `,
   );
   if (!result) return null;
@@ -307,12 +307,12 @@ export async function readOps(
 }
 
 /**
- * The ops in a design's log with these sender ids. The API asks before applying a batch, so an
+ * The ops in a canvas's log with these sender ids. The API asks before applying a batch, so an
  * op that was already committed is answered from the log and not applied a second time.
  */
 export async function findOps(
   db: Db,
-  { designId, ids }: { designId: string; ids: string[] },
+  { canvasId, ids }: { canvasId: string; ids: string[] },
 ): Promise<StoredOp[]> {
   // An id Postgres cannot store is not in the log, and asking for it would fail the query.
   const known = ids.filter(isStorable);
@@ -323,8 +323,8 @@ export async function findOps(
       select json_build_object(
         'ops', coalesce(json_agg(${opJson("o")} order by o.seq), '[]'::json)
       ) as result
-        from design_ops o
-       where o.design_id = ${designId} and o.client_op_id in ${known}
+        from canvas_ops o
+       where o.canvas_id = ${canvasId} and o.client_op_id in ${known}
     `,
   );
   return (result?.ops ?? []).map(toStoredOp);
@@ -346,7 +346,7 @@ export interface OpJson {
   at: number;
 }
 
-/** A `design_ops` row as json, where `row` is the statement's name for the row. */
+/** A `canvas_ops` row as json, where `row` is the statement's name for the row. */
 export function opJson(row: string): SQL {
   const o = sql.raw(row);
   return sql`json_build_object(

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 /*
  * Whether this person has said no to usage reporting, the ways Ponzu 1.x let them say it
- * (apps/cli/src/telemetry.ts): `PONZU_TELEMETRY=0`, `DO_NOT_TRACK`, a CI machine, or
+ * (its CLI's telemetry.ts): `PONZU_TELEMETRY=0`, `DO_NOT_TRACK`, a CI machine, or
  * `ponzu telemetry off`, which wrote `"enabled": false` to ~/.ponzu/telemetry.json. Someone who
  * turned it off for 1.x stays off in the cloud app. There is no switch of its own in the app's
  * settings yet (docs/analytics.md, "Turning it off").

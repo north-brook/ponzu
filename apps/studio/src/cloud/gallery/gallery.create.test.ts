@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's components in a real Chromium, beside gallery.test.ts: creating a
- * design, the repo picker, the page tabs and the pull request tab, their keyboard and focus
+ * canvas, the repo picker, the page tabs and the pull request tab, their keyboard and focus
  * behaviour. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
@@ -9,8 +9,13 @@ import {
   buildGallery,
   chromiumPath,
   fontsLoaded,
+  holdSend,
   launch,
   type Page,
+  releaseSend,
+  type SendFrame,
+  seekSend,
+  sendFrame,
   serve,
 } from "../../../scripts/visual-lib.ts";
 
@@ -73,24 +78,46 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     });
     expect(toggle).toBe(true);
   });
-  test("the composer sends only something, and an idea fills it without sending", async () => {
+  test("the composer sends only something, and Tab takes the suggestion in without sending", async () => {
     await open("fresh-start");
+    // The first idea stays for the whole test: which one Tab takes mustn't depend on the clock.
+    await page.goto(`${server.url}/gallery.html?board=fresh-start&theme=light&dwell=600000`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
     const send = 'button[aria-label="Send"]';
     const disabled = () => page.$eval(send, (b) => b.getAttribute("aria-disabled") === "true");
     expect(await disabled()).toBe(true);
     await page.fill("textarea", "   ");
     expect(await disabled()).toBe(true);
-    await page.click('button:has-text("A dark mode for the shop")');
-    expect(await page.inputValue("textarea")).toBe(
-      "A dark mode for the shop, using the tokens you already have",
-    );
-    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    // Spaces are typing too: the suggestion is put away.
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    await page.fill("textarea", "");
+    await page.waitForSelector('[data-suggestion="idea_checkout"]');
+    await page.focus("textarea");
+    await page.keyboard.press("Tab");
+    const idea = "Make checkout one page, with the order summary on the right";
+    expect(await page.inputValue("textarea")).toBe(idea);
+    // In the field to edit, the cursor after it, and nothing sent.
+    expect(
+      await page.$eval("textarea", (el) => {
+        const field = el as HTMLTextAreaElement;
+        return document.activeElement === field && field.selectionStart === field.value.length;
+      }),
+    ).toBe(true);
+    expect(await page.$("[data-suggestion]")).toBeNull();
     expect(await disabled()).toBe(false);
+    // With words in the field, Tab is the keyboard's again: past the frame the idea's caret is
+    // placed in, so that doesn't take focus back after the Tab (a loaded machine runs it late).
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
   });
+
   /** Where the create page's question sits, in px from the window's top. */
   const questionTop = () =>
     page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
-  test("the repo picker opens under its chip and the page stays where it is", async () => {
+  test("the repo picker opens under its selector and the page stays where it is", async () => {
     const picker = '[data-slot="popover-content"]';
     const box = (selector: string) =>
       page.$eval(selector, (el) => {
@@ -112,10 +139,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         picker,
       );
       expect(await questionTop()).toBe(resting);
-      // Under the chip, and whole inside the window.
-      const chip = await box('button[aria-label^="Project"]');
+      // Under the selector, and whole inside the window.
+      const selector = await box('button[aria-label^="Project"]');
       const open_ = await box(picker);
-      expect(open_.top).toBeGreaterThanOrEqual(chip.bottom);
+      expect(open_.top).toBeGreaterThanOrEqual(selector.bottom);
       expect(open_.bottom).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight));
     }
     // Fifteen repos and Scratch: the list shows five rows and half of the sixth, and has its search.
@@ -128,14 +155,21 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(list.bottom - list.top).toBeGreaterThan(shown);
     // Typing shortens the list; the page still doesn't move.
     const resting = await questionTop();
-    await page.keyboard.type("len");
+    await page.keyboard.type("alm");
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
     expect(await questionTop()).toBe(resting);
   });
-  test("in a window too short for it, the picker's list gives up height and stays under the chip", async () => {
+  test("in a window too short for it, the picker's list gives up height and stays under the selector", async () => {
     await open("pick-a-project-many-repos");
+    // The picker hangs from the statement's second line, so it takes a window this short (under
+    // the smallest the app allows) to run out of room.
     await page.setViewportSize({ width: 1440, height: 560 });
     try {
+      // The column re-centres for the shorter pane in the frame after the resize (a
+      // ResizeObserver): past two frames it is where it rests.
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
       const resting = await questionTop();
       await page.click('button[aria-label^="Project"]');
       await page.waitForSelector('input[aria-label="Search repositories"]');
@@ -160,15 +194,73 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       await page.setViewportSize({ width: 1440, height: 900 });
     }
   });
-  test("a first visit keeps its ideas' room: a skeleton while they're made, and nothing moves", async () => {
-    await open("fresh-start");
-    const withIdeas = await questionTop();
-    expect(await page.$('[aria-label="Ideas"]')).not.toBeNull();
+  test("ideas take turns as the composer's placeholder, and nothing on the page moves for them", async () => {
+    const placeholder = () =>
+      page.$eval("textarea", (el) => getComputedStyle(el, "::placeholder").color);
+    // While they are being made: the plain placeholder.
     await open("fresh-start-loading");
-    expect(await page.$('[aria-label="Finding ideas"]')).not.toBeNull();
-    expect(await page.$('[aria-label="Ideas"]')).toBeNull();
-    expect(await questionTop()).toBe(withIdeas);
+    const waiting = await questionTop();
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    const plain = await placeholder();
+    expect(plain).not.toBe("rgba(0, 0, 0, 0)");
+
+    // Made: each shows in the placeholder's place and colour, with the key that takes it.
+    await page.goto(`${server.url}/gallery.html?board=fresh-start&theme=light&dwell=200`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    expect(await questionTop()).toBe(waiting);
+    await page.waitForSelector("[data-suggestion]");
+    // Everything about the one showing, read in one go: the next takes its place in 200ms.
+    const prompts: Record<string, string> = {
+      idea_checkout: "Make checkout one page, with the order summary on the right",
+      idea_hero: "Three takes on the home hero that put the plants first",
+      idea_dark: "A dark mode for the shop, using the tokens you already have",
+      idea_empty: "Friendlier empty states for cart, orders and search",
+    };
+    const showing = await page.evaluate(() => {
+      const line = document.querySelector<HTMLElement>("[data-suggestion]")!;
+      const field = document.querySelector("textarea")!;
+      const now = line.querySelector(".suggestion-in")!;
+      const words = now.firstChild?.textContent ?? "";
+      return {
+        id: line.dataset.suggestion!,
+        words,
+        key: now.querySelector("kbd")?.textContent,
+        color: getComputedStyle(line).color,
+        pointer: getComputedStyle(line).pointerEvents,
+        placeholder: getComputedStyle(field, "::placeholder").color,
+        described: document.getElementById(field.getAttribute("aria-describedby")!)?.textContent,
+        // Words made from the repo: none of them reaches a private recording unmasked.
+        masked: [...document.querySelectorAll("[data-create-composer] *")]
+          .filter((el) =>
+            [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent?.includes(words)),
+          )
+          .map((el) => el.closest('[data-replay="mask"]') !== null),
+      };
+    });
+    const prompt = prompts[showing.id]!;
+    // In the placeholder's place and colour, with the key that takes it; the real placeholder
+    // steps aside, and the pointer goes through to the field.
+    expect(showing.words).toBe(prompt);
+    expect(showing.key).toBe("tab");
+    expect(showing.color).toBe(plain);
+    expect(showing.placeholder).toBe("rgba(0, 0, 0, 0)");
+    expect(showing.pointer).toBe("none");
+    // The field tells assistive tech what the picture of a placeholder can't.
+    expect(showing.described).toBe(`Suggestion: ${prompt}. Press Tab to use it.`);
+    expect(showing.masked.length).toBeGreaterThanOrEqual(2);
+    expect(showing.masked.every(Boolean)).toBe(true);
+    // One after another, round to the first again.
+    for (const id of ["idea_hero", "idea_dark", "idea_empty", "idea_checkout"]) {
+      await page.waitForSelector(`[data-suggestion="${id}"]`);
+    }
+    // Typing puts them away, and the plain placeholder is the field's again once it is cleared.
+    await page.fill("textarea", "A card");
+    expect(await page.$("[data-suggestion]")).toBeNull();
+    expect(await questionTop()).toBe(waiting);
+    await page.fill("textarea", "");
+    await page.waitForSelector("[data-suggestion]");
   });
+
   test("a menu gives focus back without a ring, unless the keyboard brought it to the chip", async () => {
     await open("create");
     const chip = 'button[aria-label^="Model"]';
@@ -177,7 +269,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click("textarea");
     await page.keyboard.type("A card");
     await page.click(chip);
-    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]');
+    // Closed without a choice, focus goes back to the chip, with no ring after a click.
+    await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
     await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
     expect(await ring()).toBe("none");
@@ -205,97 +299,83 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await open("pick-a-project-many-repos");
     await page.click('button[aria-label^="Project"]');
     await page.waitForSelector('input[aria-label="Search repositories"]');
-    await page.keyboard.type("len");
+    await page.keyboard.type("alm");
     const options = await page.$$eval('[role="option"]', (els) =>
       els.map((e) => e.getAttribute("data-choice")),
     );
-    expect(options).toEqual(["repo_lenny"]);
+    expect(options).toEqual(["repo_almanac"]);
     await page.keyboard.press("Enter");
     await page.waitForSelector('input[aria-label="Search repositories"]', { state: "detached" });
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("lenny");
-    await focusOn("Project: lenny");
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("thistlewick/almanac");
+    // Chosen, the caret goes on to the composer, to say what to make there.
+    await focusOn("Describe what you want to make");
   });
-  // A few repos list without a search, and the list takes the keys; enough to need one, the field.
-  for (const [board, focused] of [
-    ["create", '[role="listbox"][aria-label="Repositories"]'],
-    ["pick-a-project-many-repos", 'input[aria-label="Search repositories"]'],
-  ] as const) {
-    test(`the repo picker on ${board}: the arrows, Home and End move the highlight; Escape changes nothing`, async () => {
-      await open(board);
-      await page.click('button[aria-label^="Project"]');
-      await page.waitForSelector(focused);
-      const highlighted = () =>
-        page.$eval(focused, (el) => {
-          const id = el.getAttribute("aria-activedescendant");
-          return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
-        });
-      const choices = await page.$$eval('[role="option"]', (els) =>
-        els.map((e) => e.getAttribute("data-choice")),
-      );
-      // It opens on the chosen one, named for assistive tech.
-      expect(await highlighted()).toBe("repo_fernwood");
-      await page.keyboard.press("End");
-      expect(await highlighted()).toBe(choices.at(-1)!);
-      await page.keyboard.press("Home");
-      expect(await highlighted()).toBe(choices[0]!);
-      await page.keyboard.press("ArrowDown");
-      expect(await highlighted()).toBe(choices[1]!);
-      // The field, or the list, keeps focus throughout.
-      expect(await page.$eval(focused, (el) => el === document.activeElement)).toBe(true);
-      await page.keyboard.press("Escape");
-      await page.waitForSelector(focused, { state: "detached" });
-      await focusOn("Project: fernwood");
-    });
-  }
-  test("the repo picker: one line a row, by name; the search only once there are enough", async () => {
+  /**
+   * Checks the arrows, Home and End move the highlight while `focused` (the field, or the list)
+   * keeps focus, and that Escape closes the picker with the chosen repo kept.
+   */
+  const highlightWalk = async (focused: string) => {
+    const highlighted = () =>
+      page.$eval(focused, (el) => {
+        const id = el.getAttribute("aria-activedescendant");
+        return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
+      });
+    const choices = await page.$$eval('[role="option"]', (els) =>
+      els.map((e) => e.getAttribute("data-choice")),
+    );
+    // It opens on the chosen one, named for assistive tech.
+    expect(await highlighted()).toBe("repo_fernwood");
+    await page.keyboard.press("End");
+    expect(await highlighted()).toBe(choices.at(-1)!);
+    await page.keyboard.press("Home");
+    expect(await highlighted()).toBe(choices[0]!);
+    await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toBe(choices[1]!);
+    // The field, or the list, keeps focus throughout.
+    expect(await page.$eval(focused, (el) => el === document.activeElement)).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(focused, { state: "detached" });
+    await focusOn("Project: thistlewick/fernwood");
+  };
+  test("the repo picker on create: one line a row, by name, no search; the list takes the keys, Escape changes nothing, Return chooses", async () => {
+    const list = '[role="listbox"][aria-label="Repositories"]';
     await open("create");
     await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+    await page.waitForSelector(list);
+    // A few repos: no search; the list itself has the keys.
     expect(await page.$('input[aria-label="Search repositories"]')).toBeNull();
-    // Each row says only its name: no owner, no second line, no heading over them.
+    // Each row says its full name on one line: no second line, no heading over them.
     expect(await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent))).toEqual([
       "Scratch",
-      "fernwood",
-      "lenny",
-      "ponzu",
-      "fablefuel",
+      "thistlewick/fernwood",
+      "thistlewick/almanac",
+      "thistlewick/ponzu",
+      "thistlewick/quillmoor",
     ]);
     expect(await page.$("[cmdk-group-heading]")).toBeNull();
     const heights = await page.$$eval('[role="option"]', (els) =>
       els.map((e) => Math.round(e.getBoundingClientRect().height)),
     );
     expect(new Set(heights)).toEqual(new Set([32]));
+    await highlightWalk(list);
     // Return chooses with the list's own focus too.
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector(list);
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]', {
-      state: "detached",
-    });
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
+    await page.waitForSelector(list, { state: "detached" });
+    // The statement's last words: "Make something from scratch".
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
+    await focusOn("Describe what you want to make");
   });
-  test("the repo picker: a name cut short shows whole in a tip; one that fits doesn't", async () => {
+  test("the repo picker on pick-a-project-many-repos: the search field keeps the keys; the arrows, Home and End move the highlight; Escape changes nothing", async () => {
+    const field = 'input[aria-label="Search repositories"]';
     await open("pick-a-project-many-repos");
     await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('input[aria-label="Search repositories"]');
-    const name = "customer-onboarding-experiments-and-landing-page-variants";
-    const tip = '[data-slot="tooltip-content"]';
-    await page.hover('[data-choice="repo_lenny"] span');
-    await new Promise((r) => setTimeout(r, 700));
-    expect(await page.$(tip)).toBeNull();
-    const row = `[data-choice="repo_${name}"]`;
-    await page.$eval(row, (el) => el.scrollIntoView({ block: "nearest" }));
-    await page.hover(`${row} span`);
-    await page.waitForSelector(tip);
-    expect(await page.textContent(tip)).toContain(name);
-    // It sits past the picker's edge, not over the rows.
-    const [tipLeft, pickerRight] = await page.evaluate((tip) => {
-      const t = document.querySelector(tip)!.getBoundingClientRect();
-      const p = document.querySelector('[data-slot="popover-content"]')!.getBoundingClientRect();
-      return [t.left, p.right];
-    }, tip);
-    expect(tipLeft).toBeGreaterThanOrEqual(pickerRight);
+    await page.waitForSelector(field);
+    await highlightWalk(field);
   });
-  test("the repo picker: the arrows show a cut-short name's tip too, and take it away", async () => {
+  test("the repo picker: a cut-short name's tip, from the arrows and the pointer; one that fits has none", async () => {
     await open("pick-a-project-many-repos");
     await page.mouse.move(1, 1);
     await page.click('button[aria-label^="Project"]');
@@ -315,7 +395,908 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.textContent(tip)).toContain(name);
     await page.keyboard.press("ArrowDown");
     await page.waitForSelector(tip, { state: "detached" });
+    // The pointer: a name that fits gets no tip, the one cut short does.
+    await page.hover('[data-choice="repo_almanac"] span');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(await page.$(tip)).toBeNull();
+    const row = `[data-choice="repo_${name}"]`;
+    await page.$eval(row, (el) => el.scrollIntoView({ block: "nearest" }));
+    await page.hover(`${row} span`);
+    await page.waitForSelector(tip);
+    expect(await page.textContent(tip)).toContain(name);
+    // It sits past the picker's edge, not over the rows: the right edge where the window has
+    // room, else the left (the picker hangs from the header's selector, right of centre).
+    const clear = await page.evaluate((tip) => {
+      const t = document.querySelector(tip)!.getBoundingClientRect();
+      const p = document.querySelector('[data-slot="popover-content"]')!.getBoundingClientRect();
+      return {
+        past: t.left >= p.right || t.right <= p.left,
+        inside: t.left >= 0 && t.right <= window.innerWidth,
+      };
+    }, tip);
+    expect(clear).toEqual({ past: true, inside: true });
   });
+  /**
+   * The create page, measured: the main pane, the mark (and how opaque it is), the statement,
+   * the selector and its words, the composer's card, all in px.
+   */
+  const header = () =>
+    page.evaluate(() => {
+      const box = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      };
+      const label = document.querySelector("[data-project-label]")!;
+      const name = (label.lastElementChild ?? label) as HTMLElement;
+      const mark = document.querySelector("[data-create-mark]")!;
+      return {
+        pane: box(document.querySelector("main")!),
+        mark: box(mark),
+        markShown: Number(getComputedStyle(mark).opacity),
+        // How far the page has scrolled: in a pane too short for it all, it scrolls.
+        scrolled: document.querySelector("[data-create-composer]")!.scrollTop,
+        statement: box(document.querySelector("[data-create-statement]")!),
+        firstLine: box(document.querySelector("[data-create-statement] h1")!),
+        selector: box(document.querySelector("[data-project-selector]")!),
+        label: box(label),
+        // A line is the face's line box, a little over its size: two would be over twice it.
+        labelLines: Math.floor(
+          name.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(name).fontSize),
+        ),
+        nameShown: name.clientWidth,
+        composer: box(document.querySelector("[data-create-composer] [data-composer-card]")!),
+      };
+    });
+
+  /** How far the thread's composer rests from the foot of its pane, on a canvas. */
+  const threadInset = async () => {
+    await open("thread-in-the-right-rail");
+    return page.evaluate(() => {
+      const pane = document.getElementById("thread-pane")!.getBoundingClientRect();
+      const card = document.querySelector("#thread [data-composer-card]")!.getBoundingClientRect();
+      return Math.round(pane.bottom - card.bottom);
+    });
+  };
+
+  test("the hero's centre is 5% of the pane's height over its true centre at every window height; the composer sits on the pane's foot at the thread composer's inset", async () => {
+    const inset = await threadInset();
+    for (const height of [640, 700, 900, 1200]) {
+      await open("fresh-start", { width: 1440, height });
+      const h = await header();
+      // The composer: centred in the pane, at its foot, as far from it as the thread's is from its own.
+      expect(Math.round(h.pane.bottom - h.composer.bottom)).toBe(inset);
+      const middle = (h.pane.left + h.pane.right) / 2;
+      expect(Math.abs((h.composer.left + h.composer.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
+      // The hero, the mark over the statement's two lines: on the pane's centre line, its centre
+      // 5% of the pane's height over the pane's (create.ts, HERO_RISE), so it scales.
+      expect(Math.abs((h.mark.left + h.mark.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs((h.statement.left + h.statement.right) / 2 - middle)).toBeLessThanOrEqual(1);
+      expect(Math.round(h.statement.top - h.mark.bottom)).toBe(24);
+      const tall = h.pane.bottom - h.pane.top;
+      const centre = h.pane.top + tall / 2 - tall * 0.05;
+      expect(Math.abs((h.mark.top + h.statement.bottom) / 2 - centre)).toBeLessThanOrEqual(1);
+      expect(h.markShown).toBe(1);
+    }
+  });
+
+  test("the hero holds still as the composer grows, and gives way only once it must: the statement rises, the mark goes", async () => {
+    await open("fresh-start", { width: 1440, height: 900 });
+    const resting = await header();
+    // A few lines grow the composer upward and move nothing else.
+    await page.fill("textarea", "One\nTwo\nThree\nFour");
+    const grown = await header();
+    expect(grown.composer.top).toBeLessThan(resting.composer.top);
+    expect(grown.composer.bottom).toBe(resting.composer.bottom);
+    expect(grown.statement).toEqual(resting.statement);
+    expect(grown.mark).toEqual(resting.mark);
+
+    // The smallest window and the tallest the field grows: the whole hero still has its room.
+    await open("fresh-start", { width: 1440, height: 640 });
+    const long = Array.from({ length: 14 }, (_, i) => `Line ${i + 1}`).join("\n");
+    await page.fill("textarea", long);
+    const smallest = await header();
+    expect(smallest.markShown).toBe(1);
+    expect(smallest.composer.top - smallest.statement.bottom).toBeGreaterThanOrEqual(40 - 0.5);
+    // A pane shorter than any window gives it (the rule holds all the same): the statement rises
+    // ahead of the composer and the mark goes.
+    await page.$eval("main", (el) => {
+      (el as HTMLElement).style.marginTop = "200px";
+    });
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("[data-create-mark]")!).opacity === "0",
+    );
+    const tight = await header();
+    // Nothing overlaps: the statement keeps 40 over the composer, and 24 under the pane's top.
+    expect(tight.composer.top - tight.statement.bottom).toBeGreaterThanOrEqual(40 - 0.5);
+    // (counted from the top of what scrolls: the field keeps its caret in view).
+    expect(tight.statement.top + tight.scrolled - tight.pane.top).toBeGreaterThanOrEqual(24 - 0.5);
+    // Taken back, the hero is where it was.
+    await page.fill("textarea", "");
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("[data-create-mark]")!).opacity === "1",
+    );
+    const back = await header();
+    expect(back.statement.top).toBeGreaterThan(tight.statement.top);
+    expect(back.mark.bottom).toBeLessThanOrEqual(back.statement.top - 24 + 0.5);
+  });
+
+  test("a repo takes the statement's second line, Scratch ends its first; the mark and the first line hold still either way; a long owner and name stay on one line and in the pane", async () => {
+    const centreOf = (b: { left: number; right: number }) => (b.left + b.right) / 2;
+    await open("create");
+    const short = await header();
+    // "Make something in" on the first line, the repo under it, each centred on the pane's line.
+    expect(short.selector.top).toBeGreaterThanOrEqual(short.firstLine.bottom - 0.5);
+    expect(short.selector.bottom).toBeLessThanOrEqual(short.statement.bottom + 0.5);
+    expect(Math.abs(centreOf(short.selector) - centreOf(short.firstLine))).toBeLessThanOrEqual(1);
+    expect(short.firstLine.top).toBe(short.statement.top);
+    expect(short.selector.bottom).toBeLessThan(short.composer.top);
+    // Scratch: one line, "Make something from scratch", the selector's words on the first line's.
+    await open("fresh-start-no-repos");
+    const scratch = await header();
+    expect(scratch.label.top).toBe(scratch.firstLine.top);
+    expect(scratch.label.bottom).toBe(scratch.firstLine.bottom);
+    expect(scratch.selector.left).toBeGreaterThanOrEqual(scratch.firstLine.right - 0.5);
+    // The two lines' room kept: the statement, the mark and the first line where the repo's are.
+    expect(scratch.statement.top).toBe(short.statement.top);
+    expect(scratch.statement.bottom).toBe(short.statement.bottom);
+    // (Across, to the pixel: centring a statement of another width rounds apart by a 64th.)
+    expect(scratch.mark.top).toBe(short.mark.top);
+    expect(scratch.mark.bottom).toBe(short.mark.bottom);
+    expect(Math.abs(scratch.mark.left - short.mark.left)).toBeLessThan(0.5);
+    expect(scratch.firstLine.top).toBe(short.firstLine.top);
+    expect(scratch.firstLine.bottom).toBe(short.firstLine.bottom);
+    await open("fresh-start-long-name");
+    const long = await header();
+    expect(long.labelLines).toBe(1);
+    expect(long.statement.right).toBeLessThanOrEqual(long.pane.right);
+    expect(long.statement.left).toBeGreaterThanOrEqual(long.pane.left);
+    // Its second line takes the statement's whole measure and no more, still centred.
+    expect(Math.round(long.selector.right - long.selector.left)).toBeLessThanOrEqual(660);
+    expect(Math.abs(centreOf(long.selector) - centreOf(long.firstLine))).toBeLessThanOrEqual(1);
+    // The mark and the first line where they were (to the pixel: centring a statement of another
+    // width rounds apart).
+    expect(Math.round(long.mark.left)).toBe(Math.round(short.mark.left));
+    expect(long.mark.top).toBe(short.mark.top);
+    expect(long.firstLine.top).toBe(short.firstLine.top);
+    expect(long.firstLine.bottom).toBe(short.firstLine.bottom);
+    expect(Math.round(long.firstLine.left)).toBe(Math.round(short.firstLine.left));
+    expect(Math.round(long.firstLine.right)).toBe(Math.round(short.firstLine.right));
+    expect(long.statement.bottom).toBe(short.statement.bottom);
+    // The owner gave way first: most of what shows is the name.
+    expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.6);
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: the-extraordinarily-long-organization-name/customer-onboarding-experiments-and-landing-page-variants",
+    );
+  });
+
+  test("while the project is being found the selector's skeleton holds the second line; resolved to Scratch or a repo, nothing above it moves", async () => {
+    /**
+     * What must hold still: the mark (and its centre, to the pixel), the statement's room and its
+     * first line, top to bottom. The words themselves change ("in" to "from scratch"), so their
+     * width does.
+     */
+    const still = () =>
+      page.evaluate(() => {
+        const box = (selector: string) => {
+          const r = document.querySelector(selector)!.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom };
+        };
+        const mark = document.querySelector("[data-create-mark]")!.getBoundingClientRect();
+        return {
+          mark: { ...box("[data-create-mark]"), centre: Math.round((mark.left + mark.right) / 2) },
+          statement: box("[data-create-statement]"),
+          firstLine: box("[data-create-statement] h1"),
+        };
+      });
+    for (const resolve of ["scratch", "repo"]) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+      await page.goto(`${server.url}/gallery.html?board=create&theme=light&resolve=${resolve}`);
+      await page.waitForFunction(
+        () => (window as { galleryReady?: boolean }).galleryReady === true,
+      );
+      // Not known yet: the skeleton on the second line, never "scratch" before it knows.
+      expect(await page.getAttribute("[data-project-selector]", "aria-busy")).toBe("true");
+      const [first, skeleton] = await page.evaluate(() =>
+        ["[data-create-statement] h1", "[data-project-selector]"].map(
+          (s) => document.querySelector(s)!.getBoundingClientRect().top,
+        ),
+      );
+      expect(skeleton!).toBeGreaterThan(first!);
+      const before = await still();
+      await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+      await page.waitForFunction(
+        () => !document.querySelector("[data-project-selector][aria-busy]"),
+      );
+      // Past the frame the hero is placed in again, were it to move.
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
+      expect(await still()).toEqual(before);
+    }
+  });
+
+  /** The model chip, the menu's two panes, and what has focus. */
+  const modelMenu = () =>
+    page.evaluate(() => {
+      const box = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      };
+      const focused = document.activeElement;
+      return {
+        chip: box(document.querySelector('button[aria-label^="Model"]')),
+        menu: box(document.querySelector('[role="menu"]')),
+        models: box(document.querySelector('[data-pane="model"]')),
+        efforts: box(document.querySelector('[data-pane="effort"]')),
+        // Each pane's group, named by its label for assistive tech.
+        groups: [...document.querySelectorAll('[role="menu"] [role="group"]')].map(
+          (g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent,
+        ),
+        focused:
+          focused?.getAttribute("role") === "menuitemradio"
+            ? `${focused.closest<HTMLElement>("[data-pane]")?.dataset.pane}:${focused.textContent}`
+            : (focused?.getAttribute("aria-label") ?? focused?.tagName),
+      };
+    });
+  const pressIn = async (key: string, expected: string) => {
+    await page.keyboard.press(key);
+    await page.waitForFunction(
+      (expected) => {
+        const el = document.activeElement;
+        const pane = el?.closest<HTMLElement>("[data-pane]")?.dataset.pane;
+        return `${pane}:${el?.textContent}` === expected;
+      },
+      expected,
+      { timeout: 2000 },
+    );
+  };
+
+  test("the model menu: two panes side by side, opening upward; the arrows keep to a pane, Left and Right cross; a model keeps it open, an effort closes it and the caret goes to the composer", async () => {
+    await open("create");
+    const chip = 'button[aria-label^="Model"]';
+    const words = await page.inputValue("textarea");
+    // Opened with Return: Radix starts on the first model.
+    await page.focus(chip);
+    await focusOn("Model: Opus 5.5, effort High");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]');
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("role") === "menuitemradio",
+    );
+    const m = await modelMenu();
+    // Models on the left, efforts on the right, a rule between; over the chip, its end on the chip's.
+    expect(m.groups).toEqual(["Model", "Effort"]);
+    expect(m.efforts!.left).toBeGreaterThan(m.models!.right);
+    expect(Math.abs(m.efforts!.top - m.models!.top)).toBeLessThanOrEqual(0.5);
+    expect(m.menu!.bottom).toBeLessThanOrEqual(m.chip!.top);
+    expect(Math.abs(m.menu!.right - m.chip!.right)).toBeLessThanOrEqual(1);
+    expect(m.focused).toBe("model:Opus 5.5");
+    // Up and Down stay in the pane: the last model doesn't lead on to the efforts.
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await pressIn("ArrowUp", "model:Opus 5.5");
+    await pressIn("ArrowUp", "model:Opus 5.5");
+    // Right goes to the chosen effort, Left back to the chosen model.
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("End", "effort:Max");
+    await pressIn("ArrowDown", "effort:Max");
+    await pressIn("Home", "effort:Low");
+    await pressIn("ArrowUp", "effort:Low");
+    await pressIn("ArrowLeft", "model:Opus 5.5");
+    // A model chosen: the menu stays open, the chip says it, the effort beside it next.
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(`${chip}[aria-label="Model: Sonnet 5, effort High"]`);
+    expect(await page.$('[role="menu"]')).not.toBeNull();
+    expect((await modelMenu()).focused).toBe("model:Sonnet 5");
+    // An effort chosen: the menu closes, and the caret is back in the composer.
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("ArrowDown", "effort:Extra high");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe what you want to make");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Sonnet 5, effort Extra high");
+    // The same with the pointer: a model keeps it open, an effort closes it onto the composer.
+    await page.click(chip);
+    await page.click('[role="menuitemradio"]:has-text("Opus 5.5")');
+    expect(await page.$('[role="menu"]')).not.toBeNull();
+    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe what you want to make");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Opus 5.5, effort Low");
+    expect(await page.inputValue("textarea")).toBe(words);
+  });
+
+  test("the model menu on what an account reported: a long name cut short in a pane that stays in the window; a model that takes no effort says so and closes the menu", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?board=create&theme=light&models=reported`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    const chip = 'button[aria-label^="Model"]';
+    await page.click(chip);
+    await page.waitForSelector('[role="menu"]');
+    const long = '[role="menuitemradio"]:has-text("Opus 6 with a million")';
+    const m = await modelMenu();
+    // The models' pane fits names up to its most, and cuts a longer one, whole in its title.
+    expect(m.models!.right - m.models!.left).toBeLessThanOrEqual(232 + 0.5);
+    expect(m.models!.right - m.models!.left).toBeGreaterThanOrEqual(152 - 0.5);
+    expect(
+      await page.$eval(
+        long,
+        (el) => el.querySelector("span")!.scrollWidth > el.querySelector("span")!.clientWidth,
+      ),
+    ).toBe(true);
+    expect(await page.getAttribute(long, "title")).toBe("Opus 6 with a million tokens of context");
+    expect(m.menu!.left).toBeGreaterThanOrEqual(0);
+    expect(m.menu!.top).toBeGreaterThanOrEqual(0);
+    // Its efforts are its own three.
+    await page.click(long);
+    expect(
+      await page.$$eval('[data-pane="effort"] [role="menuitemradio"]', (els) =>
+        els.map((e) => e.textContent),
+      ),
+    ).toEqual(["Low", "Medium", "High"]);
+    // One that takes no effort: chosen, there is nothing to come, so the menu closes onto the
+    // composer, and the chip says the model alone.
+    await page.click('[role="menuitemradio"]:has-text("Haiku 4.5")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe what you want to make");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Haiku 4.5");
+    // Opened again, the efforts' pane says it takes none, in a row's place, and Right goes nowhere.
+    await page.click(chip);
+    await page.waitForSelector("[data-no-effort]");
+    expect(await page.textContent("[data-no-effort]")).toBe("None for this model");
+    expect(await page.$$('[data-pane="effort"] [role="menuitemradio"]')).toHaveLength(0);
+    expect(
+      await page.$eval(
+        '[role="menu"]',
+        (menu) => document.getElementById(menu.getAttribute("aria-describedby")!)?.textContent,
+      ),
+    ).toBe("None for this model");
+    await page.focus('[role="menuitemradio"]:has-text("Haiku 4.5")');
+    await pressIn("ArrowRight", "model:Haiku 4.5");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Model: Haiku 4.5");
+  });
+
+  /** The send composition, with motion: `query` adds the harness's options (`fail`, `beat`). */
+  const openSend = async (
+    query = "",
+    reducedMotion: "reduce" | "no-preference" = "no-preference",
+  ) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion });
+    await page.goto(`${server.url}/gallery.html?board=create-send&theme=light${query}`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    // Every travelling card ever made, counted as it arrives.
+    await page.evaluate(() => {
+      const w = window as { flights?: number };
+      w.flights = 0;
+      new MutationObserver((records) => {
+        for (const r of records) {
+          for (const n of r.addedNodes) {
+            if (n instanceof Element && n.querySelector('[data-flight="surface"]')) w.flights!++;
+          }
+        }
+      }).observe(document.body, { childList: true });
+    });
+    await page.focus("[data-create-composer] textarea");
+  };
+  const gallery = <T>(key: string) =>
+    page.evaluate((key) => (window as unknown as Record<string, T>)[key], key);
+  const near = (
+    a: SendFrame["surface"],
+    b: { x: number; y: number; width: number; height: number },
+  ) =>
+    !!a &&
+    Math.abs(a.x - b.x) <= 1 &&
+    Math.abs(a.y - b.y) <= 1 &&
+    Math.abs(a.width - b.width) <= 1 &&
+    Math.abs(a.height - b.height) <= 1;
+  const sendCard = () =>
+    page.$eval("[data-create-composer] [data-composer-card]", (el) => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return { x, y, width, height };
+    });
+
+  test("a send: the composer travels as one from its box to the thread composer's, which has the words as its first line", async () => {
+    await openSend("&beat=600000");
+    const from = await sendCard();
+    const heroBox = () =>
+      page.$eval("[data-create-hero]", (el) => {
+        const { x, width } = el.getBoundingClientRect();
+        return { x, width };
+      });
+    const hero = await heroBox();
+    const length = await holdSend(page, () => page.keyboard.press("Enter"));
+    // On a relative of the panes' clock: longer, so it lands once the pane has opened.
+    expect(length).toBeGreaterThan(220);
+    await seekSend(page, 0);
+    const start = await sendFrame(page);
+    expect(start.surfaces).toBe(1);
+    expect(near(start.surface, from)).toBe(true);
+    // The hero fades where it stood: the thread's pane opening beside it doesn't move it.
+    await seekSend(page, 0.5);
+    const mid = await heroBox();
+    expect(Math.abs(mid.x - hero.x)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(mid.width - hero.width)).toBeLessThanOrEqual(0.5);
+    // Where it rests, it rests: the thread's composer once the pane has opened.
+    let last = start;
+    for (let i = 1; i <= 20; i++) {
+      await seekSend(page, i / 20);
+      const frame = await sendFrame(page);
+      // One card all the way, never smaller than where it lands, moving only toward it.
+      expect(frame.surfaces).toBe(1);
+      expect(frame.surface!.x).toBeGreaterThanOrEqual(last.surface!.x - 0.5);
+      expect(frame.surface!.width).toBeLessThanOrEqual(last.surface!.width + 0.5);
+      last = frame;
+    }
+    // The + and the send button keep to their corners of the card.
+    expect(last.attach!.x - last.surface!.x).toBeLessThan(12);
+    expect(last.surface!.x + last.surface!.width - (last.send!.x + last.send!.width)).toBeLessThan(
+      12,
+    );
+    // At its last step it is on the thread's composer, measured in the same frame: no jump.
+    expect(near(last.surface, last.home!)).toBe(true);
+    await releaseSend(page);
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    // And that is where the thread's composer rests once the pane's easing is over. (Held
+    // stepping can outlast the window's watch on that easing, which is on the wall clock, and
+    // the pane then lays itself out once more: wait for that rather than read it mid-way.)
+    await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
+    const home = await page.$eval("#thread [data-composer-card]", (el) => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return { x, y, width, height, seen: `${style.visibility} ${style.opacity}` };
+    });
+    expect(near(last.surface, home)).toBe(true);
+    expect(home.seen).toBe("visible 1");
+    // The words are the thread's first line; the composer is empty and has the caret.
+    const first = await page.$eval("#thread [data-thread-line], #thread li, #thread p", (el) =>
+      el.textContent?.trim(),
+    );
+    expect(first).toContain("I'd like to iterate on the onboarding flow");
+    expect(await page.inputValue("#thread textarea")).toBe("");
+    await focusOn("Message");
+    expect(await gallery<number>("flights")).toBe(1);
+  });
+
+  test("after the beat the thread's pane closes, and our own caret in it doesn't keep it open", async () => {
+    await openSend("&beat=200");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "closed",
+    );
+    await page.waitForSelector('button[aria-controls="thread"][aria-expanded="false"]');
+  });
+
+  for (const [kind, touch] of [
+    [
+      "the pointer moved into it",
+      async () => {
+        await page.mouse.move(1300, 600);
+        await page.mouse.move(1310, 620);
+      },
+    ],
+    ["a press in it", () => page.mouse.click(1300, 400)],
+    [
+      "a scroll in it",
+      async () => {
+        await page.mouse.move(1300, 400);
+        await page.mouse.wheel(0, -120);
+      },
+    ],
+    ["typing in it", () => page.keyboard.type("and")],
+    [
+      "something in it focused",
+      async () => {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.focus("#thread textarea");
+      },
+    ],
+  ] as const) {
+    test(`the thread's pane stays open after ${kind}`, async () => {
+      await page.mouse.move(700, 300);
+      await openSend("&beat=600000");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+      await focusOn("Message");
+      await touch();
+      await page.waitForFunction(
+        () => (window as { gallerySettled?: string }).gallerySettled === "open",
+      );
+      expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe(
+        "true",
+      );
+    });
+  }
+
+  test("the first move of the pointer after a send, into the pane, keeps it open", async () => {
+    await openSend("&beat=600000");
+    await page.mouse.move(700, 300);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.mouse.move(1300, 600, { steps: 1 });
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
+  test("the thread's toggle used during the beat: the pane is as the person left it, and the beat is over", async () => {
+    await page.mouse.move(700, 300);
+    await openSend("&beat=600000");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.click('button[aria-controls="thread"]');
+    await page.waitForFunction(
+      () => (window as { gallerySending?: boolean }).gallerySending === false,
+    );
+    expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe(
+      "false",
+    );
+    expect(await gallery<string | undefined>("gallerySettled")).toBeUndefined();
+  });
+
+  test("a send that fails comes back to the page as it was, the error said, with no second travel", async () => {
+    await openSend("&fail=150&beat=600000");
+    const before = await sendCard();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="status"]:text("couldn\'t be made")');
+    await page.waitForSelector("[data-create-composer]:not([data-launched])");
+    expect(await page.inputValue("[data-create-composer] textarea")).toBe(
+      "I'd like to iterate on the onboarding flow",
+    );
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: thistlewick/fernwood",
+    );
+    expect(await page.$("[data-flight]")).toBeNull();
+    expect(await gallery<number>("flights")).toBe(1);
+    // Once the thread's pane has closed again, the composer is where it was.
+    await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
+    expect(await sendCard()).toEqual(before);
+    await focusOn("Describe what you want to make");
+  });
+
+  test("send pressed twice makes one send and one travel", async () => {
+    await openSend("&beat=600000");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await page
+      .click('[data-create-composer] button[aria-label="Send"]', { force: true })
+      .catch(() => {});
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    expect(await gallery<number>("gallerySends")).toBe(1);
+    expect(await gallery<number>("flights")).toBe(1);
+  });
+
+  test("keys pressed while the composer travels land in the thread's composer, and keep the pane open", async () => {
+    await page.mouse.move(700, 300);
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.3);
+    await focusOn("Message");
+    await page.keyboard.type("and the");
+    // Going to the pane ends the beat, not the travel: the card is still on its way.
+    expect((await sendFrame(page)).surfaces).toBe(1);
+    expect(await gallery<string | undefined>("gallerySettled")).toBeUndefined();
+    await releaseSend(page);
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    expect(await page.inputValue("#thread textarea")).toBe("and the");
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
+  test("with reduced motion nothing travels, and it ends the same: the words in the thread, the caret there, the pane closing after the beat", async () => {
+    await openSend("&beat=300", "reduce");
+    await page.keyboard.press("Enter");
+    await focusOn("Message");
+    expect(await gallery<number>("flights")).toBe(0);
+    expect(await page.textContent("#thread")).toContain(
+      "I'd like to iterate on the onboarding flow",
+    );
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "closed",
+    );
+  });
+
+  test("a window resized mid-way lands the composer at once, where the thread's now rests", async () => {
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.5);
+    expect((await sendFrame(page)).surfaces).toBe(1);
+    await page.setViewportSize({ width: 1300, height: 820 });
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await releaseSend(page);
+    // The pane lays itself out for the new window once its opening is over.
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#thread [data-composer-card]");
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return (
+        Math.round(r.right) === 1300 - 10 &&
+        Math.round(r.bottom) === 820 - 10 &&
+        getComputedStyle(el).visibility === "visible" &&
+        getComputedStyle(el).opacity === "1"
+      );
+    });
+  });
+
+  test("a pane's edge taken hold of mid-way lands the composer at once", async () => {
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.4);
+    await page.evaluate(() =>
+      document.querySelector("header")!.parentElement!.setAttribute("data-pane-drag", ""),
+    );
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.evaluate(() =>
+      document.querySelector("header")!.parentElement!.removeAttribute("data-pane-drag"),
+    );
+    await releaseSend(page);
+    expect(
+      await page.$eval("#thread [data-composer-card]", (el) => getComputedStyle(el).opacity),
+    ).toBe("1");
+  });
+
+  /** The open list as read top to bottom: `# <heading>` for a group's heading, else a row's words. */
+  const listed = () =>
+    page.$$eval('[role="listbox"] [cmdk-group-heading], [role="listbox"] [role="option"]', (els) =>
+      els.map((e) => (e.hasAttribute("cmdk-group-heading") ? `# ${e.textContent}` : e.textContent)),
+    );
+  const openPicker = async () => {
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+  };
+  /** Opens a board with the other workspaces' repos held back until `galleryArrive()`. */
+  const openLater = async (board: string) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?board=${board}&theme=light&later`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+  };
+  /** Each row's key and where it is, in px from the window's top. */
+  const rowTops = () =>
+    page.$$eval('[role="option"]', (els) =>
+      els.map((e) => [e.getAttribute("data-choice"), Math.round(e.getBoundingClientRect().top)]),
+    );
+
+  test("with several workspaces the picker groups them, each under its name with its own Scratch, and searches them all", async () => {
+    await open("pick-a-project-workspaces");
+    await openPicker();
+    expect(await listed()).toEqual([
+      "# Thistlewick",
+      "Scratch",
+      "thistlewick/fernwood",
+      "thistlewick/almanac",
+      "thistlewick/ponzu",
+      "thistlewick/quillmoor",
+      "# Bramble School",
+      "Scratch",
+      "brambleschool/app",
+      "brambleschool/site",
+      "brambleschool/curriculum",
+    ]);
+    // Each Scratch is its workspace's.
+    expect(
+      await page.$$eval('[role="option"]', (els) =>
+        els.filter((e) => e.textContent === "Scratch").map((e) => e.getAttribute("data-choice")),
+      ),
+    ).toEqual(["scratch", "scratch:ws_brambleschool"]);
+    // A heading is the menus' section label, cut short on one line; not an option, but the name
+    // of its rows' group.
+    const headings = await page.$$eval("[cmdk-group-heading]", (els) =>
+      els.map((h) => {
+        const label = h.firstElementChild!;
+        const css = getComputedStyle(label);
+        const group = h.parentElement!.querySelector('[role="group"]')!;
+        return {
+          height: Math.round(label.getBoundingClientRect().height),
+          type: [css.fontSize, css.fontWeight, css.paddingTop, css.paddingBottom, css.paddingLeft],
+          hidden: h.getAttribute("aria-hidden"),
+          names: document.getElementById(group.getAttribute("aria-labelledby")!) === h,
+          truncates: css.textOverflow === "ellipsis" && css.whiteSpace === "nowrap",
+        };
+      }),
+    );
+    expect(headings).toEqual(
+      ["Thistlewick", "Bramble School"].map(() => ({
+        height: 24,
+        type: ["11px", "600", "6px", "4px", "8px"],
+        hidden: "true",
+        names: true,
+        truncates: true,
+      })),
+    );
+    // In the faint ink of every menu's label, and the rows' icons stand under its first letter.
+    const [faint, iconLeft, headingLeft] = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.className = "text-faint";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      const label = document.querySelector("[cmdk-group-heading] > *")!;
+      return [
+        color === getComputedStyle(label).color,
+        Math.round(
+          document.querySelector('[data-choice="scratch"] svg')!.getBoundingClientRect().left,
+        ),
+        Math.round(label.getBoundingClientRect().left + 8),
+      ];
+    });
+    expect(faint).toBe(true);
+    expect(iconLeft).toBe(headingLeft);
+    // Owners read quieter than names.
+    const [owner, name] = await page.$eval('[data-choice="repo_brambleschool_app"]', (row) =>
+      [...row.querySelectorAll("span span")].map((s) => getComputedStyle(s).color),
+    );
+    expect(owner).not.toBe(name);
+    // A search matches anywhere in owner/name, and a workspace's name finds its Scratch and repos;
+    // a heading shows only over a group with a match.
+    await page.keyboard.type("oo");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 6);
+    expect(await listed()).toEqual([
+      "# Thistlewick",
+      "thistlewick/fernwood",
+      "thistlewick/quillmoor",
+      "# Bramble School",
+      "Scratch",
+      "brambleschool/app",
+      "brambleschool/site",
+      "brambleschool/curriculum",
+    ]);
+    await page.fill('input[aria-label="Search repositories"]', "/site");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
+    expect(await listed()).toEqual(["# Bramble School", "brambleschool/site"]);
+    // "scratch" finds every workspace's.
+    await page.fill('input[aria-label="Search repositories"]', "scratch");
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 2);
+    expect(await listed()).toEqual(["# Thistlewick", "Scratch", "# Bramble School", "Scratch"]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("the arrows move over the rows and pass the headings by", async () => {
+    await open("pick-a-project-workspaces");
+    await openPicker();
+    const field = 'input[aria-label="Search repositories"]';
+    const highlighted = () =>
+      page.$eval(field, (el) => {
+        const id = el.getAttribute("aria-activedescendant");
+        return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
+      });
+    expect(await highlighted()).toBe("repo_fernwood");
+    await page.keyboard.press("Home");
+    expect(await highlighted()).toBe("scratch");
+    await page.keyboard.press("End");
+    expect(await highlighted()).toBe("repo_brambleschool_curriculum");
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+    expect(await highlighted()).toBe("scratch:ws_brambleschool");
+    // Past Bramble School's heading to Thistlewick's last repo.
+    await page.keyboard.press("ArrowUp");
+    expect(await highlighted()).toBe("repo_quillmoor");
+    await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toBe("scratch:ws_brambleschool");
+    await page.keyboard.press("Escape");
+  });
+
+  test("choosing another workspace's repo switches the sidebar's workspace and keeps the choice and the words", async () => {
+    await open("pick-a-project-workspaces");
+    await page.fill("textarea", "Three takes on the lesson page");
+    await openPicker();
+    await page.click('[data-choice="repo_brambleschool_app"]');
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    await page.waitForSelector('button[aria-label="Workspace: Bramble School"]');
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: brambleschool/app",
+    );
+    expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
+    await focusOn("Describe what you want to make");
+    // There, its own group comes first and Thistlewick's after.
+    await openPicker();
+    expect(await listed()).toEqual([
+      "# Bramble School",
+      "Scratch",
+      "brambleschool/app",
+      "brambleschool/site",
+      "brambleschool/curriculum",
+      "# Thistlewick",
+      "Scratch",
+      "thistlewick/fernwood",
+      "thistlewick/almanac",
+      "thistlewick/ponzu",
+      "thistlewick/quillmoor",
+    ]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("choosing another workspace's Scratch switches the sidebar's workspace with Scratch chosen and the words kept", async () => {
+    await open("pick-a-project-workspaces");
+    await page.fill("textarea", "Three takes on the lesson page");
+    await openPicker();
+    await page.click('[data-choice="scratch:ws_brambleschool"]');
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    await page.waitForSelector('button[aria-label="Workspace: Bramble School"]');
+    // The statement says "from scratch"; to assistive tech, whose.
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: Scratch in Bramble School",
+    );
+    expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
+    // Bramble School's Scratch, now the window's own, is the one checked.
+    await openPicker();
+    expect(
+      await page.$$eval("[data-checked]", (els) => els.map((e) => e.getAttribute("data-choice"))),
+    ).toEqual(["scratch"]);
+    expect(await page.getAttribute('[data-choice="scratch"]', "data-selected")).toBe("true");
+    expect(await listed().then((l) => l.slice(0, 2))).toEqual(["# Bramble School", "Scratch"]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("a workspace's heading and Scratch show at once; its repos join at the foot, and nothing moves", async () => {
+    await openLater("pick-a-project-workspaces");
+    const before = await header();
+    await openPicker();
+    // Bramble School's name and Scratch are there before its repos, which hold a place under it.
+    expect(await listed()).toEqual([
+      "# Thistlewick",
+      "Scratch",
+      "thistlewick/fernwood",
+      "thistlewick/almanac",
+      "thistlewick/ponzu",
+      "thistlewick/quillmoor",
+      "# Bramble School",
+      "Scratch",
+    ]);
+    expect(await page.$('[role="status"][aria-label="Loading repositories"]')).not.toBeNull();
+    expect(await page.$('input[aria-label="Search repositories"]')).not.toBeNull();
+    const open_ = await rowTops();
+    await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 9);
+    // They join at the foot: the rows there were stay put, and so does the page.
+    expect((await rowTops()).slice(0, open_.length)).toEqual(open_);
+    expect(await header()).toEqual(before);
+    expect(await page.$('[role="status"][aria-label="Loading repositories"]')).toBeNull();
+    await page.keyboard.press("Escape");
+  });
+
+  test("an open list takes only the last workspace's late repos; the others' wait until it opens again", async () => {
+    await openLater("pick-a-project-three-workspaces");
+    await openPicker();
+    const opened = await listed();
+    expect(opened.slice(6)).toEqual(["# Bramble School", "Scratch", "# Ada Park", "Scratch"]);
+    // The pointer rests on Bramble School's Scratch, under which its repos would go (the list
+    // scrolls it into view first).
+    await page.hover('[data-choice="scratch:ws_brambleschool"] span');
+    const open_ = await rowTops();
+    await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 8);
+    // The last workspace's repo joined at the foot; Bramble School's wait, so nothing moved.
+    expect(await listed()).toEqual([...opened, "adapark/dotfiles"]);
+    expect((await rowTops()).slice(0, open_.length)).toEqual(open_);
+    expect(
+      await page.getAttribute('[data-choice="scratch:ws_brambleschool"]', "data-selected"),
+    ).toBe("true");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="listbox"]', { state: "detached" });
+    // Opened again, every workspace lists what it has.
+    await openPicker();
+    expect((await listed()).slice(6)).toEqual([
+      "# Bramble School",
+      "Scratch",
+      "brambleschool/app",
+      "brambleschool/site",
+      "brambleschool/curriculum",
+      "# Ada Park",
+      "Scratch",
+      "adapark/dotfiles",
+    ]);
+    await page.keyboard.press("Escape");
+  });
+
   test("page tabs: the arrows move between them without opening one; Return opens it", async () => {
     await open("thread-in-the-right-rail");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';
@@ -390,9 +1371,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
   test("the create composer: a press anywhere on its card writes; its controls keep theirs", async () => {
     await open("create");
-    const field = 'textarea[aria-label="Describe the design"]';
+    const field = 'textarea[aria-label="Describe what you want to make"]';
     const card = await page.$eval(field, (el) => {
-      const r = el.parentElement!.getBoundingClientRect();
+      const r = el.closest(".cursor-text")!.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     });
     const focused = () =>
@@ -427,15 +1408,15 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(selected!.to - selected!.at).toBeGreaterThan(0);
     // The model picker opens its menu, not the field.
     await page.$eval(field, (el) => (el as HTMLElement).blur());
-    await page.click('button[aria-haspopup="menu"]');
+    await page.click('button[aria-label^="Model"]');
     await page.waitForSelector('[role="menu"]');
     expect(await focused()).toBeNull();
     await page.keyboard.press("Escape");
   });
-  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and the page numbers work there", async () => {
+  test("the pull request tab swaps the middle only: the thread stays, and ⌥⌘B and the page numbers work there", async () => {
     await open("pull-request-tab");
     const heading = 'h1:text-is("Quieter hero, editorial take")';
-    // The rail's width as the design gives it: its panel and the 10 of gutter (its edge) before it.
+    // The rail's width as the mockup gives it: its panel and the 10 of gutter (its edge) before it.
     const thread = () =>
       page.$eval("#thread-pane", (el) => Math.round(el.getBoundingClientRect().width + 10));
     const expanded = () =>
@@ -443,12 +1424,12 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.$(heading)).not.toBeNull();
     expect(await expanded()).toBe("true");
     expect(await thread()).toBe(360);
-    // ⌘J closes and opens the thread on this tab as anywhere, and the tab stays.
+    // ⌥⌘B closes and opens the thread on this tab as anywhere, and the tab stays.
     await page.click(heading);
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("false");
     expect(await page.$(heading)).not.toBeNull();
-    await page.keyboard.press("Meta+j");
+    await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("true");
     // What is typed in the thread outlives leaving the tab (board 3 asks a question: its note
     // field is in the composer's place). ⌃1 (Alt off the Mac) opens the first page; the thread
@@ -504,5 +1485,40 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.focus('button[aria-label="Toggle sidebar"]');
     await page.keyboard.press("Tab");
     await focusOn(first!);
+  });
+  test("the details' menu: Turn off auto-merge while it is on, Close for an open one, none once closed", async () => {
+    const more = 'button[aria-label="More actions"]';
+    const items = () => page.$$eval('[role="menuitem"]', (els) => els.map((e) => e.textContent));
+    const runs = () => page.evaluate(() => (window as { actionsRun?: string[] }).actionsRun ?? []);
+    await open("pull-request-menu");
+    await page.click(more);
+    await page.waitForSelector('[role="menu"]');
+    expect(await items()).toEqual(["Turn off auto-merge", "Close pull request"]);
+    await page.click('[role="menuitem"]:has-text("Close pull request")');
+    expect(await runs()).toEqual(["close"]);
+    // From the keyboard too: the menu opens on its first item.
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await page.focus(more);
+    await focusOn("More actions");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+    await page.keyboard.press("Enter");
+    expect(await runs()).toEqual(["close", "auto_merge_off"]);
+
+    // Auto-merge off: only Close.
+    await open("pull-request-tab");
+    await page.click(more);
+    await page.waitForSelector('[role="menu"]');
+    expect(await items()).toEqual(["Close pull request"]);
+    await page.keyboard.press("Escape");
+
+    // Closed, or merged: nothing to do to it, so no menu; the closed one says what it opens with.
+    await open("pull-request-summary");
+    expect(await page.$(more)).toBeNull();
+    expect(await page.$('section[aria-label="The description it opens with"]')).not.toBeNull();
+    await open("pull-request-closed");
+    expect(await page.$('section[aria-label="The description it opens with"]')).toBeNull();
+    await open("pull-request-merged");
+    expect(await page.$(more)).toBeNull();
   });
 });

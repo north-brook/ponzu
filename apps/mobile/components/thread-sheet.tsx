@@ -1,9 +1,8 @@
 import type { Thread } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { clientOf, shortAgent } from "../lib/agents";
+import { shortAgo } from "../lib/ago";
 import { draftKey } from "../lib/drafts";
-import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
 import { Glass } from "./glass";
@@ -128,7 +127,7 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
               {agent ? (
                 <AgentAvatar
                   name={m.author.name}
-                  client={clientOf(m.author.name)}
+                  client="claude"
                   color={color.ink}
                   soft={color.pinSoft}
                 />
@@ -146,7 +145,7 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
                       color: color.ink,
                     }}
                   >
-                    {agent ? shortAgent(m.author.name) : "You"}
+                    {agent ? m.author.name : "You"}
                   </Text>
                   <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.faint }}>
                     {shortAgo(m.createdAt)}

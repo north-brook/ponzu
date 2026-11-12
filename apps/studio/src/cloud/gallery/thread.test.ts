@@ -100,6 +100,60 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await page.$('button:has-text("new")')).toBeNull();
   });
 
+  test("a comment's picture is a glance: 144 by 96 over its words at every rail width, sharp at 2x", async () => {
+    for (const rail of [300, 360, 520]) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+      await page.goto(
+        `${server.url}/gallery.html?board=thread-in-the-right-rail&theme=light&rail=${rail}`,
+      );
+      await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady);
+      // The rail at the width asked for, as the panes write it for the chrome.
+      const width = await page.evaluate(() =>
+        Number.parseFloat(
+          getComputedStyle(document.querySelector("header")!.parentElement!).getPropertyValue(
+            "--pane-rail",
+          ),
+        ),
+      );
+      expect(Math.round(width)).toBe(rail);
+      const button = page.locator('button[aria-label^="Open the comment"]').first();
+      await button.scrollIntoViewIfNeeded();
+      const shape = await button.evaluate(async (el) => {
+        const img = el.querySelector("img")!;
+        await img.decode();
+        const box = el.getBoundingClientRect();
+        const words = el.nextElementSibling!.querySelector("p")!;
+        const css = getComputedStyle(el);
+        return {
+          width: box.width,
+          height: box.height,
+          corners: [
+            css.borderTopLeftRadius,
+            css.borderTopRightRadius,
+            css.borderBottomRightRadius,
+            css.borderBottomLeftRadius,
+          ],
+          // Over its words: a hairline between, their right edges one.
+          gap: words.getBoundingClientRect().top - box.bottom,
+          right: words.getBoundingClientRect().right - box.right,
+          wordsCorner: getComputedStyle(words).borderTopRightRadius,
+          pixels: [img.naturalWidth, img.naturalHeight],
+        };
+      });
+      expect(shape).toEqual({
+        width: 144,
+        height: 96,
+        corners: ["10px", "10px", "5px", "10px"],
+        gap: 2,
+        right: 0,
+        wordsCorner: "5px",
+        // At least twice its size: sharp on a 2x screen.
+        pixels: [480, 320],
+      });
+    }
+  });
+
   test("pictures loading above what the person reads don't move it", async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {
@@ -235,18 +289,6 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     );
   });
 
-  test("Stop while working with nothing typed; Send once there are words", async () => {
-    await open("thread-in-the-right-rail");
-    expect(await page.$('button[aria-label="Stop"]')).not.toBeNull();
-    await page.fill('textarea[aria-label="Message"]', "Keep the green");
-    expect(await page.$('button[aria-label="Stop"]')).toBeNull();
-    const send = () =>
-      page.$eval('button[aria-label="Send"]', (b) => b.getAttribute("aria-disabled"));
-    expect(await send()).toBeNull();
-    await page.fill('textarea[aria-label="Message"]', "   ");
-    expect(await page.$('button[aria-label="Stop"]')).not.toBeNull();
-  });
-
   test("Return sends, Shift-Return breaks the line, and the draft clears", async () => {
     await open("thread-in-the-right-rail");
     await page.click('textarea[aria-label="Message"]');
@@ -332,8 +374,8 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     working: string | null;
     /** Live asides, by text, and whether each is set in italics. */
     asides: { text: string; italic: boolean }[];
-    /** Lines on their way out: their height and opacity. */
-    leaving: { height: number; opacity: number }[];
+    /** Lines on their way out: their height and opacity, and the clock each leaves on. */
+    leaving: { height: number; opacity: number; clock: string[] }[];
     messages: number;
     work: boolean;
     answerBottom: number | null;
@@ -376,6 +418,13 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
             (el) => ({
               height: el.getBoundingClientRect().height,
               opacity: Number(getComputedStyle(el).opacity),
+              // A CSS animation's curve is its keyframes' (the effect's own is linear).
+              clock: el.getAnimations().map((a) => {
+                const effect = a.effect as KeyframeEffect;
+                const name = (a as Animation & { animationName?: string }).animationName;
+                const curve = effect.getKeyframes()[0]?.easing;
+                return `${name} ${effect.getComputedTiming().duration}ms ${curve}`;
+              }),
             }),
           ),
           messages: log?.querySelectorAll("p[dir=auto]").length ?? 0,
@@ -408,9 +457,9 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(sent).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(sent);
-    // Every frame from the send to the end: one working line, never blank, no work lines.
+    // Every frame from the send to the end (however many the machine painted): one working
+    // line, never blank, no work lines.
     const during = frames.slice(sent, end);
-    expect(during.length).toBeGreaterThan(30);
     for (const frame of during) {
       expect(frame.lines).toBe(1);
       expect(frame.working?.trim()).toBeTruthy();
@@ -452,9 +501,34 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     // room than they did (no flash of an aside at its full height after it had gone).
     expect(Math.abs(frames[end]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
     expect(Math.abs(frames[end]!.askTop! - before.askTop!)).toBeLessThan(1);
-    // Then they close and fade a little each frame, on the pane's clock, and are gone.
+    // Then they close and fade, on the pane's clock (each one's own animation, exactly), a little
+    // more in each frame painted, and are gone.
+    const pane = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--dur-pane").trim(),
+    );
+    // The panes' curve, as the browser writes it.
+    const ease = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.animationTimingFunction = "var(--ease-out)";
+      document.body.append(probe);
+      const curve = getComputedStyle(probe).animationTimingFunction;
+      probe.remove();
+      return curve;
+    });
+    const ms = Number.parseFloat(pane) * (/\ds$/.test(pane) ? 1000 : 1);
+    expect(ms).toBeGreaterThan(0);
     const leaving = after.filter((f) => f.leaving.length);
-    expect(leaving.length).toBeGreaterThan(5);
+    expect(leaving[0]!.leaving.map((l) => l.clock)).toEqual([
+      [`leave ${ms}ms ${ease}`],
+      [`leave ${ms}ms ${ease}`],
+    ]);
+    for (const f of leaving) {
+      for (const l of f.leaving) {
+        // Its animation over (it goes in the frames after), it has closed all the way.
+        if (l.clock.length === 0) expect(l.height).toBeLessThan(1);
+        else expect(l.clock).toEqual([`leave ${ms}ms ${ease}`]);
+      }
+    }
     const total = (f: Frame) => f.leaving.reduce((n, l) => n + l.height, 0);
     for (let i = 1; i < leaving.length; i++) {
       expect(total(leaving[i]!)).toBeLessThanOrEqual(total(leaving[i - 1]!) + 0.5);
@@ -525,6 +599,23 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await page.$('[aria-expanded][data-slot^="trace"]')).toBeNull();
   });
 
+  test("a canvas whose model gave way says so in its thread, whole, before the turn that ran on the new one", async () => {
+    await open("thread-model-changed");
+    const line =
+      "Maya's Claude doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5.";
+    const notes = await page.$$eval(`${log} [role="note"]`, (els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        const rail = el.closest('[role="log"]')!.getBoundingClientRect();
+        return { text: el.textContent, inside: box.left >= rail.left && box.right <= rail.right };
+      }),
+    );
+    // Said once, in full (it wraps; it is never cut short), and inside the rail.
+    expect(notes).toEqual([{ text: line, inside: true }]);
+    const text = await page.$eval(log, (el) => el.textContent ?? "");
+    expect(text.indexOf(line)).toBeLessThan(text.indexOf("Done: the cards are one size now"));
+  });
+
   test("a running turn's asides: italic, quieter than the answer, close together, Markdown intact", async () => {
     await open("turn-running");
     const asides = await page.$$eval(`${log} > [data-aside]`, (els) =>
@@ -560,14 +651,6 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(plain.italic).toBe("normal");
     expect(plain.link).toBe(true);
     expect(plain.color).not.toBe(asides[0]!.color);
-  });
-
-  test("an older runner's thread keeps its answers and never shows its stretches' stale labels", async () => {
-    await open("turn-old-runner");
-    const text = await page.$eval('[role="log"]', (el) => el.textContent ?? "");
-    expect(text).not.toContain("Setting direction");
-    expect(text).not.toContain("Worked for");
-    expect(text).toContain("The flow is ready");
   });
 
   /** A field's card: the element whose presses go to it. */

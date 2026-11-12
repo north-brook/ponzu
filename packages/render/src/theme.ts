@@ -1,11 +1,11 @@
 /**
- * Runs in the page. In a design whose colors change with the theme, finds
+ * Runs in the page. In a canvas whose colors change with the theme, finds
  * text and surfaces that only work in one theme: a raw color beside a
  * light-dark() token, so one changes and the other doesn't. Reads every color
  * in both schemes by flipping color-scheme on the page, and which
  * prefers-color-scheme rules apply, then puts both back.
  * Parts that set color-scheme themselves don't follow the flip and are left alone.
- * Designs with no theme render light everywhere, so they're skipped.
+ * Canvases with no theme render light everywhere, so they're skipped.
  */
 export const THEME_LINT_SCRIPT = `(() => {
   const root = document.querySelector('[data-artboard]');

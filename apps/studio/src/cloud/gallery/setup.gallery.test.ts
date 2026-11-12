@@ -68,7 +68,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await open("settings-account");
     await page.click('nav[aria-label="Settings"] button:has-text("Members")');
     expect(await title()).toBe("Members");
-    await page.click(`${dialog} button[aria-label="Workspace: Northbrook"]`);
+    await page.click(`${dialog} button[aria-label="Workspace: Thistlewick"]`);
     await page.click('[role="menuitemradio"]:has-text("Personal")');
     // Members gives way to Plan and usage, and leaves the nav.
     expect(await title()).toBe("Plan and usage");
@@ -159,7 +159,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
 
   test("roles: an admin changes a member's, and the account's owner is locked", async () => {
     await open("settings-members");
-    expect(await page.$('button[aria-label^="Role of Bryce Bjork"]')).toBeNull();
+    expect(await page.$('button[aria-label^="Role of Ada Park"]')).toBeNull();
     await page.click('button[aria-label="Role of Maya Ortiz: Member"]');
     await page.click('[role="menuitemradio"]:has-text("Admin")');
     await page.waitForSelector('button[aria-label="Role of Maya Ortiz: Admin"]');
@@ -185,7 +185,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     );
   });
 
-  test("where you design: Continue waits for an account, which turns Ready on return", async () => {
+  test("where you build: Continue waits for an account, which turns Ready on return", async () => {
     await open("setup-where-nothing-ready");
     const continueButton = 'button:has-text("Continue")';
     expect(await page.$eval(continueButton, (b) => (b as HTMLButtonElement).disabled)).toBe(true);
@@ -194,7 +194,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await page.$eval(continueButton, (b) => (b as HTMLButtonElement).disabled)).toBe(false);
   });
 
-  test("where you design: a dozen accounts in the smallest window leave Continue in reach", async () => {
+  test("where you build: a dozen accounts in the smallest window leave Continue in reach", async () => {
     await open("setup-where-many", { width: 1100, height: 640 });
     expect(await inView('button:has-text("Continue")')).toBe(true);
     expect(await inView('button:has-text("Don\'t see an organization?")')).toBe(true);

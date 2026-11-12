@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-/** Something that holds a value and says when it changes: the open design's stores. */
+/** Something that holds a value and says when it changes: the open canvas's stores. */
 export interface Store<T> {
   subscribe(listener: () => void): () => void;
   getSnapshot(): T;

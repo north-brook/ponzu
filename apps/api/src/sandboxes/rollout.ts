@@ -1,69 +1,63 @@
 import type { CheckpointCover, SandboxImage } from "@ponzu/db";
-import { runnerImage } from "../runner/client.ts";
-import { moveHold } from "./orchestrate.ts";
+import { imageHold, sameImage } from "./orchestrate.ts";
 
 /*
  * Where a rollout of a new sandbox image stands (docs/cloud.md, "How images roll out"): for each
- * design's sandbox, the image it was made from, what its runner says it runs, and what its next
- * wake will do about the image set now. `scripts/images.ts` prints it; it changes nothing.
+ * canvas's sandbox, the image it runs and what its next wake will do about the image this build
+ * ships (`current.json`). A wake on another image recreates the sandbox (its disk is lost and
+ * the runner restores the last checkpoint), unless that checkpoint is behind. `scripts/images.ts`
+ * prints it; it changes nothing.
  */
 
 export type Next =
   /** It is on the image set now. */
   | "current"
-  /** Its next wake moves it. */
-  | "moves"
-  /** Awake or on its way: it moves at the first wake after it next sleeps. */
-  | "moves_after_sleep"
-  /** Its next wake resumes it, since the last checkpoint is behind; the one after moves it. */
-  | "moves_after_a_checkpoint"
-  /** It stays where it is: a move onto this image failed for it, until another is set. */
-  | "stays_image_failed"
-  /** It stays: its runner never saved a checkpoint, so a move would lose what is on its disk. */
+  /** Its next wake recreates it on the image set now. */
+  | "recreates"
+  /** Awake or on its way: it is recreated at the first wake after it next sleeps. */
+  | "recreates_after_sleep"
+  /** Its next wake resumes it, since the last checkpoint is behind; a later one recreates it. */
+  | "recreates_after_a_checkpoint"
+  /** It stays: its runner never saved a checkpoint, so a recreate would lose what is on disk. */
   | "stays_no_checkpoint"
-  /** It stays: moving is off (`PONZU_SANDBOX_MAX_MOVES=0`). */
-  | "stays_moving_off"
-  /** Its design is settled: the sweep destroys it. */
+  /** Its canvas is settled: the sweep retires it. */
   | "retired";
 
 export interface RolloutRow {
-  designId: string;
-  sandboxId: string;
+  canvasId: string;
   state: string;
-  generation: number;
-  /** What it was made from; null for one made before that was recorded. */
+  /** The image it runs; null before its first wake. */
   image: string | null;
-  /** What its runner says it runs; null for a runner too old to say. */
-  runnerImage: string | null;
+  /** What its runner said it is when it last started. */
+  client: string | null;
   next: Next;
 }
 
 export function rollout(
   sandboxes: SandboxImage[],
   covers: ReadonlyMap<string, CheckpointCover>,
-  { image, maxMoves }: { image: string; maxMoves: number },
+  { image }: { image: string },
 ): RolloutRow[] {
-  return sandboxes.map(({ sandbox, designStatus, client }) => {
-    const row = {
-      designId: sandbox.designId,
-      sandboxId: sandbox.id,
-      state: sandbox.state,
-      generation: sandbox.generation,
-      image: sandbox.image,
-      runnerImage: runnerImage(client),
-    };
-    return { ...row, next: nextFor() };
+  return sandboxes.map((row) => ({
+    canvasId: row.sandbox.canvasId,
+    state: row.sandbox.state,
+    image: row.sandbox.image,
+    client: row.client,
+    next: nextFor(row, covers.get(row.sandbox.canvasId) ?? "none", image),
+  }));
+}
 
-    function nextFor(): Next {
-      if (designStatus === "settled") return "retired";
-      if (sandbox.image === image) return "current";
-      const hold = moveHold(sandbox, image, maxMoves, covers.get(sandbox.designId) ?? "none");
-      if (hold === "moving_off") return "stays_moving_off";
-      if (hold === "image_failed") return "stays_image_failed";
-      if (hold === "no_checkpoint") return "stays_no_checkpoint";
-      if (sandbox.state !== "asleep" && sandbox.state !== "failed") return "moves_after_sleep";
-      if (hold === "checkpoint_behind") return "moves_after_a_checkpoint";
-      return "moves";
-    }
-  });
+/** What the next wake of one sandbox does about `image`. */
+export function nextFor(
+  { sandbox, canvasStatus }: SandboxImage,
+  cover: CheckpointCover,
+  image: string,
+): Next {
+  if (canvasStatus === "settled") return "retired";
+  if (!sandbox.image || sameImage(sandbox.image, image)) return "current";
+  const hold = imageHold(cover);
+  if (hold === "no_checkpoint") return "stays_no_checkpoint";
+  if (sandbox.state !== "asleep") return "recreates_after_sleep";
+  if (hold === "checkpoint_behind") return "recreates_after_a_checkpoint";
+  return "recreates";
 }

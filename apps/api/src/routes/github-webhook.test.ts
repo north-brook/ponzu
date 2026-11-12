@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { emptyDoc } from "@ponzu/core";
 import {
-  createDesign,
+  createCanvas,
   events,
-  getDesign,
+  getCanvas,
   getGithubUserToken,
   getWorkspaceByInstallation,
   jobs,
@@ -80,8 +80,8 @@ const reposOf = async (workspaceId: string) =>
       .map((repo) => [repo.fullName, repo.removedAt === null]),
   );
 
-const eventsOf = async (designId: string) =>
-  (await t.db.select().from(events)).filter((event) => event.designId === designId);
+const eventsOf = async (canvasId: string) =>
+  (await t.db.select().from(events)).filter((event) => event.canvasId === canvasId);
 
 /** The job a delivery's work was recorded as. */
 const jobOf = async (deliveryId: string) =>
@@ -94,7 +94,7 @@ async function cronRun() {
   });
   expect(response.status).toBe(200);
   await t.backgroundDone();
-  return response.json();
+  return (await response.json()) as { steps: { jobs: { ran: number; abandoned: number } } };
 }
 
 /**
@@ -103,7 +103,7 @@ async function cronRun() {
  */
 async function drainJobs() {
   t.clock.advance(PEOPLE_WINDOW_MS);
-  while ((await cronRun()).ran > 0);
+  while ((await cronRun()).steps.jobs.ran > 0);
 }
 
 const installationPayload = (action: string, installation: FakeInstallation, sender: number) => ({
@@ -112,14 +112,14 @@ const installationPayload = (action: string, installation: FakeInstallation, sen
   sender: { id: sender, login: "someone" },
 });
 
-/** A person in an organization with the App, and a design on a branch of its repo. */
-async function designInRepo(login: string) {
+/** A person in an organization with the App, and a canvas on a branch of its repo. */
+async function canvasInRepo(login: string) {
   const person = await t.signInAs({ login: `${login}-person` });
   const installation = installOnOrg(login, [person]);
   const [workspace] = await syncGithub(t.deps, person.userId);
   const repository = installation.repositories[0]!;
   const repo = (await t.db.select().from(repos)).find((r) => r.githubRepoId === repository.id)!;
-  const design = await createDesign(t.db, {
+  const canvas = await createCanvas(t.db, {
     workspaceId: workspace!.id,
     repoId: repo.id,
     ownerId: person.userId,
@@ -128,12 +128,12 @@ async function designInRepo(login: string) {
     branch: "pz/checkout",
     doc: emptyDoc("Checkout"),
   });
-  return { person, installation, workspace: workspace!, repository, design };
+  return { person, installation, workspace: workspace!, repository, canvas };
 }
 
 /**
  * Someone on GitHub who never signed in to Ponzu, given `access` to a repo: what decides
- * whether their review reaches a design's agent.
+ * whether their review reaches a canvas's agent.
  */
 function reviewer(
   login: string,
@@ -209,7 +209,7 @@ describe("what is let in", () => {
   });
 
   test("a delivery seen before is acknowledged and not processed again", async () => {
-    const { repository, design } = await designInRepo("replayco");
+    const { repository, canvas } = await canvasInRepo("replayco");
     const review = {
       action: "submitted",
       repository: { id: repository.id },
@@ -228,7 +228,7 @@ describe("what is let in", () => {
 
     expect(first.status).toBe(202);
     expect(again.status).toBe(204);
-    expect(await eventsOf(design.id)).toHaveLength(1);
+    expect(await eventsOf(canvas.id)).toHaveLength(1);
   });
 
   test("work that fails after the answer is kept, and the cron runs it again after a wait", async () => {
@@ -250,9 +250,9 @@ describe("what is let in", () => {
 
     // GitHub took the 202 as done: a redelivery is a duplicate, and the job carries the work.
     expect((await deliver("installation", payload, { id: "delivery-flaky" })).status).toBe(204);
-    expect(await cronRun()).toMatchObject({ ran: 0 });
+    expect(await cronRun()).toMatchObject({ steps: { jobs: { ran: 0 } } });
     t.clock.advance(60_000);
-    expect(await cronRun()).toMatchObject({ ran: 1 });
+    expect(await cronRun()).toMatchObject({ steps: { jobs: { ran: 1 } } });
 
     expect(await getWorkspaceByInstallation(t.db, installation.id)).not.toBeNull();
     expect(await jobOf("delivery-flaky")).toMatchObject({
@@ -348,8 +348,8 @@ describe("installation", () => {
     expect(all.find((workspace) => workspace.githubLogin === "goneco")).toBeUndefined();
   });
 
-  test("deleted: the workspace stays with its designs, without the App or its repos", async () => {
-    const { installation, workspace, design } = await designInRepo("deletedco");
+  test("deleted: the workspace stays with its canvases, without the App or its repos", async () => {
+    const { installation, workspace, canvas } = await canvasInRepo("deletedco");
     t.github.installations.splice(t.github.installations.indexOf(installation), 1);
 
     await deliver("installation", installationPayload("deleted", installation, 1));
@@ -357,11 +357,11 @@ describe("installation", () => {
     const after = (await t.db.select().from(workspaces)).find((w) => w.id === workspace.id)!;
     expect(after.installationId).toBeNull();
     expect(await reposOf(workspace.id)).toEqual({ "deletedco/app": false });
-    expect(await getDesign(t.db, design.id)).not.toBeNull();
+    expect(await getCanvas(t.db, canvas.id)).not.toBeNull();
   });
 
   test("a created delivered after its deletion makes nothing come back", async () => {
-    const { installation, workspace } = await designInRepo("latecreatedco");
+    const { installation, workspace } = await canvasInRepo("latecreatedco");
     t.github.installations.splice(t.github.installations.indexOf(installation), 1);
     await deliver("installation", installationPayload("deleted", installation, 1));
 
@@ -372,7 +372,7 @@ describe("installation", () => {
   });
 
   test("suspend and unsuspend, in either order, end as GitHub has it", async () => {
-    const { installation, workspace } = await designInRepo("suspendco");
+    const { installation, workspace } = await canvasInRepo("suspendco");
     const suspendedAt = () =>
       t.db
         .select()
@@ -391,7 +391,7 @@ describe("installation", () => {
   });
 
   test("new_permissions_accepted and installation_repositories bring the repo list up to date", async () => {
-    const { installation, workspace } = await designInRepo("reposchangedco");
+    const { installation, workspace } = await canvasInRepo("reposchangedco");
     installation.repositories.push({ id: id(), fullName: "reposchangedco/docs", access: {} });
 
     await deliver("installation_repositories", {
@@ -423,7 +423,7 @@ describe("installation", () => {
 
 describe("repository", () => {
   test("renamed, privatized, a new default branch: the repo row follows GitHub", async () => {
-    const { installation, workspace, repository } = await designInRepo("renameco");
+    const { installation, workspace, repository } = await canvasInRepo("renameco");
     repository.fullName = "renameco/application";
     repository.private = false;
     repository.defaultBranch = "trunk";
@@ -444,8 +444,8 @@ describe("repository", () => {
     });
   });
 
-  test("transferred to another account with the App: the repo and its designs move", async () => {
-    const { installation, repository, design, person } = await designInRepo("fromco");
+  test("transferred to another account with the App: the repo and its canvases move", async () => {
+    const { installation, repository, canvas, person } = await canvasInRepo("fromco");
     const to = installOnOrg("toco", [person]);
     await syncGithub(t.deps, person.userId);
     installation.repositories.splice(0, 1);
@@ -458,11 +458,11 @@ describe("repository", () => {
     });
 
     const toWorkspace = await getWorkspaceByInstallation(t.db, to.id);
-    expect((await getDesign(t.db, design.id))!.workspaceId).toBe(toWorkspace!.id);
+    expect((await getCanvas(t.db, canvas.id))!.workspaceId).toBe(toWorkspace!.id);
   });
 
-  test("deleted: marked removed, its design kept", async () => {
-    const { installation, workspace, repository, design } = await designInRepo("repodeletedco");
+  test("deleted: marked removed, its canvas kept", async () => {
+    const { installation, workspace, repository, canvas } = await canvasInRepo("repodeletedco");
     installation.repositories.splice(0, 1);
 
     await deliver("repository", {
@@ -472,7 +472,7 @@ describe("repository", () => {
     });
 
     expect(await reposOf(workspace.id)).toEqual({ "repodeletedco/app": false });
-    expect(await getDesign(t.db, design.id)).not.toBeNull();
+    expect(await getCanvas(t.db, canvas.id)).not.toBeNull();
   });
 
   test("a repo of an installation Ponzu does not know makes no rows", async () => {
@@ -490,7 +490,7 @@ describe("repository", () => {
 
 describe("who can reach a workspace", () => {
   test("member added and removed: the person is synced in and out", async () => {
-    const { installation, workspace } = await designInRepo("collabco");
+    const { installation, workspace } = await canvasInRepo("collabco");
     const newcomer = await t.signInAs({ login: "newcomer-c" });
     installation.repositories[0]!.access[newcomer.github.id] = "read";
 
@@ -512,7 +512,7 @@ describe("who can reach a workspace", () => {
   });
 
   test("organization member_removed and team membership changes sync the person named", async () => {
-    const { installation, person } = await designInRepo("orgco");
+    const { installation, person } = await canvasInRepo("orgco");
     delete installation.repositories[0]!.access[person.github.id];
 
     await deliver("organization", {
@@ -526,7 +526,7 @@ describe("who can reach a workspace", () => {
     await deliver("membership", {
       action: "added",
       member: { id: person.github.id, login: "x" },
-      team: { id: 1, slug: "design" },
+      team: { id: 1, slug: "canvas" },
     });
     expect(await listUserWorkspaces(t.db, person.userId)).toHaveLength(1);
   });
@@ -545,7 +545,7 @@ describe("who can reach a workspace", () => {
   });
 
   test("removed, with a GitHub token that is dead: they leave the workspace the event names", async () => {
-    const { installation, workspace, person } = await designInRepo("deadtokenco");
+    const { installation, workspace, person } = await canvasInRepo("deadtokenco");
     const stays = await t.signInAs({ login: "deadtokenco-stays" });
     installation.account.members!.push(stays.github.id);
     installation.repositories[0]!.access[stays.github.id] = "write";
@@ -569,7 +569,7 @@ describe("who can reach a workspace", () => {
   });
 
   test("added, with a GitHub token that is dead: nothing changes until they sign in again", async () => {
-    const { installation, person } = await designInRepo("deadaddco");
+    const { installation, person } = await canvasInRepo("deadaddco");
     t.github.revokeTokens(person.github.id);
 
     await deliver("member", {
@@ -582,14 +582,14 @@ describe("who can reach a workspace", () => {
   });
 
   test("team: a team's repos changed, so everyone in the workspace is synced", async () => {
-    const { installation, workspace, person } = await designInRepo("teamco");
+    const { installation, workspace, person } = await canvasInRepo("teamco");
     const other = await t.signInAs({ login: "teamco-other" });
     installation.account.members!.push(other.github.id);
     installation.repositories[0]!.access[other.github.id] = "read";
     await syncGithub(t.deps, other.userId);
     // The team that gave Ponzu's people the repo lost it; one of them keeps it another way.
     delete installation.repositories[0]!.access[person.github.id];
-    const team = { id: 7, slug: "design" };
+    const team = { id: 7, slug: "canvas" };
 
     await deliver("team", {
       action: "removed_from_repository",
@@ -638,7 +638,7 @@ describe("github_app_authorization", () => {
 });
 
 describe("pull requests, checks and reviews", () => {
-  /** The design's branch pushed to GitHub, and a pull request from it someone opened there. */
+  /** The canvas's branch pushed to GitHub, and a pull request from it someone opened there. */
   function openOnGithub(repository: { fullName: string }, { draft = false } = {}) {
     const repo = t.github.repo(repository.fullName)!;
     t.github.pulls.push(repo, "pz/checkout");
@@ -646,13 +646,13 @@ describe("pull requests, checks and reviews", () => {
     return { repo, pull };
   }
 
-  const notices = async (designId: string) =>
+  const notices = async (canvasId: string) =>
     (await t.db.select().from(threadItems))
-      .filter((item) => item.designId === designId && item.kind === "notice")
+      .filter((item) => item.canvasId === canvasId && item.kind === "notice")
       .map((item) => item.payload);
 
-  test("opened, ready, merged: the design follows GitHub, settles, and the thread says so once", async () => {
-    const { repository, design } = await designInRepo("prco");
+  test("opened, ready, merged: the canvas follows GitHub, settles, and the thread says so once", async () => {
+    const { repository, canvas } = await canvasInRepo("prco");
     const { pull } = openOnGithub(repository, { draft: true });
     const send = (action: string) =>
       deliver("pull_request", {
@@ -663,7 +663,7 @@ describe("pull requests, checks and reviews", () => {
 
     await send("opened");
     // Read again until GitHub had worked out that it can merge.
-    expect(await getDesign(t.db, design.id)).toMatchObject({
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({
       prNumber: pull.number,
       prState: "draft",
       prMergeable: true,
@@ -672,25 +672,25 @@ describe("pull requests, checks and reviews", () => {
     pull.draft = false;
     await send("ready_for_review");
     await send("synchronize");
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prState: "open", status: "active" });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prState: "open", status: "active" });
 
     pull.state = "closed";
     pull.merged = true;
     await send("closed");
     await send("closed");
-    expect(await getDesign(t.db, design.id)).toMatchObject({
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({
       prState: "merged",
       status: "settled",
     });
     const url = `https://github.com/${repository.fullName}/pull/${pull.number}`;
-    expect(await notices(design.id)).toEqual([
+    expect(await notices(canvas.id)).toEqual([
       { type: "pull_request", number: pull.number, url, title: pull.title, state: "draft" },
       { type: "pull_request", number: pull.number, url, title: pull.title, state: "merged" },
     ]);
   });
 
   test("deliveries out of order change nothing: what is recorded is GitHub's word now", async () => {
-    const { repository, design } = await designInRepo("reopenco");
+    const { repository, canvas } = await canvasInRepo("reopenco");
     const { pull } = openOnGithub(repository);
     const send = (action: string, state: string) =>
       deliver("pull_request", {
@@ -703,11 +703,11 @@ describe("pull requests, checks and reviews", () => {
     await send("reopened", "open");
     await send("closed", "closed");
 
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prState: "open", status: "active" });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prState: "open", status: "active" });
   });
 
   test("a read that began first and finished last is not recorded over a newer one", async () => {
-    const { repository, design } = await designInRepo("slowreadco");
+    const { repository, canvas } = await canvasInRepo("slowreadco");
     const { repo, pull } = openOnGithub(repository);
     const sha = t.github.pulls.head(repo, "pz/checkout")!;
     t.github.pulls.setChecks(sha, [
@@ -740,31 +740,31 @@ describe("pull requests, checks and reviews", () => {
       { name: "test", state: "success" },
     ]);
     t.clock.advance(1_000);
-    await refreshPullRequest(t.deps, design.id, { number: pull.number });
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
+    await refreshPullRequest(t.deps, canvas.id, { number: pull.number });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prChecks: "passing" });
 
     held.release();
     await t.backgroundDone();
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "passing" });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prChecks: "passing" });
   });
 
-  test("deliveries about a design in one window make one read of it", async () => {
-    const { repository, design } = await designInRepo("windowco");
+  test("deliveries about a canvas in one window make one read of it", async () => {
+    const { repository, canvas } = await canvasInRepo("windowco");
     const { pull } = openOnGithub(repository);
     t.clock.advance(MERGEABLE_AFTER_MS);
     const reads = t.github.pulls.queries;
 
     // A burst of checks finishing, all about the same pull request.
-    const request = { designId: design.id, number: pull.number };
+    const request = { canvasId: canvas.id, number: pull.number };
     await Promise.all([1, 2, 3].map(() => refreshSoon(t.deps, [request, request])));
 
     expect(t.github.pulls.queries - reads).toBe(1);
     const reading = (await t.db.select().from(jobs)).filter(
-      (job) => job.kind === REFRESH_JOB && job.key?.startsWith(`${design.id}@`),
+      (job) => job.kind === REFRESH_JOB && job.key?.startsWith(`${canvas.id}@`),
     );
     expect(reading).toHaveLength(1);
     expect(reading[0]!.completedAt).not.toBeNull();
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: pull.number });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prNumber: pull.number });
 
     // A delivery after the window is read again.
     await refreshSoon(t.deps, [request]);
@@ -772,7 +772,7 @@ describe("pull requests, checks and reviews", () => {
   });
 
   test("a check run starting is not even taken: the push that started it is read", async () => {
-    const { repository } = await designInRepo("createdco");
+    const { repository } = await canvasInRepo("createdco");
     const response = await deliver("check_run", {
       action: "created",
       repository: { id: repository.id },
@@ -787,11 +787,11 @@ describe("pull requests, checks and reviews", () => {
   });
 
   test("a push is read until GitHub shows its commit and knows whether it can merge", async () => {
-    const { repository, design } = await designInRepo("pushreadco");
+    const { repository, canvas } = await canvasInRepo("pushreadco");
     const { repo, pull } = openOnGithub(repository);
     t.clock.advance(MERGEABLE_AFTER_MS);
-    await refreshPullRequest(t.deps, design.id, { number: pull.number });
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
+    await refreshPullRequest(t.deps, canvas.id, { number: pull.number });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prMergeable: true });
 
     const after = t.github.pulls.push(repo, "pz/checkout");
     const reads = t.github.pulls.queries;
@@ -804,11 +804,11 @@ describe("pull requests, checks and reviews", () => {
 
     // Unknown at first, as GitHub has it for a few seconds after a push; then known.
     expect(t.github.pulls.queries - reads).toBeGreaterThan(1);
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: true });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prMergeable: true });
   });
 
   test("a push to the default branch is when the repo moved; a push to any other branch is not", async () => {
-    const { repository } = await designInRepo("movedco");
+    const { repository } = await canvasInRepo("movedco");
     const movedAt = async () =>
       (await t.db.select().from(repos)).find((r) => r.githubRepoId === repository.id)!
         .defaultPushedAt;
@@ -842,9 +842,9 @@ describe("pull requests, checks and reviews", () => {
       (r) => r.githubRepoId === repository.id,
     )!;
     const repo = t.github.repo(repository.fullName)!;
-    const designs: { id: string }[] = [];
+    const canvases: { id: string }[] = [];
     for (const branch of ["pz/one", "pz/two", "pz/three"]) {
-      const made = await createDesign(t.db, {
+      const made = await createCanvas(t.db, {
         workspaceId: workspace!.id,
         repoId: repoRow.id,
         ownerId: person.userId,
@@ -858,7 +858,7 @@ describe("pull requests, checks and reviews", () => {
       t.clock.advance(MERGEABLE_AFTER_MS);
       await refreshPullRequest(t.deps, made.id);
       pull.conflicting = true;
-      designs.push(made);
+      canvases.push(made);
     }
 
     t.github.failNext("/graphql", 502);
@@ -868,7 +868,7 @@ describe("pull requests, checks and reviews", () => {
     });
 
     const mergeable = async () =>
-      Promise.all(designs.map(async ({ id }) => (await getDesign(t.db, id))!.prMergeable));
+      Promise.all(canvases.map(async ({ id }) => (await getCanvas(t.db, id))!.prMergeable));
     // One read failed; the others were not held up by it.
     expect((await mergeable()).filter((value) => value === false)).toHaveLength(2);
     const failed = (await t.db.select().from(jobs)).filter(
@@ -885,11 +885,11 @@ describe("pull requests, checks and reviews", () => {
     expect(await mergeable()).toEqual([false, false, false]);
   });
 
-  test("a push to the default branch that gives an open pull request conflicts shows on its design", async () => {
-    const { repository, design } = await designInRepo("conflictco");
+  test("a push to the default branch that gives an open pull request conflicts shows on its canvas", async () => {
+    const { repository, canvas } = await canvasInRepo("conflictco");
     const { repo, pull } = openOnGithub(repository);
     t.clock.advance(MERGEABLE_AFTER_MS);
-    await refreshPullRequest(t.deps, design.id, { number: pull.number });
+    await refreshPullRequest(t.deps, canvas.id, { number: pull.number });
 
     pull.conflicting = true;
     const after = t.github.pulls.push(repo, "main");
@@ -900,11 +900,11 @@ describe("pull requests, checks and reviews", () => {
       repository: { id: repository.id, default_branch: "main" },
     });
 
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prMergeable: false });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prMergeable: false });
   });
 
-  test("a pull request from a fork, or on a branch no design owns, changes nothing", async () => {
-    const { repository, design } = await designInRepo("forkco");
+  test("a pull request from a fork, or on a branch no canvas owns, changes nothing", async () => {
+    const { repository, canvas } = await canvasInRepo("forkco");
 
     await deliver("pull_request", {
       action: "opened",
@@ -922,11 +922,11 @@ describe("pull requests, checks and reviews", () => {
       pull_request: pullRequest(999_999_002),
     });
 
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: null, prState: null });
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prNumber: null, prState: null });
   });
 
   test("a failed check run or suite is news for the agent; a passing one is not", async () => {
-    const { repository, design } = await designInRepo("checkco");
+    const { repository, canvas } = await canvasInRepo("checkco");
     const { repo } = openOnGithub(repository);
     t.github.pulls.setChecks(t.github.pulls.head(repo, "pz/checkout")!, [
       { name: "lint", state: "failure" },
@@ -957,7 +957,7 @@ describe("pull requests, checks and reviews", () => {
       },
     });
 
-    const feed = await eventsOf(design.id);
+    const feed = await eventsOf(canvas.id);
     expect(feed.map((event) => [event.kind, event.priority, event.payload])).toEqual([
       [
         "check",
@@ -983,18 +983,18 @@ describe("pull requests, checks and reviews", () => {
         },
       ],
     ]);
-    // And the design's row has the checks as GitHub rolls them up.
-    expect(await getDesign(t.db, design.id)).toMatchObject({ prNumber: 1, prChecks: "failing" });
-    // The news wakes the design's sandbox: one wake waits for the cron.
+    // And the canvas's row has the checks as GitHub rolls them up.
+    expect(await getCanvas(t.db, canvas.id)).toMatchObject({ prNumber: 1, prChecks: "failing" });
+    // The news wakes the canvas's sandbox: one wake waits for the cron.
     const wakes = (await t.db.select().from(jobs)).filter(
-      (job) => job.kind === WAKE_JOB && job.key === design.id && job.completedAt === null,
+      (job) => job.kind === WAKE_JOB && job.key === canvas.id && job.completedAt === null,
     );
     expect(wakes).toHaveLength(1);
     expect(wakes[0]!.lockedBy).toBeNull();
   });
 
-  test("a review is news for the agent, but not once the design is settled", async () => {
-    const { repository, design } = await designInRepo("reviewco");
+  test("a review is news for the agent, but not once the canvas is settled", async () => {
+    const { repository, canvas } = await canvasInRepo("reviewco");
     const { pull } = openOnGithub(repository);
     const kim = reviewer("kim", repository, "write");
     const review = (state: string) => ({
@@ -1020,7 +1020,7 @@ describe("pull requests, checks and reviews", () => {
     });
     await deliver("pull_request_review", review("APPROVED"));
 
-    const feed = await eventsOf(design.id);
+    const feed = await eventsOf(canvas.id);
     expect(feed).toHaveLength(1);
     expect(feed[0]).toMatchObject({
       kind: "review",
@@ -1037,7 +1037,7 @@ describe("pull requests, checks and reviews", () => {
   });
 
   test("a review by someone with no standing in the repo never reaches the agent", async () => {
-    const { repository, design } = await designInRepo("publicco");
+    const { repository, canvas } = await canvasInRepo("publicco");
     const stranger = reviewer("stranger-pusher", repository, "write");
     const review = (author_association: string) => ({
       action: "submitted",
@@ -1057,16 +1057,16 @@ describe("pull requests, checks and reviews", () => {
       // Taken, since the pull request is read again; its words go nowhere.
       expect((await deliver("pull_request_review", review(association))).status).toBe(202);
     }
-    expect(await eventsOf(design.id)).toEqual([]);
+    expect(await eventsOf(canvas.id)).toEqual([]);
     // Dropped on sight: GitHub was not even asked who they are.
     expect(t.github.permissionRequests.length).toBe(asked);
 
     await deliver("pull_request_review", review("OWNER"));
-    expect(await eventsOf(design.id)).toHaveLength(1);
+    expect(await eventsOf(canvas.id)).toHaveLength(1);
   });
 
   test("a review reaches the agent only from someone GitHub says can push to the repo", async () => {
-    const { person, repository, design } = await designInRepo("pushco");
+    const { person, repository, canvas } = await canvasInRepo("pushco");
     const reader = reviewer("org-reader", repository, "read");
     const outsider = reviewer("org-nobody", repository);
     const review = (user: { id: number; login: string }, body: string) => ({
@@ -1084,11 +1084,11 @@ describe("pull requests, checks and reviews", () => {
 
     await deliver("pull_request_review", review(reader, "from a reader"));
     await deliver("pull_request_review", review(outsider, "from nobody"));
-    expect(await eventsOf(design.id)).toEqual([]);
+    expect(await eventsOf(canvas.id)).toEqual([]);
 
     // Someone who signed in is named on the event, and their answer is the one kept for them.
     await deliver("pull_request_review", review(person.github, "from a writer"));
-    const feed = await eventsOf(design.id);
+    const feed = await eventsOf(canvas.id);
     expect(feed.map((event) => [event.payload.body, event.userId])).toEqual([
       ["from a writer", person.userId],
     ]);
@@ -1098,7 +1098,7 @@ describe("pull requests, checks and reviews", () => {
   });
 
   test("a review waits for GitHub to say who wrote it: the job is tried again", async () => {
-    const { repository, design } = await designInRepo("flakyreviewco");
+    const { repository, canvas } = await canvasInRepo("flakyreviewco");
     const lee = reviewer("lee-reviews", repository, "write");
     t.github.failNext(`/repos/${repository.fullName}/collaborators/lee-reviews/permission`);
 
@@ -1120,10 +1120,10 @@ describe("pull requests, checks and reviews", () => {
     );
 
     expect(response.status).toBe(202);
-    expect(await eventsOf(design.id)).toEqual([]);
+    expect(await eventsOf(canvas.id)).toEqual([]);
     expect(await jobOf("delivery-review-flaky")).toMatchObject({ attempts: 1 });
     t.clock.advance(2 * 60_000);
     await cronRun();
-    expect(await eventsOf(design.id)).toHaveLength(1);
+    expect(await eventsOf(canvas.id)).toHaveLength(1);
   });
 });

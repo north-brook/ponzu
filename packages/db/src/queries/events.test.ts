@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { seedDesign } from "../fixtures.ts";
+import { seedCanvas } from "../fixtures.ts";
 import { newId } from "../ids.ts";
-import { designRunners, designs, events } from "../schema/index.ts";
+import { canvases, canvasRunners, events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import {
   appendEvent,
@@ -21,8 +21,8 @@ beforeAll(async () => {
 });
 afterAll(() => db.$client.close());
 
-const say = (db: Db, designId: string, text: string, priority: "now" | "next" | "later" = "now") =>
-  appendEvent(db, { designId, kind: "message", priority, payload: { text } });
+const say = (db: Db, canvasId: string, text: string, priority: "now" | "next" | "later" = "now") =>
+  appendEvent(db, { canvasId, kind: "message", priority, payload: { text } });
 
 const texts = (claimed: { payload: unknown }[]) =>
   claimed.map((event) => (event.payload as { text: string }).text);
@@ -30,25 +30,25 @@ const texts = (claimed: { payload: unknown }[]) =>
 const ids = (claimed: { id: string }[]) => claimed.map((event) => event.id);
 
 /**
- * A runner starting for the design: it takes the lease, then claims, each time under a new claim
+ * A runner starting for the canvas: it takes the lease, then claims, each time under a new claim
  * id unless one is given, and acknowledges, as that runner.
  */
-async function start(designId: string) {
-  const { runnerId } = await takeRunnerLease(db, { designId, now: new Date() });
+async function start(canvasId: string) {
+  const { runnerId } = await takeRunnerLease(db, { canvasId, now: new Date() });
   return {
     runnerId,
     claim: async (limit?: number, claimId = newId("clm")) =>
-      (await claimEvents(db, { designId, runnerId, claimId, limit }))!.events,
+      (await claimEvents(db, { canvasId, runnerId, claimId, limit }))!.events,
     ack: (ids: string[], claudeSessionId: string | null = null) =>
-      markEventsDelivered(db, { designId, runnerId, ids, claudeSessionId }),
+      markEventsDelivered(db, { canvasId, runnerId, ids, claudeSessionId }),
   };
 }
 
 test("an appended event waits, undelivered", async () => {
-  const { design, user } = await seedDesign(db);
+  const { canvas, user } = await seedCanvas(db);
 
   const event = await appendEvent(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     kind: "comment",
     priority: "next",
     payload: { threadId: "th_1" },
@@ -68,17 +68,17 @@ test("an appended event waits, undelivered", async () => {
 });
 
 test("a claim hands the runner the waiting events in order, once, with who is behind each", async () => {
-  const { design, user } = await seedDesign(db);
+  const { canvas, user } = await seedCanvas(db);
   await appendEvent(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     kind: "message",
     priority: "now",
     payload: { text: "first" },
     userId: user.id,
   });
-  await say(db, design.id, "second", "later");
-  await say(db, design.id, "third", "next");
-  const runner = await start(design.id);
+  await say(db, canvas.id, "second", "later");
+  await say(db, canvas.id, "third", "next");
+  const runner = await start(canvas.id);
 
   const claimed = await runner.claim();
 
@@ -92,57 +92,60 @@ test("a claim hands the runner the waiting events in order, once, with who is be
   expect(await runner.claim()).toEqual([]);
 });
 
-test("a claim is one design's, and respects its limit", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  await say(db, one.design.id, "a");
-  await say(db, one.design.id, "b");
-  await say(db, other.design.id, "elsewhere");
-  const runner = await start(one.design.id);
+test("a claim is one canvas's, and respects its limit", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  await say(db, one.canvas.id, "a");
+  await say(db, one.canvas.id, "b");
+  await say(db, other.canvas.id, "elsewhere");
+  const runner = await start(one.canvas.id);
 
   expect(texts(await runner.claim(1))).toEqual(["a"]);
   expect(texts(await runner.claim())).toEqual(["b"]);
-  // A runner of one design claims nothing of another's, whatever id it names.
+  // A runner of one canvas claims nothing of another's, whatever id it names.
   const elsewhere = await claimEvents(db, {
-    designId: other.design.id,
+    canvasId: other.canvas.id,
     runnerId: runner.runnerId,
     claimId: newId("clm"),
   });
   expect(elsewhere!.events).toEqual([]);
-  expect(texts(await (await start(other.design.id)).claim())).toEqual(["elsewhere"]);
+  expect(texts(await (await start(other.canvas.id)).claim())).toEqual(["elsewhere"]);
 });
 
-test("a claim answers the design's head, and a design that is not there answers null", async () => {
-  const { design } = await seedDesign(db);
-  const { runnerId } = await start(design.id);
+test("a claim answers the canvas's head, and a canvas that is not there answers null", async () => {
+  const { canvas } = await seedCanvas(db);
+  const { runnerId } = await start(canvas.id);
 
-  const claimed = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
+  const claimed = await claimEvents(db, { canvasId: canvas.id, runnerId, claimId: newId("clm") });
 
-  expect(claimed).toEqual({ events: [], seq: design.seq, pullRequest: null });
+  expect(claimed).toEqual({ events: [], seq: canvas.seq, pullRequest: null });
   expect(
-    await claimEvents(db, { designId: "des_missing", runnerId, claimId: newId("clm") }),
+    await claimEvents(db, { canvasId: "cnv_missing", runnerId, claimId: newId("clm") }),
   ).toBeNull();
 });
 
-test("a claim says the design's pull request as its row has it, for the agent's next turn", async () => {
-  const { design } = await seedDesign(db);
-  const { runnerId } = await start(design.id);
-  await db.update(designs).set({ prNumber: 12, prState: "draft" }).where(eq(designs.id, design.id));
+test("a claim says the canvas's pull request as its row has it, for the agent's next turn", async () => {
+  const { canvas } = await seedCanvas(db);
+  const { runnerId } = await start(canvas.id);
+  await db
+    .update(canvases)
+    .set({ prNumber: 12, prState: "draft" })
+    .where(eq(canvases.id, canvas.id));
 
-  const claimed = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
+  const claimed = await claimEvents(db, { canvasId: canvas.id, runnerId, claimId: newId("clm") });
 
   expect(claimed?.pullRequest).toEqual({ number: 12, state: "draft" });
 });
 
 test("a claim sent again hands out again what it handed out, and nothing new", async () => {
-  const { design } = await seedDesign(db);
-  for (const text of ["a", "b", "c"]) await say(db, design.id, text);
-  const runner = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  for (const text of ["a", "b", "c"]) await say(db, canvas.id, text);
+  const runner = await start(canvas.id);
   const claimId = newId("clm");
   expect(texts(await runner.claim(2, claimId))).toEqual(["a", "b"]);
 
   // Its answer was lost. Something new arrives before the runner sends it again.
-  await say(db, design.id, "d");
+  await say(db, canvas.id, "d");
   expect(texts(await runner.claim(2, claimId))).toEqual(["a", "b"]);
 
   // Once the runner has them, a new claim goes on from there.
@@ -151,10 +154,31 @@ test("a claim sent again hands out again what it handed out, and nothing new", a
   expect(await runner.claim()).toEqual([]);
 });
 
+test("a claim narrowed to some kinds leaves the rest in the feed for a later claim", async () => {
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "a");
+  await appendEvent(db, { canvasId: canvas.id, kind: "stop", priority: "now", payload: {} });
+  await say(db, canvas.id, "b");
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
+  const claim = async (
+    kinds: readonly ("stop" | "answer" | "edit")[] | "all",
+    claimId = newId("clm"),
+  ) => (await claimEvents(db, { canvasId: canvas.id, runnerId, claimId, kinds }))!.events;
+
+  // Nothing of a kind it may not hand out, and nothing at all when it may hand out none.
+  expect(await claim([])).toEqual([]);
+  const narrowed = newId("clm");
+  expect((await claim(["stop", "answer", "edit"], narrowed)).map((e) => e.kind)).toEqual(["stop"]);
+  // Sent again, it hands out what it handed out, whatever it is allowed now.
+  expect((await claim("all", narrowed)).map((e) => e.kind)).toEqual(["stop"]);
+  // The messages were never claimed: once every kind may go, they do.
+  expect(texts(await claim("all"))).toEqual(["a", "b"]);
+});
+
 test("two claims at once never hand out the same event", async () => {
-  const { design } = await seedDesign(db);
-  for (const text of ["a", "b", "c", "d"]) await say(db, design.id, text);
-  const runner = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  for (const text of ["a", "b", "c", "d"]) await say(db, canvas.id, text);
+  const runner = await start(canvas.id);
 
   const [one, two] = await Promise.all([runner.claim(), runner.claim()]);
 
@@ -162,34 +186,34 @@ test("two claims at once never hand out the same event", async () => {
 });
 
 test("what a runner took and never delivered is the next runner's, at once", async () => {
-  const { design } = await seedDesign(db);
-  await say(db, design.id, "lost with the runner");
-  const first = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "lost with the runner");
+  const first = await start(canvas.id);
   expect(texts(await first.claim())).toEqual(["lost with the runner"]);
 
-  const second = await start(design.id);
-  await say(db, design.id, "new");
+  const second = await start(canvas.id);
+  await say(db, canvas.id, "new");
 
   expect(texts(await second.claim())).toEqual(["lost with the runner", "new"]);
   expect(await second.claim()).toEqual([]);
 });
 
 test("a runner whose lease was taken is handed nothing", async () => {
-  const { design } = await seedDesign(db);
-  const old = await start(design.id);
-  await start(design.id);
-  await say(db, design.id, "for the new one");
+  const { canvas } = await seedCanvas(db);
+  const old = await start(canvas.id);
+  await start(canvas.id);
+  await say(db, canvas.id, "for the new one");
 
   expect(await old.claim()).toEqual([]);
-  const [row] = await db.select().from(events).where(eq(events.designId, design.id));
+  const [row] = await db.select().from(events).where(eq(events.canvasId, canvas.id));
   expect(row!.claimedBy).toBeNull();
 });
 
 test("delivered events are never handed out again, to this runner or the next", async () => {
-  const { design } = await seedDesign(db);
-  await say(db, design.id, "a");
-  await say(db, design.id, "b");
-  const runner = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "a");
+  await say(db, canvas.id, "b");
+  const runner = await start(canvas.id);
   const claimed = await runner.claim();
 
   const delivered = await runner.ack(ids(claimed));
@@ -197,39 +221,39 @@ test("delivered events are never handed out again, to this runner or the next", 
   expect(delivered).toBe(2);
   expect(await runner.ack(ids(claimed))).toBe(0);
   expect(await runner.ack([])).toBe(0);
-  expect(await (await start(design.id)).claim()).toEqual([]);
+  expect(await (await start(canvas.id)).claim()).toEqual([]);
 });
 
 test("a runner acknowledges only what it claimed, and nothing once its lease is taken", async () => {
-  const { design } = await seedDesign(db);
-  await say(db, design.id, "first");
-  const old = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "first");
+  const old = await start(canvas.id);
   const held = await old.claim();
-  await say(db, design.id, "second");
-  const next = await start(design.id);
+  await say(db, canvas.id, "second");
+  const next = await start(canvas.id);
   const taken = await next.claim();
   expect(texts(taken)).toEqual(["first", "second"]);
-  const unclaimed = await say(db, design.id, "not yet claimed");
+  const unclaimed = await say(db, canvas.id, "not yet claimed");
 
   // The old runner's late ack, of what it held and the new one now holds.
   expect(await old.ack([...ids(held), ...ids(taken)], "sess-old")).toBe(0);
   // The new one's, of an event it was never handed.
   expect(await next.ack([unclaimed.id], "sess-new")).toBe(0);
 
-  const rows = await db.select().from(events).where(eq(events.designId, design.id));
+  const rows = await db.select().from(events).where(eq(events.canvasId, canvas.id));
   expect(rows.map((row) => row.deliveredAt)).toEqual([null, null, null]);
   const [lease] = await db
     .select()
-    .from(designRunners)
-    .where(eq(designRunners.designId, design.id));
+    .from(canvasRunners)
+    .where(eq(canvasRunners.canvasId, canvas.id));
   expect(lease!.claudeSessionId).toBe("sess-new");
   expect(await next.ack(ids(taken))).toBe(2);
 });
 
 test("acknowledging one claim leaves what another claim holds", async () => {
-  const { design } = await seedDesign(db);
-  for (const text of ["a", "b", "c"]) await say(db, design.id, text);
-  const runner = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  for (const text of ["a", "b", "c"]) await say(db, canvas.id, text);
+  const runner = await start(canvas.id);
   const first = await runner.claim(2);
   const second = await runner.claim();
   expect(texts(second)).toEqual(["c"]);
@@ -237,7 +261,7 @@ test("acknowledging one claim leaves what another claim holds", async () => {
   // The later claim finishes first. Its events are after the other's in the feed.
   expect(await runner.ack(ids(second))).toBe(1);
 
-  const rows = await db.select().from(events).where(eq(events.designId, design.id));
+  const rows = await db.select().from(events).where(eq(events.canvasId, canvas.id));
   const delivered = Object.fromEntries(rows.map((row) => [row.id, row.deliveredAt !== null]));
   expect(delivered).toEqual({
     [first[0]!.id]: false,
@@ -246,25 +270,25 @@ test("acknowledging one claim leaves what another claim holds", async () => {
   });
 });
 
-test("marking delivered is one design's", async () => {
-  const one = await seedDesign(db);
-  const other = await seedDesign(db);
-  await say(db, one.design.id, "a");
-  const runner = await start(one.design.id);
+test("marking delivered is one canvas's", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  await say(db, one.canvas.id, "a");
+  const runner = await start(one.canvas.id);
   const claimed = await runner.claim();
-  const elsewhere = { designId: other.design.id, runnerId: runner.runnerId, ids: ids(claimed) };
+  const elsewhere = { canvasId: other.canvas.id, runnerId: runner.runnerId, ids: ids(claimed) };
 
   expect(await markEventsDelivered(db, elsewhere)).toBe(0);
   expect(await runner.ack(ids(claimed))).toBe(1);
 });
 
 test("an ack keeps the Claude session its events went into, and a null one keeps the last", async () => {
-  const { design } = await seedDesign(db);
-  await say(db, design.id, "a");
-  const runner = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  await say(db, canvas.id, "a");
+  const runner = await start(canvas.id);
   const claimed = await runner.claim();
   const session = async () =>
-    (await db.select().from(designRunners).where(eq(designRunners.designId, design.id)))[0]!
+    (await db.select().from(canvasRunners).where(eq(canvasRunners.canvasId, canvas.id)))[0]!
       .claudeSessionId;
 
   await runner.ack(ids(claimed), "sess-1");
@@ -276,53 +300,53 @@ test("an ack keeps the Claude session its events went into, and a null one keeps
   expect(await session()).toBe("sess-2");
 });
 
-test("a design's stops are found with who stopped the run, and nothing else is", async () => {
-  const { design, user } = await seedDesign(db);
-  const other = await seedDesign(db);
+test("a canvas's stops are found with who stopped the run, and nothing else is", async () => {
+  const { canvas, user } = await seedCanvas(db);
+  const other = await seedCanvas(db);
   const stop = await appendEvent(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     kind: "stop",
     priority: "now",
     payload: {},
     userId: user.id,
   });
-  const message = await say(db, design.id, "not a stop");
+  const message = await say(db, canvas.id, "not a stop");
   const elsewhere = await appendEvent(db, {
-    designId: other.design.id,
+    canvasId: other.canvas.id,
     kind: "stop",
     priority: "now",
     payload: {},
   });
 
   const found = await findStops(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     ids: [stop.id, message.id, elsewhere.id],
   });
 
   expect(found).toEqual([{ id: stop.id, from: personOf(user) }]);
-  expect(await findStops(db, { designId: design.id, ids: [] })).toEqual([]);
+  expect(await findStops(db, { canvasId: canvas.id, ids: [] })).toEqual([]);
 });
 
 test("text Postgres cannot store is replaced in the payload, not refused", async () => {
-  const { design } = await seedDesign(db);
+  const { canvas } = await seedCanvas(db);
 
-  const event = await say(db, design.id, "cut \ud83d here\u0000");
+  const event = await say(db, canvas.id, "cut \ud83d here\u0000");
 
   expect(event.payload).toEqual({ text: "cut � here�" });
 });
 
 test("a lapsed event goes in again once, as a copy any runner claims as new; a copy is not copied", async () => {
-  const { design } = await seedDesign(db);
-  const message = await say(db, design.id, "use hugeicons");
-  const first = await start(design.id);
+  const { canvas } = await seedCanvas(db);
+  const message = await say(db, canvas.id, "use hugeicons");
+  const first = await start(canvas.id);
   await first.claim();
   await first.ack([message.id]);
   const now = new Date();
 
   // Two sweeps at once: one lapses it.
   const [a, b] = await Promise.all([
-    lapseEvents(db, { designId: design.id, ids: [message.id], now }),
-    lapseEvents(db, { designId: design.id, ids: [message.id], now }),
+    lapseEvents(db, { canvasId: canvas.id, ids: [message.id], now }),
+    lapseEvents(db, { canvasId: canvas.id, ids: [message.id], now }),
   ]);
   const lapsed = [...a, ...b];
   expect(lapsed).toHaveLength(1);
@@ -340,34 +364,34 @@ test("a lapsed event goes in again once, as a copy any runner claims as new; a c
   });
 
   // Not delivered, a copy cannot lapse; delivered and lapsed, it is not copied again.
-  expect(await lapseEvents(db, { designId: design.id, ids: [copyId], now })).toEqual([]);
+  expect(await lapseEvents(db, { canvasId: canvas.id, ids: [copyId], now })).toEqual([]);
   await first.ack([copyId]);
-  expect(await lapseEvents(db, { designId: design.id, ids: [copyId], now })).toEqual([
+  expect(await lapseEvents(db, { canvasId: canvas.id, ids: [copyId], now })).toEqual([
     { id: copyId, kind: "message", retryOf: message.id, copy: null },
   ]);
   expect(await first.claim()).toEqual([]);
 });
 
 test("a runner heard since a moment is one that reported, claimed or acknowledged after it", async () => {
-  const { design } = await seedDesign(db);
+  const { canvas } = await seedCanvas(db);
   const before = new Date(Date.now() - 60_000);
-  const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: before });
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: before });
   const thaw = new Date();
-  expect(await runnerHeardSince(db, { designId: design.id, since: thaw })).toBe(false);
-  const message = await say(db, design.id, "hi");
+  expect(await runnerHeardSince(db, { canvasId: canvas.id, since: thaw })).toBe(false);
+  const message = await say(db, canvas.id, "hi");
   const later = new Date(thaw.getTime() + 1_000);
-  await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm"), now: later });
-  expect(await runnerHeardSince(db, { designId: design.id, since: thaw })).toBe(true);
+  await claimEvents(db, { canvasId: canvas.id, runnerId, claimId: newId("clm"), now: later });
+  expect(await runnerHeardSince(db, { canvasId: canvas.id, since: thaw })).toBe(true);
   expect(
-    await runnerHeardSince(db, { designId: design.id, since: new Date(later.getTime() + 1) }),
+    await runnerHeardSince(db, { canvasId: canvas.id, since: new Date(later.getTime() + 1) }),
   ).toBe(false);
   await markEventsDelivered(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     runnerId,
     ids: [message.id],
     now: new Date(later.getTime() + 5_000),
   });
   expect(
-    await runnerHeardSince(db, { designId: design.id, since: new Date(later.getTime() + 1) }),
+    await runnerHeardSince(db, { canvasId: canvas.id, since: new Date(later.getTime() + 1) }),
   ).toBe(true);
 });

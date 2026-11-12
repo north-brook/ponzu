@@ -1,6 +1,10 @@
 import { PR_CHECKS, PR_STATES } from "@ponzu/db";
 import { z } from "zod";
-import type { GithubPullRequestRead, GithubWho } from "../deps/github-pull-requests.ts";
+import {
+  type GithubPullRequestRead,
+  type GithubWho,
+  MERGE_QUEUE_STATES,
+} from "../deps/github-pull-requests.ts";
 import type { PullRequestTarget } from "./sync.ts";
 
 /*
@@ -18,7 +22,7 @@ const Who = z.object({
   login: z.string(),
   avatarUrl: z.string().nullable(),
   bot: z.boolean(),
-  /** The Ponzu App's own bot: the design's agent, which pushes and writes as the App. */
+  /** The Ponzu App's own bot: the canvas's agent, which pushes and writes as the App. */
   ponzu: z.boolean(),
 });
 const MergeMethod = z.enum(["squash", "merge", "rebase"]);
@@ -92,6 +96,18 @@ export const PullRequestView = z.object({
     /** False when there were more than the first hundred. */
     complete: z.boolean(),
   }),
+  /**
+   * Whether its base merges through a merge queue, and its entry while it is in one: where, from
+   * 1, and how it stands. Absent from an API older than merge queues.
+   */
+  mergeQueue: z
+    .object({
+      enabled: z.boolean(),
+      entry: z
+        .object({ state: z.enum(MERGE_QUEUE_STATES), position: z.number().nullable() })
+        .nullable(),
+    })
+    .optional(),
   reviews: z.array(
     z.object({
       id: z.string(),
@@ -112,6 +128,10 @@ export const PullRequestView = z.object({
       url: z.string(),
       path: z.string().nullable(),
       line: z.number().nullable(),
+      /** For a line comment, whether its thread is resolved on GitHub; null or absent otherwise. */
+      resolved: z.boolean().nullable().optional(),
+      /** For a line comment, its author's GitHub id when a person wrote it. */
+      authorId: z.number().nullable().optional(),
     }),
   ),
   files: z.object({
@@ -143,7 +163,7 @@ export const PullRequestView = z.object({
 });
 
 export const PullRequestTabView = z.object({
-  /** The design's branch on GitHub; `exists` is false until something is pushed to it. */
+  /** The canvas's branch on GitHub; `exists` is false until something is pushed to it. */
   branch: z.object({
     name: z.string(),
     base: z.string(),
@@ -152,15 +172,22 @@ export const PullRequestTabView = z.object({
     aheadBy: z.number(),
     behindBy: z.number(),
     /**
-     * Commits the design's sandbox has on the branch that GitHub does not, as its runner last
+     * Commits the canvas's sandbox has on the branch that GitHub does not, as its runner last
      * said: Ponzu pushes them at the end of each turn, and Create PR pushes them first.
      */
     unpushed: z.number(),
     /** Why the last push of them failed, in words for a person; null when it did not. */
     pushError: z.string().nullable(),
   }),
-  /** The design's newest pull request; null before one is opened. */
+  /** The canvas's newest pull request; null before one is opened. */
   pullRequest: PullRequestView.nullable(),
+  /**
+   * The agent's kept words on what the branch changes, while no pull request is open (none yet,
+   * or the newest closed or merged): the description Create PR opens the next one with. Null
+   * while one is open (its description on GitHub says them) or when the agent kept none.
+   * Untrusted markdown, as a description is: the agent writes it, and it may have read anything.
+   */
+  summary: z.string().nullable(),
   /** How Merge merges: the first of squash, merge and rebase the repo allows. */
   mergeMethod: MergeMethod.nullable(),
   autoMergeAllowed: z.boolean(),
@@ -188,6 +215,7 @@ export function toTab(
       ponzu: who.bot && (who.login === appSlug || who.login === `${appSlug}[bot]`),
     };
   const pr = read.pullRequest;
+  const open = pr !== null && (pr.state === "open" || pr.state === "draft");
   const pullRequest = pr && {
     ...pr,
     author: mark(pr.author),
@@ -210,6 +238,7 @@ export function toTab(
       ...pullRequest,
       head: { ref: pullRequest.head.ref, sha: pullRequest.head.sha },
     },
+    summary: !open && target.summary?.trim() ? target.summary : null,
     mergeMethod: read.mergeMethods[0] ?? null,
     autoMergeAllowed: read.autoMergeAllowed,
     nextAction: nextAction(read, target.sandbox?.unpushed ?? 0),
@@ -217,7 +246,7 @@ export function toTab(
 }
 
 /**
- * What the action button offers (the spec's PR states): open one when the design has commits its
+ * What the action button offers (the spec's PR states): open one when the canvas has commits its
  * base lacks and no open pull request (or commits since its merged one), on GitHub or still only
  * in its sandbox (`unpushed`: Create PR pushes them first); then ready a draft, resolve conflicts,
  * fix failing checks, wait on running ones with auto-merge where the repo allows it (and offer
@@ -239,6 +268,9 @@ export function nextAction(
     return workedOnSince ? "create_pr" : "none";
   }
   if (pullRequest.state === "draft") return "ready";
+  // In the merge queue: GitHub merges it once the queue's checks pass, and there is nothing to
+  // press meanwhile (taking it out of the queue is GitHub's).
+  if (pullRequest.mergeQueue.entry) return "none";
   if (pullRequest.mergeable === false) return "resolve";
   if (pullRequest.checks.state === "failing") return "fix_checks";
   // Checks still running: the spec's action is Auto-merge. Where the repo has no auto-merge

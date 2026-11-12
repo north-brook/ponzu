@@ -1,6 +1,6 @@
 import {
   anonymiseUser,
-  deleteDesign,
+  deleteCanvas,
   deleteUser,
   listUserWorkspaces,
   planAccountDeletion,
@@ -10,9 +10,12 @@ import { keepAllowances } from "../billing/allowances.ts";
 import type { ClaudeDeps } from "../claude/accounts.ts";
 import { disconnectClaude } from "../claude/accounts.ts";
 import type { Deps } from "../deps/index.ts";
-import { ApiError } from "../http/errors.ts";
+import { githubUserToken } from "../github/user-token.ts";
+import { ApiError, UpstreamError } from "../http/errors.ts";
+import { type RunNowDeps, runNow } from "../jobs/run.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
-import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
+import { finishRetire, holdForRetire } from "../sandboxes/retire.ts";
+import { accountForgetJob } from "./forget.ts";
 
 /*
  * Deleting a person's account (docs/cloud.md, "Deleting an account"). In this order, each step
@@ -20,21 +23,28 @@ import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
  *
  *   refused while they are the only admin of a workspace others are in
  *   their Claude credential destroyed, with every sandbox that held it
- *   every sandbox of a design they own retired
- *   their designs that are theirs alone deleted: Scratch, and those in a workspace nobody
+ *   every sandbox of a canvas they own retired
+ *   their canvases that are theirs alone deleted: Scratch, and those in a workspace nobody
  *     else is in
  *   their name taken out of what stays (thread items, the history of ops)
  *   this period's free allowance granted in each workspace they are in, so it stays counted
+ *   their grant of the GitHub App revoked at GitHub, best effort: Ponzu leaves their GitHub
+ *     authorizations, and a failure is logged and does not stop the rest
  *   their row deleted, and with it their sessions (ended at once), GitHub token, memberships,
  *     repo access, Claude account, devices and sign-ins; refused, as the first step, if
  *     another admin's deletion has meanwhile left them the only one
- *   their WorkOS user deleted, in the background: their next sign-in is someone new
+ *   a job recorded that forgets them outside Ponzu, tried again until it is done: their WorkOS
+ *     user deleted (their next sign-in is someone new), then their PostHog person, events and
+ *     recordings (account/forget.ts)
  *
- * Designs they own in a workspace others are in stay with it, owned by nobody: their canvas,
+ * Canvases they own in a workspace others are in stay with it, owned by nobody: their boards,
  * thread and pull request are work others share, in a repo others reach.
  */
 
-export type DeleteAccountDeps = ClaudeDeps & Pick<Deps, "workos" | "archives" | "analytics">;
+export type DeleteAccountDeps = ClaudeDeps & RunNowDeps & Pick<Deps, "archives">;
+
+/** How long revoking the GitHub grant may hold up the deletion, reading the token included. */
+export const GITHUB_GRANT_REVOKE_MS = 10_000;
 
 export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promise<void> {
   const { db, log } = deps;
@@ -42,41 +52,85 @@ export async function deleteAccount(deps: DeleteAccountDeps, user: User): Promis
   if (plan.soleAdminOf.length > 0) throw soleAdmin(plan.soleAdminOf);
 
   await disconnectClaude(deps, user.id);
-  const machines: string[] = [];
-  for (const designId of [...plan.kept, ...plan.deleted]) {
-    machines.push(...(await retireSandboxes(deps, designId)));
+  // Held first, which meters what was awake while the canvas's row still says whose it is.
+  const retiring: { canvasId: string; by: string | null }[] = [];
+  for (const canvasId of [...plan.kept, ...plan.deleted]) {
+    retiring.push({ canvasId, by: await holdForRetire(deps, canvasId) });
   }
   const forgotten: (() => Promise<void>)[] = [];
-  for (const designId of plan.deleted) {
-    forgotten.push(await forgetCheckpoints(deps, designId));
-    await deleteDesign(db, designId);
+  for (const canvasId of plan.deleted) {
+    forgotten.push(await forgetCheckpoints(deps, canvasId));
+    await deleteCanvas(db, canvasId);
   }
   await anonymiseUser(db, user.id);
   // Leaving mid-period does not take back the free credits they brought.
   for (const workspace of await listUserWorkspaces(db, user.id)) {
     await keepAllowances(deps, workspace.id, [user.id]);
   }
+  // While their token is still stored: the row's deletion takes it with it.
+  await revokeGithubGrant(deps, user.id);
   // Checked again as the row goes: another admin may have deleted themselves meanwhile.
   const deleted = await deleteUser(db, user.id);
   if (deleted.status === "sole_admin") {
     throw soleAdmin((await planAccountDeletion(db, user.id)).soleAdminOf);
   }
   const workosUserId = deleted.status === "deleted" ? deleted.workosUserId : null;
+  // Recorded before anything else is said about them, so only a failed insert can lose it.
+  await runNow(deps, accountForgetJob({ userId: user.id, workosUserId }));
   log.info("account_deleted", {
     userId: user.id,
-    deletedDesigns: plan.deleted.length,
-    keptDesigns: plan.kept.length,
+    deletedCanvases: plan.deleted.length,
+    keptCanvases: plan.kept.length,
   });
+  // About no one: PostHog is about to forget them, and deletes only what it had before it was
+  // asked, so an event under their id now would make their person again.
   deps.analytics.capture(
     "account deleted",
-    { deleted_designs: plan.deleted.length, kept_designs: plan.kept.length },
-    { distinctId: user.id },
+    { deleted_canvases: plan.deleted.length, kept_canvases: plan.kept.length },
+    { distinctId: null },
   );
 
-  deps.background("account_deleted", destroySandboxes(deps, machines));
-  // The transcripts and work in progress of the designs that went with them.
+  for (const { canvasId, by } of retiring) {
+    deps.background("account_deleted", finishRetire(deps, canvasId, by));
+  }
+  // The transcripts and work in progress of the canvases that went with them.
   for (const forget of forgotten) deps.background("account_deleted", forget());
-  if (workosUserId) deps.background("account_deleted", deps.workos.deleteUser(workosUserId));
+}
+
+/**
+ * Revoke the person's grant of the GitHub App, which ends every token of theirs and takes
+ * Ponzu off their GitHub authorizations, with a live token of theirs (refreshed if it has run
+ * out). Best effort and bounded: a person with no token has nothing to revoke, and a failure
+ * or a GitHub slower than `GITHUB_GRANT_REVOKE_MS` is logged, ids and status only, and the
+ * deletion goes on. They can still revoke it themselves in GitHub's settings.
+ */
+async function revokeGithubGrant(deps: DeleteAccountDeps, userId: string): Promise<void> {
+  const { clock, github, log } = deps;
+  const signal = clock.timeout(GITHUB_GRANT_REVOKE_MS);
+  const gaveUp = new Promise<"timeout">((resolve) =>
+    signal.addEventListener("abort", () => resolve("timeout"), { once: true }),
+  );
+  const revoke = async (): Promise<"revoked" | "no_token"> => {
+    let token: string;
+    try {
+      token = await githubUserToken(deps, userId);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "github_reauth_required") return "no_token";
+      throw error;
+    }
+    await github.deleteAuthorization(token);
+    return "revoked";
+  };
+  try {
+    const outcome = await Promise.race([revoke(), gaveUp]);
+    if (outcome === "revoked") log.info("github_grant_revoked", { userId });
+    else if (outcome === "no_token") log.info("github_grant_revoke_skipped", { userId });
+    else log.warn("github_grant_revoke_failed", { userId, reason: "timeout" });
+  } catch (error) {
+    // Never the error itself: what GitHub said back is no business of the logs.
+    const status = error instanceof UpstreamError ? error.status : undefined;
+    log.warn("github_grant_revoke_failed", { userId, status: status ?? null });
+  }
 }
 
 /** The refusal while the person is the only admin of a workspace others are in. */

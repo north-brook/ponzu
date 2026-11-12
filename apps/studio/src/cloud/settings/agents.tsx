@@ -10,7 +10,7 @@ import {
   shortDate,
 } from "../claude.ts";
 import { EFFORT_LABELS } from "../create/model-picker.tsx";
-import type { Effort, ModelOption } from "../model.ts";
+import { type Effort, effortFor, effortsOf, type ModelOption } from "../model.ts";
 import { ClaudeCard, type ClaudeCardProps, canConnect } from "../setup/claude-card.tsx";
 import { StepButton } from "../setup/step.tsx";
 import { useNow } from "../time.ts";
@@ -39,15 +39,15 @@ export type AgentsSectionProps = AgentsConnection & {
   /** Sign in again: a subscription near its year's end, or one signed out. */
   onReconnect: () => void;
   defaults: AgentDefaults;
-  models: ModelOption[];
-  efforts: Effort[];
+  models: readonly ModelOption[];
+  efforts: readonly Effort[];
   onDefaultsChange: (defaults: AgentDefaults) => void;
   /** The plan's windows, as last seen; null for an API key, which has none. */
   limits: ClaudeLimit[] | null;
 };
 
 /**
- * Agents: which agent account is connected, the defaults a new design starts with, and the
+ * Agents: which agent account is connected, the defaults a new canvas starts with, and the
  * Claude plan's own limits. Claude Code is the one agent today.
  */
 export function AgentsSection({
@@ -95,13 +95,16 @@ export function AgentsSection({
               leading={<AgentMark client="claude" size={18} />}
               trailing={<QuietButton onClick={onReconnect}>Reconnect</QuietButton>}
             >
-              <TwoLine title="Claude was signed out" line="Designs wait until you connect again." />
+              <TwoLine
+                title="Claude was signed out"
+                line="Canvases wait until you connect again."
+              />
             </Row>
           )}
           {connected?.expiresAt && needsRenewal(connected, now) ? (
             <Row trailing={<QuietButton onClick={onReconnect}>Sign in</QuietButton>}>
               <span className="text-12 text-muted">
-                Sign in again before {shortDate(connected.expiresAt)} to keep designs running.
+                Sign in again before {shortDate(connected.expiresAt)} to keep canvases running.
               </span>
             </Row>
           ) : null}
@@ -118,7 +121,7 @@ export function AgentsSection({
           </ActionRow>
         </Section>
       ) : null}
-      <Section label="Defaults for new designs">
+      <Section label="Defaults for new canvases">
         <Row
           trailing={
             <ValuePicker
@@ -138,7 +141,12 @@ export function AgentsSection({
               label="Model"
               value={defaults.model}
               options={models.map((m) => ({ value: m.id, label: m.label }))}
-              onChange={(model) => onDefaultsChange({ ...defaults, model })}
+              onChange={(model) =>
+                onDefaultsChange({
+                  model,
+                  effort: effortFor(models, efforts, model, defaults.effort),
+                })
+              }
             />
           }
         >
@@ -149,7 +157,10 @@ export function AgentsSection({
             <ValuePicker
               label="Effort"
               value={defaults.effort}
-              options={efforts.map((e) => ({ value: e, label: EFFORT_LABELS[e] }))}
+              options={effortsOf(models, efforts, defaults.model).map((e) => ({
+                value: e,
+                label: EFFORT_LABELS[e],
+              }))}
               onChange={(effort) => onDefaultsChange({ ...defaults, effort })}
             />
           }
@@ -178,8 +189,8 @@ function Limits({
       label="Limits"
       note={
         seen
-          ? `From ${plan}. When a limit is hit, designs wait and Ponzu pings you when they can run again.`
-          : `From ${plan}. Ponzu shows these once a design has run.`
+          ? `From ${plan}. When a limit is hit, canvases wait and Ponzu pings you when they can run again.`
+          : `From ${plan}. Ponzu shows these once a canvas has run.`
       }
     >
       {limits.map((limit) => {

@@ -5,10 +5,10 @@ import { Slice } from "../cloud/ui/marks.tsx";
 /*
  * The window's calm states. Something gone wrong is said in a sentence where the work would be,
  * with the one thing to do about it, never as a dialog or a crash: offline, access lost, a
- * design deleted while open.
+ * canvas deleted while open.
  */
 
-/** The canvas pane's whole content, when there is nothing to show but why. */
+/** The main pane's whole content, when there is nothing to show but why. */
 export function PaneMessage({
   title,
   body,
@@ -40,7 +40,7 @@ export function PaneMessage({
   );
 }
 
-/** A line over the top of the canvas pane: the work stays where it is beneath it. */
+/** A line over the top of the main pane: the work stays where it is beneath it. */
 export function Banner({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-6">

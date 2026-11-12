@@ -1,6 +1,6 @@
 import {
   appendThreadItemOnce,
-  type Design,
+  type Canvas,
   getPullRequestContext,
   type PullRequestContext,
   recordPullRequestRead,
@@ -14,52 +14,58 @@ import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 
 /*
- * Keeping a design's row in step with its pull request on GitHub. Every path that learns
+ * Keeping a canvas's row in step with its pull request on GitHub. Every path that learns
  * something about one (the tab being opened, an action taken, a webhook) reads GitHub as the
  * App and hands what it read to `recordRead`, the one place the row and the thread hear of it:
- * a merge settles the design there whichever path saw it first.
+ * a merge settles the canvas there whichever path saw it first.
  */
 
 export type PullRequestDeps = Pick<Deps, "db" | "github" | "clock" | "log" | "analytics">;
 
-/** A design whose branch GitHub can be asked about, as the App. */
+/** A canvas whose branch GitHub can be asked about, as the App. */
 export interface PullRequestTarget {
-  designId: string;
+  canvasId: string;
   repo: PullRequestRepo;
   branch: string;
   defaultBranch: string;
   /** The pull request the row last recorded. */
   number: number | null;
   /**
-   * The branch in the design's sandbox as its runner last said: commits GitHub lacks, and why
+   * The branch in the canvas's sandbox as its runner last said: commits GitHub lacks, and why
    * the last push failed. Absent where it was not read.
    */
   sandbox?: { unpushed: number; pushError: string | null };
+  /**
+   * The agent's words on what the branch changes (`describe_pull_request`), kept on the canvas:
+   * the description the next pull request opens with. Absent where it was not read.
+   */
+  summary?: string | null;
 }
 
-/** What asking GitHub about a design's pull request takes, or why it cannot be asked. */
+/** What asking GitHub about a canvas's pull request takes, or why it cannot be asked. */
 export function targetOf(context: PullRequestContext): PullRequestTarget | ApiError {
-  const { design, repo, installationId, suspendedAt } = context;
+  const { canvas, repo, installationId, suspendedAt } = context;
   if (!repo) {
     return new ApiError(
       409,
       "no_repository",
-      "A Scratch design has no repo to open a pull request in.",
+      "A Scratch canvas has no repo to open a pull request in.",
     );
   }
   if (installationId === null || suspendedAt !== null) {
     return new ApiError(403, "forbidden", "Ponzu cannot reach this repository on GitHub now.");
   }
-  if (!design.branch) {
-    return new ApiError(409, "branch_not_pushed", "Nothing has been pushed for this design yet.");
+  if (!canvas.branch) {
+    return new ApiError(409, "branch_not_pushed", "Nothing has been pushed for this canvas yet.");
   }
   return {
-    designId: design.id,
+    canvasId: canvas.id,
     repo: { installationId, repository: { id: repo.githubRepoId, fullName: repo.fullName } },
-    branch: design.branch,
+    branch: canvas.branch,
     defaultBranch: repo.defaultBranch,
-    number: design.prNumber,
+    number: canvas.prNumber,
     sandbox: context.sandbox,
+    summary: canvas.prSummary,
   };
 }
 
@@ -70,11 +76,11 @@ export interface Read {
 }
 
 /**
- * Read the design's branch and its pull request: the one `number` names, or, when GitHub has a
- * newer one from the branch, that one. Only a pull request from the design's branch in its own
- * repo (never a fork's of the same name) into the default branch is the design's: one someone
+ * Read the canvas's branch and its pull request: the one `number` names, or, when GitHub has a
+ * newer one from the branch, that one. Only a pull request from the canvas's branch in its own
+ * repo (never a fork's of the same name) into the default branch is the canvas's: one someone
  * pointed at another base merges nothing into the default branch, so it neither shows here nor
- * settles the design.
+ * settles the canvas.
  */
 export async function readPullRequest(
   { github, clock }: Pick<Deps, "github" | "clock">,
@@ -122,28 +128,28 @@ export function lagsBranch({ pullRequest, branch }: GithubPullRequestRead): bool
  */
 export async function recordCurrent(
   deps: Pick<Deps, "db" | "log" | "analytics">,
-  designId: string,
+  canvasId: string,
   { read, readAt }: Read,
   { lagging = false } = {},
 ): Promise<void> {
   if (!read.pullRequest || (lagsBranch(read) && !lagging)) return;
-  await recordRead(deps, designId, read.pullRequest, readAt);
+  await recordRead(deps, canvasId, read.pullRequest, readAt);
 }
 
 /**
- * Record what a read found on the design's row, and in its thread the first time the pull
- * request is seen open, merged or closed. Answers the design as it now stands, or null when it
+ * Record what a read found on the canvas's row, and in its thread the first time the pull
+ * request is seen open, merged or closed. Answers the canvas as it now stands, or null when it
  * was not applied: a read that began later was recorded first, or the row already says this.
  */
 export async function recordRead(
   { db, log, analytics }: Pick<Deps, "db" | "log" | "analytics">,
-  designId: string,
+  canvasId: string,
   pullRequest: GithubPullRequest,
   readAt: Date,
-): Promise<Design | null> {
+): Promise<Canvas | null> {
   const { number, state, url, title } = pullRequest;
-  const design = await recordPullRequestRead(db, {
-    designId,
+  const canvas = await recordPullRequestRead(db, {
+    canvasId,
     number,
     state,
     checks: pullRequest.checks.state,
@@ -152,10 +158,10 @@ export async function recordRead(
     updatedAt: pullRequest.updatedAt,
     readAt,
   });
-  if (!design) return null;
+  if (!canvas) return null;
   const firstSeen = await appendThreadItemOnce(db, {
     id: noticeId(number, state),
-    designId,
+    canvasId,
     kind: "notice",
     payload: { type: "pull_request", number, url, title, state },
   });
@@ -168,10 +174,10 @@ export async function recordRead(
         : state === "closed"
           ? "pull request closed"
           : "pull request created";
-    analytics.capture(event, { design_id: designId, number }, { workspaceId: design.workspaceId });
+    analytics.capture(event, { canvas_id: canvasId, number }, { workspaceId: canvas.workspaceId });
   }
-  log.info("pull_request_recorded", { designId, number, state });
-  return design;
+  log.info("pull_request_recorded", { canvasId, number, state });
+  return canvas;
 }
 
 /**
@@ -188,17 +194,17 @@ export function noticeId(number: number, state: GithubPullRequest["state"]): str
 const CATCH_UP_MS = [1_000, 2_000, 3_000, 4_000];
 
 /**
- * Read a design's pull request from GitHub and record it. Nothing happens for a design that is
+ * Read a canvas's pull request from GitHub and record it. Nothing happens for a canvas that is
  * gone, Scratch, or not on GitHub. While an open one lags its branch, or GitHub is still working
  * out whether it can merge (as it does for seconds after a push or a change of base), it is read
  * again; a read that lags is not recorded unless it is the last.
  */
 export async function refreshPullRequest(
   deps: PullRequestDeps,
-  designId: string,
+  canvasId: string,
   { number = null }: { number?: number | null } = {},
 ): Promise<void> {
-  const context = await getPullRequestContext(deps.db, designId);
+  const context = await getPullRequestContext(deps.db, canvasId);
   if (!context) return;
   const target = targetOf(context);
   if (target instanceof ApiError) return;
@@ -207,7 +213,7 @@ export async function refreshPullRequest(
     const found = await readPullRequest(deps, target, asked);
     const { pullRequest } = found.read;
     const wait = CATCH_UP_MS[attempt];
-    await recordCurrent(deps, designId, found, { lagging: wait === undefined });
+    await recordCurrent(deps, canvasId, found, { lagging: wait === undefined });
     const working = isOpen(pullRequest) && pullRequest.mergeable === null;
     if (!(lagsBranch(found.read) || working) || wait === undefined) return;
     asked = pullRequest?.number ?? asked;

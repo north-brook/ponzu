@@ -1,17 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
-  createDesign,
+  createCanvas,
   deleteUser,
-  getDesign,
-  getLiveSandbox,
+  getCanvas,
+  getSandbox,
   recordUsage,
   upsertMembership,
   upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
-import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
-import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
+import { canvasSandboxName } from "@ponzu/sandbox";
+import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
+import { githubUserToken } from "../github/user-token.ts";
+import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
+import { createTestApp, type SignedInPerson, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 /*
  * Deleting an account through the route: what blocks it, what goes, what stays with the team,
@@ -23,7 +26,8 @@ let ws: Workspace;
 const KEY = "sk-ant-api03-rae-deletes-her-account-0000";
 
 beforeAll(async () => {
-  t = await createTestApp();
+  // With PostHog's personal key, as production will have it once the founder sets it.
+  t = await createTestApp({ posthogAdmin: true });
   ws = await workspaceWithRepo(t, { rae: "admin", sol: "admin", tom: "write" });
 });
 afterAll(() => t.close());
@@ -85,7 +89,7 @@ describe("refusals", () => {
 describe("a personal account others are in", () => {
   let dee: SignedInPerson;
   let own: { id: string };
-  let deesDesign: string;
+  let deesCanvas: string;
 
   beforeAll(async () => {
     dee = await t.signInAs({ login: "dee" });
@@ -125,8 +129,8 @@ describe("a personal account others are in", () => {
       role: "member",
       githubAccess: "collaborator",
     });
-    deesDesign = (
-      await createDesign(t.db, {
+    deesCanvas = (
+      await createCanvas(t.db, {
         workspaceId: own.id,
         repoId: repo!.id,
         ownerId: dee.userId,
@@ -146,16 +150,16 @@ describe("a personal account others are in", () => {
       message: "Make someone else an admin first.",
       details: { workspaces: [{ id: own.id, name: "dee" }] },
     });
-    expect(await getDesign(t.db, deesDesign)).not.toBeNull();
+    expect(await getCanvas(t.db, deesCanvas)).not.toBeNull();
   });
 
-  test("keeps the design the collaborator shares once someone else is its admin", async () => {
+  test("keeps the canvas the collaborator shares once someone else is its admin", async () => {
     await t.db.execute(
       `update memberships set role = 'admin' where workspace_id = '${own.id}' and role = 'member'`,
     );
     const deleted = await call(t, dee.headers, "DELETE", "/v1/me", { confirm: "dee" });
     expect(deleted.status).toBe(204);
-    expect((await getDesign(t.db, deesDesign))?.ownerId).toBeNull();
+    expect((await getCanvas(t.db, deesCanvas))?.ownerId).toBeNull();
     expect(await rows(`select role from memberships where workspace_id = '${own.id}'`)).toEqual([
       { role: "admin" },
     ]);
@@ -164,10 +168,13 @@ describe("a personal account others are in", () => {
 
 describe("deleting Rae", () => {
   let rae: SignedInPerson;
-  let teamDesign: string;
-  let scratchDesign: string;
-  let ownDesign: string;
-  let solsDesign: string;
+  let raesGithubToken: string;
+  /** Whether her GitHub token's row was still stored while GitHub was asked to revoke it. */
+  let tokenStoredDuringRevoke: boolean | null = null;
+  let teamCanvas: string;
+  let scratchCanvas: string;
+  let ownCanvas: string;
+  let solsCanvas: string;
 
   beforeAll(async () => {
     rae = await t.signInAs({ login: "rae" });
@@ -182,18 +189,18 @@ describe("deleting Rae", () => {
       installId: "rae-phone-install-0001",
     });
 
-    // A design of the team's that she owns and has talked in, with its sandbox up.
-    teamDesign = (await designIn(t, ws, "rae", sampleDoc())).id;
-    const said = await call(t, rae.headers, "POST", `/v1/designs/${teamDesign}/messages`, {
+    // A canvas of the team's that she owns and has talked in, with its sandbox up.
+    teamCanvas = (await canvasIn(t, ws, "rae", sampleDoc())).id;
+    const said = await call(t, rae.headers, "POST", `/v1/canvases/${teamCanvas}/messages`, {
       text: "Tighten the pricing table",
     });
     expect(said.status).toBe(201);
-    await call(t, rae.headers, "PATCH", `/v1/designs/${teamDesign}`, { name: "Pricing, tighter" });
+    await call(t, rae.headers, "PATCH", `/v1/canvases/${teamCanvas}`, { name: "Pricing, tighter" });
     await t.backgroundDone();
-    expect((await getLiveSandbox(t.db, teamDesign))?.state).toBe("awake");
+    expect((await getSandbox(t.db, teamCanvas))?.state).toBe("awake");
 
-    // Her Scratch design, and one in her own account's workspace.
-    scratchDesign = (await designIn(t, ws, "rae", sampleDoc(), "scratch")).id;
+    // Her Scratch canvas, and one in her own account's workspace.
+    scratchCanvas = (await canvasIn(t, ws, "rae", sampleDoc(), "scratch")).id;
     const own = await upsertWorkspace(t.db, {
       githubAccountId: rae.github.id,
       githubLogin: "rae",
@@ -205,8 +212,8 @@ describe("deleting Rae", () => {
       installedByUserId: null,
     });
     await upsertMembership(t.db, { workspaceId: own.id, userId: rae.userId, role: "admin" });
-    ownDesign = (
-      await createDesign(t.db, {
+    ownCanvas = (
+      await createCanvas(t.db, {
         workspaceId: own.id,
         repoId: null,
         ownerId: rae.userId,
@@ -216,13 +223,13 @@ describe("deleting Rae", () => {
         doc: sampleDoc(),
       })
     ).id;
-    // A teammate's design, which is not hers to delete.
-    solsDesign = (await designIn(t, ws, "sol", sampleDoc())).id;
+    // A teammate's canvas, which is not hers to delete.
+    solsCanvas = (await canvasIn(t, ws, "sol", sampleDoc())).id;
 
     await recordUsage(t.db, {
       id: "rae-usage",
       workspaceId: ws.id,
-      designId: teamDesign,
+      canvasId: teamCanvas,
       userId: rae.userId,
       kind: "sandbox",
       seconds: 3600,
@@ -234,9 +241,65 @@ describe("deleting Rae", () => {
       periodStart: new Date(t.clock.now()),
     });
 
+    raesGithubToken = await githubUserToken(t.deps, rae.userId);
+    t.github.duringGrantRevoke = async () => {
+      tokenStoredDuringRevoke =
+        (await rows(`select 1 from github_user_tokens where user_id = '${rae.userId}'`)).length ===
+        1;
+    };
     const deleted = await call(t, rae.headers, "DELETE", "/v1/me", { confirm: "RAE" });
+    t.github.duringGrantRevoke = null;
     expect(deleted.status).toBe(204);
     await t.backgroundDone();
+  });
+
+  test("revokes her grant of the GitHub App, as the App, while her token is still stored", async () => {
+    const { clientId, clientSecret } = t.github.credentials;
+    // Others deleted before her in this file revoked theirs: hers is the one with her token.
+    const hers = t.github.grantRevocations.filter(
+      (request) => (request.body as { access_token?: string }).access_token === raesGithubToken,
+    );
+    expect(hers).toEqual([
+      {
+        clientId,
+        authorization: `basic ${btoa(`${clientId}:${clientSecret}`)}`,
+        body: { access_token: raesGithubToken },
+      },
+    ]);
+    expect(tokenStoredDuringRevoke).toBe(true);
+    // GitHub ended every token of hers.
+    expect(t.github.accepts(raesGithubToken)).toBe(false);
+    expect(t.logs.some((line) => line.event === "github_grant_revoked")).toBe(true);
+  });
+
+  test("forgets her at WorkOS and PostHog in one job, which completed", async () => {
+    const [job] = await rows(
+      `select payload, completed_at from jobs
+        where kind = '${ACCOUNT_FORGET_JOB}' and key = '${rae.userId}'`,
+    );
+    expect(job?.payload).toEqual({ userId: rae.userId, workosUserId: rae.workos.id });
+    expect(job?.completed_at).not.toBeNull();
+    expect(t.posthogAdmin.requests.map((request) => request.body)).toContainEqual({
+      distinct_ids: [rae.userId],
+      delete_events: true,
+      delete_recordings: true,
+    });
+  });
+
+  test("says the account was deleted about no one, so PostHog does not make her again", () => {
+    const said = t.analytics.of("account deleted");
+    expect(said.length).toBeGreaterThan(0);
+    for (const event of said) {
+      expect(event.distinctId).not.toBe(rae.userId);
+      expect(event.properties.$process_person_profile).toBe(false);
+    }
+  });
+
+  test("logs nothing of her token, her email or the App's secret", () => {
+    const logged = JSON.stringify(t.logs);
+    for (const secret of [raesGithubToken, "rae@example.com", t.github.credentials.clientSecret]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 
   test("ends her sessions at once, and WorkOS forgets her", async () => {
@@ -259,24 +322,22 @@ describe("deleting Rae", () => {
     }
   });
 
-  test("deletes her Scratch designs and those in her own account", async () => {
-    expect(await getDesign(t.db, scratchDesign)).toBeNull();
-    expect(await getDesign(t.db, ownDesign)).toBeNull();
+  test("deletes her Scratch canvases and those in her own account", async () => {
+    expect(await getCanvas(t.db, scratchCanvas)).toBeNull();
+    expect(await getCanvas(t.db, ownCanvas)).toBeNull();
   });
 
-  test("keeps the team's design, owned by nobody, its sandbox retired", async () => {
-    const design = await getDesign(t.db, teamDesign);
-    expect(design?.ownerId).toBeNull();
-    expect(await getLiveSandbox(t.db, teamDesign)).toBeNull();
-    expect(
-      (await t.sandbox.list({ labels: { design: teamDesign } })).filter((s) => s.state !== "gone"),
-    ).toEqual([]);
-    expect((await getDesign(t.db, solsDesign))?.ownerId).not.toBeNull();
+  test("keeps the team's canvas, owned by nobody, its sandbox retired", async () => {
+    const canvas = await getCanvas(t.db, teamCanvas);
+    expect(canvas?.ownerId).toBeNull();
+    expect(await getSandbox(t.db, teamCanvas)).toBeNull();
+    expect(await t.sandboxes.status(canvasSandboxName(TEST_SCOPE, teamCanvas))).toBeNull();
+    expect((await getCanvas(t.db, solsCanvas))?.ownerId).not.toBeNull();
   });
 
-  test("keeps her words in the team's design, under a deleted user's name", async () => {
+  test("keeps her words in the team's canvas, under a deleted user's name", async () => {
     const sol = await as("sol");
-    const thread = await call(t, sol, "GET", `/v1/designs/${teamDesign}/thread`);
+    const thread = await call(t, sol, "GET", `/v1/canvases/${teamCanvas}/thread`);
     expect(thread.status).toBe(200);
     const message = thread.body.items.find((item: { kind: string }) => item.kind === "message");
     expect(message.payload).toMatchObject({
@@ -284,8 +345,8 @@ describe("deleting Rae", () => {
       from: { name: "Deleted user", login: "ghost" },
     });
     const ops = await rows(
-      `select actor_name, actor_avatar_url from design_ops
-        where design_id = '${teamDesign}' and actor_id = '${rae.userId}'`,
+      `select actor_name, actor_avatar_url from canvas_ops
+        where canvas_id = '${teamCanvas}' and actor_id = '${rae.userId}'`,
     );
     expect(ops.length).toBeGreaterThan(0);
     for (const op of ops)
@@ -304,5 +365,54 @@ describe("deleting Rae", () => {
     expect(sol.body.members.map((m: { githubLogin: string }) => m.githubLogin)).not.toContain(
       "rae",
     );
+  });
+});
+
+describe("GitHub not revoking the grant", () => {
+  const grantPath = () => `/applications/${t.github.credentials.clientId}/grant`;
+  const failed = () => t.logs.filter((line) => line.event === "github_grant_revoke_failed");
+
+  test("a GitHub error is logged with its status, and the deletion goes on", async () => {
+    const cat = await t.signInAs({ login: "cat" });
+    const token = await githubUserToken(t.deps, cat.userId);
+    t.github.failNext(grantPath(), 500);
+    const before = failed().length;
+    expect((await call(t, cat.headers, "DELETE", "/v1/me", { confirm: "cat" })).status).toBe(204);
+    await t.backgroundDone();
+    expect(failed().slice(before)).toEqual([
+      expect.objectContaining({ userId: cat.userId, status: 500 }),
+    ]);
+    expect(await rows(`select 1 from users where id = '${cat.userId}'`)).toEqual([]);
+    expect(t.workos.hasUser(cat.workos.id)).toBe(false);
+    expect(JSON.stringify(t.logs)).not.toContain(token);
+  });
+
+  test("a grant GitHub no longer has is done", async () => {
+    const dot = await t.signInAs({ login: "dot" });
+    // She revoked Ponzu on GitHub herself, and the webhook has not come yet.
+    const token = await githubUserToken(t.deps, dot.userId);
+    t.github.revokeTokens(dot.github.id);
+    const before = failed().length;
+    expect((await call(t, dot.headers, "DELETE", "/v1/me", { confirm: "dot" })).status).toBe(204);
+    // GitHub answers 404 for a token it no longer has, which is what was wanted.
+    expect(t.github.grantRevocations.at(-1)?.body).toEqual({ access_token: token });
+    expect(failed().length).toBe(before);
+    expect(await rows(`select 1 from users where id = '${dot.userId}'`)).toEqual([]);
+  });
+
+  test("GitHub slower than ten seconds is given up on, and the deletion goes on", async () => {
+    const eve = await t.signInAs({ login: "eve" });
+    const held = t.github.holdNext(grantPath());
+    const before = failed().length;
+    const deleting = call(t, eve.headers, "DELETE", "/v1/me", { confirm: "eve" });
+    await held.reached;
+    t.clock.advance(10_000);
+    expect((await deleting).status).toBe(204);
+    held.release();
+    await t.backgroundDone();
+    expect(failed().slice(before)).toEqual([
+      expect.objectContaining({ userId: eve.userId, reason: "timeout" }),
+    ]);
+    expect(await rows(`select 1 from users where id = '${eve.userId}'`)).toEqual([]);
   });
 });

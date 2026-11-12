@@ -2,12 +2,12 @@ import { basename, extname } from "node:path";
 import { z } from "zod";
 import { ToolError, tool } from "../define.ts";
 import { fileSize, localFiles, readGiven } from "../disk.ts";
-import { designOf } from "../util.ts";
+import { canvasOf } from "../util.ts";
 
 /** The largest file add_asset takes. */
 export const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 
-/** A kind of file a design can hold as an asset. */
+/** A kind of file a canvas can hold as an asset. */
 interface AssetType {
   mime: string;
   /** In a sentence: "a PNG image". */
@@ -46,7 +46,7 @@ const JPEG: AssetType = {
   is: (head) => startsWith(head, 0xff, 0xd8, 0xff),
 };
 
-/** What a design can hold as an asset, by file extension. */
+/** What a canvas can hold as an asset, by file extension. */
 const ASSET_TYPES: Record<string, AssetType> = {
   png: {
     mime: "image/png",
@@ -98,7 +98,7 @@ export const addAsset = tool({
   name: "add_asset",
   title: "Add asset",
   group: "write",
-  description: `Add an image, a font or a video to the design from a file in the sandbox: one in the repo, or one you made or downloaded with your own tools. Returns the reference to use for it, like assets/logo.png: as src in markup, or inside url() in styles and tokens. Up to ${fileSize(MAX_ASSET_BYTES)}. Types: ${Object.keys(ASSET_TYPES).join(", ")}. The file has to be what its name says.`,
+  description: `Add an image, a font or a video to the canvas from a file in the sandbox: one in the repo, or one you made or downloaded with your own tools. Returns the reference to use for it, like assets/logo.png: as src in markup, or inside url() in styles and tokens. Up to ${fileSize(MAX_ASSET_BYTES)}. Types: ${Object.keys(ASSET_TYPES).join(", ")}. The file has to be what its name says.`,
   input: {
     path: z.string().describe("Absolute path of the file."),
     name: z
@@ -111,7 +111,7 @@ export const addAsset = tool({
   async handler(args, ctx) {
     const { ws } = ctx;
     if (!ws.storeAsset) throw new ToolError("Assets can't be added here.");
-    const { key } = await designOf(ctx);
+    const { key } = await canvasOf(ctx);
     // A file's own name may have spaces and the like; a name the agent chose has to be right.
     const name = args.name ?? basename(args.path).replace(/[^A-Za-z0-9._-]+/g, "-");
     if (!ASSET_NAME.test(name))
@@ -121,7 +121,7 @@ export const addAsset = tool({
     const type = ASSET_TYPES[extname(name).slice(1).toLowerCase()];
     if (!type)
       throw new ToolError(
-        `${name} isn't a kind of file a design can hold. Assets are images, fonts and video: ${Object.keys(ASSET_TYPES).join(", ")}.`,
+        `${name} isn't a kind of file a canvas can hold. Assets are images, fonts and video: ${Object.keys(ASSET_TYPES).join(", ")}.`,
       );
     const bytes = await readGiven(
       ws.files ?? localFiles,

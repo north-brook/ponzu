@@ -1,21 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { beginSandbox, getDesignAssetKey, getLiveSandbox } from "@ponzu/db";
+import { beginSandbox, getCanvasAssetKey, moveSandbox } from "@ponzu/db";
 import {
   call,
-  designWithRunner,
+  canvasWithRunner,
   type StartedRunner,
   startRunner,
   type Workspace,
   workspaceWithRepo,
-} from "../testing/designs.ts";
+} from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 
 /*
  * A runner's checkpoints through the routes (docs/cloud.md, "Saving the sandbox"): archives that
  * no client can reach, a turn marker that only goes up, reading them back, and a rollback logged
- * with the sandbox it happened in.
+ * with the session it happened in.
  */
 
 let t: TestApp;
@@ -63,15 +63,15 @@ const point = (turn: number, over: Record<string, unknown> = {}) => ({
 });
 
 describe("checkpoints", () => {
-  test("a transcript is stored where no design key reaches it, and can only be recorded by a checkpoint", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
-    const assetKey = await getDesignAssetKey(t.db, design.id);
+  test("a transcript is stored where no canvas key reaches it, and can only be recorded by a checkpoint", async () => {
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
     const transcript = bytes("the whole conversation");
     const { id, key } = await archive(runner, "session", transcript);
 
     expect(key.startsWith("private/")).toBe(true);
     expect(key).not.toContain(assetKey);
-    expect(key).not.toContain(design.id);
+    expect(key).not.toContain(canvas.id);
     expect(t.storage.objects.get(key)!.headers["cache-control"]).toBe("private, no-store");
     // The public path would answer an assets address: refused.
     const completed = await send(runner, "POST", "/uploads/complete", { ids: [id] });
@@ -88,12 +88,12 @@ describe("checkpoints", () => {
       workspace: false,
     });
     // Nothing a client reads names the key.
-    const head = await call(t, ws.people.maya!.headers, "GET", `/v1/designs/${design.id}`);
+    const head = await call(t, ws.people.maya!.headers, "GET", `/v1/canvases/${canvas.id}`);
     expect(JSON.stringify(head.body)).not.toContain(key.split("/")[1]!);
   });
 
   test("an archive is the right kind and size or it is refused", async () => {
-    const { runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const { runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const body = bytes("x");
     const declared = (over: Record<string, unknown>) => ({
       files: [
@@ -127,7 +127,7 @@ describe("checkpoints", () => {
   });
 
   test("the marker only goes up, the next runner is told it, and replaced archives are deleted", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const one = await archive(runner, "session", bytes("turn one"));
     const work = await archive(runner, "workspace", bytes("files"));
     await send(runner, "POST", "/checkpoint", point(1, { session: one.id, workspace: work.id }));
@@ -157,7 +157,7 @@ describe("checkpoints", () => {
     expect(t.storage.objects.has(stale.key)).toBe(false);
     expect(t.storage.objects.has(two.key)).toBe(true);
 
-    const next = await startRunner(t, design.id);
+    const next = await startRunner(t, canvas.id);
     expect(next.session.saved).toMatchObject({ turn: 2, claudeSessionId: "sess-1", session: true });
     // The one before is superseded: it records nothing.
     const superseded = await send(runner, "POST", "/checkpoint", point(3));
@@ -165,7 +165,7 @@ describe("checkpoints", () => {
   });
 
   test("restore hands back addresses that read the archives as they were stored, for ten minutes", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     expect((await send(runner, "POST", "/restore")).body).toEqual({
       saved: null,
       session: null,
@@ -175,7 +175,7 @@ describe("checkpoints", () => {
     const { id } = await archive(runner, "session", transcript);
     await send(runner, "POST", "/checkpoint", point(4, { session: id }));
 
-    const next = await startRunner(t, design.id);
+    const next = await startRunner(t, canvas.id);
     const restored = await send(next, "POST", "/restore");
     expect(restored.body.saved.turn).toBe(4);
     expect(restored.body.workspace).toBeNull();
@@ -187,14 +187,22 @@ describe("checkpoints", () => {
     expect((await t.storage.fetch(url)).status).toBe(403);
   });
 
-  test("a rollback is logged with the sandbox it happened in, and counted", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+  test("a rollback is logged with the session it happened in", async () => {
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    const now = new Date(t.clock.now());
     await beginSandbox(t.db, {
-      designId: design.id,
-      provider: "boat",
-      now: new Date(t.clock.now()),
+      canvasId: canvas.id,
+      now,
       by: "job_test",
       limits: { perWorkspace: 100, perOwner: 100 },
+    });
+    await moveSandbox(t.db, {
+      canvasId: canvas.id,
+      from: ["waking"],
+      to: "awake",
+      now,
+      by: "job_test",
+      changes: { sessionId: "sbx_session_1", image: "ponzu-runner@sha256:aa" },
     });
     const report = {
       kind: "rollback",
@@ -205,16 +213,13 @@ describe("checkpoints", () => {
       restored: { session: true, workspace: true },
     };
     expect((await send(runner, "POST", "/restored", report)).status).toBe(204);
-    expect((await send(runner, "POST", "/restored", report)).status).toBe(204);
-    const sandbox = (await getLiveSandbox(t.db, design.id))!;
-    expect(sandbox.rollbacks).toBe(2);
     expect(
-      t.logs.findLast((l) => l.event === "sandbox_rollback" && l.designId === design.id),
+      t.logs.findLast((l) => l.event === "sandbox_rollback" && l.canvasId === canvas.id),
     ).toMatchObject({
       level: "warn",
-      sandboxId: sandbox.id,
-      generation: 1,
-      rollbacks: 2,
+      sessionId: "sbx_session_1",
+      image: "ponzu-runner@sha256:aa",
+      sandboxState: "awake",
       diskTurn: 3,
       diskBootId: "boot-a",
       savedTurn: 5,
@@ -227,14 +232,13 @@ describe("checkpoints", () => {
       disk: null,
     });
     expect(rebuilt.status).toBe(204);
-    expect((await getLiveSandbox(t.db, design.id))!.rollbacks).toBe(2);
     expect(
-      t.logs.findLast((l) => l.event === "sandbox_rebuilt" && l.designId === design.id),
+      t.logs.findLast((l) => l.event === "sandbox_rebuilt" && l.canvasId === canvas.id),
     ).toMatchObject({ level: "info", savedTurn: 5, diskTurn: null });
   });
 
   test("a checkpoint can keep the archives of the one before in place of those it does not carry", async () => {
-    const { runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const { runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const talk = await archive(runner, "session", bytes("the conversation so far"));
     const work = await archive(runner, "workspace", bytes("a bundle"));
     await send(
@@ -267,13 +271,13 @@ describe("checkpoints", () => {
     expect(t.storage.objects.has(talk.key)).toBe(false);
   });
 
-  test("deleting a design deletes its checkpoints' archives, recorded or not", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+  test("deleting a canvas deletes its checkpoints' archives, recorded or not", async () => {
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const recorded = await archive(runner, "session", bytes("the whole conversation"));
     await send(runner, "POST", "/checkpoint", point(1, { session: recorded.id }));
     const unrecorded = await archive(runner, "workspace", bytes("never recorded"));
     const { headers } = await t.signInAs({ login: "maya" });
-    const deleted = await call(t, headers, "DELETE", `/v1/designs/${design.id}`);
+    const deleted = await call(t, headers, "DELETE", `/v1/canvases/${canvas.id}`);
     expect(deleted.status).toBe(204);
     await t.backgroundDone();
     expect(t.storage.objects.has(recorded.key)).toBe(false);

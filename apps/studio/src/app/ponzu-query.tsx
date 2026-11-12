@@ -22,7 +22,7 @@ interface Ponzu {
   api: Api;
   queries: PonzuQueries;
   mutations: PonzuMutations;
-  /** The window's one QueryClient, for an open design's stores (store-ponzu.ts). */
+  /** The window's one QueryClient, for an open canvas's stores (store-ponzu.ts). */
   queryClient: QueryClient;
 }
 

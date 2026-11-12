@@ -2,17 +2,17 @@ import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { PrState } from "../enums.ts";
 import { newId } from "../ids.ts";
-import { designRunners, designs, events, type Json, users } from "../schema/index.ts";
+import { canvases, canvasRunners, events, type Json, users } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
-export type DesignEvent = typeof events.$inferSelect;
+export type FeedEvent = typeof events.$inferSelect;
 
 export interface NewEvent {
-  designId: string;
-  kind: DesignEvent["kind"];
-  priority: DesignEvent["priority"];
+  canvasId: string;
+  kind: FeedEvent["kind"];
+  priority: FeedEvent["priority"];
   /** Stored in the clear. Never put a secret's value in one. */
   payload: Json;
   /** The person behind it. Null when GitHub was. */
@@ -30,14 +30,14 @@ export interface EventPerson {
 }
 
 /** An event as its runner is handed it. */
-export interface ClaimedEvent extends Omit<DesignEvent, "userId"> {
+export interface ClaimedEvent extends Omit<FeedEvent, "userId"> {
   /** The person behind it. Null when GitHub was, or when they have since been deleted. */
   from: EventPerson | null;
 }
 
 /**
  * An event as a row of `events` stores it: a new id, its payload with what Postgres cannot hold
- * replaced, and the person behind it (null when GitHub was). Every way into a design's feed
+ * replaced, and the person behind it (null when GitHub was). Every way into a canvas's feed
  * makes its rows here: `appendEvent`, a person's message (`postMessage`), an answer
  * (`answerQuestion`), and the commit statement for the events of a person's ops.
  */
@@ -47,7 +47,7 @@ export function eventRow({
   payload,
   userId = null,
   posthogSessionId = null,
-}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & {
+}: Omit<NewEvent, "canvasId">): Omit<NewEvent, "canvasId"> & {
   id: string;
   userId: string | null;
   posthogSessionId: string | null;
@@ -63,33 +63,33 @@ export function eventRow({
 }
 
 /**
- * Add something that happened to a design's feed, for its agent to take up: what a webhook or
+ * Add something that happened to a canvas's feed, for its agent to take up: what a webhook or
  * a route appends on its own. The events of a person's ops go in with the ops (`commitOps`).
  */
-export async function appendEvent(db: Db, event: NewEvent): Promise<DesignEvent> {
+export async function appendEvent(db: Db, event: NewEvent): Promise<FeedEvent> {
   const [row] = await run(
     db
       .insert(events)
-      .values({ designId: event.designId, ...eventRow(event) })
+      .values({ canvasId: event.canvasId, ...eventRow(event) })
       .returning(),
   );
   return row!;
 }
 
 /**
- * Who sent each of these events of a design, and from which app session: what a turn the event
- * began is attributed to. Ids that are not the design's are left out.
+ * Who sent each of these events of a canvas, and from which app session: what a turn the event
+ * began is attributed to. Ids that are not the canvas's are left out.
  */
 export async function getEventOrigins(
   db: Db,
-  { designId, ids }: { designId: string; ids: string[] },
+  { canvasId, ids }: { canvasId: string; ids: string[] },
 ): Promise<Map<string, { userId: string | null; posthogSessionId: string | null }>> {
   if (ids.length === 0) return new Map();
   const rows = await run(
     db
       .select({ id: events.id, userId: events.userId, posthogSessionId: events.posthogSessionId })
       .from(events)
-      .where(and(eq(events.designId, designId), inArray(events.id, ids))),
+      .where(and(eq(events.canvasId, canvasId), inArray(events.id, ids))),
   );
   return new Map(rows.map(({ id, ...origin }) => [id, origin]));
 }
@@ -114,55 +114,67 @@ function at(now: Date | undefined) {
  */
 export const TURN_KINDS = ["message", "answer", "comment", "check", "review"] as const;
 
-/** Whether `runnerId` holds `designId`'s lease, as a condition of the statement it is in. */
-function leaseHeld(db: Db, designId: string, runnerId: string) {
+/** Whether `runnerId` holds `canvasId`'s lease, as a condition of the statement it is in. */
+function leaseHeld(db: Db, canvasId: string, runnerId: string) {
   const leased = db
-    .select({ id: designRunners.designId })
-    .from(designRunners)
-    .where(and(eq(designRunners.designId, designId), eq(designRunners.runnerId, runnerId)));
+    .select({ id: canvasRunners.canvasId })
+    .from(canvasRunners)
+    .where(and(eq(canvasRunners.canvasId, canvasId), eq(canvasRunners.runnerId, runnerId)));
   return sql`exists (${leased})`;
 }
 
 /**
- * Hand a design's runner the events it has not been handed, oldest first, at most `limit`: those
+ * Hand a canvas's runner the events it has not been handed, oldest first, at most `limit`: those
  * not yet delivered and not already claimed by `runnerId`, which is then recorded as their
  * runner under `claimId`. So an event goes to each runner once, and one an earlier runner took
  * and never acknowledged (it is gone) is the next one's.
  *
  * `claimId` is the runner's, new for each claim. Sent again, because the first answer was lost,
  * it hands out again what that claim handed out and has not been acknowledged, and nothing
- * else. The design's head `seq` comes back from the same statement, so a claim that happened
+ * else. The canvas's head `seq` comes back from the same statement, so a claim that happened
  * always gets its answer.
  *
- * Only the design's current runner (`design_runners.runner_id`) is handed anything: a runner
+ * Only the canvas's current runner (`canvas_runners.runner_id`) is handed anything: a runner
  * whose lease was taken between its call being let in and this statement gets nothing. Null
- * when there is no such design.
+ * when there is no such canvas.
+ *
+ * `kinds`, when given, narrows what a new claim hands out to those kinds: the rest stay in the
+ * feed, neither claimed nor delivered, for a later claim. A claim sent again still hands out
+ * exactly what it handed out the first time.
  */
 export async function claimEvents(
   db: Db,
   {
-    designId,
+    canvasId,
     runnerId,
     claimId,
     limit = 100,
     now,
+    kinds = "all",
   }: {
-    designId: string;
+    canvasId: string;
     runnerId: string;
     claimId: string;
     limit?: number;
     /** The API's clock, which the wake compares a claim with; the database's when absent. */
     now?: Date;
+    kinds?: readonly FeedEvent["kind"][] | "all";
   },
 ): Promise<{
   events: ClaimedEvent[];
   seq: number;
-  /** The design's pull request as its row says, for the agent's next turn. */
+  /** The canvas's pull request as its row says, for the agent's next turn. */
   pullRequest: { number: number; state: PrState } | null;
 } | null> {
-  const pending = and(eq(events.designId, designId), isNull(events.deliveredAt));
+  const pending = and(eq(events.canvasId, canvasId), isNull(events.deliveredAt));
   const ofThisClaim = and(eq(events.claimedBy, runnerId), eq(events.claimId, claimId));
   const repeated = db.select({ id: events.id }).from(events).where(and(pending, ofThisClaim));
+  const claimable =
+    kinds === "all"
+      ? undefined
+      : kinds.length === 0
+        ? sql`false`
+        : inArray(events.kind, [...kinds]);
   // In `with`, so that it runs once. As a subquery of the update it is run again for each
   // row whenever the planner joins by nested loop, and each run locks the next `limit` rows.
   const waiting = db.$with("waiting").as(
@@ -172,12 +184,13 @@ export async function claimEvents(
       .where(
         and(
           pending,
-          leaseHeld(db, designId, runnerId),
+          leaseHeld(db, canvasId, runnerId),
           or(
             ofThisClaim,
             and(
               sql`not exists (${repeated})`,
               or(isNull(events.claimedBy), sql`${events.claimedBy} <> ${runnerId}`),
+              claimable,
             ),
           ),
         ),
@@ -195,17 +208,17 @@ export async function claimEvents(
       .where(inArray(events.id, db.select({ id: waiting.id }).from(waiting)))
       .returning(),
   );
-  // From the design, so that its head comes back when nothing is claimed.
+  // From the canvas, so that its head comes back when nothing is claimed.
   const rows = await run(
     db
       .with(claimed)
       .select({
-        seq: designs.seq,
-        prNumber: designs.prNumber,
-        prState: designs.prState,
+        seq: canvases.seq,
+        prNumber: canvases.prNumber,
+        prState: canvases.prState,
         event: {
           id: claimed.id,
-          designId: claimed.designId,
+          canvasId: claimed.canvasId,
           seq: claimed.seq,
           kind: claimed.kind,
           priority: claimed.priority,
@@ -220,10 +233,10 @@ export async function claimEvents(
         },
         user: { id: users.id, name: users.name, githubLogin: users.githubLogin },
       })
-      .from(designs)
+      .from(canvases)
       .leftJoin(claimed, sql`true`)
       .leftJoin(users, eq(users.id, claimed.userId))
-      .where(eq(designs.id, designId)),
+      .where(eq(canvases.id, canvasId)),
   );
   const [head] = rows;
   if (!head) return null;
@@ -240,43 +253,43 @@ export async function claimEvents(
 /**
  * Mark events as delivered, by id: `runnerId` has put them into the Claude session. Only events
  * it claimed are marked: anything else stays waiting, whatever its place in the feed, and an id
- * already marked, of another design or handed to another runner is left alone.
- * `claudeSessionId`, when not null, is stored as the design's session in the same statement, so
+ * already marked, of another canvas or handed to another runner is left alone.
+ * `claudeSessionId`, when not null, is stored as the canvas's session in the same statement, so
  * the next runner resumes the session these events went into. Nothing is marked or stored once
  * `runnerId` no longer holds the lease. Answers how many were marked.
  */
 export async function markEventsDelivered(
   db: Db,
   {
-    designId,
+    canvasId,
     runnerId,
     ids,
     claudeSessionId = null,
     now,
   }: {
-    designId: string;
+    canvasId: string;
     runnerId: string;
     ids: string[];
     claudeSessionId?: string | null;
     /**
      * The API's clock, which the sweep weighs a delivered event's wait for its turn by (against
-     * `design_runners.said_at`); the database's when absent.
+     * `canvas_runners.said_at`); the database's when absent.
      */
     now?: Date;
   },
 ): Promise<number> {
   const session = db.$with("session").as(
     db
-      .update(designRunners)
+      .update(canvasRunners)
       .set({ claudeSessionId })
       .where(
         and(
-          eq(designRunners.designId, designId),
-          eq(designRunners.runnerId, runnerId),
+          eq(canvasRunners.canvasId, canvasId),
+          eq(canvasRunners.runnerId, runnerId),
           sql`${claudeSessionId}::text is not null`,
         ),
       )
-      .returning({ id: designRunners.designId }),
+      .returning({ id: canvasRunners.canvasId }),
   );
   if (ids.length === 0) {
     await run(db.with(session).select({ id: session.id }).from(session));
@@ -289,11 +302,11 @@ export async function markEventsDelivered(
       .set({ deliveredAt: at(now) })
       .where(
         and(
-          eq(events.designId, designId),
+          eq(events.canvasId, canvasId),
           inArray(events.id, ids),
           isNull(events.deliveredAt),
           eq(events.claimedBy, runnerId),
-          leaseHeld(db, designId, runnerId),
+          leaseHeld(db, canvasId, runnerId),
         ),
       )
       .returning({ id: events.id }),
@@ -302,12 +315,12 @@ export async function markEventsDelivered(
 }
 
 /**
- * Of these ids, the design's `stop` events, each with the person who stopped the run: what a
+ * Of these ids, the canvas's `stop` events, each with the person who stopped the run: what a
  * runner's `stopped` notice names, for the API to say who it was.
  */
 export async function findStops(
   db: Db,
-  { designId, ids }: { designId: string; ids: string[] },
+  { canvasId, ids }: { canvasId: string; ids: string[] },
 ): Promise<{ id: string; from: EventPerson | null }[]> {
   if (ids.length === 0) return [];
   const rows = await run(
@@ -318,29 +331,27 @@ export async function findStops(
       })
       .from(events)
       .leftJoin(users, eq(users.id, events.userId))
-      .where(and(eq(events.designId, designId), eq(events.kind, "stop"), inArray(events.id, ids))),
+      .where(and(eq(events.canvasId, canvasId), eq(events.kind, "stop"), inArray(events.id, ids))),
   );
   return rows.map(({ id, user }) => ({ id, from: personOf(user) }));
 }
 
 /**
- * Whether the design's feed has an event that wakes a sandbox (`now` or `next`) that its current
- * runner claimed and has not put into its session: in a sandbox that was idle, what the runner
- * held back because its claim was answered as it got ready to sleep. Asleep, the sandbox must be
- * woken again for it.
+ * Whether the canvas's feed has an event that wakes a sandbox (`now` or `next`) that no runner
+ * has put into its session: the pending rule after a sleep (docs/cloud.md, "The sandbox"). What
+ * came in while the runner shut down, or what it claimed and never delivered, is the next
+ * runner's, and asleep, nothing would wake the canvas for it.
  */
-export async function hasHeldEvents(db: Db, designId: string): Promise<boolean> {
+export async function hasPendingEvents(db: Db, canvasId: string): Promise<boolean> {
   const [row] = await run(
     db
       .select({ id: events.id })
       .from(events)
-      .innerJoin(designRunners, eq(designRunners.designId, events.designId))
       .where(
         and(
-          eq(events.designId, designId),
+          eq(events.canvasId, canvasId),
           isNull(events.deliveredAt),
           inArray(events.priority, ["now", "next"]),
-          eq(events.claimedBy, designRunners.runnerId),
         ),
       )
       .limit(1),
@@ -351,7 +362,7 @@ export async function hasHeldEvents(db: Db, designId: string): Promise<boolean> 
 /** An event the API stopped waiting on a turn for, and the copy that puts it in again, if any. */
 export interface LapsedEvent {
   id: string;
-  kind: DesignEvent["kind"];
+  kind: FeedEvent["kind"];
   /** The event it is itself a copy of, when it is one: such a one is not put in again. */
   retryOf: string | null;
   /** The copy put in the feed for it, or null when it was a copy already. */
@@ -367,7 +378,7 @@ export interface LapsedEvent {
  */
 export async function lapseEvents(
   db: Db,
-  { designId, ids, now }: { designId: string; ids: string[]; now: Date },
+  { canvasId, ids, now }: { canvasId: string; ids: string[]; now: Date },
 ): Promise<LapsedEvent[]> {
   if (ids.length === 0) return [];
   const pairs = JSON.stringify(ids.map((id) => ({ id, copy: newId("evt") })));
@@ -378,12 +389,12 @@ export async function lapseEvents(
         select p.id, p.copy from json_to_recordset(${pairs}::json) as p(id text, copy text)
       ), lapsed as (
         update events e set lapsed_at = ${timeParam(now)}::timestamptz
-         where e.design_id = ${designId} and e.id in (select id from pairs)
+         where e.canvas_id = ${canvasId} and e.id in (select id from pairs)
            and e.lapsed_at is null and e.delivered_at is not null
         returning e.*
       ), copies as (
-        insert into events (id, design_id, kind, priority, payload, user_id, posthog_session_id)
-        select p.copy, l.design_id, l.kind, l.priority,
+        insert into events (id, canvas_id, kind, priority, payload, user_id, posthog_session_id)
+        select p.copy, l.canvas_id, l.kind, l.priority,
                l.payload || jsonb_build_object('retryOf', l.id), l.user_id, l.posthog_session_id
           from lapsed l join pairs p on p.id = l.id
          where l.payload->>'retryOf' is null

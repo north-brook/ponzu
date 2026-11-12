@@ -10,7 +10,7 @@ import { TipProvider } from "./tooltip.tsx";
  * it, focus goes back to what opened it. A click on the dim closes it too. A field marked
  * `data-keeps-escape` keeps Escape for itself, to cancel its edit.
  *
- * `dim` is whose: Settings dims a little more than a dialog that blocks a send, as the design
+ * `dim` is whose: Settings dims a little more than a dialog that blocks a send, as the mockup
  * draws them.
  */
 export function Modal({

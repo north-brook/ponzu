@@ -3,6 +3,9 @@ import { CommitRefusedError, type SyncTransport } from "@ponzu/core";
 import type { Checkpoint, Restored, RunnerApi, Uploaded, UploadFile } from "./api.ts";
 import {
   type AckRequest,
+  type AgentPullRequestAction,
+  type AgentPullRequestAnswer,
+  type AgentPullRequestRequest,
   ARCHIVE_TYPE,
   type CheckpointRequest,
   type CheckpointResponse,
@@ -12,6 +15,9 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   type GitReport,
+  type ModelsReport,
+  type ModelsResponse,
+  type PullRequestStanding,
   type PullRequestSummaryRequest,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -21,6 +27,8 @@ import {
   type SavedArchive,
   type SavedPoint,
   SESSION_ARCHIVE,
+  type SecretRequest,
+  type SecretResponse,
   type StateRequest,
   type StateResponse,
   type ThreadResponse,
@@ -38,9 +46,9 @@ import { ApiError, type Endpoint, request, TIMEOUT_MS } from "./request.ts";
  */
 export class HttpRunnerApi implements RunnerApi {
   readonly sync: SyncTransport;
-  private readonly endpoint: Endpoint & { designId: string };
+  private readonly endpoint: Endpoint & { canvasId: string };
 
-  constructor(endpoint: Endpoint & { designId: string }) {
+  constructor(endpoint: Endpoint & { canvasId: string }) {
     this.endpoint = { ...endpoint, runnerId: null };
     this.sync = this.transport();
   }
@@ -73,6 +81,10 @@ export class HttpRunnerApi implements RunnerApi {
 
   async withdraw(ids: string[]): Promise<void> {
     await this.call("POST", "/v1/runner/questions/withdraw", { ids });
+  }
+
+  secret(questionId: string): Promise<SecretResponse> {
+    return this.call("POST", "/v1/runner/secret", { questionId } satisfies SecretRequest);
   }
 
   async upload(files: UploadFile[], opts: { seq?: number } = {}): Promise<Uploaded[]> {
@@ -123,6 +135,10 @@ export class HttpRunnerApi implements RunnerApi {
 
   async recordUsage(turns: TurnUsage[]): Promise<void> {
     await this.call("POST", "/v1/runner/usage", { turns });
+  }
+
+  reportModels(report: ModelsReport): Promise<ModelsResponse> {
+    return this.call<ModelsResponse>("POST", "/v1/runner/models", report);
   }
 
   async saveCheckpoint(point: Checkpoint): Promise<SavedPoint> {
@@ -183,13 +199,29 @@ export class HttpRunnerApi implements RunnerApi {
     } satisfies PullRequestSummaryRequest);
   }
 
+  readPullRequest(turn: string | null): Promise<PullRequestStanding> {
+    const query = turn ? `?turn=${encodeURIComponent(turn)}` : "";
+    return this.call<PullRequestStanding>("GET", `/v1/runner/pull-request${query}`);
+  }
+
+  actOnPullRequest(
+    action: AgentPullRequestAction,
+    request: AgentPullRequestRequest,
+  ): Promise<AgentPullRequestAnswer> {
+    return this.call<AgentPullRequestAnswer>(
+      "POST",
+      `/v1/runner/pull-request/${action.replace("_", "-")}`,
+      request,
+    );
+  }
+
   /** The existing document routes, as core's `Replica` asks for them. */
   private transport(): SyncTransport {
-    const design = `/v1/designs/${encodeURIComponent(this.endpoint.designId)}`;
+    const canvas = `/v1/canvases/${encodeURIComponent(this.endpoint.canvasId)}`;
     return {
       commit: async (ops) => {
         try {
-          return await this.call("POST", `${design}/ops`, { ops });
+          return await this.call("POST", `${canvas}/ops`, { ops });
         } catch (err) {
           // Malformed or too large: the same post will never be taken.
           if (err instanceof ApiError && (err.status === 400 || err.status === 413))
@@ -199,13 +231,13 @@ export class HttpRunnerApi implements RunnerApi {
       },
       fetchOps: async (after) => {
         try {
-          return await this.call("GET", `${design}/ops?after=${after}`);
+          return await this.call("GET", `${canvas}/ops?after=${after}`);
         } catch (err) {
           if (err instanceof ApiError && err.status === 410) return "gone";
           throw err;
         }
       },
-      fetchDoc: () => this.call("GET", `${design}/doc`),
+      fetchDoc: () => this.call("GET", `${canvas}/doc`),
     };
   }
 

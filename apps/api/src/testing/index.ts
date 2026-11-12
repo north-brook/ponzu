@@ -1,18 +1,22 @@
 import type { Db } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
-import { FakeClock, FakeProvider } from "@ponzu/sandbox";
+import type { RunnerBundle } from "@ponzu/runner/bundle";
+import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
 import { createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
+import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
+import { DocCache } from "../canvases/doc-cache.ts";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { CLAUDE_SONNET } from "../deps/model.ts";
+import type { RateLimit } from "../deps/rate-limit.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
-import { DocCache } from "../designs/doc-cache.ts";
-import type { SandboxConfig } from "../env.ts";
+import type { Environment, SandboxConfig } from "../env.ts";
+import { FEATURES_OFF, type Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
@@ -20,6 +24,9 @@ import { createVault } from "../vault/vault.ts";
 import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
+import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
+import { FakePush } from "./fake-push.ts";
+import { FakeRateLimit } from "./fake-rate-limit.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -32,26 +39,35 @@ export {
   PASSING_VERDICT,
   verdict,
 } from "./fake-model.ts";
+export { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 export {
   type FakePull,
   type FakeRepoAccess,
   MERGEABLE_AFTER_MS,
 } from "./fake-pull-requests.ts";
+export { FakePush } from "./fake-push.ts";
+export { FakeRateLimit } from "./fake-rate-limit.ts";
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
-/** The sandbox image the test app creates sandboxes from; its provider has it baked. */
-export const TEST_SNAPSHOT = "ponzu-runner-test";
+/** The image the test app's sandboxes run, as current.json names one. */
+export const TEST_IMAGE = `ponzu-runner@sha256:${"a".repeat(64)}`;
+/** The runner bundle the test app serves and names at every start. */
+export const TEST_BUNDLE: RunnerBundle = {
+  sha256: "b".repeat(64),
+  requires: { claude: "2.1.322", playwrightCore: "1.64.1" },
+  tgz: Buffer.from("not really a tgz").toString("base64"),
+};
 /** Where the test app tells a sandbox's runner the API is. */
 export const TEST_API_URL = "https://api.test";
-/** The label value the test app's sandboxes carry: its database's, as a deployment's would. */
-export const TEST_SCOPE = "testscope";
+/** The scope the test app's sandbox names carry (`pz-<scope>-…`): its database's, as a deployment's would. */
+export const TEST_SCOPE = "7e57000000a0";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
 /** What the test app's cron route takes as its bearer token. */
 export const TEST_CRON_SECRET = "test_cron_secret_".padEnd(40, "x");
-/** Where the test app says design files are served from. */
+/** Where the test app says canvases' files are served from. */
 export const TEST_ASSETS_URL = "https://assets.test";
 /** The test App's bot, who commits are committed by. */
 export const TEST_BOT_USER_ID = 9_000_001;
@@ -93,8 +109,8 @@ export type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
 /**
  * The real app on an in-process Postgres, with a fake for everything outside the process:
- * WorkOS and GitHub served from memory through the API's real clients, the in-memory sandbox
- * provider, storage and sealer, and a clock that moves only when the test moves it. Nothing a
+ * WorkOS and GitHub served from memory through the API's real clients, Vercel's sandboxes in
+ * memory (`FakeSandboxes`), storage and sealer, and a clock that moves only when the test moves it. Nothing a
  * test does through this can reach the network: no part of it holds the real `fetch`.
  *
  * Call the app with `app.request(path, init)` so routing, validation, auth and serialization
@@ -104,6 +120,8 @@ export async function createTestApp(
   options: {
     minimumClientVersions?: MinimumVersions;
     commit?: string | null;
+    /** Which environment the app says it is (`/v1/health`); `local` when unset. */
+    environment?: Environment;
     /**
      * A real database and Realtime, for an opt-in test against the Neon `dev` branch. Without
      * them everything stays in this process.
@@ -112,15 +130,29 @@ export async function createTestApp(
     /** Real storage and where it serves from, for an opt-in test against the R2 bucket. */
     storage?: ObjectStorage;
     assetsUrl?: string;
-    /** How sandboxes are made, over the test's own: a snapshot of null acts out it being unset. */
+    /** How sandboxes are made, over the test's own. */
     sandbox?: Partial<SandboxConfig>;
     /**
-     * Another test app's provider (and its clock), to act out two deployments sharing one
-     * provider account. Give each its own `sandbox.scope`.
+     * Another test app's sandboxes and clock, to act out two deployments sharing one Vercel
+     * project. Give each its own `sandbox.scope`.
      */
-    provider?: FakeProvider;
+    shared?: { sandboxes: FakeSandboxes; clock: FakeClock };
     /** What the runner is told to report its turns to PostHog with; none by default. */
     posthog?: PosthogConfig;
+    /**
+     * True to give the app PostHog's private API (the fake's), as a deployment with
+     * PONZU_POSTHOG_PERSONAL_API_KEY does. Off by default: deleting an account skips PostHog.
+     */
+    posthogAdmin?: boolean;
+    /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
+    push?: boolean;
+    /** Rate limits other than the fake's, such as the real seam on a scripted SDK call. */
+    rateLimit?: RateLimit;
+    /**
+     * Feature switches over the defaults, which are every switch off as in an environment that
+     * sets none, except `push`, which follows the option above.
+     */
+    features?: Partial<Features>;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -131,17 +163,19 @@ export async function createTestApp(
   db.transaction = () => {
     throw new Error("No transactions support in neon-http driver");
   };
-  const clock = options.provider?.clock ?? new FakeClock();
+  const clock = options.shared?.clock ?? new FakeClock();
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
-  const sandbox = options.provider ?? new FakeProvider(clock);
-  sandbox.seedSnapshot(TEST_SNAPSHOT);
+  const sandboxes = options.shared?.sandboxes ?? new FakeSandboxes(clock);
   const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
+  const push = new FakePush({ enabled: options.push ?? true });
+  const posthogAdmin = new FakePosthogAdmin();
+  const rateLimit = new FakeRateLimit(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -168,19 +202,29 @@ export async function createTestApp(
       clock,
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
-    sandbox,
+    sandboxes,
+    runnerBundle: () => TEST_BUNDLE,
     anthropic,
     storage: options.storage ?? storage,
     archives: options.storage ?? storage,
     poke: poke.poke,
-    runnerPort: poke.port,
     realtime: options.live?.realtime ?? sealer,
     model,
     reviewer,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    posthogAdmin: options.posthogAdmin
+      ? createPosthogAdmin({ config: posthogAdmin.config, fetch: posthogAdmin.fetch, clock })
+      : null,
+    push,
+    rateLimit: options.rateLimit ?? rateLimit,
+    features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
     config: {
-      build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
+      build: {
+        version: "0.0.0-test",
+        commit: options.commit ?? "testcommit",
+        environment: options.environment ?? "local",
+      },
       minimumClientVersions: options.minimumClientVersions ?? {},
       assetsUrl: options.assetsUrl ?? TEST_ASSETS_URL,
       posthog: options.posthog ?? null,
@@ -191,13 +235,13 @@ export async function createTestApp(
       },
       cronSecret: TEST_CRON_SECRET,
       sandbox: {
-        snapshot: TEST_SNAPSHOT,
+        image: TEST_IMAGE,
         apiUrl: TEST_API_URL,
         idleSeconds: 300,
-        // Higher than a deployment's, since a test file keeps many designs awake at once.
+        // Higher than a deployment's, since a test file keeps many canvases awake at once.
         limits: { perWorkspace: 100, perOwner: 100 },
-        maxMoves: 3,
         scope: TEST_SCOPE,
+        vercel: null,
         ...options.sandbox,
       },
     },
@@ -307,13 +351,19 @@ export async function createTestApp(
     clock,
     workos,
     github,
-    sandbox,
+    sandboxes,
     anthropic,
     storage,
     poke,
     realtime: sealer,
     model,
     reviewer,
+    /** PostHog's private API: what it was asked to forget (with `posthogAdmin: true`). */
+    posthogAdmin,
+    /** Every ping the app sent to a phone, and how Expo answers the next ones. */
+    push,
+    /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */
+    rateLimit,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

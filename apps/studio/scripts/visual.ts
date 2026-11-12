@@ -3,16 +3,21 @@
  * The cloud gallery, drawn in headless Chromium.
  *
  *   bun scripts/visual.ts compare --design <path to a .design folder> [--out <dir>] [--only <id>]
- *     Draws every composition that names a board, and the design's own board, at the board's
+ *     Draws every composition that names a board, and the mockup's own board, at the board's
  *     size in light and dark; writes ours, theirs, the difference and the two side by side to
  *     <out> (.context/visual by default), and prints how much differs, overall and outside the
  *     masked regions: what this code doesn't draw, and the chrome, which departs from the boards
  *     on purpose (no lockup, the toggles at the window's edges).
  *
  *   bun scripts/visual.ts references
- *     Redraws what the gallery test compares against: a picture of each composition with its
- *     text hidden (so it holds on any machine's font rendering), and the styles it paints with
- *     (paintedStyles). Look at what changed before committing them.
+ *     Redraws what the gallery test compares against: a picture of each composition in light with
+ *     its text hidden (so it holds on any machine's font rendering), and the styles it paints with
+ *     in light and dark (paintedStyles). Look at what changed before committing them.
+ *
+ *   bun scripts/visual.ts shots [--out <dir>] [--only <id>]
+ *     Draws the compositions the site shows (SITE_SHOTS) with their text, in light and dark, at
+ *     twice the size, to <out>/<id>-<theme>.png (apps/web/public/product by default). Look at
+ *     them before committing them.
  */
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -26,6 +31,10 @@ import {
   type Page,
   paintedStyles,
   REFERENCES,
+  SITE_BOARDS,
+  SITE_PRODUCT,
+  SITE_SCALE,
+  SITE_SHOTS,
   STUDIO,
   serve,
   shootBoard,
@@ -40,8 +49,10 @@ const { positionals, values } = parseArgs({
   options: { design: { type: "string" }, out: { type: "string" }, only: { type: "string" } },
 });
 const command = positionals[0];
-if (command !== "compare" && command !== "references") {
-  console.error("usage: bun scripts/visual.ts compare --design <dir> | references");
+if (command !== "compare" && command !== "references" && command !== "shots") {
+  console.error(
+    "usage: bun scripts/visual.ts compare --design <dir> | references | shots [--out <dir>] [--only <id>]",
+  );
   process.exit(2);
 }
 if (command === "compare" && !values.design) {
@@ -57,14 +68,38 @@ try {
   const tool = await browser.newPage();
   const chosen = COMPOSITIONS.filter((c) => !values.only || c.id === values.only);
 
-  if (command === "references") {
+  if (command === "shots") {
+    const out = resolve(values.out ?? SITE_PRODUCT);
+    mkdirSync(out, { recursive: true });
+    const sharp = await browser.newPage({ deviceScaleFactor: SITE_SCALE });
+    const shots = SITE_SHOTS.filter((id) => !values.only || id === values.only);
+    if (shots.length === 0) throw new Error(`${values.only} isn't one of SITE_SHOTS.`);
+    for (const id of shots) {
+      const c = COMPOSITIONS.find((c) => c.id === id);
+      if (!c) throw new Error(`SITE_SHOTS names ${id}, which isn't a composition.`);
+      for (const theme of THEMES) {
+        // With the canvas's boards drawn (gallery `&boards`), which the references leave out.
+        const shot = await shootComposition(sharp, server.url, c, theme, {
+          hideText: false,
+          boards: SITE_BOARDS.has(id),
+        });
+        if (!(await fontsLoaded(sharp)))
+          throw new Error("The app's fonts didn't load; the shots would be wrong.");
+        await Bun.write(join(out, `${id}-${theme}.png`), shot);
+        console.log(`${id}-${theme}`);
+      }
+    }
+  } else if (command === "references") {
     mkdirSync(REFERENCES, { recursive: true });
     for (const c of chosen.filter((c) => c.reference)) {
       for (const theme of THEMES) {
         const shot = await shootComposition(page, server.url, c, theme, { hideText: true });
         if (!(await fontsLoaded(page)))
           throw new Error("The app's fonts didn't load; references would be wrong.");
-        await Bun.write(join(REFERENCES, `${c.id}-${theme}.png`), shot);
+        // The test compares a picture only in light, and not for a styles-only composition.
+        if (theme === "light" && c.reference === true) {
+          await Bun.write(join(REFERENCES, `${c.id}-${theme}.png`), shot);
+        }
         await Bun.write(join(REFERENCES, `${c.id}-${theme}.styles.txt`), await paintedStyles(page));
         console.log(`${c.id}-${theme}`);
       }
@@ -100,7 +135,7 @@ try {
   built.dispose();
 }
 
-/** The design's board on the left, ours on the right. */
+/** The mockup's board on the left, ours on the right. */
 async function sideBySide(page: Page, left: Buffer, right: Buffer): Promise<Buffer> {
   const data = await page.evaluate(
     async ({ left, right }) => {

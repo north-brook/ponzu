@@ -13,7 +13,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
-import { circular, cornersCss, designCorners, measureCorners, type Radii } from "./corners.ts";
+import { circular, cornersCss, measureCorners, ownCorners, type Radii } from "./corners.ts";
 import { BoardImages, firstStep, markupUrl } from "./images.ts";
 import { BoardDetail, type Detail, holdLoops, STILL_CSS } from "./lod.ts";
 import { animationsOf, MOTION_CSS, Motion } from "./motion.ts";
@@ -41,7 +41,7 @@ interface Props {
    */
   hold?: boolean;
   /**
-   * Rounded as the canvas draws the board's sheet: each corner the design's own radius, or
+   * Rounded as the canvas draws the board's sheet: each corner the board's own radius, or
    * `--pz-board-radius` on a parent where that is larger (corners.ts).
    */
   rounded?: boolean;
@@ -71,7 +71,7 @@ function ensureFonts(fonts: GoogleFontRequest[]) {
 const loadedFaces = new Set<string>();
 
 /**
- * Declare a design's own @font-face rules (from tokens.css) in the host
+ * Declare a board's own @font-face rules (from tokens.css) in the host
  * document: inside a shadow root Chromium ignores them, and the artboard's
  * text falls back to the next family.
  */
@@ -251,18 +251,18 @@ export const ArtboardView = memo(function ArtboardView({
 
 /**
  * The canvas rounds its boards a touch (`--pz-board-radius`, a few screen px) and keeps the
- * design's own radius wherever that is larger (corners.ts). The design's is read from the root as
+ * board's own radius wherever that is larger (corners.ts). The board's is read from the root as
  * the browser resolved it, so a token, a calc() or a % counts, and handed up for the sheet, the
  * working ring and the frame to follow. A root not laid out yet (hidden) takes the document's px
- * as a guess. Thumbnails, screenshots and exports draw the design's own corners.
+ * as a guess. Thumbnails, screenshots and exports draw the board's own corners.
  */
 function roundRoot(root: ShadowRoot, artboard: AB, report?: (corners: Radii) => void) {
   root.querySelector("style[data-pz-round]")?.remove();
   const el = root.querySelector<HTMLElement>("[data-artboard]");
   const measured = el ? measureCorners(el) : null;
-  const guess = designCorners(artboard);
+  const guess = ownCorners(artboard);
   const corners = measured ?? (guess ? circular(guess) : null);
-  // Nothing to go on: the root keeps the design's corners as they are until it is laid out.
+  // Nothing to go on: the root keeps the board's own corners as they are until it is laid out.
   if (!corners) return;
   const css = cornersCss(corners, "var(--pz-board-radius)");
   const style = root.ownerDocument.createElement("style");

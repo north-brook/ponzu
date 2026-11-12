@@ -34,13 +34,36 @@ export interface StackItem {
   label: string;
 }
 
-/** One window of a Claude plan's own limits, as the runner last saw it. */
+/**
+ * One window of a Claude plan's own limits, as a runner on the account's credential last saw it
+ * (docs/cloud.md, "Claude plan limits"). Kept as the Agent SDK named it, so a window the apps do
+ * not know yet is kept and simply not shown.
+ */
 export interface ClaudeLimit {
-  window: "session" | "week" | "week_opus";
-  /** 0 to 1. */
-  utilization: number;
-  /** ISO 8601. */
-  resetsAt: string;
+  /** The SDK's `rateLimitType`: `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, … */
+  window: string;
+  /** The share used, from 0 (it can run a little past 1); null when Claude Code did not say. */
+  utilization: number | null;
+  /** ISO 8601; null when Claude Code did not say. */
+  resetsAt: string | null;
+  /** When a runner reported it, ISO 8601. */
+  at: string;
+}
+
+/**
+ * One model Claude Code offers an account, as its runner last reported it: an entry of the Agent
+ * SDK's `supportedModels()`, kept as the SDK said it (docs/cloud.md, "Models"). The API turns
+ * these into what the apps offer, so a change to how it does needs no new report.
+ */
+export interface ClaudeModelReport {
+  /** What Claude Code takes as a model: an alias (`opus`, `default`) or a full id. */
+  value: string;
+  /** The full id `value` runs as now (`claude-opus-5-5`), when Claude Code says. */
+  resolvedModel: string | null;
+  displayName: string;
+  description: string;
+  /** The effort levels it takes; empty when it takes none, null when Claude Code did not say. */
+  efforts: ("low" | "medium" | "high" | "xhigh" | "max")[] | null;
 }
 
 export const users = pgTable("users", {
@@ -106,7 +129,7 @@ export const workspaces = pgTable(
   {
     id: text("id").primaryKey(),
     // The GitHub account is the identity. An uninstall and reinstall changes the installation
-    // and must come back to the same workspace and its designs.
+    // and must come back to the same workspace and its canvases.
     githubAccountId: bigint("github_account_id", { mode: "number" }).notNull().unique(),
     githubLogin: text("github_login").notNull(),
     kind: text("kind", { enum: WORKSPACE_KINDS }).notNull(),
@@ -249,10 +272,10 @@ export const repos = pgTable(
     /**
      * When the default branch last moved: the API's clock as GitHub's push webhook for it came
      * in. Null: none has been heard since the App could see the repo. (`pushed_at` is GitHub's
-     * own, for any branch, a design's included, and only as fresh as the last read of the list.)
+     * own, for any branch, a canvas's included, and only as fresh as the last read of the list.)
      */
     defaultPushedAt: instant("default_pushed_at"),
-    /** The provider snapshot new designs in this repo start from. */
+    /** The provider snapshot new canvases in this repo start from. */
     baseSnapshot: text("base_snapshot"),
     baseStatus: text("base_status", { enum: BASE_STATUSES }).notNull().default("none"),
     baseBuiltAt: instant("base_built_at"),
@@ -278,7 +301,7 @@ export const repos = pgTable(
      * time, and is not taken again for a while after, whether that generation ended or not.
      */
     ideasClaimedAt: instant("ideas_claimed_at"),
-    /** Set when the App loses the repo. The row stays because designs point at it. */
+    /** Set when the App loses the repo. The row stays because canvases point at it. */
     removedAt: instant("removed_at"),
     /**
      * When the API last read who can reach this repo as the App (`workspace_people`), by its
@@ -291,7 +314,7 @@ export const repos = pgTable(
   },
   (t) => [
     index("repos_workspace_id_idx").on(t.workspaceId),
-    // What a design's foreign key points at, so a design is always in its repo's workspace.
+    // What a canvas's foreign key points at, so a canvas is always in its repo's workspace.
     unique("repos_id_workspace_id_key").on(t.id, t.workspaceId),
     check("repos_base_status_check", oneOf(t.baseStatus, BASE_STATUSES)),
   ],
@@ -304,7 +327,7 @@ export const repos = pgTable(
  * every repo of an installation their own token reaches (`write` or `read`, and `none` for the
  * workspace's others), and a question asked as the App about one repo when no answer is fresh.
  * Every function instance reads it, so one answer serves them all, and live queries join it:
- * Realtime has no row-level security, so this is how a list shows a repo's designs only to
+ * Realtime has no row-level security, so this is how a list shows a repo's canvases only to
  * people who can read the repo. A row is only ever replaced by a newer answer, and a webhook
  * that says access may have changed makes the answers it concerns stale (`checked_at` at the
  * epoch), so they are asked again before they are trusted.
@@ -369,7 +392,7 @@ export const claudeAccounts = pgTable(
     status: text("status", { enum: CLAUDE_ACCOUNT_STATUSES }).notNull().default("connected"),
     /**
      * The subscription token or the API key, sealed to this row. Destroyed when the person
-     * disconnects: the row stays, `revoked`, so the designs that run on it keep pointing at it,
+     * disconnects: the row stays, `revoked`, so the canvases that run on it keep pointing at it,
      * and connecting again fills it in.
      */
     encryptedCredential: text("encrypted_credential"),
@@ -381,8 +404,15 @@ export const claudeAccounts = pgTable(
     expiresAt: instant("expires_at"),
     limits: jsonb("limits").$type<ClaudeLimit[]>(),
     limitsObservedAt: instant("limits_observed_at"),
-    /** Set while the plan is at a limit; designs on this account wait until then. */
+    /** Set while the plan is at a limit; canvases on this account wait until then. */
     limitedUntil: instant("limited_until"),
+    /**
+     * The models Claude Code offered this credential, as a runner on it last reported; when, and
+     * which Claude Code said so. Null until a runner has; cleared when the credential changes.
+     */
+    models: jsonb("models").$type<ClaudeModelReport[]>(),
+    modelsReportedAt: instant("models_reported_at"),
+    modelsClaudeCode: text("models_claude_code"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

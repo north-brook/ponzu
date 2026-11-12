@@ -54,9 +54,9 @@ const STEPS: { step: IconStep; use: string; beside: string }[] = [
 const TEXTS: { name: keyof typeof TEXT; sample: string; tone?: string }[] = [
   { name: "body", sample: "Making the photo lead in B for Sam", tone: "text-ink" },
   { name: "name", sample: "Quieter shop hero", tone: "text-ink" },
-  { name: "title", sample: "Northbrook", tone: "text-ink" },
+  { name: "title", sample: "Thistlewick", tone: "text-ink" },
   { name: "control", sample: "Opus 5.5 · fernwood", tone: "text-muted" },
-  { name: "secondary", sample: "by brycedbjork · Oct 3", tone: "text-muted" },
+  { name: "secondary", sample: "by adapark · Oct 3", tone: "text-muted" },
   { name: "meta", sample: "fernwood · pz/hero-refresh · #412" },
   { name: "label", sample: "Repositories" },
 ];

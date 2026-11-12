@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["ponzu-studio://app", "https://ponzu.design"],
+        "methods": ["PUT", "GET", "HEAD"],
+        "headers": ["content-type", "x-amz-checksum-sha256", "cache-control", "content-disposition"]
+      },
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

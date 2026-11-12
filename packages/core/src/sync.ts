@@ -2,7 +2,7 @@ import type { Doc, Op } from "./doc.ts";
 import type { Actor } from "./types.ts";
 
 /**
- * How a design's ops travel between a replica and the API (docs/cloud.md, "The document and
+ * How a canvas's ops travel between a replica and the API (docs/cloud.md, "The document and
  * how it syncs"). The API orders ops; everyone applies them in that order.
  */
 
@@ -17,7 +17,7 @@ export interface ClientOp {
  * sender's op sanitized and stamped, so it can differ from what was sent.
  */
 export interface CommittedOp {
-  /** Its place in the design's order, counting from 1 with no gaps. */
+  /** Its place in the canvas's order, counting from 1 with no gaps. */
   seq: number;
   /** The `ClientOp.id` it was sent with. */
   id: string;
@@ -28,11 +28,11 @@ export interface CommittedOp {
 }
 
 export interface CommitResult {
-  /** The ops of this post that are in the design, in order. A retried op comes back as first committed. */
+  /** The ops of this post that are in the canvas, in order. A retried op comes back as first committed. */
   committed: CommittedOp[];
   /** The ops of this post that will never be, and why. */
   rejected: { id: string; reason: string }[];
-  /** The design's latest seq once the post was handled. */
+  /** The canvas's latest seq once the post was handled. */
   seq: number;
 }
 
@@ -58,7 +58,7 @@ export class CommitRefusedError extends Error {
   }
 }
 
-/** What a replica needs from the API, for one design. */
+/** What a replica needs from the API, for one canvas. */
 export interface SyncTransport {
   /** Rejects with `CommitRefusedError` for a post that will never be taken, and with anything else for a failure worth another try. */
   commit(ops: ClientOp[]): Promise<CommitResult>;

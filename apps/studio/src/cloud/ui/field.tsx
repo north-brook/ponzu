@@ -53,7 +53,7 @@ function FieldError({ className, children, ...props }: ComponentProps<"p">) {
 }
 
 /**
- * A one-line text field, 40 tall: an edge at rest, and focused the design's soft halo with a yuzu
+ * A one-line text field, 40 tall: an edge at rest, and focused the mockup's soft halo with a yuzu
  * caret (never an ink ring). `invalid` turns the edge danger and keeps the halo. `leading` sits
  * before the text: an icon, or the faint "$" of an amount.
  */

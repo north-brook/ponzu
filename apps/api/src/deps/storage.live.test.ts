@@ -1,12 +1,14 @@
 // The real bucket, through the API's own routes: presign, PUT, complete, GET through the public
-// URL, then delete. Skipped unless R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-// R2_BUCKET and PONZU_ASSETS_URL (the bucket's public URL) are set.
+// URL, then delete; and a list and bulk delete under a fresh asset key. Skipped unless
+// R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET and PONZU_ASSETS_URL (the
+// bucket's public URL) are set.
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { emptyDoc } from "@ponzu/core";
-import { getDesignAssetKey } from "@ponzu/db";
+import { getCanvasAssetKey, newAssetKey } from "@ponzu/db";
 import { systemClock } from "@ponzu/sandbox";
-import { call, designWithRunner, workspaceWithRepo } from "../testing/designs.ts";
+import { deleteUnder } from "../canvases/files.ts";
+import { call, canvasWithRunner, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp } from "../testing/index.ts";
 import { createR2Storage } from "./storage.ts";
 
@@ -39,8 +41,8 @@ describe.skipIf(!configured)("R2, for real", () => {
     const t = await createTestApp({ storage, assetsUrl });
     close = t.close;
     const ws = await workspaceWithRepo(t, { maya: "write" });
-    const { design, runner } = await designWithRunner(t, ws, "maya", emptyDoc("Live"));
-    const assetKey = (await getDesignAssetKey(t.db, design.id))!;
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", emptyDoc("Live"));
+    const assetKey = (await getCanvasAssetKey(t.db, canvas.id))!;
     const svg = new TextEncoder().encode(
       '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>',
     );
@@ -108,5 +110,46 @@ describe.skipIf(!configured)("R2, for real", () => {
     );
     await storage.delete(`${assetKey}/assets/icon.svg`);
     expect(await storage.head(`${assetKey}/assets/icon.svg`)).toBeNull();
+  }, 60_000);
+
+  test("what is under an asset key is listed in pages and deleted together, and nothing else", async () => {
+    const assetKey = newAssetKey();
+    const neighbour = newAssetKey();
+    const bytes = new TextEncoder().encode("ponzu live list");
+    const object = {
+      contentType: "text/plain",
+      size: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      cacheControl: "no-store",
+    };
+    const keys = ["a", "b & c", "d"].map((name) => `${assetKey}/assets/${name}.txt`);
+    const kept = `${neighbour}/assets/kept.txt`;
+    made.push(...keys, kept);
+    for (const key of [...keys, kept]) {
+      const put = await storage.presignPut(key, object, 60);
+      const answer = await fetch(put.url, { method: "PUT", headers: put.headers, body: bytes });
+      expect(answer.status).toBe(200);
+    }
+
+    const listed = await storage.list(`${assetKey}/`);
+    expect(listed).toMatchObject({ keys, truncated: false });
+    // Each with when it was written: just now, by R2's clock, which is near enough to ours.
+    expect(listed.objects.map((object) => object.key)).toEqual(keys);
+    for (const { modifiedAt } of listed.objects) {
+      expect(Math.abs(modifiedAt!.getTime() - Date.now())).toBeLessThan(10 * 60_000);
+    }
+    expect(await storage.list(`${assetKey}/`, { after: keys[0] })).toMatchObject({
+      keys: keys.slice(1),
+      truncated: false,
+    });
+    expect(await deleteUnder(storage, `${assetKey}/`, { limit: 2 })).toEqual({
+      deleted: 2,
+      done: false,
+    });
+    expect(await deleteUnder(storage, `${assetKey}/`)).toEqual({ deleted: 1, done: true });
+    expect(await storage.list(`${assetKey}/`)).toMatchObject({ keys: [], truncated: false });
+    // Nothing at a key is not an error.
+    await storage.deleteMany(keys);
+    expect((await storage.head(kept))?.size).toBe(bytes.byteLength);
   }, 60_000);
 });

@@ -228,8 +228,8 @@ export function NeedsYou({
       {ask.kind === "secret" && !closed ? (
         <p className="m-0 px-3.5 pt-2 pb-1.5 text-11 text-faint leading-[1.4]">
           {repoName
-            ? `Kept with ${repoName}'s secrets for its designs. It never goes in the thread.`
-            : "Kept for this design only. It never goes in the thread."}
+            ? `Kept with ${repoName}'s secrets for its canvases. It never goes in the thread.`
+            : "Kept for this canvas only. It never goes in the thread."}
         </p>
       ) : null}
     </section>
@@ -375,7 +375,7 @@ function PageBody({
                 onClick={() => onOpenLink(href)}
                 className={cn(
                   OPTION,
-                  draft.chosen.length
+                  draft.chosen[0] === "yes"
                     ? "bg-raised shadow-chosen"
                     : "hover:bg-hover active:bg-press",
                 )}
@@ -385,10 +385,24 @@ function PageBody({
                     Open {new URL(href).host || href}
                   </span>
                   <span className="truncate text-12 text-muted leading-[1.4]">
-                    {draft.chosen.length ? "Opened. Send when you're done there." : href}
+                    {draft.chosen[0] === "yes" ? "Opened. Send when you're done there." : href}
                   </span>
                 </span>
                 <Icon icon={ArrowUpRight01Icon} step="inline" className="text-icon-soft" />
+              </button>
+              <button
+                type="button"
+                data-option
+                disabled={disabled}
+                onClick={() => onChoose("no", false)}
+                className={cn(
+                  OPTION,
+                  draft.chosen[0] === "no"
+                    ? "bg-raised shadow-chosen"
+                    : "hover:bg-hover active:bg-press",
+                )}
+              >
+                <span className="font-medium text-13 leading-[1.3]">Not now</span>
               </button>
             </div>
           ) : (

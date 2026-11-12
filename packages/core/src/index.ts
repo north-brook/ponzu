@@ -1,4 +1,5 @@
 export * from "./activity.ts";
+export * from "./canvas-source.ts";
 export * from "./catalog.ts";
 export * from "./css.ts";
 export * from "./doc.ts";
@@ -15,6 +16,7 @@ export * from "./protocol.ts";
 export * from "./reconcile.ts";
 export * from "./replica.ts";
 export * from "./sanitize.ts";
+export * from "./search.ts";
 export * from "./stamp.ts";
 export * from "./suggestions.ts";
 export * from "./summary.ts";

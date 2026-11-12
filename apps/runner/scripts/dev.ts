@@ -7,7 +7,7 @@
  *
  * Each line typed is a message from Ada. `/stop` stops the turn, `/answer <words>` answers the
  * open question, `/quit` stops the runner. The thread prints as the runner writes it. The model
- * is PONZU_DEV_MODEL, Haiku by default; the design starts empty in a fresh folder.
+ * is PONZU_DEV_MODEL, Haiku by default; the canvas starts empty in a fresh folder.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -18,21 +18,23 @@ import { emptyDoc } from "@ponzu/core";
 import { FakeRunnerApi } from "../src/api/fake.ts";
 import { fakeApiHandler } from "../src/api/fake-http.ts";
 
-const DESIGN = "des_dev";
+const CANVAS = "cnv_dev";
 const TOKEN = "pzr_dev";
+/** The bearer of the runner's port, which every call to it carries. */
+const PORT_TOKEN = "port_dev";
 const RUNNER_PORT = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
 
 const fake = new FakeRunnerApi({
   doc: emptyDoc("Untitled"),
   session: {
-    design: { id: DESIGN, name: "Untitled" },
+    canvas: { id: CANVAS, name: "Untitled" },
     model: process.env.PONZU_DEV_MODEL ?? "haiku",
   },
 });
 const api = Bun.serve({
   port: Number(process.env.PONZU_DEV_API_PORT ?? 8790),
   hostname: "127.0.0.1",
-  fetch: fakeApiHandler(fake, { designId: DESIGN, token: TOKEN }),
+  fetch: fakeApiHandler(fake, { canvasId: CANVAS, token: TOKEN }),
 });
 
 const root = mkdtempSync(join(tmpdir(), "ponzu-dev-"));
@@ -43,8 +45,9 @@ const runner = spawn(process.execPath, [join(import.meta.dir, "..", entry)], {
   env: {
     ...process.env,
     PONZU_API_URL: `http://127.0.0.1:${api.port}`,
-    PONZU_DESIGN_ID: DESIGN,
+    PONZU_CANVAS_ID: CANVAS,
     PONZU_RUNNER_TOKEN: TOKEN,
+    PONZU_PORT_TOKEN: PORT_TOKEN,
     PONZU_RUNNER_PORT: String(RUNNER_PORT),
     PONZU_WORK_ROOT: join(root, "work"),
     PONZU_STATE_DIR: join(root, "state"),
@@ -59,7 +62,10 @@ runner.on("exit", (code) => {
 console.log(`fake API on ${api.port}, runner on ${RUNNER_PORT}, files in ${root}`);
 
 const poke = () =>
-  fetch(`http://127.0.0.1:${RUNNER_PORT}/poke`, { method: "POST" }).catch(() => {});
+  fetch(`http://127.0.0.1:${RUNNER_PORT}/poke`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${PORT_TOKEN}` },
+  }).catch(() => {});
 
 // The thread, as it changes.
 const shown = new Map<string, string>();

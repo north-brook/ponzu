@@ -1,20 +1,26 @@
 /*
  * The runner's fake API, served inside a test sandbox so the runner can be driven there before
- * the real API is deployed: `bun fake-api.js`, as a systemd unit beside the runner's, with the
- * runner's own PONZU_DESIGN_ID and PONZU_RUNNER_TOKEN from boat's environment file. The runner
+ * the real API is deployed: `bun fake-api.js`, started by the driver (live.ts) as the sandbox's
+ * own user at every start of the sandbox, before ponzu-start, with the runner's own
+ * PONZU_CANVAS_ID, PONZU_RUNNER_TOKEN and PONZU_PORT_TOKEN in its command's env. The runner
  * reaches it on localhost as it would reach the API.
  *
+ * It serves `GET /v1/runner/bundle` as the API does: the runner bundle's tgz (from
+ * PONZU_FAKE_API_BUNDLE), behind the runner token, with `x-ponzu-bundle-sha256`. ponzu-start
+ * fetches it when the disk does not have the bundle the start names.
+ *
  * Under `/control/` (the same bearer) the driver on the other side of the sandbox's address
- * pushes events and reads back what the runner did. What a cold start must not lose (the
+ * pushes events and reads back what the runner did. What a new session must not lose (the
  * session's Claude session id, the document, the last checkpoint and its archives) is kept in a
  * file; a git token is never written.
  *
- * The real API is not on the sandbox's disk, so a disk that comes back older leaves it as it
- * was. To act that out, the driver keeps the fake's memory on its own machine (`GET
- * /control/memory`) and, with PONZU_FAKE_API_HOLD=1, the fake answers the runner 503 after every
- * start until the driver hands it back (`PUT /control/memory`): the runner retries, as it does
- * against an API it cannot reach.
+ * The real API is not on the sandbox's disk, so a sandbox that is removed and made again (or
+ * comes back older) leaves it as it was. To act that out, the driver keeps the fake's memory on
+ * its own machine (`GET /control/memory`) and, with PONZU_FAKE_API_HOLD=1, the fake answers the
+ * runner 503 until the driver hands it back (`PUT /control/memory`): the runner retries, as it
+ * does against an API it cannot reach.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { emptyDoc } from "@ponzu/core";
 import { FakeRunnerApi } from "../../src/api/fake.ts";
@@ -28,10 +34,12 @@ import type {
 } from "../../src/api/protocol.ts";
 import { writeDurably } from "../../src/durable.ts";
 
-const designId = need("PONZU_DESIGN_ID");
+const canvasId = need("PONZU_CANVAS_ID");
 const token = need("PONZU_RUNNER_TOKEN");
 const port = Number(process.env.PONZU_FAKE_API_PORT ?? 8790);
 const runnerPort = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
+/** The runner's port answers only the bearer of its port token, on localhost too. */
+const runnerDoor = { authorization: `Bearer ${process.env.PONZU_PORT_TOKEN ?? ""}` };
 const stateFile = process.env.PONZU_FAKE_API_STATE ?? `${process.env.HOME}/.ponzu-fake-api.json`;
 /** Held until the driver hands back the memory it kept: what the real API would remember. */
 let held = process.env.PONZU_FAKE_API_HOLD === "1";
@@ -45,7 +53,7 @@ interface Kept {
   saved: SavedPoint | null;
   /** The checkpoint's archives, in base64. */
   archives: { session: string | null; workspace: string | null };
-  /** How many times the state was written: the driver checks a cold start read the last. */
+  /** How many times the state was written: the driver checks a fresh start read the last. */
   writes: number;
 }
 const kept: Kept | null = existsSync(stateFile)
@@ -53,7 +61,12 @@ const kept: Kept | null = existsSync(stateFile)
   : null;
 const fake = new FakeRunnerApi({
   doc: kept?.doc ?? emptyDoc("Untitled"),
-  session: kept?.session ?? { design: { id: designId, name: "Untitled" }, model: "haiku" },
+  // Every live run's turns are on the development key: Haiku, at low effort.
+  session: kept?.session ?? {
+    canvas: { id: canvasId, name: "Untitled" },
+    model: "haiku",
+    effort: "low",
+  },
   feedSeq: kept?.feedSeq ?? 0,
 });
 const unbase = (s: string | null | undefined) =>
@@ -75,13 +88,15 @@ const started = Date.now();
 const states: (StateRequest & { at: number })[] = [];
 const calls: { at: number; route: string }[] = [];
 
-const api = fakeApiHandler(fake, { designId, token });
+const api = fakeApiHandler(fake, { canvasId, token });
 Bun.serve({
   port,
   hostname: "0.0.0.0",
   async fetch(request) {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
+    // The bundle is served even while held: it is what the start fetches before any runner runs.
+    if (route === "GET /v1/runner/bundle") return serveBundle(request);
     if (!url.pathname.startsWith("/control/")) {
       if (held)
         return Response.json(
@@ -131,8 +146,8 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
         saved: fake.saved,
         checkpoints: fake.checkpoints,
         restored: fake.restored,
-        quiesced: fake.quiesced,
         summaries: fake.summaries,
+        bundles,
         calls: calls.length,
         lastCall: calls.at(-1) ?? null,
         claims: calls
@@ -154,19 +169,21 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
     case "POST /control/release":
       held = false;
       return new Response(null, { status: 204 });
-    case "PUT /control/sleep": {
-      // As the API's stop does: the row says stopping, and the runner is asked for a report. As
-      // its wake does: the row says awake, and the runner is only poked.
-      fake.sleep = ((await request.json()) as { sleep: string | null }).sleep;
-      const door = fake.sleep === null ? "poke" : "report";
-      await fetch(`http://127.0.0.1:${runnerPort}/${door}`, { method: "POST" }).catch(() => {});
+    case "POST /control/poke":
+      // As the API's wake of an awake row: the runner is only poked.
+      await fetch(`http://127.0.0.1:${runnerPort}/poke`, {
+        method: "POST",
+        headers: runnerDoor,
+      }).catch(() => {});
       return new Response(null, { status: 204 });
-    }
     case "POST /control/events": {
       const body = (await request.json()) as EventBody & { priority?: Priority };
       const event = fake.push(body, body.priority ? { priority: body.priority } : {});
       keep();
-      await fetch(`http://127.0.0.1:${runnerPort}/poke`, { method: "POST" }).catch(() => {});
+      await fetch(`http://127.0.0.1:${runnerPort}/poke`, {
+        method: "POST",
+        headers: runnerDoor,
+      }).catch(() => {});
       return Response.json(event);
     }
     case "PUT /control/session":
@@ -196,6 +213,24 @@ function keep(force = false): void {
 }
 setInterval(keep, 500);
 
+/** How many times the bundle was served: a start on a disk that has it fetches nothing. */
+let bundles = 0;
+
+/** `GET /v1/runner/bundle`, as the API answers it. */
+function serveBundle(request: Request): Response {
+  if (!authorized(request)) return new Response(null, { status: 401 });
+  const file = process.env.PONZU_FAKE_API_BUNDLE;
+  if (!file || !existsSync(file)) return new Response("no bundle", { status: 404 });
+  const bytes = readFileSync(file);
+  bundles += 1;
+  return new Response(bytes, {
+    headers: {
+      "content-type": "application/gzip",
+      "x-ponzu-bundle-sha256": createHash("sha256").update(bytes).digest("hex"),
+    },
+  });
+}
+
 function authorized(request: Request): boolean {
   return request.headers.get("authorization") === `Bearer ${token}`;
 }
@@ -206,4 +241,4 @@ function need(name: string): string {
   return value;
 }
 
-console.log(`fake API for ${designId} on ${port}${held ? " (held)" : ""}`);
+console.log(`fake API for ${canvasId} on ${port}${held ? " (held)" : ""}`);

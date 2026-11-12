@@ -1,5 +1,7 @@
 import type { PullRequestContext, User } from "@ponzu/db";
 import type {
+  GithubCheck,
+  GithubMergeQueue,
   GithubPullRequest,
   MergeRefusal,
   PersonResult,
@@ -21,14 +23,14 @@ import {
 import { type PullRequestTab, toTab } from "./view.ts";
 
 /*
- * What a person does to a design's pull request: mark it ready, merge it, set auto-merge, close
+ * What a person does to a canvas's pull request: mark it ready, merge it, set auto-merge, close
  * it, or bring its branch up to date. Each is done as them, with their GitHub user token
  * (docs/cloud.md, "Pull requests"): GitHub then holds them to the rules of the repo as they
  * apply to that person, and its history names them.
  *
  * Each reads the pull request first, refuses what it can name before asking GitHub, and says
  * why GitHub refused with a code a client can show. Each ends by reading it again, and that is
- * what it answers: GitHub's word on what happened, recorded on the design.
+ * what it answers: GitHub's word on what happened, recorded on the canvas.
  */
 
 export type PullRequestAction =
@@ -41,10 +43,20 @@ export type PullRequestAction =
    */
   | { kind: "merge"; headSha: string; bypass: boolean }
   | { kind: "auto_merge"; enabled: boolean }
-  | { kind: "close" }
+  /**
+   * `number` is the pull request the person said to close: refused if the canvas's newest is
+   * another one by now. Without it, whichever is newest.
+   */
+  | { kind: "close"; number?: number }
   | { kind: "update_branch"; headSha: string };
 
-type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config">;
+type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config" | "features">;
+
+/** What an action did: `did` when this call did it, `queued` when a merge went into a queue. */
+interface Done {
+  did: boolean;
+  queued: boolean;
+}
 
 /** The waits for GitHub to work out whether a pull request can merge, before giving up. */
 const MERGEABLE_WAITS_MS = [1_000, 2_000];
@@ -61,10 +73,30 @@ export async function actOnPullRequest(
   user: User,
   action: PullRequestAction,
 ): Promise<PullRequestTab> {
+  return (await actAndSay(deps, context, user, action)).tab;
+}
+
+/**
+ * `actOnPullRequest`, saying too whether this call is what did it (`did`): false when there was
+ * nothing to do (already ready, already merged, auto-merge already on), as when someone else did
+ * it a moment before. The agent's routes say so in its thread only when it did. `queued` says a
+ * merge this call asked for went into the repo's merge queue rather than merging now.
+ */
+export async function actAndSay(
+  deps: ActDeps,
+  context: PullRequestContext,
+  user: User,
+  action: PullRequestAction,
+): Promise<{ tab: PullRequestTab; did: boolean; queued: boolean }> {
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
-  const read = await act(deps, target, user, action);
-  return toTab(target, read.read, deps.config.githubApp.slug);
+  const done: Done = { did: false, queued: false };
+  const read = await act(deps, target, user, action, done);
+  return {
+    tab: toTab(target, read.read, deps.config.githubApp.slug),
+    did: done.did,
+    queued: done.queued,
+  };
 }
 
 async function act(
@@ -72,11 +104,12 @@ async function act(
   target: PullRequestTarget,
   user: User,
   action: PullRequestAction,
+  done: Done,
 ): Promise<Read> {
   const { github } = deps;
   let current = await readAndRecord(deps, target);
   const pr = current.read.pullRequest;
-  if (!pr) throw new ApiError(409, "no_pull_request", "This design has no pull request yet.");
+  if (!pr) throw new ApiError(409, "no_pull_request", "This canvas has no pull request yet.");
   const personToken = () => githubUserToken(deps, user.id);
   const { fullName } = target.repo.repository;
   const { number } = pr;
@@ -86,6 +119,7 @@ async function act(
       if (pr.state === "open") return current;
       if (pr.state !== "draft") throw closed(pr);
       expectDone(await github.markReady(await personToken(), pr.id), pr);
+      done.did = true;
       break;
     }
 
@@ -93,6 +127,24 @@ async function act(
       if (pr.state === "merged") return current;
       if (pr.state === "closed") throw closed(pr);
       if (pr.state === "draft") throw draft();
+      // A repo that merges through a merge queue (docs/cloud.md, "Pull requests"): merging is
+      // adding it to the queue, behind PONZU_MERGE_QUEUE until that is proven against GitHub,
+      // and never past the queue, whatever `bypass` says.
+      const queue = pr.mergeQueue;
+      if (queue.entry) {
+        if (queue.entry.state === "unmergeable") throw queueUnmergeable(pr);
+        // In the queue already, by someone else or a moment ago: nothing to do.
+        return current;
+      }
+      if (queue.enabled) {
+        if (!deps.features.mergeQueue) throw mergeQueue();
+        if (action.headSha !== pr.head.sha || lagsBranch(current.read)) throw headMoved();
+        if (pr.mergeable === false) throw conflicts(pr);
+        expectDone(await github.enqueuePullRequest(await personToken(), pr.id, pr.head.sha), pr);
+        done.did = true;
+        done.queued = true;
+        break;
+      }
       current = await untilMergeable(deps, target, current);
       const ready = current.read.pullRequest!;
       if (action.headSha !== ready.head.sha || lagsBranch(current.read)) throw headMoved();
@@ -107,6 +159,7 @@ async function act(
         sha: ready.head.sha,
       });
       if (result === "done") {
+        done.did = true;
         const merged = await untilMerged(deps, target, number);
         // The branch is done with once merged, as GitHub's own button leaves it to be deleted:
         // only while it is still where it merged, so nothing pushed since is lost.
@@ -121,9 +174,13 @@ async function act(
         }
         return merged;
       }
+      // Someone else (a person pressing Merge, the agent, auto-merge) merged it first: what
+      // GitHub has now is the answer, and this call did nothing.
+      const now = await readAndRecord(deps, target, number);
+      if (now.read.pullRequest?.state === "merged") return now;
       if (result === "not_mergeable") {
         // GitHub does not say why, but the pull request as it is now does.
-        throw blockedBy((await readAndRecord(deps, target)).read.pullRequest ?? ready);
+        throw blockedBy(now.read.pullRequest ?? ready);
       }
       if (isRefusal(result)) throw refusalError(result, ready);
       expectDone(result, ready);
@@ -135,6 +192,7 @@ async function act(
       if (!action.enabled) {
         if (!pr.autoMerge) return current;
         expectDone(await github.disableAutoMerge(await personToken(), pr.id), pr);
+        done.did = true;
         break;
       }
       if (pr.autoMerge) return current;
@@ -153,14 +211,31 @@ async function act(
       const method = current.read.mergeMethods[0];
       if (!method) throw refused();
       expectDone(await github.enableAutoMerge(await personToken(), pr.id, method), pr);
+      done.did = true;
       break;
     }
 
     case "close": {
+      // The route closes the canvas's newest pull request: one opened since the person looked
+      // (the agent opens them too) is not the one they said to close.
+      if (action.number !== undefined && action.number !== number) {
+        throw new ApiError(
+          409,
+          "pull_request_changed",
+          `This canvas's pull request is #${number} now, not #${action.number}. Look again first.`,
+        );
+      }
       if (pr.state === "closed") return current;
       if (pr.state === "merged") throw closed(pr);
-      expectDone(await github.closePullRequest(await personToken(), { fullName, number }), pr);
-      break;
+      const result = await github.closePullRequest(await personToken(), { fullName, number });
+      // Auto-merge (or a teammate) can merge it between the read above and the close: GitHub
+      // then has it merged, whatever it answered the close, and the person is told so.
+      const after = await readAndRecord(deps, target, number);
+      const now = after.read.pullRequest;
+      if (now?.state === "merged") throw closed(now);
+      expectDone(result, pr);
+      done.did = true;
+      return after;
     }
 
     case "update_branch": {
@@ -181,10 +256,11 @@ async function act(
       });
       if (result === "refused" && pr.mergeable === false) throw conflicts(pr);
       expectDone(result, pr);
+      done.did = true;
       // GitHub makes the merge commit a moment later, and then works out mergeability again.
       deps.background(
         "pull_request_refresh",
-        refreshPullRequest(deps, target.designId, { number }),
+        refreshPullRequest(deps, target.canvasId, { number }),
       );
       break;
     }
@@ -198,7 +274,7 @@ async function readAndRecord(
   number?: number,
 ): Promise<Read> {
   const read = await readPullRequest(deps, target, number);
-  await recordCurrent(deps, target.designId, read);
+  await recordCurrent(deps, target.canvasId, read);
   return read;
 }
 
@@ -219,8 +295,8 @@ async function untilMergeable(
 
 /**
  * Read a pull request GitHub has just merged until its reads show it merged, which settles the
- * design, for a few seconds. If they still do not, it is read again in a minute by a job, so the
- * design settles even if GitHub's webhook for the merge never comes.
+ * canvas, for a few seconds. If they still do not, it is read again in a minute by a job, so the
+ * canvas settles even if GitHub's webhook for the merge never comes.
  */
 async function untilMerged(
   deps: PullRequestDeps,
@@ -234,12 +310,12 @@ async function untilMerged(
     current = await readAndRecord(deps, target, number);
   }
   if (current.read.pullRequest?.state !== "merged") {
-    await refreshLater(deps, { designId: target.designId, number }, MERGE_CHECKED_AFTER_MS);
+    await refreshLater(deps, { canvasId: target.canvasId, number }, MERGE_CHECKED_AFTER_MS);
   }
   return current;
 }
 
-/** Deletes a merged design's branch; a refusal (protected, or no right to) leaves it be. */
+/** Deletes a merged canvas's branch; a refusal (protected, or no right to) leaves it be. */
 async function deleteMergedBranch(
   deps: ActDeps,
   userToken: string,
@@ -263,13 +339,71 @@ function expectDone(result: PersonResult, pr: GithubPullRequest): void {
         "forbidden",
         `GitHub does not let you do this to #${pr.number} in its repo.`,
       );
+    case "workflow_permission":
+      throw workflowPermission();
     case "refused":
       throw refused();
   }
 }
 
+/**
+ * What holds an open pull request back from merging now, in the words and code Merge would
+ * refuse with; null when Merge would ask GitHub (clean, unstable or with hooks). A draft is held
+ * back by being one. On a repo with a merge queue, Merge adds to the queue only while `mergeQueue`
+ * (the switch) is on, and one already in the queue waits there.
+ */
+export function mergeHold(
+  pr: Holdable,
+  { mergeQueue: queueOn = false }: { mergeQueue?: boolean } = {},
+): { code: string; message: string } | null {
+  if (pr.state === "draft") {
+    const error = draft();
+    return { code: error.code, message: error.message };
+  }
+  if (pr.state !== "open") return null;
+  const entry = pr.mergeQueue?.entry;
+  if (entry) {
+    if (entry.state === "unmergeable") {
+      const error = queueUnmergeable(pr);
+      return { code: error.code, message: error.message };
+    }
+    const at = entry.position === null ? "" : `, ${ordinal(entry.position)} in line`;
+    return {
+      code: "merge_queued",
+      message: `#${pr.number} is in the merge queue on GitHub${at}. GitHub merges it when the queue's checks pass.`,
+    };
+  }
+  if (pr.mergeQueue?.enabled) {
+    if (queueOn) return null;
+    const error = mergeQueue();
+    return { code: error.code, message: error.message };
+  }
+  if (pr.mergeable !== false && MERGEABLE_NOW.includes(pr.mergeState)) return null;
+  const error = pr.mergeable === null ? mergeabilityUnknown() : blockedBy(pr);
+  return { code: error.code, message: error.message };
+}
+
+/** What saying why a pull request is held back reads of it: GitHub's, or the tab's. */
+type Holdable = Pick<
+  GithubPullRequest,
+  "number" | "state" | "mergeable" | "mergeState" | "reviewDecision"
+> & {
+  head: { ref: string };
+  base: { ref: string };
+  checks: { items: Pick<GithubCheck, "required" | "state">[] };
+  mergeQueue?: GithubMergeQueue;
+};
+
+/** 1st, 2nd, 3rd, 4th… 11th, 12th, 13th, 21st. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix =
+    tens >= 11 && tens <= 13 ? "th" : (({ 1: "st", 2: "nd", 3: "rd" } as const)[n % 10] ?? "th");
+  return `${n}${suffix}`;
+}
+
 /** Why the repo's rules do not let it merge now, as far as the pull request says. */
-function blockedBy(pr: GithubPullRequest): ApiError {
+function blockedBy(pr: Holdable): ApiError {
   if (pr.mergeable === false) return conflicts(pr);
   if (pr.mergeState === "behind") return refusalError("branch_behind", pr);
   if (pr.reviewDecision === "changes_requested") return refusalError("changes_requested", pr);
@@ -304,7 +438,7 @@ function isRefusal(result: PersonResult | MergeRefusal): result is (typeof REFUS
 }
 
 /** What GitHub's reason for not merging means for the person. */
-function refusalError(refusal: (typeof REFUSALS)[number], pr: GithubPullRequest): ApiError {
+function refusalError(refusal: (typeof REFUSALS)[number], pr: Holdable): ApiError {
   switch (refusal) {
     case "review_required":
       return new ApiError(409, refusal, "The repo's rules want an approving review first.");
@@ -331,7 +465,7 @@ const closed = (pr: GithubPullRequest) =>
 const draft = () =>
   new ApiError(409, "pull_request_draft", "This pull request is a draft. Mark it ready first.");
 
-const conflicts = (pr: GithubPullRequest) =>
+const conflicts = (pr: Holdable) =>
   new ApiError(409, "merge_conflicts", `${pr.head.ref} conflicts with ${pr.base.ref}.`);
 
 const headMoved = () =>
@@ -349,4 +483,26 @@ const refused = () =>
     422,
     "github_refused",
     "GitHub would not do this. The pull request on GitHub says why.",
+  );
+
+/** The App has no `workflows` permission: no one in Ponzu can do this, so it says where to. */
+const workflowPermission = () =>
+  new ApiError(
+    422,
+    "workflow_permission",
+    "GitHub won't let Ponzu change files under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows. Do this on GitHub instead.",
+  );
+
+const mergeQueue = () =>
+  new ApiError(
+    409,
+    "merge_queue",
+    "This repository merges through a merge queue. Add it to the queue on GitHub.",
+  );
+
+const queueUnmergeable = (pr: Pick<GithubPullRequest, "number">) =>
+  new ApiError(
+    409,
+    "merge_queue_unmergeable",
+    `GitHub's merge queue can't merge #${pr.number}. The pull request on GitHub says why.`,
   );

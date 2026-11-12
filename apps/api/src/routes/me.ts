@@ -8,6 +8,7 @@ import {
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
+import { BILLING_MODES } from "../features.ts";
 import type { AppEnv } from "../http/context.ts";
 import { validate } from "../http/validate.ts";
 import { ClaudeAccountView, claudeAccountView } from "./claude.ts";
@@ -25,7 +26,7 @@ const Onboarding = z.object({
 });
 
 const OnboardingBody = z.object({
-  /** Continue on "Where do you design?", or Start designing on the iPhone step. */
+  /** Continue on "Where do you build?", or Start building on the iPhone step. */
   step: z.enum(["where", "iphone"]),
 });
 
@@ -33,7 +34,7 @@ const Me = z.object({
   user: Profile,
   onboarding: Onboarding,
   /**
-   * The person's own Claude, or null if none is connected: whether their designs can run, and
+   * The person's own Claude, or null if none is connected: whether their canvases can run, and
    * whether it runs out soon. Never its credential.
    */
   claudeAccount: ClaudeAccountView.nullable(),
@@ -51,11 +52,20 @@ const Me = z.object({
       suspended: z.boolean(),
     }),
   ),
+  /**
+   * The switches an app shows or hides things by: billing's mode, and whether pings to phones
+   * and the email digest can be sent at all. The rest of `deps.features` is the API's own.
+   */
+  features: z.object({
+    billing: z.enum(BILLING_MODES),
+    push: z.boolean(),
+    email: z.boolean(),
+  }),
 });
 
 export const me = new Hono<AppEnv>()
   .get("/", access.user, async (c) => {
-    const { db } = c.var.deps;
+    const { db, features } = c.var.deps;
     const { user } = c.var.actor;
     const [claudeAccount, workspaces] = await Promise.all([
       getClaudeAccount(db, user.id),
@@ -74,6 +84,7 @@ export const me = new Hono<AppEnv>()
           installed: workspace.installationId !== null,
           suspended: workspace.suspendedAt !== null,
         })),
+        features: { billing: features.billing, push: features.push, email: features.email },
       }),
     );
   })

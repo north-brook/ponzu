@@ -1,7 +1,7 @@
 import { type Doc, findArtboard, type Thread } from "@ponzu/core";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { clientOf, shortAgent } from "../lib/agents";
-import { shortAgo } from "../lib/files";
+
+import { shortAgo } from "../lib/ago";
 import { tick } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
@@ -196,14 +196,14 @@ function Row({
       })}
     >
       {author?.kind === "agent" ? (
-        <AgentMark client={clientOf(author.name)} size={28} color={color.ink} />
+        <AgentMark client="claude" size={28} color={color.ink} />
       ) : (
         <Initial letter={me} />
       )}
       <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}>
-            {author?.kind === "agent" ? shortAgent(author.name) : "You"}
+            {author?.kind === "agent" ? author.name : "You"}
           </Text>
           {board && (
             <>
@@ -248,11 +248,11 @@ function Row({
         </Text>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           {latest?.author.kind === "agent" && (
-            <AgentMark client={clientOf(latest.author.name)} size={13} color={color.ink} />
+            <AgentMark client="claude" size={13} color={color.ink} />
           )}
           <Text style={small}>
             {latest
-              ? `${latest.author.kind === "agent" ? shortAgent(latest.author.name) : "You"} replied`
+              ? `${latest.author.kind === "agent" ? latest.author.name : "You"} replied`
               : "No replies yet"}
           </Text>
           <View style={{ flex: 1 }} />

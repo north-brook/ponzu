@@ -98,9 +98,9 @@ export interface ChromiumOptions {
   /** Base URL for relative asset paths, usually the server's /assets route. */
   assetBase?: string;
   /**
-   * Lets a design load from servers on this machine (http://localhost:3000,
+   * Lets a canvas load from servers on this machine (http://localhost:3000,
    * 127.0.0.1, [::1]): the repo's dev server, in a sandbox. Off by default,
-   * because on a person's own computer a design could then reach whatever
+   * because on a person's own computer a canvas could then reach whatever
    * they have listening locally. The rest of the local network stays out of
    * reach either way.
    */
@@ -365,7 +365,7 @@ export class ChromiumRenderer implements Renderer {
     return this.job(this.main, pageScale, async (page) => {
       const loaded = await this.load(page, req);
       const cdp = await page.context().newCDPSession(page);
-      // Transparent where the design is, like screenshots.
+      // Transparent behind the board, like screenshots.
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },
       });
@@ -491,9 +491,9 @@ export class ChromiumRenderer implements Renderer {
     await this.opts.preparePage?.(page);
     const assetBase = req.assetBase ?? this.opts.assetBase;
     // Chrome won't let a page at a public origin reach a server on this
-    // machine or its network (local network access). Two things get a design
+    // machine or its network (local network access). Two things get a canvas
     // its files from one anyway. With `loopback`, the page is given Chrome's
-    // own permission for this machine, and Chrome loads what the design asks
+    // own permission for this machine, and Chrome loads what the board asks
     // for as it would from anywhere: a video in pieces, and never through
     // this process. What that can't cover is fetched from here: a request
     // that needs a CORS header, which a dev server rarely sends with its
@@ -627,7 +627,7 @@ const grantSessions = new WeakMap<Browser, Promise<CDPSession>>();
  * Gives a page's context leave to load from this machine, which Chrome
  * refuses a page at a public origin until someone says yes to a prompt.
  * Loopback only: the permission for the rest of the local network is a
- * separate one and stays ungranted, so a design can't reach a router or a
+ * separate one and stays ungranted, so a canvas can't reach a router or a
  * cloud's metadata address. False when this Chrome has no such permission to
  * give (it came when local network access was split in two); then every
  * request to this machine is fetched from here instead.

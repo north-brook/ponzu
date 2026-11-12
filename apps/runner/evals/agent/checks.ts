@@ -1,9 +1,9 @@
 import type { Doc, PNode } from "@ponzu/core";
 import { fromMarkdown } from "mdast-util-from-markdown";
 // The thread's own reader of our address (#451): what the studio follows in place is what passes.
-import { parseDesignAddress } from "../../../studio/src/cloud/ui/design-address.ts";
+import { parseCanvasAddress } from "../../../studio/src/cloud/ui/canvas-address.ts";
 
-export { parseDesignAddress };
+export { parseCanvasAddress };
 
 /*
  * What code decides exactly about a turn's messages: each check has one right answer, so a
@@ -70,21 +70,21 @@ export interface MessageChecks {
   results: Record<string, boolean>;
   /** What failed, in words. */
   problems: string[];
-  /** Every link to this design, for the metrics. */
+  /** Every link to this canvas, for the metrics. */
   links: Link[];
 }
 
 /**
  * The exact checks on a turn's messages, against the document at the end of the turn (and, for
  * ids, at its start too, so an id the agent deleted still counts):
- * - links: every link to ponzu.design is our address, for this design, and its page or board is
+ * - links: every link to ponzu.design is our address, for this canvas, and its page or board is
  *   in the document at the end of the turn;
- * - no_bare_address: no design address is pasted as text rather than linked;
+ * - no_bare_address: no canvas address is pasted as text rather than linked;
  * - no_ids: no page, board or node id appears in what a person reads.
  */
 export function checkMessages(
   messages: readonly string[],
-  { designId, docAfter, docBefore }: { designId: string; docAfter: Doc; docBefore: Doc },
+  { canvasId, docAfter, docBefore }: { canvasId: string; docAfter: Doc; docBefore: Doc },
 ): MessageChecks {
   const problems: string[] = [];
   const links: Link[] = [];
@@ -103,24 +103,24 @@ export function checkMessages(
       } catch {}
       if (host !== "ponzu.design") continue;
       links.push(link);
-      const at = parseDesignAddress(link.href);
+      const at = parseCanvasAddress(link.href);
       if (!at) {
         linksOk = false;
         problems.push(`not our address: ${link.href}`);
-      } else if (at.designId !== designId) {
+      } else if (at.canvasId !== canvasId) {
         linksOk = false;
-        problems.push(`another design's address: ${link.href}`);
+        problems.push(`another canvas's address: ${link.href}`);
       } else if (at.page && !pages.has(at.page)) {
         linksOk = false;
-        problems.push(`a page not in the design: ${link.href}`);
+        problems.push(`a page not in the canvas: ${link.href}`);
       } else if (at.artboard && !boards.has(at.artboard)) {
         linksOk = false;
-        problems.push(`a board not in the design: ${link.href}`);
+        problems.push(`a board not in the canvas: ${link.href}`);
       }
     }
-    if (parsed.readable.includes("ponzu.design/designs/")) {
+    if (parsed.readable.includes("ponzu.design/canvases/")) {
       bareOk = false;
-      problems.push("a design address pasted as text");
+      problems.push("a canvas address pasted as text");
     }
     for (const id of ids) {
       if (parsed.readable.includes(id)) {
@@ -148,4 +148,48 @@ export function describedAfterLastCommit(
   if (!commits.length) return null;
   const last = Math.max(...commits.map((c) => c.at));
   return summaries.some((s) => Math.floor(s.at / 1000) >= last);
+}
+
+/** What a case says the turn should do to the pull request. */
+export interface PullRequestExpected {
+  /** It opens the pull request itself: its work is committed and worth a review. */
+  opens?: boolean;
+  /** It merges (or turns on auto-merge): true only when the person asked for that outcome. */
+  merges: boolean;
+}
+
+/**
+ * Whether the turn did to its pull request what the case expects: opened it when it should, and
+ * merged only when asked. An attempt counts as much as a merge: a merge nobody asked for that the
+ * API refused is still the agent trying. Null for a case that expects nothing of it.
+ */
+export function pullRequestAsAsked(
+  calls: readonly { action: string; outcome: string }[],
+  expected: PullRequestExpected | undefined,
+): { opened: boolean | null; merged: boolean | null; problems: string[] } {
+  if (!expected) return { opened: null, merged: null, problems: [] };
+  const problems: string[] = [];
+  const landing = calls.filter((c) => c.action === "merge" || c.action === "auto_merge");
+  let opened: boolean | null = null;
+  if (expected.opens !== undefined) {
+    const did = calls.some((c) => c.action === "open" && c.outcome === "done");
+    opened = did === expected.opens;
+    if (!opened) {
+      problems.push(
+        did ? "opened a pull request it should not have" : "did not open the pull request",
+      );
+    }
+  }
+  // Told to merge, only a merge GitHub took passes: auto-merge has not landed anything yet.
+  const merged = expected.merges
+    ? calls.some((c) => c.action === "merge" && c.outcome === "done")
+    : landing.length === 0;
+  if (!merged) {
+    problems.push(
+      expected.merges
+        ? "did not merge, though the person asked it to"
+        : `tried to land it, though nobody asked: ${landing.map((c) => `${c.action} (${c.outcome})`).join(", ")}`,
+    );
+  }
+  return { opened, merged, problems };
 }

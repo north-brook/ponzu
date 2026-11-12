@@ -10,23 +10,23 @@ import {
   type PNode,
   walk,
 } from "@ponzu/core";
+import type { Applied, OpenCanvas, ToolCanvas } from "./canvas.ts";
 import type { ToolContext } from "./context.ts";
 import { ToolError } from "./define.ts";
-import type { Applied, OpenDesign, ToolDesign } from "./design.ts";
 
 /**
- * The design a call works on: the workspace's one design, unless the tool list set a way to
- * pick among several. `ids` are the ids the call passes, which say which design it means.
+ * The canvas a call works on: the workspace's one canvas, unless the tool list set a way to
+ * pick among several. `ids` are the ids the call passes, which say which canvas it means.
  */
-export function designOf(ctx: ToolContext, ids: (string | undefined)[] = []): Promise<OpenDesign> {
+export function canvasOf(ctx: ToolContext, ids: (string | undefined)[] = []): Promise<OpenCanvas> {
   return ctx.pick ? ctx.pick(ids) : ctx.ws.resolve();
 }
 
 /**
  * Something a host says right after an artboard's name about where it keeps it. Only a host
- * that keeps designs as files has anything to say.
+ * that keeps canvases as files has anything to say.
  */
-export type ArtboardNote = (open: OpenDesign, artboardId: string) => string | Promise<string>;
+export type ArtboardNote = (open: OpenCanvas, artboardId: string) => string | Promise<string>;
 
 /**
  * ` · link: <address>` for a page or board, where the host has links that the person's thread
@@ -46,12 +46,12 @@ export function origin(ctx: ToolContext): Origin {
 }
 
 /** Apply an agent's op. The artboards it changed show as theirs while they keep working. */
-export function apply(design: ToolDesign, op: Op, ctx: ToolContext): Applied {
-  const event = design.apply(op, origin(ctx));
-  const key = ctx.ws.designs().find((d) => d.design === design)?.key;
+export function apply(canvas: ToolCanvas, op: Op, ctx: ToolContext): Applied {
+  const event = canvas.apply(op, origin(ctx));
+  const key = ctx.ws.canvases().find((d) => d.canvas === canvas)?.key;
   if (key && event.artboards.length) {
     // A deleted artboard is no longer anyone's to work on.
-    const gone = event.artboards.filter((id) => !findArtboard(design.doc, id));
+    const gone = event.artboards.filter((id) => !findArtboard(canvas.doc, id));
     const artboards = event.artboards.filter((id) => !gone.includes(id));
     ctx.ws.presence.worked(ctx.caller, key, { artboards, gone });
   }
@@ -141,5 +141,5 @@ export function plural(n: number, word: string): string {
 export function droppedNote(dropped: { what: string }[]): string {
   if (!dropped.length) return "";
   const list = [...new Set(dropped.map((d) => d.what))].slice(0, 6).join(", ");
-  return `\nRemoved (designs can't run code): ${list}.`;
+  return `\nRemoved (canvases can't run code): ${list}.`;
 }

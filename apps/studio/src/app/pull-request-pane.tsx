@@ -2,15 +2,16 @@ import type { PullRequestTab } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import { useEffect, useMemo } from "react";
 import { type PullRequestTabState, PullRequestView } from "../cloud/pr-tab/pull-request-view.tsx";
-import { BypassMergeDialog } from "./confirm-dialogs.tsx";
-import type { OpenDesign } from "./design.tsx";
+import { type OpenCanvas, useAccess } from "./canvas.tsx";
+import { BypassMergeDialog, ClosePullRequestDialog } from "./confirm-dialogs.tsx";
 import type { Host } from "./host.ts";
 import { prSummary, toPullRequestDetail } from "./pull-request-map.ts";
+import { opensWith, tabMenu } from "./pull-request-store.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /**
- * The pull request tab, in the canvas's pane: what GitHub has, read again as it opens, with
- * the summary from the design's head while the read is on its way or when it fails.
+ * The pull request tab, in the main pane: what GitHub has, read again as it opens, with
+ * the summary from the canvas's head while the read is on its way or when it fails.
  */
 export function PullRequestPane({
   host,
@@ -18,13 +19,15 @@ export function PullRequestPane({
   viewerLogin,
 }: {
   host: Host;
-  open: OpenDesign;
+  open: OpenCanvas;
   viewerLogin: string;
 }) {
   const pull = useSnapshot(open.pullRequest);
-  const head = useLiveQuery("design.head", { designId: open.id }).rows?.[0];
+  const head = useLiveQuery("canvas.head", { canvasId: open.id }).rows?.[0];
   const summary = prSummary(head);
   const store = open.pullRequest;
+  // Closing and turning auto-merge off steer the canvas, as the chrome's action does.
+  const canAct = useAccess(open) === "write";
 
   // Opening the tab is looking at it now: GitHub's word as of this moment.
   useEffect(() => store.refresh(), [store]);
@@ -55,6 +58,8 @@ export function PullRequestPane({
       onOpenLink={(url) => host.openExternal(url)}
       onRetry={() => store.refresh()}
       onLoadDiff={store.loadDiff}
+      summary={pull.tab ? opensWith(pull.tab) : null}
+      menu={canAct ? tabMenu(pull, store) : null}
     />
   );
 }
@@ -78,14 +83,24 @@ export function stillSettling(pr: Pull, now: number): boolean {
   return open && checks.length === 0 && now - Date.parse(pr.updatedAt) < CHECKS_COME_MS;
 }
 
-/** Asks before a merge that goes past the repo's rules, wherever the button was pressed. */
-export function BypassConfirmation({ open }: { open: OpenDesign }) {
-  const { bypass } = useSnapshot(open.pullRequest);
+/**
+ * Asks before a merge that goes past the repo's rules, wherever the button was pressed, and
+ * before closing the pull request from the tab's menu.
+ */
+export function PullRequestConfirmations({ open }: { open: OpenCanvas }) {
+  const { bypass, closing } = useSnapshot(open.pullRequest);
   return (
-    <BypassMergeDialog
-      reason={bypass?.reason ?? null}
-      onCancel={() => open.pullRequest.cancelBypass()}
-      onConfirm={() => open.pullRequest.confirmBypass()}
-    />
+    <>
+      <BypassMergeDialog
+        reason={bypass?.reason ?? null}
+        onCancel={() => open.pullRequest.cancelBypass()}
+        onConfirm={() => open.pullRequest.confirmBypass()}
+      />
+      <ClosePullRequestDialog
+        number={closing?.number ?? null}
+        onCancel={() => open.pullRequest.cancelClose()}
+        onConfirm={() => open.pullRequest.confirmClose()}
+      />
+    </>
   );
 }

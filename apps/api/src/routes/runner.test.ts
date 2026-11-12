@@ -5,8 +5,8 @@ import { sampleDoc } from "@ponzu/core/fixtures";
 import {
   appendEvent,
   createRunnerToken,
-  getDesignAssetKey,
-  getDesignHead,
+  getCanvasAssetKey,
+  getCanvasHead,
   getQuestion,
   listAssets,
   listThreadItems,
@@ -18,17 +18,18 @@ import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { fingerprint } from "../runner/git-credential.ts";
 import {
   call,
-  designIn,
-  designWithRunner,
+  canvasIn,
+  canvasWithRunner,
   type StartedRunner,
   startRunner,
   type Workspace,
   workspaceWithRepo,
-} from "../testing/designs.ts";
+} from "../testing/canvases.ts";
 import {
   createTestApp,
   TEST_ASSETS_URL,
   TEST_BOT_USER_ID,
+  TEST_BUNDLE,
   type TestApp,
 } from "../testing/index.ts";
 
@@ -42,7 +43,7 @@ afterAll(() => t.close());
 
 const as = (login: string) => ws.people[login]!.headers;
 const sample = (repo: "repo" | "scratch" = "repo") =>
-  designWithRunner(t, ws, "maya", sampleDoc(), repo);
+  canvasWithRunner(t, ws, "maya", sampleDoc(), repo);
 const send = (runner: StartedRunner, method: string, path: string, body?: unknown) =>
   call(t, runner.headers, method, `/v1/runner${path}`, body);
 /** A claim's body: a new claim each time unless an id is given. */
@@ -50,19 +51,19 @@ const claim = (body: { claimId?: string; limit?: number } = {}) => ({
   claimId: newId("clm"),
   ...body,
 });
-const say = (designId: string, text: string, userId = ws.people.maya!.userId) =>
-  appendEvent(t.db, { designId, kind: "message", priority: "now", payload: { text }, userId });
+const say = (canvasId: string, text: string, userId = ws.people.maya!.userId) =>
+  appendEvent(t.db, { canvasId, kind: "message", priority: "now", payload: { text }, userId });
 
 describe("the session and the lease", () => {
   test("hands a runner everything it starts with, and the lease", async () => {
-    const { design, runner } = await sample();
-    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const { canvas, runner } = await sample();
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
     const maya = ws.people.maya!;
     const [owner, name] = ws.repo.fullName.split("/") as [string, string];
 
     expect(runner.session).toEqual({
       runnerId: expect.stringMatching(/^rnr_[0-9a-z]{16}$/),
-      design: { id: design.id, name: "Sample" },
+      canvas: { id: canvas.id, name: "Sample" },
       repo: { owner, name, defaultBranch: "main" },
       branch: null,
       claudeSessionId: null,
@@ -74,7 +75,7 @@ describe("the session and the lease", () => {
         email: `${TEST_BOT_USER_ID}+ponzu-test[bot]@users.noreply.github.com`,
       },
       assetBase: `${TEST_ASSETS_URL}/${assetKey}`,
-      link: `https://ponzu.design/designs/${design.id}`,
+      link: `https://ponzu.design/canvases/${canvas.id}`,
       theme: null,
       openQuestions: [],
       seq: 0,
@@ -82,17 +83,19 @@ describe("the session and the lease", () => {
       workspaceId: ws.id,
       // The test app has no PostHog key: the runner traces nothing.
       analytics: null,
+      // Its canvas records no Claude account: nothing reported for one.
+      models: null,
     });
   });
 
-  test("a Scratch design has no repository and no branch", async () => {
+  test("a Scratch canvas has no repository and no branch", async () => {
     const { runner } = await sample("scratch");
 
     expect(runner.session).toMatchObject({ repo: null, branch: null });
   });
 
   test("each session is a new lease, and every call of the runner before it is superseded", async () => {
-    const { design, runner: older } = await sample();
+    const { canvas, runner: older } = await sample();
     const again = await call(
       t,
       { authorization: older.headers.authorization },
@@ -112,8 +115,8 @@ describe("the session and the lease", () => {
         claudeSessionId: null,
       }),
       send(older, "POST", "/usage", { turns: [] }),
-      call(t, older.headers, "GET", `/v1/designs/${design.id}/doc`),
-      call(t, older.headers, "POST", `/v1/designs/${design.id}/ops`, {
+      call(t, older.headers, "GET", `/v1/canvases/${canvas.id}/doc`),
+      call(t, older.headers, "POST", `/v1/canvases/${canvas.id}/ops`, {
         ops: [{ id: "op_old", op: { op: "note", name: "n", content: "x" } }],
       }),
     ]);
@@ -121,22 +124,22 @@ describe("the session and the lease", () => {
       expect([answer.status, answer.body.error.code]).toEqual([409, "superseded"]);
     const newer = { ...older.headers, [RUNNER_HEADER]: again.body.runnerId };
     expect((await call(t, newer, "POST", "/v1/runner/events/claim", claim())).status).toBe(200);
-    expect((await getDesignHead(t.db, design.id))!.seq).toBe(0);
+    expect((await getCanvasHead(t.db, canvas.id))!.seq).toBe(0);
   });
 
   test("a call without the lease is superseded, and a revoked token is refused everywhere", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const bare = { authorization: runner.headers.authorization };
     expect((await call(t, bare, "POST", "/v1/runner/events/claim", claim())).body.error.code).toBe(
       "superseded",
     );
 
-    await revokeRunnerTokens(t.db, design.id);
+    await revokeRunnerTokens(t.db, canvas.id);
 
     for (const [method, path] of [
       ["POST", "/v1/runner/session"],
       ["POST", "/v1/runner/events/claim"],
-      ["GET", `/v1/designs/${design.id}/doc`],
+      ["GET", `/v1/canvases/${canvas.id}/doc`],
     ] as const) {
       const answer = await call(
         t,
@@ -149,11 +152,11 @@ describe("the session and the lease", () => {
     }
   });
 
-  test("a runner reaches only its own design, and no person reaches a runner route", async () => {
+  test("a runner reaches only its own canvas, and no person reaches a runner route", async () => {
     const { runner } = await sample();
-    const other = await designIn(t, ws, "maya", sampleDoc());
+    const other = await canvasIn(t, ws, "maya", sampleDoc());
 
-    const doc = await call(t, runner.headers, "GET", `/v1/designs/${other.id}/doc`);
+    const doc = await call(t, runner.headers, "GET", `/v1/canvases/${other.id}/doc`);
     const person = await call(t, as("maya"), "POST", "/v1/runner/events/claim", claim());
 
     expect([doc.status, doc.body.error.code]).toEqual([404, "not_found"]);
@@ -162,11 +165,11 @@ describe("the session and the lease", () => {
 });
 
 describe("events", () => {
-  test("a claim hands out the design's events oldest first, with who and when, and its head", async () => {
-    const { design, runner } = await sample();
-    const first = await say(design.id, "Make it blue");
+  test("a claim hands out the canvas's events oldest first, with who and when, and its head", async () => {
+    const { canvas, runner } = await sample();
+    const first = await say(canvas.id, "Make it blue");
     await appendEvent(t.db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "check",
       priority: "next",
       payload: { name: "ci", conclusion: "failure", url: null, summary: null },
@@ -196,25 +199,25 @@ describe("events", () => {
   });
 
   test("claiming again hands out only what is new, and a new runner gets what the old one never acked", async () => {
-    const { design, runner } = await sample();
-    const lost = await say(design.id, "one");
+    const { canvas, runner } = await sample();
+    const lost = await say(canvas.id, "one");
     await send(runner, "POST", "/events/claim", claim());
-    const later = await say(design.id, "two");
+    const later = await say(canvas.id, "two");
 
     const replay = await send(runner, "POST", "/events/claim", claim());
     expect(replay.body.events.map((e: { id: string }) => e.id)).toEqual([later.id]);
 
-    const next = await startRunner(t, design.id);
+    const next = await startRunner(t, canvas.id);
     const taken = await send(next, "POST", "/events/claim", claim({ limit: 1 }));
     expect(taken.body.events.map((e: { id: string }) => e.id)).toEqual([lost.id]);
   });
 
   test("a claim sent again after its answer was lost hands out the same events, and nothing new", async () => {
-    const { design, runner } = await sample();
-    const message = await say(design.id, "Make it blue");
+    const { canvas, runner } = await sample();
+    const message = await say(canvas.id, "Make it blue");
     const lostClaim = claim();
     await send(runner, "POST", "/events/claim", lostClaim);
-    const later = await say(design.id, "And the header");
+    const later = await say(canvas.id, "And the header");
 
     const again = await send(runner, "POST", "/events/claim", lostClaim);
     expect(again.body.events.map((e: { id: string }) => e.id)).toEqual([message.id]);
@@ -236,8 +239,8 @@ describe("events", () => {
   });
 
   test("an ack marks only what this runner was handed", async () => {
-    const { design, runner } = await sample();
-    const unclaimed = await say(design.id, "never claimed");
+    const { canvas, runner } = await sample();
+    const unclaimed = await say(canvas.id, "never claimed");
 
     const ack = await send(runner, "POST", "/events/ack", {
       ids: [unclaimed.id],
@@ -245,22 +248,22 @@ describe("events", () => {
     });
 
     expect(ack.body).toEqual({ acked: 0 });
-    const [row] = await feedOf(t.db, design.id);
+    const [row] = await feedOf(t.db, canvas.id);
     expect(row!.deliveredAt).toBeNull();
   });
 
   test("an ack marks events delivered once, and keeps the session they went into for the next runner", async () => {
-    const { design, runner } = await sample();
-    const event = await say(design.id, "one");
+    const { canvas, runner } = await sample();
+    const event = await say(canvas.id, "one");
     await send(runner, "POST", "/events/claim", claim());
-    const ack = { ids: [event.id, "evt_not_this_designs"], claudeSessionId: "sess-1" };
+    const ack = { ids: [event.id, "evt_not_this_canvases"], claudeSessionId: "sess-1" };
 
     expect((await send(runner, "POST", "/events/ack", ack)).body).toEqual({ acked: 1 });
     expect((await send(runner, "POST", "/events/ack", ack)).body).toEqual({ acked: 0 });
     // A stop acked alone names no session; the one there is stays.
     await send(runner, "POST", "/events/ack", { ids: [], claudeSessionId: null });
 
-    const next = await startRunner(t, design.id);
+    const next = await startRunner(t, canvas.id);
     expect(next.session.claudeSessionId).toBe("sess-1");
     expect((await send(next, "POST", "/events/claim", claim())).body.events).toEqual([]);
   });
@@ -283,7 +286,7 @@ describe("the thread", () => {
   });
 
   test("items are appended by their ids, replaced while they stream, and fixed once finished", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const id = newId("ti");
     const write = (text: string, streaming: boolean) =>
       send(runner, "POST", "/thread", { items: [assistant(id, text, streaming)] });
@@ -294,27 +297,27 @@ describe("the thread", () => {
     const late = await write("I'll ma", true);
 
     expect(late.body.items).toEqual([{ id, seq: first.body.items[0].seq, streaming: false }]);
-    const [stored] = await listThreadItems(t.db, { designId: design.id });
+    const [stored] = await listThreadItems(t.db, { canvasId: canvas.id });
     expect(stored).toMatchObject({ kind: "assistant", payload: { text: "I'll make it blue." } });
   });
 
-  test("a stopped notice names the person from the stop event, and no stop of the design refuses the write", async () => {
-    const { design, runner } = await sample();
+  test("a stopped notice names the person from the stop event, and no stop of the canvas refuses the write", async () => {
+    const { canvas, runner } = await sample();
     const other = await sample();
     const stop = await appendEvent(t.db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "stop",
       priority: "now",
       payload: {},
       userId: ws.people.maya!.userId,
     });
     const theirs = await appendEvent(t.db, {
-      designId: other.design.id,
+      canvasId: other.canvas.id,
       kind: "stop",
       priority: "now",
       payload: {},
     });
-    const message = await say(design.id, "not a stop");
+    const message = await say(canvas.id, "not a stop");
     const notice = (eventId: string) => ({
       id: newId("ti"),
       kind: "notice",
@@ -328,10 +331,10 @@ describe("the thread", () => {
       });
       expect([refused.status, refused.body.error.code]).toEqual([400, "invalid_request"]);
     }
-    expect(await listThreadItems(t.db, { designId: design.id })).toEqual([]);
+    expect(await listThreadItems(t.db, { canvasId: canvas.id })).toEqual([]);
 
     await send(runner, "POST", "/thread", { items: [notice(stop.id)] });
-    const [stored] = await listThreadItems(t.db, { designId: design.id });
+    const [stored] = await listThreadItems(t.db, { canvasId: canvas.id });
     expect(stored!.payload).toEqual({
       type: "stopped",
       by: { id: ws.people.maya!.userId, name: "Maya", login: "maya" },
@@ -339,7 +342,7 @@ describe("the thread", () => {
   });
 
   test("a runner cannot write what only the API knows, nor people's items, nor its own made-up ids", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const refused = [
       {
         id: newId("ti"),
@@ -363,11 +366,11 @@ describe("the thread", () => {
       const answer = await send(runner, "POST", "/thread", { items: [item] });
       expect([answer.status, answer.body.error.code]).toEqual([400, "invalid_request"]);
     }
-    expect(await listThreadItems(t.db, { designId: design.id })).toEqual([]);
+    expect(await listThreadItems(t.db, { canvasId: canvas.id })).toEqual([]);
   });
 
   test("a turn's work item keeps its record, bounded; one from an older runner has none", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const said = newId("ti");
     const turnItem = (id: string, log: unknown[]) => ({
       id,
@@ -403,12 +406,12 @@ describe("the thread", () => {
     ]) {
       expect((await send(runner, "POST", "/thread", { items: [bad] })).status).toBe(400);
     }
-    const stored = await listThreadItems(t.db, { designId: design.id });
+    const stored = await listThreadItems(t.db, { canvasId: canvas.id });
     expect(stored.map((i) => i.payload)).toEqual([ok.payload, old.payload]);
   });
 
   test("agent text is clipped, and a write holds at most 32 items, each once", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const id = newId("ti");
 
     await send(runner, "POST", "/thread", { items: [assistant(id, "x".repeat(40_000), false)] });
@@ -417,14 +420,14 @@ describe("the thread", () => {
       items: [assistant(id, "a", true), assistant(id, "b", true)],
     });
 
-    const [stored] = await listThreadItems(t.db, { designId: design.id });
+    const [stored] = await listThreadItems(t.db, { canvasId: canvas.id });
     expect((stored!.payload as { text: string }).text).toHaveLength(32_000);
     expect((stored!.payload as { text: string }).text.endsWith("…")).toBe(true);
     expect((await send(runner, "POST", "/thread", { items: many })).status).toBe(400);
     expect(twice.status).toBe(400);
   });
 
-  test("the same id in two designs is two items", async () => {
+  test("the same id in two canvases is two items", async () => {
     const one = await sample();
     const two = await sample();
     const id = newId("ti");
@@ -432,19 +435,41 @@ describe("the thread", () => {
     await send(one.runner, "POST", "/thread", { items: [assistant(id, "one", true)] });
     await send(two.runner, "POST", "/thread", { items: [assistant(id, "two", false)] });
 
-    expect((await listThreadItems(t.db, { designId: one.design.id }))[0]).toMatchObject({
+    expect((await listThreadItems(t.db, { canvasId: one.canvas.id }))[0]).toMatchObject({
       payload: { text: "one" },
       streaming: true,
     });
-    expect((await listThreadItems(t.db, { designId: two.design.id }))[0]!.payload).toEqual({
+    expect((await listThreadItems(t.db, { canvasId: two.canvas.id }))[0]!.payload).toEqual({
       text: "two",
     });
   });
 });
 
+describe("the bundle", () => {
+  test("is served to a runner token before the lease, as the tgz with its hash", async () => {
+    const canvas = await canvasIn(t, ws, "maya", sampleDoc());
+    const { token } = await createRunnerToken(t.db, { canvasId: canvas.id, ttlSeconds: 3600 });
+    const response = await t.app.request("/v1/runner/bundle", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/gzip");
+    expect(response.headers.get("x-ponzu-bundle-sha256")).toBe(TEST_BUNDLE.sha256);
+    expect(Buffer.from(await response.arrayBuffer()).toString("base64")).toBe(TEST_BUNDLE.tgz);
+  });
+
+  test("is nobody else's", async () => {
+    expect((await t.app.request("/v1/runner/bundle")).status).toBe(401);
+    const revoked = await t.app.request("/v1/runner/bundle", {
+      headers: { authorization: "Bearer pzr_not-a-token" },
+    });
+    expect(revoked.status).toBe(401);
+  });
+});
+
 describe("state", () => {
-  test("shows on the design's head, answers its seq, and keeps the session", async () => {
-    const { design, runner } = await sample();
+  test("shows on the canvas's head, answers its seq, and keeps the session", async () => {
+    const { canvas, runner } = await sample();
     const state = {
       state: "working",
       status: 'Drawing "Home"',
@@ -455,16 +480,13 @@ describe("state", () => {
     const first = await send(runner, "PUT", "/state", state);
     const again = await send(runner, "PUT", "/state", state);
 
-    expect([first.body, again.body]).toEqual([
-      { seq: 0, sleep: null },
-      { seq: 0, sleep: null },
-    ]);
-    expect(await getDesignHead(t.db, design.id)).toMatchObject({
+    expect([first.body, again.body]).toEqual([{ seq: 0 }, { seq: 0 }]);
+    expect(await getCanvasHead(t.db, canvas.id)).toMatchObject({
       agentState: "working",
       agentStatus: 'Drawing "Home"',
       agentArtboards: ["ab_1"],
     });
-    expect((await startRunner(t, design.id)).session.claudeSessionId).toBe("sess-7");
+    expect((await startRunner(t, canvas.id)).session.claudeSessionId).toBe("sess-7");
   });
 
   test("a state the protocol does not have is refused", async () => {
@@ -484,7 +506,7 @@ describe("questions", () => {
   const plan = (id: string) => ({ id, kind: "plan", payload: { plan: "1. Draw\n2. Ship" } });
 
   test("a question is raised once under its id and counts once, and a withdrawal closes it once", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const id = newId("q");
 
     expect((await send(runner, "POST", "/questions", plan(id))).body).toEqual({
@@ -495,11 +517,11 @@ describe("questions", () => {
       id,
       status: "open",
     });
-    expect((await getDesignHead(t.db, design.id))!.needsYouCount).toBe(1);
-    expect((await startRunner(t, design.id)).session.openQuestions).toEqual([id]);
+    expect((await getCanvasHead(t.db, canvas.id))!.needsYouCount).toBe(1);
+    expect((await startRunner(t, canvas.id)).session.openQuestions).toEqual([id]);
   });
 
-  test("a withdrawal closes open questions once, and leaves another design's", async () => {
+  test("a withdrawal closes open questions once, and leaves another canvas's", async () => {
     const one = await sample();
     const two = await sample();
     const id = newId("q");
@@ -510,8 +532,8 @@ describe("questions", () => {
     const again = await send(one.runner, "POST", "/questions/withdraw", { ids: [id] });
 
     expect([withdrawn.body, again.body]).toEqual([{ withdrawn: 1 }, { withdrawn: 0 }]);
-    expect((await getDesignHead(t.db, one.design.id))!.needsYouCount).toBe(0);
-    expect((await getQuestion(t.db, { designId: two.design.id, id }))!.status).toBe("open");
+    expect((await getCanvasHead(t.db, one.canvas.id))!.needsYouCount).toBe(0);
+    expect((await getQuestion(t.db, { canvasId: two.canvas.id, id }))!.status).toBe("open");
     // Raising it again after it closed changes nothing, and says so.
     expect((await send(one.runner, "POST", "/questions", plan(id))).body.status).toBe("cancelled");
   });
@@ -543,8 +565,8 @@ describe("uploads", () => {
   ) => t.storage.fetch(file.put.url, { method: "PUT", headers: file.put.headers, body });
   const svg = bytes('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 
-  test("an asset is presigned, put, completed and served as the design's file", async () => {
-    const { design, runner } = await sample();
+  test("an asset is presigned, put, completed and served as the canvas's file", async () => {
+    const { canvas, runner } = await sample();
     const logo = bytes("\x89PNG not really");
     const signed = await send(runner, "POST", "/uploads", {
       files: [declared("asset", "logo.png", "image/png", logo)],
@@ -557,7 +579,7 @@ describe("uploads", () => {
     const done = await send(runner, "POST", "/uploads/complete", { ids: [file.id] });
     const again = await send(runner, "POST", "/uploads/complete", { ids: [file.id] });
 
-    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
     const served = {
       id: file.id,
       ref: "assets/logo.png",
@@ -569,7 +591,7 @@ describe("uploads", () => {
       "content-type": "image/png",
     });
     expect(
-      await listAssets(t.db, { designId: design.id, paths: ["assets/logo.png"] }),
+      await listAssets(t.db, { canvasId: canvas.id, paths: ["assets/logo.png"] }),
     ).toMatchObject([{ contentType: "image/png", size: logo.byteLength, createdByUserId: null }]);
   });
 
@@ -594,7 +616,7 @@ describe("uploads", () => {
     expect((await put(second, logo)).status).toBe(403);
   });
 
-  test("completing bytes that never arrived, or another design's upload, is not found", async () => {
+  test("completing bytes that never arrived, or another canvas's upload, is not found", async () => {
     const { runner } = await sample();
     const other = await sample();
     const logo = bytes("x");
@@ -612,13 +634,13 @@ describe("uploads", () => {
   });
 
   test("an object of the right size that storage holds without the declared checksum is not the upload", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const logo = bytes("x");
     const signed = await send(runner, "POST", "/uploads", {
       files: [declared("asset", "x.png", "image/png", logo)],
     });
     const [file] = signed.body.files;
-    const key = `${await getDesignAssetKey(t.db, design.id)}/assets/x.png`;
+    const key = `${await getCanvasAssetKey(t.db, canvas.id)}/assets/x.png`;
     // As something other than the signed PUT would leave it.
     t.storage.objects.set(key, { body: logo, headers: {}, sha256: null });
 
@@ -661,7 +683,7 @@ describe("uploads", () => {
   });
 
   test("an SVG is stored to be saved, not shown, when opened by itself", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const signed = await send(runner, "POST", "/uploads", {
       files: [declared("asset", "icon.svg", "image/svg+xml", svg)],
     });
@@ -669,7 +691,7 @@ describe("uploads", () => {
 
     expect(file.put.headers["content-disposition"]).toBe("attachment");
     expect((await put(file, svg)).status).toBe(200);
-    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
     expect(t.storage.objects.get(`${assetKey}/assets/icon.svg`)!.headers).toMatchObject({
       "content-type": "image/svg+xml",
       "content-disposition": "attachment",
@@ -677,14 +699,14 @@ describe("uploads", () => {
   });
 
   test("previews are completed with the seq they show, and replace the ones before", async () => {
-    const { design, runner } = await sample();
-    await call(t, runner.headers, "POST", `/v1/designs/${design.id}/ops`, {
+    const { canvas, runner } = await sample();
+    await call(t, runner.headers, "POST", `/v1/canvases/${canvas.id}/ops`, {
       ops: [
         { id: "op_1", op: { op: "note", name: "a", content: "1" } },
         { id: "op_2", op: { op: "note", name: "a", content: "2" } },
       ],
     });
-    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const assetKey = await getCanvasAssetKey(t.db, canvas.id);
     const upload = async (seq: number | undefined) => {
       const light = bytes(`light ${seq}`);
       const dark = bytes(`dark ${seq}`);
@@ -710,11 +732,11 @@ describe("uploads", () => {
       `${TEST_ASSETS_URL}/${assetKey}/previews/1-light.png`,
       `${TEST_ASSETS_URL}/${assetKey}/previews/1-dark.png`,
     ]);
-    expect((await getDesignHead(t.db, design.id))!.previewSeq).toBe(1);
+    expect((await getCanvasHead(t.db, canvas.id))!.previewSeq).toBe(1);
 
     await upload(2);
     await t.backgroundDone();
-    expect((await getDesignHead(t.db, design.id))!.previewSeq).toBe(2);
+    expect((await getCanvasHead(t.db, canvas.id))!.previewSeq).toBe(2);
     expect(
       [...t.storage.objects.keys()].filter((key) => key.startsWith(`${assetKey}/`)).sort(),
     ).toEqual([`${assetKey}/previews/2-dark.png`, `${assetKey}/previews/2-light.png`]);
@@ -724,7 +746,7 @@ describe("uploads", () => {
 describe("git credentials", () => {
   const github = (path: string) => ({ protocol: "https", host: "github.com", path });
 
-  test("a one-hour token for the design's repository only, reused while it has ten minutes left", async () => {
+  test("a one-hour token for the canvas's repository only, reused while it has ten minutes left", async () => {
     const { runner } = await sample();
     const asked = t.github.installationTokenRequests.length;
 
@@ -759,7 +781,7 @@ describe("git credentials", () => {
   });
 
   test("an erased token is not handed out again", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const ask = github(`${ws.repo.fullName}.git`);
     const first = await send(runner, "POST", "/git-credential", ask);
 
@@ -775,7 +797,7 @@ describe("git credentials", () => {
     // Which token was given back, and why, by its fingerprint.
     expect(t.logs.filter((line) => line.event === "git_credential_erased").slice(-2)).toEqual([
       expect.objectContaining({
-        designId: design.id,
+        canvasId: canvas.id,
         fingerprint: fingerprint(first.body.password),
         reason: "GitHub's git answered 404 to the runner's check, 4 times",
       }),
@@ -784,7 +806,7 @@ describe("git credentials", () => {
   });
 
   test("every token git is handed is logged: minted or reused, its expiry and what GitHub granted, never the token", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const ask = github(`${ws.repo.fullName}.git`);
     await send(runner, "POST", "/git-credential/erase", ask);
     const first = await send(runner, "POST", "/git-credential", ask);
@@ -792,7 +814,7 @@ describe("git credentials", () => {
 
     const lines = t.logs.filter((line) => line.event === "git_credential").slice(-2);
     const said = {
-      designId: design.id,
+      canvasId: canvas.id,
       fingerprint: fingerprint(first.body.password),
       expiresAt: first.body.expiresAt,
       permissions: { contents: "write", metadata: "read" },
@@ -805,8 +827,8 @@ describe("git credentials", () => {
     expect(JSON.stringify(t.logs)).not.toContain(first.body.password);
   });
 
-  test("what the runner saw of git and GitHub is logged here, under the design: its checks and pushes", async () => {
-    const { design, runner } = await sample();
+  test("what the runner saw of git and GitHub is logged here, under the canvas: its checks and pushes", async () => {
+    const { canvas, runner } = await sample();
     const refused = await send(runner, "POST", "/git-report", {
       name: "git_credential_refused",
       fields: { fingerprint: "0123456789ab", status: 404, check: 2 },
@@ -823,14 +845,14 @@ describe("git credentials", () => {
       },
     });
     expect(t.logs.findLast((line) => line.event === "git_credential_refused")).toMatchObject({
-      designId: design.id,
+      canvasId: canvas.id,
       from: "runner",
       fingerprint: "0123456789ab",
       status: 404,
       check: 2,
     });
     const pushed = t.logs.findLast((line) => line.event === "git_push");
-    expect(pushed).toMatchObject({ designId: design.id, ok: false, kind: "transient" });
+    expect(pushed).toMatchObject({ canvasId: canvas.id, ok: false, kind: "transient" });
     expect(String(pushed?.said).length).toBe(500);
 
     // Only names it knows, and only short scalar fields.
@@ -895,7 +917,7 @@ describe("git credentials", () => {
 
 describe("usage", () => {
   test("each turn is recorded once, by model", async () => {
-    const { design, runner } = await sample();
+    const { canvas, runner } = await sample();
     const turn = {
       id: crypto.randomUUID(),
       claudeSessionId: "sess-1",
@@ -915,7 +937,7 @@ describe("usage", () => {
     expect((await send(runner, "POST", "/usage", { turns: [turn] })).body).toEqual({ recorded: 1 });
     expect((await send(runner, "POST", "/usage", { turns: [turn] })).body).toEqual({ recorded: 0 });
     const rows = (await t.db.execute(
-      `select cost_microusd, credits, payer from usage_events where design_id = '${design.id}'`,
+      `select cost_microusd, credits, payer from usage_events where canvas_id = '${canvas.id}'`,
     )) as unknown as { rows: { cost_microusd: string | number; payer: string }[] };
     expect(rows.rows.map((row) => [Number(row.cost_microusd), row.payer])).toEqual([
       [12_500, "own_plan"],
@@ -923,11 +945,11 @@ describe("usage", () => {
   });
 });
 
-test("no event reaches a design that is not the runner's, whatever it names", async () => {
+test("no event reaches a canvas that is not the runner's, whatever it names", async () => {
   const { runner } = await sample();
-  const other = await designIn(t, ws, "maya", emptyDoc("Other"));
+  const other = await canvasIn(t, ws, "maya", emptyDoc("Other"));
   const event = await say(other.id, "theirs");
-  await createRunnerToken(t.db, { designId: other.id, ttlSeconds: 60 });
+  await createRunnerToken(t.db, { canvasId: other.id, ttlSeconds: 60 });
 
   const claimed = await send(runner, "POST", "/events/claim", claim());
   const acked = await send(runner, "POST", "/events/ack", {

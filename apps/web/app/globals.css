@@ -16,7 +16,7 @@
   /* Yuzu: the brand's one color. */
   --yuzu: #ffc81e;
   /*
-   * The desktop the demo and the download page's steps sit on: yuzu on light. Its big slice is
+   * The desktop the download page's steps sit on: yuzu on light. Its big slice is
    * ink, faint.
    */
   --stage: #ffc81e;
@@ -24,6 +24,7 @@
   --stage-slice-opacity: 0.12;
   --stage-shadow: rgba(90, 60, 0, 0.3);
   --shot-shadow: rgba(40, 30, 0, 0.28);
+  --shot-rule: rgb(17 17 16 / 0.08);
   --rule: #e8e6e0;
   --outline: #d3d0c8;
   --cta: #111110;
@@ -66,6 +67,7 @@
     --stage-slice-opacity: 0.1;
     --stage-shadow: rgba(0, 0, 0, 0.5);
     --shot-shadow: rgba(0, 0, 0, 0.8);
+    --shot-rule: rgb(255 255 255 / 0.09);
     --rule: #1f1f1e;
     --outline: #3f3d39;
     --cta: #ffc81e;
@@ -159,7 +161,7 @@
 }
 
 /*
- * The desktop under the demo and the download steps. Dark mode lights it from the corner the slice
+ * The desktop under the download steps. Dark mode lights it from the corner the slice
  * sits in, so the soy reads as a surface and not a hole.
  */
 .stage {
@@ -175,42 +177,13 @@
 }
 
 /*
- * The homepage demo's desktop: ink in both schemes, so the studio and the use-case tabs above it
- * stand out at full contrast. On the dark page plain ink would be a hole, so it lifts a step and
- * takes a hairline.
+ * A product shot (components/hero-shot.tsx): the Mac window, drawn by the studio's gallery, with
+ * a hairline and a soft shadow so it sits on the page in either scheme.
  */
-.demo-stage {
-  background: #111110;
-}
-
-@media (prefers-color-scheme: dark) {
-  .demo-stage {
-    background: #171716;
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
-  }
-}
-
-/* The app's home screen, in its tile on the home page: the studio's own colors. */
-.home {
-  --home-rule: rgb(17 17 16 / 0.06);
-  --home-rule-strong: rgb(17 17 16 / 0.12);
-  background: #faf9f6;
-}
-
-.home-preview {
-  background: #f4f3ef;
-}
-
-@media (prefers-color-scheme: dark) {
-  .home {
-    --home-rule: rgb(255 255 255 / 0.11);
-    --home-rule-strong: rgb(255 255 255 / 0.2);
-    background: #151514;
-  }
-
-  .home-preview {
-    background: #121211;
-  }
+.shot {
+  box-shadow:
+    0 0 0 1px var(--shot-rule),
+    0 30px 80px -30px var(--shot-shadow);
 }
 
 /*
@@ -417,102 +390,6 @@
     linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent),
     linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 8px), transparent);
   mask-composite: intersect;
-}
-
-/*
- * The GitHub viewer's loading state (app/gh/[...slug]/loading.tsx), in the canvas's own colors
- * (packages/canvas/src/styles.css), so the skeleton reads as the canvas about to appear.
- */
-.gv-loading {
-  --gv-canvas: #f4f3ef;
-  --gv-surface: #ffffff;
-  --gv-board-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.05);
-  --gv-line: rgba(0, 0, 0, 0.07);
-  --gv-block: rgba(0, 0, 0, 0.045);
-  --gv-shine: rgba(0, 0, 0, 0.035);
-  --gv-raised: #ffffff;
-  --gv-label: #5e5b54;
-  --gv-bar: rgba(250, 250, 249, 0.72);
-  --gv-bar-edge: rgba(0, 0, 0, 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .gv-loading {
-    --gv-canvas: #121211;
-    --gv-surface: #1b1b1a;
-    --gv-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
-    --gv-line: rgba(255, 255, 255, 0.08);
-    --gv-block: rgba(255, 255, 255, 0.045);
-    --gv-shine: rgba(255, 255, 255, 0.04);
-    --gv-raised: #3a3a3a;
-    --gv-label: #a9a59b;
-    --gv-bar: rgba(28, 28, 28, 0.72);
-    --gv-bar-edge: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.gv-progress {
-  animation: gv-bar 2.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.gv-board {
-  animation: gv-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  animation-delay: calc(var(--i) * 90ms);
-}
-
-.gv-sheen {
-  background: linear-gradient(100deg, transparent 30%, var(--gv-shine) 50%, transparent 70%);
-  background-size: 220% 100%;
-  animation: gv-sheen 1.4s linear infinite;
-}
-
-.gv-bar {
-  background: var(--gv-bar);
-  box-shadow:
-    0 0 0 0.5px var(--gv-bar-edge),
-    0 6px 20px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(18px) saturate(1.6);
-}
-
-@keyframes gv-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.985);
-  }
-}
-
-@keyframes gv-sheen {
-  from {
-    background-position: 120% 0;
-  }
-  to {
-    background-position: -120% 0;
-  }
-}
-
-/* Most of the way at once, then a crawl: GitHub answers in a second or two, or it's slow. */
-@keyframes gv-bar {
-  from {
-    transform: scaleX(0);
-  }
-  40% {
-    transform: scaleX(0.6);
-  }
-  to {
-    transform: scaleX(0.86);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gv-board,
-  .gv-sheen {
-    animation: none;
-  }
-
-  .gv-progress {
-    animation: none;
-    transform: scaleX(0.6);
-  }
 }
 
 /* `svg` lifts the wheel rules above the tile's own inline stylesheet. */
