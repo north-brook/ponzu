@@ -1010,9 +1010,9 @@ test("screenshot renders in the theme and from the assets the host names", async
   host.viewerTheme = "dark";
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(shot.images).toHaveLength(1);
-  expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");
+  expect(shot.text).toContain("Shown in dark, the theme the person sees Ponzu in.");
   expect(calls[0]).toMatchObject({ colorScheme: "dark", assetBase: host.assetBase(), lint: true });
-  expect((await call("get_basic_info")).text).toContain("The person's canvas is in dark mode");
+  expect((await call("get_basic_info")).text).toContain("The person sees Ponzu in dark mode");
 });
 
 test("the tools that need a renderer say so when there is none", async () => {
@@ -1144,7 +1144,7 @@ test("every page and board the agent learns of comes with its own link, ready to
 /** A place inside a .design folder, or the folder itself. `assets/…` is how markup names an asset. */
 const FOLDER_PATH =
   /\.design\b|design\.json|comments\.json|tokens\.css|\b(?:pages|notes|exports)\/|\.ponzu\b/;
-/** Ways of telling an agent to say which design: there is one. */
+/** Ways of telling an agent to say which canvas: there is one. */
 const FILE_ARGUMENT = /`file`|\bfile argument\b|\b(?:pass|passing|without|omit) file\b|\bfile=/i;
 /** The local world: a Mac app that pairs with agents, which watch the canvas in a loop. */
 const LOCAL_WORLD = /\bMac app\b|\bpair(?:ing|ed)\b|\bwatch(?:ing)? the canvas\b|\bwatch loop\b/i;

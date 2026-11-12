@@ -113,7 +113,7 @@ const exportTool = tool({
   title: "Export",
   group: "see",
   description:
-    "Export an artboard or node as PNG, JPEG or PDF to a file in the sandbox, at the path you choose: inside the repo when it should be committed. The path's ending says the format: .png, .jpg or .pdf. When Ponzu can host the file too, the result also has a link to it, for a pull request description, say. A design with light-dark() colors exports in the theme the person's canvas is in unless you pass colorScheme.",
+    "Export an artboard or node as PNG, JPEG or PDF to a file in the sandbox, at the path you choose: inside the repo when it should be committed. The path's ending says the format: .png, .jpg or .pdf. When Ponzu can host the file too, the result also has a link to it, for a pull request description, say. Work with light-dark() colors exports in the theme the person sees Ponzu in unless you pass colorScheme.",
   input: {
     ...exportInput,
     path: z
@@ -142,10 +142,10 @@ const exportTool = tool({
 
 const updateCanvas = tool({
   name: "update_canvas",
-  title: "Update design",
+  title: "Update canvas",
   group: "organize",
   description:
-    'Name the canvas, or change its icon. Give a new canvas a real name once you know what it is: a few words for what is being designed, like "Checkout flow".',
+    'Name the canvas, or change its icon. Give a new canvas a real name once you know what it is: a few words for what is being made, like "Checkout flow".',
   input: {
     name: z.string().min(1).optional(),
     icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
@@ -179,7 +179,7 @@ export const cloudTools: ToolDef<any>[] = [
   ...listenTools,
   guideTool(
     cloudGuides,
-    "basics, layout, typography, comments (how comments and messages reach you, and what to do with each), variations, code (rebuilding UI that is already in the repo, and building a canvas in code), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile",
+    "basics, layout, typography, comments (how comments and messages reach you, and what to do with each), variations, code (rebuilding UI that is already in the repo, and turning boards into code), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile",
   ),
 ];
 

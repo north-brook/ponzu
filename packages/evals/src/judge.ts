@@ -10,7 +10,7 @@ import type { Meter } from "./meter.ts";
  * product's own model calls do (`generateText` with `Output.object`), and every call is metered.
  * A judge is meant to be a stronger model than what it judges: Claude Opus 5.5 for the ideas,
  * which Claude Haiku 5.5 writes. The thread judge is the exception for now: it is on the same
- * Opus 5.5 as the design agent (`THREAD_JUDGE_MODEL` in apps/runner/evals/agent/judge.ts says why).
+ * Opus 5.5 as the agent (`THREAD_JUDGE_MODEL` in apps/runner/evals/agent/judge.ts says why).
  */
 
 /** The offline judges' model, unless a suite names a stronger one for what it judges. */

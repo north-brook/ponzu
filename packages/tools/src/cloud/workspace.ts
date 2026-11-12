@@ -24,7 +24,7 @@ export interface AgentStatus {
  *
  * `status` and `intent` are told, not asked: they may be async, and one that throws or rejects
  * is counted (a "host call failed" telemetry event) and otherwise dropped. By then the edit
- * that led to it is in the design, so the failure is no part of that tool's result.
+ * that led to it is in the canvas, so the failure is no part of that tool's result.
  * `assetBase`, `link` and `theme` are read in the middle of a tool call, from what the runner
  * already holds: they reach for nothing and don't throw.
  */
@@ -42,7 +42,7 @@ export interface CloudHost {
   assetBase(): string | undefined;
   /** Put an export where a link reaches it, and resolve to the link. Absent when nothing can. */
   publish?(file: NamedBytes): Promise<string>;
-  /** A link that opens the design in Ponzu. */
+  /** A link that opens the canvas in Ponzu. */
   link(): string | undefined;
   /** The theme renders default to: the canvas of the person the agent is working for, once known. */
   theme(): ColorScheme | undefined;

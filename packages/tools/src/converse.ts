@@ -193,7 +193,7 @@ export const converseTools = [
         .max(4000)
         .optional()
         .describe(
-          "What happened, which tool, and what would have helped. Leave design content, names, paths and personal details out of any argument or error you quote.",
+          "What happened, which tool, and what would have helped. Leave canvas content, names, paths and personal details out of any argument or error you quote.",
         ),
       tool: z.string().optional().describe("The Ponzu tool it's about, if any."),
     },

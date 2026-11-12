@@ -1,8 +1,8 @@
 # @ponzu/runner
 
-The one long-lived process inside each design's sandbox. It runs Claude Code through the Agent
-SDK with the canvas tools in-process, keeps the design in step with the API, writes what the
-agent does to the thread and the design's state, and puts what people do back into the run.
+The one long-lived process inside each canvas's sandbox. It runs Claude Code through the Agent
+SDK with Ponzu's tools in-process, keeps the canvas in step with the API, writes what the
+agent does to the thread and the canvas's state, and puts what people do back into the run.
 [docs/cloud.md](../../docs/cloud.md) ("The runner", "Events", "Needs you", "Credentials" and
 "The runner protocol") is its specification.
 
@@ -161,8 +161,8 @@ docs/cloud.md ("The sandbox", "Saving the sandbox") is the specification.
   (a rollback) or has none (a new or recreated sandbox, or a snapshot that expired) gets the
   checkpoint back, never over anything newer, and the runner logs `sandbox_rollback` or
   `sandbox_rebuilt` as JSON and tells the API.
-- **The pull request summary.** On a checked-out repo design the runner hosts
-  `describe_pull_request` beside the canvas tools: the agent's own words on what its branch
+- **The pull request summary.** On a canvas with a checked-out repo the runner hosts
+  `describe_pull_request` beside Ponzu's tools: the agent's own words on what its branch
   changes, which the API writes into the pull request's description.
 - **The agent's pull request** (`src/pull-request-tools.ts`). Beside it, `open_pull_request`,
   `read_pull_request`, `mark_pull_request_ready`, `update_pull_request_branch`,
@@ -203,15 +203,15 @@ token it issued for the canvas. A local API that wakes canvases in real sandboxe
 
 **What a hostile repo or a hostile comment can do.** A repo's hooks, MCP servers, skills and
 code run as the agent's user in the sandbox (`agent` in the image). So does whatever the agent
-is talked into: anyone whose words become a prompt (a person commenting on the design, anyone
+is talked into: anyone whose words become a prompt (a person commenting on the canvas, anyone
 reviewing its pull request, which on a public repo is anyone on GitHub, a check's log) can try
 to make the agent run a command. Either way that reaches the Claude credential, a one-hour
 token for that one repository (through the runner's socket) and the repo's own secrets, and
-nothing of any other design. In the image it does not reach the runner token: `agent` cannot
+nothing of any other canvas. In the image it does not reach the runner token: `agent` cannot
 read the supervisor's or runner's `/proc` or the runner's log, and has no sudo, and the canvas tools
 read and write the paths it names as `agent` (`PONZU_AS_AGENT`). The runner keeps the
 exposure down where it can: other people's words reach the model quoted, under instructions
 that quoted text never directs it; the runner token can only write what an agent could anyway
 (a runner cannot write the API's own notices, such as a pull request's); and the lease means a
-stolen token can stop this design's runner but not act beside it. docs/cloud.md ("Security")
+stolen token can stop this canvas's runner but not act beside it. docs/cloud.md ("Security")
 has the whole threat and the hardening that remains.

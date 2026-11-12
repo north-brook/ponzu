@@ -61,7 +61,7 @@ export async function overview(
   if (ws.theme)
     lines.push(
       isThemed(doc.tokens) || doc.pages.some((p) => p.artboards.some((ab) => isThemed("", ab.root)))
-        ? `The person's canvas is in ${ws.theme} mode, so they see this design's light-dark() colors in ${ws.theme}. Screenshots default to it.`
+        ? `The person sees Ponzu in ${ws.theme} mode, so they see this canvas's light-dark() colors in ${ws.theme}. Screenshots default to it.`
         : `The person's canvas is in ${ws.theme} mode. These tokens don't change with the theme, so artboards show as they are in both. Notes, diagrams and docs you make for the person should still follow it: give them light-dark() colors.`,
     );
   const working = ws.presence.list().filter((p) => p.working.length);

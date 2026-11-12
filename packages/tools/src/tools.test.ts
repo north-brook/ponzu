@@ -703,16 +703,16 @@ test("renders default to the person's theme and say so when the canvas has one",
   await call("update_styles", {
     updates: [{ ids: ["n_h"], style: { color: "light-dark(#111, #eee)" } }],
   });
-  expect((await call("get_basic_info", {})).text).toContain("canvas is in dark mode, so they see");
+  expect((await call("get_basic_info", {})).text).toContain("sees Ponzu in dark mode, so they see");
   await call("update_styles", { updates: [{ ids: ["n_h"], style: { color: null } }] });
 
   await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(scheme()).toBe("dark");
-  expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");
+  expect(shot.text).toContain("Shown in dark, the theme the person sees Ponzu in.");
   expect(shot.text).toContain('pass colorScheme: "light" to see it');
   expect((await call("get_basic_info", {})).text).toContain(
-    "The person's canvas is in dark mode, so they see this design's light-dark() colors in dark.",
+    "The person sees Ponzu in dark mode, so they see this canvas's light-dark() colors in dark.",
   );
   await call("screenshot", { id: "ab_hero", colorScheme: "light" });
   expect(scheme()).toBe("light");

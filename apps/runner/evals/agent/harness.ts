@@ -30,7 +30,7 @@ import { gitIn } from "../../src/save/work.ts";
 import { FITNESS_REPO } from "./seeds.ts";
 
 /*
- * One real turn of the design agent, the way a sandbox runs it, on this machine: the runner
+ * One real turn of the agent, the way a sandbox runs it, on this machine: the runner
  * (`Runner`) in process against the API in memory (`FakeRunnerApi`), real Claude Code through the
  * Agent SDK on a Claude sign-in, real screenshots from a headless Chromium, and a real git
  * repository standing in for GitHub. Each turn gets its own folders, Claude config and home, so
@@ -52,10 +52,10 @@ export const REFUSAL =
 const BRANCH = "pz/onboarding";
 
 export interface TurnSetup {
-  /** The design's id: its links are `https://ponzu.design/canvases/<id>…`. */
+  /** The canvas's id: its links are `https://ponzu.design/canvases/<id>…`. */
   canvasId: string;
   doc: Doc;
-  /** A design on the fitness app's repository, or Scratch. */
+  /** A canvas on the fitness app's repository, or Scratch. */
   repo: boolean;
   /** Every push is refused, as GitHub refused a token it had just minted. */
   refusePush?: boolean;
@@ -63,7 +63,7 @@ export interface TurnSetup {
   event: EventBody;
   /** Who it is from: Ada unless said, null for GitHub. */
   from?: Person | null;
-  /** The design's pull request when the turn begins, as the app shows it; none unless said. */
+  /** The canvas's pull request when the turn begins, as the app shows it; none unless said. */
   pullRequest?: PullRequestState | null;
 }
 
@@ -75,7 +75,7 @@ export interface TurnOutcome {
   closing: string | null;
   docBefore: Doc;
   docAfter: Doc;
-  /** Commits on the design's branch, as unix seconds and subject, oldest first. */
+  /** Commits on the canvas's branch, as unix seconds and subject, oldest first. */
   commits: { at: number; subject: string }[];
   /** Commits the remote holds of the branch. */
   pushed: number;

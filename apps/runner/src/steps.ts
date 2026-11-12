@@ -196,8 +196,7 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
     case "update_canvas": {
       const name = shown(input.name, NAME);
       if (name) return step(`Naming the canvas "${name}"`, `Named the canvas "${name}"`, 1);
-      if (input.icon !== undefined)
-        return step("Choosing the canvas's icon", "Chose the canvas's icon", 1);
+      if (input.icon !== undefined) return step("Choosing an icon", "Chose an icon", 1);
       // Its input still to come, or a name that may not be said.
       return step("Naming the canvas", "Named the canvas", 1);
     }
@@ -212,7 +211,7 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
         ? step("Deleting a page", "Deleted a page", 2)
         : step("Arranging pages", "Arranged pages", 2);
     case "set_tokens":
-      return step("Setting the canvas's tokens", "Set the canvas's tokens", 2);
+      return step("Setting the tokens", "Set the tokens", 2);
     case "write_note": {
       const name = shown(input.name, NAME);
       return name

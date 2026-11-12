@@ -202,7 +202,7 @@ export function buildRunnerBundle(): Bundle {
   }
 }
 
-/** What one design's sandbox is given at every start: never at create, never on disk. */
+/** What one canvas's sandbox is given at every start: never at create, never on disk. */
 export interface Start {
   canvasId: string;
   runnerToken: string;
@@ -500,7 +500,7 @@ export async function gh<T = unknown>(token: string, path: string, method = "GET
 }
 
 /**
- * The session a repo design's runner gets: GITHUB_TEST_REPO on a new branch, authored as
+ * The session a repo canvas's runner gets: GITHUB_TEST_REPO on a new branch, authored as
  * E2E_PERSON (the App's bot when unset) and committed as the App's bot.
  */
 export async function repoSession(github: { jwt: string; token: string }, branch: string) {

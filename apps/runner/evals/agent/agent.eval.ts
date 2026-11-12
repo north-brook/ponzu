@@ -43,8 +43,8 @@ import {
 import { onboardingDoc, pinnedComment, pricingDoc } from "./seeds.ts";
 
 /*
- * The design agent's thread suite: one real turn per case (docs/evals.md), the situations #448
- * and #451 ran by hand, each from its own seeded design. Exact checks decide what code can
+ * The agent's thread suite: one real turn per case (docs/evals.md), the situations #448
+ * and #451 ran by hand, each from its own seeded canvas. Exact checks decide what code can
  * (links resolve, no ids, the description written after the last commit, a closing message);
  * the calibrated thread judge decides the rest; counts and lengths are reported as metrics only.
  */
@@ -242,7 +242,7 @@ export interface FactInputs {
   notices?: string[];
   questions: number;
   ended: string | null;
-  /** The design's pull request when the turn began; absent from rows recorded before it was said. */
+  /** The canvas's pull request when the turn began; absent from rows recorded before it was said. */
   pullRequestStart?: PullRequestState | null;
   /** What the agent asked of its pull request, and what came of it. */
   pullRequestCalls?: { action: string; outcome: string }[];
@@ -306,12 +306,12 @@ export function factsText(f: FactInputs): string {
   if (f.changed.length) lines.push(`Boards changed: ${f.changed.join(", ")}.`);
   if (f.deleted.length) lines.push(`Boards deleted: ${f.deleted.join(", ")}.`);
   if (f.pagesMade.length) lines.push(`Pages made: ${f.pagesMade.map((p) => `'${p}'`).join(", ")}.`);
-  if (f.tokensChanged) lines.push("The design's tokens changed.");
-  if (!f.repo) lines.push("Scratch design: no repository, so nothing to commit or push.");
+  if (f.tokensChanged) lines.push("The canvas's tokens changed.");
+  if (!f.repo) lines.push("Scratch canvas: no repository, so nothing to commit or push.");
   else {
     lines.push(
       f.commits.length
-        ? `Commits on the design's branch: ${f.commits.map((c) => `"${c}"`).join(", ")}.`
+        ? `Commits on the canvas's branch: ${f.commits.map((c) => `"${c}"`).join(", ")}.`
         : "No commit was made.",
     );
     lines.push(`Commits on the remote branch after the turn: ${f.pushed} of ${f.commits.length}.`);
@@ -686,7 +686,7 @@ function finish(
 
 /** The report a person reads, from what `latest.json` records. */
 export function agentMarkdown(report: SuiteReport, results: readonly CaseResult[]): string {
-  const lines = [reportHeader(report, "The design agent's thread")];
+  const lines = [reportHeader(report, "The agent's thread")];
   // A row may come from an earlier run (`--only`, `rejudge`): say where each one's turn ran.
   const ran = results.filter((row) => row.ran);
   if (ran.length) {

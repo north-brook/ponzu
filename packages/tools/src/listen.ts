@@ -93,7 +93,7 @@ export function guideTool(guides: Record<string, string>, about: string) {
     title: "Get guide",
     group: "listen",
     readOnly: true,
-    description: `House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: ${about}.`,
+    description: `House rules and workflows for work in Ponzu. Read 'basics' once per session before writing. Topics: ${about}.`,
     input: { topic: z.enum(topics) },
     handler({ topic }) {
       return { text: guides[topic]! };

@@ -19,7 +19,7 @@ const link = (q: string) => `https://ponzu.design/canvases/${canvas}${q}`;
 const check = (...messages: string[]) =>
   checkMessages(messages, { canvasId: canvas, docAfter: doc, docBefore: doc });
 
-test("a link to a board or page of this design passes; one to a board that is gone fails", () => {
+test("a link to a board or page of this canvas passes; one to a board that is gone fails", () => {
   expect(
     check(
       `See [${hero.name}](${link(`?artboard=${hero.id}`)}) and [Mobile](${link(`?page=${mobile!.id}`)}).`,
@@ -31,10 +31,10 @@ test("a link to a board or page of this design passes; one to a board that is go
   });
   const gone = check(`See [Old](${link("?artboard=ab_gone000")}).`);
   expect(gone.results.links).toBe(false);
-  expect(gone.problems).toEqual([`a board not in the design: ${link("?artboard=ab_gone000")}`]);
+  expect(gone.problems).toEqual([`a board not in the canvas: ${link("?artboard=ab_gone000")}`]);
 });
 
-test("another design's address, or one dressed up as ours, fails", () => {
+test("another canvas's address, or one dressed up as ours, fails", () => {
   expect(
     check(`[x](https://ponzu.design/canvases/cnv_other?artboard=${hero.id})`).results.links,
   ).toBe(false);

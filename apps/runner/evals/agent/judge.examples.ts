@@ -392,7 +392,7 @@ One decision is yours: whether people make an account before their first workout
       request:
         "Message from Ada: Design a pricing page hero for Stillwater, a meditation app: three options side by side to choose from, and a note board that compares them and says which you'd pick.",
       facts:
-        "Made boards 'Pricing hero' and 'Note: Which plan to pick' on page Home. Scratch design: no repository. Nothing failed.",
+        "Made boards 'Pricing hero' and 'Note: Which plan to pick' on page Home. Scratch canvas: no repository. Nothing failed.",
       midTurn: [],
       closing: `I've built the pricing hero on the canvas, with the note board beside it.
 
@@ -418,7 +418,7 @@ I shortened the Yearly price suffix to "/ mo · $80 a year" after it wrapped ont
       request:
         "Message from Ada: Make a mobile version of the option you recommended, on its own page called Mobile.",
       facts:
-        "Made page 'Mobile' and board 'Yearly plan – mobile' on it. Scratch design. Nothing failed.",
+        "Made page 'Mobile' and board 'Yearly plan – mobile' on it. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `I've made the mobile version of Yearly, the plan I recommended, on a new page called Mobile. The artboard is [Yearly plan – mobile](${LINK}?artboard=ab_bd49f), 390px wide. The screenshot shows no layout problems.
 
@@ -435,7 +435,7 @@ The links in that line are text only, and they don't go anywhere yet. If you'd r
     input: {
       request:
         "Message from Ada: Where can I see why you picked that one, and which board should I look at first on my phone?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `The reasoning is on [Note: Which plan to pick](${LINK}?artboard=ab_6qptl), the board beside the desktop hero on the Home page. It has a comparison table and my reasons for choosing Yearly:
 
@@ -454,7 +454,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: sends the person to a board by name with no link.",
     input: {
       request: "Message from Ada: Where can I see why you picked that plan?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing:
         "The reasoning is on Note: Which plan to pick, beside the hero on the Home page: I'd lead with Yearly because a year gives the habit time to take hold.",
@@ -467,7 +467,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: the link's text is 'here', not the board's name.",
     input: {
       request: "Message from Ada: Which board should I look at first on my phone?",
-      facts: "No change to the canvas. Scratch design. Nothing failed.",
+      facts: "No change to the canvas. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `Start [here](${LINK}?artboard=ab_bd49f): it's the phone version of Yearly, at its real 390px width.`,
       prDescription: null,
@@ -479,7 +479,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
     note: "Made up: a recap of six boards, every one linked, after a plain request.",
     input: {
       request: ONBOARDING,
-      facts: "Made six iPhone screens on the Onboarding page. Scratch design. Nothing failed.",
+      facts: "Made six iPhone screens on the Onboarding page. Scratch canvas. Nothing failed.",
       midTurn: [],
       closing: `Here's the flow:
 - [1 Welcome](${LINK}?artboard=ab_a1): the headline and Get started.

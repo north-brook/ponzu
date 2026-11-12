@@ -365,7 +365,7 @@ export class ChromiumRenderer implements Renderer {
     return this.job(this.main, pageScale, async (page) => {
       const loaded = await this.load(page, req);
       const cdp = await page.context().newCDPSession(page);
-      // Transparent where the design is, like screenshots.
+      // Transparent behind the board, like screenshots.
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },
       });
@@ -493,7 +493,7 @@ export class ChromiumRenderer implements Renderer {
     // Chrome won't let a page at a public origin reach a server on this
     // machine or its network (local network access). Two things get a canvas
     // its files from one anyway. With `loopback`, the page is given Chrome's
-    // own permission for this machine, and Chrome loads what the design asks
+    // own permission for this machine, and Chrome loads what the board asks
     // for as it would from anywhere: a video in pieces, and never through
     // this process. What that can't cover is fetched from here: a request
     // that needs a CORS header, which a dev server rarely sends with its

@@ -28,12 +28,12 @@ const colorSchemeArg = z
   .enum(["light", "dark"])
   .optional()
   .describe(
-    "Theme for light-dark() colors. Default: the theme the person's canvas is in, else light.",
+    "Theme for light-dark() colors. Default: the theme the person sees Ponzu in, else light.",
   );
 
 /**
- * The theme to render in, and a line saying so when the design has one. The
- * person's canvas shows a themed design in its own theme, so renders default to it.
+ * The theme to render in, and a line saying so when the canvas has one. Ponzu
+ * shows themed work in the theme the person sees it in, so renders default to it.
  */
 function scheme(
   ws: { theme?: "light" | "dark" },
@@ -45,7 +45,7 @@ function scheme(
   // Always one or the other, so media queries don't follow wherever the renderer runs.
   const colorScheme = asked ?? ws.theme ?? "light";
   const other = colorScheme === "dark" ? "light" : "dark";
-  const whose = asked ? "" : ws.theme ? ", the theme the person's canvas is in" : "";
+  const whose = asked ? "" : ws.theme ? ", the theme the person sees Ponzu in" : "";
   return {
     colorScheme,
     line: `Shown in ${colorScheme}${whose}. Lint checks colors in ${other} too; pass colorScheme: "${other}" to see it.`,

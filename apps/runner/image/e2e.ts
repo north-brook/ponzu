@@ -10,7 +10,7 @@
  *   the runner, a turn that draws; the public port without its bearer; then twice: a sleep as
  *   the API's (ponzu-stop, then stop), up again (a resume, the same disk), ponzu-start (the
  *   bundle is already on the disk), a turn in the same Claude session. Every wake is timed.
- * repo: a design on GITHUB_TEST_REPO: the runner checks out a new branch, Claude commits a file
+ * repo: a canvas on GITHUB_TEST_REPO: the runner checks out a new branch, Claude commits a file
  *   and pushes it. Needs GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY_PATH;
  *   E2E_PERSON (a GitHub login) authors the commit, else the App's bot does. The branch and the
  *   one-hour token are deleted after.
@@ -140,7 +140,7 @@ async function scratch(): Promise<void> {
 
 /**
  * As the API's wake: the fake API up (it is the API, always there), the message that woke the
- * design in the feed, then ponzu-start. Times the runner to /health, its first claim, the first
+ * canvas in the feed, then ponzu-start. Times the runner to /health, its first claim, the first
  * thread item, the first artboard change and both previews, from `t0` (the up() call).
  */
 async function bootAndTurn(box: Box, start: Start, label: string, t0: number, text: string) {
@@ -263,7 +263,7 @@ async function repo(): Promise<void> {
       const ready = await idle(box, start, "the runner to check out the branch");
       say("repo.ready", { seconds: secs(performance.now() - t0) });
       const work = `/home/agent/work/${name}`;
-      // The checkout is the agent's, on the design's branch, and git asks only the runner.
+      // The checkout is the agent's, on the canvas's branch, and git asks only the runner.
       const checkout = (
         await sh(
           box,

@@ -70,16 +70,16 @@ export interface MessageChecks {
   results: Record<string, boolean>;
   /** What failed, in words. */
   problems: string[];
-  /** Every link to this design, for the metrics. */
+  /** Every link to this canvas, for the metrics. */
   links: Link[];
 }
 
 /**
  * The exact checks on a turn's messages, against the document at the end of the turn (and, for
  * ids, at its start too, so an id the agent deleted still counts):
- * - links: every link to ponzu.design is our address, for this design, and its page or board is
+ * - links: every link to ponzu.design is our address, for this canvas, and its page or board is
  *   in the document at the end of the turn;
- * - no_bare_address: no design address is pasted as text rather than linked;
+ * - no_bare_address: no canvas address is pasted as text rather than linked;
  * - no_ids: no page, board or node id appears in what a person reads.
  */
 export function checkMessages(
@@ -109,18 +109,18 @@ export function checkMessages(
         problems.push(`not our address: ${link.href}`);
       } else if (at.canvasId !== canvasId) {
         linksOk = false;
-        problems.push(`another design's address: ${link.href}`);
+        problems.push(`another canvas's address: ${link.href}`);
       } else if (at.page && !pages.has(at.page)) {
         linksOk = false;
-        problems.push(`a page not in the design: ${link.href}`);
+        problems.push(`a page not in the canvas: ${link.href}`);
       } else if (at.artboard && !boards.has(at.artboard)) {
         linksOk = false;
-        problems.push(`a board not in the design: ${link.href}`);
+        problems.push(`a board not in the canvas: ${link.href}`);
       }
     }
     if (parsed.readable.includes("ponzu.design/canvases/")) {
       bareOk = false;
-      problems.push("a design address pasted as text");
+      problems.push("a canvas address pasted as text");
     }
     for (const id of ids) {
       if (parsed.readable.includes(id)) {

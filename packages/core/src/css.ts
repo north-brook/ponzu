@@ -177,7 +177,7 @@ function indexOfTopLevel(text: string, ch: string): number {
 const THEMED = /light-dark\(|prefers-color-scheme/i;
 
 /**
- * Whether a design changes with the theme, from its tokens and, given one, an
+ * Whether a canvas changes with the theme, from its tokens and, given one, an
  * artboard's markup. Ones that don't look the same in light and dark, so they
  * render light everywhere.
  */

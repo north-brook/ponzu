@@ -47,13 +47,13 @@ export interface Workspace {
   /** Tell any open studio an agent just captured an artboard, so it flashes on it. */
   capture?(key: string, capture: Capture): void;
   /**
-   * A link the person can click to open this design in Ponzu, on the artboard if one is given.
+   * A link the person can click to open this canvas in Ponzu, on the artboard if one is given.
    * `origin` is where the agent reached this host, for a canvas link that works from its machine.
    * Absent, or undefined, when there's no canvas for one to open.
    */
   link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
   /**
-   * The link to one page or artboard of this design, for the agent to paste into what it writes
+   * The link to one page or artboard of this canvas, for the agent to paste into what it writes
    * to the person: where they read it, a click takes their canvas there. Tools that tell the
    * agent of a page or board give it beside the id, so it never builds one from parts. Absent
    * where nothing follows such a link in place (the local server).
@@ -83,7 +83,7 @@ export interface Workspace {
 
 /**
  * Where a host sends usage. Properties are names, counts and timings, never
- * design content, file names or paths.
+ * canvas content, file names or paths.
  */
 export interface Telemetry {
   capture(event: string, properties?: Record<string, unknown>): void;
@@ -211,7 +211,7 @@ export class EventHub {
   }
 
   /**
-   * Tell what an op did to a design, read against the doc after it: each comment in it, then
+   * Tell what an op did to a canvas, read against the doc after it: each comment in it, then
    * the change to the canvas if there was one.
    */
   emitOp(key: string, doc: Doc, e: { op: Op; origin: Author; artboards: string[] }): void {
@@ -344,7 +344,7 @@ export class PresenceHub {
   private map = new Map<string, Presence>();
   private listeners = new Set<(p: Presence[]) => void>();
   private idle = new Map<string, ReturnType<typeof setTimeout>>();
-  /** The design each agent's calls last resolved to, read or written: where its disk edits go. */
+  /** The canvas each agent's calls last resolved to, read or written: where its disk edits go. */
   private seenIn = new Map<string, string>();
   /** When each agent was last reminded to watch the canvas. */
   private reminded = new Map<string, number>();
