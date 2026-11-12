@@ -2,10 +2,12 @@ import {
   appendThreadItemOnce,
   countSandboxRestart,
   getDesign,
+  getSandbox,
   getSandboxOwners,
   lapseEvents,
   listSandboxesToSweep,
   moveSandbox,
+  revokeRunnerTokens,
   type SandboxRow,
   type SweptSandbox,
   setSandboxExpiry,
@@ -20,6 +22,7 @@ import {
   EXTEND_MARGIN_MS,
   EXTEND_WITHIN_MS,
   MAX_SESSION_MS,
+  SESSION_CYCLE_BUSY_MS,
   SESSION_CYCLE_MS,
 } from "./constants.ts";
 import { runnerTarget } from "./environment.ts";
@@ -125,8 +128,11 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
     if (stalled(row, now)) return "stalled";
     // A turn owed is work, whatever the runner reports: never slept on.
     if (!owes && sandbox.lastActivityAt.getTime() < now - idleMs) return "sleep";
-    if (sandbox.sessionStartedAt && sandbox.sessionStartedAt.getTime() < now - SESSION_CYCLE_MS) {
-      return "cycle";
+    if (sandbox.sessionStartedAt) {
+      // A sleep cuts a turn, so one under way or owed is given until close to the cap.
+      const age = now - sandbox.sessionStartedAt.getTime();
+      const busy = owes === "wait" || row.agentState === "working";
+      if (age > (busy ? SESSION_CYCLE_BUSY_MS : SESSION_CYCLE_MS)) return "cycle";
     }
     if (!sandbox.expiresAt || sandbox.expiresAt.getTime() < now + EXTEND_WITHIN_MS) {
       return "extend";
@@ -193,7 +199,8 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
 
 type Step = (deps: JobDeps, row: SweptSandbox, idleBefore: number) => Promise<boolean>;
 
-const STEPS: Record<SweepStep, Step> = {
+/** Each step; exported for the lifecycle tests' races. */
+export const STEPS: Record<SweepStep, Step> = {
   retire: async (deps, { sandbox }) => {
     await retire(deps, sandbox.designId);
     return true;
@@ -212,6 +219,13 @@ const STEPS: Record<SweepStep, Step> = {
   restart: async (deps, { sandbox }) => {
     const { db, log } = deps;
     const { designId } = sandbox;
+    // Unheard because Vercel ended its session (its timeout): asleep, and woken only for work.
+    if (sandbox.sessionId) {
+      const seen = await deps.sandboxes.status(sandboxName(deps, designId));
+      if (seen?.status !== "running" || seen.sessionId !== sandbox.sessionId) {
+        return followEnded(deps, sandbox, sandbox.sessionId);
+      }
+    }
     const restarts = await countSandboxRestart(db, designId);
     if (restarts > MAX_RESTARTS) {
       const failure = `Its runner stopped answering ${restarts} times in a row.`;
@@ -272,7 +286,7 @@ const STEPS: Record<SweepStep, Step> = {
     if (starting) {
       // It says it is working and has said nothing in all this time: its runner is started
       // again, and the copy is the next runner's.
-      await putToSleep(deps, sandbox, "restart", { wake: "lapsed" });
+      await putToSleep(deps, sandbox, "restart", { wake: "lapsed", silenced: true });
       return true;
     }
     // An idle runner claims the copy at once; failing that, within the minute by itself.
@@ -298,7 +312,8 @@ const STEPS: Record<SweepStep, Step> = {
       runnerMs: row.runnerStartedAt ? now - row.runnerStartedAt.getTime() : null,
     });
     await captureAbout(deps, designId, "turn stalled", {});
-    return putToSleep(deps, sandbox, "restart", { wake: "stalled" });
+    // The thread has said so: the runner's own notice of the cut turn would say it twice.
+    return putToSleep(deps, sandbox, "restart", { wake: "stalled", silenced: true });
   },
 
   sleep: (deps, { sandbox }, idleBefore) =>
@@ -319,20 +334,7 @@ const STEPS: Record<SweepStep, Step> = {
       await setSandboxExpiry(deps.db, { designId, sessionId, expiresAt: new Date(deadline) });
       return true;
     }
-    // Vercel already stopped the session: the row follows, and the pending rule wakes it.
-    const asleep = await moveSandbox(deps.db, {
-      designId,
-      from: ["awake"],
-      to: "asleep",
-      now: new Date(deps.clock.now()),
-      sessionId,
-    });
-    if (!asleep) return false;
-    deps.log.warn("sandbox_expired", { designId, sessionId });
-    const awakeMs = sandbox.awakeSince ? deps.clock.now() - sandbox.awakeSince.getTime() : 0;
-    await captureSlept(deps, designId, "expired", awakeMs);
-    await wakeIfPending(deps, designId);
-    return true;
+    return followEnded(deps, sandbox, sessionId);
   },
 
   repair: async (deps, row) => {
@@ -340,18 +342,30 @@ const STEPS: Record<SweepStep, Step> = {
     const { sandbox } = row;
     const { designId } = sandbox;
     // (A settled design's row, a retire that died among them, is the retire step's.)
+    // Taken first, and only if nobody has made progress on it since the sweep looked: a wake
+    // that moved it meanwhile keeps the session it started.
+    const by = `repair:${crypto.randomUUID()}`;
+    const held = await moveSandbox(db, {
+      designId,
+      from: ["waking", "stopping"],
+      to: "stopping",
+      now: new Date(clock.now()),
+      hold: by,
+      stateBefore: new Date(sandbox.stateAt.getTime() + 1),
+    });
+    if (!held) return false;
     const name = sandboxName(deps, designId);
     const seen = await sandboxes.status(name);
     if (seen?.status === "running" && seen.sessionId) {
       await sandboxes.stop({ name, sessionId: seen.sessionId });
     }
-    // Only a move nobody has made progress on since the sweep looked.
+    await revokeRunnerTokens(db, designId);
     const asleep = await moveSandbox(db, {
       designId,
-      from: ["waking", "stopping"],
+      from: ["stopping"],
       to: "asleep",
       now: new Date(clock.now()),
-      stateBefore: new Date(sandbox.stateAt.getTime() + 1),
+      by,
     });
     if (!asleep) return false;
     deps.log.warn("sandbox_repaired", { designId, was: sandbox.state, by: sandbox.wakingBy });
@@ -359,6 +373,28 @@ const STEPS: Record<SweepStep, Step> = {
     return true;
   },
 };
+
+/**
+ * Vercel already stopped the awake row's session (its timeout, or the 24-hour cap): the row
+ * follows, pinned to that session, and the pending rule wakes it only if there is work.
+ */
+async function followEnded(deps: JobDeps, sandbox: SandboxRow, sessionId: string) {
+  const { designId } = sandbox;
+  const asleep = await moveSandbox(deps.db, {
+    designId,
+    from: ["awake"],
+    to: "asleep",
+    now: new Date(deps.clock.now()),
+    sessionId,
+  });
+  if (!asleep) return false;
+  await revokeRunnerTokens(deps.db, designId);
+  deps.log.warn("sandbox_expired", { designId, sessionId });
+  const awakeMs = sandbox.awakeSince ? deps.clock.now() - sandbox.awakeSince.getTime() : 0;
+  await captureSlept(deps, designId, "expired", awakeMs);
+  await wakeIfPending(deps, designId);
+  return true;
+}
 
 /** What the thread says when an owed turn lapses and the event goes in again. */
 export const LAPSED_AGAIN =
@@ -429,6 +465,9 @@ export async function reconcile(deps: JobDeps): Promise<number> {
         await deps.sandboxes.remove(info.name);
         deps.log.warn("sandbox_orphan_removed", { name: info.name, kind: parsed.kind });
       } else {
+        // Looked at again just before: a wake may have claimed it since the list.
+        const sandbox = await getSandbox(deps.db, parsed.id);
+        if (designAction(info, { exists: true, sandbox }, deps.clock.now()) !== "stop") continue;
         await deps.sandboxes.stop({ name: info.name, sessionId: info.sessionId! });
         deps.log.warn("sandbox_leak", { name: info.name, sessionId: info.sessionId });
       }

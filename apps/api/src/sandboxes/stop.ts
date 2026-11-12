@@ -34,6 +34,12 @@ export interface SleepOptions {
   wake?: string;
   /** Why it failed, for the row (`sandbox_failed`). */
   failure?: string;
+  /**
+   * Let the runner go before its shutdown, so it writes nothing more: the sweep has said what
+   * happens to the turn it cut (a lapse sends it again), and the runner's own "send a message to
+   * pick it up" would say otherwise. Its disk is kept by the stop's snapshot all the same.
+   */
+  silenced?: boolean;
 }
 
 /** Put the awake `row` to sleep. False when it was not this call that moved it. */
@@ -58,6 +64,7 @@ export async function putToSleep(
   if (!stopping) return false;
   const awakeMs = row.awakeSince ? clock.now() - row.awakeSince.getTime() : 0;
   const began = clock.now();
+  if (options.silenced) await revokeRunnerTokens(db, designId);
   if (stopping.sessionId) {
     const at: At = { name: sandboxName(deps, designId), sessionId: stopping.sessionId };
     try {

@@ -7,6 +7,7 @@ import {
   moveSandbox,
   newId,
   recordCheckpoint,
+  type SweptSandbox,
 } from "@ponzu/db";
 import { IMAGE_COMMANDS, RUNNER_HEADER, RUNNER_PORT } from "@ponzu/runner/protocol";
 import { designSandboxName } from "@ponzu/sandbox";
@@ -28,9 +29,9 @@ import {
   STOP_COMMAND_MS,
 } from "./constants.ts";
 import { designSpec, wakeDesign } from "./orchestrate.ts";
-import { finishRetire, holdForRetire } from "./retire.ts";
+import { finishRetire, holdForRetire, retire } from "./retire.ts";
 import { putToSleep } from "./stop.ts";
-import { extendBy } from "./sweep.ts";
+import { extendBy, LAPSED_GIVE_UP, STALLED_MS, STALLED_SAID, STEPS } from "./sweep.ts";
 
 /*
  * A design's sandbox from its first message to its retirement, through the routes and the
@@ -181,6 +182,31 @@ async function idleToSleep(runner: Runner) {
     await runner.beat();
   }
   await cron();
+}
+
+/** The thread after the person's last message. */
+async function threadAfterLastMessage(designId: string) {
+  const all = await rows(
+    `select kind, payload from thread_items where design_id = '${designId}' order by seq`,
+  );
+  const last = all.findLastIndex((item) => item.kind === "message");
+  return all.slice(last + 1) as { kind: string; payload: Record<string, unknown> }[];
+}
+
+/** The design's feed, oldest first. */
+const feed = async (designId: string) =>
+  (await rows(
+    `select id, kind, payload, delivered_at, lapsed_at from events
+      where design_id = '${designId}' order by seq`,
+  )) as { id: string; kind: string; payload: Record<string, unknown>; lapsed_at: unknown }[];
+
+/** The runner beats for `ms` in `state`, and the cron sweeps every minute. */
+async function beatFor(runner: Runner, ms: number, state: "working" | "idle" = "idle") {
+  for (let at = 0; at < ms; at += 30_000) {
+    t.clock.advance(30_000);
+    await runner.beat(state);
+    if ((at / 30_000) % 2 === 1) await cron();
+  }
 }
 
 /** While `work` runs, every `clock.sleep` also runs `onSleep` (once each, by count). */
@@ -756,18 +782,255 @@ describe("a turn that never came", () => {
 
   test("a runner that says it works and writes nothing for fifteen minutes is started again", async () => {
     const { design, runner } = await awakeDesign({ answered: false });
+    const token = startEnv(design.id).PONZU_RUNNER_TOKEN;
     const claimed = await runner.claim();
-    await runner.ack(claimed.body.events.map((e: { id: string }) => e.id));
-    for (let i = 0; i < 32; i++) {
-      t.clock.advance(30_000);
-      await runner.beat("working");
-      if (i % 2 === 1) await cron();
+    const [message] = claimed.body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    // A long session's first answer can take minutes: working, it is waited for.
+    await beatFor(runner, 10 * MINUTE, "working");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+    // When its runner is shut down, it has been let go already: the thread says the message
+    // goes again, and the runner's own "send a message to pick it up" would contradict it.
+    let heardAtStop: number | null = null;
+    t.sandboxes.onExec(IMAGE_COMMANDS.stop, async () => {
+      heardAtStop ??= (await runner.beat("working")).status;
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+    try {
+      await beatFor(runner, 6 * MINUTE, "working");
+    } finally {
+      t.sandboxes.onExec(IMAGE_COMMANDS.stop, () => ({ exitCode: 0, stdout: "", stderr: "" }));
     }
     expect(logged("turn_lapsed", design.id)).toMatchObject({ agentState: "working" });
+    expect(heardAtStop).toBe(401);
     // Its runner shut down and started again; the copy is the next runner's.
     expect(stops(design.id).length).toBeGreaterThanOrEqual(1);
-    expect(starts(design.id).length).toBeGreaterThanOrEqual(2);
+    expect(startEnv(design.id).PONZU_RUNNER_TOKEN).not.toBe(token);
     expect((await row(design.id)).state).toBe("awake");
+    const copy = (await feed(design.id)).at(-1)!;
+    expect(copy.payload.retryOf).toBe(message!.id);
+    const next = await runnerIn(design.id);
+    expect((await next.claim()).body.events.map((e: { id: string }) => e.id)).toEqual([copy.id]);
+  });
+
+  test("a copy that gets no turn either says to send it again, and is not sent a third time", async () => {
+    const { design, runner } = await awakeDesign({ answered: false });
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    await idleToSleep(runner);
+    const copy = (await feed(design.id)).at(-1)!;
+    expect(copy.payload.retryOf).toBe(message!.id);
+
+    await runner.ack((await runner.claim()).body.events.map((e: { id: string }) => e.id));
+    await idleToSleep(runner);
+    expect((await row(design.id)).state).toBe("awake");
+    expect((await threadAfterLastMessage(design.id)).at(-1)).toEqual({
+      kind: "notice",
+      payload: { type: "error", code: "turn_failed", message: LAPSED_GIVE_UP },
+    });
+    expect(await feed(design.id)).toHaveLength(2);
+    // Nothing is owed now: the next idle sweep puts it to sleep.
+    await idleToSleep(runner);
+    expect((await row(design.id)).state).toBe("asleep");
+  });
+
+  test("a turn that wrote and then went quiet for an hour, its runner still saying working, is started again", async () => {
+    const { design, runner } = await awakeDesign({ answered: false });
+    const token = startEnv(design.id).PONZU_RUNNER_TOKEN;
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    await runner.answer("Looking at the pricing page.");
+
+    // Swept every minute (other designs' jobs move the shared clock on too) until it is stalled:
+    // an hour after it last wrote, and not before.
+    for (let i = 0; i < 70 && !logged("turn_stalled", design.id); i++) {
+      await beatFor(runner, MINUTE, "working");
+    }
+    const stalledLine = logged("turn_stalled", design.id) as { saidMs: number } | undefined;
+    expect(stalledLine?.saidMs).toBeGreaterThanOrEqual(STALLED_MS);
+    expect(stalledLine!.saidMs).toBeLessThan(STALLED_MS + 3 * MINUTE);
+    expect((await threadAfterLastMessage(design.id)).at(-1)).toEqual({
+      kind: "notice",
+      payload: { type: "error", code: "turn_failed", message: STALLED_SAID },
+    });
+    // Put to sleep and woken again at once, for the stall.
+    expect(captured("sandbox slept", design.id)).toMatchObject({ why: "restart" });
+    const [wake] = await rows(
+      `select payload from jobs where kind = 'sandbox.wake' and key = '${design.id}'
+        order by run_at desc limit 1`,
+    );
+    expect(wake!.payload).toMatchObject({ reason: "stalled" });
+    expect(startEnv(design.id).PONZU_RUNNER_TOKEN).not.toBe(token);
+    expect((await row(design.id)).state).toBe("awake");
+  });
+
+  test("a message answered is owed nothing, and its sandbox sleeps as before", async () => {
+    const { design, runner } = await awakeDesign({ answered: false });
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    t.clock.advance(20_000);
+    await runner.answer();
+    await idleToSleep(runner);
+    expect((await row(design.id)).state).toBe("asleep");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+  });
+
+  test("a message the person stopped before anything was written is not sent again", async () => {
+    // Stopped while it was starting: the runner ends it before the turn has said anything, and
+    // writes no `stopped` notice for a turn that had not begun. The stop is the answer.
+    const { design, runner } = await awakeDesign({ answered: false });
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    t.clock.advance(5_000);
+    expect((await call(t, await as("maya"), "POST", `/v1/designs/${design.id}/stop`)).status).toBe(
+      204,
+    );
+    await t.backgroundDone();
+    const stopped = (await runner.claim()).body.events as { id: string; kind: string }[];
+    expect(stopped.map((e) => e.kind)).toEqual(["stop"]);
+    await runner.ack(stopped.map((e) => e.id));
+    await idleToSleep(runner);
+    expect((await row(design.id)).state).toBe("asleep");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+  });
+});
+
+describe("nothing left running", () => {
+  test("a session Vercel ended at its timeout is followed to sleep, not restarted", async () => {
+    const { design } = await awakeDesign();
+    const before = await row(design.id);
+    // Thirty-one minutes with no sweep and no runner beating: Vercel's timeout ends it.
+    t.clock.advance(31 * MINUTE);
+    const startsBefore = starts(design.id).length;
+    await cron();
+    expect(logged("sandbox_expired", design.id)).toMatchObject({ sessionId: before.sessionId });
+    expect(captured("sandbox slept", design.id)).toMatchObject({ why: "expired" });
+    // Nothing waits in its feed: it stays asleep, and its runner's token is gone.
+    expect((await row(design.id)).state).toBe("asleep");
+    expect(starts(design.id)).toHaveLength(startsBefore);
+    const [token] = await rows(
+      `select revoked_at from runner_tokens where design_id = '${design.id}'
+        order by created_at desc limit 1`,
+    );
+    expect(token!.revoked_at).not.toBeNull();
+  });
+
+  test("a turn under way holds the cycle off until close to the cap", async () => {
+    const { design, runner } = await awakeDesign();
+    const age = async (hours: number) =>
+      rows(
+        `update sandboxes set session_started_at = '${new Date(t.clock.now() - hours * 3600_000).toISOString()}',
+                expires_at = '${new Date(t.clock.now() + 2 * MINUTE).toISOString()}'
+          where design_id = '${design.id}'`,
+      );
+    await age(23.6);
+    await runner.beat("working");
+    await cron();
+    expect(captured("sandbox slept", design.id)).toBeUndefined();
+    expect((await row(design.id)).state).toBe("awake");
+    t.clock.advance(30_000);
+    await age(23.8);
+    await runner.beat("working");
+    await cron();
+    expect(captured("sandbox slept", design.id)).toMatchObject({ why: "cycle" });
+  });
+
+  test("a wake that gives up on a refusal that would have passed stops the session it resumed", async () => {
+    const design = await fresh();
+    t.sandboxes.failNext("start", nameOf(design.id), "unavailable");
+    await wakeDesign(t.deps, design.id, { id: "job_last", attempts: 40, maxAttempts: 40 });
+    expect(await row(design.id)).toMatchObject({ state: "asleep" });
+    expect((await row(design.id)).failure).toContain("unavailable");
+    expect(await status(design.id)).toBe("stopped");
+  });
+
+  test("a wake waiting out a refusal after up() leaves no session running between attempts", async () => {
+    const design = await fresh();
+    t.sandboxes.failNext("start", nameOf(design.id), "unavailable");
+    await say(design.id);
+    expect((await row(design.id)).state).toBe("waking");
+    expect(await status(design.id)).toBe("stopped");
+    t.clock.advance(MINUTE);
+    await cron();
+    expect((await row(design.id)).state).toBe("awake");
+    expect(await status(design.id)).toBe("running");
+  });
+
+  test("a wake whose design was settled and retired while it started stops and removes what it made", async () => {
+    const design = await fresh();
+    const name = nameOf(design.id);
+    const start = t.sandboxes.start.bind(t.sandboxes);
+    t.sandboxes.start = async (at, command, options) => {
+      const started = await start(at, command, options);
+      if (at.name === name) {
+        // The retire ran to the end between this wake's up() and its move to awake.
+        await rows(
+          `update designs set status = 'settled', settled_at = now() where id = '${design.id}'`,
+        );
+        const by = await holdForRetire(t.deps, design.id);
+        await finishRetire(t.deps, design.id, by);
+        await t.sandboxes.up(name, designSpec(TEST_IMAGE));
+      }
+      return started;
+    };
+    try {
+      await wakeDesign(t.deps, design.id, job("job_retired_under"));
+    } finally {
+      t.sandboxes.start = start;
+    }
+    expect(await getSandbox(t.db, design.id)).toBeNull();
+    expect(await t.sandboxes.status(name)).toBeNull();
+    expect(logged("wake_let_go", design.id)).toBeDefined();
+  });
+
+  test("a retire that comes after the design was reopened leaves it be", async () => {
+    const { design } = await awakeDesign();
+    await rows(
+      `update designs set status = 'settled', settled_at = now() where id = '${design.id}'`,
+    );
+    await rows(`update designs set status = 'active', settled_at = null where id = '${design.id}'`);
+    await retire(t.deps, design.id);
+    expect((await row(design.id)).state).toBe("awake");
+    expect(await status(design.id)).toBe("running");
+  });
+
+  test("a repair that finds the wake moved on since the sweep looked leaves its session be", async () => {
+    const { design } = await awakeDesign();
+    const awake = await row(design.id);
+    // As the sweep saw it: waking, past its lease.
+    const seen = {
+      ...awake,
+      state: "waking" as const,
+      stateAt: new Date(t.clock.now() - 7 * MINUTE),
+    };
+    expect(await STEPS.repair(t.deps, { sandbox: seen } as SweptSandbox, 0)).toBe(false);
+    expect((await row(design.id)).state).toBe("awake");
+    expect(await status(design.id)).toBe("running");
+  });
+
+  test("reconcile looks at the row again before it stops a session", async () => {
+    const leaked = await awakeDesign();
+    await idleToSleep(leaked.runner);
+    t.sandboxes.resumeBehindOurBack(nameOf(leaked.design.id));
+    // A wake claims it between reconcile's list and its stop.
+    const list = t.sandboxes.list.bind(t.sandboxes);
+    t.sandboxes.list = async (prefix, options) => {
+      const listed = await list(prefix, options);
+      await moveSandbox(t.db, {
+        designId: leaked.design.id,
+        from: ["asleep"],
+        to: "waking",
+        now: new Date(t.clock.now()),
+        hold: "job_between",
+      });
+      return listed;
+    };
+    try {
+      await reconcileCron();
+    } finally {
+      t.sandboxes.list = list;
+    }
+    expect(await status(leaked.design.id)).toBe("running");
   });
 });
 

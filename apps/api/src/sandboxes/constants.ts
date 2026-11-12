@@ -18,6 +18,11 @@ export const EXTEND_MARGIN_MS = 5 * 60_000;
 /** A session this old is put to sleep (and woken again if there is work) before it hits the cap. */
 export const SESSION_CYCLE_MS = 23.5 * 3600_000;
 /**
+ * ...unless a turn is under way or owed: then it waits for the turn until this old, which leaves
+ * ten minutes before the furthest deadline an extend gives (the cap less its margin).
+ */
+export const SESSION_CYCLE_BUSY_MS = MAX_SESSION_MS - 15 * 60_000;
+/**
  * How long Vercel keeps a design's snapshot after its last use. Past it the next wake boots an
  * empty disk and the runner rebuilds from git and the last checkpoint.
  */

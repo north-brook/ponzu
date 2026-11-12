@@ -86,8 +86,10 @@ export async function connectClaude(
 /**
  * Destroy the person's credential, wherever it is. Their designs say they wait for Claude, and
  * every awake sandbox whose runner was started with it is put to sleep at once: the credential
- * lives only in the running runner's memory (it went in the start command's env, which Vercel
- * does not keep with the sandbox), so an asleep one holds nothing and is left alone. A design
+ * lives only in the running runner's memory (it went in the start command's env, never on the
+ * disk), so an asleep one holds nothing and is left alone. Whether Vercel itself keeps a
+ * command's env is not documented: an open question put to Vercel in writing (docs/cloud.md,
+ * "Known constraints"); if it does, the credential moves into the runner's session. A design
  * waking at this moment is put to sleep by the minute's sweep. Safe to repeat.
  */
 export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promise<void> {

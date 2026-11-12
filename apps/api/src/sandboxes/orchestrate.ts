@@ -303,9 +303,9 @@ async function bringUp(
       },
     });
     if (!awake) {
-      // Taken from this wake: whoever has it now stops what this one started, or the sweep's
-      // reconcile does.
+      // Taken from this wake (a retire, a repair, or a wake after the lease).
       await revokeRunnerToken(db, environment.runnerTokenId);
+      await letGo(deps, designId, at);
       return null;
     }
     // The runner it replaced, if any, hears at its next call that it is done.
@@ -318,14 +318,40 @@ async function bringUp(
     };
   } catch (error) {
     if (environment) await revokeRunnerToken(db, environment.runnerTokenId);
-    // A refusal that is not waited out: leave nothing running on the owner's credential.
-    if (!(error instanceof SandboxError && WAITS.has(error.code))) {
-      await sandboxes.stop(at).catch((stop: unknown) => {
-        deps.log.warn("sandbox_stop_failed", { designId, error: stop });
-      });
-    }
+    // `up()` resumed or created a session that serves nothing now: stopped, whatever the
+    // refusal, so a wake that is tried again (or gives up) leaves no VM running behind a row
+    // that is not awake. The next attempt's `up()` resumes it in a couple of seconds.
+    await stopQuietly(deps, at);
     throw error;
   }
+}
+
+/** Stop `at`, best effort: a stop that fails is left to the session's timeout and reconcile. */
+async function stopQuietly(deps: JobDeps, at: At): Promise<void> {
+  await deps.sandboxes.stop(at).catch((stop: unknown) => {
+    deps.log.warn("sandbox_stop_failed", { name: at.name, sessionId: at.sessionId, error: stop });
+  });
+}
+
+/**
+ * A wake whose row was taken from it after its `up()`: what it started is stopped unless the
+ * row's holder now runs on that same session (a wake after the lease, which shuts down whatever
+ * runs there itself), and the sandbox is removed when its design is settled or gone, since the
+ * retire that took the row may have finished before this wake's `up()` made it again.
+ */
+async function letGo(deps: JobDeps, designId: string, at: At): Promise<void> {
+  const row = await getSandbox(deps.db, designId);
+  const theirs =
+    row?.state === "waking" || (row?.state === "awake" && row.sessionId === at.sessionId);
+  if (theirs) return;
+  await stopQuietly(deps, at);
+  const context = await getWakeContext(deps.db, designId);
+  if (!context || context.status === "settled") {
+    await deps.sandboxes.remove(at.name).catch((error: unknown) => {
+      deps.log.warn("sandbox_remove_failed", { designId, error });
+    });
+  }
+  deps.log.warn("wake_let_go", { designId, sessionId: at.sessionId, state: row?.state ?? null });
 }
 
 /**

@@ -188,6 +188,8 @@ export interface Move {
   idleBefore?: Date;
   /** Only if the row holds this session. */
   sessionId?: string;
+  /** Only while the design is settled: a retire never takes the row of a design reopened. */
+  whileSettled?: boolean;
   changes?: SandboxChanges;
 }
 
@@ -225,6 +227,7 @@ async function move(
     stateBefore,
     idleBefore,
     sessionId,
+    whileSettled,
     changes = {},
     limits,
   }: Move & { limits?: SandboxLimits },
@@ -279,6 +282,11 @@ async function move(
     conditions.push(sql`s.last_activity_at < ${timeParam(idleBefore)}::timestamptz`);
   }
   if (sessionId !== undefined) conditions.push(sql`s.session_id = ${sessionId}`);
+  if (whileSettled) {
+    conditions.push(
+      sql`exists (select 1 from designs d where d.id = s.design_id and d.status = 'settled')`,
+    );
+  }
   if (limits) conditions.push(roomFor(sql`s.design_id`, limits));
   return queryJson<MoveResult>(
     db,
