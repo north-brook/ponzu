@@ -159,18 +159,22 @@ test("a secret asked for is a question row; given, it is fetched once into the f
 
 test("a step that would say the value says the plain words instead", async () => {
   const s = await setup();
+  // A password, which looks like plain words: only knowing it is a secret keeps it out.
+  const password = "purple monkey dishwasher";
   const result = s.run.call(REQUEST_SECRET, { name: "SCRUB_KEY" });
   const id = derivedId("q", "toolu_1");
   await until(() => s.api.questions.get(id));
-  s.api.giveSecret(id, VALUE);
+  s.api.giveSecret(id, password);
   s.runner.poke();
   await result;
 
-  // The agent echoes it in a command: the turn's record and the state never say it.
+  // The agent puts it in a search, which a step would otherwise say: the turn's record and the
+  // state say the search in plain words.
   const writes = s.api.threadWrites.length;
-  s.run.emit({ type: "tool", id: "toolu_echo", name: "Bash", input: { command: `echo ${VALUE}` } });
-  await until(() => s.api.threadWrites.length > writes);
-  nowhere(s);
+  s.run.emit({ type: "tool", id: "toolu_search", name: "WebSearch", input: { query: password } });
+  await until(() => JSON.stringify(s.api.threadWrites.slice(writes)).includes("Searching the web"));
+  expect(JSON.stringify(s.api.threadWrites)).not.toContain(password);
+  expect(JSON.stringify(s.api.states)).not.toContain(password);
 });
 
 test("a reserved or malformed name is refused before anyone is asked", async () => {
