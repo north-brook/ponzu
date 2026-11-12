@@ -29,7 +29,12 @@ import { Sidebar } from "../sidebar/sidebar.tsx";
 import { railSignal } from "../status.ts";
 import { AppWindow } from "../window/app-window.tsx";
 import { DesignChrome, type DesignChromeProps } from "../window/design-chrome.tsx";
+import { PANES } from "../window/panes.ts";
 import * as f from "./fixtures.ts";
+
+/** `?rail=<px>`: the rail's width, in place of the design's. */
+const RAIL_WIDTH =
+  typeof location === "undefined" ? 0 : Number(new URLSearchParams(location.search).get("rail"));
 
 const ignore = () => {};
 
@@ -163,6 +168,9 @@ export function Harness({
         }
         chrome={chrome?.(open)}
         rail={rail ? (railContent ?? <div />) : null}
+        // `?rail=<px>`: the thread rail at that width (its limits in panes.ts), for the tests
+        // that look at the thread at its narrowest and widest.
+        {...(RAIL_WIDTH ? { panes: { sidebar: PANES.sidebar.default, rail: RAIL_WIDTH } } : {})}
       >
         {children}
       </AppWindow>

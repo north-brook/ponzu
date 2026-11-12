@@ -296,7 +296,8 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
         .locator("img")
         .evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight]),
     ).toEqual([480, 320]);
-    expect(await picture.boundingBox()).toMatchObject({ width: 240, height: 160 });
+    // Drawn at 240 by 160, shown as a glance at three fifths of that (lines.tsx).
+    expect(await picture.boundingBox()).toMatchObject({ width: 144, height: 96 });
     // And it is kept with the comment, for everyone.
     await waitUntil(async () => (await kept()).some((c) => c.picture !== null));
     const [first] = await kept();
