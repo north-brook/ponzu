@@ -1,4 +1,4 @@
-import { FilterHorizontalIcon, UserGroupIcon } from "@hugeicons/core-free-icons";
+import { FilterMailIcon, UserGroupIcon } from "@hugeicons/core-free-icons";
 import {
   type DesignFilter,
   isFiltering,
@@ -55,7 +55,7 @@ export function FilterMenu({
           label={isFiltering(filter) ? "Filter (on)" : "Filter"}
           className="relative h-[26px] w-6 shrink-0"
         >
-          <Icon icon={FilterHorizontalIcon} step="control" />
+          <Icon icon={FilterMailIcon} step="control" />
           {isFiltering(filter) ? (
             <span className="absolute top-[3px] right-[2px] size-1.5 rounded-pill bg-yuzu shadow-[0_0_0_1.5px_var(--c-chrome)]" />
           ) : null}
