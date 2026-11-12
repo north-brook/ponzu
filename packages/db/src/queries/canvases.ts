@@ -2,7 +2,7 @@ import type { Doc } from "@ponzu/core";
 import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { CanvasHead } from "../head.ts";
-import { newId, randomString } from "../ids.ts";
+import { newAssetKey, newId } from "../ids.ts";
 import {
   type CanvasStatus,
   canvasCheckpoints,
@@ -112,7 +112,7 @@ export async function createCanvas(
       .with(checkpoint, ...(said ?? []))
       .insert(canvases)
       // 160 random bits: the key is all that guards the canvas's files.
-      .values({ ...values, id, assetKey: randomString(32) })
+      .values({ ...values, id, assetKey: newAssetKey() })
       .returning(columns),
   );
   return canvas!;
