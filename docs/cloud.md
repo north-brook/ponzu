@@ -1310,7 +1310,11 @@ never handed a model it would refuse once a runner has reported. The canvas's th
 as that runner's session starts, the API (never the runner, which is refused with 400 if it
 tries) writes a notice `{ type: "model_changed", from, to, fromName, toName, account }` under
 the id `ti_model-` and the first 12 hex digits of the SHA-256 of `from→to`, so each change is
-said once however often the canvas starts. The names are the ones the API knows then (what the
+said once however often the canvas starts (a canvas that goes back to its model and then loses
+it again to the same one is not told twice). It is written only once a runner has reported what
+the account offers: before that (a credential just connected again, or one revoked) the canvas
+still runs on the default in its place, but nobody knows its model is gone, so the thread says
+nothing and only the log does (`reported: false`). The names are the ones the API knows then (what the
 account is offered, else the hand-kept list, else the id), since the model gone is no longer in
 what the account offers; `account` is whose Claude it is, the canvas's owner when they hold the
 account, else null. The apps say it as "Maya's Claude doesn't offer Fable 5.2 any more, so this
@@ -1402,7 +1406,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }`; at most one kept in ten minutes after a runner's first, never 429 |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |

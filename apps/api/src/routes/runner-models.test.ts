@@ -191,6 +191,7 @@ test("only what the account offers can be chosen, and a saved choice it no longe
   }
   const made = await create({ model: "claude-opus-6" });
   expect(made.status).toBe(201);
+  const onOpus6 = await newCanvas({ model: "claude-opus-6" });
 
   // Another key: nothing is known of what it is offered, so the hand-kept list, and what will
   // run in place of the saved Opus 6 shows: Opus 5.5, on the saved effort, which it takes.
@@ -198,6 +199,16 @@ test("only what the account offers can be chosen, and a saved choice it no longe
   const after = await call(t, headers, "GET", "/v1/claude/defaults");
   expect(labels(after.body)).toEqual(["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
   expect(after.body).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
+
+  // A canvas on Opus 6 starts on Opus 5.5 until a runner says what the new key is offered, but
+  // its thread does not say the key "doesn't offer Opus 6 any more": nobody knows that yet.
+  expect((await runnerIn(onOpus6)).session).toMatchObject({ model: "claude-opus-5-5" });
+  expect(t.logs.findLast((l) => l.event === "model_unoffered")).toMatchObject({
+    canvasId: onOpus6,
+    chosen: "claude-opus-6",
+    reported: false,
+  });
+  expect(await modelNotices(onOpus6)).toEqual([]);
 });
 
 test("a runner on a credential since replaced reports nothing for the one there now", async () => {

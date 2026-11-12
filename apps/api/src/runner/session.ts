@@ -55,26 +55,36 @@ export async function startRunnerSession(
   const offer = offerFor(claude);
   const run = runsOn(offer, canvas);
   if (canvas.model !== null && run.model !== null && run.model !== canvas.model) {
-    // What it was made with is no longer offered: it runs on what the account offers now, and
-    // the thread says so, once for each change. Named here, while the names are known: the
-    // model gone is no longer in what the account offers, so no app could name it later.
-    deps.log.info("model_unoffered", { canvasId, chosen: canvas.model, runs: run.model });
-    const holder = owner && claude?.userId === owner.id ? owner : null;
-    await appendThreadItemOnce(deps.db, {
-      id: modelNoticeId(canvas.model, run.model),
+    // What it was made with is no longer offered: it runs on what the account offers now.
+    deps.log.info("model_unoffered", {
       canvasId,
-      kind: "notice",
-      payload: {
-        type: "model_changed",
-        from: canvas.model,
-        to: run.model,
-        fromName: modelLabel(offer, canvas.model),
-        toName: modelLabel(offer, run.model),
-        account: holder
-          ? { id: holder.id, name: holder.name ?? holder.githubLogin, login: holder.githubLogin }
-          : null,
-      } satisfies Notice,
+      chosen: canvas.model,
+      runs: run.model,
+      reported: offer.reported,
     });
+    // The thread says so, once for each change, but only when a runner has said what the
+    // account offers: before that (a credential just connected again, or revoked) nobody knows
+    // the model is gone, and "doesn't offer it any more" would not be true. Named here, while
+    // the names are known: the model gone is no longer in what the account offers, so no app
+    // could name it later.
+    if (offer.reported) {
+      const holder = owner && claude?.userId === owner.id ? owner : null;
+      await appendThreadItemOnce(deps.db, {
+        id: modelNoticeId(canvas.model, run.model),
+        canvasId,
+        kind: "notice",
+        payload: {
+          type: "model_changed",
+          from: canvas.model,
+          to: run.model,
+          fromName: modelLabel(offer, canvas.model),
+          toName: modelLabel(offer, run.model),
+          account: holder
+            ? { id: holder.id, name: holder.name ?? holder.githubLogin, login: holder.githubLogin }
+            : null,
+        } satisfies Notice,
+      });
+    }
   }
   const { slug, botUserId } = deps.config.githubApp;
   const committer = {
