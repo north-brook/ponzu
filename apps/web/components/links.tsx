@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { btn } from "./button";
 import { GitHub } from "./icons";
+import { IPHONE_PATH } from "./platforms";
 
 export { TESTFLIGHT } from "./site";
 
@@ -13,8 +14,8 @@ export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
 /** Every release's notes since Ponzu Cloud's first, both apps (app/changelog). */
 export const CHANGELOG = "/changelog";
-/** The iPhone tile on the home page. */
-export const IPHONE = "/#iphone";
+/** Ponzu for iPhone: /iphone, which forwards to the beta or the App Store (next.config.ts). */
+export const IPHONE = IPHONE_PATH;
 
 /** A link in the header or the footer: what it says, and where it goes. */
 export interface SiteLink {

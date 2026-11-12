@@ -1,13 +1,15 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { GitHub, Slice } from "@/components/icons";
 
 /*
- * The three steps between the download and the first design, drawn rather
- * than screenshotted: two Finder windows and an agent's terminal on the stage the home
- * page sets its screenshot on, built from the real macOS icons in
- * /public/download. Step two's title carries the disk image's own badged
- * icon (apps/desktop/build/installer-icon.png), so the page shows what Finder
- * will.
+ * The three steps between the download and the first canvas, drawn rather than screenshotted, on
+ * the stage the home page sets its screenshot on: the install (a Finder window built from the real
+ * macOS icons in /public/download, its title carrying the disk image's own badged icon from
+ * apps/desktop/build/installer-icon.png), then Ponzu's own sign-in and its "Make something in"
+ * page. The last two are drawn after the app's screens (apps/studio/src/cloud/setup/sign-in.tsx
+ * and create/create-page.tsx) and shared with the Windows and Linux steps (other-steps.tsx). The
+ * repo in the drawing is made up.
  */
 
 /** A macOS icon at its drawn size. Decorative: the caption carries the meaning. */
@@ -108,44 +110,7 @@ function Title({ icon, name }: { icon: ReactNode; name: string }) {
   );
 }
 
-/** A Finder row. A selected row takes the yellow accent macOS offers. */
-function Row({
-  icon,
-  name,
-  selected,
-  children,
-}: {
-  icon: ReactNode;
-  name: string;
-  selected?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <div
-      className={`relative flex h-10 items-center gap-2.5 px-3.5 ${selected ? "bg-m2 text-[#111110]" : "text-muted"}`}
-    >
-      {icon}
-      <span className="truncate text-sm/5">{name}</span>
-      {children}
-    </div>
-  );
-}
-
-/** Step one: the disk image, already selected, in Downloads. */
-function Downloads({ installer }: { installer: string }) {
-  return (
-    <Window>
-      <Title icon={<Glyph size={24} src="/download/downloads-folder.webp" />} name="Downloads" />
-      <Row icon={<Glyph size={24} src="/download/disk-image.webp" />} name={installer} selected>
-        <Pointer className="absolute top-6 left-[64%] text-ink" />
-      </Row>
-      <Row icon={<Glyph size={24} src="/download/document.webp" />} name="fernwood brief.pdf" />
-      <Row icon={<Glyph size={24} src="/download/document.webp" />} name="hero moodboard.png" />
-    </Window>
-  );
-}
-
-/** Step two: the opened disk image, the app in hand over Applications. */
+/** The Mac's install: the opened disk image, the app in hand over Applications. */
 function Installer() {
   return (
     <Window>
@@ -166,27 +131,69 @@ function Installer() {
   );
 }
 
-/**
- * Step three: an agent asked for a design. The app registers itself with
- * Claude Code, Codex and Cursor on launch, so there's nothing to connect.
- */
-function Terminal() {
+/** A Mac window's title bar: the three lights. */
+export function MacBar() {
   return (
-    <Window dark>
-      <div className="flex h-10 items-center gap-2 border-b border-white/10 px-3.5">
-        <i className="size-3 rounded-full bg-white/15" />
-        <i className="size-3 rounded-full bg-white/15" />
-        <i className="size-3 rounded-full bg-white/15" />
+    <div className="flex h-10 items-center gap-2 border-b border-well-rule px-3.5">
+      <i className="size-3 rounded-full bg-chip shadow-[inset_0_0_0_1px_var(--well-rule)]" />
+      <i className="size-3 rounded-full bg-chip shadow-[inset_0_0_0_1px_var(--well-rule)]" />
+      <i className="size-3 rounded-full bg-chip shadow-[inset_0_0_0_1px_var(--well-rule)]" />
+    </div>
+  );
+}
+
+/** Ponzu's first screen: the mark, "Sign in to Ponzu" and the one button, about to be pressed. */
+function SignIn({ bar }: { bar: ReactNode }) {
+  return (
+    <Window>
+      {bar}
+      <div className="flex h-[132px] flex-col items-center justify-center gap-2.5 px-4">
+        <Slice size={26} />
+        <span className="font-display text-[15px] font-semibold tracking-[-0.01em] text-ink">
+          Sign in to Ponzu
+        </span>
+        <span className="relative inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-[7px] text-xs font-semibold text-ground">
+          <GitHub />
+          Continue with GitHub
+          <Pointer className="absolute top-5 left-[88%] text-ink" />
+        </span>
       </div>
-      <pre className="m-0 h-[132px] px-4 py-3.5 font-mono text-xs/5 whitespace-pre-wrap text-code-ink">
-        <span className="text-white/45">$ </span>claude
-        {"\n\n"}
-        <span className="text-white/45">&gt; </span>Design a landing page for my app in Ponzu.
-        <i className="ml-1 inline-block h-3.5 w-[7px] translate-y-0.5 bg-m1" />
-      </pre>
     </Window>
   );
 }
+
+/** Ponzu's create page: a repo picked and the first ask being typed. */
+function Describe({ bar }: { bar: ReactNode }) {
+  return (
+    <Window>
+      {bar}
+      <div className="flex h-[132px] flex-col items-center justify-center gap-3 px-4">
+        <span className="flex flex-col items-center font-display text-[15px]/[19px] font-semibold tracking-[-0.01em] text-ink">
+          Make something in
+          <span className="text-muted">{DRAWN_REPO}</span>
+        </span>
+        <span className="flex w-full items-center gap-2 rounded-full bg-chip py-1.5 pr-1.5 pl-3.5 text-xs text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]">
+          <span className="flex-1 truncate">
+            A pricing page, three takes
+            <i className="ml-0.5 inline-block h-3 w-px translate-y-0.5 bg-ink" />
+          </span>
+          <span
+            aria-hidden="true"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full bg-m1 text-[13px] leading-none text-[#111110]"
+          >
+            ↑
+          </span>
+        </span>
+      </div>
+    </Window>
+  );
+}
+
+/**
+ * The repo the create page in the drawing names: made up, owned by the gallery's fictional person
+ * (apps/studio/src/cloud/gallery/fixtures.ts), so no real account appears on the site.
+ */
+export const DRAWN_REPO = "adapark/kettle";
 
 /** The noun the step acts on, lifted out of the caption. */
 export function Key({ children }: { children: ReactNode }) {
@@ -217,40 +224,50 @@ export function Step({
   );
 }
 
+/** What the two steps after the install say, the same on every desktop (design §3.3). */
+export const AFTER_INSTALL = [
+  "Open Ponzu and continue with GitHub.",
+  "Install Ponzu on the GitHub account where your repos live, connect Claude, and describe what you want to make.",
+] as const;
+
+/** Steps two and three, the same on every desktop once Ponzu is installed. `bar` is the OS's own. */
+export function AfterInstall({ bar }: { bar: ReactNode }) {
+  return (
+    <>
+      <Step caption={AFTER_INSTALL[0]} index={2}>
+        <SignIn bar={bar} />
+      </Step>
+      <Step caption={AFTER_INSTALL[1]} index={3}>
+        <Describe bar={bar} />
+      </Step>
+    </>
+  );
+}
+
 /** The three steps, side by side on the desk and stacked on the phone. */
-export function MacSteps({ installer }: { installer: string }) {
+export function Steps({ children }: { children: ReactNode }) {
   return (
     <ol className="m-0 grid w-full max-w-[1200px] list-none grid-cols-3 gap-6 p-0 max-[1000px]:grid-cols-1 max-[1000px]:gap-10">
+      {children}
+    </ol>
+  );
+}
+
+/** The Mac: open the disk image and drag Ponzu into Applications, then sign in and describe it. */
+export function MacSteps({ installer }: { installer: string }) {
+  return (
+    <Steps>
       <Step
         caption={
           <>
-            Open <Key>{installer}</Key> from your Downloads folder.
+            Open <Key>{installer}</Key> and drag <Key>Ponzu</Key> into your Applications folder.
           </>
         }
         index={1}
       >
-        <Downloads installer={installer} />
-      </Step>
-      <Step
-        caption={
-          <>
-            Drag <Key>Ponzu</Key> into your Applications folder, then open it.
-          </>
-        }
-        index={2}
-      >
         <Installer />
       </Step>
-      <Step
-        caption={
-          <>
-            Open <Key>Ponzu</Key> and ask your agent for a design.
-          </>
-        }
-        index={3}
-      >
-        <Terminal />
-      </Step>
-    </ol>
+      <AfterInstall bar={<MacBar />} />
+    </Steps>
   );
 }
