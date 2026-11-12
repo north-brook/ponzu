@@ -497,9 +497,14 @@ describe("the warning before the cap", () => {
   });
 
   test("a fraction that floating point can't hold still compares exactly", () => {
-    // 100 × 0.7 is 70.00000000000001 in floating point, but 70 cents is 70% of $1.
-    expect(capWarning(70, 100, 0.7)).toBe(true);
-    expect(capWarning(69, 100, 0.7)).toBe(false);
+    // 100 × 0.07 is 7.000000000000001 in floating point, but 7 cents is 7% of $1, and
+    // 10,000 × 0.035 is 350.00000000000006, but $3.50 is 3.5% of $100. A plain multiply misses both.
+    expect(100 * 0.07).toBeGreaterThan(7);
+    expect(capWarning(7, 100, 0.07)).toBe(true);
+    expect(capWarning(6, 100, 0.07)).toBe(false);
+    expect(10_000 * 0.035).toBeGreaterThan(350);
+    expect(capWarning(350, 10_000, 0.035)).toBe(true);
+    expect(capWarning(349, 10_000, 0.035)).toBe(false);
     expect(capWarning(575, 1000, 0.575)).toBe(true);
     expect(capWarning(574, 1000, 0.575)).toBe(false);
   });
