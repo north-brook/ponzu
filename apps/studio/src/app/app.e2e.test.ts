@@ -31,12 +31,13 @@ const SHOTS = process.env.PONZU_SHOTS;
 
 /**
  * Where a guided step's shared parts sit: each one's top and the line it is centred on, the
- * same on every step to the pixel (their words, and so their widths, differ).
+ * same on every step to the pixel (their words, and so their widths, differ). To the pixel, not
+ * finer: centring a word of another width can land a fraction of a layout unit off.
  */
 async function stepFrame(page: Page) {
   const box = async (selector: string) => {
     const found = await page.locator(selector).first().boundingBox();
-    return found && { top: found.y, centre: found.x + found.width / 2 };
+    return found && { top: Math.round(found.y), centre: Math.round(found.x + found.width / 2) };
   };
   return {
     progress: await box('[role="progressbar"]'),
