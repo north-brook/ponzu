@@ -2991,7 +2991,9 @@ environment, so it holds from the next deploy.
 - `off`, the default: nothing is held back.
 - `wakes_paused`: no sandbox wakes. The wake gate `maintenance` sets the canvas's
   `agent_blocker` to `paused` and tries the wake again every two minutes, so a message is kept
-  in the feed and goes in once the switch is off. A turn already running finishes. Every minute
+  in the feed and goes in once the switch is off. A turn already running finishes, and a
+  sandbox already awake is not held: it takes up what is sent until it goes to sleep, so the
+  switch stops new spend only as awake sandboxes sleep. Every minute
   the cron's `maintenance` step, once the switch is off, lifts `paused` everywhere and wakes the
   canvases that owe a turn (`resumeBlocked`), which takes up a wake that ran out of tries during
   a long pause. Everything else works.

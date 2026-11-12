@@ -61,11 +61,15 @@ export const MAINTENANCE_RETRY_MS = 2 * 60_000;
  * in two minutes, as a busy sandbox's is, so what was sent goes in once the switch is off. A
  * wake that runs out of tries is picked up by the cron's `maintenance` step, which lifts
  * `paused` once the switch is off.
+ *
+ * A sandbox already awake has nothing to wake: its runner takes up what was sent by itself (a
+ * message's wake only pokes it), so the gate lets it through rather than have the head say the
+ * agent is paused while it answers.
  */
-export const maintenanceGate: WakeGate = (_ctx, now, { deps }) =>
-  wakesPaused(deps.features)
-    ? { blocker: "paused", retryAt: new Date(now.getTime() + MAINTENANCE_RETRY_MS) }
-    : null;
+export const maintenanceGate: WakeGate = (ctx, now, { deps }) => {
+  if (!wakesPaused(deps.features) || ctx.sandbox?.state === "awake") return null;
+  return { blocker: "paused", retryAt: new Date(now.getTime() + MAINTENANCE_RETRY_MS) };
+};
 
 /** How long past a plan's reset its canvases wait before they wake: a little slack for clocks. */
 export const LIMIT_GRACE_MS = 30_000;

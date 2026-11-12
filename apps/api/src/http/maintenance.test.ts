@@ -266,6 +266,22 @@ describe("wakes paused", () => {
     expect(thread.some((i) => i.kind === "message")).toBe(true);
   });
 
+  test("a canvas already awake is not held: its runner takes the message, and the head never says paused", async () => {
+    const canvas = await fresh();
+    const headers = await as("maya");
+    await call(t, headers, "POST", `/v1/canvases/${canvas.id}/messages`, { text: "First" });
+    await t.backgroundDone();
+    expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+    switchTo("wakes_paused");
+    const said = await call(t, headers, "POST", `/v1/canvases/${canvas.id}/messages`, {
+      text: "Second",
+    });
+    expect(said.status).toBe(201);
+    await t.backgroundDone();
+    expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+    expect((await head(canvas.id)).agentBlocker).toBeNull();
+  });
+
   test("a wake that ran out of tries while paused is taken up by the cron once the switch is off", async () => {
     const canvas = await fresh();
     await appendEvent(t.db, {

@@ -83,7 +83,6 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     }),
     // No sandbox here holds commits GitHub lacks, so Create PR never asks one to push.
     ...({} as Pick<JobDeps, "sandboxes" | "runnerBundle" | "poke">),
-    features: FEATURES_OFF,
   });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;
