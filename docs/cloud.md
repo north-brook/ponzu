@@ -2509,18 +2509,23 @@ API keeps what sending will need.
 |---|---|---|---|
 | GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
 | PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
-| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
+| POST | `/v1/me/devices` | `{ platform, pushToken?, pushEnvironment?, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
 | PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
 | DELETE | `/v1/me/devices/:id` | none | 204 |
 
 `prefs` is `{ needsYou, replies, prReady, teammateComments, emailDigest }`, on the person's row:
 the first three start on, the last two off, as the board draws them. A toggle saves as it is
-flipped and every device reads the same row. A device is an install of the app: `pushToken` is
-its APNs device token in hex (`ios`; `macos` is kept for the Mac's own notifications later) and
-`pushEnvironment` which APNs it is for. The iPhone registers after the person turns
-notifications on, and again at each launch, which updates the row in place and keeps
-`lastSeenAt`. `installId` is the app's own random id for the install (16 to 64 letters, digits
-or dashes), made once and kept in the Keychain, and never returned. A token another person
+flipped and every device reads the same row. A device is an install of the app, one row per
+person and install. An iPhone (`ios`) sends `pushToken`, its Expo push token exactly as
+`getExpoPushTokenAsync` gave it (`ExponentPushToken[…]` or `ExpoPushToken[…]`), and
+`pushEnvironment`, which APNs it is for; pushes go through Expo's push service, which holds the
+APNs key. A Mac (`macos`) sends neither, and a 400 refuses one that does: it shows its own
+notifications while the app runs. The database holds the same rule (an iPhone row has a token,
+a Mac row has none). The iPhone registers after the person turns notifications on, and again
+at each launch, which updates the row in place and keeps `lastSeenAt`; a new token from the
+same install replaces the old one on the same row. `installId` is the app's own random id for
+the install (16 to 64 letters, digits or dashes), made once and kept (in the Keychain on the
+phone), and never returned. A token another person
 registered moves to whoever registers it now, with pings on, only when the same install
 registers it (the phone signed in as someone else; logged `device_token_moved` with both
 people). From any other install it stays where it is and the answer is 409 `push_token_taken`

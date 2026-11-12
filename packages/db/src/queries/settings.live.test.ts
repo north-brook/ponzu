@@ -35,25 +35,22 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       teammateComments: true,
       emailDigest: false,
     });
-    const token = `${Date.now().toString(16)}`.padStart(64, "d");
-    const first = await registerDevice(db, {
+    const token = `ExponentPushToken[live-${Date.now().toString(36)}]`;
+    const phone = {
       userId: user.id,
-      platform: "ios",
+      platform: "ios" as const,
       pushToken: token,
-      pushEnvironment: "production",
-      installId: `install-${token}`,
+      pushEnvironment: "production" as const,
+      installId: `install-${Date.now().toString(36)}`,
       name: "iPhone",
       appVersion: "1.0.0",
       pingsBlocked: false,
-    });
+    };
+    const first = await registerDevice(db, phone);
     if (first.status !== "registered") throw new Error("not registered");
     expect(first.created).toBe(true);
     expect(first.device.lastSeenAt).toBeInstanceOf(Date);
-    const again = await registerDevice(db, {
-      ...first.device,
-      installId: `install-${token}`,
-      pingsBlocked: true,
-    });
+    const again = await registerDevice(db, { ...phone, pingsBlocked: true });
     expect(again).toMatchObject({
       status: "registered",
       created: false,
@@ -61,13 +58,16 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
     });
     const other = await seedUser(db, "pinged-elsewhere");
     expect(
-      await registerDevice(db, {
-        ...first.device,
-        userId: other.id,
-        installId: "another-install",
-        pingsBlocked: false,
-      }),
+      await registerDevice(db, { ...phone, userId: other.id, installId: "another-install" }),
     ).toEqual({ status: "taken", holderId: user.id });
+    const mac = await registerDevice(db, {
+      userId: user.id,
+      platform: "macos",
+      installId: `mac-${Date.now().toString(36)}`,
+      name: "Studio",
+      appVersion: "2.0.0",
+    });
+    expect(mac).toMatchObject({ status: "registered", created: true, device: { pushToken: null } });
     const changed = await updateDevice(db, {
       userId: user.id,
       id: first.device.id,

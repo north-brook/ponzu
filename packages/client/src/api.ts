@@ -348,10 +348,14 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
        */
       register: async (body: {
         platform: "ios" | "macos";
-        /** The APNs device token, in hex. */
-        pushToken: string;
-        pushEnvironment: "development" | "production";
-        /** The app's random id for this install, made once and kept in the Keychain. */
+        /**
+         * An iPhone's Expo push token (`ExponentPushToken[…]`, from `getExpoPushTokenAsync`),
+         * as Expo gave it. A Mac sends none.
+         */
+        pushToken?: string;
+        /** Which APNs an iPhone's token is for. A Mac sends none. */
+        pushEnvironment?: "development" | "production";
+        /** The app's random id for this install, made once and kept (the Keychain on iOS). */
         installId: string;
         name?: string | null;
         appVersion?: string | null;

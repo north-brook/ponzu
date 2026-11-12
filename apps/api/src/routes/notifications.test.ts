@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { MAX_DEVICES_PER_USER } from "@ponzu/db";
+import { listDevices, MAX_DEVICES_PER_USER } from "@ponzu/db";
 import { call } from "../testing/canvases.ts";
 import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
 
@@ -14,7 +14,8 @@ beforeAll(async () => {
 });
 afterAll(() => t.close());
 
-const token = (n: number) => n.toString(16).padStart(64, "a");
+/** An Expo push token, as the phone gets one from `getExpoPushTokenAsync`. */
+const token = (n: number) => `ExponentPushToken[${n.toString().padStart(22, "x")}]`;
 /** The install of the app a phone runs: one per token unless a test says otherwise. */
 const install = (n: number) => `install-${n.toString().padStart(12, "0")}`;
 const phone = (n: number, extra: Record<string, unknown> = {}) => ({
@@ -97,7 +98,6 @@ describe("devices", () => {
 
     const again = await call(t, maya.headers, "POST", "/v1/me/devices", {
       ...phone(1),
-      pushToken: token(1).toUpperCase(),
       appVersion: "0.14.0",
     });
     expect(again.status).toBe(200);
@@ -126,7 +126,7 @@ describe("devices", () => {
     });
   });
 
-  test("take a new token from APNs, but not one another device holds", async () => {
+  test("take a new token from Expo, but not one another device holds", async () => {
     const { body: a } = await call(t, maya.headers, "POST", "/v1/me/devices", phone(3));
     await call(t, maya.headers, "POST", "/v1/me/devices", phone(4));
     const rotated = await call(t, maya.headers, "PATCH", `/v1/me/devices/${a.device.id}`, {
@@ -206,12 +206,58 @@ describe("devices", () => {
     expect(again.status).toBe(404);
   });
 
-  test("refuse what is not an APNs token", async () => {
-    for (const pushToken of ["ExponentPushToken[abc]", "abc", "g".repeat(64)]) {
+  test("refuse what is not an Expo push token, an APNs token in hex included", async () => {
+    for (const pushToken of [
+      "ExponentPushToken[abc]",
+      "ExponentPushToken[has spaces in it]",
+      "exponentpushtoken[aaaaaaaaaaaa]",
+      "abc",
+      "a".repeat(64),
+    ]) {
       const bad = await call(t, maya.headers, "POST", "/v1/me/devices", { ...phone(9), pushToken });
       expect(bad.status).toBe(400);
       expect(JSON.stringify(bad.body)).not.toContain(pushToken);
     }
+    // An iPhone without a token, or without which APNs it is for, is not a registration.
+    const { pushToken: _token, ...tokenless } = phone(9);
+    expect((await call(t, maya.headers, "POST", "/v1/me/devices", tokenless)).status).toBe(400);
+    const { pushEnvironment: _env, ...nowhere } = phone(9);
+    expect((await call(t, maya.headers, "POST", "/v1/me/devices", nowhere)).status).toBe(400);
+  });
+
+  test("take both of Expo's token shapes, exactly as given", async () => {
+    const expo = "ExpoPushToken[Ab_9-cdEFghIJkl]";
+    const { status, body } = await call(t, maya.headers, "POST", "/v1/me/devices", {
+      ...phone(12),
+      pushToken: expo,
+    });
+    expect(status).toBe(201);
+    const kept = (await listDevices(t.db, maya.userId)).find((d) => d.id === body.device.id);
+    expect(kept?.pushToken).toBe(expo);
+  });
+
+  test("a Mac registers its install with no token, and again in place", async () => {
+    const mac = { platform: "macos", installId: install(500), name: "Studio", appVersion: "2.0.0" };
+    const first = await call(t, maya.headers, "POST", "/v1/me/devices", mac);
+    expect(first.status).toBe(201);
+    expect(first.body.device).toMatchObject({ platform: "macos", name: "Studio", pings: true });
+    const again = await call(t, maya.headers, "POST", "/v1/me/devices", {
+      ...mac,
+      appVersion: "2.1.0",
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.device).toMatchObject({ id: first.body.device.id, appVersion: "2.1.0" });
+    // A Mac carries no token, on registering or after.
+    for (const extra of [{ pushToken: token(501) }, { pushEnvironment: "production" }]) {
+      const bad = await call(t, maya.headers, "POST", "/v1/me/devices", { ...mac, ...extra });
+      expect(bad.status).toBe(400);
+      expect(bad.body.error.code).toBe("invalid_request");
+    }
+    const patched = await call(t, maya.headers, "PATCH", `/v1/me/devices/${first.body.device.id}`, {
+      pushToken: token(502),
+    });
+    expect(patched.status).toBe(400);
+    expect(patched.body.error.code).toBe("invalid_request");
   });
 
   test("keep at most twenty a person, forgetting the one unseen longest", async () => {

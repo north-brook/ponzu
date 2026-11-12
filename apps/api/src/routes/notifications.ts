@@ -2,6 +2,7 @@ import {
   DEVICE_PLATFORMS,
   type Device,
   deleteDevice,
+  EXPO_PUSH_TOKEN,
   listDevices,
   PUSH_ENVIRONMENTS,
   pingPrefsOf,
@@ -20,7 +21,8 @@ import { validate } from "../http/validate.ts";
 /*
  * Settings › Notifications (docs/cloud.md, "Notifications"): which events ping the person, and
  * the devices pings go to. The iPhone registers itself once the person turns notifications on,
- * with its APNs token. Nothing sends pushes yet: this keeps what sending will need.
+ * with its Expo push token. The Mac registers its install, with no token: it shows its own
+ * notifications while the app runs.
  */
 
 const PingPrefs = z.object({
@@ -60,37 +62,58 @@ const toView = (device: Device): z.input<typeof DeviceView> => ({
 const Notifications = z.object({ prefs: PingPrefs, devices: z.array(DeviceView) });
 const DeviceAnswer = z.object({ device: DeviceView });
 
-/** An APNs device token: hex, 32 bytes today and allowed to grow. Kept in lowercase. */
+/** An Expo push token, `ExponentPushToken[…]`, kept exactly as the phone gave it. */
 const PushToken = z
   .string()
-  .regex(/^[0-9a-fA-F]{64,200}$/, "A push token is the device's APNs token, in hex.")
-  .transform((token) => token.toLowerCase());
+  .regex(EXPO_PUSH_TOKEN, "A push token is the device's Expo push token, ExponentPushToken[…].");
 const DeviceName = z.string().trim().min(1).max(100);
 const AppVersion = z.string().trim().min(1).max(40);
 
-const Registration = z.object({
-  platform: z.enum(DEVICE_PLATFORMS),
-  pushToken: PushToken,
-  /** Which APNs the token is for: a development build's or the App Store's. */
-  pushEnvironment: z.enum(PUSH_ENVIRONMENTS),
-  /**
-   * The app's own random id for this install, made once and kept in the Keychain: what lets
-   * the phone, signed in as someone else, take its token along. Never returned.
-   */
-  installId: z
-    .string()
-    .regex(/^[A-Za-z0-9-]{16,64}$/, "An install id is 16 to 64 letters, digits or dashes."),
-  name: DeviceName.nullish(),
-  appVersion: AppVersion.nullish(),
-  blocked: z.boolean().optional(),
-});
+const Registration = z
+  .object({
+    platform: z.enum(DEVICE_PLATFORMS),
+    /** An iPhone's Expo push token. A Mac has none. */
+    pushToken: PushToken.optional(),
+    /** Which APNs an iPhone's token is for: a development build's or the App Store's. */
+    pushEnvironment: z.enum(PUSH_ENVIRONMENTS).optional(),
+    /**
+     * The app's own random id for this install, made once and kept in the Keychain: what lets
+     * the phone, signed in as someone else, take its token along. Never returned.
+     */
+    installId: z
+      .string()
+      .regex(/^[A-Za-z0-9-]{16,64}$/, "An install id is 16 to 64 letters, digits or dashes."),
+    name: DeviceName.nullish(),
+    appVersion: AppVersion.nullish(),
+    blocked: z.boolean().optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.platform === "ios") {
+      if (!body.pushToken) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["pushToken"],
+          message: "An iPhone needs its push token.",
+        });
+      }
+      if (!body.pushEnvironment) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["pushEnvironment"],
+          message: "An iPhone says which APNs its token is for.",
+        });
+      }
+    } else if (body.pushToken !== undefined || body.pushEnvironment !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["pushToken"], message: "A Mac has no push token." });
+    }
+  });
 const DeviceChanges = z
   .object({
     pings: z.boolean(),
     blocked: z.boolean(),
     name: DeviceName.nullable(),
     appVersion: AppVersion.nullable(),
-    /** APNs gave the app a new token. */
+    /** Expo gave the app a new token. Only an iPhone has one. */
     pushToken: PushToken,
   })
   .partial();
@@ -125,16 +148,24 @@ export const notifications = new Hono<AppEnv>()
   .post("/devices", access.user, validate("json", Registration), async (c) => {
     const { deps, actor, log } = c.var;
     const body = c.req.valid("json");
-    const registered = await registerDevice(deps.db, {
+    const common = {
       userId: actor.user.id,
-      platform: body.platform,
-      pushToken: body.pushToken,
-      pushEnvironment: body.pushEnvironment,
       installId: body.installId,
       name: body.name ?? null,
       appVersion: body.appVersion ?? null,
-      pingsBlocked: body.blocked ?? false,
-    });
+    };
+    const registered = await registerDevice(
+      deps.db,
+      body.platform === "ios"
+        ? {
+            ...common,
+            platform: "ios",
+            pushToken: body.pushToken!,
+            pushEnvironment: body.pushEnvironment!,
+            pingsBlocked: body.blocked ?? false,
+          }
+        : { ...common, platform: "macos" },
+    );
     if (registered.status === "taken") {
       log.warn("device_token_conflict", { userId: actor.user.id, holderId: registered.holderId });
       throw new ApiError(409, "push_token_taken", "Another account has this device.");
@@ -170,6 +201,9 @@ export const notifications = new Hono<AppEnv>()
       } catch (error) {
         if (error instanceof QueryError && error.message.includes("devices_push_token_unique")) {
           throw new ApiError(409, "push_token_taken", "Another device already has that token.");
+        }
+        if (error instanceof QueryError && error.message.includes("devices_push_token_check")) {
+          throw new ApiError(400, "invalid_request", "A Mac has no push token.");
         }
         throw error;
       }

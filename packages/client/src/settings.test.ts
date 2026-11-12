@@ -52,7 +52,7 @@ async function settingsSteps(maya: Api, ines: Api, workspaceId: string, repoId: 
 
   const { device } = await maya.devices.register({
     platform: "ios",
-    pushToken: "c".repeat(64),
+    pushToken: "ExponentPushToken[maya-phone-token-01]",
     pushEnvironment: "development",
     installId: "maya-phone-install-01",
     name: "iPhone 16 Pro",

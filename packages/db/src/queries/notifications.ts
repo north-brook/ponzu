@@ -1,16 +1,27 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import type { DeliveryState, NotificationKind, NotificationReadVia } from "../enums.ts";
 import { newId } from "../ids.ts";
-import { devices } from "../schema/index.ts";
+import {
+  devices,
+  type NotificationLink,
+  notificationDeliveries,
+  notifications,
+} from "../schema/index.ts";
 import type { User } from "./accounts.ts";
-import { queryJson } from "./json.ts";
-import { run } from "./run.ts";
+import { queryJson, timeParam } from "./json.ts";
+import { QueryError, run } from "./run.ts";
 
 /*
  * What pings a person and where (docs/cloud.md, "Notifications"): the toggles of Settings ›
- * Notifications, which live on their row, and the phones that registered a push token. Nothing
- * sends pushes yet; these are what sending will read.
+ * Notifications, which live on their row; the devices they use, an iPhone by its Expo push
+ * token and a Mac by its install; what Ponzu told them (`notifications`, the inbox); and each
+ * push of it to an iPhone (`notification_deliveries`).
+ *
+ * Every function here that depends on the time takes `now` from its caller.
  */
+
+const at = (time: Date) => sql`${timeParam(time)}::timestamptz`;
 
 /** The events that may ping a person, and the daily email. */
 export interface PingPrefs {
@@ -62,22 +73,36 @@ export async function setPingPrefs(
   return result;
 }
 
+// Devices --------------------------------------------------------------------------------------
+
 export type Device = typeof devices.$inferSelect;
 
 /** How many devices a person keeps. Registering past it forgets the one unseen the longest. */
 export const MAX_DEVICES_PER_USER = 20;
 
-export interface DeviceRegistration {
+/**
+ * An Expo push token, as `Expo.isExpoPushToken` takes one: what an iPhone registers. Kept as
+ * it is, never lowercased.
+ */
+export const EXPO_PUSH_TOKEN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,128}\]$/;
+
+interface RegistrationBase {
   userId: string;
-  platform: Device["platform"];
-  pushToken: string;
-  pushEnvironment: Device["pushEnvironment"];
-  /** The app's own id for this install, kept in the Keychain. */
+  /** The app's own random id for this install. A device is an install. */
   installId: string;
   name: string | null;
   appVersion: string | null;
-  pingsBlocked: boolean;
 }
+
+export type DeviceRegistration =
+  | (RegistrationBase & {
+      platform: "ios";
+      /** Its Expo push token. */
+      pushToken: string;
+      pushEnvironment: NonNullable<Device["pushEnvironment"]>;
+      pingsBlocked: boolean;
+    })
+  | (RegistrationBase & { platform: "macos" });
 
 export type DeviceRegistered =
   | {
@@ -89,39 +114,119 @@ export type DeviceRegistered =
     }
   /**
    * Another person holds the token from another install of the app, or from one that never
-   * said which it was: nothing changed. `holderId` is who holds it.
+   * said which it was: nothing changed. `holderId` is who holds it. (Also answered, with the
+   * person's own id, for a Mac whose install id is already one of their iPhones'.)
    */
   | { status: "taken"; holderId: string };
 
 /**
- * Record a device's push token for a person, as seen now. Registering it again updates it in
- * place. A token another person registered moves to this person, with pings on, only when the
- * same install registers it (the phone signed in as someone else); otherwise it stays theirs.
- * Answers the device and whether it is new to this person. In the same statement, the person's devices past `MAX_DEVICES_PER_USER` are forgotten, longest unseen
- * first.
+ * Record one of a person's devices, as seen now, and answer it and whether it is new to them.
+ * A device is an install: registering from the same install again updates its one row. In
+ * the same statement, the person's devices past `MAX_DEVICES_PER_USER` are forgotten, longest
+ * unseen first.
+ *
+ * An iPhone comes with its push token. A token another person registered moves to this person,
+ * with pings on, only when the same install registers it (the phone signed in as someone
+ * else); otherwise it stays theirs. A new token from an install that had another one replaces
+ * it in place (the token changed).
+ *
+ * A Mac has no token: it is found by its install.
  */
 export async function registerDevice(
   db: Db,
   device: DeviceRegistration,
 ): Promise<DeviceRegistered> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return device.platform === "ios"
+        ? await registerPhone(db, device)
+        : await registerMac(db, device);
+    } catch (error) {
+      // Two registrations of one install at once (the app at launch, and its token listener)
+      // both found nothing and both inserted; one is refused by a key. Its statement, run again,
+      // finds the row the other made and updates it.
+      const raced =
+        error instanceof QueryError &&
+        /devices_user_install_key|devices_push_token_unique/.test(error.message);
+      if (!raced || attempt >= 3) throw error;
+    }
+  }
+}
+
+async function registerPhone(
+  db: Db,
+  device: Extract<DeviceRegistration, { platform: "ios" }>,
+): Promise<DeviceRegistered> {
+  const id = newId("dev");
+  // Each branch writes at most one row: the token's own row moves to this install (`moved`),
+  // or this install's row takes the new token (`rotated`), or a new row is made (`inserted`).
+  // When the token's row moves here and this install also had a row of its own, that row goes
+  // first (`dropped`): `moved` reads `dropped`, which makes Postgres finish the delete before
+  // the update, so the one-row-per-install key never sees both.
   const result = await queryJson<{
     device: Record<string, unknown> | null;
     priorUserId: string | null;
+    created: boolean;
   }>(
     db,
     sql`
       with prior as (
-        select user_id from devices where push_token = ${device.pushToken}
+        select id, user_id, install_id from devices where push_token = ${device.pushToken}
+         for update
       ),
-      registered as (
+      mine as (
+        select id from devices
+         where user_id = ${device.userId} and install_id = ${device.installId}
+           and push_token is distinct from ${device.pushToken}
+         for update
+      ),
+      allowed as (
+        select not exists (
+          select 1 from prior
+           where user_id <> ${device.userId} and install_id is distinct from ${device.installId}
+        ) as ok
+      ),
+      dropped as (
+        delete from devices
+         where id in (select id from mine)
+           and exists (select 1 from prior) and (select ok from allowed)
+        returning id
+      ),
+      moved as (
+        update devices d set
+          user_id = ${device.userId},
+          push_environment = ${device.pushEnvironment},
+          install_id = ${device.installId},
+          name = coalesce(${device.name}, d.name),
+          app_version = coalesce(${device.appVersion}, d.app_version),
+          pings_blocked = ${device.pingsBlocked},
+          pings_enabled = d.pings_enabled or d.user_id <> ${device.userId},
+          last_seen_at = now()
+          from (select count(*) from dropped) as gone
+         where d.id = (select id from prior) and (select ok from allowed)
+        returning d.*
+      ),
+      rotated as (
+        update devices d set
+          push_token = ${device.pushToken},
+          push_environment = ${device.pushEnvironment},
+          name = coalesce(${device.name}, d.name),
+          app_version = coalesce(${device.appVersion}, d.app_version),
+          pings_blocked = ${device.pingsBlocked},
+          last_seen_at = now()
+         where d.id = (select id from mine) and not exists (select 1 from prior)
+        returning d.*
+      ),
+      inserted as (
         insert into devices (id, user_id, platform, push_token, push_environment, install_id,
                              name, app_version, pings_blocked, last_seen_at)
-        values (${newId("dev")}, ${device.userId}, ${device.platform}, ${device.pushToken},
-                ${device.pushEnvironment}, ${device.installId}, ${device.name},
-                ${device.appVersion}, ${device.pingsBlocked}, now())
+        select ${id}, ${device.userId}, 'ios', ${device.pushToken}, ${device.pushEnvironment},
+               ${device.installId}, ${device.name}, ${device.appVersion}, ${device.pingsBlocked},
+               now()
+         where not exists (select 1 from prior) and not exists (select 1 from mine)
+        -- Another registration of the same token got there first: as if it had been here.
         on conflict (push_token) do update set
           user_id = excluded.user_id,
-          platform = excluded.platform,
           push_environment = excluded.push_environment,
           install_id = excluded.install_id,
           name = coalesce(excluded.name, devices.name),
@@ -130,6 +235,58 @@ export async function registerDevice(
           pings_enabled = devices.pings_enabled or devices.user_id <> excluded.user_id,
           last_seen_at = now()
         where devices.user_id = excluded.user_id or devices.install_id = excluded.install_id
+        returning devices.*
+      ),
+      registered as (
+        select * from moved union all select * from rotated union all select * from inserted
+      ),
+      forgotten as (
+        delete from devices
+         where id in (
+           select id from devices
+            where user_id = ${device.userId}
+              and exists (select 1 from registered)
+              and id <> (select id from registered)
+              and id not in (select id from dropped)
+            order by last_seen_at desc, id
+            offset ${MAX_DEVICES_PER_USER - 1}
+         )
+      )
+      select json_build_object(
+        'device', (select row_to_json(r) from registered r),
+        'priorUserId', (select user_id from prior),
+        'created', exists (select 1 from inserted where id = ${id})
+                   or exists (select 1 from prior where user_id <> ${device.userId})
+      ) as result
+    `,
+  );
+  const prior = result?.priorUserId ?? null;
+  if (!result?.device) return { status: "taken", holderId: prior! };
+  return {
+    status: "registered",
+    device: toDevice(result.device),
+    created: result.created,
+    ...(prior && prior !== device.userId ? { movedFrom: prior } : {}),
+  };
+}
+
+async function registerMac(
+  db: Db,
+  device: Extract<DeviceRegistration, { platform: "macos" }>,
+): Promise<DeviceRegistered> {
+  const id = newId("dev");
+  const result = await queryJson<{ device: Record<string, unknown> | null }>(
+    db,
+    sql`
+      with registered as (
+        insert into devices (id, user_id, platform, install_id, name, app_version, last_seen_at)
+        values (${id}, ${device.userId}, 'macos', ${device.installId}, ${device.name},
+                ${device.appVersion}, now())
+        on conflict (user_id, install_id) where install_id is not null do update set
+          name = coalesce(excluded.name, devices.name),
+          app_version = coalesce(excluded.app_version, devices.app_version),
+          last_seen_at = now()
+        where devices.platform = 'macos'
         returning devices.*
       ),
       forgotten as (
@@ -143,20 +300,12 @@ export async function registerDevice(
             offset ${MAX_DEVICES_PER_USER - 1}
          )
       )
-      select json_build_object(
-        'device', (select row_to_json(r) from registered r),
-        'priorUserId', (select user_id from prior)
-      ) as result
+      select json_build_object('device', (select row_to_json(r) from registered r)) as result
     `,
   );
-  const prior = result?.priorUserId ?? null;
-  if (!result?.device) return { status: "taken", holderId: prior! };
-  return {
-    status: "registered",
-    device: toDevice(result.device),
-    created: prior !== device.userId,
-    ...(prior && prior !== device.userId ? { movedFrom: prior } : {}),
-  };
+  if (!result?.device) return { status: "taken", holderId: device.userId };
+  const registered = toDevice(result.device);
+  return { status: "registered", device: registered, created: registered.id === id };
 }
 
 export interface DeviceChanges {
@@ -169,7 +318,8 @@ export interface DeviceChanges {
 
 /**
  * Change one of the person's devices, as seen now. Null when they have no such device. A push
- * token another device already holds throws (`devices_push_token_unique`).
+ * token another device already holds throws (`devices_push_token_unique`), and so does a token
+ * for a Mac (`devices_push_token_check`).
  */
 export async function updateDevice(
   db: Db,
@@ -199,6 +349,18 @@ export async function deleteDevice(
   return deleted.length > 0;
 }
 
+/** Forget devices by id, whoever has them: Expo said their tokens are dead. Answers how many. */
+export async function forgetDevices(db: Db, ids: readonly string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const deleted = await run(
+    db
+      .delete(devices)
+      .where(inArray(devices.id, [...ids]))
+      .returning({ id: devices.id }),
+  );
+  return deleted.length;
+}
+
 /** A person's devices, the one seen last first. */
 export function listDevices(db: Db, userId: string): Promise<Device[]> {
   return run(
@@ -210,20 +372,725 @@ export function listDevices(db: Db, userId: string): Promise<Device[]> {
   );
 }
 
+/** A heartbeat this soon after the last one is not written. */
+export const DEVICE_ACTIVE_WRITE_EVERY_MS = 30_000;
+
+/**
+ * Say the person is at one of their devices now: it moves `active_at` and `last_seen_at`.
+ * Answers `missing` when they have no such device, and `fresh`, writing nothing, when it was
+ * marked active less than `DEVICE_ACTIVE_WRITE_EVERY_MS` ago.
+ */
+export async function touchDeviceActive(
+  db: Db,
+  { userId, id, now }: { userId: string; id: string; now: Date },
+): Promise<"touched" | "fresh" | "missing"> {
+  const result = await queryJson<{ found: boolean; touched: boolean }>(
+    db,
+    sql`
+      with target as (
+        select id, active_at from devices where id = ${id} and user_id = ${userId}
+      ),
+      touched as (
+        update devices set active_at = ${at(now)}, last_seen_at = ${at(now)}
+         where id = (select id from target)
+           and (active_at is null
+                or active_at <= ${at(new Date(now.getTime() - DEVICE_ACTIVE_WRITE_EVERY_MS))})
+        returning id
+      )
+      select json_build_object(
+        'found', exists (select 1 from target),
+        'touched', exists (select 1 from touched)
+      ) as result
+    `,
+  );
+  if (!result?.found) return "missing";
+  return result.touched ? "touched" : "fresh";
+}
+
+/**
+ * Forget devices nobody has used in a long while: an iPhone unseen since `iosUnseenBefore`, a
+ * Mac unseen since `macUnseenBefore`. Answers how many went.
+ */
+export async function pruneDevices(
+  db: Db,
+  { iosUnseenBefore, macUnseenBefore }: { iosUnseenBefore: Date; macUnseenBefore: Date },
+): Promise<number> {
+  const deleted = await run(
+    db
+      .delete(devices)
+      .where(
+        sql`(${devices.platform} = 'ios' and ${devices.lastSeenAt} < ${at(iosUnseenBefore)})
+         or (${devices.platform} = 'macos' and ${devices.lastSeenAt} < ${at(macUnseenBefore)})`,
+      )
+      .returning({ id: devices.id }),
+  );
+  return deleted.length;
+}
+
 /** A row as `row_to_json` writes it, back to what Drizzle would have read. */
 function toDevice(json: Record<string, unknown>): Device {
   return {
     id: String(json.id),
     userId: String(json.user_id),
     platform: json.platform as Device["platform"],
-    pushToken: String(json.push_token),
-    pushEnvironment: json.push_environment as Device["pushEnvironment"],
+    pushToken: (json.push_token as string | null) ?? null,
+    pushEnvironment: (json.push_environment as Device["pushEnvironment"]) ?? null,
     installId: (json.install_id as string | null) ?? null,
     name: (json.name as string | null) ?? null,
     appVersion: (json.app_version as string | null) ?? null,
     pingsEnabled: Boolean(json.pings_enabled),
     pingsBlocked: Boolean(json.pings_blocked),
     lastSeenAt: new Date(String(json.last_seen_at)),
+    activeAt: json.active_at ? new Date(String(json.active_at)) : null,
     createdAt: new Date(String(json.created_at)),
   };
+}
+
+// Notifications --------------------------------------------------------------------------------
+
+export type Notification = typeof notifications.$inferSelect;
+export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
+
+/** One notification to write, for one person. */
+export interface NewNotification {
+  id?: string;
+  userId: string;
+  workspaceId: string | null;
+  canvasId: string | null;
+  kind: NotificationKind;
+  dedupeKey: string;
+  title: string;
+  subtitle?: string | null;
+  body: string;
+  link: NotificationLink;
+  sourceId?: string | null;
+  people?: string[];
+  muted: boolean;
+  /** Read as it is made: the person was looking at the canvas. */
+  readVia?: "looking";
+}
+
+/**
+ * Write notifications, as of `now`, in one statement. One whose person already has its dedupe
+ * key is left out, even one written at the same moment by another statement. Answers the rows
+ * written.
+ */
+export async function insertNotifications(
+  db: Db,
+  { rows, now }: { rows: readonly NewNotification[]; now: Date },
+): Promise<Notification[]> {
+  if (rows.length === 0) return [];
+  return run(
+    db
+      .insert(notifications)
+      .values(
+        rows.map((row) => ({
+          id: row.id ?? newId("ntf"),
+          userId: row.userId,
+          workspaceId: row.workspaceId,
+          canvasId: row.canvasId,
+          kind: row.kind,
+          dedupeKey: row.dedupeKey,
+          title: row.title,
+          subtitle: row.subtitle ?? null,
+          body: row.body,
+          link: row.link,
+          sourceId: row.sourceId ?? null,
+          people: row.people ?? [],
+          muted: row.muted,
+          createdAt: now,
+          updatedAt: now,
+          readAt: row.readVia ? now : null,
+          readVia: row.readVia ?? null,
+        })),
+      )
+      .onConflictDoNothing({ target: [notifications.userId, notifications.dedupeKey] })
+      .returning(),
+  );
+}
+
+export type Collapsed =
+  /** Folded into the person's unread row: it now stands for one thing more. */
+  | { status: "collapsed"; notification: Notification }
+  /** This comment was already told, as its own row or folded into one. Nothing changed. */
+  | { status: "already"; notification: Notification }
+  /** No unread row to fold into: write a row of its own. */
+  | null;
+
+/**
+ * Fold a teammate's comment into the person's unread `teammate_comment` row for the canvas made
+ * since `since`, if there is one: its count goes up by one, the commenter's first name joins its
+ * people, and its body becomes `bodyFor(people, count)`. The row keeps its id and its place.
+ *
+ * Each statement is one: the row is read, then changed only if nobody changed it meanwhile, and
+ * read again if they did.
+ */
+export async function collapseCommentNotification(
+  db: Db,
+  {
+    userId,
+    canvasId,
+    dedupeKey,
+    person,
+    since,
+    now,
+    bodyFor,
+  }: {
+    userId: string;
+    canvasId: string;
+    /** This comment's own key, `comment:<canvas>:<message>`. */
+    dedupeKey: string;
+    /** The commenter's first name. */
+    person: string;
+    since: Date;
+    now: Date;
+    bodyFor: (people: readonly string[], count: number) => string;
+  },
+): Promise<Collapsed> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const found = await queryJson<{
+      already: Record<string, unknown> | null;
+      target: Record<string, unknown> | null;
+    }>(
+      db,
+      sql`
+        select json_build_object(
+          'already', (select row_to_json(n) from notifications n
+                       where n.user_id = ${userId}
+                         and (n.dedupe_key = ${dedupeKey} or ${dedupeKey} = any(n.merged_keys))
+                       limit 1),
+          'target', (select row_to_json(n) from notifications n
+                      where n.user_id = ${userId} and n.canvas_id = ${canvasId}
+                        and n.kind = 'teammate_comment' and n.read_at is null
+                        and n.created_at >= ${at(since)}
+                      order by n.created_at desc, n.id desc
+                      limit 1)
+        ) as result
+      `,
+    );
+    if (found?.already) return { status: "already", notification: toNotification(found.already) };
+    if (!found?.target) return null;
+    const target = toNotification(found.target);
+    const people = target.people.includes(person) ? target.people : [...target.people, person];
+    const count = target.count + 1;
+    const [changed] = await run(
+      db
+        .update(notifications)
+        .set({
+          count,
+          people,
+          mergedKeys: sql`array_append(${notifications.mergedKeys}, ${dedupeKey})`,
+          body: bodyFor(people, count),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(notifications.id, target.id),
+            eq(notifications.count, target.count),
+            sql`${notifications.readAt} is null`,
+          ),
+        )
+        .returning(),
+    );
+    if (changed) return { status: "collapsed", notification: changed };
+  }
+  throw new Error("A teammate's comment could not be folded in: its row kept changing.");
+}
+
+/**
+ * Mark a person's unread notifications read, as of `now`, by `via`: the ones named by `ids`,
+ * or every one about `canvasId`, or (with neither) all of them. Only those made by `now` are
+ * read, so one made a moment later still shows. Reading again is safe. Answers the ids read.
+ */
+export async function markNotificationsRead(
+  db: Db,
+  {
+    userId,
+    ids,
+    canvasId,
+    now,
+    via,
+  }: {
+    userId: string;
+    ids?: readonly string[];
+    canvasId?: string;
+    now: Date;
+    via: NotificationReadVia;
+  },
+): Promise<string[]> {
+  if (ids && ids.length === 0) return [];
+  const read = await run(
+    db
+      .update(notifications)
+      .set({ readAt: now, readVia: via, updatedAt: now })
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          sql`${notifications.readAt} is null`,
+          sql`${notifications.createdAt} <= ${at(now)}`,
+          ids ? inArray(notifications.id, [...ids]) : undefined,
+          canvasId ? eq(notifications.canvasId, canvasId) : undefined,
+        ),
+      )
+      .returning({ id: notifications.id }),
+  );
+  return read.map((row) => row.id);
+}
+
+/**
+ * Resolve the needs-you notifications of a canvas's questions that closed (answered, withdrawn,
+ * cancelled). Answers the people whose badge went down, each once.
+ */
+export async function resolveNeedsYou(
+  db: Db,
+  { canvasId, questionIds, now }: { canvasId: string; questionIds: readonly string[]; now: Date },
+): Promise<string[]> {
+  if (questionIds.length === 0) return [];
+  const resolved = await run(
+    db
+      .update(notifications)
+      .set({ resolvedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(notifications.canvasId, canvasId),
+          eq(notifications.kind, "needs_you"),
+          inArray(notifications.sourceId, [...questionIds]),
+          sql`${notifications.resolvedAt} is null`,
+        ),
+      )
+      .returning({ userId: notifications.userId }),
+  );
+  return [...new Set(resolved.map((row) => row.userId))];
+}
+
+/**
+ * The sweep behind `resolveNeedsYou`: resolve up to `limit` needs-you notifications whose
+ * question is no longer open, or is gone. Answers the people whose badge went down, each once.
+ */
+export async function resolveClosedQuestions(
+  db: Db,
+  { now, limit = 500 }: { now: Date; limit?: number },
+): Promise<string[]> {
+  const resolved = await run(
+    db
+      .update(notifications)
+      .set({ resolvedAt: now, updatedAt: now })
+      .where(
+        sql`${notifications.id} in (
+          select n.id from notifications n
+           where n.kind = 'needs_you' and n.resolved_at is null
+             and not exists (
+               select 1 from questions q
+                where q.canvas_id = n.canvas_id and q.id = n.source_id and q.status = 'open'
+             )
+           limit ${limit}
+        )`,
+      )
+      .returning({ userId: notifications.userId }),
+  );
+  return [...new Set(resolved.map((row) => row.userId))];
+}
+
+/**
+ * The number on a person's badge, on the dock and the phone's icon: their open needs-you
+ * questions across every workspace, read or not, pinged or muted.
+ */
+export async function badgeCount(db: Db, userId: string): Promise<number> {
+  const result = await queryJson<{ count: number }>(
+    db,
+    sql`
+      select json_build_object('count', count(*)) as result
+        from notifications
+       where user_id = ${userId} and kind = 'needs_you' and resolved_at is null
+    `,
+  );
+  return Number(result?.count ?? 0);
+}
+
+/**
+ * The pushes handed to Expo for these people since `since`, by kind and when, for the hourly
+ * limit. A send whose answer was lost counts: it may have gone.
+ */
+export async function recentPushes(
+  db: Db,
+  { userIds, since }: { userIds: readonly string[]; since: Date },
+): Promise<{ userId: string; kind: NotificationKind; at: Date }[]> {
+  if (userIds.length === 0) return [];
+  const rows = await run(
+    db
+      .select({
+        userId: notifications.userId,
+        kind: notifications.kind,
+        at: notificationDeliveries.sentAt,
+      })
+      .from(notificationDeliveries)
+      .innerJoin(notifications, eq(notifications.id, notificationDeliveries.notificationId))
+      .where(
+        and(
+          inArray(notifications.userId, [...userIds]),
+          sql`${notificationDeliveries.sentAt} > ${at(since)}`,
+        ),
+      )
+      .orderBy(notificationDeliveries.sentAt),
+  );
+  return rows.map((row) => ({ ...row, at: row.at! }));
+}
+
+/**
+ * A person's notifications made since `since` that they have not read, or that were muted, for
+ * the daily email: by canvas (the ones about none last), oldest first within each.
+ */
+export function listRecentForDigest(
+  db: Db,
+  { userId, since }: { userId: string; since: Date },
+): Promise<Notification[]> {
+  return run(
+    db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          sql`${notifications.createdAt} >= ${at(since)}`,
+          sql`(${notifications.readAt} is null or ${notifications.muted})`,
+        ),
+      )
+      .orderBy(
+        sql`${notifications.canvasId} nulls last`,
+        notifications.createdAt,
+        notifications.id,
+      ),
+  );
+}
+
+/** How long an unread notification stays in the inbox before the sweep reads it as `expired`. */
+export const NOTIFICATION_EXPIRES_MS = 3 * 24 * 60 * 60_000;
+/** How long a notification is kept at all. */
+export const NOTIFICATION_KEPT_MS = 30 * 24 * 60 * 60_000;
+
+/**
+ * The sweep, as of `now`, up to `limit` rows each way: unread notifications made before
+ * `expireBefore` are read as `expired`, and notifications made before `deleteBefore` are
+ * deleted, with their deliveries. A needs-you whose question is still open is never deleted.
+ * Answers how many of each.
+ */
+export async function pruneNotifications(
+  db: Db,
+  {
+    now,
+    expireBefore,
+    deleteBefore,
+    limit = 1000,
+  }: { now: Date; expireBefore: Date; deleteBefore: Date; limit?: number },
+): Promise<{ expired: number; deleted: number }> {
+  const result = await queryJson<{ expired: number; deleted: number }>(
+    db,
+    sql`
+      with expired as (
+        update notifications set read_at = ${at(now)}, read_via = 'expired', updated_at = ${at(now)}
+         where id in (
+           select id from notifications
+            where read_at is null
+              and created_at < ${at(expireBefore)}
+              -- Not one the delete below may take: one statement changes a row once.
+              and (created_at >= ${at(deleteBefore)} or (kind = 'needs_you' and resolved_at is null))
+            limit ${limit}
+         )
+        returning id
+      ),
+      deleted as (
+        delete from notifications
+         where id in (
+           select id from notifications
+            where created_at < ${at(deleteBefore)}
+              and not (kind = 'needs_you' and resolved_at is null)
+            limit ${limit}
+         )
+        returning id
+      )
+      select json_build_object(
+        'expired', (select count(*) from expired),
+        'deleted', (select count(*) from deleted)
+      ) as result
+    `,
+  );
+  return { expired: Number(result?.expired ?? 0), deleted: Number(result?.deleted ?? 0) };
+}
+
+/** A notification as `row_to_json` writes it, back to what Drizzle would have read. */
+function toNotification(json: Record<string, unknown>): Notification {
+  const time = (value: unknown) => (value ? new Date(String(value)) : null);
+  return {
+    id: String(json.id),
+    userId: String(json.user_id),
+    workspaceId: (json.workspace_id as string | null) ?? null,
+    canvasId: (json.canvas_id as string | null) ?? null,
+    kind: json.kind as NotificationKind,
+    dedupeKey: String(json.dedupe_key),
+    title: String(json.title),
+    subtitle: (json.subtitle as string | null) ?? null,
+    body: String(json.body),
+    link: json.link as NotificationLink,
+    sourceId: (json.source_id as string | null) ?? null,
+    count: Number(json.count),
+    people: (json.people as string[]) ?? [],
+    mergedKeys: (json.merged_keys as string[]) ?? [],
+    muted: Boolean(json.muted),
+    createdAt: new Date(String(json.created_at)),
+    updatedAt: new Date(String(json.updated_at)),
+    readAt: time(json.read_at),
+    readVia: (json.read_via as NotificationReadVia | null) ?? null,
+    resolvedAt: time(json.resolved_at),
+  };
+}
+
+// Deliveries -----------------------------------------------------------------------------------
+
+/**
+ * Plan pushes, one per notification and iPhone. One already planned for that pair is left as
+ * it is. Answers the rows written.
+ */
+export async function insertDeliveries(
+  db: Db,
+  {
+    rows,
+    now,
+  }: { rows: readonly { notificationId: string; deviceId: string; sendAt: Date }[]; now: Date },
+): Promise<NotificationDelivery[]> {
+  if (rows.length === 0) return [];
+  return run(
+    db
+      .insert(notificationDeliveries)
+      .values(
+        rows.map((row) => ({
+          id: newId("ndl"),
+          notificationId: row.notificationId,
+          deviceId: row.deviceId,
+          sendAt: row.sendAt,
+          createdAt: now,
+        })),
+      )
+      .onConflictDoNothing({
+        target: [notificationDeliveries.notificationId, notificationDeliveries.deviceId],
+      })
+      .returning(),
+  );
+}
+
+/** A delivery due to go, with what sending it needs to check. */
+export interface DueDelivery {
+  id: string;
+  sendAt: Date;
+  attempts: number;
+  /** The iPhone, or null when it was forgotten. */
+  device: {
+    id: string;
+    userId: string;
+    pushToken: string | null;
+    pingsEnabled: boolean;
+    pingsBlocked: boolean;
+  } | null;
+}
+
+/**
+ * A notification's waiting deliveries due by `now`, and when the next one still waiting after
+ * that is due (null when none is).
+ */
+export async function dueDeliveries(
+  db: Db,
+  { notificationId, now }: { notificationId: string; now: Date },
+): Promise<{ due: DueDelivery[]; nextSendAt: Date | null }> {
+  const result = await queryJson<{
+    due: {
+      id: string;
+      send_at: string;
+      attempts: number;
+      device: {
+        id: string;
+        user_id: string;
+        push_token: string | null;
+        pings_enabled: boolean;
+        pings_blocked: boolean;
+      } | null;
+    }[];
+    next: string | null;
+  }>(
+    db,
+    sql`
+      select json_build_object(
+        'due', coalesce((
+          select json_agg(json_build_object(
+                   'id', d.id, 'send_at', d.send_at, 'attempts', d.attempts,
+                   'device', case when v.id is null then null else json_build_object(
+                     'id', v.id, 'user_id', v.user_id, 'push_token', v.push_token,
+                     'pings_enabled', v.pings_enabled, 'pings_blocked', v.pings_blocked
+                   ) end
+                 ) order by d.send_at, d.id)
+            from notification_deliveries d
+            left join devices v on v.id = d.device_id
+           where d.notification_id = ${notificationId} and d.state = 'waiting'
+             and d.send_at <= ${at(now)}
+        ), '[]'::json),
+        'next', (
+          select min(send_at) from notification_deliveries
+           where notification_id = ${notificationId} and state = 'waiting'
+             and send_at > ${at(now)}
+        )
+      ) as result
+    `,
+  );
+  return {
+    due: (result?.due ?? []).map((row) => ({
+      id: row.id,
+      sendAt: new Date(row.send_at),
+      attempts: Number(row.attempts),
+      device: row.device
+        ? {
+            id: row.device.id,
+            userId: row.device.user_id,
+            pushToken: row.device.push_token,
+            pingsEnabled: row.device.pings_enabled,
+            pingsBlocked: row.device.pings_blocked,
+          }
+        : null,
+    })),
+    nextSendAt: result?.next ? new Date(result.next) : null,
+  };
+}
+
+/** One delivery's move to a new state. */
+export type DeliveryUpdate =
+  /** About to be handed to Expo, at `sentAt`. Only from waiting; it counts an attempt. */
+  | { id: string; state: "sending"; sentAt: Date }
+  /** Expo took it and gave `ticketId`. From waiting or sending. */
+  | { id: string; state: "sent"; sentAt: Date; ticketId: string }
+  /** Not sent, and why. Only from waiting. */
+  | { id: string; state: "cancelled"; outcome: string }
+  /** Refused, with Expo's code. From waiting, sending or sent; `receiptCheckedAt` if by receipt. */
+  | { id: string; state: "failed"; outcome: string; receiptCheckedAt?: Date }
+  /** Its receipt says Apple took it. Only from sent. */
+  | { id: string; state: "delivered"; receiptCheckedAt: Date }
+  /** No answer or receipt came in time. From sending or sent. */
+  | { id: string; state: "unknown"; outcome?: string; receiptCheckedAt: Date };
+
+/** The states each new state may be reached from. A settled delivery never moves again. */
+const MOVES_FROM: Record<Exclude<DeliveryState, "waiting">, readonly DeliveryState[]> = {
+  sending: ["waiting"],
+  sent: ["waiting", "sending"],
+  cancelled: ["waiting"],
+  failed: ["waiting", "sending", "sent"],
+  delivered: ["sent"],
+  unknown: ["sending", "sent"],
+};
+
+/**
+ * Move deliveries to new states in one statement. A move from a state it may not come from is
+ * left out (a delivery sent once is never marked to send again, and a settled one never moves).
+ * Answers the ids moved.
+ */
+export async function markDeliveries(
+  db: Db,
+  updates: readonly DeliveryUpdate[],
+): Promise<string[]> {
+  if (updates.length === 0) return [];
+  const rows = updates.map((update) => ({
+    id: update.id,
+    state: update.state,
+    from: MOVES_FROM[update.state],
+    sent_at: "sentAt" in update ? update.sentAt.toISOString() : null,
+    ticket_id: "ticketId" in update ? update.ticketId : null,
+    outcome: "outcome" in update ? (update.outcome ?? null) : null,
+    receipt_checked_at:
+      "receiptCheckedAt" in update && update.receiptCheckedAt
+        ? update.receiptCheckedAt.toISOString()
+        : null,
+  }));
+  const moved = await queryJson<{ ids: string[] | null }>(
+    db,
+    sql`
+      with moved as (
+        update notification_deliveries d set
+          state = u.state,
+          sent_at = coalesce(u.sent_at, d.sent_at),
+          ticket_id = coalesce(u.ticket_id, d.ticket_id),
+          outcome = coalesce(u.outcome, d.outcome),
+          receipt_checked_at = coalesce(u.receipt_checked_at, d.receipt_checked_at),
+          attempts = d.attempts + case when u.state = 'sending' then 1 else 0 end
+          from json_to_recordset(${JSON.stringify(rows)}::json) as u(
+            id text, state text, "from" text[], sent_at timestamptz, ticket_id text,
+            outcome text, receipt_checked_at timestamptz
+          )
+         where d.id = u.id and d.state = any(u."from")
+        returning d.id
+      )
+      select json_build_object('ids', (select json_agg(id) from moved)) as result
+    `,
+  );
+  return moved?.ids ?? [];
+}
+
+/**
+ * Up to `limit` sent deliveries whose receipt is to read: sent at or before `before`, and not
+ * read yet. Oldest first.
+ */
+export async function receiptsDue(
+  db: Db,
+  { before, limit = 1000 }: { before: Date; limit?: number },
+): Promise<
+  {
+    id: string;
+    notificationId: string;
+    deviceId: string | null;
+    ticketId: string;
+    sentAt: Date;
+    kind: NotificationKind;
+  }[]
+> {
+  const rows = await run(
+    db
+      .select({
+        id: notificationDeliveries.id,
+        notificationId: notificationDeliveries.notificationId,
+        deviceId: notificationDeliveries.deviceId,
+        ticketId: notificationDeliveries.ticketId,
+        sentAt: notificationDeliveries.sentAt,
+        kind: notifications.kind,
+      })
+      .from(notificationDeliveries)
+      .innerJoin(notifications, eq(notifications.id, notificationDeliveries.notificationId))
+      .where(
+        and(
+          eq(notificationDeliveries.state, "sent"),
+          sql`${notificationDeliveries.receiptCheckedAt} is null`,
+          sql`${notificationDeliveries.sentAt} <= ${at(before)}`,
+        ),
+      )
+      .orderBy(notificationDeliveries.sentAt, notificationDeliveries.id)
+      .limit(limit),
+  );
+  return rows.map((row) => ({ ...row, ticketId: row.ticketId!, sentAt: row.sentAt! }));
+}
+
+/**
+ * Settle sends whose answer was lost: deliveries handed to Expo at or before `before` that never
+ * came back as sent or failed. They may have gone, so they are not sent again; they are marked
+ * `unknown`, as of `now`. Answers how many.
+ */
+export async function settleLostSends(
+  db: Db,
+  { before, now }: { before: Date; now: Date },
+): Promise<number> {
+  const settled = await run(
+    db
+      .update(notificationDeliveries)
+      .set({ state: "unknown", outcome: "no_answer", receiptCheckedAt: now })
+      .where(
+        and(
+          eq(notificationDeliveries.state, "sending"),
+          sql`${notificationDeliveries.sentAt} <= ${at(before)}`,
+        ),
+      )
+      .returning({ id: notificationDeliveries.id }),
+  );
+  return settled.length;
 }
