@@ -91,6 +91,15 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         document.activeElement?.tagName === "TEXTAREA" &&
         document.activeElement.closest("[data-create-composer]") !== null,
     );
+  /**
+   * The caret comes to the create page's composer and stays there: past the menu or popover the
+   * choice was made in handing focus back as it goes (its exit runs 90ms), it is still there.
+   */
+  const caretStaysInCreate = async () => {
+    await waitUntil(caretInCreate);
+    await page.waitForTimeout(400);
+    expect(await caretInCreate()).toBe(true);
+  };
 
   const shoot = async (name: string) => {
     if (!SHOTS) return;
@@ -346,7 +355,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The create page fills the canvas pane until a design is opened, with the caret in its
     // composer: a workspace that opens on its create page is for typing into at once.
     await page.getByText("Make something").waitFor();
-    await waitUntil(caretInCreate);
+    await caretStaysInCreate();
   });
 
   test("the create page's picker groups both workspaces; the other's repo or Scratch switches the window there in one step", async () => {
@@ -404,7 +413,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The create page, not the design last open there, with the caret in its composer.
     await page.getByText("Make something").waitFor();
     expect((await selectorSaid())?.slice(1)).toEqual(["Project: maya/kettle"]);
-    await waitUntil(caretInCreate);
+    await caretStaysInCreate();
 
     // Back to the team, and from there Personal's Scratch: the window switches with Scratch
     // chosen, never showing a repo or Northbrook's choice on the way.
@@ -710,7 +719,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Workspace: Northbrook" }).click();
     await page.getByRole("menuitemradio", { name: "Personal" }).click();
     await page.getByText("Make something").waitFor();
-    await waitUntil(caretInCreate);
+    await caretStaysInCreate();
     // Back to Northbrook, which opens on the design: no create page, and the caret stays out of
     // anything until the person puts it somewhere.
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
