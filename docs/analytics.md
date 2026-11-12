@@ -97,6 +97,7 @@ Every event about a workspace also carries `workspace_id`.
 | `claude disconnected` | | |
 | `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
 | `canvas deleted` | `canvas_id`, `by_owner` | |
+| `canvas file links reset` | `canvas_id`, `by_owner` | The owner or an admin reset the canvas's file links from Share: its files moved under a new asset key, and links to the old one stop working. |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
 | `canvas taken over` | `canvas_id`, `woke` | A teammate took over a canvas whose owner left the workspace or deleted their account; it runs on their Claude from then on. `woke`: its feed held work no runner took, so it was woken. About the person who took it. |
 | `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |

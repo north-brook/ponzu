@@ -14,7 +14,6 @@ import {
   AGENT_STATES,
   CANVAS_STATUSES,
   type Canvas,
-  deleteCanvas,
   findCanvasByCreateKey,
   getCanvas,
   getCanvasAssetKey,
@@ -43,9 +42,11 @@ import { access } from "../auth/access.ts";
 import { type CanvasGrant, requireCanvas, requireWorkspace } from "../auth/authorize.ts";
 import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import { toCommittedOp } from "../canvases/actor.ts";
+import { rotateAssetKey } from "../canvases/asset-key.ts";
 import { commitPost } from "../canvases/commit.ts";
 import { startCanvas } from "../canvases/create.ts";
 import { readCurrentDoc } from "../canvases/document.ts";
+import { deleteCanvasAndFiles } from "../canvases/files.ts";
 import { reverse } from "../canvases/undo.ts";
 import { EFFORTS } from "../claude/models.ts";
 import type { Deps } from "../deps/index.ts";
@@ -101,6 +102,8 @@ const CanvasView = z.object({
   access: z.enum(["read", "write"]),
   /** The canvas's files are under here. Knowing it is the permission to read them. */
   assetsUrl: z.string(),
+  /** When its file links were last reset; null while they never were. */
+  assetKeyRotatedAt: z.date().nullable(),
 });
 
 function toView(
@@ -125,6 +128,23 @@ async function viewOf(
   const assetKey = await getCanvasAssetKey(deps.db, grant.canvas.id);
   if (!assetKey) throw new ApiError(404, "not_found", "There is no such canvas.");
   return CanvasView.parse(toView(deps, grant.canvas, grant.repo, grant.access, assetKey));
+}
+
+/**
+ * What only a canvas's owner or an admin of its workspace may do: delete it, reset its file
+ * links. 403 `forbidden` for anyone else, saying `what` they may not do.
+ */
+async function requireOwnerOrAdmin(
+  deps: Pick<Deps, "db">,
+  canvas: Pick<Canvas, "ownerId" | "workspaceId">,
+  userId: string,
+  what: string,
+): Promise<void> {
+  if (canvas.ownerId === userId) return;
+  const member = await getMemberWorkspace(deps.db, { userId, workspaceId: canvas.workspaceId });
+  if (member?.role !== "admin") {
+    throw new ApiError(403, "forbidden", `Only its owner or a workspace admin can ${what}.`);
+  }
 }
 
 const CreateBody = z.object({
@@ -394,28 +414,48 @@ export const canvases = new Hono<AppEnv>()
   .delete("/:id", access.user, validate("param", Params), async (c) => {
     const { deps, actor } = c.var;
     const { canvas } = await requireCanvas(c, c.req.valid("param").id, "write");
-    if (canvas.ownerId !== actor.user.id) {
-      const member = await getMemberWorkspace(deps.db, {
-        userId: actor.user.id,
-        workspaceId: canvas.workspaceId,
-      });
-      if (member?.role !== "admin") {
-        throw new ApiError(403, "forbidden", "Only its owner or a workspace admin can delete it.");
-      }
-    }
+    await requireOwnerOrAdmin(deps, canvas, actor.user.id, "delete it");
     // Its sandbox's row first, while the canvas is there to put its awake time down to.
     const retiring = await holdForRetire(deps, canvas.id);
     const forget = await forgetCheckpoints(deps, canvas.id);
-    await deleteCanvas(deps.db, canvas.id);
-    deps.analytics.capture("canvas deleted", {
-      canvas_id: canvas.id,
-      by_owner: canvas.ownerId === actor.user.id,
-    });
+    // The row and its files: the job that deletes them is recorded as the row goes, and runs now.
+    // A delete that lost a race with another finds no row, records nothing and counts nothing:
+    // the canvas is gone, as asked.
+    if (await deleteCanvasAndFiles(deps, canvas.id)) {
+      deps.analytics.capture("canvas deleted", {
+        canvas_id: canvas.id,
+        by_owner: canvas.ownerId === actor.user.id,
+      });
+    }
     // The row went with the canvas; its id never comes back, so the delete at Vercel follows.
     deps.background("retire", finishRetire(deps, canvas.id, retiring));
     // Its transcripts and work in progress, which no row knows of any more.
     deps.background("checkpoints_deleted", forget());
     return c.body(null, 204);
+  })
+
+  /**
+   * Resets the canvas's file links (docs/cloud.md, "Assets and previews"): its files move under a
+   * new asset key, and links to the old one stop working once the old key's files are deleted, a
+   * quarter of an hour later. Its owner or a workspace admin may, as for a delete. Answers the
+   * canvas as `GET` does, with its new `assetsUrl`; everyone else's app sees the head's
+   * `assetKeyRotatedAt` move and asks for it. Two resets at once make one: the second answers
+   * the canvas as the first left it.
+   */
+  .post("/:id/asset-key/rotate", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const grant = await requireCanvas(c, c.req.valid("param").id, "write");
+    await requireOwnerOrAdmin(deps, grant.canvas, actor.user.id, "reset its file links");
+    const rotation = await rotateAssetKey(deps, grant.canvas.id);
+    const canvas = rotation === "missing" ? null : await getCanvas(deps.db, grant.canvas.id);
+    if (!canvas) throw new ApiError(404, "not_found", "There is no such canvas.");
+    if (rotation === "rotated") {
+      deps.analytics.capture("canvas file links reset", {
+        canvas_id: canvas.id,
+        by_owner: canvas.ownerId === actor.user.id,
+      });
+    }
+    return c.json(await viewOf(deps, { ...grant, canvas }));
   })
 
   /**

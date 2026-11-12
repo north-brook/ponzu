@@ -1,8 +1,8 @@
-import { isAssetKey, type NewJob } from "@ponzu/db";
+import { deleteCanvasWithFiles, isAssetKey, type NewJob } from "@ponzu/db";
 import { z } from "zod";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { RetryLater } from "../jobs/retry.ts";
-import type { JobDeps, RunningJob } from "../jobs/run.ts";
+import { type JobDeps, type RunNowDeps, type RunningJob, runJob } from "../jobs/run.ts";
 
 /*
  * A canvas's files, deleted with it (docs/cloud.md, "Assets and previews"). Everything a canvas
@@ -15,8 +15,10 @@ import type { JobDeps, RunningJob } from "../jobs/run.ts";
  * Pull request pictures (`pull-requests/<key>/`) are not under the asset key and are kept: the
  * pull request on GitHub still shows them.
  *
- * The job is registered here and recorded by nobody yet. Deleting a canvas, and deleting an
- * account, record it once the data lifecycle work wires them (W9).
+ * Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canvases that go
+ * with it) both go through `deleteCanvasAndFiles`, which deletes the row and records this job in
+ * one statement, keyed by the asset key the row had as it went, and runs it at once. A function
+ * that dies before the job is done leaves it to the minute's cron.
  */
 
 /** The job that deletes a deleted canvas's files. Its key is the canvas's asset key. */
@@ -96,4 +98,27 @@ export async function runCanvasFilesDeleteJob(
     throw new Error(`Deleted ${deleted} files on the last attempt; more remain.`);
   }
   throw new RetryLater(FILES_RETRY_MS, `Deleted ${deleted} files; more remain.`);
+}
+
+/**
+ * Delete a canvas's row, with everything that is only its own, and its files: the row goes and
+ * the files job is recorded in one statement (`deleteCanvasWithFiles`), then run at once, past
+ * the response. False when there was no such canvas, which records nothing (a canvas deleted
+ * twice). The caller has already retired its sandbox and read its checkpoints, which need the
+ * row. Pull request pictures (`pull-requests/<key>/`) are not under the asset key, and stay.
+ */
+export async function deleteCanvasAndFiles(deps: RunNowDeps, canvasId: string): Promise<boolean> {
+  const worker = `${CANVAS_FILES_DELETE_JOB}:${crypto.randomUUID()}`;
+  const { deleted, job } = await deleteCanvasWithFiles(deps.db, {
+    canvasId,
+    job: {
+      kind: CANVAS_FILES_DELETE_JOB,
+      maxAttempts: CANVAS_FILES_DELETE_ATTEMPTS,
+      runAt: new Date(deps.clock.now()),
+      lockedBy: worker,
+    },
+  });
+  // Null with the row deleted: a job for that key was already waiting, and does the work.
+  if (job) deps.background(CANVAS_FILES_DELETE_JOB, runJob(deps, job, worker));
+  return deleted;
 }

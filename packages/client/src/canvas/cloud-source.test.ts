@@ -195,6 +195,49 @@ describe("opening", () => {
     expect(asked).toEqual([]);
   });
 
+  test("its file links reset: every open copy follows to the new address, and draws again", async () => {
+    const h = await harness();
+    const maya = h.open(h.maya);
+    const ines = h.open(h.ines);
+    await h.settle();
+    const before = `https://assets.test/${h.canvas.id}/`;
+    expect([maya.source.assetBase, ines.source.assetBase]).toEqual([before, before]);
+    const drawn = ines.states.length;
+
+    // Ines may change the canvas but neither owns it nor runs the workspace.
+    await expect(ines.client.api.canvases.rotateAssetKey(h.canvas.id)).rejects.toMatchObject({
+      status: 403,
+      code: "forbidden",
+    });
+    const answered = await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    const after = `https://assets.test/${h.canvas.id}-1/`;
+    expect(answered.assetsUrl).toBe(after);
+    await h.settle();
+
+    expect([maya.source.assetBase, ines.source.assetBase]).toEqual([after, after]);
+    expect(ines.states.length).toBeGreaterThan(drawn);
+
+    // A head change that is not a reset asks for nothing.
+    let asked = 0;
+    const get = ines.client.api.canvases.get;
+    ines.client.api.canvases.get = (...args) => {
+      asked++;
+      return get(...args);
+    };
+    await maya.client.api.canvases.rename(h.canvas.id, { name: "Kettle, renamed" });
+    await h.settle();
+    expect(asked).toBe(0);
+    ines.client.api.canvases.get = get;
+
+    // Reset twice more, a second apart: it ends at the last address.
+    await h.clock.advance(1000);
+    await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    await h.clock.advance(1000);
+    await maya.client.api.canvases.rotateAssetKey(h.canvas.id);
+    await h.settle();
+    expect(ines.source.assetBase).toBe(`https://assets.test/${h.canvas.id}-3/`);
+  });
+
   test("presence is said on opening, every 30 seconds after, and taken back on closing", async () => {
     const h = await harness();
     const { source } = h.open(h.maya);

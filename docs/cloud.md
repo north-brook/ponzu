@@ -2491,7 +2491,57 @@ lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand key
 most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
 any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
-bucket. Nothing records the job yet; deleting a canvas or an account will.
+bucket.
+
+Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canvases that go with
+it, "Deleting an account") go through the same purge, `deleteCanvasAndFiles`: one statement
+deletes the canvas's row and records that job, keyed by the asset key the row had as it went, so
+the row is never gone without the job that deletes its files. The request then runs the job at
+once, past its answer; a function that dies first leaves it to the minute's cron. A canvas
+deleted twice finds no row the second time and records nothing. A pull request's pictures are
+not under the asset key and stay: its description on GitHub still shows them.
+
+**Resetting a canvas's file links.** A link to a canvas's file works for whoever holds it, and a
+link can get out (pasted in a chat, kept by someone who has since lost access). The canvas's
+owner or an admin of its workspace can reset its file links, from the foot of Share ("Reset file
+links", with a confirmation: "Reset this canvas's file links? Links to its images and exports
+stop working, including any you've copied or pasted elsewhere. Everyone who can open the canvas
+gets the new ones."). `POST /v1/canvases/:id/asset-key/rotate` (403 `forbidden` for anyone else)
+makes a new asset key and:
+
+1. copies every object under the old key to the new one;
+2. swaps the canvas's `asset_key`, only if it is still the old one, and moves
+   `canvases.asset_key_rotated_at` (in the head), recording in the same statement the job
+   `canvas.asset_key_retire`, keyed by the old key, due fifteen minutes later;
+3. copies again whatever the old key gained or changed during the first pass;
+4. answers the canvas as `GET` does, with its new `assetsUrl`.
+
+The job runs once every upload address signed for the old key has run out (ten minutes, with
+five over): while the canvas is still under the new key it copies once more what came late, then
+deletes everything under the old key, a page at a time as the files delete does. Neither that
+copy nor the second pass writes over a file that was written under the new key after the one
+under the old key, so a file the runner replaced since the swap keeps its newer version: each
+copy reads the new key's file again just before it copies. That narrows the race to one round
+trip to storage and does not close it, since storage is not asked for a conditional copy. A
+canvas reset again within the fifteen minutes gets what came late to the old key under its
+current key instead, and only what changed there since the swap, so a file deleted under the
+middle key stays deleted. A canvas deleted after the swap has its files job take the new key at once; the retire job then deletes
+whatever the second pass still copied into the new key after that. An upload
+completed after the swap is moved under the new key as it completes. Two resets at once make
+one: the second finds the key changed, answers the canvas as the first left it, and its copies
+are deleted by a `canvas.files_delete` job. A failure before the swap changes nothing anyone can
+see. Clients watch the head's `assetKeyRotatedAt`: when it moves, the open canvas asks
+`GET /v1/canvases/:id` for the new address and draws from it, and the sidebar asks again for the
+row's previews. A runner already awake keeps the old address until it next starts, so for up to
+fifteen minutes after a reset it reads files through a key about to go, and past that it cannot
+read them until its next start. Resets are on demand only; nothing resets a canvas's links when
+someone loses access.
+
+Neither a delete nor a reset clears a cached copy. Previews, exports and comment pictures are
+served `immutable` for a year and assets for five minutes, so Cloudflare's edge, and a browser
+that already opened a file, can keep answering with a copy after the object is gone from R2,
+for as long as they keep it. Nothing asks Cloudflare to purge its cache yet: that needs a
+Cloudflare API token with cache purge rights and a seam for it, and is not built.
 
 Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
 exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
@@ -2830,7 +2880,11 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    revoked: its row is held, the sandbox is deleted at Vercel in the background, and the sweep's
    reconcile removes what that misses.
 3. Their canvases that are theirs alone are deleted with everything under them: their Scratch
-   canvases, and their canvases in a workspace nobody else is in.
+   canvases, and their canvases in a workspace nobody else is in. Each goes through the same
+   purge as deleting one canvas ("Assets and previews"): its row and the `canvas.files_delete`
+   job for its asset key in one statement, the job run at once, so its stored files (assets,
+   previews, exports, comment pictures) are deleted too. A pull request's pictures stay with
+   the pull request on GitHub. The canvases that stay with a workspace keep their files.
 4. Their name is taken out of what stays: in every canvas of a workspace they are in, or that
    they own, a thread item they wrote or stopped a run in names them as
    `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under

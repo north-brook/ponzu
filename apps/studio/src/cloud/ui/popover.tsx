@@ -41,6 +41,11 @@ function PopoverContent({
   );
 }
 
+/** Closes the popover it is in when pressed: for an action that hands over to a dialog. */
+function PopoverClose({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Close>) {
+  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
+}
+
 function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
 }
@@ -68,6 +73,7 @@ function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) 
 export {
   Popover,
   PopoverAnchor,
+  PopoverClose,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,

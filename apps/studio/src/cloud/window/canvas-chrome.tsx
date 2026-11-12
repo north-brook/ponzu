@@ -29,6 +29,8 @@ export interface CanvasChromeProps {
     repo: Repo;
     members: CanvasMember[];
     onOpenRepo: () => void;
+    /** Share's "Reset file links": for its owner and the workspace's admins, else null. */
+    onResetLinks?: (() => void) | null;
   } | null;
   pullRequest: { pr: PullRequestSummary; tabOpen: boolean; onToggleTab: () => void } | null;
   action: {
@@ -185,6 +187,7 @@ export function CanvasChrome({
               members={team.members}
               meId={team.meId}
               onOpenRepo={team.onOpenRepo}
+              onResetLinks={team.onResetLinks ?? null}
             />
           ) : null}
         </Popover>

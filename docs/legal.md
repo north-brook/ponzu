@@ -46,13 +46,14 @@ address and state are not in the code.
 | Servers, database and storage in the US; Cloudflare caches files at its edge | `apps/api/vercel.json` (`iad1`); PostHog default host `us.i.posthog.com` | Neon region and R2 location are the founder's to read |
 | Who can see a canvas: readers of its repo in the workspace; pushers steer; Scratch is the owner's alone | docs/cloud.md "Identity and access", line "A Scratch canvas has no repo and is its owner's alone" | true |
 | Files at unguessable ponzu.cloud addresses; the key is the capability | docs/cloud.md "Assets and previews" | true |
+| The owner or a workspace admin can reset a canvas's file links; the old addresses stop working about fifteen minutes later | `POST /v1/canvases/:id/asset-key/rotate` and the `canvas.asset_key_retire` job (`apps/api/src/canvases/asset-key.ts`); `routes/canvas-files.test.ts` | true in code once deployed and migrated (`asset_key_rotated_at`). A copy Cloudflare or a browser already cached is not purged |
 | GitHub App permissions: contents and pull requests write; checks, statuses, metadata, members read | docs/cloud.md "Pull requests" ("Measured on the test repository") | the production App is not created yet; founder confirms, including email access |
 | History compacted after 7 days | `OP_RETENTION_DAYS` in `packages/db/src/queries/checkpoints.ts` | true |
 | Snapshot expires 30 days after last use; Vercel removes the sandbox 14 days later | docs/cloud.md "The sandbox" | true (Vercel's behaviour) |
 | A checkpoint is deleted when a newer one replaces it | `apps/api/src/runner/checkpoint.ts` (`clear`) | true |
 | Claude sign-in and GitHub App install states (`auth_states`) deleted a day after they expire; finished background jobs and webhook records after 30 days | `sweepOldRows` in `packages/db/src/queries/retention.ts`, run hourly by `apps/api/src/cron/steps/retention.ts`; `retention.test.ts` | true in code once deployed. At most 5,000 rows of each a run, so a backlog takes hours to clear |
 | Deleting a canvas removes document, thread, comments, events, questions, checkpoints, sandbox | `apps/api/src/routes/canvases.ts` (`delete`), `forgetCheckpoints` | true |
-| Deleting a canvas removes its files | `canvas.files_delete` exists (`apps/api/src/canvases/files.ts`) but nothing records the job | not true yet; site slice S9. Open note on the page |
+| Deleting a canvas, or the account that alone has it, removes its files; a pull request's pictures stay | `deleteCanvasAndFiles` in `apps/api/src/canvases/files.ts` records the `canvas.files_delete` job in the statement that deletes the row and runs it at once; `routes/canvas-files.test.ts`, `routes/account.test.ts` | true in code once deployed. Cloudflare's and browsers' caches are not purged (previews, exports and comment pictures are cached up to a year); open note on the page |
 | Account deletion steps, what stays, the sole-admin refusal | `apps/api/src/account/delete.ts`; docs/cloud.md "Deleting an account" | true; the WorkOS delete is the `account.forget` job's, tried again for about six hours (`apps/api/src/account/forget.ts`) |
 | On deletion, thread items and the actor of their ops become "Deleted user"; a comment author's name inside the document and checkpoints, and words in workspaces already left, are not rewritten | `anonymiseUser` in `packages/db/src/queries/account-deletion.ts`; docs/cloud.md "Deleting an account" (last paragraph) | true |
 | GitHub grant revoked on account deletion | `revokeGithubGrant` in `apps/api/src/account/delete.ts`, `Github.deleteAuthorization` in `apps/api/src/deps/github.ts`; `routes/account.test.ts` | true in code, best effort: a failure is logged and the deletion goes on. Uses the App's existing client id and secret |
@@ -124,7 +125,8 @@ Google Fonts and https images load from the addresses a canvas names (`apps/desk
 4. **Is account deletion complete?** `apps/api/src/account/delete.ts` and
    `apps/api/src/account/forget.ts`. The GitHub grant is revoked (best effort), and WorkOS and
    PostHog are asked to forget the person by a job that retries; the PostHog step needs the
-   founder's personal key in production. Canvas files in R2 are the files purge's (W9 D1).
+   founder's personal key in production. Canvas files in R2 go through the same purge as
+   deleting one canvas (`deleteCanvasAndFiles`); what Cloudflare's edge cached is not purged.
 5. **Is customer content sent to AI providers?** Turns go to Anthropic under the person's own
    account. Only repository metadata and short excerpts go under Ponzu's key (docs/cloud.md
    "Ideas").

@@ -245,9 +245,10 @@ describe("the SQL that is sealed", () => {
     // Re-sent whole on every change, or refused.
     expect(sql).not.toMatch(/\b(order by|limit|offset|distinct|group by|exists|with)\b|now\(\)/i);
     expect(sql).not.toMatch(/\bin\s*\(\s*select/i);
-    // Secrets, and canvas content, never travel through Realtime.
+    // Secrets, and canvas content, never travel through Realtime. The asset key is the
+    // capability to a canvas's files; when it was last reset (`asset_key_rotated_at`) is not.
     expect(sql).not.toMatch(
-      /encrypted_|asset_key|token|canvas_ops|canvas_checkpoints|\bselect \*/i,
+      /encrypted_|asset_key\b|token|canvas_ops|canvas_checkpoints|\bselect \*/i,
     );
     expect(sql).not.toMatch(/\.\*/);
   });
