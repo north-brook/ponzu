@@ -1,6 +1,6 @@
 import {
   countAppliedMigrations,
-  countSealedUnderOtherKeys,
+  countSealedValues,
   EXPECTED_MIGRATIONS,
   pingDb,
   QueryError,
@@ -179,8 +179,10 @@ const CHECKS: Record<SelfcheckId, Check> = {
   },
 
   async vault_old_keys(deps) {
-    const counts = await countSealedUnderOtherKeys(deps.db, await deps.vault.currentKeyId());
-    const count = Object.values(counts).reduce((sum, each) => sum + each, 0);
+    const { current } = await deps.vault.keyIds();
+    const count = (await countSealedValues(deps.db))
+      .filter((counted) => counted.keyId !== current)
+      .reduce((sum, counted) => sum + counted.count, 0);
     return count === 0 ? { ...OK, count } : fail("old_keys", { count });
   },
 

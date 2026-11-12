@@ -304,7 +304,9 @@ test("every sealed column in the schema is one the count reads", async () => {
     `select table_name || '.' || column_name as name from information_schema.columns
       where table_schema = 'public' and column_name like 'encrypted%' order by 1`,
   );
-  expect(rows.map((row) => row.name)).toEqual([...SEALED_COLUMNS].sort());
+  expect(rows.map((row) => row.name)).toEqual(
+    SEALED_COLUMNS.map(({ table, column }) => `${table}.${column}`).sort(),
+  );
 });
 
 test("a check that does not answer within its budget times out, and the rest are not held", async () => {

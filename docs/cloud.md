@@ -2911,7 +2911,9 @@ permissions and events the API uses), the App's webhook (its URL is `PONZU_API_U
 `/v1/github/webhook`, json, TLS checked), Ponzu's Anthropic key, the sandbox list, values still
 sealed under an old vault key, and whether PostHog is set. Each check has five seconds, and
 all run at once. `detail` is a word from a fixed list and never quotes what a service said or
-a value from the environment. The hourly step raises each failed check to PostHog as an
+a value from the environment. Two checks add a field: `github_app` names in `missing` the
+permissions or events from the API's own list that the App lacks, and `vault_old_keys` gives
+its `count`. The hourly step raises each failed check to PostHog as an
 exception (`selfcheck_failed`, with `check`), which is the alarm; the old-keys count and
 PostHog are informational and only logged.
 

@@ -157,6 +157,7 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export { countAppliedMigrations, EXPECTED_MIGRATIONS } from "./queries/migrations.ts";
 export {
   type Device,
   type DeviceChanges,
@@ -183,12 +184,6 @@ export {
   readOps,
   type StoredOp,
 } from "./queries/ops.ts";
-export {
-  countAppliedMigrations,
-  countSealedUnderOtherKeys,
-  EXPECTED_MIGRATIONS,
-  SEALED_COLUMNS,
-} from "./queries/ops-checks.ts";
 export {
   bestPermission,
   countWorkspacePeople,
@@ -307,6 +302,15 @@ export {
   WAKING_LEASE_MS,
   type WakeContext,
 } from "./queries/sandboxes.ts";
+export {
+  countSealedValues,
+  listSealedNotUnder,
+  replaceSealedValue,
+  SEALED_COLUMNS,
+  type SealedColumn,
+  type SealedCount,
+  type SealedValue,
+} from "./queries/sealed.ts";
 export {
   admitSession,
   endSession,
