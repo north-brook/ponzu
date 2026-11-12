@@ -106,6 +106,11 @@ export interface Analytics {
   readonly ai: AiTracing | null;
   /** Sends what is queued now, within `FLUSH_MS`. For scripts and tests; requests need not. */
   flush(): Promise<void>;
+  /**
+   * Someone turned usage sharing on or off: this instance reads who has turned it off again at
+   * its next send, rather than when its copy is a minute old.
+   */
+  sharingChanged(): void;
 }
 
 /** Analytics switched off: no PostHog key. Everything is a no-op. */
@@ -116,18 +121,146 @@ export const noAnalytics: Analytics = {
   exception: () => {},
   ai: null,
   flush: async () => {},
+  sharingChanged: () => {},
 };
+
+/* ------------------------------------------------------------------ */
+/* Share usage data                                                    */
+/* ------------------------------------------------------------------ */
+
+/** How long an instance keeps who has turned usage sharing off before it reads it again. */
+export const OPT_OUTS_TTL_MS = 60_000;
+
+/** The most captures held for the next send; past this the oldest is dropped. */
+export const HELD_MAX = 1_000;
+
+/**
+ * Who has turned Settings › Account › Share usage data off (`users.share_usage`), as this
+ * instance last read it.
+ */
+export interface OptOuts {
+  /** The set, read again when the copy held is `OPT_OUTS_TTL_MS` old or was let go of. */
+  current(): Promise<ReadonlySet<string>>;
+  /** The copy held while it is fresh, without reading anything; null otherwise. */
+  fresh(): ReadonlySet<string> | null;
+  /** The copy held, fresh or not, without reading anything: null before the first read. */
+  known(): ReadonlySet<string> | null;
+  /** Lets go of the copy held, so the next `current` reads it again. */
+  forget(): void;
+}
+
+/** Opt-outs read by `load` at most once a `ttlMs` (and once at a time), on `now`'s clock. */
+export function cachedOptOuts(
+  load: () => Promise<string[]>,
+  now: () => number,
+  ttlMs = OPT_OUTS_TTL_MS,
+): OptOuts {
+  let held: { ids: ReadonlySet<string>; at: number } | null = null;
+  let stale = false;
+  let reading: Promise<ReadonlySet<string>> | null = null;
+  const fresh = () => (held && !stale && now() - held.at < ttlMs ? held.ids : null);
+  return {
+    fresh,
+    current() {
+      const ids = fresh();
+      if (ids) return Promise.resolve(ids);
+      reading ??= (async () => {
+        try {
+          const at = now();
+          stale = false;
+          const ids = new Set(await load());
+          held = { ids, at };
+          return ids;
+        } finally {
+          reading = null;
+        }
+      })();
+      return reading;
+    },
+    known: () => held?.ids ?? null,
+    forget: () => {
+      stale = true;
+    },
+  };
+}
+
+/**
+ * `sink`, leaving out what is about a person who has turned usage sharing off: their captures,
+ * their profile and their errors. What is about no person (a workspace's group, an event about
+ * no one) is untouched.
+ *
+ * Who has turned it off is read from the database only when the queue is sent, in the
+ * background, never on the request path. A capture is checked against the copy this instance
+ * holds while that copy is fresh; otherwise it is held here (at most `HELD_MAX`, the oldest
+ * dropped first, each with the time it was captured) and handed to `sink` only once the send
+ * has read the set again. If that read fails, the last copy decides, however old; with none
+ * yet, everything waits for the next send. Nothing about an opted-out person is ever sent on a
+ * guess.
+ */
+export function withoutOptedOut(
+  sink: AnalyticsSink,
+  optOuts: OptOuts,
+  log?: Logger,
+): AnalyticsSink {
+  const held: { about: string; send: () => void }[] = [];
+  const decide = (about: string | null, send: () => void) => {
+    if (about === null) return send();
+    const out = optOuts.fresh();
+    if (out) {
+      if (!out.has(about)) send();
+      return;
+    }
+    held.push({ about, send });
+    if (held.length > HELD_MAX) held.splice(0, held.length - HELD_MAX);
+  };
+  return {
+    capture: (message) => {
+      // An event about no one is keyed by its workspace or canvas, never a person.
+      const about =
+        message.properties.$process_person_profile === false ? null : message.distinctId;
+      // One that is held would be stamped when it is sent: it keeps when it was captured.
+      const sent =
+        message.timestamp || about === null || optOuts.fresh()
+          ? message
+          : { ...message, timestamp: new Date() };
+      decide(about, () => sink.capture(sent));
+    },
+    identify: (distinctId, set, setOnce) =>
+      decide(distinctId, () => sink.identify(distinctId, set, setOnce)),
+    group: (groupType, groupKey, properties) => sink.group(groupType, groupKey, properties),
+    exception: (error, distinctId, properties) =>
+      decide(distinctId, () => sink.exception(error, distinctId, properties)),
+    async flush() {
+      if (held.length > 0 || !optOuts.fresh()) {
+        let out: ReadonlySet<string> | null;
+        try {
+          out = await optOuts.current();
+        } catch (error) {
+          log?.warn("analytics_opt_outs_unread", { error });
+          out = optOuts.known();
+        }
+        if (out) {
+          for (const { about, send } of held.splice(0)) {
+            if (!out.has(about)) send();
+          }
+        }
+      }
+      await sink.flush();
+    },
+  };
+}
 
 /**
  * Analytics over `sink`. `keep` is handed each send of the queue so that something waits for
  * it: Vercel's `waitUntil` in a deployment, the test's background list under `createTestApp`.
  */
 export function createAnalytics({
-  sink,
+  sink: given,
   ai = null,
   keep,
   log,
   flushMs = FLUSH_MS,
+  optOuts = null,
 }: {
   sink: AnalyticsSink;
   ai?: AiTracing | null;
@@ -135,7 +268,10 @@ export function createAnalytics({
   log: Logger;
   /** How long one send may take: `FLUSH_MS`, shorter only in tests. */
   flushMs?: number;
+  /** Who has turned usage sharing off: what is about them never reaches `sink`. */
+  optOuts?: OptOuts | null;
 }): Analytics {
+  const sink = optOuts ? withoutOptedOut(given, optOuts, log) : given;
   let scheduled = false;
   const flush = () => bounded(sink.flush(), flushMs);
   /** One send for everything captured in this turn of the event loop. */
@@ -234,6 +370,12 @@ export function createAnalytics({
 
     ai,
     flush,
+    sharingChanged: () => {
+      if (!optOuts) return;
+      optOuts.forget();
+      // Read again in the background now, so what is captured next need not wait for it.
+      soon();
+    },
   };
 }
 

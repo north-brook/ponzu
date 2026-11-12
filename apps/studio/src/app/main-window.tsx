@@ -29,6 +29,7 @@ import { AppWindow } from "../cloud/window/app-window.tsx";
 import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
+import { useUsageSharing } from "./analytics/sharing.ts";
 import { type FreshCanvas, useOpenCanvas } from "./canvas.tsx";
 import { useCanvasPanes } from "./canvas-panes.tsx";
 import { DeleteCanvasDialog } from "./confirm-dialogs.tsx";
@@ -107,6 +108,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     [analytics, say],
   );
   useMaintenanceNotice(host, tell);
+  useUsageSharing(host, meAnswer.data?.privacy.shareUsage);
 
   // Signed in without a keychain to keep the session in: say so once, now, when it matters.
   useEffect(() => {

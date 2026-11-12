@@ -65,6 +65,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     docStorage: signedInCache(session, window.localStorage),
     onApiError: errors.listen,
     welcome1x: () => desktop.welcome1x(),
+    // An older shell has no switch to write: the account's own still holds.
+    setUsageSharing: (enabled) => desktop.setUsageSharing?.(enabled) ?? Promise.resolve(false),
   };
 }
 

@@ -37,6 +37,14 @@ export interface Analytics {
   signedOut(): void;
   /** An error React caught, or another the app means to report. */
   exception(error: unknown, properties?: Record<string, unknown>): void;
+  /**
+   * Settings › Account › Share usage data: off stops every capture and the recording at once,
+   * and is kept in PostHog's own storage, so it holds at the next launch too; on starts
+   * capturing again. Whether this window reports at all is `reporting`.
+   */
+  setSharing(on: boolean): void;
+  /** Whether this window loaded PostHog: false when the build or this computer says no. */
+  readonly reporting: boolean;
   /** The PostHog client, for @posthog/react's provider; null when nothing is reported. */
   readonly client: PostHog | null;
 }
@@ -48,6 +56,8 @@ export const noAnalytics: Analytics = {
   workspace() {},
   signedOut() {},
   exception() {},
+  setSharing() {},
+  reporting: false,
   client: null,
 };
 

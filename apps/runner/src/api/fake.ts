@@ -224,7 +224,12 @@ export class FakeRunnerApi {
   /** Add something to the canvas's feed, as the API does when it happens. */
   push(
     body: EventBody,
-    opts: { priority?: Priority; from?: Person | null; posthogSessionId?: string | null } = {},
+    opts: {
+      priority?: Priority;
+      from?: Person | null;
+      posthogSessionId?: string | null;
+      trace?: boolean;
+    } = {},
   ): RunnerEvent {
     const event = {
       id: `evt_${String(++this.seq).padStart(4, "0")}`,
@@ -233,6 +238,7 @@ export class FakeRunnerApi {
       priority: opts.priority ?? "now",
       from: opts.from === undefined ? ADA : opts.from,
       ...(opts.posthogSessionId !== undefined ? { posthogSessionId: opts.posthogSessionId } : {}),
+      ...(opts.trace !== undefined ? { trace: opts.trace } : {}),
       ...body,
     } as RunnerEvent;
     this.events.push({ event });

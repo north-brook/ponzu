@@ -1252,6 +1252,7 @@ export class Runner {
       eventId: event.id,
       userId: event.from?.id ?? null,
       sessionId: event.posthogSessionId ?? null,
+      trace: event.trace !== false,
     };
   }
 

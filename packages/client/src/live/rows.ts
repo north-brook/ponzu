@@ -33,6 +33,7 @@ export const LIVE_COLUMNS = {
     "ping_pr_ready",
     "ping_teammate_comments",
     "email_digest",
+    "share_usage",
     "onboarding_where_at",
     "onboarding_iphone_at",
     "claude_account_id",
@@ -148,6 +149,8 @@ export interface MeRow {
   pingPrReady: boolean;
   pingTeammateComments: boolean;
   emailDigest: boolean;
+  /** Settings › Account › Share usage data. */
+  shareUsage: boolean;
   onboardingWhereAt: string | null;
   onboardingIphoneAt: string | null;
   claudeAccount: {
@@ -271,6 +274,7 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
     pingPrReady: Boolean(r.ping_pr_ready),
     pingTeammateComments: Boolean(r.ping_teammate_comments),
     emailDigest: Boolean(r.email_digest),
+    shareUsage: Boolean(r.share_usage),
     onboardingWhereAt: maybeTime(r.onboarding_where_at),
     onboardingIphoneAt: maybeTime(r.onboarding_iphone_at),
     claudeAccount:
