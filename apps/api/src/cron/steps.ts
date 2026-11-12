@@ -3,6 +3,7 @@ import type { Deps } from "../deps/index.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
+import { selfcheckStep } from "./steps/selfcheck.ts";
 
 /*
  * What the minute's cron does (`routes/cron.ts`), as steps. A feature that needs the cron adds
@@ -34,7 +35,12 @@ export interface CronStep {
 }
 
 /** Every step, one line each. `jobs` is first and is run before the others. */
-export const CRON_STEPS: readonly CronStep[] = [jobsStep, installationsStep, sandboxesStep];
+export const CRON_STEPS: readonly CronStep[] = [
+  jobsStep,
+  installationsStep,
+  sandboxesStep,
+  selfcheckStep,
+];
 
 /**
  * How late a run may be and still do a slotted step whose time it missed: a step due at :00

@@ -2902,6 +2902,19 @@ is set), `PONZU_REPO_BASES=1`, `PONZU_MERGE_QUEUE=1`, `PONZU_RATE_LIMITS` (`off`
 and `PONZU_MAINTENANCE` (`off`, `wakes_paused` or `read_only`). `GET /v1/me` reports billing,
 push and email, so an app shows only what can work.
 
+Each deployment checks its own dependencies and settings: `GET /v1/cron/selfcheck`, behind
+`CRON_SECRET` like the minute's cron, and a cron step at minute 7 of every hour
+(`apps/api/src/ops/selfcheck.ts`). It answers `{ checks: [{ id, ok, detail }] }` for the
+database, the migrations applied against the ones the build has, Realtime sealing, both buckets
+(a HEAD of a key that is never stored), WorkOS's key, the GitHub App (its slug, and the
+permissions and events the API uses), the App's webhook (its URL is `PONZU_API_URL` plus
+`/v1/github/webhook`, json, TLS checked), Ponzu's Anthropic key, the sandbox list, values still
+sealed under an old vault key, and whether PostHog is set. Each check has five seconds, and
+all run at once. `detail` is a word from a fixed list and never quotes what a service said or
+a value from the environment. The hourly step raises each failed check to PostHog as an
+exception (`selfcheck_failed`, with `check`), which is the alarm; the old-keys count and
+PostHog are informational and only logged.
+
 ### Checking a deploy's sandboxes
 
 After a deploy that changes the sandbox lifecycle, the image or the runner, on the deployed API:

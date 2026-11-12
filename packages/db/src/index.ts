@@ -184,6 +184,12 @@ export {
   type StoredOp,
 } from "./queries/ops.ts";
 export {
+  countAppliedMigrations,
+  countSealedUnderOtherKeys,
+  EXPECTED_MIGRATIONS,
+  SEALED_COLUMNS,
+} from "./queries/ops-checks.ts";
+export {
   bestPermission,
   countWorkspacePeople,
   forgetWorkspacePeople,

@@ -32,6 +32,14 @@ export interface Vault {
   seal(plaintext: string, binding: Binding): Promise<string>;
   /** Throws a `VaultError` if the value was altered, moved, or sealed with a key not held. */
   open(sealed: string, binding: Binding): Promise<string>;
+  /** The id of the key that seals now (`PONZU_VAULT_KEY`'s): safe to store and to log. */
+  currentKeyId(): Promise<string>;
+}
+
+/** The id of the key a sealed value was sealed with, or null when it is not in the format. */
+export function keyIdOf(sealed: string): string | null {
+  const [format, keyId] = sealed.split(".");
+  return format === FORMAT && keyId ? keyId : null;
 }
 
 /** A sealed value that cannot be opened, or a key that cannot be used. It never quotes either. */
@@ -89,6 +97,10 @@ export function createVault({ key, oldKeys = [] }: { key: string; oldKeys?: stri
           { cause },
         );
       }
+    },
+
+    async currentKeyId() {
+      return (await held)[0]!.id;
     },
   };
 }
