@@ -4,6 +4,7 @@
  * network) and judges what it read against the repository's desired state (`evaluate`, pure, so
  * tests run it on recorded fixtures). What it judges comes back as findings, one line each.
  */
+import { ZodError } from "zod";
 import type { EnvironmentName, Infra } from "../desired.ts";
 
 /**
@@ -104,6 +105,15 @@ export function list(items: readonly string[]): string {
 
 /** What an error says, in one short line, without its stack or a response body. */
 export function describeError(error: unknown): string {
+  // A schema's error message is its issues as multi-line JSON; the first line would be "[".
+  if (error instanceof ZodError) {
+    const issue = error.issues[0];
+    const where = issue?.path.length ? `${issue.path.join(".")}: ` : "";
+    return `answered in a shape the check does not know (${where}${issue?.message ?? "invalid"})`.slice(
+      0,
+      160,
+    );
+  }
   if (error instanceof Error) {
     const status = (error as { statusCode?: unknown }).statusCode;
     const first = error.message.split("\n")[0]?.slice(0, 160) ?? "";

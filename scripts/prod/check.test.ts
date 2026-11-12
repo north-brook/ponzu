@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 import {
   exitCode,
   formatFinding,
@@ -9,7 +10,13 @@ import {
   SECTIONS,
   summary,
 } from "./check.ts";
-import type { AnySection, CheckContext, Finding, Status } from "./checks/finding.ts";
+import {
+  type AnySection,
+  type CheckContext,
+  describeError,
+  type Finding,
+  type Status,
+} from "./checks/finding.ts";
 import { loadInfra } from "./desired.ts";
 
 const line = (status: Status, id = "x.y"): Finding => ({ id, area: "x", status, says: "says" });
@@ -174,6 +181,20 @@ describe("main", () => {
       exitCode: 0,
     });
   });
+
+  test("--json redacts a secret that JSON would escape", async () => {
+    const quoted = 'cron"secret\\0123456789abcdef';
+    const out = io({ CRON_SECRET: quoted });
+    await main(["--env", "dev", "--json"], out, [
+      section({ evaluate: () => [{ ...line("fail"), says: `holds ${quoted}`, fix: quoted }] }),
+    ]);
+    const text = out.lines.join("\n");
+    expect(text).not.toContain(JSON.stringify(quoted).slice(1, -1));
+    expect(JSON.parse(text).findings[0]).toMatchObject({
+      says: "holds [redacted]",
+      fix: "[redacted]",
+    });
+  });
 });
 
 describe("pieces", () => {
@@ -181,6 +202,13 @@ describe("pieces", () => {
     expect(readCredentials({ VERCEL_TOKEN: ` ${TOKEN} `, CRON_SECRET: "", OTHER: "x" })).toEqual({
       VERCEL_TOKEN: TOKEN,
     });
+  });
+
+  test("an answer in an unknown shape says where, not a line of JSON", () => {
+    const parsed = z.object({ name: z.string() }).safeParse({ name: 1 });
+    expect(describeError(parsed.error)).toBe(
+      "answered in a shape the check does not know (name: Invalid input: expected string, received number)",
+    );
   });
 
   test("an ok line prints no fix", () => {

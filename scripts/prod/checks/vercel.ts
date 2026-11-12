@@ -68,6 +68,11 @@ export interface VercelDesired {
   region: string;
   framework: string;
   domains: string[];
+  /**
+   * Production's domains that dev's apiDomains still list: they stay on dev's project until
+   * founder step D11 moves them, so on production their absence is pending, not a failure.
+   */
+  notYetMoved: string[];
   firewall: Firewall;
   crons: { path: string; schedule: string }[];
   required: readonly string[];
@@ -97,7 +102,8 @@ export function apiNodeVersion(path = join(ROOT, "apps", "api", "package.json"))
 }
 
 export function vercelDesired(ctx: Pick<CheckContext, "env" | "infra">): VercelDesired {
-  const environment = ctx.infra["environments.json"].environments[ctx.env];
+  const environments = ctx.infra["environments.json"].environments;
+  const environment = environments[ctx.env];
   const vercelJson = readVercelJson();
   return {
     env: ctx.env,
@@ -107,6 +113,10 @@ export function vercelDesired(ctx: Pick<CheckContext, "env" | "infra">): VercelD
     region: vercelJson.regions[0] as string,
     framework: vercelJson.framework,
     domains: environment.apiDomains,
+    notYetMoved:
+      ctx.env === "production"
+        ? environment.apiDomains.filter((d) => environments.dev.apiDomains.includes(d))
+        : [],
     firewall: ctx.infra["vercel-firewall.json"],
     crons: vercelJson.crons,
     required: REQUIRED_ENV,
@@ -495,14 +505,14 @@ export function evaluateVercel(desired: VercelDesired, observed: VercelObserved)
   const missing = desired.domains.filter(
     (domain) => !observed.domains.some((d) => d.name === domain && d.verified && !d.redirect),
   );
+  const domainsSay = `${list(missing)} ${missing.length === 1 ? "is" : "are"} not a verified domain of ${name}`;
+  const domainsFix = "docs/production.md › The founder's steps (D11 moves the domains)";
   out.push(
-    missing.length
-      ? f.fail(
-          "domains",
-          `${list(missing)} ${missing.length === 1 ? "is" : "are"} not a verified domain of ${name}`,
-          "docs/production.md › The founder's steps (D11 moves the domains)",
-        )
-      : f.ok("domains", `${list(desired.domains)} on ${name}, verified`),
+    !missing.length
+      ? f.ok("domains", `${list(desired.domains)} on ${name}, verified`)
+      : missing.every((domain) => desired.notYetMoved.includes(domain))
+        ? f.pending("domains", `${domainsSay}: dev still serves it until D11`, domainsFix)
+        : f.fail("domains", domainsSay, domainsFix),
   );
 
   out.push(...evaluateFirewall(desired, observed.firewall));

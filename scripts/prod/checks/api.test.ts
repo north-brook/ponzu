@@ -230,6 +230,8 @@ describe("fetchApi: where the cron secret goes", () => {
     ]);
     expect(seen[0]?.headers.get("authorization")).toBeNull();
     expect(seen[1]?.headers.get("authorization")).toBe(`Bearer ${SECRET}`);
+    // A redirect is refused, never followed: the secret goes to the address health vouched for.
+    expect(seen.map((r) => r.redirect)).toEqual(["error", "error"]);
     // Parsed: the fixture's own note is not part of the answer.
     expect(observed.selfcheck).toEqual(read({ checks: selfcheck().checks }));
   });

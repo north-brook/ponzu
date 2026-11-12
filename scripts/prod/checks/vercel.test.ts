@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OPTIONAL_ENV, REQUIRED_ENV } from "../../../apps/api/src/env.ts";
+import { FORBIDDEN_ENV, OPTIONAL_ENV, REQUIRED_ENV } from "../../../apps/api/src/env.ts";
 import { loadInfra } from "../desired.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
@@ -187,6 +187,18 @@ describe("evaluate on hand-made failures", () => {
     );
   });
 
+  test("production's domain still on dev before D11 is pending; once moved, missing fails", () => {
+    const observed = goodProduction();
+    observed.domains = [];
+    expect(byId(evaluateVercel(desired("production"), observed))["vercel.domains"]).toMatchObject({
+      status: "pending",
+      says: "api.ponzu.design is not a verified domain of ponzu-api-prod: dev still serves it until D11",
+    });
+    const moved = { ...desired("production"), notYetMoved: [] };
+    expect(byId(evaluateVercel(moved, observed))["vercel.domains"]?.status).toBe("fail");
+    expect(desired("dev").notYetMoved).toEqual([]);
+  });
+
   test("production's project not made yet is one pending line; dev's missing project fails", () => {
     const missing = observeVercel(null, null, null);
     expect(evaluateVercel(desired("production"), missing)).toEqual([
@@ -206,6 +218,17 @@ describe("the names it holds the project to", () => {
   test("every secret it wants sensitive is a name the API reads", () => {
     const known = new Set([...REQUIRED_ENV, ...OPTIONAL_ENV]);
     expect(SECRET_ENV.filter((name) => !known.has(name))).toEqual([]);
+  });
+
+  test("every name the API reads that looks like a secret is held to sensitive", () => {
+    // A secret added to env.ts later fails here until SECRET_ENV names it too.
+    const looksSecret = /SECRET|PRIVATE_KEY|PASSWORD|API_KEY|TOKEN|ACCESS_KEY|VAULT|DATABASE_URL/;
+    const forbidden = new Set<string>(FORBIDDEN_ENV);
+    const secrets = new Set<string>(SECRET_ENV);
+    const names = [...REQUIRED_ENV, ...OPTIONAL_ENV].filter(
+      (name) => looksSecret.test(name) && !forbidden.has(name),
+    );
+    expect(names.filter((name) => !secrets.has(name))).toEqual([]);
   });
 
   test("the file's own firewall normalises to itself, with the SDK's renamed keys read the same", () => {

@@ -187,7 +187,15 @@ export async function main(
   };
   const result = await runCheck(ctx, sections);
   if (json) {
-    print(JSON.stringify(result, null, 2));
+    // Each string is redacted before JSON escapes it: a secret holding a quote or a backslash
+    // would no longer match itself once escaped. The document is redacted again as it prints.
+    const clean = (text: string) => redactText(text, known);
+    const findings = result.findings.map((finding) => ({
+      ...finding,
+      says: clean(finding.says),
+      ...(finding.fix ? { fix: clean(finding.fix) } : {}),
+    }));
+    print(JSON.stringify({ ...result, findings }, null, 2));
     return result.exitCode;
   }
   print(`Ponzu ${env.data}: ${deep ? "deep " : ""}check of every resource against infra/`);

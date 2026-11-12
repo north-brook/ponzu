@@ -108,7 +108,13 @@ async function getJson<T>(
   headers: Record<string, string> = {},
 ): Promise<Read<T>> {
   try {
-    const response = await ctx.fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    // The API never redirects these. Following one would judge another host as this
+    // environment, and could carry the cron secret somewhere else.
+    const response = await ctx.fetch(url, {
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     const text = await response.text();
     let json: unknown;
     try {
