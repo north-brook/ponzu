@@ -344,12 +344,18 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
     await page.mouse.move(700, 500);
     for (const pane of ["sidebar", "thread", "thread", "sidebar"]) {
-      const frames = await sampleToggle(page, `button[aria-controls="${pane}"]`);
+      const { frames, clocks } = await sampleToggle(page, `button[aria-controls="${pane}"]`);
       const edge = pane === "sidebar" ? "left" : "right";
-      const moving = frames.filter((f) => f[edge] !== frames[0]![edge]);
-      // It eased, rather than jumped…
-      expect(moving.length).toBeGreaterThan(5);
-      // …and the board stayed where it was on screen throughout: no swim, no refit.
+      // It eased, rather than jumped: the pane and the canvas's edge each on the panes' clock…
+      const eased = (target: string) =>
+        clocks.filter((c) => c.target === target && c.duration > 0).map((c) => c.duration);
+      expect(eased(`#${pane}-pane`)).toHaveLength(1);
+      const ms = eased(`#${pane}-pane`)[0]!;
+      expect(eased("main").length).toBeGreaterThan(0);
+      expect(new Set([...eased(`#${pane}-pane`), ...eased("main")])).toEqual(new Set([ms]));
+      expect(frames.at(-1)![edge]).not.toBe(frames[0]![edge]);
+      // …and the board stayed where it was on screen in every frame painted (however many a
+      // busy machine paints): no swim, no refit.
       for (const f of frames) {
         expect(Math.abs(f.boardX - frames[0]!.boardX)).toBeLessThanOrEqual(1);
         expect(f.boardY).toBe(frames[0]!.boardY);

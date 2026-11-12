@@ -334,26 +334,65 @@ export interface Frame {
   boardY: number;
 }
 
+/** A transition a toggle started on something that moves with a pane: the clock it eased on. */
+export interface Clock {
+  /** What eased: `#sidebar-pane`, `main`, `[data-chrome-title]`, `header > div:first-child`… */
+  target: string;
+  property: string;
+  /** In ms. */
+  duration: number;
+  delay: number;
+  easing: string;
+}
+
+/** A toggle pressed: where things were, frame by frame, and the clocks that moved them. */
+export interface Toggle {
+  frames: Frame[];
+  clocks: Clock[];
+}
+
 /**
- * Presses `selector` and records every frame until things have rested. Measured in a
- * ResizeObserver on the canvas pane made after the page's own: where a frame is painted, after
- * the canvas has answered its pane's resize.
+ * Presses `selector` and records every frame painted until the panes have rested (the window no
+ * longer wears `data-pane-motion`, and two frames more). Measured in a ResizeObserver on the
+ * canvas pane made after the page's own: where a frame is painted, after the canvas has answered
+ * its pane's resize. How many frames that is depends on the machine: assert what holds in each
+ * one, never how many there were. The clocks are every transition the press started on what
+ * moves with a pane (the panels and `pane-motion`, cloud.css), caught as they are made.
  */
-export function sampleToggle(page: Page, selector: string): Promise<Frame[]> {
+export function sampleToggle(page: Page, selector: string): Promise<Toggle> {
+  return toggle(page, selector, 0);
+}
+
+/**
+ * Presses `selector` and walks its easing on the easing's own clock rather than the machine's.
+ * Every transition the press starts on what moves with a pane is caught as it is made, before a
+ * frame is drawn, and held (at a playback rate of 0, so it still runs as far as the window can
+ * tell); then all are set together to `steps + 1` times evenly spaced over the pane's own
+ * transition, start to end, with a frame measured at each (`t` is that time, in ms); then they
+ * finish, and a last frame is measured at rest. The same frames on any machine, however few it
+ * would have painted. Layout only: nothing a ResizeObserver does in answer (the canvas's camera)
+ * has run in the frames between.
+ */
+export function stepToggle(page: Page, selector: string, steps = 20): Promise<Toggle> {
+  return toggle(page, selector, steps);
+}
+
+function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
   return page.evaluate(
-    (selector) =>
-      new Promise<Frame[]>((resolve) => {
+    ([selector, steps]) =>
+      new Promise<Toggle>((resolve, reject) => {
         const main = document.querySelector("main")!;
+        const win = document.querySelector("header")!.parentElement!;
         const x = (el: Element | null | undefined) => el?.getBoundingClientRect().left ?? NaN;
         const dividers = () => document.querySelectorAll("header [data-chrome-divider]");
         const frames: Frame[] = [];
-        const measure = () => {
+        const measure = (t = performance.now()) => {
           const box = main.getBoundingClientRect();
           const title = document.querySelector("[data-chrome-title]");
           const all = dividers();
           const board = document.querySelector("[data-artboard-host]")?.getBoundingClientRect();
           frames.push({
-            t: performance.now(),
+            t,
             left: box.left,
             right: box.right,
             divider: x(all[0]),
@@ -367,21 +406,102 @@ export function sampleToggle(page: Page, selector: string): Promise<Frame[]> {
             boardY: board?.top ?? NaN,
           });
         };
-        const ro = new ResizeObserver(measure);
-        measure();
-        ro.observe(main);
+
+        type Transition = Animation & { transitionProperty: string };
+        const clocks = new Map<Transition, Clock>();
+        const name = (el: Element) => {
+          if (el.id) return `#${el.id}`;
+          for (const attr of ["data-chrome-title", "data-chrome-rail"]) {
+            if (el.hasAttribute(attr)) return `[${attr}]`;
+          }
+          const tag = el.tagName.toLowerCase();
+          const parent = el.parentElement;
+          if (parent?.tagName === "HEADER") {
+            const i = [...parent.children].indexOf(el);
+            return `header > ${tag}${i === 0 ? ":first-child" : `:nth-child(${i + 1})`}`;
+          }
+          return tag;
+        };
+        /** Every new transition on what moves with a pane: noted, and held when stepping. */
+        const catchClocks = () => {
+          for (const animation of win.getAnimations({ subtree: true })) {
+            if (!("transitionProperty" in animation)) continue;
+            const a = animation as Transition;
+            const target = (a.effect as KeyframeEffect | null)?.target;
+            if (clocks.has(a) || !(target instanceof Element)) continue;
+            if (!target.matches("[data-panel], .pane-motion")) continue;
+            if (steps) a.playbackRate = 0;
+            const timing = a.effect!.getComputedTiming();
+            clocks.set(a, {
+              target: name(target),
+              property: a.transitionProperty,
+              duration: Number(timing.duration),
+              delay: Number(timing.delay ?? 0),
+              easing: String(timing.easing),
+            });
+          }
+        };
+        // The press's changes land in its own task and the microtasks after it, before a frame:
+        // looked at after each, so every transition is caught before it can have moved.
+        const mo = new MutationObserver(catchClocks);
+        mo.observe(win, { subtree: true, attributes: true, childList: true });
+        const ro = new ResizeObserver(() => measure());
+
+        const rest = (end: number | null) => {
+          const since = performance.now();
+          const wait = () => {
+            if (win.hasAttribute("data-pane-motion")) {
+              if (performance.now() - since > 10_000) {
+                mo.disconnect();
+                ro.disconnect();
+                reject(new Error("The window still wears data-pane-motion 10s on."));
+              } else setTimeout(wait, 16);
+              return;
+            }
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => {
+                mo.disconnect();
+                ro.disconnect();
+                measure(end ?? performance.now());
+                resolve({ frames, clocks: [...clocks.values()] });
+              }),
+            );
+          };
+          wait();
+        };
+
+        if (!steps) {
+          measure();
+          ro.observe(main);
+        }
         (document.querySelector(selector) as HTMLElement).click();
-        // Rested: the panes' clock and as much again.
-        const pane = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
-        setTimeout(
-          () => {
-            ro.disconnect();
-            measure();
-            resolve(frames);
-          },
-          Math.max(700, 2 * (Number.parseFloat(pane) || 0) + 300),
-        );
+        catchClocks();
+        if (!steps) {
+          rest(null);
+          return;
+        }
+        setTimeout(() => {
+          catchClocks();
+          mo.disconnect();
+          // Only those still live: one a later change replaced (cancelled) must stay gone.
+          const live = new Set(win.getAnimations({ subtree: true }));
+          const held = [...clocks.keys()].filter((a) => live.has(a));
+          const panel = held.find((a) =>
+            ((a.effect as KeyframeEffect).target as Element).matches("[data-panel]"),
+          );
+          const end = panel ? Number(panel.effect!.getComputedTiming().duration) : 0;
+          for (let i = 0; panel && i <= steps; i++) {
+            const t = (end * i) / steps;
+            for (const a of held) a.currentTime = t;
+            measure(t);
+          }
+          for (const a of held) {
+            a.playbackRate = 1;
+            if (a.playState !== "finished" && a.playState !== "idle") a.finish();
+          }
+          rest(end);
+        });
       }),
-    selector,
+    [selector, steps] as const,
   );
 }
