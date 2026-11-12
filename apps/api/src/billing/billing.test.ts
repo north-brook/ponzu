@@ -5,12 +5,17 @@ import {
   apportion,
   awakeUnits,
   billedCredits,
+  capWarning,
   centsFor,
+  chargedCents,
+  chargedCredits,
   creditsOf,
   creditUnits,
   freeCredits,
   lowestCapUsd,
+  MIN_INVOICE_CENTS,
 } from "./credits.ts";
+import { type BillingGateInput, billingGate, GRACE_MS } from "./gate.ts";
 import { billingPeriod } from "./period.ts";
 import { countedPeople, ungranted, workspaceUsage } from "./usage.ts";
 
@@ -423,5 +428,174 @@ describe("a breakdown adds up to the headline", () => {
       ).byDesign?.find((row) => row.usedCredits === 1)?.design?.id;
     expect(credited(rows)).toBe("des_a");
     expect(credited(rows.toReversed())).toBe("des_a");
+  });
+});
+
+describe("what a period is charged", () => {
+  test("what was billed, up to the cap and never past it", () => {
+    // $100 at 10 cents a credit pays for 1,000 credits.
+    expect(chargedCredits(220, 10_000, 100_000)).toBe(220);
+    expect(chargedCredits(999, 10_000, 100_000)).toBe(999);
+    expect(chargedCredits(1000, 10_000, 100_000)).toBe(1000);
+    expect(chargedCredits(1001, 10_000, 100_000)).toBe(1000);
+    expect(chargedCredits(0, 10_000, 100_000)).toBe(0);
+  });
+
+  test("a cap of $1 with a 10-cent credit charges at most 10 credits, $1.00", () => {
+    expect(chargedCredits(9, 100, 100_000)).toBe(9);
+    expect(chargedCredits(10, 100, 100_000)).toBe(10);
+    expect(chargedCredits(11, 100, 100_000)).toBe(10);
+    expect(chargedCredits(5000, 100, 100_000)).toBe(10);
+    expect(chargedCents(10, 100_000)).toBe(100);
+  });
+
+  test("a credit price that doesn't divide the cap charges the whole credits under it", () => {
+    // $1 at $0.123456 a credit pays for 8 credits ($0.98), not 9 ($1.11).
+    expect(chargedCredits(50, 100, 123_456)).toBe(8);
+    expect(chargedCents(8, 123_456)).toBe(98);
+  });
+
+  test("the charge never passes what was billed or the cap, and is the most the cap allows", () => {
+    return fc.assert(
+      fc.property(
+        fc.nat({ max: 10_000_000 }),
+        fc.integer({ min: 100, max: 100_000_000 }),
+        fc.integer({ min: 1, max: 10_000_000 }),
+        (billed, capCents, creditMicrousd) => {
+          const charged = chargedCredits(billed, capCents, creditMicrousd);
+          expect(charged).toBeLessThanOrEqual(billed);
+          expect(chargedCents(charged, creditMicrousd)).toBeLessThanOrEqual(capCents);
+          // One more credit would cost more than the cap, in exact millionths of a dollar.
+          if (charged < billed) {
+            expect((charged + 1) * creditMicrousd).toBeGreaterThan(capCents * 10_000);
+          }
+        },
+      ),
+      { seed: 6, numRuns: 2000 },
+    );
+  });
+
+  test("a charge under $1.00 is not invoiced", () => {
+    expect(MIN_INVOICE_CENTS).toBe(100);
+    expect(chargedCents(9, 100_000)).toBeLessThan(MIN_INVOICE_CENTS);
+    expect(chargedCents(10, 100_000)).toBe(MIN_INVOICE_CENTS);
+  });
+});
+
+describe("the warning before the cap", () => {
+  test("at 80% of the cap exactly, and not a cent before", () => {
+    expect(capWarning(0, 10_000, 0.8)).toBe(false);
+    expect(capWarning(7999, 10_000, 0.8)).toBe(false);
+    expect(capWarning(8000, 10_000, 0.8)).toBe(true);
+    expect(capWarning(10_000, 10_000, 0.8)).toBe(true);
+    expect(capWarning(12_000, 10_000, 0.8)).toBe(true);
+  });
+
+  test("a $1 cap warns at 80 cents", () => {
+    expect(capWarning(79, 100, 0.8)).toBe(false);
+    expect(capWarning(80, 100, 0.8)).toBe(true);
+  });
+
+  test("a fraction that floating point can't hold still compares exactly", () => {
+    // 100 × 0.07 is 7.000000000000001 in floating point, but 7 cents is 7% of $1, and
+    // 10,000 × 0.035 is 350.00000000000006, but $3.50 is 3.5% of $100. A plain multiply misses both.
+    expect(100 * 0.07).toBeGreaterThan(7);
+    expect(capWarning(7, 100, 0.07)).toBe(true);
+    expect(capWarning(6, 100, 0.07)).toBe(false);
+    expect(10_000 * 0.035).toBeGreaterThan(350);
+    expect(capWarning(350, 10_000, 0.035)).toBe(true);
+    expect(capWarning(349, 10_000, 0.035)).toBe(false);
+    expect(capWarning(575, 1000, 0.575)).toBe(true);
+    expect(capWarning(574, 1000, 0.575)).toBe(false);
+  });
+});
+
+describe("the billing gate", () => {
+  const now = new Date("2026-11-20T12:00:00.000Z");
+  const base: BillingGateInput = {
+    usedCredits: 0,
+    freeCredits: 100,
+    billedCents: 0,
+    capCents: 10_000,
+    hasCard: false,
+    pastDueSince: null,
+    now,
+    graceMs: GRACE_MS,
+  };
+  const gate = (over: Partial<BillingGateInput>) => billingGate({ ...base, ...over });
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+
+  test("the grace is 7 days to the millisecond", () => {
+    expect(GRACE_MS).toBe(604_800_000);
+  });
+
+  const cases: [string, Partial<BillingGateInput>, ReturnType<typeof billingGate>][] = [
+    ["nothing used, no card", {}, "ok"],
+    ["free credits nearly used, no card", { usedCredits: 99 }, "ok"],
+    ["free credits exactly used up, no card", { usedCredits: 100 }, "free_used"],
+    ["past free, no card", { usedCredits: 140, billedCents: 400 }, "free_used"],
+    ["no free credits counted and nothing used, no card", { freeCredits: 0 }, "free_used"],
+    [
+      "past free with a card, under the cap",
+      { usedCredits: 140, billedCents: 400, hasCard: true },
+      "ok",
+    ],
+    ["a cent under the cap", { hasCard: true, usedCredits: 1099, billedCents: 9999 }, "ok"],
+    [
+      "exactly at the cap",
+      { hasCard: true, usedCredits: 1100, billedCents: 10_000 },
+      "cap_reached",
+    ],
+    ["past the cap", { hasCard: true, usedCredits: 1200, billedCents: 11_000 }, "cap_reached"],
+    [
+      "a $1 cap reached by ten 10-cent credits",
+      { hasCard: true, usedCredits: 110, billedCents: 100, capCents: 100 },
+      "cap_reached",
+    ],
+    [
+      "a $1 cap with nine credits billed",
+      { hasCard: true, usedCredits: 109, billedCents: 90, capCents: 100 },
+      "ok",
+    ],
+    [
+      "no card and inside free: the cap is not looked at",
+      { usedCredits: 50, billedCents: 20_000 },
+      "ok",
+    ],
+    [
+      "past due a millisecond short of 7 days",
+      { hasCard: true, pastDueSince: ago(GRACE_MS - 1) },
+      "ok",
+    ],
+    ["past due exactly 7 days", { hasCard: true, pastDueSince: ago(GRACE_MS) }, "payment_failed"],
+    ["past due longer", { hasCard: true, pastDueSince: ago(GRACE_MS + 1) }, "payment_failed"],
+    [
+      "past due inside its grace, at the cap",
+      { hasCard: true, billedCents: 10_000, pastDueSince: ago(GRACE_MS - 1) },
+      "cap_reached",
+    ],
+    [
+      "payment failed comes before the cap",
+      { hasCard: true, billedCents: 10_000, pastDueSince: ago(GRACE_MS) },
+      "payment_failed",
+    ],
+    [
+      "payment failed comes before free used",
+      { usedCredits: 100, pastDueSince: ago(GRACE_MS) },
+      "payment_failed",
+    ],
+    [
+      "past due in the future (clock skew) is inside the grace",
+      { hasCard: true, pastDueSince: new Date(now.getTime() + 1) },
+      "ok",
+    ],
+  ];
+  for (const [name, over, expected] of cases) {
+    test(name, () => expect(gate(over)).toBe(expected));
+  }
+
+  test("the grace passed in is the one used", () => {
+    expect(gate({ hasCard: true, pastDueSince: ago(1000), graceMs: 1000 })).toBe("payment_failed");
+    expect(gate({ hasCard: true, pastDueSince: ago(999), graceMs: 1000 })).toBe("ok");
   });
 });
