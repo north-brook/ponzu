@@ -367,6 +367,11 @@ export const questions = pgTable(
       onDelete: "set null",
     }),
     answeredAt: instant("answered_at"),
+    /**
+     * For a `secret` question: when its value went to the runner of the turn that asked for it
+     * (`POST /v1/runner/secret`). It goes once; null until then, and for every other kind.
+     */
+    deliveredAt: instant("delivered_at"),
     createdAt: createdAt(),
   },
   (t) => [

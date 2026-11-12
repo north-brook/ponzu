@@ -731,7 +731,11 @@ How Claude Code is configured, and why (`apps/runner/src/agent/sdk.ts`):
   of its own.
 - **Nobody to click "allow".** `bypassPermissions`, as `agent` in a VM of its own.
   AskUserQuestion, plan approval and any other prompt still reach `canUseTool`, and become
-  questions ("Needs you"). The result message is the only success signal: an API failure
+  questions ("Needs you"). That AskUserQuestion does so under `bypassPermissions` is what the
+  SDK documents and the runner's tests assume; the live proof is the "Needs you" case in
+  `apps/runner/src/live.test.ts`, which has not been run yet. If it fails, AskUserQuestion is
+  taken out of the bypass for that tool alone. An MCP server's elicitation reaches
+  `onElicitation` ("Needs you"). The result message is the only success signal: an API failure
   arrives as `subtype: "success"` with `is_error: true`.
 - **The repo's own Claude Code.** `settingSources: ["project"]` loads the repo's CLAUDE.md,
   `.claude/settings.json` (hooks, permission rules), skills, commands and agents; the sandbox
@@ -1216,6 +1220,38 @@ Questions are rows that clients watch, and neither they nor events are encrypted
 The answer to a request for a secret is therefore not the secret: the API encrypts
 the value into the repo's secrets, and the question and the event carry only the
 secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
+
+**A secret the agent asks for.** On a repo canvas whose checkout is there, the runner hosts
+`request_secret({ name, description })` beside the pull request tools. The name is checked by
+the same rule as Settings (`checkSecretName` in the runner protocol, which the API and
+`newEnvironment` use too) before anyone is asked. The runner raises a `secret` question under
+the tool call's id (`q_` from it, so raising it again is safe) and waits on it as on
+AskUserQuestion; the thread's step says "Asking for NAME", then "Asked for NAME". Anyone who
+may steer the canvas answers it with `POST /v1/canvases/:id/questions/:questionId/secret
+{ value }` (1 byte to 16 KiB, no NUL): 409 `question_closed` once answered or for another kind,
+409 `no_repository` on Scratch, 400 `secret_name_reserved`, and 409 `secrets_full` past the
+repo's 50 secrets or 44 KiB (a replacement counted as one). One statement seals the value into
+`repo_secrets`, closes the question with `{ name }` and writes the `answer` event
+`{ questionId, question, secret: { name } }`; the route captures `question answered` (kind
+`secret`) and `repo secret changed`. The runner of the turn that asked then fetches the value
+with `POST /v1/runner/secret { questionId }`, which answers `{ name, value }` once
+(`questions.delivered_at`), within 15 minutes of the answer, to the runner holding the lease,
+and 404 otherwise. That is the privilege the start's `PONZU_REPO_SECRETS` already gives, for one
+value. The runner writes it as the agent to `~/.ponzu/secrets/NAME` (0600, outside the checkout
+and the transcript, so no checkpoint holds it), adds it to what the log, the thread, the state,
+traces and checkpoints scrub, and the tool says: "NAME is saved to this repository's secrets in
+Ponzu. It's in the file ~/.ponzu/secrets/NAME now, and in the environment of every command from
+the sandbox's next start. Never print it." Each start empties that folder: its environment has
+the repo's secrets as they are then. An answer that comes after the turn ended goes in as a
+message that names the secret and says it is there from the next start.
+
+**A link handed off.** An MCP server's URL elicitation (`onElicitation`, `mode: "url"`) with an
+http or https address becomes a `handoff` question `{ title, url, description }`, which the
+apps show as "Open …" and "Not now". The ordinary answer route takes `{ approved }`: true is
+"accept" to the server, false "decline", and a turn that moves on cancels it. Any other address
+is declined without asking anyone. A form elicitation is declined in v1, and the thread says
+once, as an `error` notice `elicitation_unsupported`: "SERVER asked for details Ponzu can't
+show yet, so Claude went on without them."
 
 ### Credentials
 
@@ -2719,9 +2755,11 @@ installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `US
 the repo has is 409 `secret_exists`; replacing or removing one it lacks is 404. The value is
 sealed in the vault bound to `repo_secrets.encrypted_value` and `<repo id>/<name>`, and is
 never returned, logged or put in an event or a question. A secret the agent asks for in the
-thread goes to the same row (`answerSecretQuestion`, which no route calls yet) and the question
-keeps only its name; that name comes from the sandbox, so the route that wires it must check it
-as these routes do, and the sandbox's environment checks it again either way.
+thread goes to the same row (`answerSecretQuestion`, from `POST
+/v1/canvases/:id/questions/:questionId/secret`; "Needs you") and the question keeps only its
+name. That name comes from the sandbox, so the runner's question route and the answer route
+both check it with these routes' rule, and the sandbox's environment checks it again either way.
+Unlike these routes, it takes write access to the canvas rather than a workspace admin.
 
 **Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the canvas's repo's
 secrets, read in one statement, and packs them into one variable of the start command's `env`,
