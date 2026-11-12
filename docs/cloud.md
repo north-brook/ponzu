@@ -1946,7 +1946,7 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | POST | `/v1/canvases/:id/pull-request/ready` | none | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/canvases/:id/pull-request/auto-merge` | none | `PullRequestTab` |
-| POST | `/v1/canvases/:id/pull-request/close` | none | `PullRequestTab` |
+| POST | `/v1/canvases/:id/pull-request/close?number=` | none (`number` optional) | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the canvas; the rest takes write access. `PullRequestTab` is the
@@ -1975,9 +1975,11 @@ the person (which failing checks, or which base to merge in), once for a commit.
 button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
 canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
 is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
-branch and its commits stay. Create PR opens a new one later.") and sent only while the pull
-request it named is still the open one; one that auto-merge merged meanwhile is answered
-`pull_request_closed` ("#N is merged."), never reopened. A closed pull request shows its closed
+branch and its commits stay. Create PR opens a new one later.") and sent with the number it
+named, so a newer pull request opened meanwhile is never closed in its place (409
+`pull_request_changed`). One that auto-merge merged meanwhile, before the API's read or between
+that read and GitHub's close, is answered `pull_request_closed` ("#N is merged."), never
+reopened. A closed pull request shows its closed
 mark in muted and offers Create PR once the branch has commits its base lacks, and the tab shows
 `summary` under "The description it opens with" whenever Create PR is offered. The tab is
 reached from the chrome's pull request mark, so before the first pull request there is no tab to
@@ -2124,6 +2126,7 @@ canvas settles whether or not the merge's webhook arrives.
 |---|---|
 | `no_pull_request` | nothing is open to act on |
 | `pull_request_closed`, `pull_request_draft` | merged or closed; a draft, for a merge or auto-merge |
+| `pull_request_changed` | a close named a pull request that is no longer the canvas's newest |
 | `head_moved` | the branch has commits since `headSha`, or moved under the request |
 | `mergeability_unknown` | GitHub is still working out whether it can merge |
 | `merge_conflicts` | the branch conflicts with its base |

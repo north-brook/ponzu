@@ -869,6 +869,46 @@ describe("acting", () => {
     expect(t.github.pulls.actions.length).toBe(acted);
   });
 
+  test("auto-merge landing between the read and the close is told as merged, not closed", async () => {
+    const { ws, repo, canvas, pull } = await ready();
+    t.github.pulls.mergeBeforeCloseAs("ines");
+    const refused = await act(ws, canvas.id, "close");
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "pull_request_closed",
+      message: `#${pull.number} is merged.`,
+    });
+    expect(t.github.pulls.latest(repo)).toMatchObject({ merged: true, mergedBy: "ines" });
+    // The canvas has it merged, as the next read does.
+    expect((await call(t, as(ws, "maya"), "GET", path(canvas.id))).body).toMatchObject({
+      pullRequest: { state: "merged" },
+    });
+  });
+
+  test("close names the pull request it means: a newer one is not closed in its place", async () => {
+    const { ws, repo, canvas, pull: first } = await ready();
+    // Someone closes it on GitHub, and a new one opens from the branch before the tab reads.
+    Object.assign(first, { state: "closed" });
+    await opened(ws, canvas.id);
+    const second = t.github.pulls.latest(repo)!;
+    expect(second.number).not.toBe(first.number);
+
+    const acted = t.github.pulls.actions.length;
+    const refused = await act(ws, canvas.id, `close?number=${first.number}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "pull_request_changed",
+      message: `This canvas's pull request is #${second.number} now, not #${first.number}. Look again first.`,
+    });
+    expect(t.github.pulls.actions.length).toBe(acted);
+    expect(second.state).toBe("open");
+
+    expect(await codeOf(act(ws, canvas.id, "close?number=abc"))).toBe("invalid_request");
+    const closed = await act(ws, canvas.id, `close?number=${second.number}`);
+    expect(closed.status).toBe(200);
+    expect(closed.body.pullRequest).toMatchObject({ number: second.number, state: "closed" });
+  });
+
   test("a person whose GitHub token GitHub no longer takes is asked to sign in again", async () => {
     const { ws, repo, canvas } = await ready();
     t.github.revokeTokens(ws.people.maya!.github.id);

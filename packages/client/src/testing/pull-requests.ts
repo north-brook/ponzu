@@ -351,8 +351,15 @@ export class FakePullRequests {
     return this.tab();
   }
 
-  close(): Tab {
+  close(number?: number): Tab {
     const pull = this.current();
+    if (number !== undefined && number !== pull.number) {
+      throw new ApiError(
+        409,
+        "pull_request_changed",
+        `This canvas's pull request is #${pull.number} now, not #${number}. Look again first.`,
+      );
+    }
     if (pull.state === "merged") throw closed(pull);
     if (pull.state !== "closed") {
       pull.state = "closed";

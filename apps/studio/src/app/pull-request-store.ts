@@ -256,7 +256,7 @@ export class PullRequestStore {
     this.set({ closing: null });
     const pr = tab?.pullRequest;
     if (!closing || busy || !pr || pr.number !== closing.number || !isOpen(pr)) return;
-    this.act("close", { kind: "close" });
+    this.act("close", { kind: "close", number: closing.number });
   }
 
   cancelClose(): void {

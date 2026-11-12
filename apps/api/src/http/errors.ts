@@ -109,6 +109,8 @@ export type ErrorCode =
   | "no_pull_request"
   /** The canvas's pull request is merged or closed. */
   | "pull_request_closed"
+  /** A close named a pull request that is no longer the canvas's newest. Look again first. */
+  | "pull_request_changed"
   /** The pull request is a draft: mark it ready first. */
   | "pull_request_draft"
   /** The branch conflicts with the branch it merges into. */

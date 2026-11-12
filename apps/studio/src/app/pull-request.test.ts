@@ -411,6 +411,28 @@ test("a Close confirmed after a merge the store hasn't read is refused by the AP
   });
 });
 
+test("a Close confirmed after a newer pull request opened, unread, leaves the newer one open", async () => {
+  const w = await world();
+  w.backend.agent(w.canvas.id).push();
+  await w.read();
+  const first = (await w.run("create_pr")).tab!.pullRequest!;
+  w.store.askClose();
+  // Someone closes it and a new one opens from the branch before the store reads either.
+  await w.client.api.canvases.pullRequest.close(w.canvas.id);
+  const second = (await w.client.api.canvases.pullRequest.open(w.canvas.id)).pullRequest!;
+  expect(second.number).not.toBe(first.number);
+
+  w.store.confirmClose();
+  await settle();
+  expect(w.said).toEqual([
+    `This canvas's pull request is #${second.number} now, not #${first.number}. Look again first.`,
+  ]);
+  expect(w.store.getSnapshot()).toMatchObject({
+    busy: null,
+    tab: { pullRequest: { number: second.number, state: "draft" } },
+  });
+});
+
 test("Turn off auto-merge, from the menu while it is on; the button offers it again", async () => {
   const w = await world();
   w.backend.agent(w.canvas.id).push();
