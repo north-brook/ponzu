@@ -33,7 +33,7 @@ export const GRANDFATHERED: Record<string, string> = {
   "0023_vercel_sandboxes.sql":
     "Before any deploy served people: the move to Vercel Sandbox dropped the old sandboxes table and its columns on dev only, deployed with the API that stopped reading them.",
   "0025_canvases.sql":
-    "The design-to-canvas rename, program.md section 4's one documented exception: run with every sandbox asleep, paired with the deploy that reads the new names, and never rolled back past (docs/production.md).",
+    "The rename to canvases, program.md section 4's one documented exception: run with every sandbox asleep, paired with the deploy that reads the new names, and never rolled back past (docs/production.md).",
 };
 
 export interface Finding {
