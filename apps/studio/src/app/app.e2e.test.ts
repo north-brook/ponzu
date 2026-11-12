@@ -413,6 +413,12 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
     expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe("true");
+    // Landed, and the panes at rest.
+    await waitUntil(() =>
+      page.evaluate(
+        () => !document.querySelector("[data-flight], [data-pane-motion], [data-composer-flight]"),
+      ),
+    );
   });
 
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {

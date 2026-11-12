@@ -100,6 +100,11 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
       window.ponzuFake!.backend.latencyMs = 0;
     });
     await shoot("design-waking");
+    // Left alone, the thread's pane closes after its beat, having shown where the thread lives.
+    await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
+    // Maya opens it again, and that is remembered for the designs she opens next.
+    await page.click('button[aria-controls="thread"]');
+    await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
 
     // Settings: every section, in the personal workspace and then the team's.
     await fake(() => {
