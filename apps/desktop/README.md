@@ -164,7 +164,7 @@ ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>   open a canvas
 ponzu://github/setup?result=installed&workspace=<workspace id>     back from GitHub's install
 ponzu://github/setup?result=requested | pending | sign_in | failed
 ponzu://billing/card?setup=<setup id>&result=added | cancelled     back from adding a card
-ponzu://settings?section=usage | notifications | account&n=<notification id>
+ponzu://settings?section=usage | notifications | account&workspace=<workspace id>&n=<notification id>
 ```
 
 The grammar is every client's, in `@ponzu/core/links` (docs/cloud.md, "Clients"), and

@@ -102,6 +102,7 @@ describe("where a tap goes", () => {
     ).toEqual({
       kind: "settings",
       section: "usage",
+      workspaceId: "ws_1",
       notificationId: "ntf_4",
     });
     expect(

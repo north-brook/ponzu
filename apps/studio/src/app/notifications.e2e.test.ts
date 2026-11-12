@@ -200,12 +200,13 @@ describe.skipIf(!chromiumPath)("the Mac's notifications", () => {
     expect((await mac()).shown.length).toBe(before);
   });
 
-  test("a billing ping opens Plan and usage, and Settings lists This Mac first", async () => {
+  test("a billing ping opens its own workspace's Plan and usage, and Settings lists This Mac first", async () => {
+    // The ping is about the workspace the window is not showing.
     const id = await page.evaluate(() => {
-      const { backend, me, workspaceId } = window.ponzuFake!;
+      const { backend, me, personalId } = window.ponzuFake!;
       return backend.notify(me.id, {
         kind: "billing_cap_warning",
-        workspaceId,
+        workspaceId: personalId,
         title: "Northbrook",
         body: "Northbrook has used $80 of its $100 cap this month.",
         link: { open: "usage" },
@@ -213,11 +214,22 @@ describe.skipIf(!chromiumPath)("the Mac's notifications", () => {
     });
     await waitUntil(async () => (await mac()).shown.some((n) => n.id === id));
     const notice = (await mac()).shown.find((n) => n.id === id)!;
+    const personalId = await page.evaluate(() => window.ponzuFake!.personalId);
+    expect(personalId).not.toBe(await page.evaluate(() => window.ponzuFake!.workspaceId));
     expect([notice.groupId, notice.link]).toEqual([
-      await page.evaluate(() => window.ponzuFake!.workspaceId),
-      { kind: "settings", section: "usage", notificationId: id },
+      personalId,
+      { kind: "settings", section: "usage", workspaceId: personalId, notificationId: id },
     ]);
     await page.evaluate((n) => window.ponzuFake!.mac!.click(n), id);
+    // The window moved to the ping's workspace, so its plan is the one that opens.
+    await waitUntil(async () =>
+      page
+        .evaluate(
+          (meId) => JSON.parse(localStorage.getItem(`ponzu.ui.${meId}`) ?? "{}").workspaceId,
+          await page.evaluate(() => window.ponzuFake!.me.id),
+        )
+        .then((shown) => shown === personalId),
+    );
     const nav = page.getByRole("navigation", { name: "Settings" });
     await nav.getByRole("button", { name: "Plan and usage" }).waitFor();
     expect(

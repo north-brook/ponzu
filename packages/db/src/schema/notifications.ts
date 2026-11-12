@@ -92,7 +92,7 @@ export const notifications = pgTable(
     ),
     check(
       "notifications_link_check",
-      sql`jsonb_typeof(${t.link}) = 'object' and ${t.link} ->> 'open' in (${sql.raw(NOTIFICATION_OPENS.map((open) => `'${open}'`).join(", "))}) and ${atMostBytes(t.link, NOTIFICATION_LINK_BYTES)}`,
+      sql`jsonb_typeof(${t.link}) = 'object' and coalesce(${t.link} ->> 'open', '') in (${sql.raw(NOTIFICATION_OPENS.map((open) => `'${open}'`).join(", "))}) and ${atMostBytes(t.link, NOTIFICATION_LINK_BYTES)}`,
     ),
     check("notifications_count_check", sql`${t.count} >= 1`),
   ],

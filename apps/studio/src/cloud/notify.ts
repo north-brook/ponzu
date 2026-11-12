@@ -117,7 +117,13 @@ export function linkOfRow(row: NotificationRow): DeepLink | null {
   const { link } = row;
   if (row.canvasId === null) {
     return link.open === "usage"
-      ? { kind: "settings", section: "usage", notificationId: row.id }
+      ? {
+          kind: "settings",
+          section: "usage",
+          // Its own workspace's plan, whichever the window shows.
+          ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+          notificationId: row.id,
+        }
       : null;
   }
   return {

@@ -216,6 +216,11 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           notificationOpened(link.notificationId);
         }
         if (link.kind === "settings") {
+          // A billing ping's link names its workspace: that one's plan is the one it means.
+          if (link.workspaceId) {
+            const workspaceId = link.workspaceId;
+            update((now) => ({ ...now, workspaceId }));
+          }
           if (link.section) {
             setSettingsLink({ section: SETTINGS_FOR_LINK[link.section], at: Date.now() });
           }

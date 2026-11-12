@@ -413,6 +413,11 @@ describe("notifications", () => {
     await expect(bad({ link: { open: "inbox" } as never })).rejects.toThrow(
       "notifications_link_check",
     );
+    // A link with nowhere to open is refused too, not let through as an unknown.
+    await expect(bad({ link: {} as never })).rejects.toThrow("notifications_link_check");
+    await expect(bad({ link: { open: null } as never })).rejects.toThrow(
+      "notifications_link_check",
+    );
     await expect(bad({ link: { open: "thread", questionId: "q".repeat(1100) } })).rejects.toThrow(
       "notifications_link_check",
     );
@@ -614,16 +619,18 @@ describe("notifications", () => {
     });
   });
 
-  test("the daily email reads the last day's unread and muted rows, by canvas", async () => {
+  test("the daily email reads the last day's unread rows, muted or not, by canvas", async () => {
     const { canvas, user } = await seedCanvas(db);
     const other = await seedCanvas(db);
-    const [old, unread, muted, read, elsewhere] = await insertNotifications(db, {
+    const [old, unread, muted, read, elsewhere, mutedRead] = await insertNotifications(db, {
       rows: [
         needsYou(user.id, canvas.id, "q_d0"),
         needsYou(user.id, other.canvas.id, "q_d1"),
-        needsYou(user.id, canvas.id, "q_d2", { muted: true, readVia: "looking" }),
+        needsYou(user.id, canvas.id, "q_d2", { muted: true }),
         needsYou(user.id, canvas.id, "q_d3", { readVia: "looking" }),
         needsYou(user.id, canvas.id, "q_d4"),
+        // Muted and read since: the person has seen it, so it is not news.
+        needsYou(user.id, canvas.id, "q_d5", { muted: true, readVia: "looking" }),
       ],
       now: start,
     });
@@ -637,6 +644,7 @@ describe("notifications", () => {
     const ids = listed.map((n) => n.id);
     expect(ids).not.toContain(old!.id);
     expect(ids).not.toContain(read!.id);
+    expect(ids).not.toContain(mutedRead!.id);
     expect(new Set(ids)).toEqual(new Set([unread!.id, muted!.id, elsewhere!.id]));
     // Grouped: each canvas's rows together.
     const canvases = listed.map((n) => n.canvasId);

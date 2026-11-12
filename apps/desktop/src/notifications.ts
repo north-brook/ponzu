@@ -41,9 +41,9 @@ export interface NotificationClass {
     silent: boolean;
   }): ShownNotification;
   /** Takes delivered notifications out of Notification Center, by id (macOS). */
-  remove?(ids: string[]): void;
+  remove(ids: string[]): void;
   /** Takes all of the app's delivered notifications out of Notification Center (macOS). */
-  removeAll?(): void;
+  removeAll(): void;
 }
 
 export interface ShownNotification {
@@ -121,7 +121,7 @@ export function createNotifier(deps: {
         shown?.close();
       }
       // Those let go of, or shown before a reload, are still in Notification Center.
-      deps.Notification.remove?.(ids);
+      deps.Notification.remove(ids);
     },
     setBadge(value) {
       if (typeof value !== "number" || !Number.isInteger(value) || value < 0) return;
@@ -132,7 +132,7 @@ export function createNotifier(deps: {
       kept.clear();
       for (const notification of shown) notification.close();
       // Those let go of, or shown before a reload, are still in Notification Center.
-      deps.Notification.removeAll?.();
+      deps.Notification.removeAll();
       deps.setBadge(0);
     },
     get kept() {

@@ -2934,8 +2934,8 @@ Every five minutes the cron's `digests` step records an `email.digest` job, keye
 `digest:<user>:<local date>`, for each of up to 20 people whose email is on, who has an
 address, for whom it is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
 one Postgres does not know), and whose `digest_sent_on` is before that local date. The job reads
-their notifications from the 24 hours before it was found due that are unread or `muted`, leaves
-out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
+their notifications from the 24 hours before it was found due that are still unread (`muted` ones
+included: they were never pinged), leaves out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
 their workspace. A canvas whose person is no longer a member, or whose kept access answer has
 changed to less than read since its newest row, is left out (an answer that is only old is not:
 the email is for people who have been away); a billing row goes only to someone still among the
@@ -3186,11 +3186,12 @@ ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usag
 ponzu://github/setup?result=installed&workspace=<workspace id>
 ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
 ponzu://billing/card?setup=<setup id>&result=added|cancelled
-ponzu://settings?section=usage|notifications|account&n=
+ponzu://settings?section=usage|notifications|account&workspace=&n=
 ```
 
 `n` names the notification a link came from (a Mac's banner, a phone's ping), so opening it
-reads it; a billing ping's link is the settings one, to Plan and usage.
+reads it; a billing ping's link is the settings one, to Plan and usage, and names its
+workspace, so the app shows that workspace's plan whichever one the window was showing.
 
 A link only asks to show something; one that doesn't parse is dropped, and an optional
 part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`

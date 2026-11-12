@@ -200,7 +200,8 @@ describe("where a banner goes", () => {
       groupId: "ws_1",
       title: "Northbrook",
       body: "Northbrook has used $80 of its $100 cap this month.",
-      link: { kind: "settings", section: "usage", notificationId: "ntf_1" },
+      // Its own workspace's plan, whichever the window shows.
+      link: { kind: "settings", section: "usage", workspaceId: "ws_1", notificationId: "ntf_1" },
     });
   });
 

@@ -1,5 +1,5 @@
 {
-  "id": "ec4326b4-5deb-46b9-b11e-209832c638f8",
+  "id": "e2c87a53-6c3f-428f-8627-5027eea5f619",
   "prevId": "77fc6520-ac8a-4c72-b784-da5b1797d815",
   "version": "7",
   "dialect": "postgresql",
@@ -4499,7 +4499,7 @@
         },
         "notifications_link_check": {
           "name": "notifications_link_check",
-          "value": "jsonb_typeof(\"notifications\".\"link\") = 'object' and \"notifications\".\"link\" ->> 'open' in ('thread', 'pull-request', 'comment', 'usage') and octet_length(\"notifications\".\"link\"::text) <= 1024"
+          "value": "jsonb_typeof(\"notifications\".\"link\") = 'object' and coalesce(\"notifications\".\"link\" ->> 'open', '') in ('thread', 'pull-request', 'comment', 'usage') and octet_length(\"notifications\".\"link\"::text) <= 1024"
         },
         "notifications_count_check": {
           "name": "notifications_count_check",

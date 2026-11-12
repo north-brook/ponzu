@@ -91,8 +91,9 @@ export async function checkPushReceipts(
     deps.analytics.capture(
       "push failed",
       { kind: delivery.kind, error: receipt.error },
-      // The same id the ticket's failure would have had: one delivery fails once.
-      { distinctId: null, uuid: stableUuid(`${delivery.id}/failed`) },
+      // The person's, so their usage switch applies; and the same id the ticket's failure
+      // would have had: one delivery fails once.
+      { distinctId: delivery.userId, uuid: stableUuid(`${delivery.id}/failed`) },
     );
     if (receipt.error === "DeviceNotRegistered" && delivery.deviceId) {
       dead.push({ id: delivery.deviceId, sentAt: delivery.sentAt });

@@ -497,6 +497,11 @@ describe("Expo's answers", () => {
       outcome: "DeviceNotRegistered",
     });
     expect(await deviceRows(phone.id)).toHaveLength(1);
+    // The failure is the person's, so their usage switch can drop it.
+    expect(t.analytics.of("push failed").at(-1)).toMatchObject({
+      distinctId: ws.people[owner]!.userId,
+      properties: { kind: "needs_you", error: "DeviceNotRegistered" },
+    });
   });
 });
 

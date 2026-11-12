@@ -219,7 +219,14 @@ describe("the daily email", () => {
     const { canvas, ws, userId } = await person(t);
     const now = new Date(t.clock.now());
     const read = await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
-    await markNotificationsRead(t.db, { userId, ids: [read.id], now, via: "mac" });
+    // A muted row read since (its canvas opened) is not news either.
+    const mutedRead = await row(t, {
+      userId,
+      workspaceId: ws.id,
+      canvasId: canvas.id,
+      muted: true,
+    });
+    await markNotificationsRead(t.db, { userId, ids: [read.id, mutedRead.id], now, via: "mac" });
     const question = newId("q");
     await row(t, {
       userId,

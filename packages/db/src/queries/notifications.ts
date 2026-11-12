@@ -831,8 +831,10 @@ export async function recentPushes(
 }
 
 /**
- * A person's notifications made since `since` that they have not read, or that were muted, for
- * the daily email: by canvas (the ones about none last), oldest first within each.
+ * A person's notifications made since `since` that they have not read, for the daily email: by
+ * canvas (the ones about none last), oldest first within each. A muted row is in it while it is
+ * unread, as every row is; one the person has read since (on the Mac, or by opening its canvas)
+ * is not news.
  */
 export function listRecentForDigest(
   db: Db,
@@ -846,7 +848,7 @@ export function listRecentForDigest(
         and(
           eq(notifications.userId, userId),
           sql`${notifications.createdAt} >= ${at(since)}`,
-          sql`(${notifications.readAt} is null or ${notifications.muted})`,
+          sql`${notifications.readAt} is null`,
         ),
       )
       .orderBy(
@@ -1254,6 +1256,8 @@ export async function receiptsDue(
     ticketId: string;
     sentAt: Date;
     kind: NotificationKind;
+    /** The person the notification is for. */
+    userId: string;
   }[]
 > {
   const rows = await run(
@@ -1265,6 +1269,7 @@ export async function receiptsDue(
         ticketId: notificationDeliveries.ticketId,
         sentAt: notificationDeliveries.sentAt,
         kind: notifications.kind,
+        userId: notifications.userId,
       })
       .from(notificationDeliveries)
       .innerJoin(notifications, eq(notifications.id, notificationDeliveries.notificationId))

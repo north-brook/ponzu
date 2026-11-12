@@ -40,7 +40,7 @@ CREATE TABLE "notifications" (
 	CONSTRAINT "notifications_kind_check" CHECK ("notifications"."kind" in ('needs_you', 'reply', 'finished', 'failed', 'claude_limit', 'pr_ready', 'pr_approved', 'teammate_comment', 'billing_free_used', 'billing_cap_warning', 'billing_cap_reached', 'billing_payment_failed')),
 	CONSTRAINT "notifications_read_via_check" CHECK (("notifications"."read_at" is null) = ("notifications"."read_via" is null) and ("notifications"."read_via" is null or "notifications"."read_via" in ('mac', 'ios', 'seen', 'looking', 'expired'))),
 	CONSTRAINT "notifications_text_check" CHECK (char_length("notifications"."title") <= 200 and char_length("notifications"."body") <= 200 and ("notifications"."subtitle" is null or char_length("notifications"."subtitle") <= 200)),
-	CONSTRAINT "notifications_link_check" CHECK (jsonb_typeof("notifications"."link") = 'object' and "notifications"."link" ->> 'open' in ('thread', 'pull-request', 'comment', 'usage') and octet_length("notifications"."link"::text) <= 1024),
+	CONSTRAINT "notifications_link_check" CHECK (jsonb_typeof("notifications"."link") = 'object' and coalesce("notifications"."link" ->> 'open', '') in ('thread', 'pull-request', 'comment', 'usage') and octet_length("notifications"."link"::text) <= 1024),
 	CONSTRAINT "notifications_count_check" CHECK ("notifications"."count" >= 1)
 );
 --> statement-breakpoint

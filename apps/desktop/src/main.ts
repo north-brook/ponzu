@@ -404,7 +404,7 @@ function followLink(link: DeepLink) {
 let notifier: Notifier | null = null;
 function notifications(): Notifier {
   notifier ??= createNotifier({
-    Notification: Notification as unknown as NotificationClass,
+    Notification: Notification satisfies NotificationClass,
     setBadge: (count) => {
       if (!smoke) app.setBadgeCount(count);
     },
