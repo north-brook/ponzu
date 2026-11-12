@@ -2683,9 +2683,9 @@ until then. `PONZU_EMAIL_FROM` is who it is from, `Ponzu <ping@ponzu.design>` un
 | GET | `/v1/email/unsubscribe?t=` | none | a page saying the email is off; 400 and a page saying the link doesn't work |
 | POST | `/v1/email/unsubscribe?t=` | anything (a mail app's one-click unsubscribe) | 204; 400 `invalid_request` |
 
-At minute 0 of each hour the cron's `digests` step records an `email.digest` job, keyed
-`digest:<user>:<local date>`, for each person whose email is on, who has an address, for whom it
-is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
+Every five minutes the cron's `digests` step records an `email.digest` job, keyed
+`digest:<user>:<local date>`, for each of up to 20 people whose email is on, who has an
+address, for whom it is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
 one Postgres does not know), and whose `digest_sent_on` is before that local date. The job reads
 their notifications from the 24 hours before it was found due that are unread or `muted`, leaves
 out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
@@ -2693,7 +2693,9 @@ their workspace. A canvas whose person is no longer a member, or whose kept acce
 changed to less than read since its newest row, is left out (an answer that is only old is not:
 the email is for people who have been away); a billing row goes only to someone still among the
 workspace's billing recipients. With nothing left it only stamps `digest_sent_on`. Otherwise it
-sends one email and stamps the date.
+sends one email and stamps the date. The step runs its batch itself, one email after another,
+rather than leaving it to the minute's `jobs` step, which takes ten jobs a minute of every kind:
+a busy 9:00 never holds pushes up, and Resend's rate is not met all at once.
 
 The subject counts what it holds ("Ponzu: 3 things on 2 canvases", "… and your plan" with
 billing rows). The body is each canvas's name (or the workspace's) and under it the rows' own

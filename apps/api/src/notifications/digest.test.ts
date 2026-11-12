@@ -8,13 +8,22 @@ import {
   newId,
   recordRepoAccess,
   resolveNeedsYou,
+  stampDigestSent,
 } from "@ponzu/db";
 import { runCronSteps } from "../cron/steps.ts";
 import { runDueJobs } from "../jobs/run.ts";
 import { call, canvasIn, canvasWithRunner, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_API_URL, type TestApp } from "../testing/index.ts";
 import { createVault, generateVaultKey } from "../vault/vault.ts";
-import { digestEmail, digestHref, digestKey, digestSubject } from "./digest.ts";
+import {
+  DIGEST_BATCH,
+  DIGEST_LINES_PER_GROUP,
+  digestEmail,
+  digestHref,
+  digestKey,
+  digestSubject,
+  runDigestJob,
+} from "./digest.ts";
 import { unsubscribeToken, unsubscribeUser } from "./unsubscribe.ts";
 
 /*
@@ -220,10 +229,26 @@ describe("the daily email", () => {
       sourceId: question,
     });
     await resolveNeedsYou(t.db, { canvasId: canvas.id, questionIds: [question], now });
-    t.clock.advance(-60_000);
+    // 31 Dec 08:59 is a day and a minute before the email is due.
+    t.clock.advance(new Date("2025-12-31T08:59:00Z").getTime() - t.clock.now());
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
-    // 2 Jan 09:00 is a day and a minute after that last row.
-    expect(await cronAt(t, "2026-01-02T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
+    // 1 Jan 09:00: the read and the resolved rows are inside the day, and still say nothing.
+    expect(await cronAt(t, "2026-01-01T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
+    expect(t.mail.sent).toEqual([]);
+    expect((await digestRecipient(t.db, userId))?.digestSentOn).toBe("2026-01-01");
+  });
+
+  test("a job for a date already stamped sends nothing", async () => {
+    const t = await app();
+    const { canvas, ws, userId } = await person(t);
+    await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
+    await stampDigestSent(t.db, { userId, localDate: "2026-01-01" });
+    t.clock.advance(9 * 60 * 60_000);
+    await runDigestJob(
+      t.deps,
+      { userId, localDate: "2026-01-01", until: new Date(t.clock.now()).toISOString() },
+      { id: "job_test", kind: "email.digest", payload: {}, attempts: 1, maxAttempts: 5 },
+    );
     expect(t.mail.sent).toEqual([]);
   });
 
@@ -329,11 +354,16 @@ describe("the daily email", () => {
     t.mail.failNext("unavailable");
     expect(await cronAt(t, "2026-01-01T09:00:00Z")).toEqual({ due: 1, recorded: 1 });
     expect(t.mail.sent).toEqual([]);
+    // A row made after it was found due waits for tomorrow's: every attempt covers the same day.
+    t.clock.advance(2 * 60_000);
+    await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id, body: "Later." });
     // The job waits five minutes and goes again.
     await cronAt(t, "2026-01-01T09:05:00Z");
     expect(t.mail.sent.map((email) => email.idempotencyKey)).toEqual([
       `digest:${userId}:2026-01-01`,
     ]);
+    expect(t.mail.sent[0]!.subject).toBe("Ponzu: 1 thing on 1 canvas");
+    expect(t.mail.sent[0]!.text).not.toContain("Later.");
 
     // The next day Resend refuses it: logged, the date stamped, and not tried again.
     await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
@@ -342,6 +372,43 @@ describe("the daily email", () => {
     expect(t.logs.filter((line) => line.event === "digest_failed")).toHaveLength(1);
     expect(await cronAt(t, "2026-01-02T10:00:00Z")).toEqual({ due: 0, recorded: 0 });
     expect(t.mail.sent).toHaveLength(1);
+  });
+});
+
+describe("sending in batches", () => {
+  test("the step sends its batch itself, not left behind other jobs, and caps a canvas at ten lines", async () => {
+    const t = await app();
+    const { canvas, ws, userId } = await person(t);
+    for (let n = 0; n < DIGEST_LINES_PER_GROUP + 2; n++) {
+      await row(t, { userId, workspaceId: ws.id, canvasId: canvas.id });
+      t.clock.advance(1000);
+    }
+    t.clock.advance(new Date("2026-01-01T09:00:00Z").getTime() - t.clock.now());
+    // The cron's steps alone, and what they left running past the response: no `jobs` claim.
+    const answer = await runCronSteps(t.deps, new Date(t.clock.now()));
+    expect(answer.steps.digests).toEqual({ due: 1, recorded: 1 });
+    await t.backgroundDone();
+    expect(t.mail.sent).toHaveLength(1);
+    const lines = t.mail.sent[0]!.text.split("\n").filter((line) => line.startsWith("- "));
+    expect(lines).toHaveLength(DIGEST_LINES_PER_GROUP + 1);
+    expect(lines.at(-1)).toBe("- And 2 more.");
+    expect(t.mail.sent[0]!.subject).toBe("Ponzu: 12 things on 1 canvas");
+  });
+
+  test("a step takes at most a batch, and the next slot takes the rest", async () => {
+    const t = await app();
+    const people = [];
+    for (let n = 0; n < DIGEST_BATCH + 1; n++) people.push(await person(t, "UTC"));
+    expect(await cronAt(t, "2026-01-01T09:00:00Z")).toEqual({
+      due: DIGEST_BATCH,
+      recorded: DIGEST_BATCH,
+    });
+    // Nobody had anything to say, so each was only stamped; the one left goes five minutes on.
+    expect(await cronAt(t, "2026-01-01T09:05:00Z")).toEqual({ due: 1, recorded: 1 });
+    expect(await cronAt(t, "2026-01-01T09:10:00Z")).toEqual({ due: 0, recorded: 0 });
+    for (const { userId } of people) {
+      expect((await digestRecipient(t.db, userId))?.digestSentOn).toBe("2026-01-01");
+    }
   });
 });
 

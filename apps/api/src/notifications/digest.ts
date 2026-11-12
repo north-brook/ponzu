@@ -2,6 +2,7 @@ import {
   digestRecipient,
   digestsDue,
   enqueueJob,
+  type Job,
   listRecentForDigest,
   type Notification,
   notifyCanvasFacts,
@@ -9,9 +10,10 @@ import {
   stampDigestSent,
 } from "@ponzu/db";
 import { z } from "zod";
+import type { Deps } from "../deps/index.ts";
 import { MailError, mailErrorOf } from "../deps/mail.ts";
 import { RetryLater } from "../jobs/retry.ts";
-import type { JobDeps, RunningJob } from "../jobs/run.ts";
+import { type JobDeps, type RunningJob, runJob } from "../jobs/run.ts";
 import { titleOf } from "./copy.ts";
 import { canvasFactsOf } from "./facts.ts";
 import { isBillingKind } from "./kinds.ts";
@@ -24,8 +26,9 @@ import { unsubscribeToken } from "./unsubscribe.ts";
  * kept quiet. It is opt-in (Settings › Notifications › Email) and off for everyone until
  * RESEND_API_KEY is set.
  *
- * At minute 0 of each hour the cron's `digests` step records an `email.digest` job for each
- * person whose email is due (`digestsDue`), keyed `digest:<user>:<local date>`. The job reads
+ * Every five minutes the cron's `digests` step records an `email.digest` job for each of up to
+ * `DIGEST_BATCH` people whose email is due (`digestsDue`), keyed `digest:<user>:<local date>`,
+ * and runs them one after another. The job reads
  * their notifications, drops what they can no longer read, sends one email through `deps.mail`
  * with the job's key as Resend's idempotency key, and stamps `digest_sent_on`. With nothing to
  * say it only stamps.
@@ -63,26 +66,51 @@ export function digestKey(userId: string, localDate: string): string {
 }
 
 /**
- * The cron's hourly step: record a digest job for everyone whose email is due at `now`. Nothing
- * while email is off. One already waiting for the same person and date is left to do it.
+ * How many people's emails one run of the cron's step takes. They are sent one after another,
+ * each with `MAIL_DEADLINE_MS` at most, so a batch ends well inside a job's lock
+ * (`JOB_LOCK_SECONDS`), and the step runs every few minutes, so a busy 9:00 is worked through
+ * a batch at a time.
+ */
+export const DIGEST_BATCH = 20;
+
+/**
+ * The cron's step: record a held digest job for each of up to `DIGEST_BATCH` people whose email
+ * is due at `now`, and send them one after another, past the response (`deps.background`), as
+ * `runNow` does for one job. Nothing while email is off. One already waiting for the same person
+ * and date is left to do it.
+ *
+ * Not left for the minute's `jobs` step to claim: that takes ten jobs a minute shared with every
+ * other kind, so a busy hour of emails would hold up pushes waiting their turn behind it. And
+ * not all at once: Resend takes a few requests a second, and the rest would come back 429. A
+ * batch that dies with its instance is claimed by the cron once its lock runs out.
  */
 export async function enqueueDigests(
-  deps: Pick<JobDeps, "db" | "mail">,
+  deps: JobDeps & Pick<Deps, "background">,
   now: Date,
 ): Promise<{ due: number; recorded: number }> {
   if (!deps.mail.enabled) return { due: 0, recorded: 0 };
-  const due = await digestsDue(deps.db, { now });
-  let recorded = 0;
+  const due = await digestsDue(deps.db, { now, limit: DIGEST_BATCH });
+  const worker = `${DIGEST_JOB}:${crypto.randomUUID()}`;
+  const held: Job[] = [];
   for (const { userId, localDate } of due) {
     const job = await enqueueJob(deps.db, {
       kind: DIGEST_JOB,
       key: digestKey(userId, localDate),
       payload: { userId, localDate, until: now.toISOString() },
       runAt: now,
+      lockedBy: worker,
     });
-    if (job) recorded++;
+    if (job) held.push(job);
   }
-  return { due: due.length, recorded };
+  if (held.length > 0) {
+    deps.background(
+      DIGEST_JOB,
+      (async () => {
+        for (const job of held) await runJob(deps, job, worker);
+      })(),
+    );
+  }
+  return { due: due.length, recorded: held.length };
 }
 
 /** One canvas (or, for billing, one workspace) and its lines. */
