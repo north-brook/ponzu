@@ -3080,7 +3080,8 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    a canvas's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
 8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
-   them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
+   them outside Ponzu, recorded in the same statement that deletes their row (so the row never
+   goes without it) and run at once (`apps/api/src/account/forget.ts`). It deletes
    their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
    and one that a new account signed in with before the job was recorded is kept). While the
    job waits, sign-in refuses that WorkOS user as `account_being_deleted` (409), so no account

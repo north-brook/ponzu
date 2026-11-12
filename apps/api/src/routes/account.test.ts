@@ -84,7 +84,13 @@ describe("refusals", () => {
     await t.db.execute(
       `delete from memberships where workspace_id = '${team.id}' and user_id = '${team.people.abe!.userId}'`,
     );
-    expect(await deleteUser(t.db, team.people.zia!.userId)).toEqual({ status: "sole_admin" });
+    expect(
+      await deleteUser(t.db, team.people.zia!.userId, {
+        kind: ACCOUNT_FORGET_JOB,
+        maxAttempts: 1,
+        runAt: new Date(),
+      }),
+    ).toEqual({ status: "sole_admin" });
     expect((await call(t, await as("zia"), "GET", "/v1/me")).status).toBe(200);
   });
 });
