@@ -85,6 +85,8 @@ const desktop: PonzuDesktop = {
   openExternal: (url) => ipcRenderer.send(CHANNELS.openExternal, url),
   comeForward: () => ipcRenderer.send(CHANNELS.comeForward),
   welcome1x: () => ipcRenderer.invoke(CHANNELS.welcome1x) as Promise<boolean>,
+  setUsageSharing: (enabled) =>
+    ipcRenderer.invoke(CHANNELS.usageSharing, enabled === true) as Promise<boolean>,
 };
 
 contextBridge.exposeInMainWorld("ponzuDesktop", desktop);

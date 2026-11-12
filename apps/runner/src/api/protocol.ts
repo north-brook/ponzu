@@ -287,6 +287,11 @@ export type RunnerEvent = {
    * under it, so a session recording links to the agent's work (docs/analytics.md).
    */
   posthogSessionId?: string | null;
+  /**
+   * False when the person behind it has turned Share usage data off: the turn it begins sends
+   * no `$ai_*` events. Absent (an older API) or true, the turn is traced as before.
+   */
+  trace?: boolean;
 } & EventBody;
 
 export type EventBody =

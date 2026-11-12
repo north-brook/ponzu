@@ -65,7 +65,7 @@ export const LIVE_QUERIES = {
     sql: `select u.id, u.github_login, u.name, u.email, u.avatar_url,
                  u.default_agent, u.default_model, u.default_effort,
                  u.ping_needs_you, u.ping_replies, u.ping_pr_ready, u.ping_teammate_comments,
-                 u.email_digest, u.onboarding_where_at, u.onboarding_iphone_at,
+                 u.email_digest, u.share_usage, u.onboarding_where_at, u.onboarding_iphone_at,
                  a.id as claude_account_id, a.kind as claude_account_kind,
                  a.status as claude_account_status, a.plan_label as claude_plan_label,
                  a.key_hint as claude_key_hint, a.connected_at as claude_connected_at,

@@ -1,7 +1,7 @@
 import { OpenTelemetry } from "@ai-sdk/otel";
 import { BasicTracerProvider, type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import type { TelemetryOptions } from "ai";
-import { WORKSPACE_GROUP } from "./analytics.ts";
+import { type OptOuts, WORKSPACE_GROUP } from "./analytics.ts";
 import { currentScope } from "./scope.ts";
 
 /*
@@ -87,15 +87,34 @@ export function createAiTracing({
 /**
  * Who a span is about, as `PostHogSpanProcessor` asks its `client`: the request's person and the
  * app session that sent it, read when each span starts.
+ *
+ * With `optOuts`, a person who has turned usage sharing off is left off: the span is still the
+ * workspace's, about no one. Spans start on the request path, so this reads only the copy the
+ * analytics' sends hold, and only while it is fresh: with no fresh copy it asks for one and
+ * leaves everyone off, so an idle instance's old copy never attributes a span to anyone.
  */
-export const scopeContext = {
-  getContext() {
-    const scope = currentScope();
-    if (!scope) return undefined;
-    const distinctId = scope.userId();
-    return {
-      ...(distinctId ? { distinctId } : {}),
-      ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
-    };
-  },
-};
+export function scopeContextFor(optOuts: OptOuts | null = null) {
+  return {
+    getContext() {
+      const scope = currentScope();
+      if (!scope) return undefined;
+      let distinctId = scope.userId();
+      let sessionId = scope.sessionId;
+      if (optOuts && distinctId) {
+        const out = optOuts.fresh();
+        if (!out) void optOuts.current().catch(() => {});
+        if (!out || out.has(distinctId)) {
+          distinctId = null;
+          sessionId = null;
+        }
+      }
+      return {
+        ...(distinctId ? { distinctId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+      };
+    },
+  };
+}
+
+/** Who a span is about, with no one left off. */
+export const scopeContext = scopeContextFor();

@@ -1576,12 +1576,14 @@ answers come in as messages (Questions).
 
 ```
 RunnerEvent = { id, seq, at, priority: "now" | "next" | "later", from: Person | null,
-                posthogSessionId: string | null, kind, payload }
+                posthogSessionId: string | null, trace: boolean, kind, payload }
 Person      = { id, name, login }
 ```
 
 `posthogSessionId` is the PostHog session of the app that sent it, when it said: the turn the
-event begins is traced under it (docs/analytics.md).
+event begins is traced under it (docs/analytics.md). `trace` is false when the person behind it
+has turned Share usage data off, as their row says at the claim: the runner sends no `$ai_*` for
+a turn whose first event says false. An older API leaves it out, which counts as true.
 
 | Kind | Priority | Payload | Into the run |
 |---|---|---|---|
@@ -3126,6 +3128,16 @@ by setting `PONZU_POSTHOG_KEY` and off without it. The API captures what happens
 calls it makes; each canvas's runner traces the agent's turns in LLM analytics; the apps capture
 what only they know and record sessions. The rules both sides keep, the event catalogue and what
 is never sent are in [analytics.md](analytics.md).
+
+**Share usage data.** Settings › Account has the person's switch, on by default and kept on their
+row (`users.share_usage`), so it holds on every device. `PATCH /v1/me/privacy` `{ shareUsage }`
+answers `{ shareUsage }` and captures nothing; `GET /v1/me` carries it as `privacy.shareUsage` and
+the `me` live row as `share_usage`. Off, the API's sink drops every capture, profile and
+exception about the person (who is out is read in the background send and kept a minute per
+instance), each event a runner claims says `trace: false`, so the runner sends no `$ai_*` for a
+turn that event begins, and the Mac stops its own reporting and writes `~/.ponzu/telemetry.json`.
+A turn already running keeps the flag it began with. analytics.md, "Turning it off", has the
+details and what is not built.
 
 ## Environments
 

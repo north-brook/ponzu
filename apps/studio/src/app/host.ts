@@ -64,4 +64,10 @@ export interface Host {
    * where there is no shell (a browser, the tests), which never shows it.
    */
   welcome1x?(): Promise<boolean>;
+  /**
+   * Share usage data, on this computer: the shell writes what its next launch reads, and stops
+   * its own reporting when it is turned off. Answers whether its next launch will report.
+   * Absent where there is no shell.
+   */
+  setUsageSharing?(enabled: boolean): Promise<boolean>;
 }

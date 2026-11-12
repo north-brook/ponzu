@@ -368,6 +368,89 @@ describe("turns", () => {
   });
 });
 
+describe("share usage data", () => {
+  const privacy = (headers: Record<string, string>, shareUsage: boolean) =>
+    call(t, headers, "PATCH", "/v1/me/privacy", { shareUsage });
+
+  test("off, the API sends nothing about the person: not their events, profile, turns or errors", async () => {
+    const quiet = await t.signInAs({ login: "quiet" });
+    t.analytics.events.length = 0;
+    const off = await privacy(quiet.headers, false);
+    expect(off).toEqual({ status: 200, body: { shareUsage: false } });
+    await t.backgroundDone();
+    // Turning it off is captured as nothing at all.
+    expect(t.analytics.events).toEqual([]);
+
+    t.analytics.events.length = 0;
+    t.analytics.people.length = 0;
+    const again = await t.signInAs({ login: "quiet" });
+    await call(t, quiet.headers, "POST", "/v1/auth/sign-out");
+    await t.backgroundDone();
+    const about = JSON.stringify([t.analytics.events, t.analytics.people]);
+    expect(about).not.toContain(quiet.userId);
+
+    // Events about no person are not theirs to stop.
+    t.deps.analytics.capture(
+      "sandbox restored",
+      { canvas_id: "cnv_none", kind: "rebuilt" },
+      { distinctId: null, workspaceId: ws.id },
+    );
+    await t.backgroundDone();
+    expect(t.analytics.of("sandbox restored")).toHaveLength(1);
+
+    // Back on: the next sign-in is theirs again, at this instance's next send.
+    expect(await privacy(again.headers, true)).toEqual({ status: 200, body: { shareUsage: true } });
+    await t.signInAs({ login: "quiet" });
+    expect(t.analytics.of("user signed in").map((e) => e.distinctId)).toEqual([quiet.userId]);
+    expect(t.analytics.people.map((p) => p.distinctId)).toEqual([quiet.userId]);
+  });
+
+  test("a turn begun by someone opted out is reported to no one, and the next claim says not to trace", async () => {
+    const ines = ws.people.ines!;
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    await privacy(ines.headers, false);
+    try {
+      const event = await appendEvent(t.db, {
+        canvasId: canvas.id,
+        kind: "message",
+        priority: "now",
+        payload: { text: "Go" },
+        userId: ines.userId,
+      });
+      const claimed = await call(t, runner.headers, "POST", "/v1/runner/events/claim", {
+        claimId: newId("clm"),
+      });
+      expect(claimed.body.events).toEqual([
+        expect.objectContaining({ id: event.id, trace: false }),
+      ]);
+
+      await call(t, runner.headers, "POST", "/v1/runner/usage", {
+        turns: [
+          {
+            id: "3f1c2a9e-0000-4000-8000-000000000009",
+            claudeSessionId: "sess_1",
+            at: "2026-11-11T10:00:30.000Z",
+            models: [],
+            turn: {
+              startedAt: "2026-11-11T10:00:00.000Z",
+              outcome: "completed",
+              errorCode: null,
+              durationMs: 30_000,
+              toolCalls: 0,
+              eventId: event.id,
+            },
+          },
+        ],
+      });
+      await t.backgroundDone();
+      expect(t.analytics.of("turn started")).toEqual([]);
+      expect(t.analytics.of("turn finished")).toEqual([]);
+    } finally {
+      await privacy(ines.headers, true);
+    }
+  });
+});
+
 describe("error tracking", () => {
   const failing = () =>
     createApp(t.deps).route(
