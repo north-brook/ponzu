@@ -354,19 +354,39 @@ Monthly, after cutover: `bun scripts/prod/restore-drill.ts --env production` *(n
 
 ## Checking production
 
-`bun scripts/prod/check.ts --env dev|production [--json] [--deep]` *(not built yet)* is
-read-only and never asks a vendor to decrypt a value.
+`bun scripts/prod/check.ts --env dev|production [--json] [--deep]` is read-only and never asks
+a vendor to decrypt a value.
 
-- It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN`, `NEON_API_KEY`,
-  `CLOUDFLARE_API_TOKEN` (read only), `POSTHOG_PERSONAL_API_KEY` (read only), `gh` auth, and
-  `CRON_SECRET` for the selfcheck. A missing credential makes its section `skipped`, never a
-  pass.
+- It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN` (and
+  `VERCEL_TEAM_ID`, optional for the read-only lines; without it the team is named by its public
+  slug), `NEON_API_KEY`, `CLOUDFLARE_API_TOKEN` (read only), `POSTHOG_PERSONAL_API_KEY` (read
+  only), `GH_TOKEN` or `gh` auth, and `CRON_SECRET` for the selfcheck. A missing credential
+  makes its section `skipped`, never a pass.
 - Each line is `ok`, `fail`, `pending`, `manual` or `skipped`, with the runbook step or the
-  `apply.ts` command that fixes it. It exits 0 only when every line is `ok` or `manual`.
-- Every printed line goes through `@ponzu/core/redact`.
-- `--deep` also creates and removes one `pz-test-check-` sandbox from the current image. On
-  production it is the founder's to run.
+  `apply.ts` command that fixes it. It exits 0 only when every line is `ok` or `manual`; a
+  `pending` or `skipped` line exits 1 like a `fail`.
+- Every printed line goes through `@ponzu/core/redact`, with every credential present as a known
+  secret, so even a vendor's error that quoted one would not print it.
+- `--deep` also creates and removes one `pz-test-check-` sandbox from the current image, and
+  needs `VERCEL_TEAM_ID` as well. On production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
+
+What each section checks today (Neon, R2 and Cloudflare, GitHub, WorkOS and PostHog come with
+the next pieces of this work):
+
+| Section | Lines |
+|---|---|
+| `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, the Preview and Development targets are empty and every secret is stored as sensitive; the environment's API domains are verified on the project; the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready and carries `vercel.json`'s cron. |
+| `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. While `api.ponzu.design` is in both environments' `apiDomains` (before D11), production's line is `pending`. |
+| `dns` | Each of the environment's API domains, the assets host and `ponzu.design`: resolves over DNS-over-HTTPS, presents a valid certificate with at least 14 days left, and answers as it should (the API and the site from Vercel; the assets host with the header rule, which dev may go without). A production name not set up yet is `pending` with its founder step. |
+| `spend` | The five spend alerts, each `manual`. |
+| `deep` | With `--deep` only: the throwaway sandbox is made from current.json's image and removed. |
+
+The Vercel section reads through `@vercel/sdk`. On 1.28.53 the SDK's own schema refuses dev's real
+project answer (it requires a `traffic_sources` field the API does not send), so the check falls
+back to the answer the SDK hands over with its validation error. The tests run that path on the
+recorded answers (trimmed to the fields the check reads, which the SDK refuses too); the full
+answer went through it once when it was recorded.
 
 ## Rotating secrets
 

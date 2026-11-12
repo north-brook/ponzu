@@ -22,6 +22,7 @@
     "@commitlint/config-conventional": "^21.2.4",
     "@ponzu/evals": "workspace:*",
     "@types/bun": "latest",
+    "@vercel/sdk": "1.28.53",
     "typescript": "^5.9.3",
     "zod": "^4"
   },
