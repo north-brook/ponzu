@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import sitemap from "./app/sitemap.ts";
+import { LEGAL_DRAFT } from "./components/legal-status.ts";
 import { FOOTER, NAV } from "./components/links.tsx";
 import { guide, OSES } from "./components/platforms.ts";
 import config from "./next.config.ts";
@@ -164,6 +165,9 @@ test("every redirect lands somewhere that exists", () => {
 
 /** Whether a page, or a layout above it, keeps it out of search. */
 function noindex(file: string): boolean {
+  // The legal pages' layout reads LEGAL_STATUS (components/legal-status.ts); legal.test.ts
+  // checks that it does.
+  if (file.startsWith("(legal)/")) return LEGAL_DRAFT;
   const dirs = file.split("/").slice(0, -1);
   const files = [file, ...dirs.map((_, i) => `${dirs.slice(0, i + 1).join("/")}/layout.tsx`)];
   return files.some((f) => {

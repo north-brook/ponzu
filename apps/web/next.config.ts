@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
         destination: "https://us-assets.i.posthog.com/static/:path*",
       },
       { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+      // RFC 9116 names /.well-known/security.txt; app/security.txt/route.ts serves the file.
+      { source: "/.well-known/security.txt", destination: "/security.txt" },
     ];
   },
   // Agents' links to a design on the person's Mac were /open#…: the browser keeps the # across
