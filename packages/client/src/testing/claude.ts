@@ -113,7 +113,13 @@ export class FakeClaude {
   /** As the API refuses a model or effort the account does not offer. */
   checkOffered(userId: string, model: string, effort: string | undefined): void {
     const offered = this.modelsOf(userId).find((m) => m.id === model);
-    if (!offered || (effort !== undefined && !(offered.efforts as string[]).includes(effort))) {
+    // As the API, an effort sent with a model that takes none is let through, not refused.
+    const refusedEffort =
+      effort !== undefined &&
+      offered !== undefined &&
+      offered.efforts.length > 0 &&
+      !(offered.efforts as string[]).includes(effort);
+    if (!offered || refusedEffort) {
       throw new ApiError(400, "model_not_offered", "Your Claude account doesn't offer that model.");
     }
   }

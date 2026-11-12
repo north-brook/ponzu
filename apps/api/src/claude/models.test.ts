@@ -169,3 +169,12 @@ test("a choice the account does not offer is refused", () => {
   ]);
   expect(() => checkOffered(fewer, "claude-h", "max")).toThrow("H doesn't take that effort");
 });
+
+test("the effort shown for a model that takes none is let through, and it runs with none", () => {
+  const offer = offeredModels([
+    entry({ value: "n", resolvedModel: "claude-n", displayName: "N", efforts: [] }),
+  ]);
+  // The picker and Settings send back the effort /v1/claude/defaults shows, which is medium.
+  expect(() => checkOffered(offer, "claude-n", "medium")).not.toThrow();
+  expect(effortOrDefault(offer, "claude-n", "medium")).toBeNull();
+});

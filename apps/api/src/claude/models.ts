@@ -122,14 +122,20 @@ export function effortOrDefault(
 
 /**
  * Refuse a choice the account does not offer: a model it does not, or an effort that model does
- * not take. Answered 400 `model_not_offered`.
+ * not take. Answered 400 `model_not_offered`. An effort sent with a model that takes none is not
+ * refused: `/v1/claude/defaults` shows the default effort for such a model, so the apps send it
+ * back, and the model is never run with one (`effortOrDefault` gives null for it).
  */
 export function checkOffered(offer: ModelOffer, model: string, effort: string | undefined): void {
   const offered = offer.models.find((m) => m.id === model);
   if (!offered) {
     throw new ApiError(400, "model_not_offered", "Your Claude account doesn't offer that model.");
   }
-  if (effort !== undefined && !(offered.efforts as string[]).includes(effort)) {
+  if (
+    effort !== undefined &&
+    offered.efforts.length > 0 &&
+    !(offered.efforts as string[]).includes(effort)
+  ) {
     throw new ApiError(
       400,
       "model_not_offered",

@@ -1184,7 +1184,8 @@ account nobody has reported for (just connected, never run) is offered the hand-
 picker is never empty. The default is Opus 5.5 on medium when the account offers it; otherwise
 the model Claude Code calls its default, otherwise the first offered. `PATCH /v1/claude/defaults`
 and `POST /v1/designs` take only a model the account offers and an effort that model takes (400
-`model_not_offered`). A saved choice the account no longer offers is not an error: the defaults
+`model_not_offered`). For a model that takes no effort the defaults show medium, so an effort
+sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a design made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
 never handed a model it would refuse once a runner has reported. Nothing in the design's thread
