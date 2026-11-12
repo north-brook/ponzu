@@ -140,7 +140,7 @@ describe("evaluate on dev's recorded answers", () => {
         id: "github.variables",
         area: "github",
         status: "pending",
-        says: "9 of the 12 repository variables the workflows read are not set: API_DEPLOY, API_DEPLOY_PRODUCTION, NEON_PROJECT_ID, PONZU_APP_POSTHOG_CLI_PROJECT_ID, PONZU_APP_POSTHOG_HOST, PONZU_APP_POSTHOG_KEY, PONZU_APP_POSTHOG_REPLAY, RELEASES_HELD and VERCEL_API_PROD_PROJECT_ID (also set, read by no workflow: PONZU_POSTHOG_KEY)",
+        says: "9 of the 12 repository variables the workflows read are not set: API_DEPLOY, API_DEPLOY_PRODUCTION, NEON_PROJECT_ID, PONZU_APP_POSTHOG_CLI_PROJECT_ID, PONZU_APP_POSTHOG_HOST, PONZU_APP_POSTHOG_KEY, PONZU_APP_POSTHOG_REPLAY, RELEASES_HELD and VERCEL_API_PROD_PROJECT_ID (also set, not in infra/github/repo.json: PONZU_POSTHOG_KEY)",
         fix: "gh variable set <NAME> --repo north-brook/ponzu (docs/production.md › Env and secrets; production's are founder step D12)",
       },
       {
@@ -401,7 +401,14 @@ const GH = "gh-token-0123456789abcdef";
 const RELEASE = "release-token-0123456789abcdef";
 
 /** A GitHub that answers from the recorded fixture, and remembers every request. */
-function fakeGithub(opts: { variables?: string[]; app?: boolean } = {}) {
+function fakeGithub(
+  opts: {
+    variables?: string[];
+    app?: boolean;
+    refuseEnvironments?: boolean;
+    rateLimit?: number;
+  } = {},
+) {
   const answers = recorded();
   const requests: { method: string; url: string; auth: string | null }[] = [];
   const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -425,6 +432,7 @@ function fakeGithub(opts: { variables?: string[]; app?: boolean } = {}) {
         : json({ ...answers.app, id: 1, node_id: "x" });
     }
     if (path === "/rate_limit") {
+      if (opts.rateLimit) return json({ message: `blocked ${RELEASE}` }, opts.rateLimit);
       return headers.get("authorization") === `token ${RELEASE}`
         ? json({ resources: {} }, 200, {
             "github-authentication-token-expiration": "2027-01-31 08:00:00 UTC",
@@ -432,6 +440,9 @@ function fakeGithub(opts: { variables?: string[]; app?: boolean } = {}) {
         : json({ message: "Bad credentials" }, 401);
     }
     const repo = "/repos/north-brook/ponzu";
+    if (opts.refuseEnvironments && path.startsWith(`${repo}/environments`)) {
+      return json({ message: `Resource not accessible by integration ${GH}` }, 403);
+    }
     if (path === repo) return json({ ...answers.repository, id: 1, name: "ponzu" });
     if (path === `${repo}/rulesets`) return json(page === 1 ? [{ id: 25478973 }] : []);
     if (path === `${repo}/rulesets/25478973`) return json(answers.rulesets[0]);
@@ -531,6 +542,40 @@ describe("fetchGithub", () => {
     const gh = fakeGithub({ app: false });
     const got = await fetchGithub(ctx(gh.fetch, {}), desired("dev"));
     expect(got.answers.app).toBeNull();
+  });
+
+  test("a token that may not read the environments is one failing line; the App is still judged", async () => {
+    const gh = fakeGithub({ refuseEnvironments: true });
+    const got = await fetchGithub(ctx(gh.fetch, { GH_TOKEN: GH }), desired("dev"));
+    expect(got.repositoryError).toMatch(
+      /^GitHub answered 403 for the environments \(the token needs/,
+    );
+    expect(got.repositoryError).not.toContain(GH);
+    const lines = evaluateGithub(desired("dev"), got);
+    expect(statuses(lines)).toEqual([
+      "ok github.app",
+      "ok github.app.permissions",
+      "ok github.app.events",
+      "ok github.app.homepage",
+      "fail github.repository",
+      "skipped github.release-token",
+    ]);
+    expect(JSON.stringify(lines)).not.toContain(GH);
+  });
+
+  test("a RELEASE_TOKEN GitHub turns away with a 403 fails its own line, not the section", async () => {
+    const gh = fakeGithub({ rateLimit: 403 });
+    const got = await fetchGithub(ctx(gh.fetch, { RELEASE_TOKEN: RELEASE }), desired("dev"));
+    expect(got.releaseToken).toEqual({ status: 403, expiresAt: null });
+    const lines = byId(evaluateGithub(desired("dev"), got));
+    expect(lines["github.app"]?.status).toBe("ok");
+    expect(lines["github.release-token"]).toEqual({
+      id: "github.release-token",
+      area: "github",
+      status: "fail",
+      says: "GitHub answered 403 for RELEASE_TOKEN, so its expiry could not be read",
+      fix: "make a new token, set it as the repository secret RELEASE_TOKEN, and note its expiry",
+    });
   });
 
   test("an error says GitHub's status and never the token", async () => {

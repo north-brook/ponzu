@@ -22,7 +22,14 @@
 import { Octokit } from "@octokit/core";
 import { z } from "zod";
 import type { EnvironmentName, GithubAppManifest, Infra, Ruleset } from "../desired.ts";
-import { type CheckContext, type Finding, findings, list, type Section } from "./finding.ts";
+import {
+  type CheckContext,
+  describeError,
+  type Finding,
+  findings,
+  list,
+  type Section,
+} from "./finding.ts";
 
 /** A token that expires sooner than this fails, so it is renewed before Release Please stops. */
 export const RELEASE_TOKEN_WARN_DAYS = 30;
@@ -145,6 +152,12 @@ export interface GithubObserved {
    * its answer carried (`null`: the token never expires).
    */
   releaseToken: null | { status: number; expiresAt: string | null };
+  /**
+   * Why the repository could not be read with the token (GitHub's status and what the token
+   * needs, never the token), so one refused read is one failing line and the App's lines, which
+   * need no token, are still judged. Absent or `null`: read, or no token to read with.
+   */
+  repositoryError?: string | null;
 }
 
 export const EMPTY_ANSWERS: GithubAnswers = {
@@ -241,16 +254,26 @@ export async function fetchGithub(
   const token = ctx.credentials.GH_TOKEN ?? ctx.credentials.GITHUB_TOKEN;
   const [app, repo, releaseToken] = await Promise.all([
     desired.appSlug ? readApp(ctx, desired.appSlug) : Promise.resolve(null),
-    token ? readRepository(ctx, token, desired.repository) : Promise.resolve(null),
+    token
+      ? readRepository(ctx, token, desired.repository).catch((error: unknown) =>
+          error instanceof Error ? error : new Error(String(error)),
+        )
+      : Promise.resolve(null),
     ctx.credentials.RELEASE_TOKEN
       ? readTokenExpiry(ctx, ctx.credentials.RELEASE_TOKEN)
       : Promise.resolve(null),
   ]);
+  const repositoryError = repo instanceof Error ? describeError(repo) : null;
   return {
     checkedAt,
     token: !!token,
-    answers: GithubAnswers.parse({ ...EMPTY_ANSWERS, ...repo, app }),
+    answers: GithubAnswers.parse({
+      ...EMPTY_ANSWERS,
+      ...(repo instanceof Error ? {} : repo),
+      app,
+    }),
     releaseToken,
+    repositoryError,
   };
 }
 
@@ -394,8 +417,10 @@ async function readTokenExpiry(
     const raw = headers["github-authentication-token-expiration"];
     return { status, expiresAt: typeof raw === "string" ? parseExpiry(raw) : null };
   } catch (error) {
+    // Any answer GitHub gives is judged on the token's own line (401: refused; anything else:
+    // unreadable), so a token GitHub turns away never takes the App's lines down with it.
     const status = githubStatus(error);
-    if (status === 401) return { status, expiresAt: null };
+    if (status !== null) return { status, expiresAt: null };
     throw plainError(error, "RELEASE_TOKEN");
   }
 }
@@ -427,6 +452,14 @@ export function evaluateGithub(desired: GithubDesired, observed: GithubObserved)
         "credentials",
         "skipped (no GH_TOKEN, no GITHUB_TOKEN): the repository's merge settings, rulesets, environments, variables and secrets",
         "GH_TOKEN=$(gh auth token) bun scripts/prod/check.ts …, as a repository admin",
+      ),
+    );
+  } else if (observed.repositoryError) {
+    out.push(
+      f.fail(
+        "repository",
+        `the repository could not be read: ${observed.repositoryError}`,
+        "GH_TOKEN=$(gh auth token) as a repository admin, or a fine-grained token with Administration, Environments, Secrets and Variables read",
       ),
     );
   } else {
@@ -691,7 +724,7 @@ function evaluateNames(
 ): Finding {
   const missing = want.filter((name) => !got.includes(name));
   const extra = got.filter((name) => !want.includes(name)).sort();
-  const also = extra.length ? ` (also set, read by no workflow: ${list(extra)})` : "";
+  const also = extra.length ? ` (also set, not in infra/github/repo.json: ${list(extra)})` : "";
   return missing.length
     ? f.pending(
         what,
@@ -719,6 +752,13 @@ function evaluateReleaseToken(observed: GithubObserved): Finding {
     return f.fail(
       "release-token",
       "GitHub refuses RELEASE_TOKEN: it has expired or was revoked",
+      renew,
+    );
+  }
+  if (token.status < 200 || token.status >= 300) {
+    return f.fail(
+      "release-token",
+      `GitHub answered ${token.status} for RELEASE_TOKEN, so its expiry could not be read`,
       renew,
     );
   }
