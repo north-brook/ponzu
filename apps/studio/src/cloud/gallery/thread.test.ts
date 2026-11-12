@@ -599,6 +599,23 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await page.$('[aria-expanded][data-slot^="trace"]')).toBeNull();
   });
 
+  test("a canvas whose model gave way says so in its thread, whole, before the turn that ran on the new one", async () => {
+    await open("thread-model-changed");
+    const line =
+      "Maya's Claude doesn't offer Fable 5.2 any more, so this canvas now runs on Opus 5.5.";
+    const notes = await page.$$eval(`${log} [role="note"]`, (els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        const rail = el.closest('[role="log"]')!.getBoundingClientRect();
+        return { text: el.textContent, inside: box.left >= rail.left && box.right <= rail.right };
+      }),
+    );
+    // Said once, in full (it wraps; it is never cut short), and inside the rail.
+    expect(notes).toEqual([{ text: line, inside: true }]);
+    const text = await page.$eval(log, (el) => el.textContent ?? "");
+    expect(text.indexOf(line)).toBeLessThan(text.indexOf("Done: the cards are one size now"));
+  });
+
   test("a running turn's asides: italic, quieter than the answer, close together, Markdown intact", async () => {
     await open("turn-running");
     const asides = await page.$$eval(`${log} > [data-aside]`, (els) =>

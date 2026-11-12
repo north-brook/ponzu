@@ -154,7 +154,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard
           card={card}
           cardComplete
@@ -172,7 +172,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard={false}
           card={card}
           cardComplete={false}
@@ -190,7 +190,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <FreeCreditsDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canAddCard
           card={card}
           cardComplete
@@ -208,7 +208,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <CapReachedDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canRaise
           capUsd={500}
           billedUsd={500}
@@ -226,7 +226,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
         <CapReachedDialog
           open={open}
           onDismiss={dismiss}
-          workspaceName={f.northbrook.name}
+          workspaceName={f.thistlewick.name}
           canRaise={false}
           capUsd={500}
           billedUsd={500}
