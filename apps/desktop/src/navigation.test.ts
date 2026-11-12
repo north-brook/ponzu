@@ -62,7 +62,8 @@ test("the policy lets the studio script only itself, and reach only its environm
   expect(policy["base-uri"]).toEqual(["'none'"]);
   expect(policy["form-action"]).toEqual(["'none'"]);
   const connect = policy["connect-src"]!;
-  expect(connect).toContain("https://api.ponzu.design");
+  expect(connect).toContain("https://api-dev.ponzu.design");
+  expect(connect).not.toContain("https://api.ponzu.design");
   expect(connect.filter((source) => source.endsWith(".neon.tech"))).toHaveLength(2);
   // Exact hosts: no other Neon project, R2 bucket or ponzu.cloud host is a place to send things.
   expect(connect.join(" ")).not.toContain("*");
@@ -82,7 +83,7 @@ test("a development build's policy reaches any environment's realtime and files"
 test("a packaged build talks to Ponzu Cloud whatever its environment says", () => {
   const env = { PONZU_API_URL: "https://evil.example", PONZU_STUDIO_URL: "http://localhost:5173" };
   expect(configFor(true, env, built())).toMatchObject({
-    apiUrl: "https://api.ponzu.design",
+    apiUrl: "https://api-dev.ponzu.design",
     studioDevUrl: null,
     linkScheme: "ponzu",
   });
@@ -93,7 +94,7 @@ test("a packaged build talks to Ponzu Cloud whatever its environment says", () =
   });
   // Plain http goes nowhere but this computer.
   expect(configFor(false, { PONZU_API_URL: "http://api.example" }, built()).apiUrl).toBe(
-    "https://api.ponzu.design",
+    "https://api-dev.ponzu.design",
   );
 });
 

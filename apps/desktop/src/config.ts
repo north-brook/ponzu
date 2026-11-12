@@ -130,7 +130,7 @@ export interface EnvironmentsFile {
 
 /**
  * The environment a build of `of` bakes in: a release takes the one the file's `release` names
- * (dev until the cutover PR flips it), Ponzu Dev always takes dev's. A field that is still
+ * (production), Ponzu Dev always takes dev's. A field that is still
  * `null` (not created yet) fails the build, one line a field, so no build goes out half pointed
  * somewhere. The fields the app never reads (buckets, the Neon branch, the Vercel project) are
  * release.yml's to check (`desired.ts assert-release production`), not the build's.

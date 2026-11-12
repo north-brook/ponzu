@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { FakeClock, FakeSandboxes, type Sandboxes } from "../../../packages/sandbox/src/index.ts";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import { deepDesired, evaluateDeep, fetchDeep, type MakeSandboxes } from "./deep.ts";
 import type { CheckContext } from "./finding.ts";
 
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 
 function context(env: "dev" | "production"): CheckContext {
   return {

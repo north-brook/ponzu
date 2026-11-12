@@ -27,17 +27,17 @@ function io(
   };
 }
 
-/** ponzu-api-prod after D2, its variables kept as a fake Vercel would keep them. */
+/** ponzu-api, its Production variables kept as a fake Vercel would keep them. */
 function prodVercel(envs: Record<string, unknown>[] = []): Routes {
   return {
-    "GET /v9/projects/ponzu-api-prod": () => ({
+    "GET /v9/projects/ponzu-api": () => ({
       ...project,
-      name: "ponzu-api-prod",
+      name: "ponzu-api",
       id: "prj_prod",
       env: envs,
     }),
-    "GET /v10/projects/ponzu-api-prod/env": () => ({ envs }),
-    "POST /v10/projects/ponzu-api-prod/env": (s: { body: Record<string, unknown>[] }) => {
+    "GET /v10/projects/ponzu-api/env": () => ({ envs }),
+    "POST /v10/projects/ponzu-api/env": (s: { body: Record<string, unknown>[] }) => {
       for (const e of s.body)
         envs.push({ ...e, id: `env_${envs.length}`, value: e.type === "plain" ? e.value : "" });
       return { created: [] };
@@ -126,7 +126,7 @@ describe("without --yes", () => {
       "Ponzu production: apply vercel-env (dry run: nothing is changed; --yes applies)",
     );
     expect(out.lines).toContain(
-      "     POST https://api.vercel.com/v10/projects/ponzu-api-prod/env?slug=northbrook",
+      "     POST https://api.vercel.com/v10/projects/ponzu-api/env?slug=northbrook",
     );
     expect(out.lines).toContain('          "key": "PONZU_ENVIRONMENT",');
     expect(out.lines.at(-1)).toBe("1 change; nothing was changed. Run again with --yes to apply.");
@@ -259,7 +259,7 @@ describe("secrets generate --yes", () => {
     let quoted = "";
     const net = fakeNetwork({
       ...prodVercel(),
-      "POST /v10/projects/ponzu-api-prod/env": (s: { body: { value: string }[] }) => {
+      "POST /v10/projects/ponzu-api/env": (s: { body: { value: string }[] }) => {
         quoted = s.body[0]!.value;
         throw new Error(`refused ${quoted}`);
       },

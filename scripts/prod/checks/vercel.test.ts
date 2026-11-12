@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FORBIDDEN_ENV, OPTIONAL_ENV, REQUIRED_ENV } from "../../../apps/api/src/env.ts";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
   evaluateVercel,
@@ -16,7 +16,7 @@ import {
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "vercel");
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const desired = (env: "dev" | "production") => vercelDesired({ env, infra });
 const recorded = () =>
   observeVercel(

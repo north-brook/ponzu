@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Vercel } from "@vercel/sdk";
 import { HTTPClient } from "@vercel/sdk/lib/http.js";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import {
   applyContext,
   asSeen,
@@ -30,7 +30,7 @@ import {
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures", "vercel");
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"));
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const TOKEN = "vercel-test-token-0123456789";
 const API = "https://api.vercel.com";
 

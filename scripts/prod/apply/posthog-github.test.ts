@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import { planRulesets, rulesetsArea } from "./github.ts";
 import { planPosthog, posthogArea } from "./posthog.ts";
 import { applyContext, asSeen, fakeNetwork, Reply, type Routes, written } from "./testing.ts";
 
 const FIXTURES = join(import.meta.dir, "..", "fixtures");
 const fixture = (path: string) => JSON.parse(readFileSync(join(FIXTURES, path), "utf8"));
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 
 describe("apply posthog", () => {
   const KEY = "phx_posthog-test-key-0123456789";
