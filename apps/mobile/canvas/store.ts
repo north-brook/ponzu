@@ -25,6 +25,8 @@ export interface CanvasState {
   /** The boards the agent works on, as the app said; null until it says (presence rings until then). */
   working: string[] | null;
   pending: PendingPin | null;
+  /** The Comment button was pressed: the next tap off a pin drops a comment's pin. */
+  commenting: boolean;
   unsent: (PendingPin & { key: string })[];
   /** Threads with a reply left unsent. */
   writing: string[];
@@ -56,6 +58,7 @@ export let state: CanvasState = {
   presence: [],
   working: null,
   pending: null,
+  commenting: false,
   unsent: [],
   writing: [],
   moving: null,
@@ -146,6 +149,9 @@ export function receive(msg: ToCanvas) {
       break;
     case "pending":
       set({ pending: msg.pin });
+      break;
+    case "commenting":
+      set({ commenting: msg.on });
       break;
     case "unsent":
       set({ unsent: msg.pins, writing: msg.threads ?? [] });

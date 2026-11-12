@@ -199,8 +199,8 @@ something to draw.
 
 A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
 and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
-`message`. Read only for now: comments, the chat sheet and the pull request
-sheet come with their own slices.
+`message`. Comments work (below); the chat sheet and the pull request sheet
+come with their own slices.
 
 - **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
   opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
@@ -230,8 +230,9 @@ sheet come with their own slices.
   the pages' native menu, and the floating stack bottom right: the pull
   request (once there is one), Comment, and Chat (the shared `railSignal`: the
   needs-you count, else the turning slice while the agent wakes or works).
-  Their sheets aren't built yet, so the three are shown and unavailable. A
-  double-tapped board has the screen and the chrome steps aside.
+  The chat and pull request sheets aren't built yet, so those two are shown
+  and unavailable. A double-tapped board has the screen and the chrome steps
+  aside.
 - **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
   `CloudSource` and the client's fake backend, with a stand-in page that
   applies what it's sent as the real one does. `canvas/page.webkit.test.ts`
@@ -240,6 +241,51 @@ sheet come with their own slices.
   board and refuses an injected script. `rntests/canvas-stack.rntest.tsx`
   covers the stack's states. A WebContent kill on a simulator, and the canvas
   on a phone, are proven only on the job runner or a device.
+
+### Comments
+
+Comments are left where they're about (iPhone design §8). Hold on the canvas,
+or press Comment and then tap (the page drops the pin where the tap lands,
+`commenting` in `canvas/protocol.ts`), and the comment field floats up, in
+voice or typing as last used. A pin opens its thread's sheet: the messages
+under their authors' names, a reply field, and Resolve or Reopen. A held
+unsent pin offers Open, Move and Discard draft.
+
+- **One op each, through the replica.** `lib/canvas/comments.ts` makes
+  `thread.create`, `thread.message` (with `thread.update` to open a resolved
+  thread again) and `thread.update`, and `commit` applies each with
+  `source.apply()`: it is on the canvas at once, and `commit` answers once the
+  API has it, or rejects with the API's words once it never will. The person
+  is stamped from the session (`lib/canvas/actor.ts`); the API stamps it
+  again. There is no "writing" signal to send: the cloud has none.
+- **Drafts are on disk** (`lib/drafts.ts`, AsyncStorage `ponzu.drafts.<canvasId>`).
+  Words stay in their draft until the API has them, not just until Send:
+  sent words carry the id they were sent as (`sending`), so after the app was
+  killed in between, the next open drops the draft if the API's canvas has
+  that thread or message and keeps it, as an unsent pin, if not. Only the
+  API's own doc settles drafts, never the cached copy. Signing out clears
+  them with every other `ponzu.*` key.
+- **Refused**, the words come back in the field with the API's reason under
+  it (or, if something else is open by then, the pin stays unsent and the
+  reason shows under the title). **Offline**, a comment is still applied and
+  waits; the title says "Saved here. Ponzu sends it when you're back online."
+  until it lands. Leaving the canvas or the app being killed before then
+  loses the op but not the draft.
+- **Read only.** On a canvas the person may only look at (no push access, or
+  the last copy shown offline before the canvas opened), Comment is
+  unavailable and VoiceOver says why ("You can look at this canvas. Steering
+  it takes push access to <repo>."), a hold does nothing, and a thread's sheet
+  shows that line in place of its reply field, with Resolve unavailable.
+- **Proofs.** `bun test apps/mobile/lib/canvas/comments.test.ts` runs each op
+  over the real `CloudSource` and the fake backend (shown at once, refused,
+  read only, offline then landed, a reply reopening) and the drafts over a
+  storage that outlives the app (killed before and after the API took it).
+  `rntests/comments.rntest.tsx` renders the canvas screen against the fake
+  with a stand-in web view: Comment, a tap, Send puts the op on the page at
+  once; a refused one comes back with its words; a read-only canvas disables
+  Comment. `canvas/page.webkit.test.ts` checks a tap after Comment drops a
+  pin in WebKit. `maestro/comment.yaml` and `comment-modes.yaml` run the
+  flows on a simulator, on spare only.
 
 ## Variants
 

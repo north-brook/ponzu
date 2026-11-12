@@ -550,8 +550,25 @@ export function PhoneCanvas() {
     setHeld(null);
   }, [s.place]);
 
+  /** A comment starts at `p`, on the layer under it: a hold, or a tap after the Comment button. */
+  const dropPin = (p: Point) => {
+    if (!page) return;
+    const hit = hitTest(p);
+    const at = threadPoint(camRef.current, p.x, p.y, hit?.box);
+    send({
+      t: "longpress",
+      pageId: page.id,
+      ...(hit ? { artboardId: hit.box.id } : {}),
+      ...onNode(hit, at),
+      ...at,
+    });
+  };
+  const commenting = s.commenting;
+
   // Gestures read the latest render through a ref: one listener for the canvas's life.
   const latest = useRef({
+    commenting,
+    dropPin,
     held,
     pinsAt,
     unsentAt,
@@ -568,6 +585,8 @@ export function PhoneCanvas() {
     stop,
   });
   latest.current = {
+    commenting,
+    dropPin,
     held,
     pinsAt,
     unsentAt,
@@ -712,11 +731,13 @@ export function PhoneCanvas() {
         coast(v, box, from);
       },
       tap(p) {
-        const { held, pinsAt, unsentAt } = latest.current;
+        const { held, pinsAt, unsentAt, commenting, dropPin } = latest.current;
         // Moving a pin, only the design moves.
         if (held) return;
         const unsentPins = unsentAt(camRef.current);
         const hit = nearestPin([...pinsAt(camRef.current), ...unsentPins], p);
+        // After the Comment button, a tap off a pin drops a comment's pin there.
+        if (!hit && commenting) return dropPin(p);
         send(
           !hit
             ? { t: "tap" }
@@ -731,7 +752,7 @@ export function PhoneCanvas() {
         if (id) focus(id);
       },
       longPress(p) {
-        const { held, hitTest, onNode, page, unsentAt } = latest.current;
+        const { held, page, unsentAt, dropPin } = latest.current;
         if (!page || held) return;
         // An unsent comment's pin: the app offers to open, move or discard it.
         const unsent = nearestPin(unsentAt(camRef.current), p);
@@ -739,15 +760,7 @@ export function PhoneCanvas() {
           send({ t: "holdUnsent", key: unsent.id });
           return;
         }
-        const hit = hitTest(p);
-        const at = threadPoint(camRef.current, p.x, p.y, hit?.box);
-        send({
-          t: "longpress",
-          pageId: page.id,
-          ...(hit ? { artboardId: hit.box.id } : {}),
-          ...onNode(hit, at),
-          ...at,
-        });
+        dropPin(p);
       },
     });
     const points = (list: TouchList) =>

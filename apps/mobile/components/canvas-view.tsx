@@ -65,6 +65,8 @@ export const CanvasView = forwardRef<
     /** How far a sheet over the canvas rises, px from the bottom. */
     sheet: number;
     pending: PendingPin | null;
+    /** The Comment button was pressed: the next tap off a pin drops a comment's pin. */
+    commenting?: boolean;
     /** New comments left unsent, by their draft's key: their pins stay, to tap. */
     unsent: (PendingPin & { key: string })[];
     /** Threads with a reply left unsent. */
@@ -125,6 +127,7 @@ export const CanvasView = forwardRef<
       // The doc, who's here and the agent's boards: the bridge's, from the replica.
       ...p.bridge.all(),
       { t: "pending", pin: p.pending },
+      { t: "commenting", on: Boolean(p.commenting) },
       { t: "unsent", pins: p.unsent, threads: p.writing },
       { t: "thread", id: p.thread },
       { t: "move", key: p.moving ?? null },
@@ -157,6 +160,10 @@ export const CanvasView = forwardRef<
     ],
   );
   useEffect(() => send({ t: "pending", pin: props.pending }), [props.pending]);
+  useEffect(
+    () => send({ t: "commenting", on: Boolean(props.commenting) }),
+    [Boolean(props.commenting)],
+  );
   // By value: the list is made again on every change to the doc.
   const unsentKey = JSON.stringify([props.unsent, props.writing]);
   useEffect(() => send({ t: "unsent", pins: props.unsent, threads: props.writing }), [unsentKey]);

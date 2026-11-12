@@ -1,4 +1,4 @@
-import { type CanvasHeadRow, DocCache, type Profile } from "@ponzu/client";
+import { type CanvasHeadRow, DocCache } from "@ponzu/client";
 import { CloudSource } from "@ponzu/client/canvas";
 import { useSessionState } from "@ponzu/client/react";
 import type { Actor, CanvasState } from "@ponzu/core";
@@ -9,6 +9,7 @@ import { useLive } from "../cloud/canvases";
 import { DOC_CACHE_PATH, fileStorage } from "../cloud/files";
 import { phoneKeys } from "../cloud/persist";
 import { useCloud } from "../cloud/query";
+import { actorOf } from "./actor";
 import { CanvasBridge } from "./bridge";
 
 /*
@@ -20,15 +21,7 @@ import { CanvasBridge } from "./bridge";
 /** The last canvases opened, on disk for offline (8 of them); signing out clears the folder. */
 const docCache = new DocCache(fileStorage(...DOC_CACHE_PATH));
 
-/** The signed-in person as the API stamps their ops. */
-export function actorOf(person: Pick<Profile, "id" | "name" | "githubLogin" | "avatarUrl">): Actor {
-  return {
-    kind: "user",
-    id: person.id,
-    name: person.name ?? person.githubLogin,
-    ...(person.avatarUrl ? { avatarUrl: person.avatarUrl } : {}),
-  };
-}
+export { actorOf };
 
 const CONNECTING: CanvasState = {
   status: "connecting",
@@ -44,6 +37,8 @@ export interface OpenCanvas {
   source: CloudSource | null;
   bridge: CanvasBridge | null;
   state: CanvasState;
+  /** The person, as their ops and comments name them. Null until signed in and open. */
+  me: Actor | null;
 }
 
 /**
@@ -54,13 +49,17 @@ export function useCanvasSource(canvasId: string): OpenCanvas {
   const { live, userId } = useCloud();
   const session = useSessionState(backend.session);
   const person = session.status === "signed_in" ? session.user : null;
-  const [open, setOpen] = useState<{ source: CloudSource; bridge: CanvasBridge } | null>(null);
+  const [open, setOpen] = useState<{
+    source: CloudSource;
+    bridge: CanvasBridge;
+    me: Actor;
+  } | null>(null);
   useEffect(() => {
     if (!person || person.id !== userId) return;
     const me = actorOf(person);
     const source = new CloudSource({ api: backend.api, live, canvasId, me, cache: docCache });
     const bridge = new CanvasBridge(source, { canvasId, me });
-    setOpen({ source, bridge });
+    setOpen({ source, bridge, me });
     return () => {
       bridge.close();
       source.close();
@@ -73,7 +72,12 @@ export function useCanvasSource(canvasId: string): OpenCanvas {
     [open],
   );
   const state = useSyncExternalStore(subscribe, () => open?.source.getState() ?? CONNECTING);
-  return { source: open?.source ?? null, bridge: open?.bridge ?? null, state };
+  return {
+    source: open?.source ?? null,
+    bridge: open?.bridge ?? null,
+    state,
+    me: open?.me ?? null,
+  };
 }
 
 /** The canvas's head row, live: the agent, the pull request, needs you. */

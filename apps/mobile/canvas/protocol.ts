@@ -75,6 +75,11 @@ export type ToCanvas =
   /** The pin of a comment being written, or none. Its board comes into view. */
   | { t: "pending"; pin: PendingPin | null }
   /**
+   * The Comment button was pressed: while on, a tap on the canvas that isn't on a pin drops a
+   * comment's pin there, answered as `longpress` is. Off, a tap is a tap again.
+   */
+  | { t: "commenting"; on: boolean }
+  /**
    * New comments left unsent, by their draft's key: each keeps a pin, to tap and go on. `threads`
    * have a reply left unsent: their pins show a pencil for their count.
    */
@@ -120,8 +125,8 @@ export type FromCanvas =
   /** Listening: send the doc. */
   | { t: "ready" }
   /**
-   * A finger held still on the canvas for half a second: start a comment there. Coordinates are a
-   * Thread's: artboard px with `artboardId`, page px without.
+   * A finger held still on the canvas for half a second, or a tap while `commenting`: start a
+   * comment there. Coordinates are a Thread's: artboard px with `artboardId`, page px without.
    */
   | {
       t: "longpress";

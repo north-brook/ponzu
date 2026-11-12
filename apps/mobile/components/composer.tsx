@@ -120,9 +120,29 @@ export function Composer({
   /** Sent from a field that leaves: the microphone stops with the tap, not when the Mac answers. */
   const [gone, setGone] = useState(false);
   const [kept] = useState(() => (draft ? (getDraft(draft.key)?.text ?? "") : ""));
+  /**
+   * Words sent and not yet answered. Their draft keeps them until the send is (iPhone design
+   * §8: an app killed in between still has them), whatever the field shows meanwhile; what's
+   * typed after them is kept with them.
+   */
+  const inFlight = useRef<string | null>(null);
   const keep = (t: string) => {
-    if (draft)
-      setDraft(draft.key, { file: draft.file, thread: draft.thread, pin: draft.pin, text: t });
+    if (!draft) return;
+    const sending = getDraft(draft.key)?.sending;
+    const text = inFlight.current ? [inFlight.current, t.trim()].filter(Boolean).join(" ") : t;
+    setDraft(draft.key, {
+      file: draft.file,
+      thread: draft.thread,
+      pin: draft.pin,
+      text,
+      ...(sending ? { sending } : {}),
+    });
+  };
+  /** Sent and answered: the draft goes, and only what's been written since stays. */
+  const landed = (since: string) => {
+    if (!draft) return;
+    setDraft(draft.key, { file: draft.file, thread: draft.thread, pin: draft.pin, text: "" });
+    if (since) keep(since);
   };
   // Opened in voice, it goes on from what was said or typed before.
   const dictation = useDictation(voice && !gone, voice ? kept : "");
@@ -177,7 +197,8 @@ export function Composer({
     if (!has || sending) return;
     const words = text.trim();
     setSending(true);
-    // Something answers the tap at once, not when the Mac does: over the tailnet that's long
+    inFlight.current = words;
+    // Something answers the tap at once, not when Ponzu does: on a phone's network that's long
     // enough to read as a tap that didn't take. A field that leaves takes the words with it; a
     // reply's leave the field. A send that fails puts them back.
     if (leaves) setGone(true);
@@ -188,11 +209,17 @@ export function Composer({
     try {
       await onSend(words, mode);
       success();
+      inFlight.current = null;
       if (leaves) {
         setTyped("");
         dictation.setText("");
+        landed("");
+      } else {
+        const n = now.current;
+        landed((n.voice ? n.said : n.typed).trim());
       }
     } catch {
+      inFlight.current = null;
       // A field that leaves comes back with its words, listening again as it did when it opened.
       if (leaves) setGone(false);
       else {

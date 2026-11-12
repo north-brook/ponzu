@@ -13,9 +13,9 @@ import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
  * shows (the shared `railSignal`): the needs-you count on its top-right edge, else the turning
  * yuzu slice while the agent wakes or works, else its own mark.
  *
- * A button with nowhere to go yet (the comment composer, the chat and pull request sheets come
- * with their own slices) is shown and said to be unavailable, not hidden, so the stack never
- * jumps when they arrive.
+ * A button with nowhere to go (the chat and pull request sheets come with their own slices;
+ * Comment on a canvas the person may only look at) is shown and said to be unavailable, not
+ * hidden, so the stack never jumps.
  */
 export function CanvasStack({
   bottom,
@@ -25,6 +25,8 @@ export function CanvasStack({
   onPullRequest,
   onComment,
   onChat,
+  commenting = false,
+  commentHint = null,
 }: {
   /** From the screen's bottom and right edges. */
   bottom: number;
@@ -34,6 +36,10 @@ export function CanvasStack({
   onPullRequest?: () => void;
   onComment?: () => void;
   onChat?: () => void;
+  /** Comment was pressed and the pin isn't down yet: its glass is held. */
+  commenting?: boolean;
+  /** Why Comment is unavailable, for VoiceOver (the read-only line). */
+  commentHint?: string | null;
 }) {
   const { color } = useTheme();
   const needsYou = typeof chat === "object" ? chat.needsYou : 0;
@@ -55,7 +61,13 @@ export function CanvasStack({
           <PullRequestIcon color={color.ink} />
         </Control>
       )}
-      <Control testID="stack-comment" label="Comment" onPress={onComment}>
+      <Control
+        testID="stack-comment"
+        label="Comment"
+        onPress={onComment}
+        held={commenting}
+        hint={onComment ? undefined : (commentHint ?? undefined)}
+      >
         <CommentIcon color={color.ink} />
       </Control>
       <Control testID="stack-chat" label={chatLabel} onPress={onChat}>
@@ -103,15 +115,26 @@ function Control({
   testID,
   label,
   onPress,
+  held = false,
+  hint,
   children,
 }: {
   testID: string;
   label: string;
   onPress?: () => void;
+  held?: boolean;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
-    <BarButton testID={testID} label={label} onPress={onPress} disabled={!onPress}>
+    <BarButton
+      testID={testID}
+      label={label}
+      hint={hint}
+      held={held}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <View style={{ opacity: onPress ? 1 : 0.4 }}>{children}</View>
     </BarButton>
   );

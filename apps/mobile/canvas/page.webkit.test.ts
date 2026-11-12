@@ -231,6 +231,53 @@ describe.skipIf(!haveWebKit)("the canvas page in WebKit", () => {
     await page.close();
   }, 60_000);
 
+  test("after the Comment button, a tap drops a comment's pin; otherwise a tap is a tap", async () => {
+    const page = await open();
+    await post(page, {
+      t: "doc",
+      doc: fixture(),
+      assetBase: `${origin}/cnv_page/`,
+      theme: "light",
+      file: "cnv_page",
+    });
+    await waitForSent(page, "drawn");
+    const sentOf = (t: string) =>
+      page.evaluate(
+        (kind) =>
+          (window as unknown as { __sent: { t: string }[] }).__sent.filter((m) => m.t === kind),
+        t,
+      );
+    // The one board is framed in the middle of the screen.
+    await page.touchscreen.tap(201, 437);
+    await waitForSent(page, "tap");
+    expect(await sentOf("longpress")).toEqual([]);
+
+    await post(page, { t: "commenting", on: true });
+    // Drawn with it (two frames: the store's render, then the gestures' reading of it).
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => done())),
+        ),
+    );
+    // Well away from the first tap, so the two are never one double tap.
+    await page.touchscreen.tap(150, 380);
+    await waitForSent(page, "longpress");
+    const [spot] = (await sentOf("longpress")) as unknown as {
+      pageId: string;
+      artboardId?: string;
+      x: number;
+      y: number;
+    }[];
+    expect(spot).toMatchObject({ pageId: "pg_home", artboardId: "ab_home" });
+    // A Thread's place: inside the board, in its own px.
+    expect(spot!.x).toBeGreaterThan(0);
+    expect(spot!.x).toBeLessThan(390);
+    expect(spot!.y).toBeGreaterThan(0);
+    expect(spot!.y).toBeLessThan(600);
+    await page.close();
+  }, 60_000);
+
   test("a working board has its ring and no rain, on a pure white ground", async () => {
     const page = await open();
     await post(page, {

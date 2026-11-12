@@ -17,6 +17,7 @@ export function BarButton({
   onPress,
   children,
   label,
+  hint,
   held = false,
   shown = true,
   disabled = false,
@@ -26,6 +27,8 @@ export function BarButton({
   onPress?: () => void;
   children: ReactNode;
   label: string;
+  /** What VoiceOver adds after the label: why it's unavailable, say. */
+  hint?: string;
   /** Not available now: it takes no touch, and VoiceOver says so. */
   disabled?: boolean;
   /** Held open: the glass a step darker. */
@@ -41,7 +44,8 @@ export function BarButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityHint={hint}
+      accessibilityState={{ disabled, selected: held }}
       hitSlop={6}
       testID={testID}
     >

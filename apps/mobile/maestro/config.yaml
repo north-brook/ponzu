@@ -7,3 +7,5 @@ executionOrder:
     - launch
     - sign-in
     - canvas
+    - comment
+    - comment-modes

@@ -1,9 +1,11 @@
-import { linkTarget } from "@ponzu/core";
+import { linkTarget, type Thread } from "@ponzu/core";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { onlineManager } from "@tanstack/react-query";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, Text, View } from "react-native";
+import { AppState, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,13 +18,37 @@ import { CanvasPlaceholder } from "../../components/canvas-placeholder";
 import { CanvasStack } from "../../components/canvas-stack";
 import { type CanvasHandle, CanvasView } from "../../components/canvas-view";
 import { BarButton } from "../../components/chrome";
+import { Composer, initialMode, type Mode } from "../../components/composer";
+import { DraftSheet } from "../../components/draft-sheet";
 import { Glass, GlassGroup } from "../../components/glass";
 import { Back, PageIcon } from "../../components/icons";
+import { CanvasHint, MoveBar } from "../../components/move-bar";
+import { Sheet } from "../../components/sheet";
 import { Shimmer } from "../../components/shimmer";
+import { ThreadSheet } from "../../components/thread-sheet";
+import {
+  COMMENT_WORDS,
+  commit,
+  newThreadOp,
+  readOnlyLine,
+  refusalWords,
+  replyOp,
+  type Spot,
+  statusOp,
+} from "../../lib/canvas/comments";
 import { canvasStatus, previewUrl } from "../../lib/canvas/status";
 import { useCanvasHead, useCanvasSource, useCanvasView } from "../../lib/canvas/use-canvas";
 import { backend } from "../../lib/cloud/backend";
-import { select, tick } from "../../lib/haptics";
+import {
+  draftKey,
+  drafts,
+  getDraft,
+  moveDraft,
+  setDraft,
+  unsent,
+  useDrafts,
+} from "../../lib/drafts";
+import { select, success, thud, tick } from "../../lib/haptics";
 import { pageIconImage } from "../../lib/page-icons";
 import { Juice } from "../../lib/slice";
 import { useTheme } from "../../lib/theme";
@@ -32,7 +58,9 @@ import { useWindowInsets } from "../../lib/window-insets";
 const ease = Easing.bezier(...EASE_OUT);
 /** The canvas's bar: 6pt above and below its 44pt controls. */
 const BAR = 56;
-const NO_PINS: never[] = [];
+
+// Unsent words are kept on disk, so an app iOS evicted or killed still has them (lib/drafts.ts).
+drafts.setStorage(AsyncStorage);
 
 /** Back where the canvas was opened from; opened by a link with nothing behind it, the list. */
 function leave() {
@@ -41,13 +69,18 @@ function leave() {
 }
 
 /**
- * A canvas, live and read only (iPhone design §7): its boards drawn in the web view from the
- * replica on this side (CloudSource, lib/canvas/use-canvas.ts, through lib/canvas/bridge.ts),
- * with the app's chrome over it: Back, the canvas's name in the middle (shimmering while the
- * agent wakes or works), the page button with the pages' native menu, and the floating stack
- * (pull request, Comment, Chat). Double-tap a board to focus it, and the chrome steps aside;
- * pan and pinch as on the Mac. Comments, the chat and the pull request sheets come with their
- * own slices; until then their buttons are shown and unavailable.
+ * A canvas, live (iPhone design §7 and §8): its boards drawn in the web view from the replica on
+ * this side (CloudSource, lib/canvas/use-canvas.ts, through lib/canvas/bridge.ts), with the app's
+ * chrome over it: Back, the canvas's name in the middle (shimmering while the agent wakes or
+ * works), the page button with the pages' native menu, and the floating stack (pull request,
+ * Comment, Chat). Double-tap a board to focus it, and the chrome steps aside; pan and pinch as
+ * on the Mac.
+ *
+ * Comments are left where they're about: hold on the canvas, or press Comment and tap, and the
+ * field floats up, typed or said. A pin opens its thread, to read, reply, resolve or reopen.
+ * Each is one op through the replica (lib/canvas/comments.ts): on the canvas at once, its words
+ * kept in their draft (lib/drafts.ts, on disk) until the API has them. The chat and pull
+ * request sheets come with their own slices; until then their buttons are shown and unavailable.
  *
  * Opened from a row, a link or a push: `page` and `artboard` say where to open (a board on its
  * page, or a page, as @ponzu/core's `linkTarget` reads them).
@@ -68,12 +101,42 @@ export default function CanvasScreen() {
   // The window's, the rail at the side included.
   const windowInsets = useWindowInsets();
   const insets = { ...safe, left: windowInsets.left, right: windowInsets.right };
-  const { source, bridge, state } = useCanvasSource(canvasId);
+  const { width } = useWindowDimensions();
+  const { source, bridge, state, me } = useCanvasSource(canvasId);
   const head = useCanvasHead(canvasId);
   const view = useCanvasView(canvasId);
   const doc = state.doc;
   const status = canvasStatus(head, state);
   const canvas = useRef<CanvasHandle>(null);
+  /**
+   * The person may comment: the API said they can push to its repo, and it is open (not the last
+   * copy shown offline, not gone). Offline after it opened, a comment still goes, and waits.
+   */
+  const writable = Boolean(source?.writable) && state.status !== "error";
+  const readOnly = readOnlyLine({
+    writable,
+    status: state.status,
+    hasDoc: Boolean(doc),
+    repo: view.data?.repo?.fullName,
+  });
+  const writableRef = useRef(writable);
+  writableRef.current = writable;
+
+  // Unsent words from before, from disk; and those sent before the app last stopped that the
+  // API's canvas shows got there go (lib/drafts.ts `settle`). Only the API's own doc says so.
+  const [draftsIn, setDraftsIn] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void drafts.load(canvasId).then(() => {
+      if (live) setDraftsIn(canvasId);
+    });
+    return () => {
+      live = false;
+    };
+  }, [canvasId]);
+  useEffect(() => {
+    if (doc && state.status === "ready" && draftsIn === canvasId) drafts.settle(canvasId, doc);
+  }, [doc, state.status, canvasId, draftsIn]);
 
   // The page draws from the canvas's own files: known from the replica, or first from the view.
   const assetsUrl = source?.assetBase ?? view.data?.assetsUrl ?? null;
@@ -135,27 +198,259 @@ export default function CanvasScreen() {
   /** A pan or pinch on the focused board: the chrome is back while it lasts. */
   const [moving, setMoving] = useState(false);
   const wasFocused = useRef<string | null>(null);
-  const onMessage = useCallback((msg: FromCanvas) => {
-    switch (msg.t) {
-      case "page":
-        setPageId(msg.pageId);
-        break;
-      case "focused":
-        if (Boolean(msg.artboardId) !== Boolean(wasFocused.current)) tick();
-        wasFocused.current = msg.artboardId;
-        setFocusedBoard(msg.artboardId);
-        setMoving(false);
-        break;
-      case "gesture":
-        setMoving(true);
-        break;
-      case "drawn":
-        setDrawn(true);
-        break;
-    }
-  }, []);
 
-  const bare = Boolean(focusedBoard) && !moving;
+  /* Comments (iPhone design §8). */
+  /** Where a new comment is being written: the floating field is up. */
+  const [pending, setPending] = useState<Spot | null>(null);
+  /** The Comment button was pressed: the next tap on the canvas drops the pin. */
+  const [placing, setPlacing] = useState(false);
+  /** An unsent comment's pin, held: Open, Move and Discard draft, by its draft's key. */
+  const [holding, setHolding] = useState<string | null>(null);
+  /** An unsent comment's pin being moved, by its draft's key: it holds still, the canvas moves. */
+  const [movingDraft, setMovingDraft] = useState<string | null>(null);
+  /** A sent comment's field on its way out, and whose pin it was. */
+  const sent = useRef<{ pin: Spot } | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  /** The thread whose sheet is open; a link or a push may name one. */
+  const [threadId, setThreadId] = useState<string | null>(params.thread ?? null);
+  useEffect(() => {
+    if (params.thread) setThreadId(params.thread);
+  }, [params.thread]);
+  const [mode, setMode] = useState<Mode>(initialMode);
+  /** How far a sheet over the canvas rises: the pin it's about stays above it. */
+  const [sheet, setSheet] = useState(0);
+  /** Why the comment being written didn't go, under its field. */
+  const [error, setError] = useState<string | null>(null);
+  /** Why a reply, Resolve or Reopen didn't go, in the thread's sheet. */
+  const [note, setNote] = useState<string | null>(null);
+  /** Why something sent from a sheet that has since closed didn't go: under the title. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Comments, replies and resolves sent and not yet answered. */
+  const [waiting, setWaiting] = useState(0);
+  const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
+
+  /** A comment left unsent: its field comes back with its words, as a hold would bring it. */
+  const openDraft = (key: string) => {
+    const pin = getDraft(key)?.pin;
+    if (!pin || !writableRef.current) return;
+    tick();
+    setThreadId(null);
+    setPlacing(false);
+    setNotice(null);
+    sent.current = null;
+    setLeaving(false);
+    setError(null);
+    setPending(pin);
+  };
+  const openDraftRef = useRef(openDraft);
+  openDraftRef.current = openDraft;
+
+  const onMessage = useCallback(
+    (msg: FromCanvas) => {
+      switch (msg.t) {
+        case "longpress":
+          // Only on a canvas the person can steer; on one they can look at, a hold does nothing.
+          if (!writableRef.current) break;
+          // The pin is dropped: the field takes the screen, so a thread's sheet gives way.
+          tick();
+          setThreadId(null);
+          setHolding(null);
+          setPlacing(false);
+          setNotice(null);
+          // A sent comment's field still on its way out comes back up for this one.
+          sent.current = null;
+          setLeaving(false);
+          setError(null);
+          setPending({
+            pageId: msg.pageId,
+            ...(msg.artboardId ? { artboardId: msg.artboardId } : {}),
+            ...(msg.nodeId ? { nodeId: msg.nodeId } : {}),
+            ...(msg.offset ? { offset: msg.offset } : {}),
+            x: msg.x,
+            y: msg.y,
+          });
+          break;
+        case "tap":
+          // Writing, a tap on the canvas puts the keyboard down; the field rides it.
+          KeyboardController.dismiss().catch(() => {});
+          break;
+        case "openThread":
+          setPending(null);
+          setPlacing(false);
+          setNote(null);
+          setNotice(null);
+          setThreadId(msg.id);
+          break;
+        case "openUnsent":
+          openDraftRef.current(msg.key);
+          break;
+        case "holdUnsent":
+          // Its sheet takes the place of whatever was up, as a hold's field does.
+          tick();
+          setThreadId(null);
+          setPending(null);
+          setPlacing(false);
+          setHolding(msg.key);
+          break;
+        case "moved": {
+          // The draft's words go with its pin, kept under the key its new spot makes.
+          const to = {
+            pageId: msg.pageId,
+            ...(msg.artboardId ? { artboardId: msg.artboardId } : {}),
+            ...(msg.nodeId ? { nodeId: msg.nodeId } : {}),
+            ...(msg.nodeId && msg.offset ? { offset: msg.offset } : {}),
+            x: msg.x,
+            y: msg.y,
+          };
+          moveDraft(msg.key, draftKey.comment(canvasId, to), to);
+          break;
+        }
+        case "page":
+          setPageId(msg.pageId);
+          break;
+        case "focused":
+          if (Boolean(msg.artboardId) !== Boolean(wasFocused.current)) tick();
+          wasFocused.current = msg.artboardId;
+          setFocusedBoard(msg.artboardId);
+          setMoving(false);
+          break;
+        case "gesture":
+          setMoving(true);
+          break;
+        case "drawn":
+          setDrawn(true);
+          break;
+      }
+    },
+    [canvasId],
+  );
+
+  /** Sent, and answered: a refusal's words go where the person will see them. */
+  const track = async (sending: Promise<void>, refused: (words: string) => void) => {
+    setWaiting((n) => n + 1);
+    try {
+      await sending;
+    } catch (err) {
+      refused(refusalWords(err));
+      throw err;
+    } finally {
+      setWaiting((n) => n - 1);
+    }
+  };
+
+  /** The sent comment's field is off the screen: its pin goes, unless another was dropped since. */
+  const left = () => {
+    const pin = sent.current?.pin;
+    sent.current = null;
+    setLeaving(false);
+    setPending((p) => (p === pin ? null : p));
+    setSheet(0);
+  };
+  const createComment = async (text: string, _mode: Mode) => {
+    if (!source || !pending || !me) return;
+    const pin = pending;
+    const key = draftKey.comment(canvasId, pin);
+    const op = newThreadOp(pin, text, me);
+    // Its words stay in their draft until the API has them; the field leaves at once, and the
+    // comment is on the canvas the moment it's applied.
+    drafts.markSending(key, op.thread.id);
+    sent.current = { pin };
+    setError(null);
+    setLeaving(true);
+    await track(commit(source, op), (words) => {
+      drafts.markSending(key, undefined);
+      // The words come back where they were left: the field over its pin, unless something
+      // else is up by now, when the pin stays as an unsent comment and the title says why.
+      if (sent.current?.pin === pin) {
+        sent.current = null;
+        setLeaving(false);
+        setError(words);
+      } else if (!pendingRef.current && !threadRef.current) {
+        setPending(pin);
+        setError(words);
+      } else setNotice(words);
+    });
+  };
+  const reply = async (text: string, _mode: Mode) => {
+    if (!source || !thread || !me) return;
+    const key = draftKey.reply(canvasId, thread.id);
+    const { op, messageId } = replyOp(thread, text, me);
+    drafts.markSending(key, messageId);
+    setNote(null);
+    await track(commit(source, op), (words) => {
+      drafts.markSending(key, undefined);
+      if (threadRef.current?.id === thread.id) setNote(words);
+      else setNotice(words);
+    });
+  };
+  const setStatus = async (next: Thread["status"]) => {
+    if (!source || !thread) return;
+    const id = thread.id;
+    setNote(null);
+    const sending = commit(source, statusOp(id, next));
+    // Resolved, it's done with: the sheet closes as it's sent.
+    if (next === "resolved") {
+      success();
+      setThreadId(null);
+      setSheet(0);
+    }
+    await track(sending, (words) => {
+      if (threadRef.current?.id === id) setNote(words);
+      else setNotice(words);
+    });
+  };
+
+  // Unsent words for this canvas: the pins of new comments left unsent (but the one being
+  // written, and those on their way), and the threads with a reply being written.
+  const allDrafts = useDrafts();
+  const pinDraft = pending ? draftKey.comment(canvasId, pending) : undefined;
+  const unsentPins = useMemo(
+    () =>
+      page
+        ? allDrafts.flatMap(([key, d]) =>
+            d.file === canvasId &&
+            d.pin &&
+            unsent(d) &&
+            key !== pinDraft &&
+            !drafts.isSending(key) &&
+            (d.pin.artboardId
+              ? page.artboards.some((a) => a.id === d.pin!.artboardId)
+              : d.pin.pageId === page.id)
+              ? [{ key, ...d.pin }]
+              : [],
+          )
+        : [],
+    [allDrafts, page, pinDraft, canvasId],
+  );
+  const writingKey = useMemo(() => {
+    const ids = new Set(doc?.threads.map((t) => t.id));
+    return [
+      ...new Set(
+        allDrafts.flatMap(([, d]) =>
+          d.file === canvasId && d.thread && unsent(d) && ids.has(d.thread) ? [d.thread] : [],
+        ),
+      ),
+    ].join(" ");
+  }, [allDrafts, doc, canvasId]);
+  const writingIds = useMemo(() => (writingKey ? writingKey.split(" ") : []), [writingKey]);
+  // Another page: a pin being moved stays where it was.
+  useEffect(() => setMovingDraft(null), [page?.id]);
+  // No longer the person's to steer (a lost push access, the canvas gone): nothing half-written
+  // stays up. Its words stay in their draft.
+  useEffect(() => {
+    if (writable) return;
+    setPending(null);
+    setPlacing(false);
+    setHolding(null);
+    setMovingDraft(null);
+  }, [writable]);
+
+  // Writing or reading a comment keeps the chrome, focused board or not.
+  const bare = Boolean(focusedBoard) && !moving && !pending && !thread && !holding;
   const navigation = useNavigation();
   useEffect(() => {
     navigation.setOptions({ autoHideHomeIndicator: bare });
@@ -203,7 +498,11 @@ export default function CanvasScreen() {
   // The offline card over the placeholder says it while the canvas hasn't drawn; after, the
   // line under the title does.
   const placeholderLine = !drawn && status.mood === "offline" ? status.line : null;
-  const line = placeholderLine ? null : status.line;
+  // Under the title, most pressing first: a comment that didn't go, one waiting to, the canvas.
+  const queued = waiting > 0 && state.status === "offline" ? COMMENT_WORDS.queued : null;
+  const line = notice ?? queued ?? (placeholderLine ? null : status.line);
+  const sheetUp = Boolean(pending || thread || holding || movingDraft);
+  const foot = Math.max(insets.bottom, 16) + 8;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
       {bridge && assetsUrl && (
@@ -213,11 +512,13 @@ export default function CanvasScreen() {
           bridge={bridge}
           theme={scheme}
           insets={canvasInsets}
-          sheet={0}
-          pending={null}
-          unsent={NO_PINS}
-          writing={NO_PINS}
-          thread={null}
+          sheet={sheet}
+          pending={pending}
+          commenting={placing}
+          unsent={unsentPins}
+          writing={writingIds}
+          thread={threadId}
+          moving={movingDraft}
           page={shownPage}
           onMessage={onMessage}
         />
@@ -343,12 +644,129 @@ export default function CanvasScreen() {
           </View>
         )}
       </Animated.View>
-      {!bare && (
+      {!bare && !sheetUp && (
         <CanvasStack
-          bottom={Math.max(insets.bottom, 16) + 8}
+          bottom={foot}
           right={16 + insets.right}
           prNumber={head?.prNumber ?? null}
           chat={status.chat}
+          commenting={placing}
+          commentHint={readOnly}
+          onComment={
+            writable
+              ? () => {
+                  tick();
+                  setThreadId(null);
+                  setNotice(null);
+                  setPlacing((p) => !p);
+                }
+              : undefined
+          }
+        />
+      )}
+      {placing && !sheetUp && <CanvasHint text={COMMENT_WORDS.place} bottom={foot + 8} />}
+      {pending && (
+        <Sheet
+          testID="comment-sheet"
+          // No sheet: the field alone floats over the canvas, above the keyboard.
+          bare
+          right={insets.right}
+          onDismiss={() => {
+            setPending(null);
+            setError(null);
+            setSheet(0);
+          }}
+          onHeight={setSheet}
+          away={leaving}
+          onAway={left}
+        >
+          <Composer
+            mode={mode}
+            onMode={setMode}
+            placeholder="Comment"
+            onSend={createComment}
+            leaves
+            // One field per pin: a pin dropped while the last comment is still sending gets its
+            // own, which that send's answer can't empty.
+            key={pinDraft}
+            draft={{ key: pinDraft!, file: canvasId, pin: pending }}
+          />
+          {error && (
+            // On glass, as it floats over the canvas with the field.
+            <Glass
+              style={{
+                alignSelf: "flex-start",
+                borderRadius: 14,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}
+            >
+              <Text
+                testID="comment-error"
+                style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}
+              >
+                {error}
+              </Text>
+            </Glass>
+          )}
+        </Sheet>
+      )}
+      {holding &&
+        (() => {
+          const d = getDraft(holding);
+          if (!d) return null;
+          return (
+            <DraftSheet
+              text={d.text}
+              right={insets.right}
+              onOpen={() => {
+                setHolding(null);
+                openDraft(holding);
+              }}
+              onMove={() => {
+                select();
+                setHolding(null);
+                setMovingDraft(holding);
+              }}
+              onDiscard={() => {
+                thud();
+                setDraft(holding, { ...d, text: "" });
+                setHolding(null);
+              }}
+              onDismiss={() => setHolding(null)}
+            />
+          );
+        })()}
+      {movingDraft && (
+        <MoveBar
+          key={movingDraft}
+          bottom={Math.max(34, insets.bottom)}
+          left={0}
+          width={width - insets.right}
+          onDone={() => {
+            tick();
+            canvas.current?.post({ t: "place" });
+            setMovingDraft(null);
+          }}
+        />
+      )}
+      {thread && !pending && (
+        <ThreadSheet
+          key={thread.id}
+          right={insets.right}
+          thread={thread}
+          me={me ?? { id: "", name: "" }}
+          file={canvasId}
+          onReply={reply}
+          onStatus={setStatus}
+          readOnly={readOnly}
+          note={note ?? queued}
+          onDismiss={() => {
+            setThreadId(null);
+            setNote(null);
+            setSheet(0);
+          }}
+          onHeight={setSheet}
         />
       )}
     </View>

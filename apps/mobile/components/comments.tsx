@@ -7,7 +7,7 @@ import { useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
 import { Glass } from "./glass";
 import { AgentMark, Back, Close, CommentIcon, PageIcon } from "./icons";
-import { Initial, type ThreadProps, ThreadView } from "./thread-sheet";
+import { Initial, initialOf, isMine, type ThreadProps, ThreadView } from "./thread-sheet";
 
 /**
  * The page's open threads, newest first: what the comments surface lists,
@@ -50,7 +50,7 @@ export function Comments({
   onOpen: (id: string) => void;
   onBack: () => void;
   onClose?: () => void;
-  /** When the person last looked at this design: a thread with something newer is unread. */
+  /** When the person last looked at this canvas: a thread with something newer is unread. */
   seen: number;
 } & Omit<ThreadProps, "thread">) {
   const { color } = useTheme();
@@ -117,9 +117,8 @@ export function Comments({
             key={t.id}
             doc={doc!}
             thread={t}
-            me={threadProps.me}
             last={i === threads.length - 1}
-            unread={unread(t, seen)}
+            unread={unread(t, seen, threadProps.me)}
             onPress={() => {
               tick();
               onOpen(t.id);
@@ -143,9 +142,9 @@ export function Comments({
 }
 
 /** Something in the thread came after the person last looked, and it wasn't theirs. */
-function unread(t: Thread, seen: number): boolean {
+function unread(t: Thread, seen: number, me: ThreadProps["me"]): boolean {
   const last = t.messages[t.messages.length - 1];
-  return Boolean(last && last.author.kind !== "user" && last.createdAt > seen);
+  return Boolean(last && !isMine(last.author, me) && last.createdAt > seen);
 }
 
 /**
@@ -157,14 +156,12 @@ function unread(t: Thread, seen: number): boolean {
 function Row({
   doc,
   thread: t,
-  me,
   last,
   unread,
   onPress,
 }: {
   doc: Doc;
   thread: Thread;
-  me: string;
   last: boolean;
   unread: boolean;
   onPress: () => void;
@@ -198,12 +195,12 @@ function Row({
       {author?.kind === "agent" ? (
         <AgentMark client="claude" size={28} color={color.ink} />
       ) : (
-        <Initial letter={me} />
+        <Initial letter={initialOf(author?.name ?? "")} />
       )}
       <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
           <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}>
-            {author?.kind === "agent" ? author.name : "You"}
+            {author?.name ?? ""}
           </Text>
           {board && (
             <>
@@ -250,11 +247,7 @@ function Row({
           {latest?.author.kind === "agent" && (
             <AgentMark client="claude" size={13} color={color.ink} />
           )}
-          <Text style={small}>
-            {latest
-              ? `${latest.author.kind === "agent" ? latest.author.name : "You"} replied`
-              : "No replies yet"}
-          </Text>
+          <Text style={small}>{latest ? `${latest.author.name} replied` : "No replies yet"}</Text>
           <View style={{ flex: 1 }} />
           <CommentIcon size={13} color={color.faint} width={1.5} />
           <Text style={small}>{t.messages.length}</Text>
