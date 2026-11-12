@@ -10,6 +10,7 @@ import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { CLAUDE_SONNET } from "../deps/model.ts";
+import type { RateLimit } from "../deps/rate-limit.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
@@ -22,6 +23,7 @@ import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
 import { FakePush } from "./fake-push.ts";
+import { FakeRateLimit } from "./fake-rate-limit.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -40,6 +42,7 @@ export {
   MERGEABLE_AFTER_MS,
 } from "./fake-pull-requests.ts";
 export { FakePush } from "./fake-push.ts";
+export { FakeRateLimit } from "./fake-rate-limit.ts";
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -132,6 +135,8 @@ export async function createTestApp(
     posthog?: PosthogConfig;
     /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
     push?: boolean;
+    /** Rate limits other than the fake's, such as the real seam on a scripted SDK call. */
+    rateLimit?: RateLimit;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -153,6 +158,7 @@ export async function createTestApp(
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
   const push = new FakePush({ enabled: options.push ?? true });
+  const rateLimit = new FakeRateLimit(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -191,6 +197,7 @@ export async function createTestApp(
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push,
+    rateLimit: options.rateLimit ?? rateLimit,
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
@@ -328,6 +335,8 @@ export async function createTestApp(
     reviewer,
     /** Every ping the app sent to a phone, and how Expo answers the next ones. */
     push,
+    /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */
+    rateLimit,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

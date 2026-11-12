@@ -66,7 +66,21 @@ test("a complete environment is read into one typed value", () => {
     posthog: null,
     // Without an Expo access token, push is off.
     push: null,
+    // Rate limits are off unless PONZU_RATE_LIMITS says vercel, and this is not on Vercel.
+    rateLimits: { mode: "off", onVercel: false },
   });
+});
+
+test("rate limits are off by default, on Vercel too, and only `vercel` switches them on", () => {
+  expect(readEnv({ ...complete, VERCEL: "1" }).rateLimits).toEqual({ mode: "off", onVercel: true });
+  expect(readEnv({ ...complete, PONZU_RATE_LIMITS: "" }).rateLimits.mode).toBe("off");
+  expect(readEnv({ ...complete, PONZU_RATE_LIMITS: "vercel", VERCEL: "1" }).rateLimits).toEqual({
+    mode: "vercel",
+    onVercel: true,
+  });
+  expect(() => readEnv({ ...complete, PONZU_RATE_LIMITS: "on" })).toThrow(
+    "PONZU_RATE_LIMITS is malformed.",
+  );
 });
 
 test("an Expo access token switches push on, and a malformed one is named and never quoted", () => {
@@ -219,6 +233,7 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_POSTHOG_AI_CONTENT",
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
+    "PONZU_RATE_LIMITS",
     "PONZU_SANDBOX_IDLE_SECONDS",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",

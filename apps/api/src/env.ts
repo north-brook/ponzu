@@ -89,6 +89,15 @@ const schema = z.object({
    * Unset, push is off: nothing is sent to a phone, and the Mac and the inbox work regardless.
    */
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
+
+  // Rate limits: per-caller limits through Vercel's firewall (deps/rate-limit.ts).
+  /**
+   * `vercel` to check each request against the firewall's `@vercel/firewall` rules, which only
+   * a deployment on Vercel can (`VERCEL=1`); `off`, the default, checks nothing. Turn it on only
+   * once infra/vercel-firewall.json's rate-limit rules are applied: a check whose rule is missing
+   * lets the request through, logged as `rate_limit_unavailable`.
+   */
+  PONZU_RATE_LIMITS: z.enum(["off", "vercel"]).default("off"),
 });
 
 /** How canvases' sandboxes are made and kept. */
@@ -157,6 +166,8 @@ export interface Env {
   posthog: PosthogConfig | null;
   /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
   push: { accessToken: string } | null;
+  /** Whether rate limits are asked of Vercel's firewall, and whether this runs on Vercel at all. */
+  rateLimits: { mode: "off" | "vercel"; onVercel: boolean };
 }
 
 /**
@@ -230,6 +241,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
         }
       : null,
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
+    rateLimits: { mode: env.PONZU_RATE_LIMITS, onVercel: env.VERCEL === "1" },
   };
 }
 

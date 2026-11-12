@@ -17,6 +17,7 @@ import { createGithub, type Github } from "./github.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
+import { type RateLimit, selectRateLimit } from "./rate-limit.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
@@ -75,6 +76,11 @@ export interface Deps {
   analytics: Analytics;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /**
+   * Per-caller rate limits through Vercel's firewall (deps/rate-limit.ts, http/rate-limits.ts).
+   * Off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` on Vercel; fails open.
+   */
+  rateLimit: RateLimit;
   config: Config;
 }
 
@@ -168,6 +174,7 @@ export function createDeps(env: Env): Deps {
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    rateLimit: selectRateLimit(env.rateLimits, { clock, log }),
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
