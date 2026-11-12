@@ -336,7 +336,7 @@ export const NAMES: Name[] = [
     from: '"dsn"',
     to: '"cnv"',
     why: "fixture id prefix",
-    paths: ["packages/client/src/testing/backend.ts", "apps/studio/src/cloud/status.test.ts"],
+    paths: ["packages/client/src/testing/backend.ts", "packages/client/src/model/status.test.ts"],
   },
 ];
 

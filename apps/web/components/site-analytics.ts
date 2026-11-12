@@ -1,6 +1,7 @@
 import type { PostHog } from "posthog-js";
 import { shouldCapture, signalsOf } from "./consent";
 import { watchHealth } from "./health";
+import { isDownloadHref } from "./platforms";
 
 /*
  * The site's analytics, started once by instrumentation-client.ts. A function of what it touches
@@ -47,11 +48,12 @@ export function startSiteAnalytics(
   if (!key || !shouldCapture(signalsOf(win))) return false;
   posthog.init(key, POSTHOG_CONFIG);
 
-  // Every way to get the app: Download buttons (the install steps) and direct DMG links.
+  // Every way to get the app: Download buttons (the install steps), /iphone and the installers
+  // themselves (isDownloadHref in platforms.ts).
   win.document.addEventListener("click", (e) => {
     const link = (e.target as Element | null)?.closest?.("a[href]");
     const href = link?.getAttribute("href");
-    if (href && (href.startsWith("/download") || href.endsWith(".dmg")))
+    if (href && isDownloadHref(href))
       posthog.capture("download clicked", { href, page: win.location.pathname });
   });
 

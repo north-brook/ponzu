@@ -142,6 +142,8 @@ test("the tree has the pages the site is made of", () => {
     expect(resolves(missing)).toBe(false);
   // A redirect that needs a query covers only links that carry it.
   expect(resolves("/download?start=1")).toBe(true);
+  // Ponzu for iPhone, the address the Mac's setup QR code prints (components/platforms.test.ts).
+  expect(resolves("/iphone")).toBe(true);
 });
 
 test("every internal link the site writes lands on a page, a file or a redirect", () => {

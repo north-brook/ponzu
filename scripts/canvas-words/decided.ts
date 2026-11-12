@@ -101,7 +101,7 @@ export const DECIDED: Decided[] = [
   },
   {
     slice: "S4",
-    path: "apps/studio/src/cloud/thread/thread.ts",
+    path: "packages/client/src/model/thread.ts",
     gone: /safe in the (?:design|canvas)\b/,
     present: ["The commits are safe in Ponzu."],
     why: "push_failed",
@@ -141,7 +141,7 @@ export const DECIDED: Decided[] = [
   },
   {
     slice: "S4",
-    path: "apps/studio/src/app/pull-request-map.ts",
+    path: "packages/client/src/model/pull-request-map.ts",
     present: ["^(?:Made|Designed) in Ponzu: "],
     why: "strips the new footer and the one on pull requests already on GitHub",
   },

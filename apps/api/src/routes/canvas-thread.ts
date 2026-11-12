@@ -28,6 +28,7 @@ import { requireCanvas } from "../auth/authorize.ts";
 import { personFor } from "../canvases/actor.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
+import { steer } from "../http/gates.ts";
 import { validate } from "../http/validate.ts";
 import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
 import { requestWake } from "../sandboxes/wake.ts";
@@ -198,6 +199,7 @@ export const canvasThread = new Hono<AppEnv>()
       }
       const attachments = refs.map((ref) => ({ ref, contentType: byPath.get(ref)!.contentType }));
       const extra = attachments.length > 0 ? { attachments } : {};
+      await steer(c, { action: "message", workspaceId: canvas.workspaceId, canvasId: canvas.id });
       const item = await postMessage(deps.db, {
         canvasId: canvas.id,
         userId: actor.user.id,
@@ -232,10 +234,12 @@ export const canvasThread = new Hono<AppEnv>()
       const question = await getQuestion(deps.db, { canvasId: canvas.id, id: questionId });
       if (!question) throw new ApiError(404, "not_found", "There is no such question.");
       if (question.status !== "open") throw await closedBy(deps.db, question);
+      const answer = answerOf(question, c.req.valid("json"));
+      await steer(c, { action: "answer", workspaceId: canvas.workspaceId, canvasId: canvas.id });
       const answered = await answerQuestion(deps.db, {
         canvasId: canvas.id,
         id: questionId,
-        answer: answerOf(question, c.req.valid("json")),
+        answer,
         userId: actor.user.id,
         posthogSessionId: appSession(),
       });

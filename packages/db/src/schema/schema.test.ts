@@ -228,4 +228,29 @@ describe("constraints", () => {
       ),
     ).rejects.toThrow();
   });
+
+  test("an agent blocker is one the wake gates know, and may say until when", async () => {
+    const { canvas } = await seedCanvas(db);
+    const block = (blocker: string, until: Date | null = null) =>
+      run(
+        db.execute(
+          sql`update canvases set agent_blocker = ${blocker}, agent_blocked_until = ${until?.toISOString() ?? null}
+               where id = ${canvas.id}`,
+        ),
+      );
+
+    for (const blocker of schema.AGENT_BLOCKERS) await block(blocker);
+    await block("claude_limited", new Date("2026-11-12T16:00:00Z"));
+    expect(await getCanvas(db, canvas.id)).toMatchObject({
+      agentBlocker: "claude_limited",
+      agentBlockedUntil: new Date("2026-11-12T16:00:00Z"),
+    });
+    await expect(block("out_of_money")).rejects.toThrow();
+    // The constraint the migration wrote names every value, in the order the enum has them.
+    const { rows } = await db.execute<{ definition: string }>(sql`
+      select pg_get_constraintdef(oid) as definition from pg_constraint
+       where conname = 'canvases_agent_blocker_check'`);
+    for (const blocker of schema.AGENT_BLOCKERS)
+      expect(rows[0]!.definition).toContain(`'${blocker}'`);
+  });
 });

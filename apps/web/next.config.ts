@@ -1,5 +1,7 @@
 import createMDX from "@next/mdx";
 import type { NextConfig } from "next";
+import { IPHONE_PATH } from "./components/platforms.ts";
+import { IPHONE_URL_TARGET } from "./components/site.ts";
 
 const nextConfig: NextConfig = {
   // PostHog's API paths end in a slash; redirecting them breaks ingestion.
@@ -43,6 +45,10 @@ const nextConfig: NextConfig = {
         destination: "/download/mac",
         permanent: false,
       },
+      // Ponzu for iPhone. The Mac's setup QR code points here, so the code never needs reprinting:
+      // a 307 (never cached as permanent) to the TestFlight beta today, the App Store later. With
+      // no iPhone link yet it sends people to every download instead.
+      { source: IPHONE_PATH, destination: IPHONE_URL_TARGET ?? "/download", permanent: false },
     ];
   },
   async headers() {
