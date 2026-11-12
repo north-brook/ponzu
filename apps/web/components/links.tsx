@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { btn } from "./button";
 import { GitHub } from "./icons";
+import { IPHONE_PATH } from "./platforms";
 
 export { TESTFLIGHT } from "./site";
 
@@ -12,8 +13,8 @@ export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
 export const PRICING = "/pricing";
-/** The iPhone tile on the home page. */
-export const IPHONE = "/#iphone";
+/** Ponzu for iPhone: /iphone, which forwards to the beta or the App Store (next.config.ts). */
+export const IPHONE = IPHONE_PATH;
 
 /** A link in the header or the footer: what it says, and where it goes. */
 export interface SiteLink {

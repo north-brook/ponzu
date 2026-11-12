@@ -23,7 +23,7 @@ export default async function Page(props: PageProps<"/download/linux">) {
       os="linux"
       started={query.start === "1"}
       title="Ponzu for Linux."
-      lede="Download the AppImage, let it run, and ask your agent for a design."
+      lede="Download the AppImage, let it run, and sign in with GitHub."
       next={
         <>
           allow <span className="text-ink">{INSTALLER}</span> to run as a program and open it.

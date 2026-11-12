@@ -13,14 +13,14 @@ import { btn } from "./button";
 import { type Phone, phone } from "./device";
 import { OsIcon } from "./download-button";
 import { Check, CopyIcon, ShareIcon, Slice } from "./icons";
-import { TESTFLIGHT } from "./links";
-import { guide, OSES, type Os, PLATFORMS } from "./platforms";
+import { guide, IPHONE_PATH, OSES, type Os, PLATFORMS } from "./platforms";
+import { IPHONE_URL_TARGET } from "./site";
 
 /*
- * The handoff: a phone can't run Ponzu, so its Download buttons open this sheet, which sends the
- * download to the person's computer. Sharing (AirDrop, Messages, Notes, Android's "Send to your
- * devices") or copying puts the install steps' link there; opening it on the computer starts the
- * download. Designed in .context/windows-linux.design (Phones › 1–5 and M1–M4).
+ * The handoff: a phone can't run the desktop app, so its Download buttons open this sheet, which
+ * sends the download to the person's computer (and an iPhone is offered Ponzu for iPhone too).
+ * Sharing (AirDrop, Messages, Notes, Android's "Send to your devices") or copying puts the install
+ * steps' link there; opening it on the computer starts the download. Designed in .context/windows-linux.design (Phones › 1–5 and M1–M4).
  *
  * The slice is the moment: it blooms when the sheet opens and again once the link is sent. The rest
  * is the house ease and short travel (`.handoff` in globals.css).
@@ -252,17 +252,17 @@ export function Handoff() {
                 </p>
               ) : null}
             </div>
-            {TESTFLIGHT && kind !== "android" ? (
+            {IPHONE_URL_TARGET && kind !== "android" ? (
               <p
                 className="handoff-rise m-0 flex items-center justify-center gap-1.5 text-sm text-faint"
                 style={{ "--k": 3 } as Style}
               >
-                Already use Ponzu?
+                Ponzu is on iPhone too.
                 <a
                   className="font-medium text-ink underline decoration-outline underline-offset-4"
-                  href={TESTFLIGHT}
+                  href={IPHONE_PATH}
                 >
-                  Try the iPhone beta
+                  Join the beta
                 </a>
               </p>
             ) : null}
