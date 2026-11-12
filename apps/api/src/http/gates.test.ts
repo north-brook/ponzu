@@ -90,6 +90,50 @@ describe("the steer gates", () => {
   });
 });
 
+describe("who is asked about", () => {
+  test("only someone who may steer: a reader or an outsider is answered before any gate", async () => {
+    const team = await workspaceWithRepo(t, { maya: "write", ravi: "read", omar: "none" });
+    const canvas = await canvasIn(t, team, "maya", sampleDoc());
+    const elsewhere = await workspaceWithRepo(t, { noor: "write" });
+    const asked: SteerRequest[] = [];
+    const statuses = await filling(
+      "billing",
+      async (_deps, request) => {
+        asked.push(request);
+      },
+      async () => [
+        (
+          await call(t, await as("ravi"), "POST", `/v1/canvases/${canvas.id}/messages`, {
+            text: "Hi",
+          })
+        ).status,
+        (
+          await call(t, await as("omar"), "POST", `/v1/canvases/${canvas.id}/messages`, {
+            text: "Hi",
+          })
+        ).status,
+        (
+          await call(t, await as("noor"), "POST", `/v1/canvases/${canvas.id}/messages`, {
+            text: "Hi",
+          })
+        ).status,
+        // A create in a workspace they are not in.
+        (
+          await call(t, await as("noor"), "POST", "/v1/canvases", {
+            workspaceId: team.id,
+            repoId: team.repo.id,
+            message: { text: "A pricing page" },
+          })
+        ).status,
+      ],
+    );
+    await t.backgroundDone();
+    for (const status of statuses) expect(status).toBeGreaterThanOrEqual(400);
+    expect(asked).toEqual([]);
+    expect(elsewhere.id).not.toBe(team.id);
+  });
+});
+
 describe("a refusal", () => {
   test("answers a message before anything is written or woken", async () => {
     const canvas = await canvasIn(t, ws, "maya", sampleDoc());

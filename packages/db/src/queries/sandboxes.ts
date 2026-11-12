@@ -418,6 +418,8 @@ export async function countSandboxRestart(db: Db, canvasId: string): Promise<num
  * Show on the canvas's head why its agent is waiting, and whether a wake is under way. `waking`
  * turns an idle agent to `waking`; without it, a `waking` agent goes back to idle, and so does a
  * `working` one when there is a blocker: nothing runs then, whatever its runner last said.
+ * `turnRuns` says otherwise for a blocker that lets a running turn finish (a wake gate's, such
+ * as billing's or a Claude plan's limit): a `working` agent stays `working`.
  * `blockedUntil` is until when the blocker holds, when that is known; any other call clears it.
  * The row clients watch is written only when this changes what it shows.
  */
@@ -428,14 +430,16 @@ export async function showAgentWaiting(
     waking,
     blocker,
     blockedUntil = null,
+    turnRuns = false,
   }: {
     canvasId: string;
     waking: boolean;
     blocker: AgentBlocker | null;
     blockedUntil?: Date | null;
+    turnRuns?: boolean;
   },
 ): Promise<void> {
-  const stopped = blocker ? sql`('waking', 'working')` : sql`('waking')`;
+  const stopped = blocker && !turnRuns ? sql`('waking', 'working')` : sql`('waking')`;
   const state = waking
     ? sql`case when ${canvases.agentState} in ('idle', 'limited') then 'waking' else ${canvases.agentState} end`
     : sql`case when ${canvases.agentState} in ${stopped} then 'idle' else ${canvases.agentState} end`;

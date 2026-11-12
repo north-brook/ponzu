@@ -130,7 +130,16 @@ export async function wakeCanvas(
   const refused = askWakeGates(context, new Date(began), { deps, reason });
   if (refused) {
     const { blocker, retryAt, gate } = refused;
-    await showAgentWaiting(db, { canvasId, waking: false, blocker, blockedUntil: retryAt });
+    // A turn already running when a feature's gate closes finishes (billing §4, sweep §6): the
+    // head keeps saying it works. Claude's and the owner's blockers stop it, as they always have.
+    const turnRuns = LIFTED_BY_A_WAKE.has(blocker);
+    await showAgentWaiting(db, {
+      canvasId,
+      waking: false,
+      blocker,
+      blockedUntil: retryAt,
+      turnRuns,
+    });
     log.info("wake_blocked", { canvasId, blocker });
     if (retryAt && job.attempts < job.maxAttempts) {
       throw new RetryLater(Math.max(0, retryAt.getTime() - began), `The ${gate} gate holds it.`);

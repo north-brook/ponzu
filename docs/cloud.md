@@ -568,7 +568,9 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 - **The wake gates** (`sandboxes/gates.ts`) are asked in order before the claim: `owner`,
   `claude`, `maintenance`, `billing`, `claudeLimit`. The first that refuses sets `agent_blocker`
   (and `agent_blocked_until` to the time it gave, if any), the rest are not asked, and the wake
-  is over, or, when the gate gave a time, the same wake job is tried again then. A wake that
+  is over, or, when the gate gave a time, the same wake job is tried again then. A turn already
+  running when `maintenance`, `billing` or `claudeLimit` refuses is left to finish, and the head
+  still says the agent works. A wake that
   passes every gate lifts a gate's blocker the head still shows. When what a gate waited on
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`

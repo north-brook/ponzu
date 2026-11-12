@@ -275,6 +275,30 @@ describe("a wake a gate refuses", () => {
     expect(await getSandbox(t.db, canvas.id)).toBeNull();
   });
 
+  test("leaves a turn already running to finish, and a later wake lifts what the gate said", async () => {
+    const canvas = await fresh();
+    await say(canvas.id);
+    expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+    await t.db.execute(`update canvases set agent_state = 'working' where id = '${canvas.id}'`);
+
+    await filling(
+      "billing",
+      () => ({ blocker: "cap_reached" }),
+      () => say(canvas.id, "And the footer"),
+    );
+    // The gate's line shows, but the turn the runner is in is not said to have stopped.
+    expect(await head(canvas.id)).toMatchObject({
+      agentBlocker: "cap_reached",
+      agentState: "working",
+    });
+    expect((await getSandbox(t.db, canvas.id))!.state).toBe("awake");
+
+    // The gate lets it through now. The sandbox is awake already, so the wake has nothing to
+    // start, and lifting the stale blocker is all that clears the line.
+    await say(canvas.id, "Now the nav");
+    expect(await head(canvas.id)).toMatchObject({ agentBlocker: null, agentBlockedUntil: null });
+  });
+
   test("is told the wake's reason", async () => {
     const canvas = await fresh();
     const reasons: (string | null)[] = [];
