@@ -1,0 +1,87 @@
+import { Mail, Open } from "@/components/legal";
+import { ENTITY } from "@/components/site";
+import { share } from "@/components/share";
+
+export const metadata = {
+  title: "Terms of Service",
+  description: "The terms for using Ponzu: the apps, the service and your work in it.",
+  ...share({
+    path: "/terms",
+    title: "Terms of Service · Ponzu",
+    description: "The terms for using Ponzu: the apps, the service and your work in it.",
+  }),
+};
+
+{/*
+  The product-specific clauses are written; the generic ones are marked for counsel. The facts
+  behind the written ones are in docs/legal.md ("Terms of Service"). No prices here: they live on
+  the pricing page, read from packages/db/src/rate-card.ts.
+*/}
+
+# Terms of Service
+
+## Agreement
+
+These terms are between you and {ENTITY.name} ("we", "us"), the maker of Ponzu. By using Ponzu (the apps for Mac, Windows, Linux and iPhone, the service they talk to, and this website), you agree to them. If you use Ponzu for an organization, you accept them on its behalf. <Open who="counsel">Age and capacity to agree.</Open>
+
+## The service
+
+Ponzu is in beta. Features change, some are not finished, and some may be taken away.
+
+## Accounts you connect
+
+- **GitHub.** You sign in with GitHub and install Ponzu's GitHub App on the accounts and repositories you choose. GitHub's terms govern your use of GitHub. Who can see and change a canvas follows who GitHub lets read and push to its repository.
+- **Claude.** You connect your own Claude subscription or Anthropic API key. Your use of Claude is under Anthropic's terms and your plan's limits, and turns count against your plan. Ponzu does not resell Claude. <Open who="founder">This clause depends on Anthropic's written approval for Claude subscription sign-in in Ponzu's sandboxes. If it is refused, Ponzu takes API keys only and this changes.</Open>
+
+## What Ponzu does for you
+
+- Ponzu runs an AI agent, Claude Code, for you in a cloud sandbox. The agent writes and runs code there, including your repository's own code, and can reach the internet.
+- It commits and pushes to the canvas's own branch, and opens, updates and merges pull requests as you, when you, or a turn you started, asks it to, and only within your repository's rules on GitHub.
+- AI output can be wrong, insecure or not what you meant. Review what the agent made before you merge it or use it.
+- You are responsible for what you ask the agent to do and for what you merge.
+
+## Your content
+
+- What you make in Ponzu (canvases, comments, threads, code) is yours.
+- You give us the permission we need to host it, process it, show it to the people with access to it, and run the service, and no more.
+- We don't use your content to train AI models.
+- You confirm you have the right to put into Ponzu what you put into it.
+
+## Acceptable use
+
+- No unlawful content, malware, or attacks on anyone, including us.
+- Don't use sandboxes to mine cryptocurrency, as proxies, or as general compute that has nothing to do with your canvases.
+- Don't get around Ponzu's limits or access rules, and don't resell the service.
+- We may stop or suspend sandboxes or accounts that break these rules. <Open who="counsel">Notice and appeal.</Open>
+
+## Workspaces
+
+- A workspace is a GitHub account (a person's or an organization's) where Ponzu's GitHub App is installed. GitHub decides who is in it.
+- A workspace's admins set its members' roles and its monthly cap. The workspace pays for what is used in it.
+- When a member leaves or deletes their account, the canvases they made in a workspace others are in stay with the workspace.
+
+## Fees
+
+- Ponzu is pay as you go, at the rates on the pricing page: each member's free credits every month, pooled across the workspace; a card when the free credits run out; and a monthly cap. At the cap, no new turn starts in the workspace until an admin raises the cap or the month resets; a turn that is running finishes. Payment is through Stripe.
+- Ponzu is free until billing starts. <Open who="counsel">How we tell people before billing starts.</Open>
+- <Open who="counsel">Taxes, refunds, and notice of price changes.</Open>
+
+## Open source
+
+Ponzu's code is open source under the MIT License. That license governs the code. These terms govern the hosted service. You may run Ponzu yourself; we don't support that.
+
+## Ending
+
+You can delete your account at any time, in Settings › Account. Our [privacy policy](/privacy) says what is deleted and what stays. <Open who="counsel">Suspension and termination by us, and what survives termination.</Open>
+
+## Disclaimers, limitation of liability, indemnity
+
+<Open who="counsel">Disclaimers, limitation of liability and indemnity.</Open>
+
+## Governing law and disputes
+
+<Open who="counsel">Governing law and disputes, in {ENTITY.name}'s state of incorporation.</Open>
+
+## Changes and contact
+
+When these terms change, the new version is posted here, and every change shows in the repository's history on GitHub. <Open who="counsel">Notice period for material changes.</Open> Write to us at <Mail to="hello" />.

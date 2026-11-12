@@ -4,26 +4,32 @@ import { REPO } from "@/components/links";
 import { Code, Link, Prose, Section } from "@/components/prose";
 import { share } from "@/components/share";
 
-const TITLE = "Privacy · Ponzu";
+const TITLE = "Privacy for Ponzu 1 · Ponzu";
 const DESCRIPTION =
-  "What the Ponzu desktop app, Ponzu for iPhone and ponzu.design collect, where it goes, and how to turn it off.";
+  "The privacy policy for Ponzu 1, the local app and CLI: what it collected, where it went, and how to turn it off.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
-  ...share({ path: "/privacy", title: TITLE, description: DESCRIPTION }),
+  ...share({ path: "/privacy/ponzu-1", title: TITLE, description: DESCRIPTION }),
 };
 
 const ISSUES = `${REPO}/issues`;
 
-// Keep this in step with the code: README.md's Telemetry section, 1.x's CLI telemetry.ts (on
-// main), apps/mobile/lib/telemetry.ts and apps/web/instrumentation-client.ts.
+/*
+ * Ponzu 1's privacy policy, the one in effect for the local app and CLI, moved here word for word
+ * from /privacy when Ponzu Cloud's policy took that address (app/(legal)/privacy). Only the title,
+ * the line above the heading and the canonical address changed. It describes Ponzu 1 as it
+ * shipped, so it is not kept in step with this branch's code: the sections below still say what
+ * the 1.x site did (a cookie, Do Not Track), which is what that policy promised.
+ */
 export default function Page() {
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-[88px] pb-14 text-center max-[720px]:pt-14 max-[720px]:pb-10">
+        <p className="m-0 text-[15px] font-medium text-faint">For Ponzu 1, the local app and CLI</p>
         <h1 className="m-0 text-[clamp(44px,6vw,72px)] leading-[1.06] font-semibold tracking-[-0.035em] text-balance text-ink">
           Privacy.
         </h1>
