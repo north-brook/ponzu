@@ -75,6 +75,13 @@ describe("the command line", () => {
     expect(await main(["neon"], out)).toBe(2);
   });
 
+  test("a usage error never prints a credential pasted as an argument", async () => {
+    const out = io(fakeNetwork({}).fetch, { VERCEL_TOKEN: "vt_pasted_by_mistake" });
+    expect(await main(["firewall", "--env", "dev", "vt_pasted_by_mistake"], out)).toBe(2);
+    expect(out.lines.join("\n")).not.toContain("vt_pasted_by_mistake");
+    expect(out.lines.join("\n")).toContain("unexpected");
+  });
+
   test("a missing credential reads nothing and exits 1", async () => {
     const net = fakeNetwork({});
     const out = io(net.fetch);

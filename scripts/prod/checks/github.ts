@@ -595,17 +595,29 @@ function evaluateMerge(desired: GithubDesired, answers: GithubAnswers): Finding 
     : f.ok("merge", `${desired.repository} squash-merges only, as infra/github/repo.json says`);
 }
 
-/** Deep equality where arrays are compared as sets and only the wanted object's keys count. */
+/**
+ * Deep equality where arrays are compared as sets and only the wanted object's keys count, at
+ * every depth: an array must have exactly as many items as wanted, each wanted item covered by
+ * its own live item, and fields GitHub adds inside an item (a status check's integration id, say)
+ * are ignored like any other added field.
+ */
 export function covers(want: unknown, got: unknown): boolean {
   if (Array.isArray(want)) {
     if (!Array.isArray(got) || want.length !== got.length) return false;
-    const rest = [...got];
-    return want.every((w) => {
-      const at = rest.findIndex((g) => covers(w, g) && covers(g, w));
-      if (at === -1) return false;
-      rest.splice(at, 1);
-      return true;
-    });
+    // Each wanted item gets a different live item. A search, not a greedy pick, so a loose wanted
+    // item cannot take the only live item a stricter one could match.
+    const used = new Set<number>();
+    const match = (i: number): boolean => {
+      if (i === want.length) return true;
+      for (let j = 0; j < got.length; j++) {
+        if (used.has(j) || !covers(want[i], got[j])) continue;
+        used.add(j);
+        if (match(i + 1)) return true;
+        used.delete(j);
+      }
+      return false;
+    };
+    return match(0);
   }
   if (want && typeof want === "object") {
     if (!got || typeof got !== "object" || Array.isArray(got)) return false;

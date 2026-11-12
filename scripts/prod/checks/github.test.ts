@@ -390,7 +390,18 @@ describe("the repository", () => {
     expect(covers([1, 2], [1, 2, 3])).toBe(false);
     expect(covers({ a: 1 }, { a: 1, b: 2 })).toBe(true);
     expect(covers({ a: 1, b: 2 }, { a: 1 })).toBe(false);
-    expect(covers([{ a: 1 }], [{ a: 1, b: 2 }])).toBe(false);
+    // A field GitHub adds inside an array item is ignored too; the item count still must match.
+    expect(covers([{ a: 1 }], [{ a: 1, b: 2 }])).toBe(true);
+    expect(covers([{ a: 1 }], [{ a: 1 }, { a: 2 }])).toBe(false);
+    expect(covers([{ a: 1, b: 2 }], [{ a: 1 }])).toBe(false);
+    // Not greedy: the loose item does not take the only match the strict one has.
+    expect(covers([{ a: 1 }, { a: 1, b: 2 }], [{ a: 1, b: 2 }, { a: 1 }])).toBe(true);
+    expect(
+      covers(
+        { required_status_checks: [{ context: "Check, typecheck, test" }] },
+        { required_status_checks: [{ context: "Check, typecheck, test", integration_id: 15368 }] },
+      ),
+    ).toBe(true);
   });
 });
 

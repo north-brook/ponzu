@@ -267,23 +267,18 @@ export async function planEnv(ctx: ApplyContext): Promise<Plan> {
 }
 
 /** The plan, and the names whose live value apply could not compare (stored unreadably, or twice). */
-async function planEnvDetailed(ctx: ApplyContext): Promise<{ plan: Plan; unproven: string[] }> {
+async function planEnvDetailed(
+  ctx: ApplyContext,
+): Promise<{ plan: Plan; unproven: string[]; missing?: string }> {
   const desired = vercelDesired(ctx);
   if (!desired.project) {
-    return {
-      plan: { notes: [`infra names no Vercel project for ${ctx.env} yet`], changes: [] },
-      unproven: [],
-    };
+    const missing = `infra names no Vercel project for ${ctx.env} yet`;
+    return { plan: { notes: [missing], changes: [] }, unproven: [], missing };
   }
   const name = desired.project;
   if ((await readProjectId(ctx, name)) === null) {
-    return {
-      plan: {
-        notes: [`${name} does not exist yet: run apply.ts vercel-project --env ${ctx.env} first`],
-        changes: [],
-      },
-      unproven: [],
-    };
+    const missing = `${name} does not exist yet: run apply.ts vercel-project --env ${ctx.env} first`;
+    return { plan: { notes: [missing], changes: [] }, unproven: [], missing };
   }
   const vercel = vercelClient(ctx);
   const query = teamQuery(ctx);
@@ -361,7 +356,15 @@ export const vercelEnvArea: ApplyArea = {
   plan: planEnv,
   async verify(ctx) {
     const f = findings("vercel");
-    const { plan: left, unproven } = await planEnvDetailed(ctx);
+    const { plan: left, unproven, missing } = await planEnvDetailed(ctx);
+    // No project means nothing was stored: never a pass. Production's project is founder step D2.
+    if (missing) {
+      return [
+        ctx.env === "production"
+          ? f.pending("env.public", `${missing} (founder step D2)`)
+          : f.fail("env.public", missing),
+      ];
+    }
     if (left.changes.length) {
       return [f.fail("env.public", `still to do: ${left.changes.map((c) => c.says).join("; ")}`)];
     }

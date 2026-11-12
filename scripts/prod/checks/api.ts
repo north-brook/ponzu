@@ -18,6 +18,7 @@ import {
   list,
   type Section,
 } from "./finding.ts";
+import { githubClient, githubStatus } from "./github.ts";
 
 /** Every check the selfcheck answers (apps/api/src/ops/selfcheck.ts; a test holds them equal). */
 export const SELFCHECK_IDS = [
@@ -159,21 +160,24 @@ async function mainHead(
   repository: string,
 ): Promise<{ sha: string } | { error: string }> {
   const token = ctx.credentials.GH_TOKEN ?? ctx.credentials.GITHUB_TOKEN;
+  const [owner = "", repo = ""] = repository.split("/");
   try {
-    const response = await ctx.fetch(`https://api.github.com/repos/${repository}/commits/main`, {
-      headers: {
-        accept: "application/vnd.github.sha",
-        "user-agent": "ponzu-prod-check",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+    const { data } = await githubClient(ctx, token).request(
+      "GET /repos/{owner}/{repo}/commits/{ref}",
+      {
+        owner,
+        repo,
+        ref: "main",
+        headers: { accept: "application/vnd.github.sha" },
+        request: { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) },
       },
-      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
-    });
-    const sha = (await response.text()).trim();
-    return response.ok && /^[0-9a-f]{40}$/.test(sha)
-      ? { sha }
-      : { error: `GitHub answered ${response.status}` };
+    );
+    const sha = String(data).trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? { sha } : { error: "GitHub answered with no commit" };
   } catch (error) {
-    return { error: describeError(error) };
+    const status = githubStatus(error);
+    // An Octokit error carries its request; only the status may reach a printed line.
+    return { error: status === null ? describeError(error) : `GitHub answered ${status}` };
   }
 }
 

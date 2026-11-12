@@ -281,6 +281,16 @@ describe("vercel-env", () => {
     const plan = await planEnv(applyContext("production", { VERCEL_TOKEN: TOKEN }, net.fetch));
     expect(plan.changes).toEqual([]);
     expect(plan.notes[0]).toContain("does not exist yet");
+    // And the read after --yes is pending with D2, never a pass with nothing stored.
+    const lines = await vercelEnvArea.verify!(
+      applyContext("production", { VERCEL_TOKEN: TOKEN }, net.fetch),
+    );
+    expect(lines.map((l) => [l.status, l.says])).toEqual([
+      [
+        "pending",
+        "ponzu-api-prod does not exist yet: run apply.ts vercel-project --env production first (founder step D2)",
+      ],
+    ]);
   });
 
   test("verify passes only when nothing is left to do", async () => {

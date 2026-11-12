@@ -188,11 +188,18 @@ export async function planHeaders(ctx: ApplyContext): Promise<Plan> {
       changes: [],
     };
   }
-  // Every other rule stays as it is. Rules on this host become the one infra describes, keeping
-  // the first one's id so its history in the dashboard carries on.
+  // Every other rule stays as it is, in its place: order decides which rule's header wins. Rules
+  // on this host become the one infra describes, at the first one's position and keeping its id
+  // so its history in the dashboard carries on; a new rule goes last.
   const others = read.rules.filter((r) => !ours(r)).map(writable);
   const keepId = mine[0]?.id;
-  const rules = [...others, keepId ? { id: keepId, ...want } : want];
+  const firstMine = read.rules.findIndex(ours);
+  const rules: unknown[] = [];
+  read.rules.forEach((r, i) => {
+    if (!ours(r)) rules.push(writable(r));
+    else if (i === firstMine) rules.push(keepId ? { id: keepId, ...want } : want);
+  });
+  if (firstMine === -1) rules.push(want);
   const body = { rules };
   const cf = cloudflareClient(ctx);
   return {

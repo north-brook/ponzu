@@ -103,16 +103,17 @@ export async function main(
   io: Io = realIo,
   areas: readonly ApplyArea[] = AREAS,
 ): Promise<number> {
+  const credentials = readCredentials(io.env);
+  // Credentials, and every value an area makes, are taken out of every line printed, a usage
+  // error included (it quotes the arguments, which could hold a pasted credential).
+  const known: string[] = Object.values(credentials).filter((v): v is string => !!v);
+  const print = (line: string) => io.print(redactText(line, known));
   const parsed = parseArgs(argv, areas);
   if (typeof parsed === "string") {
-    io.print(`${parsed}\n${USAGE}`);
+    print(`${parsed}\n${USAGE}`);
     return 2;
   }
   const { area, env, yes, args } = parsed;
-  const credentials = readCredentials(io.env);
-  // Credentials, and every value an area makes, are taken out of every line printed.
-  const known: string[] = Object.values(credentials).filter((v): v is string => !!v);
-  const print = (line: string) => io.print(redactText(line, known));
   const where = area.envless ? "the repository" : env;
   print(
     `Ponzu ${where}: apply ${area.name} ${yes ? "(--yes: changing what differs)" : "(dry run: nothing is changed; --yes applies)"}`,

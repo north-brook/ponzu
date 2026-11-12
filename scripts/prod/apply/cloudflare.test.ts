@@ -202,6 +202,20 @@ describe("apply cloudflare-headers", () => {
     expect(rules).toEqual([{ id: "rule-ours", ...headersRule("assets.ponzu.cloud", values) }]);
   });
 
+  test("the replaced rule keeps its position among the others, and a second one on the host goes", async () => {
+    const wrong = (id: string) => ({
+      ...headersRule("assets.ponzu.cloud", { "X-Content-Type-Options": "nosniff" }),
+      id,
+    });
+    const after = { ...other, id: "rule-after" };
+    const net = fakeNetwork(
+      cloudflare(undefined, [other, wrong("rule-ours"), after, wrong("rule-twice")]),
+    );
+    const plan = await planHeaders(applyContext("production", creds, net.fetch));
+    const rules = (plan.changes[0]!.request.body as { rules: { id?: string }[] }).rules;
+    expect(rules.map((r) => r.id)).toEqual(["rule-other", "rule-ours", "rule-after"]);
+  });
+
   test("--yes sends it, then the check's header line is ok and nothing is left to do", async () => {
     const net = fakeNetwork(cloudflare(undefined, [other]));
     const ctx = applyContext("production", creds, net.fetch);

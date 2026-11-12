@@ -251,6 +251,23 @@ describe("fetchApi: where the cron secret goes", () => {
     expect(observed.main).toEqual({ sha: MAIN });
   });
 
+  test("main's head is read through Octokit, and a refusal is only its status", async () => {
+    const seen: Request[] = [];
+    const observed = await fetchApi(
+      context(
+        "production",
+        (url) =>
+          url.pathname.startsWith("/repos/")
+            ? json({ message: "Not Found", token: "ghp_quoted" }, 404)
+            : answers(url),
+        seen,
+      ),
+      apiDesired({ env: "production", infra }),
+    );
+    expect(seen[1]?.headers.get("accept")).toBe("application/vnd.github.sha");
+    expect(observed.main).toEqual({ error: "GitHub answered 404" });
+  });
+
   test("without CRON_SECRET the selfcheck is not asked", async () => {
     const seen: Request[] = [];
     const observed = await fetchApi(
