@@ -36,7 +36,7 @@ export function openCommand(repo: Repo, path: string): string {
 
 /**
  * The link the Mac app opens a design from: `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=…`.
- * The app checks every part again before git sees it (@ponzu/server/clone).
+ * The app checks every part again before git sees it (1.x's local server, its clone.ts).
  */
 export function openLink(repo: Repo, path: string): string {
   const q = new URLSearchParams({ repo: `${repo.owner}/${repo.repo}` });

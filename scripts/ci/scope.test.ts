@@ -9,13 +9,8 @@ test("a change to the phone alone runs only the phone's suites", () => {
   expect(suites("apps/mobile/app/index.tsx")).toEqual({ desktop: false, mobile: true });
 });
 
-test("a change to the Mac app, its server or its studio runs only the desktop suite", () => {
-  for (const file of [
-    "apps/desktop/src/main.ts",
-    "apps/cli/src/index.ts",
-    "apps/studio/src/App.tsx",
-    "packages/server/src/serve.ts",
-  ]) {
+test("a change to the Mac app or its studio runs only the desktop suite", () => {
+  for (const file of ["apps/desktop/src/main.ts", "apps/studio/src/App.tsx"]) {
     expect(suites(file)).toEqual({ desktop: true, mobile: false });
   }
 });
@@ -75,6 +70,14 @@ test("it still runs neither once the apps take its route types through the clien
     desktop: true,
     mobile: true,
   });
+});
+
+test("the 1.x packages kept until cutover run neither", () => {
+  // Nothing either app bundles depends on them now that the CLI and its npm package are gone,
+  // and "Tests" runs their tests on every pull request.
+  for (const file of ["packages/store/src/index.ts", "packages/tools/src/local/tools.ts"]) {
+    expect(suites(file)).toEqual({ desktop: false, mobile: false });
+  }
 });
 
 test("the site runs neither", () => {
