@@ -237,6 +237,16 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
       return step("Sending Ponzu feedback", "Sent Ponzu feedback", 1);
     case "describe_pull_request":
       return step("Writing the pull request description", "Wrote the pull request description", 1);
+    case "request_secret": {
+      // A name, never a value: only one a secret may have is said.
+      const name =
+        typeof input.name === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(input.name)
+          ? input.name
+          : null;
+      return name
+        ? step(`Asking for ${name}`, `Asked for ${name}`, 1)
+        : step("Asking for a secret", "Asked for a secret", 1);
+    }
     // What the agent asked of its pull request, never what came of it: GitHub may have refused,
     // or found it done already. The API's own line in the thread says what it did.
     case "open_pull_request":
