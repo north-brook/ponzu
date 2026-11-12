@@ -32,6 +32,7 @@ export type ClaudeDeps = Pick<
   | "background"
   | "analytics"
   | "push"
+  | "mail"
 >;
 
 /** What a new credential is. */

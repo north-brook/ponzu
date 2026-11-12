@@ -6,6 +6,7 @@ import { PEOPLE_JOB } from "../github/people.ts";
 import { WEBHOOK_JOB } from "../github/webhook.ts";
 import { BADGE_JOB } from "../notifications/badge.ts";
 import { DELIVER_JOB } from "../notifications/deliver.ts";
+import { DIGEST_JOB } from "../notifications/digest.ts";
 import { NOTIFY_JOB } from "../notifications/notify.ts";
 import { REFRESH_JOB } from "../pull-requests/refresh.ts";
 import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
@@ -33,6 +34,7 @@ test("the registry runs every kind the API records, each from one module", () =>
       NOTIFY_JOB,
       DELIVER_JOB,
       BADGE_JOB,
+      DIGEST_JOB,
     ].sort(),
   );
   const named = JOB_MODULES.flatMap((kinds) => Object.keys(kinds()));

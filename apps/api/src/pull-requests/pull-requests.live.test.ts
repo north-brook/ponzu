@@ -34,6 +34,7 @@ import { systemClock } from "@ponzu/sandbox";
 import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
+import { noMail } from "../deps/mail.ts";
 import { noPush } from "../deps/push.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createLogger } from "../http/log.ts";
@@ -72,6 +73,7 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
     analytics: noAnalytics,
     // Nothing here pings a phone.
     push: noPush,
+    mail: noMail,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },

@@ -33,6 +33,7 @@ export type JobDeps = Pick<
   | "config"
   | "analytics"
   | "push"
+  | "mail"
 >;
 
 /** A job as its handler sees it: which attempt this is, out of how many. */

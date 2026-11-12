@@ -4,6 +4,7 @@ import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import type { VercelCredentials } from "@ponzu/sandbox";
 import { z } from "zod";
 import type { PosthogConfig } from "./analytics/posthog.ts";
+import { DEFAULT_EMAIL_FROM } from "./deps/mail.ts";
 import type { R2Config } from "./deps/storage.ts";
 import {
   BILLING_MODES,
@@ -97,9 +98,17 @@ const schema = z.object({
    */
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
 
-  // Notifications: the email digest (deps/mail.ts, when it is built).
+  // Notifications: the daily email (deps/mail.ts, notifications/digest.ts).
   /** Resend's API key. Unset, email is off: no digest is sent and Settings hides its row. */
   RESEND_API_KEY: z.string().min(1).optional(),
+  /**
+   * Who the daily email is from, on a domain verified at Resend, like `Ponzu <ping@ponzu.design>`
+   * (the default). One line, a name and an address in angle brackets.
+   */
+  PONZU_EMAIL_FROM: z
+    .string()
+    .regex(/^[^<>\r\n]{1,64} <[^<>@\s]{1,64}@[A-Za-z0-9.-]{1,253}>$/)
+    .default(DEFAULT_EMAIL_FROM),
 
   // Feature switches (features.ts). Each is off when unset.
   /** off, observe (the gate is computed and what it would refuse is logged), or on. */
@@ -180,6 +189,8 @@ export interface Env {
   posthog: PosthogConfig | null;
   /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
   push: { accessToken: string } | null;
+  /** The daily email through Resend, or null when RESEND_API_KEY is unset and email is off. */
+  mail: { apiKey: string; from: string } | null;
   /** Which features are switched on (features.ts): all off unless their variables say so. */
   features: Features;
 }
@@ -255,6 +266,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
         }
       : null,
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
+    mail: env.RESEND_API_KEY ? { apiKey: env.RESEND_API_KEY, from: env.PONZU_EMAIL_FROM } : null,
     features: featuresFrom(env),
   };
 }

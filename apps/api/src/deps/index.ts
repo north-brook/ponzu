@@ -15,6 +15,7 @@ import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
+import { createResendMail, type Mail, noMail } from "./mail.ts";
 import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createExpoPush, noPush, type Push } from "./push.ts";
@@ -76,6 +77,8 @@ export interface Deps {
   analytics: Analytics;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /** The daily email through Resend (deps/mail.ts). Off, as `noMail`, without RESEND_API_KEY. */
+  mail: Mail;
   /** Which features are switched on (features.ts), read from the environment once, in env.ts. */
   features: Features;
   config: Config;
@@ -171,6 +174,7 @@ export function createDeps(env: Env): Deps {
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    mail: env.mail ? createResendMail({ ...env.mail, clock, log }) : noMail,
     features: env.features,
     config: {
       build: { version: VERSION, commit: env.commit },

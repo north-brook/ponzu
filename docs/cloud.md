@@ -2673,7 +2673,45 @@ A failed check, changes asked for, a stop, a lapse being sent again and a stalle
 nobody: the agent takes the first two up by itself, and the rest recover on their own. Nothing
 calls the billing trigger yet; billing does once its gate is built.
 
-The email digest (`emailDigest`) is one email a day of the same events and nothing else.
+**The daily email** (`emailDigest`, off until the person turns it on) is one email a day of
+the same events and nothing else, sent through Resend (`deps/mail.ts`, the official `resend`
+SDK). It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email row
+until then. `PONZU_EMAIL_FROM` is who it is from, `Ponzu <ping@ponzu.design>` unless set.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/email/unsubscribe?t=` | none | a page saying the email is off; 400 and a page saying the link doesn't work |
+| POST | `/v1/email/unsubscribe?t=` | anything (a mail app's one-click unsubscribe) | 204; 400 `invalid_request` |
+
+At minute 0 of each hour the cron's `digests` step records an `email.digest` job, keyed
+`digest:<user>:<local date>`, for each person whose email is on, who has an address, for whom it
+is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
+one Postgres does not know), and whose `digest_sent_on` is before that local date. The job reads
+their notifications from the 24 hours before it was found due that are unread or `muted`, leaves
+out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
+their workspace. A canvas whose person is no longer a member, or whose kept access answer has
+changed to less than read since its newest row, is left out (an answer that is only old is not:
+the email is for people who have been away); a billing row goes only to someone still among the
+workspace's billing recipients. With nothing left it only stamps `digest_sent_on`. Otherwise it
+sends one email and stamps the date.
+
+The subject counts what it holds ("Ponzu: 3 things on 2 canvases", "… and your plan" with
+billing rows). The body is each canvas's name (or the workspace's) and under it the rows' own
+sentences, at most ten a canvas and then "And 2 more.", each linking to
+`https://ponzu.design/canvases/<id>` with `open`, `page`, `artboard`, `question` and `comment`
+riding along, which the site's page hands to the app as a `ponzu://canvas/` link; a billing line
+has no link. There is a plain text part, and `List-Unsubscribe` with
+`List-Unsubscribe-Post: List-Unsubscribe=One-Click`. The job's key is Resend's idempotency key,
+so a send retried within a day is not sent twice. Resend's 429, 5xx or no answer tries again five
+minutes on; a refusal (a bad address, an unverified sender) or a key already used is logged and
+the day is stamped. Logs carry the person's id and Resend's codes, never the address or the words.
+
+The unsubscribe link carries `t`: the person's id and that id sealed by the vault under
+`email-unsubscribe/<user id>`, so only the API can make one, one person's does not open as
+another's, and all it can do is turn that person's email off. It does not expire. Following it
+turns `emailDigest` off and answers a page ("You won't get Ponzu's daily email any more."); the
+POST does the same for a mail app and answers 204. Either is safe to repeat, and the person can
+turn the email on again in Settings.
 
 ## Repo environments
 

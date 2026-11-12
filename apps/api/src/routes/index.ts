@@ -7,6 +7,7 @@ import { canvasThread } from "./canvas-thread.ts";
 import { canvases } from "./canvases.ts";
 import { claude } from "./claude.ts";
 import { cron } from "./cron.ts";
+import { email } from "./email.ts";
 import { environments } from "./environments.ts";
 import { github } from "./github.ts";
 import { health } from "./health.ts";
@@ -41,4 +42,5 @@ export const v1 = new Hono<AppEnv>()
   .route("/runner", runner)
   .route("/runner", runnerPullRequest)
   .route("/live", live)
-  .route("/cron", cron);
+  .route("/cron", cron)
+  .route("/email", email);

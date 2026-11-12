@@ -21,6 +21,7 @@ import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
 import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
+import { FakeMail } from "./fake-mail.ts";
 import { FakeModel } from "./fake-model.ts";
 import { FakePush } from "./fake-push.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
@@ -28,6 +29,7 @@ import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { type CapturedEvent, MemoryAnalytics } from "./fake-analytics.ts";
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
+export { FakeMail } from "./fake-mail.ts";
 export {
   FAKE_IDEAS,
   FakeModel,
@@ -134,8 +136,13 @@ export async function createTestApp(
     /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
     push?: boolean;
     /**
+     * True to run with email on, as a deployment with RESEND_API_KEY does. Off by default, so
+     * every test that does not ask runs as a deployment without the key.
+     */
+    mail?: boolean;
+    /**
      * Feature switches over the defaults, which are every switch off as in an environment that
-     * sets none, except `push`, which follows the option above.
+     * sets none, except `push` and `email`, which follow the options above.
      */
     features?: Partial<Features>;
   } = {},
@@ -159,6 +166,7 @@ export async function createTestApp(
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
   const push = new FakePush({ enabled: options.push ?? true });
+  const mail = new FakeMail({ enabled: options.mail ?? false });
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -197,7 +205,13 @@ export async function createTestApp(
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push,
-    features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
+    mail,
+    features: {
+      ...FEATURES_OFF,
+      push: options.push ?? true,
+      email: options.mail ?? false,
+      ...options.features,
+    },
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
@@ -335,6 +349,8 @@ export async function createTestApp(
     reviewer,
     /** Every ping the app sent to a phone, and how Expo answers the next ones. */
     push,
+    /** Every email the app sent, and how Resend answers the next ones. */
+    mail,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

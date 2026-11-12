@@ -857,6 +857,95 @@ export function listRecentForDigest(
   );
 }
 
+/** The zone a person's daily email is timed in when their app has reported none. */
+export const DIGEST_DEFAULT_TIME_ZONE = "America/New_York";
+/** The local hour from which a person's daily email may go. */
+export const DIGEST_HOUR = 9;
+
+/** A person whose daily email is due, and the local date it is for (`YYYY-MM-DD`). */
+export interface DigestDue {
+  userId: string;
+  localDate: string;
+}
+
+/**
+ * Up to `limit` people whose daily email is due at `now`: the email is on, they have an address,
+ * it is `DIGEST_HOUR` or later where they are, and none has gone for that local date. Where they
+ * are is their app's time zone, or `DIGEST_DEFAULT_TIME_ZONE` when it reported none or reported
+ * one Postgres does not know (the route takes what the app's ICU knows, which can be newer).
+ * Oldest people first, so a long list is worked through over the hours.
+ */
+export async function digestsDue(
+  db: Db,
+  { now, limit = 500 }: { now: Date; limit?: number },
+): Promise<DigestDue[]> {
+  const result = await queryJson<DigestDue[]>(
+    db,
+    sql`
+      with zones as (select name from pg_timezone_names),
+      due as (
+        select u.id, u.created_at, u.digest_sent_on,
+               (${at(now)} at time zone coalesce(z.name, ${DIGEST_DEFAULT_TIME_ZONE})) as local
+          from users u
+          left join zones z on z.name = u.time_zone
+         where u.email_digest and u.email is not null
+      )
+      select coalesce(json_agg(json_build_object(
+               'userId', id, 'localDate', to_char(local, 'YYYY-MM-DD')
+             ) order by created_at, id), '[]') as result
+        from (
+          select * from due
+           where extract(hour from local) >= ${DIGEST_HOUR}
+             and (digest_sent_on is null or digest_sent_on < local::date)
+           order by created_at, id
+           limit ${limit}
+        ) picked
+    `,
+  );
+  return result ?? [];
+}
+
+/** What the daily email needs to know about its person, or null when there is no such person. */
+export interface DigestRecipient {
+  email: string | null;
+  emailDigest: boolean;
+  /** The local date of the last daily email, `YYYY-MM-DD`. */
+  digestSentOn: string | null;
+}
+
+export async function digestRecipient(db: Db, userId: string): Promise<DigestRecipient | null> {
+  const [row] = await run(
+    db
+      .select({
+        email: users.email,
+        emailDigest: users.emailDigest,
+        digestSentOn: users.digestSentOn,
+      })
+      .from(users)
+      .where(eq(users.id, userId)),
+  );
+  return row ?? null;
+}
+
+/**
+ * Record that the daily email for `localDate` went (or that there was nothing to say). A date
+ * earlier than the one already kept changes nothing, so a late retry cannot send twice.
+ */
+export async function stampDigestSent(
+  db: Db,
+  { userId, localDate }: { userId: string; localDate: string },
+): Promise<void> {
+  await run(
+    db
+      .update(users)
+      .set({
+        digestSentOn: sql`greatest(${users.digestSentOn}, ${localDate}::date)`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(users.id, userId)),
+  );
+}
+
 /** How long an unread notification stays in the inbox before the sweep reads it as `expired`. */
 export const NOTIFICATION_EXPIRES_MS = 3 * 24 * 60 * 60_000;
 /** How long a notification is kept at all. */

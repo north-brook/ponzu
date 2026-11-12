@@ -67,6 +67,8 @@ test("a complete environment is read into one typed value", () => {
     posthog: null,
     // Without an Expo access token, push is off.
     push: null,
+    // Without a Resend key, email is off.
+    mail: null,
     // Every feature switch is off when nothing sets it.
     features: FEATURES_OFF,
   });
@@ -150,6 +152,32 @@ test("an Expo access token switches push on, and a malformed one is named and ne
   }
   expect(message).toBe("The API cannot start. EXPO_ACCESS_TOKEN is malformed.");
   expect(message).not.toContain(short);
+});
+
+test("a Resend key switches email on, from Ponzu unless PONZU_EMAIL_FROM says otherwise", () => {
+  expect(readEnv(complete).mail).toBeNull();
+  expect(readEnv({ ...complete, RESEND_API_KEY: "" }).mail).toBeNull();
+  expect(readEnv({ ...complete, RESEND_API_KEY: "re_test_example" }).mail).toEqual({
+    apiKey: "re_test_example",
+    from: "Ponzu <ping@ponzu.design>",
+  });
+  expect(
+    readEnv({
+      ...complete,
+      RESEND_API_KEY: "re_test_example",
+      PONZU_EMAIL_FROM: "Ponzu Dev <ping@dev.ponzu.design>",
+    }).mail,
+  ).toEqual({ apiKey: "re_test_example", from: "Ponzu Dev <ping@dev.ponzu.design>" });
+  // A bare address, a second line or a second address is refused, named and never quoted.
+  for (const from of [
+    "ping@ponzu.design",
+    "Ponzu <ping@ponzu.design>\nBcc: someone@example.com",
+    "Ponzu <a@b.c>, Other <d@e.f>",
+  ]) {
+    expect(() => readEnv({ ...complete, PONZU_EMAIL_FROM: from })).toThrow(
+      "The API cannot start. PONZU_EMAIL_FROM is malformed.",
+    );
+  }
 });
 
 test("a PostHog key switches analytics on, with prompts and answers off unless asked for", () => {
@@ -283,6 +311,7 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "EXPO_ACCESS_TOKEN",
     "PONZU_API_URL",
     "PONZU_BILLING",
+    "PONZU_EMAIL_FROM",
     "PONZU_MAINTENANCE",
     "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",
