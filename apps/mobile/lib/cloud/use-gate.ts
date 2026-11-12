@@ -2,7 +2,7 @@ import { useSessionState } from "@ponzu/client/react";
 import { router, useSegments } from "expo-router";
 import { useEffect } from "react";
 import { backend } from "./backend";
-import { gateMove } from "./gate";
+import { gateMove, gateStep } from "./gate";
 import { useSetupStep } from "./use-setup";
 
 /**
@@ -13,7 +13,9 @@ import { useSetupStep } from "./use-setup";
  */
 export function useGate() {
   const state = useSessionState(backend.session);
-  const { step } = useSetupStep();
+  // With no `me` to be had, as on launch: signed in on the sign-in screen, the app goes on to
+  // the canvases rather than keep the button turning for good.
+  const step = gateStep(useSetupStep());
   const segments = useSegments() as string[];
   const move = gateMove(state, segments, step);
   useEffect(() => {

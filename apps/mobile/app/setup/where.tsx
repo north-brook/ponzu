@@ -74,7 +74,11 @@ export default function Where() {
         if (JSON.stringify(answer) !== before) setNotice(null);
       },
       onError: () => setNotice("failed"),
-      onSettled: () => setSettingUp(null),
+      // A sync that answers while an install page is still open (the one as the step opened,
+      // or coming back to the app) leaves its row waiting: the install's own end clears it.
+      onSettled: () => {
+        if (!installing.current) setSettingUp(null);
+      },
     });
   }, [syncNow]);
 

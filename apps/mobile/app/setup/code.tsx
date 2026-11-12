@@ -74,6 +74,8 @@ export default function PasteCode() {
   useEffect(() => {
     if (!pending) return;
     const left = Date.parse(pending.expiresAt) - Date.now();
+    // An expiry that can't be read is left to the API, which says so when a code is sent.
+    if (Number.isNaN(left)) return;
     const timer = setTimeout(
       () =>
         setState((now) =>

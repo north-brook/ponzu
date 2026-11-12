@@ -87,8 +87,9 @@ Signed in, where setup stands comes from `GET /v1/me` (kept on disk, so an
 offline launch still knows), by the Mac's own gates
 (`phoneSetupStep` in `@ponzu/client/model/setup`) with the iPhone step taken
 as done: the phone is the iPhone. Until `me` answers, the screen on show stays
-(the sign-in button keeps turning). With no `me` at all and none on disk, the
-launch goes to the canvases.
+(the sign-in button keeps turning). When `me` can't be had and there is none on
+disk, launch and the gate both go on to the canvases (`gateStep`), and move on
+to setup once `me` answers.
 
 ### Setup
 

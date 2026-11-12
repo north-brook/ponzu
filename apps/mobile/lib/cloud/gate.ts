@@ -54,6 +54,19 @@ export function areaOf(segments: readonly string[]): GateRoute | null {
   return "/canvases";
 }
 
+/**
+ * The setup step the gates go by: the one `me` says, or, when `me` could not be had and there
+ * is no copy of it, done, so the canvases say what there is rather than a screen waiting on an
+ * answer that is not coming. Null while `me` is still on its way. Once `me` arrives, the gate
+ * moves on to any step still to do.
+ */
+export function gateStep(setup: {
+  step: PhoneSetupStep | null;
+  unreachable: boolean;
+}): PhoneSetupStep | null {
+  return setup.step ?? (setup.unreachable ? "done" : null);
+}
+
 /** Where to send the app now, or null to leave it where it is. */
 export function gateMove(
   state: SessionState,

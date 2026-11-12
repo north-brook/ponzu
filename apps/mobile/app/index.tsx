@@ -6,7 +6,7 @@ import { StyleSheet, Text, View } from "react-native";
 import Animated, { Easing, FadeIn, FadeInDown, useReducedMotion } from "react-native-reanimated";
 import { startHandoff } from "../components/handoff";
 import { backend } from "../lib/cloud/backend";
-import { gateRoute } from "../lib/cloud/gate";
+import { gateRoute, gateStep } from "../lib/cloud/gate";
 import { useSetupStep } from "../lib/cloud/use-setup";
 import { LAUNCH } from "../lib/mark";
 import { BLOOM_IN_MS, Slice } from "../lib/slice";
@@ -50,9 +50,7 @@ export default function Launch() {
   // Signed in, launch waits for where setup stands. With no `me` at all (offline on a first
   // launch since the cache went), the canvases say what there is.
   const setup = useSetupStep();
-  const target = prepared
-    ? gateRoute(state, setup.step ?? (setup.unreachable ? "done" : null))
-    : null;
+  const target = prepared ? gateRoute(state, gateStep(setup)) : null;
   useEffect(() => {
     if (!target || gone.current) return;
     const landed = still ? 0 : mounted.current + BLOOM_IN_MS - Date.now();

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SessionState } from "@ponzu/client";
-import { areaOf, gateMove, gateRoute, signInNotice } from "./gate";
+import { areaOf, gateMove, gateRoute, gateStep, signInNotice } from "./gate";
 
 const user = {
   id: "usr_1",
@@ -32,6 +32,15 @@ test("signed in, setup's steps come before the canvases; unknown setup waits", (
   // Setup never holds back a signed-out or too-old app.
   expect(gateRoute(STATES.signed_out, "where")).toBe("/sign-in");
   expect(gateRoute(STATES.too_old, "claude")).toBe("/update");
+});
+
+test("no `me` to be had and none on disk: the gates go on as if done, never wait for good", () => {
+  expect(gateStep({ step: null, unreachable: false })).toBeNull();
+  expect(gateStep({ step: null, unreachable: true })).toBe("done");
+  expect(gateStep({ step: "where", unreachable: false })).toBe("where");
+  // Signed in on the sign-in screen with `me` failing: on to the canvases, not a turning button.
+  const step = gateStep({ step: null, unreachable: true });
+  expect(gateMove(STATES.signed_in, ["sign-in"], step)).toBe("/canvases");
 });
 
 test("sign-in says why only when GitHub needs granting again", () => {

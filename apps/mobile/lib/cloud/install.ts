@@ -53,7 +53,18 @@ export function linkOutcome(url: string, scheme: string): InstallOutcome | null 
  * had (the API refused the install link).
  */
 export async function runInstall(deps: InstallDeps): Promise<InstallOutcome> {
-  const wait = deps.wait ?? ((ms) => new Promise<void>((done) => setTimeout(done, ms)));
+  // The wait between questions ends early once the sheet is gone, so no timer outlives it.
+  let stopWaiting = () => {};
+  const wait =
+    deps.wait ??
+    ((ms: number) =>
+      new Promise<void>((done) => {
+        const timer = setTimeout(done, ms);
+        stopWaiting = () => {
+          clearTimeout(timer);
+          done();
+        };
+      }));
   const now = deps.now ?? Date.now;
   const { id, url, expiresAt } = await deps.github.installLink({
     client: "ios",
@@ -86,7 +97,11 @@ export async function runInstall(deps: InstallDeps): Promise<InstallOutcome> {
           via: "poll",
         };
         open = false;
-        deps.dismissAuthSession();
+        try {
+          deps.dismissAuthSession();
+        } catch {
+          // The sheet stays until the person closes it; what was heard is still the outcome.
+        }
         return;
       }
     }
@@ -99,6 +114,7 @@ export async function runInstall(deps: InstallDeps): Promise<InstallOutcome> {
     result = await deps.openAuthSession(url, setupRedirectFor(deps.scheme));
   } finally {
     open = false;
+    stopWaiting();
   }
   if (heard) return heard;
   const fromLink =
