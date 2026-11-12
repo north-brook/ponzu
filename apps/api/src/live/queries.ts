@@ -65,7 +65,7 @@ export const LIVE_QUERIES = {
     sql: `select u.id, u.github_login, u.name, u.email, u.avatar_url,
                  u.default_agent, u.default_model, u.default_effort,
                  u.ping_needs_you, u.ping_replies, u.ping_pr_ready, u.ping_teammate_comments,
-                 u.email_digest, u.onboarding_where_at, u.onboarding_iphone_at,
+                 u.email_digest, u.share_usage, u.onboarding_where_at, u.onboarding_iphone_at,
                  a.id as claude_account_id, a.kind as claude_account_kind,
                  a.status as claude_account_status, a.plan_label as claude_plan_label,
                  a.key_hint as claude_key_hint, a.connected_at as claude_connected_at,
@@ -94,7 +94,7 @@ export const LIVE_QUERIES = {
                  d.name, d.icon, d.branch, d.status, d.settled_at, d.seq, d.preview_seq,
                  d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
                  d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
-                 dr.seen_seq, dr.seen_thread_seq
+                 d.asset_key_rotated_at, dr.seen_seq, dr.seen_thread_seq
             from canvases d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1
             left join repos r on r.id = d.repo_id

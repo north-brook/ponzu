@@ -3,6 +3,7 @@ import type { Clock } from "@ponzu/sandbox";
 import { ApiError, UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
 import {
+  answer,
   bearer,
   createAppCredentials,
   createOctokit,
@@ -145,6 +146,13 @@ export interface Github extends GithubPullRequests {
   getOrgRole(userToken: string, org: string): Promise<GithubOrgRole | null>;
   /** Trades a refresh token for a new pair. The old refresh token stops working at once. */
   refreshUserToken(refreshToken: string): Promise<GithubRefreshResult>;
+  /**
+   * As the App, with its client id and secret: revokes the person's grant of the App, which
+   * ends every token of theirs and takes Ponzu off their GitHub authorizations. `accessToken`
+   * is any live token of theirs. A grant GitHub no longer has (404) is what was wanted; any
+   * other refusal, or no answer, throws an `UpstreamError` with GitHub's status.
+   */
+  deleteAuthorization(accessToken: string): Promise<void>;
 
   /**
    * As the App: a token for one installation, narrowed to the repositories and permissions a
@@ -548,6 +556,20 @@ export function createGithub({
       const code =
         typeof answer.error === "string" && /^[a-z_]{1,64}$/.test(answer.error) ? answer.error : "";
       throw new UpstreamError("github", `the token refresh answered 200 ${code}`, { status: 200 });
+    },
+
+    async deleteAuthorization(accessToken) {
+      // GitHub's documented call (REST "OAuth authorizations", "Delete an app authorization"),
+      // which takes the App's own credentials as Basic auth in place of any token.
+      const { status } = await answer("app", () =>
+        octokit.request("DELETE /applications/{client_id}/grant", {
+          client_id: clientId,
+          access_token: accessToken,
+          headers: { authorization: `basic ${btoa(`${clientId}:${clientSecret}`)}` },
+        }),
+      );
+      if (status === 204 || status === 404) return;
+      throw new UpstreamError("github", `DELETE grant answered ${status}`, { status });
     },
 
     createInstallationToken: (scope) => app.mint(scope),

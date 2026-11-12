@@ -329,7 +329,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ steps.pr.outputs.pull-request-number }}
         run: |
-          [ "$(gh pr view "$NUMBER" --json isDraft --jq .isDraft)" = true ] && gh pr ready "$NUMBER" || true
+          if [ "$(gh pr view "$NUMBER" --json isDraft --jq .isDraft)" = true ]; then
+            gh pr ready "$NUMBER" || true
+          fi
       - name: Run CI on the pull request
         # A pull request opened with GITHUB_TOKEN starts no workflows; a dispatch does, and its
         # checks report on the branch's head commit, which is the pull request's.

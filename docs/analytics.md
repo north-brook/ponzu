@@ -28,7 +28,16 @@ takes.
 | `PONZU_POSTHOG_HOST` | Where PostHog takes events. `https://us.i.posthog.com` when unset. |
 | `PONZU_POSTHOG_AI_CONTENT` | `1`: AI observability events carry the model's inputs and outputs (prompts, replies, tool arguments and results). Anything else, or unset: only metadata goes (model, tokens, cost, latency, tool names, outcome). Dev runs with `1`; production's setting is the founder's call, and the default in code is off. |
 
-On the server, set them on the API's Vercel project for the environment. The API hands all
+Forgetting a deleted person is a separate door, PostHog's private API, with three more values
+on the API alone, none handed to a runner (docs/cloud.md, "Deleting an account"):
+
+| Variable | Meaning |
+|---|---|
+| `PONZU_POSTHOG_PERSONAL_API_KEY` | A personal API key with `person:write`, scoped to the project. A secret. Set with the project id or not at all; unset, account deletion leaves PostHog alone and logs `analytics_forget_skipped`. |
+| `PONZU_POSTHOG_PROJECT_ID` | The project's numeric id. |
+| `PONZU_POSTHOG_API_HOST` | PostHog's app host, `https://us.posthog.com` when unset. Not the ingestion host. |
+
+On the server, set them on the API's Vercel project for the environment. The API hands the first
 three to each canvas's runner in its session (`POST /v1/runner/session`, `analytics`), so a
 sandbox needs no variables of its own, and a change reaches a runner the next time one starts.
 The runner's code that uses them is in the runner bundle the API serves, so it ships with the
@@ -80,7 +89,7 @@ Every event about a workspace also carries `workspace_id`.
 | `user signed up` | | The first sign-in of a GitHub account: its `users` row was made. |
 | `user signed in` | `new_user` | Every sign-in exchange that let someone in. |
 | `user signed out` | | |
-| `account deleted` | `deleted_canvases`, `kept_canvases` | |
+| `account deleted` | `deleted_canvases`, `kept_canvases` | About no one: the `account.forget` job asks PostHog to delete the person, and PostHog deletes only what it had before it was asked, so an event under their id would make them again. |
 | `workspace connected` | `workspace_id`, `kind`, `repos` | The App was installed on an account, or installed again, or unsuspended. Once, even when its webhook and the setup read it at the same moment: the database tells exactly one of them it made the change. About whoever installed it when Ponzu knows them, else the person whose sign-in found it. |
 | `workspace disconnected` | `workspace_id`, `reason` (`uninstalled`, `suspended`) | About no one. An uninstall is said by the reader that took it off the workspace; a suspension under one id per suspension, at GitHub's time for it. |
 | `repo access changed` | `workspace_id`, `repos` | GitHub said the repos the App reaches changed. About no one. |
@@ -88,6 +97,7 @@ Every event about a workspace also carries `workspace_id`.
 | `claude disconnected` | | |
 | `canvas created` | `canvas_id`, `source` (`idea`, `prompt`, `scratch`), `with_message`, `model`, `effort` | `source` is `scratch` for a canvas with no repo, else what the create says (`source: "idea"` when the person chose one of the composer's ideas), else `prompt`. |
 | `canvas deleted` | `canvas_id`, `by_owner` | |
+| `canvas file links reset` | `canvas_id`, `by_owner` | The owner or an admin reset the canvas's file links from Share: its files moved under a new asset key, and links to the old one stop working. |
 | `canvas settled` / `canvas reopened` | `canvas_id` | |
 | `canvas taken over` | `canvas_id`, `woke` | A teammate took over a canvas whose owner left the workspace or deleted their account; it runs on their Claude from then on. `woke`: its feed held work no runner took, so it was woken. About the person who took it. |
 | `message sent` | `canvas_id`, `first`, `characters`, `attachments` | `first`: the message a canvas began with, sent by its create. |
@@ -296,11 +306,54 @@ the builds write source maps, and before electron-builder packs the app
 process, the preload and the studio, then deletes them. Without them, or if PostHog fails, any
 map is deleted all the same: the app never ships one, and a release never fails for PostHog.
 
-## Turning the Mac app's reporting off
+## Turning it off
 
-As in 1.x, any of these turns everything off, in the shell and the studio, before anything loads:
-`PONZU_TELEMETRY=0`, `DO_NOT_TRACK=1`, `CI`, or `ponzu telemetry off` (`"enabled": false` in
-`~/.ponzu/telemetry.json`). The app has no switch of its own in Settings yet.
+**Settings › Account › Share usage data** is the person's switch, on by default. It lives on the
+account (`users.share_usage`), so it follows them to every device, and it stops what is sent
+about them from everywhere, not only from one computer:
+
+- **The API.** `PATCH /v1/me/privacy` `{ shareUsage }` sets it, and captures nothing either way;
+  `GET /v1/me` (`privacy.shareUsage`) and the `me` live row (`share_usage`) carry it. The API's
+  analytics sink (`withoutOptedOut` in `apps/api/src/analytics/analytics.ts`) drops every
+  capture, profile (`identify`) and exception whose person has turned it off. Who has is read
+  (`select id from users where share_usage = false`) in the background send, never on a
+  request's path, and kept a minute per instance; the instance that took the `PATCH` reads it
+  again at once. While an instance holds no fresh copy, what it captures about a person waits
+  for the next send's read (at most 1,000 held, each keeping the time it was captured), so
+  nothing about someone who turned it off is ever sent on a guess. Events about no person (a
+  sandbox put to sleep, a workspace's group) are not anyone's to stop and still go. The API's
+  own model calls (repo ideas) are still traced for their workspace, about no one.
+- **The agent.** Each event handed to a runner carries `trace` (false when the person behind it
+  has turned sharing off, read from their row at the claim), and the runner sends no `$ai_*`
+  events for a turn whose first event says false (`apps/runner/src/agent/trace.ts`). The API's
+  own `turn started` and `turn finished` for that person are dropped by the sink. A turn already
+  running when the switch is turned off keeps the flag it began with: that one turn's trace may
+  still go; the next does not.
+- **The Mac app.** Turning it off stops the studio's PostHog at once (`opt_out_capturing`, which
+  PostHog keeps in its own storage, so it holds at the next launch), and the shell writes
+  `{"enabled": false}` to `~/.ponzu/telemetry.json` (keeping whatever else 1.x kept there) and
+  stops the main process's error reporting. Turning it on writes `{"enabled": true}` and opts
+  the studio back in; where this launch loaded nothing to report with, recording starts at the
+  next launch, and the row says "Recording resumes next time Ponzu opens" until then. Turned
+  off on another device, a window that was reporting does the same as if it were turned off
+  here. Turned on from another device, the studio's PostHog starts again if it was loaded, but
+  the shell's file is written on only by the toggle on that computer, so a `ponzu telemetry off`
+  from 1.x is never undone from elsewhere.
+- **The iPhone** shows the same row, reading `me.shareUsage`, once the phone's analytics land.
+
+On the Mac, as in 1.x, any of these also turns everything off, in the shell and the studio,
+before anything loads, whatever the account says: `PONZU_TELEMETRY=0`, `DO_NOT_TRACK=1`, `CI`,
+or `"enabled": false` in `~/.ponzu/telemetry.json` (what `ponzu telemetry off` wrote, and what
+the switch writes).
+
+What is not built: turning the switch on from another device does not turn a Mac back on whose
+file says off; turn it on there. On a Mac that has never been told (no file, and no opt-out kept
+in the studio's PostHog storage), a launch reports from the moment it opens until `GET /v1/me`
+answers, usually a second or less: the app opened event, the first page view and the start of
+a recording may go before the studio learns the switch is off, and from then on nothing does.
+An API instance other than the one that took the `PATCH` keeps sending about the person for up
+to a minute, until its copy of who is out is read again. The website's own analytics are cookieless and anonymous, and
+are not tied to the account.
 
 ## What the Mac app never sends
 

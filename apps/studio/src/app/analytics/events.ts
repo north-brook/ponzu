@@ -30,7 +30,8 @@ export type NoticeName =
   | "install_requested"
   | "install_failed"
   | "canvas_not_made"
-  | "first_message_not_sent";
+  | "first_message_not_sent"
+  | "maintenance";
 
 export interface AppEvents {
   /** The window's studio started. Once a launch: a reload after a crash isn't another. */

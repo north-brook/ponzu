@@ -118,12 +118,18 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   expect(text).toContain("we have asked Vercel in writing");
   // Nothing sends pings yet (docs/cloud.md "Notifications").
   expect(text).toContain("Pings are not sent yet");
-  // Deleting a canvas does not purge its files yet, nor does deleting an account reach GitHub or
-  // PostHog: those are said only inside an <Open>.
-  expect(text).not.toMatch(/revoke Ponzu's authorization/i);
-  expect(text).not.toMatch(/ask PostHog to delete/i);
-  // The settings switch is S10's; until it ships the draft must not send people to it.
-  expect(text).not.toMatch(/Share usage data/);
+  // Deleting an account revokes the GitHub grant and asks PostHog to forget the person
+  // (apps/api/src/account/delete.ts, forget.ts), and says what happens when either is down.
+  expect(text).toContain("We also revoke Ponzu's authorization on your GitHub account.");
+  expect(text).toContain("We ask PostHog to delete your profile, events and recordings");
+  // The settings switch is built (users.share_usage, apps/api/src/analytics/analytics.ts's
+  // withoutOptedOut, the runner's trace flag), and says what it stops, and what it does not.
+  expect(text).toContain("turn off Settings › Account › Share usage data in the desktop app");
+  expect(text).toContain("the agent's turns that you start are not traced");
+  expect(text).toContain(
+    "a turn that was already running when you turned it off may still be traced",
+  );
+  expect(text).toContain("Turning the switch off does not delete what was already sent");
   // Account deletion does rename the person's ops in a canvas's history (anonymiseUser); only a
   // comment author's name inside the document and its checkpoints stays.
   expect(text).not.toMatch(/name inside a canvas's history/i);
@@ -131,6 +137,13 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   // marker is not the only thing the site keeps in the browser.
   expect(text).not.toMatch(/one thing the site keeps/i);
   expect(text).toContain("a note that the download has started");
+  // The retention sweep (packages/db/src/queries/retention.ts) is built, at these periods.
+  expect(text).toContain(
+    "The short-lived records we keep while you connect Claude or install Ponzu's GitHub App are deleted a day after they expire.",
+  );
+  // auth_states holds only Claude sign-ins and GitHub App installs, not sign-ins to Ponzu.
+  expect(text).not.toMatch(/records of sign-in attempts/i);
+  expect(text).toMatch(/deleted 30 days after the work finished/);
   // The 1.x CLI is gone from this branch, and with it `ponzu telemetry off`.
   expect(text).not.toContain("ponzu telemetry off");
   // The anchor the app's settings will link to.

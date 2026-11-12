@@ -1,0 +1,47 @@
+name: Uptime
+
+# Production's uptime check (docs/production.md, "Uptime"): every five minutes,
+# scripts/ci/uptime.ts asks production's /v1/health, and after two failing runs
+# in a row opens one issue labelled `production-down`, updates it while
+# production stays down and closes it when production answers again. A run
+# that finds production down fails, and the next run reads that back.
+#
+# GitHub runs a schedule only from the default branch, so this starts working
+# when it reaches main at the cutover. The job runs only on main, so a dispatch
+# from `cloud`, where production does not exist yet, checks nothing.
+# scripts/ci/workflows.test.ts holds the shape of this file.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    name: Production health
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      # One check at a time, so two runs never both open an issue.
+      group: uptime
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+      # To read the previous run's conclusion.
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # uptime.ts imports nothing outside the repository, so nothing is installed.
+      - name: Check production and open, update or close the issue
+        run: bun scripts/ci/uptime.ts
+        env:
+          GH_TOKEN: ${{ github.token }}

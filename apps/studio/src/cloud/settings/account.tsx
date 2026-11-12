@@ -4,6 +4,7 @@ import { WorkspaceMark } from "../sidebar/workspace-menu.tsx";
 import { Avatar } from "../ui/avatar.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
+import { Switch } from "../ui/switch.tsx";
 import type { Role } from "./members.ts";
 import { QuietButton, Row, Section, TwoLine } from "./parts.tsx";
 
@@ -16,9 +17,30 @@ export interface AccountSectionProps {
   onCreateTeam: () => void;
   /** Asks first: the wiring opens DeleteAccountDialog. Left out, there is no Danger zone. */
   onDelete?: () => void;
+  /**
+   * Share usage data, as the account says, and its toggle. Left out, there is no Usage data
+   * section (an API that does not say).
+   */
+  usage?: {
+    on: boolean;
+    onChange: (on: boolean) => void;
+    /** Turned on in a window that loaded nothing to report with: it starts at the next launch. */
+    resumesNextLaunch: boolean;
+  };
+  /** Opens one of the site's pages in the browser: the policy, the terms. */
+  onOpenLink?: (url: string) => void;
 }
 
 const ROLE_LABELS: Record<Role, string> = { admin: "Admin", member: "Member" };
+
+/** The site's pages Account links to. */
+export const ACCOUNT_LINKS = {
+  analytics: "https://ponzu.design/privacy#analytics",
+  privacy: "https://ponzu.design/privacy",
+  terms: "https://ponzu.design/terms",
+} as const;
+
+const USAGE_LINE = "Usage, errors and screen recordings, with your work hidden.";
 
 /** Who is signed in and through what, the teams they are in, and the way out. */
 export function AccountSection({
@@ -28,7 +50,19 @@ export function AccountSection({
   onSignOut,
   onCreateTeam,
   onDelete,
+  usage,
+  onOpenLink,
 }: AccountSectionProps) {
+  const link = (url: string, label: string) =>
+    onOpenLink ? (
+      <button
+        type="button"
+        onClick={() => onOpenLink(url)}
+        className="cursor-default rounded-4 text-faint underline-offset-2 outline-none focus-ring hover:text-muted hover:underline"
+      >
+        {label}
+      </button>
+    ) : null;
   return (
     <>
       <div className="flex items-center gap-3.5">
@@ -72,6 +106,28 @@ export function AccountSection({
           </button>
         </Row>
       </Section>
+      {usage ? (
+        <Section label="Usage data" note={link(ACCOUNT_LINKS.analytics, "Learn more")}>
+          <Row
+            trailing={
+              <Switch
+                label="Share usage data"
+                checked={usage.on}
+                onCheckedChange={usage.onChange}
+              />
+            }
+          >
+            <TwoLine
+              title="Share usage data"
+              line={
+                usage.on && usage.resumesNextLaunch
+                  ? "Recording resumes next time Ponzu opens"
+                  : USAGE_LINE
+              }
+            />
+          </Row>
+        </Section>
+      ) : null}
       {onDelete ? (
         <Section label="Danger zone">
           <Row
@@ -88,6 +144,13 @@ export function AccountSection({
             <span className="text-13 text-muted">Delete account</span>
           </Row>
         </Section>
+      ) : null}
+      {onOpenLink ? (
+        <p className="m-0 flex items-center gap-1.5 text-12 text-faint">
+          {link(ACCOUNT_LINKS.privacy, "Privacy")}
+          <span aria-hidden="true">·</span>
+          {link(ACCOUNT_LINKS.terms, "Terms")}
+        </p>
       ) : null}
     </>
   );

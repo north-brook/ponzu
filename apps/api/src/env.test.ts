@@ -77,6 +77,8 @@ test("a complete environment is read into one typed value", () => {
     commit: null,
     // Without a PostHog key, analytics is off.
     posthog: null,
+    // Without PostHog's personal key, deleting an account leaves PostHog alone.
+    posthogAdmin: null,
     // Without an Expo access token, push is off.
     push: null,
     // Every feature switch is off when nothing sets it.
@@ -304,6 +306,40 @@ test("a malformed value is named and never quoted", () => {
   );
 });
 
+test("PostHog's personal key and project id switch forgetting on together, never quoted", () => {
+  const key = "phx_a-personal-key-for-a-test-0123";
+  const both = { PONZU_POSTHOG_PERSONAL_API_KEY: key, PONZU_POSTHOG_PROJECT_ID: "4242" };
+  expect(readEnv({ ...complete, ...both }).posthogAdmin).toEqual({
+    personalApiKey: key,
+    projectId: "4242",
+    host: "https://us.posthog.com",
+  });
+  const eu = readEnv({ ...complete, ...both, PONZU_POSTHOG_API_HOST: "https://eu.posthog.com/" });
+  expect(eu.posthogAdmin?.host).toBe("https://eu.posthog.com");
+  // Empty is unset: forgetting stays off, and the API still starts.
+  const empty = { PONZU_POSTHOG_PERSONAL_API_KEY: "", PONZU_POSTHOG_PROJECT_ID: "" };
+  expect(readEnv({ ...complete, ...empty }).posthogAdmin).toBeNull();
+
+  const message = (vars: Record<string, string>) => {
+    try {
+      readEnv({ ...complete, ...vars });
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return "started";
+  };
+  const half = message({ PONZU_POSTHOG_PERSONAL_API_KEY: key });
+  expect(half).toBe(
+    "The API cannot start. PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID are both set or neither.",
+  );
+  expect(message({ PONZU_POSTHOG_PROJECT_ID: "4242" })).toBe(half);
+  expect(message({ ...both, PONZU_POSTHOG_PROJECT_ID: "x" })).toBe(
+    "The API cannot start. PONZU_POSTHOG_PROJECT_ID is malformed.",
+  );
+  const short = message({ ...both, PONZU_POSTHOG_PERSONAL_API_KEY: "phx_short" });
+  expect(short).toBe("The API cannot start. PONZU_POSTHOG_PERSONAL_API_KEY is malformed.");
+});
+
 test(".env.example lists exactly the variables the API reads, with no values", () => {
   const example = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
   const listed = [...example.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gm)];
@@ -322,8 +358,11 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",
     "PONZU_POSTHOG_AI_CONTENT",
+    "PONZU_POSTHOG_API_HOST",
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
+    "PONZU_POSTHOG_PERSONAL_API_KEY",
+    "PONZU_POSTHOG_PROJECT_ID",
     "PONZU_RATE_LIMITS",
     "PONZU_REPO_BASES",
     "PONZU_SANDBOX_IDLE_SECONDS",
@@ -423,8 +462,11 @@ test("the required, optional, system and forbidden names are exact and do not ov
     "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",
     "PONZU_POSTHOG_AI_CONTENT",
+    "PONZU_POSTHOG_API_HOST",
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
+    "PONZU_POSTHOG_PERSONAL_API_KEY",
+    "PONZU_POSTHOG_PROJECT_ID",
     "PONZU_RATE_LIMITS",
     "PONZU_REPO_BASES",
     "PONZU_SANDBOX_IDLE_SECONDS",

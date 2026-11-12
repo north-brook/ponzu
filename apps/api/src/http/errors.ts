@@ -47,6 +47,8 @@ export type ErrorCode =
   | "github_token_missing"
   /** Sign-in: this WorkOS user already belongs to a different GitHub account. */
   | "identity_conflict"
+  /** Sign-in: an account on this WorkOS user was just deleted and is still being forgotten. */
+  | "account_being_deleted"
   /** GitHub no longer accepts what Ponzu holds for this person. Sign in again. */
   | "github_reauth_required"
   /** A canvas's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
@@ -185,6 +187,11 @@ export type ErrorCode =
   | "not_ownerless"
   /** The caller has no Claude that could run the canvas: none connected, or its sign-in ran out. */
   | "claude_not_connected"
+  /**
+   * Ponzu is read-only while it updates (`PONZU_MAINTENANCE=read_only`): nothing was written.
+   * Reads still work; send it again in a few minutes.
+   */
+  | "maintenance"
   | "internal";
 
 /**

@@ -68,6 +68,12 @@ export const canvases = pgTable(
     seq: bigint("seq", { mode: "number" }).notNull().default(0),
     /** The path segment its files are served under. Knowing it is the permission to read them. */
     assetKey: text("asset_key").notNull().unique(),
+    /**
+     * When the asset key was last reset (`POST /v1/canvases/:id/asset-key/rotate`). Null while
+     * it is the one it was made with. In the head, so a client that sees it move asks for the
+     * new address.
+     */
+    assetKeyRotatedAt: instant("asset_key_rotated_at"),
     /** The seq the uploaded previews show. */
     previewSeq: bigint("preview_seq", { mode: "number" }),
     prNumber: integer("pr_number"),

@@ -126,6 +126,15 @@ text "Thistlewick" rgb(17, 17, 16) 500 13px Inter
 text "Admin" rgb(86, 83, 77) 400 13px Inter
 text "Create a team" rgb(86, 83, 77) 400 13px Inter
 icon svg[Teams] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "Usage data" rgb(169, 165, 155) 600 11px Inter
+text "Share usage data" rgb(17, 17, 16) 500 13px Inter
+text "Usage, errors and screen recordings, wi…" rgb(169, 165, 155) 400 12px Inter
+ground button[Share usage data] rgb(17, 17, 16)
+ground span[Share usage data] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
+text "Learn more" rgb(169, 165, 155) 400 12px Inter
 text "Danger zone" rgb(169, 165, 155) 600 11px Inter
 text "Delete account" rgb(86, 83, 77) 400 13px Inter
 text "Delete" rgb(217, 58, 43) 500 13px Inter
+text "Privacy" rgb(169, 165, 155) 400 12px Inter
+text "·" rgb(169, 165, 155) 400 12px Inter
+text "Terms" rgb(169, 165, 155) 400 12px Inter

@@ -1,9 +1,10 @@
-import { createDb, type Db } from "@ponzu/db";
+import { createDb, type Db, listUsageOptOuts } from "@ponzu/db";
 import { type RunnerBundle, runnerBundle } from "@ponzu/runner/bundle";
 import { type Clock, type Sandboxes, systemClock, vercelSandboxes } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
-import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
+import { type Analytics, cachedOptOuts, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
+import { createPosthogAdmin, type PosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import type { Env, Environment, SandboxConfig } from "../env.ts";
 import type { Features } from "../features.ts";
@@ -75,6 +76,12 @@ export interface Deps {
   gitTokens: GitTokens;
   /** PostHog: product events, error tracking and model-call traces. A no-op without a key. */
   analytics: Analytics;
+  /**
+   * PostHog's private API, which forgets a deleted person (analytics/posthog-admin.ts). Null
+   * without PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID: deleting an account
+   * then leaves PostHog alone, logged as `analytics_forget_skipped`.
+   */
+  posthogAdmin: PosthogAdmin | null;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
   /**
@@ -132,9 +139,16 @@ export function createDeps(env: Env): Deps {
   const outbound: Fetch = (url, init) => fetch(url, init);
   const log = createLogger(consoleSink);
   const storage = createR2Storage({ ...env.r2, fetch: outbound, clock });
-  const analytics = createPosthogAnalytics(env.posthog, { keep: waitUntil, log }) ?? noAnalytics;
+  const db = createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) });
+  // Who has turned usage sharing off, read in the analytics' background sends.
+  const optOuts = cachedOptOuts(
+    () => listUsageOptOuts(db),
+    () => clock.now(),
+  );
+  const analytics =
+    createPosthogAnalytics(env.posthog, { keep: waitUntil, log, optOuts }) ?? noAnalytics;
   return {
-    db: createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) }),
+    db,
     clock,
     ids: randomIds,
     log,
@@ -176,6 +190,9 @@ export function createDeps(env: Env): Deps {
     }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    posthogAdmin: env.posthogAdmin
+      ? createPosthogAdmin({ config: env.posthogAdmin, fetch: outbound, clock })
+      : null,
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
     rateLimit: selectRateLimit(
       { mode: env.features.rateLimits, onVercel: env.onVercel },

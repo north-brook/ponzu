@@ -1,9 +1,10 @@
-import type { Db } from "@ponzu/db";
+import { type Db, listUsageOptOuts } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import type { RunnerBundle } from "@ponzu/runner/bundle";
 import { FakeClock, FakeSandboxes } from "@ponzu/sandbox";
-import { createAnalytics } from "../analytics/analytics.ts";
+import { cachedOptOuts, createAnalytics } from "../analytics/analytics.ts";
 import type { PosthogConfig } from "../analytics/posthog.ts";
+import { createPosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
@@ -23,6 +24,7 @@ import { createVault } from "../vault/vault.ts";
 import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
+import { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 import { FakePush } from "./fake-push.ts";
 import { FakeRateLimit } from "./fake-rate-limit.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
@@ -37,6 +39,7 @@ export {
   PASSING_VERDICT,
   verdict,
 } from "./fake-model.ts";
+export { FakePosthogAdmin } from "./fake-posthog-admin.ts";
 export {
   type FakePull,
   type FakeRepoAccess,
@@ -136,6 +139,11 @@ export async function createTestApp(
     shared?: { sandboxes: FakeSandboxes; clock: FakeClock };
     /** What the runner is told to report its turns to PostHog with; none by default. */
     posthog?: PosthogConfig;
+    /**
+     * True to give the app PostHog's private API (the fake's), as a deployment with
+     * PONZU_POSTHOG_PERSONAL_API_KEY does. Off by default: deleting an account skips PostHog.
+     */
+    posthogAdmin?: boolean;
     /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
     push?: boolean;
     /** Rate limits other than the fake's, such as the real seam on a scripted SDK call. */
@@ -166,6 +174,7 @@ export async function createTestApp(
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
   const push = new FakePush({ enabled: options.push ?? true });
+  const posthogAdmin = new FakePosthogAdmin();
   const rateLimit = new FakeRateLimit(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
@@ -174,7 +183,16 @@ export async function createTestApp(
   const background: Promise<void>[] = [];
   const keep = (work: Promise<void>) => background.push(work);
   const analytics = new MemoryAnalytics();
-  const tracked = createAnalytics({ sink: analytics, keep, log });
+  // As a deployment's: what is about someone who turned usage sharing off never reaches the sink.
+  // Read now, and again only once the switch changes (never by age), so a capture reaches the
+  // sink as it is made, as a test reads it, unless that person's switch has just changed.
+  const optOuts = cachedOptOuts(
+    () => listUsageOptOuts(db),
+    () => clock.now(),
+    Number.POSITIVE_INFINITY,
+  );
+  await optOuts.current();
+  const tracked = createAnalytics({ sink: analytics, keep, log, optOuts });
 
   const deps: Deps = {
     db,
@@ -204,6 +222,9 @@ export async function createTestApp(
     reviewer,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    posthogAdmin: options.posthogAdmin
+      ? createPosthogAdmin({ config: posthogAdmin.config, fetch: posthogAdmin.fetch, clock })
+      : null,
     push,
     rateLimit: options.rateLimit ?? rateLimit,
     features: { ...FEATURES_OFF, push: options.push ?? true, ...options.features },
@@ -346,6 +367,8 @@ export async function createTestApp(
     realtime: sealer,
     model,
     reviewer,
+    /** PostHog's private API: what it was asked to forget (with `posthogAdmin: true`). */
+    posthogAdmin,
     /** Every ping the app sent to a phone, and how Expo answers the next ones. */
     push,
     /** Every rate-limit check the app made, and the limits it counts to (none until a test sets one). */

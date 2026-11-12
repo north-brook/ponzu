@@ -163,6 +163,8 @@ describe("getCanvasHead", () => {
       "agentArtboards",
       "agentState",
       "agentStatus",
+      // When its file links were last reset, never the key itself.
+      "assetKeyRotatedAt",
       "icon",
       "id",
       "lastActivityAt",

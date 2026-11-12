@@ -18,13 +18,18 @@
    * --c-chrome is the solid shell: what it is with no material behind it (a browser, the
    * gallery, Windows and Linux, Reduce Transparency), and what a ring cut against the shell
    * uses. The desktop's window takes the same two (apps/desktop/src/shell-ground.ts).
-   * --c-chrome-glass is the tint laid over the Mac's material instead, a touch darker in dark
-   * than the solid, so over the material's own grey the two read as one app. Its alpha is how
-   * much of the material shows through.
+   * --c-chrome-glass is the tint laid over the Mac's material instead (shell-ground.ts has the
+   * material: `header` in light, `hud` in dark). Measured on a real desktop, macOS 27.2: light
+   * comes to (230, 228, 227) over a black backdrop, (238, 237, 235) over mid grey and
+   * (247, 246, 244) over white; dark to (22, 22, 22), (39, 39, 39) and (59, 61, 61). So the
+   * shell is always a clear step off the boards' ground, whatever is behind the window, and takes
+   * about twice as much of it as the sidebar material did. (The same material under a darker
+   * tint, (11, 11, 13) over black, was too near the ground to tell from it.) Change a tint or
+   * a material and those are measured again (tokens.test.ts holds the pair).
    * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
    */
   --c-chrome: light-dark(#f4f3f0, #1a1a19);
-  --c-chrome-glass: light-dark(rgba(246, 245, 242, 0.62), rgba(30, 30, 28, 0.6));
+  --c-chrome-glass: light-dark(rgba(242, 241, 238, 0.6), rgba(22, 22, 21, 0.78));
   --c-canvas: light-dark(#ffffff, #000000);
   /* The dots on the canvas's ground, and on the create page's: there, and no more. */
   --c-canvas-dot: light-dark(rgba(17, 17, 16, 0.13), rgba(255, 255, 255, 0.15));

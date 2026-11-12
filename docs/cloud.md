@@ -410,8 +410,13 @@ checkpoint after every 64 ops or 256 KB of op payload.
 
 A page of ops holds at most 500 ops and 3 MB of them (always at least one), so the
 answer fits in what a Vercel function may send; when the last op is below `seq`, ask
-again from there. `GET /doc` has no such bound yet: before canvases grow past a few
-MB it must stream, or hand out a checkpoint served from R2.
+again from there. `GET /doc` streams instead: it writes the JSON text of `{ doc, seq }`
+in 256 KB slices, and Vercel's 4.5 MB limit does not apply to a streamed answer, so a
+canvas larger than that is still read in one request. A client reads it with `response.json()`
+like any other answer. A refusal (no access, no such canvas) is decided before the first
+byte and is the usual error body. The function still builds the whole document in memory
+first, so its memory, not the answer's size, is what bounds a canvas; handing out a
+checkpoint served from R2 is the way past that if canvases ever grow that large.
 
 ### The replica
 
@@ -548,10 +553,20 @@ Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), on
 area. Other work that must outlive its request and start at once records its job held and runs
 it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
 (`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
-sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+sweep and any other step (the pull request sweep, and once a day the orphan archive sweep), at
+once. A step that throws is logged as `cron_step_failed` and the
 others still run. A step runs every minute, once in every few minutes, or once an hour at a
 given minute. One on a slot runs once in it however many runs overlap, and catches up within
-five minutes when the run it was due in never came.
+five minutes when the run it was due in never came. A step that runs once a day takes an hourly
+slot and does its work only in its hour.
+
+On the hour, the retention step (`cron/steps/retention.ts`) deletes the rows that only keep
+the service running: `auth_states` a day after they expire, finished `jobs` (completed or
+failed for good) and `webhook_deliveries` 30 days after they finished or arrived, at most 5,000
+of each a run, logging counts only. The periods are constants in
+`packages/db/src/queries/retention.ts`, and the privacy policy states them. A step's slot
+mark (`recordOnce`) is a finished job too, so it goes after 30 days: a `recordOnce` key must
+name a window that is over well before then.
 
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
@@ -585,15 +600,16 @@ five minutes when the run it was due in never came.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance` and `billing` let everything through until their
-  features fill them; `claudeLimit` is "Claude plan limits". The runner's claim hands out only
-  the kinds `claimableKinds` allows (every kind, except that only a stop, an edit and a push go
-  out while the plan the canvas runs on is at its limit; billing will narrow it too); the rest
-  stay in the feed,
+  nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
+  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
+  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
+  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
+  will narrow it too); the rest stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
-  be allowed and before anything is written; each lets everything through until its feature
-  fills it.
+  be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
+  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -1123,10 +1139,25 @@ account of the person whose canvas it is alone), recorded or not. They go to the
 `deps.archives`: **set `R2_PRIVATE_BUCKET` before production**, a bucket on the same account
 with no public domain, and they go there; unset (as on dev), they go in the assets bucket, where
 the random key is all that stands between a transcript and the world, since the assets domain
-serves any key it is asked for. Either bucket wants a lifecycle rule that deletes objects under
-`private/` a day old that no checkpoint recorded (an upload whose checkpoint call never came);
-recorded ones are deleted by the API. A settled canvas keeps its last checkpoint, so that
-reopening it resumes the conversation.
+serves any key it is asked for. A settled canvas keeps its last checkpoint, so that reopening it
+resumes the conversation.
+
+**Archives nobody records.** No bucket lifecycle rule may touch `private/`: a rule goes by age
+alone, cannot tell a recorded checkpoint from an unrecorded one, and would delete the last
+checkpoint of every canvas settled for a day. Only `staging/` and incomplete multipart uploads
+take a bucket rule. The API deletes the rest itself: the archives a later checkpoint replaces,
+those of a deleted canvas, and, once a day, the ones nobody records. That last is the cron step
+`archives` (`apps/api/src/cron/steps/archives.ts`), at 09:41 UTC. It lists `private/` in
+`deps.archives` (ListObjectsV2, which gives each object's time) and deletes the objects over a
+day old that no `canvas_runners` row names as its transcript or work in progress, asking the
+database after the listing: an upload whose checkpoint call never came, and one whose delete
+failed. It deletes at most 2,000 a run and reads at most 50 pages of a thousand keys, starting at
+a random key and going round, so a bucket larger than one run reads is still swept whole over
+the days. It keeps an object storage gives no time for, deletes nothing when the database does
+not answer, and logs `archives_swept` with counts only (listed, recorded, young, undated,
+deleted), never a key. So that it can never race a checkpoint, `POST /v1/runner/checkpoint`
+refuses an archive whose upload address ran out more than twelve hours before (404), and the
+runner saves anew.
 
 ### Events
 
@@ -1545,12 +1576,14 @@ answers come in as messages (Questions).
 
 ```
 RunnerEvent = { id, seq, at, priority: "now" | "next" | "later", from: Person | null,
-                posthogSessionId: string | null, kind, payload }
+                posthogSessionId: string | null, trace: boolean, kind, payload }
 Person      = { id, name, login }
 ```
 
 `posthogSessionId` is the PostHog session of the app that sent it, when it said: the turn the
-event begins is traced under it (docs/analytics.md).
+event begins is traced under it (docs/analytics.md). `trace` is false when the person behind it
+has turned Share usage data off, as their row says at the claim: the runner sends no `$ai_*` for
+a turn whose first event says false. An older API leaves it out, which counts as true.
 
 | Kind | Priority | Payload | Into the run |
 |---|---|---|---|
@@ -2460,7 +2493,57 @@ lists what is under `<asset key>/` (ListObjectsV2) and deletes it a thousand key
 most ten attempts. The helper behind it (`deleteUnder`, `apps/api/src/canvases/files.ts`) refuses
 any prefix that is not exactly a well-formed asset key followed by `/`, before it asks storage
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
-bucket. Nothing records the job yet; deleting a canvas or an account will.
+bucket.
+
+Deleting a canvas (`DELETE /v1/canvases/:id`) and deleting an account (the canvases that go with
+it, "Deleting an account") go through the same purge, `deleteCanvasAndFiles`: one statement
+deletes the canvas's row and records that job, keyed by the asset key the row had as it went, so
+the row is never gone without the job that deletes its files. The request then runs the job at
+once, past its answer; a function that dies first leaves it to the minute's cron. A canvas
+deleted twice finds no row the second time and records nothing. A pull request's pictures are
+not under the asset key and stay: its description on GitHub still shows them.
+
+**Resetting a canvas's file links.** A link to a canvas's file works for whoever holds it, and a
+link can get out (pasted in a chat, kept by someone who has since lost access). The canvas's
+owner or an admin of its workspace can reset its file links, from the foot of Share ("Reset file
+links", with a confirmation: "Reset this canvas's file links? Links to its images and exports
+stop working, including any you've copied or pasted elsewhere. Everyone who can open the canvas
+gets the new ones."). `POST /v1/canvases/:id/asset-key/rotate` (403 `forbidden` for anyone else)
+makes a new asset key and:
+
+1. copies every object under the old key to the new one;
+2. swaps the canvas's `asset_key`, only if it is still the old one, and moves
+   `canvases.asset_key_rotated_at` (in the head), recording in the same statement the job
+   `canvas.asset_key_retire`, keyed by the old key, due fifteen minutes later;
+3. copies again whatever the old key gained or changed during the first pass;
+4. answers the canvas as `GET` does, with its new `assetsUrl`.
+
+The job runs once every upload address signed for the old key has run out (ten minutes, with
+five over): while the canvas is still under the new key it copies once more what came late, then
+deletes everything under the old key, a page at a time as the files delete does. Neither that
+copy nor the second pass writes over a file that was written under the new key after the one
+under the old key, so a file the runner replaced since the swap keeps its newer version: each
+copy reads the new key's file again just before it copies. That narrows the race to one round
+trip to storage and does not close it, since storage is not asked for a conditional copy. A
+canvas reset again within the fifteen minutes gets what came late to the old key under its
+current key instead, and only what changed there since the swap, so a file deleted under the
+middle key stays deleted. A canvas deleted after the swap has its files job take the new key at once; the retire job then deletes
+whatever the second pass still copied into the new key after that. An upload
+completed after the swap is moved under the new key as it completes. Two resets at once make
+one: the second finds the key changed, answers the canvas as the first left it, and its copies
+are deleted by a `canvas.files_delete` job. A failure before the swap changes nothing anyone can
+see. Clients watch the head's `assetKeyRotatedAt`: when it moves, the open canvas asks
+`GET /v1/canvases/:id` for the new address and draws from it, and the sidebar asks again for the
+row's previews. A runner already awake keeps the old address until it next starts, so for up to
+fifteen minutes after a reset it reads files through a key about to go, and past that it cannot
+read them until its next start. Resets are on demand only; nothing resets a canvas's links when
+someone loses access.
+
+Neither a delete nor a reset clears a cached copy. Previews, exports and comment pictures are
+served `immutable` for a year and assets for five minutes, so Cloudflare's edge, and a browser
+that already opened a file, can keep answering with a copy after the object is gone from R2,
+for as long as they keep it. Nothing asks Cloudflare to purge its cache yet: that needs a
+Cloudflare API token with cache purge rights and a seam for it, and is not built.
 
 Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
 exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
@@ -2799,19 +2882,46 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    revoked: its row is held, the sandbox is deleted at Vercel in the background, and the sweep's
    reconcile removes what that misses.
 3. Their canvases that are theirs alone are deleted with everything under them: their Scratch
-   canvases, and their canvases in a workspace nobody else is in.
+   canvases, and their canvases in a workspace nobody else is in. Each goes through the same
+   purge as deleting one canvas ("Assets and previews"): its row and the `canvas.files_delete`
+   job for its asset key in one statement, the job run at once, so its stored files (assets,
+   previews, exports, comment pictures) are deleted too. A pull request's pictures stay with
+   the pull request on GitHub. The canvases that stay with a workspace keep their files.
 4. Their name is taken out of what stays: in every canvas of a workspace they are in, or that
    they own, a thread item they wrote or stopped a run in names them as
    `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under
    their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
 5. This period's free allowance is granted to them in every workspace they are in, so their
    leaving does not take it back ("Billing").
-6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+6. Their grant of the GitHub App is revoked at GitHub, so Ponzu leaves their GitHub
+   authorizations and every token of theirs ends: `DELETE /applications/{client_id}/grant` with
+   the App's client id and secret as Basic auth and their token (refreshed first if it has run
+   out) in the body, while the token is still stored. It is best effort and inline: a person
+   with no token has nothing to revoke, a grant GitHub no longer has (404) is done, and any
+   other answer, no answer, or more than 10 seconds is logged as `github_grant_revoke_failed`
+   (their id and GitHub's status, never the token) and the deletion goes on. The
+   `github_app_authorization` webhook that follows finds nobody and does nothing, or, if it
+   comes before their row is gone, forgets the token and ends the sessions that step 7 ends
+   anyway. If step 7 then refuses (another admin's deletion left them the only one), the grant
+   is already revoked: they keep their account and sign in again.
+7. Their row is deleted, and with it everything that hangs off it: their sessions (so every
    token of theirs stops working at once), GitHub token, memberships, repo access answers,
    Claude account, devices and open sign-ins. What other people's work points at forgets them:
    a canvas's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
-7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
+   them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
+   their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
+   and one that a new account signed in with before the job was recorded is kept). While the
+   job waits, sign-in refuses that WorkOS user as `account_being_deleted` (409), so no account
+   is made on it between the job's check and its delete. It then asks PostHog to delete their person with its events and recordings:
+   `POST {PONZU_POSTHOG_API_HOST}/api/projects/{PONZU_POSTHOG_PROJECT_ID}/persons/bulk_delete/`
+   with the personal key as the bearer and `{ distinct_ids: [userId], delete_events: true,
+   delete_recordings: true }`. PostHog takes it at once and deletes in batches later, usually
+   within about a week. A failure at either is tried again; the WorkOS delete is safe to repeat.
+   Without `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` the PostHog step is
+   skipped, logged as `analytics_forget_skipped`, and the job completes. The `account deleted`
+   event is captured about no one, so it does not make their PostHog person again.
 
 **Canvases they own in a workspace others are in stay with it**, owned by nobody: a team's, or
 their own account's when collaborators on their repos are in it. Their boards, thread and pull
@@ -2983,6 +3093,33 @@ ids the code names, both ways, and with their numbers. It fails open: a check th
 count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
 steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
 
+**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or on
+cutover day (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
+environment, so it holds from the next deploy.
+
+- `off`, the default: nothing is held back.
+- `wakes_paused`: no sandbox wakes. The wake gate `maintenance` sets the canvas's
+  `agent_blocker` to `paused` and tries the wake again every two minutes, so a message is kept
+  in the feed and goes in once the switch is off. A turn already running finishes, and a
+  sandbox already awake is not held: it takes up what is sent until it goes to sleep, so the
+  switch stops new spend only as awake sandboxes sleep. Every minute
+  the cron's `maintenance` step, once the switch is off, lifts `paused` everywhere and wakes the
+  canvases that owe a turn (`resumeBlocked`), which takes up a wake that ran out of tries during
+  a long pause. Everything else works.
+- `read_only`: wakes are paused as above, and every write by a person or a runner answers 503
+  `maintenance`, "Ponzu is updating. Try again in a few minutes.", before anything of its route
+  runs. Reads pass, and so do health, the cron, signing in and out, `POST /v1/live`, a
+  person's presence, GitHub's webhook, and a runner's start, heartbeat, checkpoints and their
+  uploads, restore and git credentials, so that an awake sandbox is neither taken for dead nor
+  loses its work. A runner sends the rest again for as long as it lives, as it does any 5xx.
+  The refusal is logged as a refusal, not sent to error tracking. Pause wakes first and let
+  running turns finish before going read-only.
+
+The Mac shows the notice "Ponzu is updating. Your canvases are safe; you can look around, and
+changes come back in a few minutes." when a write is refused this way, at most once a minute,
+and the thread's foot of a paused canvas says "The agent is paused while Ponzu updates. Your
+message is kept and goes through when it's back."
+
 ## Analytics
 
 PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
@@ -2991,6 +3128,16 @@ by setting `PONZU_POSTHOG_KEY` and off without it. The API captures what happens
 calls it makes; each canvas's runner traces the agent's turns in LLM analytics; the apps capture
 what only they know and record sessions. The rules both sides keep, the event catalogue and what
 is never sent are in [analytics.md](analytics.md).
+
+**Share usage data.** Settings › Account has the person's switch, on by default and kept on their
+row (`users.share_usage`), so it holds on every device. `PATCH /v1/me/privacy` `{ shareUsage }`
+answers `{ shareUsage }` and captures nothing; `GET /v1/me` carries it as `privacy.shareUsage` and
+the `me` live row as `share_usage`. Off, the API's sink drops every capture, profile and
+exception about the person (who is out is read in the background send and kept a minute per
+instance), each event a runner claims says `trace: false`, so the runner sends no `$ai_*` for a
+turn that event begins, and the Mac stops its own reporting and writes `~/.ponzu/telemetry.json`.
+A turn already running keeps the flag it began with. analytics.md, "Turning it off", has the
+details and what is not built.
 
 ## Environments
 
@@ -3018,7 +3165,8 @@ redirects never have to move at cutover.
 The API is deployed by a workflow, which applies the pending migrations to the database first;
 nobody deploys a branch to production or migrates a shared database by hand. Dev deploys from
 the head of `cloud`. Production deploys only from `main`, through the GitHub Environment
-`production`, which needs the founder's approval. The production deploy job is not built yet.
+`production`, which needs the founder's approval: `deploy-api.yml`'s production job, off until
+the repository variable `API_DEPLOY_PRODUCTION` is set.
 Every deployment holds its environment's secrets, so only each project's own domains are
 public: previews and the unique URL of each deployment open only for the team.
 

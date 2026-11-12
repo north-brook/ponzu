@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { z } from "zod";
 import { CLAUDE_HAIKU, createClaude } from "../deps/model.ts";
-import { createAiTracing, scopeContext } from "./ai.ts";
+import { createAiTracing, scopeContext, scopeContextFor } from "./ai.ts";
+import { cachedOptOuts, OPT_OUTS_TTL_MS } from "./analytics.ts";
 import { withScope } from "./scope.ts";
 
 // A model call the API makes, traced as PostHog's AI SDK v7 path traces it, with the spans kept
@@ -100,6 +101,53 @@ test("PostHog's span processor reads who a call is for, and their app session, f
   });
   // Work no request started (the cron's) is about nobody in particular.
   expect(scopeContext.getContext()).toBeUndefined();
+});
+
+test("a model call for someone who turned usage sharing off is the workspace's, about no one", async () => {
+  let ids: string[] = [];
+  const optOuts = cachedOptOuts(
+    async () => ids,
+    () => 0,
+  );
+  const context = scopeContextFor(optOuts);
+  // Before the analytics have read who is out, nobody is named; the read is asked for.
+  expect(withScope(scope, () => context.getContext())).toEqual({});
+  await optOuts.current();
+  expect(withScope(scope, () => context.getContext())).toEqual({
+    distinctId: "usr_ada",
+    sessionId: "0192e0a0-0000-7000-8000-000000000001",
+  });
+  ids = ["usr_ada"];
+  optOuts.forget();
+  await optOuts.current();
+  expect(withScope(scope, () => context.getContext())).toEqual({});
+});
+
+test("an instance's copy past its minute names no one until it is read again", async () => {
+  let clock = 0;
+  let reads = 0;
+  const optOuts = cachedOptOuts(
+    async () => {
+      reads += 1;
+      return [];
+    },
+    () => clock,
+  );
+  const context = scopeContextFor(optOuts);
+  await optOuts.current();
+  expect(withScope(scope, () => context.getContext())).toEqual({
+    distinctId: "usr_ada",
+    sessionId: "0192e0a0-0000-7000-8000-000000000001",
+  });
+  // Idle past the copy's lifetime: Ada may have turned it off elsewhere since.
+  clock = OPT_OUTS_TTL_MS;
+  expect(withScope(scope, () => context.getContext())).toEqual({});
+  await optOuts.current();
+  expect(reads).toBe(2);
+  expect(withScope(scope, () => context.getContext())).toEqual({
+    distinctId: "usr_ada",
+    sessionId: "0192e0a0-0000-7000-8000-000000000001",
+  });
 });
 
 test("a feature asked about no workspace takes the request's", () => {

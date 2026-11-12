@@ -59,6 +59,13 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  type AssetKeySwap,
+  deleteCanvasWithFiles,
+  type FilesJob,
+  type RecordedJob,
+  swapCanvasAssetKey,
+} from "./queries/canvas-files.ts";
+export {
   BRANCH_TAKEN,
   type Canvas,
   type CanvasAccess,
@@ -145,6 +152,7 @@ export {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  hasWaitingJob,
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
@@ -210,6 +218,7 @@ export {
   removePresence,
   touchPresence,
 } from "./queries/presence.ts";
+export { listUsageOptOuts, setShareUsage } from "./queries/privacy.ts";
 export {
   type BranchCanvas,
   findCanvasByBranch,
@@ -256,6 +265,14 @@ export {
   releaseRepoIdeas,
   saveRepoIdeas,
 } from "./queries/repo-ideas.ts";
+export {
+  AUTH_STATE_RETENTION_MS,
+  JOB_RETENTION_DAYS,
+  RETENTION_BATCH,
+  type SweptRows,
+  sweepOldRows,
+  WEBHOOK_RETENTION_DAYS,
+} from "./queries/retention.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
@@ -356,6 +373,7 @@ export {
   listAssets,
   listUploadKeys,
   type NewUpload,
+  recordedArchiveKeys,
   type Upload,
 } from "./queries/uploads.ts";
 export {

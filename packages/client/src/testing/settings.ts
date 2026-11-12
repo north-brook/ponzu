@@ -11,7 +11,7 @@ import { ApiError } from "../errors.ts";
 
 export type SettingsApi = Pick<
   Api,
-  "notifications" | "devices" | "environments" | "usage" | "account"
+  "notifications" | "devices" | "environments" | "usage" | "privacy" | "account"
 >;
 
 type Prefs = Awaited<ReturnType<Api["notifications"]["get"]>>["prefs"];
@@ -57,10 +57,14 @@ export interface SettingsWorld {
   soleAdminOf(userId: string): { id: string; name: string }[];
   /** Take the person out of every workspace and forget them. */
   forget(userId: string): void;
+  /** The person's own row changed: the live `me` row says so. */
+  meChanged(): void;
 }
 
 export class FakeSettings {
   readonly prefs = new Map<string, Prefs>();
+  /** Share usage data, by person: on unless they turned it off. */
+  readonly sharing = new Map<string, boolean>();
   readonly devices = new Map<string, Device[]>();
   readonly secrets = new Map<string, { name: string; updatedAt: string }[]>();
   readonly bases = new Map<string, Base>();
@@ -294,6 +298,14 @@ export class FakeSettings {
             return usage(workspaceId);
           }),
       },
+      privacy: {
+        setShareUsage: (shareUsage) =>
+          call(() => {
+            this.sharing.set(userId, shareUsage);
+            world.meChanged();
+            return { shareUsage };
+          }),
+      },
       account: {
         delete: (confirm) =>
           call(() => {
@@ -309,6 +321,7 @@ export class FakeSettings {
             }
             world.forget(userId);
             this.prefs.delete(userId);
+            this.sharing.delete(userId);
             this.devices.delete(userId);
           }),
       },

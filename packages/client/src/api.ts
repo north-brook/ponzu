@@ -164,6 +164,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
        */
       takeOver: async (id: string) =>
         (await v1.canvases[":id"]["take-over"].$post(canvas(id))).json(),
+      /**
+       * Resets the canvas's file links: its files move under a new address, and links to the
+       * old one stop working. Its owner or a workspace admin may (403 `forbidden` otherwise).
+       * Answers the canvas with its new `assetsUrl`.
+       */
+      rotateAssetKey: async (id: string) =>
+        (await v1.canvases[":id"]["asset-key"].rotate.$post(canvas(id))).json(),
 
       doc: async (id: string) => (await v1.canvases[":id"].doc.$get(canvas(id))).json(),
       /** 410 `ops_pruned` when the log no longer keeps the ops after `after`. */
@@ -443,6 +450,15 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         (
           await v1.workspaces[":id"].billing.$patch({ ...canvas(workspaceId), json: { capUsd } })
         ).json(),
+    },
+
+    privacy: {
+      /**
+       * Settings › Account › Share usage data, for every device the person uses. `me` carries
+       * it, as `privacy.shareUsage` and the live row's `shareUsage`.
+       */
+      setShareUsage: async (shareUsage: boolean) =>
+        (await v1.me.privacy.$patch({ json: { shareUsage } })).json(),
     },
 
     account: {

@@ -83,6 +83,9 @@ export const users = pgTable("users", {
   pingPrReady: boolean("ping_pr_ready").notNull().default(true),
   pingTeammateComments: boolean("ping_teammate_comments").notNull().default(false),
   emailDigest: boolean("email_digest").notNull().default(false),
+  // Settings › Account › Share usage data: false stops the apps', the API's and the agent's
+  // analytics about this person (docs/analytics.md, "Turning it off").
+  shareUsage: boolean("share_usage").notNull().default(true),
   // Guided setup: when each step that has no other trace was finished.
   onboardingWhereAt: instant("onboarding_where_at"),
   onboardingIphoneAt: instant("onboarding_iphone_at"),

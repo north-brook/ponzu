@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Binding, createVault, generateVaultKey, VaultError } from "./vault.ts";
+import { type Binding, createVault, generateVaultKey, sealedKeyId, VaultError } from "./vault.ts";
 
 const key = generateVaultKey();
 const vault = createVault({ key });
@@ -100,4 +100,24 @@ test("a key that is not 32 bytes of base64url is refused when the vault is made"
     expect(() => createVault({ key: bad })).toThrow(VaultError);
   }
   expect(() => createVault({ key, oldKeys: ["short"] })).toThrow(VaultError);
+});
+
+test("a sealed value's key id reads without opening it, and matches the key that sealed it", async () => {
+  const next = generateVaultKey();
+  const rotated = createVault({ key: next, oldKeys: [key] });
+  const { current, old } = await rotated.keyIds();
+  expect(old).toEqual([(await vault.keyIds()).current]);
+  expect(current).toMatch(/^[0-9a-f]{8}$/);
+  expect(sealedKeyId(await rotated.seal("x", maya))).toBe(current);
+  expect(sealedKeyId(await vault.seal("x", maya))).toBe(old[0]!);
+  for (const bad of [
+    "",
+    "pzv1",
+    "pzv1.abc.n.c",
+    "pzv2.0011aabb.n.c",
+    "pzv1.0011aabb.n",
+    "pzv1.0011aabb.n.c.d",
+  ]) {
+    expect(sealedKeyId(bad)).toBeNull();
+  }
 });

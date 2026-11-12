@@ -21,6 +21,11 @@ export interface MemoryObject {
   /** The headers it was stored with, which it is served with. */
   headers: Record<string, string>;
   sha256: string | null;
+  /**
+   * When it was written, by the test's clock: set by a PUT and a copy. One a test puts in
+   * `objects` itself has none unless it gives one, and a list answers it as not said.
+   */
+  modifiedAt?: number;
 }
 
 /**
@@ -81,7 +86,12 @@ export class MemoryStorage implements ObjectStorage {
     if (body.byteLength !== signed.object.size) return refuse(403, "SignatureDoesNotMatch");
     const sha256 = createHash("sha256").update(body).digest("hex");
     if (sha256 !== signed.object.sha256) return refuse(400, "BadDigest");
-    this.objects.set(signed.key, { body, headers: expected, sha256 });
+    this.objects.set(signed.key, {
+      body,
+      headers: expected,
+      sha256,
+      modifiedAt: this.#clock.now(),
+    });
     return new Response(null, { status: 200 });
   };
 
@@ -110,9 +120,10 @@ export class MemoryStorage implements ObjectStorage {
 
   async copy(from: string, to: string) {
     const found = this.objects.get(from);
-    if (!found) throw new Error(`Nothing at ${from} to copy.`);
+    // As R2 answers a copy whose source is not there: 404, naming no key.
+    if (!found) throw new UpstreamError("storage", "COPY an object answered 404", { status: 404 });
     // R2 keeps the headers and not the checksum.
-    this.objects.set(to, { ...found, sha256: null });
+    this.objects.set(to, { ...found, sha256: null, modifiedAt: this.#clock.now() });
   }
 
   async delete(key: string) {
@@ -134,7 +145,12 @@ export class MemoryStorage implements ObjectStorage {
     const all = [...this.objects.keys()]
       .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
       .sort();
-    return { keys: all.slice(0, MAX_LIST_KEYS), truncated: all.length > MAX_LIST_KEYS };
+    const keys = all.slice(0, MAX_LIST_KEYS);
+    const objects = keys.map((key) => {
+      const at = this.objects.get(key)!.modifiedAt;
+      return { key, modifiedAt: at === undefined ? null : new Date(at) };
+    });
+    return { keys, objects, truncated: all.length > MAX_LIST_KEYS };
   }
 
   async deleteMany(keys: readonly string[]): Promise<void> {

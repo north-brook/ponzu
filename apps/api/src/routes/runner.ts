@@ -143,6 +143,7 @@ const ClaimView = z.object({
       priority: z.enum(["now", "next", "later"]),
       from: Person.nullable(),
       posthogSessionId: z.string().nullable(),
+      trace: z.boolean(),
       kind: z.string(),
       payload: z.record(z.string(), z.unknown()),
     }),
@@ -240,6 +241,8 @@ export const runner = new Hono<AppEnv>()
             priority: event.priority,
             from: event.from,
             posthogSessionId: event.posthogSessionId,
+            // Read from the person's row at the claim: a turn already under way keeps its own.
+            trace: event.trace,
             kind: event.kind,
             payload: event.payload,
           }) as RunnerEvent,

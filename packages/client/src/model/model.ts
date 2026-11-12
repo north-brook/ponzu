@@ -337,9 +337,10 @@ export interface AgentActivity {
   status: string | null;
   /**
    * Why its sandbox isn't running: every machine it may start is taken, so it waits its turn;
-   * or starting one failed. Messages are kept either way, and go in once it runs.
+   * Ponzu has paused wakes while it updates (`paused`); or starting one failed. Messages are
+   * kept either way, and go in once it runs.
    */
-  sandbox?: "busy" | "failed" | null;
+  sandbox?: "busy" | "paused" | "failed" | null;
 }
 
 /** Older items of the thread: more to fetch, fetching, or none. */

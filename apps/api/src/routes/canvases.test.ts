@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { appendThreadItem, getCanvasAssetKey, readDocSource } from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
+import { z } from "zod";
 import {
   call,
   canvasIn,
@@ -10,6 +11,7 @@ import {
   workspaceWithRepo,
 } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
+import { DOC_SLICE_BYTES } from "./canvases.ts";
 
 let t: TestApp;
 let ws: Workspace;
@@ -347,6 +349,68 @@ describe("GET /v1/canvases/:id/doc", () => {
     expect(reader.body).toEqual({ doc: emptyDoc("Read me"), seq: 0 });
     expect(own.body).toEqual(reader.body);
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([404, "not_found"]);
+  });
+
+  test("streams a 6 MB document in 256 KB slices, which response.json() reads whole", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Huge"));
+    const runner = await runnerHeaders(t, canvas.id);
+    // Three posts of nine 250 KB notes: 6.75 MB of notes, past the 4.5 MB a Vercel function
+    // may send in an answer that is not streamed.
+    const notes: Record<string, string> = {};
+    for (const post of [1, 2, 3]) {
+      const ops = Array.from({ length: 9 }, (_, i) => {
+        const name = `n${post}_${i}`;
+        notes[name] = String.fromCharCode(97 + ((post * 9 + i) % 26)).repeat(250_000);
+        return { id: `op_${post}_${i}`, op: { op: "note", name, content: notes[name] } };
+      });
+      const posted = await call(t, runner, "POST", `/v1/canvases/${canvas.id}/ops`, { ops });
+      expect(posted.status).toBe(200);
+    }
+    const read = () => t.app.request(`/v1/canvases/${canvas.id}/doc`, { headers: as("ines") });
+
+    // Whole, through response.json(), the way every client reads it.
+    const whole = await read();
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toStartWith("application/json");
+    expect(whole.headers.get("content-length")).toBeNull();
+    // The request middleware still stamps a streamed answer after the route returns it.
+    expect(whole.headers.get("cache-control")).toBe("no-store");
+    expect(whole.headers.get("x-request-id")).toBeTruthy();
+    const body = await whole.json();
+    // The shape the route no longer parses on the way out.
+    const parsed = z
+      .object({
+        doc: z.object({
+          name: z.string(),
+          pages: z.array(z.unknown()),
+          tokens: z.string(),
+          threads: z.array(z.unknown()),
+          notes: z.record(z.string(), z.string()),
+        }),
+        seq: z.number().int(),
+      })
+      .strict()
+      .parse(body);
+    expect(parsed.seq).toBe(27);
+    expect(parsed.doc).toEqual({ ...emptyDoc("Huge"), notes });
+
+    // In slices: no piece of the answer is larger than one, and together they are all of it.
+    const reader = (await read()).body!.getReader();
+    const sizes: number[] = [];
+    for (let next = await reader.read(); !next.done; next = await reader.read()) {
+      sizes.push(next.value.byteLength);
+    }
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    expect(total).toBeGreaterThan(6_000_000);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(DOC_SLICE_BYTES);
+    expect(sizes.length).toBe(Math.ceil(total / DOC_SLICE_BYTES));
+  });
+
+  test("a refusal is still the one error body, decided before anything streams", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Private"));
+    const refused = await call(t, await nobody(), "GET", `/v1/canvases/${canvas.id}/doc`);
+    expect(refused.status).toBe(404);
+    expect(refused.body.error.code).toBe("not_found");
   });
 });
 

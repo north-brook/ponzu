@@ -1,4 +1,4 @@
-import type { Api, KeyValueStorage, Live, Session } from "@ponzu/client";
+import type { Api, ApiError, KeyValueStorage, Live, Session } from "@ponzu/client";
 import type {
   DeepLink,
   MenuCommand,
@@ -54,8 +54,20 @@ export interface Host {
   /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
   /**
+   * Hear each error the API answers any request of the window's with, whoever sent it (a
+   * mutation, the thread, a canvas's sync), such as the maintenance switch's 503. Returns the
+   * unsubscribe. Left out where the host doesn't tell.
+   */
+  onApiError?(listener: (error: ApiError) => void): () => void;
+  /**
    * Whether to show the welcome from Ponzu 1.x now: the shell's answer, true once ever. Absent
    * where there is no shell (a browser, the tests), which never shows it.
    */
   welcome1x?(): Promise<boolean>;
+  /**
+   * Share usage data, on this computer: the shell writes what its next launch reads, and stops
+   * its own reporting when it is turned off. Answers whether its next launch will report.
+   * Absent where there is no shell.
+   */
+  setUsageSharing?(enabled: boolean): Promise<boolean>;
 }

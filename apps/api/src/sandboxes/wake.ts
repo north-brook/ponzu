@@ -142,7 +142,10 @@ export async function resumeBlocked(
     }
   }
   const counts = { lifted: lifted.length, started, queued: owed.length - started };
-  deps.log.info("blocked_resumed", { blockers, workspaceId, accountId, ...counts });
+  // Asked every minute by the cron's `maintenance` step: said only when it lifted something.
+  if (lifted.length > 0) {
+    deps.log.info("blocked_resumed", { blockers, workspaceId, accountId, ...counts });
+  }
   return counts;
 }
 

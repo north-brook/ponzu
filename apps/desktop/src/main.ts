@@ -56,7 +56,7 @@ import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
 import { requestIdOf, type SupportFacts } from "./support.ts";
-import { telemetryOffBecause } from "./telemetry-consent.ts";
+import { telemetryOffBecause, writeUsageSharing } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
 import { createMainWindow } from "./window.ts";
@@ -239,6 +239,8 @@ const telemetry = posthog
       home: homedir(),
     })
   : null;
+/** The person turned Share usage data off while Ponzu ran: the main process reports no more. */
+let telemetryStopped = false;
 
 let mainWindow: BrowserWindow | null = null;
 /** Links that arrived before the studio listened for them. */
@@ -405,6 +407,34 @@ function registerIpc(session: MainSession, updater: Updates) {
   });
   listen(CHANNELS.comeForward, () => comeForward());
   handle(CHANNELS.welcome1x, () => welcome1x());
+  handle(CHANNELS.usageSharing, (enabled) => setUsageSharing(enabled === true));
+}
+
+/**
+ * Settings › Account › Share usage data, on this computer (docs/analytics.md, "Turning it
+ * off"): the file the next launch reads, and, when it is turned off, the main process's error
+ * reporting stopped now. The studio stops its own PostHog itself.
+ */
+async function setUsageSharing(enabled: boolean): Promise<boolean> {
+  // Off stops reporting first, so a file that can't be written never leaves it running.
+  let shutdown: Promise<void> | null = null;
+  if (!enabled && telemetry && !telemetryStopped) {
+    telemetryStopped = true;
+    // No error after this is reported; what was queued before the person said no is sent.
+    telemetry.stop();
+    shutdown = telemetry.shutdown();
+  }
+  // The file is written before anything is awaited, so changes land in the order they were
+  // made: a later "on" is never overwritten by an earlier "off" still shutting down.
+  try {
+    writeUsageSharing(homedir(), enabled);
+  } finally {
+    await shutdown;
+  }
+  // Whether the next launch reports: this build has a project, and nothing else says no.
+  return (
+    enabled && Boolean(config.posthog) && !smoke && !telemetryOffBecause(process.env, homedir())
+  );
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -661,7 +691,7 @@ if (!app.requestSingleInstanceLock()) {
   // What the main process has queued goes before it quits, for two seconds at most.
   let flushed = false;
   app.on("will-quit", (event) => {
-    if (!telemetry || flushed) return;
+    if (!telemetry || flushed || telemetryStopped) return;
     event.preventDefault();
     flushed = true;
     void telemetry.shutdown().finally(() => app.quit());
