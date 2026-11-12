@@ -61,7 +61,12 @@ const kept: Kept | null = existsSync(stateFile)
   : null;
 const fake = new FakeRunnerApi({
   doc: kept?.doc ?? emptyDoc("Untitled"),
-  session: kept?.session ?? { design: { id: designId, name: "Untitled" }, model: "haiku" },
+  // Every live run's turns are on the development key: Haiku, at low effort.
+  session: kept?.session ?? {
+    design: { id: designId, name: "Untitled" },
+    model: "haiku",
+    effort: "low",
+  },
   feedSeq: kept?.feedSeq ?? 0,
 });
 const unbase = (s: string | null | undefined) =>

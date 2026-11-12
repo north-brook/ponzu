@@ -7,7 +7,8 @@ import { ApiError } from "../http/errors.ts";
  * offers the account it runs as (the Agent SDK's `supportedModels()`), and that is what the
  * account is offered: a model Anthropic ships appears once the sandbox image's Claude Code knows
  * it, with no Ponzu release. The list below is what an account nobody has reported for yet is
- * offered, and where an id matches, the name and the order the apps show it under.
+ * offered, and where an id matches, the name and the order the apps show it under. The Claude
+ * Code workflow's pull request names any model its release notes mention that this list lacks.
  */
 
 export interface ClaudeModel {
