@@ -162,6 +162,15 @@ export const State: z.ZodType<StateRequest, unknown> = z.object({
     })
     .nullable()
     .optional(),
+  claudeLimit: z
+    .object({
+      status: z.enum(["allowed", "allowed_warning", "rejected"]),
+      window: text(64).nullable(),
+      resetsAt: z.iso.datetime({ offset: true }).nullable(),
+      utilization: z.number().min(0).max(100).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const Turn = z

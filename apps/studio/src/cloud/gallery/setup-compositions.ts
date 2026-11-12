@@ -73,6 +73,13 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   setup("setup-iphone", "4 · Get Ponzu on your iPhone", "4-get-ponzu-on-your-iphone.html"),
   settings("settings-account", "Settings · Account", "account.html"),
   settings("settings-agents", "Settings · Agents", "agents.html"),
+  {
+    // Not drawn: the plan at its limit in the session and the week on Opus, with a Sonnet week.
+    id: "agents-limits",
+    title: "Settings · Agents, the plan at its limit",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+  },
   settings("settings-notifications", "Settings · Notifications", "notifications.html"),
   settings("settings-members", "Settings · Members", "members.html"),
   {

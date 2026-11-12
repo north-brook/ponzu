@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { chmodSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +112,7 @@ async function setup(
     flush?: () => void;
     checkoutGit?: (cwd: string) => Git;
     telemetry?: RunnerOptions["telemetry"];
+    planLimits?: boolean;
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -128,6 +129,7 @@ async function setup(
     flush: opts.flush,
     ...(opts.checkoutGit ? { checkoutGit: opts.checkoutGit } : {}),
     ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
+    ...(opts.planLimits ? { planLimits: true } : {}),
     stateDir,
     log: (m) => logs.push(m),
     onFatal: (reason) => fatal.push(reason),
@@ -369,6 +371,9 @@ test("a repo canvas is told where its checkout is, and that it drives its pull r
   expect(said).not.toContain("Ponzu doesn't open");
   expect(said).not.toContain("the person opens it");
   expect(said).toContain("If a push fails, don't work around it");
+  // The App can't write workflows, and the agent can't fix that: it leaves them out instead.
+  expect(said).toContain("leave workflow files out of your commits");
+  expect(said).not.toMatch(/fix .*workflow/i);
   expect(said).toContain(
     "Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.",
   );
@@ -614,6 +619,80 @@ test("Create PR during a turn waits for the turn to end, so the agent's git is l
   expect(s.onGithub()).toBeNull();
   s.run.end();
   await until(() => s.onGithub() === head, 5_000);
+});
+
+test("the agent's pull request tools push mid-turn, and ask the API only once GitHub has the branch (#511)", async () => {
+  const s = await onRepo();
+  s.api.remoteHead = s.onGithub;
+  s.run.ready();
+  await turn(s);
+  const head = s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: true });
+  expect(opened.isError).toBeFalsy();
+  // Pushed by the tool itself, mid-turn, before the API was asked: not left for the turn's end.
+  expect(s.onGithub()).toBe(head);
+  expect(s.api.prCalls.map((call) => call.action)).toEqual(["open"]);
+  expect(opened.text).toContain("Opened pull request #1 as a draft");
+  // And the merge names the commit GitHub has.
+  s.commit();
+  const merged = await s.run.call("merge_pull_request");
+  expect(merged.isError).toBeFalsy();
+  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", headSha: s.onGithub() });
+});
+
+/** Makes "GitHub" refuse every push, saying `line` as GitHub's own refusal does. */
+function refusePushes(origin: string, line: string) {
+  const hook = join(origin, "hooks", "pre-receive");
+  writeFileSync(hook, `#!/bin/sh\necho "${line}" >&2\nexit 1\n`);
+  chmodSync(hook, 0o755);
+}
+
+test("a push GitHub refuses fails the agent's tools before the API is asked, and nothing is said done (#511)", async () => {
+  const s = await onRepo();
+  s.api.remoteHead = s.onGithub;
+  refusePushes(s.origin, "remote: Repository not found.");
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: false });
+  expect(opened.isError).toBe(true);
+  expect(opened.text).toContain("aren't on GitHub yet, so nothing was asked of the pull request");
+  const merged = await s.run.call("merge_pull_request");
+  expect(merged.isError).toBe(true);
+  // The API heard of neither.
+  expect(s.api.prCalls).toEqual([]);
+  expect(s.onGithub()).toBeNull();
+  // And a fake API that looks at the remote never says it opened one from a branch GitHub lacks.
+  const answer = await s.api.actOnPullRequest(s.api.runner!, "open", { turn: null });
+  expect(answer).toMatchObject({ did: false, pushing: true, branch: { exists: false } });
+});
+
+test("a push with a workflow file is refused in its own words: leave the file out, never 'fix it'", async () => {
+  const s = await onRepo();
+  // GitHub's own line, verbatim, as it answers a GitHub App without the workflows permission.
+  refusePushes(
+    s.origin,
+    "remote: refusing to allow a GitHub App to create or update workflow \\`.github/workflows/ci.yml\\` without \\`workflows\\` permission",
+  );
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  const opened = await s.run.call("open_pull_request", { draft: true });
+  expect(opened.isError).toBe(true);
+  expect(opened.text).toContain("Take those changes out of the branch's commits");
+  expect(s.api.prCalls).toEqual([]);
+  s.run.end();
+
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  const message = String((notices(s.api, "error")[0]!.payload as { message?: string }).message);
+  expect(message).toBe(
+    "GitHub won't let Ponzu push changes to files under .github/workflows/ to north/fern: Ponzu's GitHub App isn't allowed to change workflows. 1 commit on pz/hero is safe in this canvas's sandbox. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.",
+  );
+  expect(message).not.toMatch(/fix/i);
+  // Not a failure that passes on another try: tried once a push, never again and again.
+  const tries = s.api.gitReports.filter((r) => r.name === "git_push");
+  expect(tries.every((r) => r.fields.kind === "workflow_permission")).toBe(true);
+  expect(tries.every((r) => r.fields.attempt === 0)).toBe(true);
 });
 
 test("the turn's checkpoint is saved before its push, which may take a while", async () => {
@@ -2125,6 +2204,55 @@ test("telemetry that cannot start leaves the runner running, untraced", async ()
   });
   expect(s.run.opts.trace).toBeUndefined();
   expect(s.logs).toContain("analytics could not start: no PostHog here");
+});
+
+/* ------------------------------------------------------------------ */
+/* Claude plan limits                                                  */
+/* ------------------------------------------------------------------ */
+
+const SESSION_FULL = {
+  status: "rejected",
+  window: "five_hour",
+  resetsAt: "2026-11-12T21:00:00.000Z",
+  utilization: 1,
+} as const;
+const WEEK_WARNING = {
+  status: "allowed_warning",
+  window: "seven_day",
+  resetsAt: "2026-11-16T09:00:00.000Z",
+  utilization: 0.81,
+} as const;
+
+test("on a subscription, what Claude Code says of the plan's limits goes with the state, once each", async () => {
+  const s = await setup({ planLimits: true, timing: { heartbeatMs: 10 } });
+  s.run.ready();
+  // Two windows inside one gap: neither is lost.
+  s.run.emit({ type: "limit", limit: SESSION_FULL });
+  s.run.emit({ type: "limit", limit: WEEK_WARNING });
+  const said = () => s.api.states.flatMap((st) => (st.claudeLimit ? [st.claudeLimit] : []));
+  await until(() => said().length === 2);
+  expect(said()).toEqual([SESSION_FULL, WEEK_WARNING]);
+
+  // The same news again is not news; heartbeats carry none.
+  s.run.emit({ type: "limit", limit: { ...SESSION_FULL } });
+  const before = s.api.states.length;
+  await until(() => s.api.states.length >= before + 3);
+  expect(said()).toHaveLength(2);
+
+  // The window reset: that is news.
+  const reset = { ...SESSION_FULL, status: "allowed", utilization: 0.02 } as const;
+  s.run.emit({ type: "limit", limit: reset });
+  await until(() => said().length === 3);
+  expect(said()[2]).toEqual(reset);
+});
+
+test("on an API key, the runner reports no limit whatever Claude Code says", async () => {
+  const s = await setup({ timing: { heartbeatMs: 10 } });
+  s.run.ready();
+  s.run.emit({ type: "limit", limit: SESSION_FULL });
+  const before = s.api.states.length;
+  await until(() => s.api.states.length >= before + 3);
+  expect(s.api.states.every((st) => st.claudeLimit === undefined)).toBe(true);
 });
 
 /* ------------------------------------------------------------------ */

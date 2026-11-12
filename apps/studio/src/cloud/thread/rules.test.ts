@@ -3,6 +3,7 @@ import type { Person } from "../model.ts";
 import {
   clearDrafts,
   composerButton,
+  composerHolds,
   readDraft,
   restoreDraft,
   writeDraft,
@@ -47,10 +48,18 @@ test("Stop while working with nothing typed; Send once there is something to sen
   expect(composerButton({ ...base, text: "this", attachments: [ready, uploading] })).toBe(
     "waiting",
   );
-  // While the owner's plan is at its limit nothing sends, but a run still going can be stopped.
+  // While the owner's plan is at its limit a message still sends: it waits in the feed and goes
+  // in at the reset. A run still going can be stopped.
   const gate = { kind: "claude_limit", owner: bryce, until: "2026-11-10T21:00:00Z" } as const;
-  expect(composerButton({ ...base, text: "hello", gate })).toBe("waiting");
+  expect(composerHolds(gate)).toBe(false);
+  expect(composerButton({ ...base, text: "hello", gate })).toBe("send");
+  expect(composerButton({ ...base, text: "this", attachments: [ready], gate })).toBe("send");
   expect(composerButton({ ...base, working: true, gate })).toBe("stop");
+  // While it waits on the owner's Claude being connected, nothing sends.
+  const signedOut = { kind: "claude_expired", owner: bryce } as const;
+  expect(composerHolds(signedOut)).toBe(true);
+  expect(composerButton({ ...base, text: "hello", gate: signedOut })).toBe("waiting");
+  expect(composerButton({ ...base, working: true, gate: signedOut })).toBe("stop");
 });
 
 test("drafts are kept per person and canvas, and signing out clears them", () => {
