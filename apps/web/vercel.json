@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../packages/canvas ../../packages/core ../../packages/store ../../packages/db/src/rate-card.ts ../../bun.lock"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../packages/canvas ../../packages/core ../../packages/render ../../packages/store ../../packages/db/src/rate-card.ts ../../bun.lock"
 }

@@ -1,5 +1,5 @@
 import type { MDXComponents } from "mdx/types";
-import { Code, H2, Link, P, Table, Td, Th, Ul } from "@/components/prose";
+import { Code, H2, Link, Ol, P, Pre, Table, Td, Th, Ul } from "@/components/prose";
 
 /*
  * What an .mdx page's Markdown renders as: the site's prose (components/prose.tsx), the same text
@@ -13,6 +13,8 @@ const components: MDXComponents = {
   a: Link,
   code: Code,
   ul: Ul,
+  ol: Ol,
+  pre: Pre,
   table: Table,
   th: Th,
   td: Td,

@@ -39,14 +39,12 @@ export function P(props: ComponentProps<"p">) {
   return <p className="m-0" {...props} />;
 }
 
-export function Link({ href, children }: { href?: string; children?: ReactNode }) {
+export function Link(props: ComponentProps<"a">) {
   return (
     <a
       className="text-ink underline decoration-outline underline-offset-4 hover:decoration-ink"
-      href={href}
-    >
-      {children}
-    </a>
+      {...props}
+    />
   );
 }
 
@@ -58,6 +56,20 @@ export function Code({ children }: { children?: ReactNode }) {
 
 export function Ul(props: ComponentProps<"ul">) {
   return <ul className="m-0 flex list-disc flex-col gap-2 pl-5 marker:text-faint" {...props} />;
+}
+
+export function Ol(props: ComponentProps<"ol">) {
+  return <ol className="m-0 flex list-decimal flex-col gap-2 pl-5 marker:text-faint" {...props} />;
+}
+
+/** A fenced code block. Its <code> is the inline Code above, so the block undoes the pill. */
+export function Pre(props: ComponentProps<"pre">) {
+  return (
+    <pre
+      className="m-0 overflow-x-auto rounded-lg bg-chip p-4 font-mono text-[14px]/6 text-ink [&>code]:bg-transparent [&>code]:p-0"
+      {...props}
+    />
+  );
 }
 
 export function Table(props: ComponentProps<"table">) {

@@ -117,6 +117,8 @@ function internalLinks(): { href: string; where: string }[] {
       ...text.matchAll(/\]\((\/(?!\/)[^)\s]*)\)/g),
       // The link constants: export const DOWNLOAD = "/download".
       ...text.matchAll(/export const [A-Z_]+(?::[^=]+)? = "(\/(?!\/)[^"]*)"/g),
+      // A page's canonical address: share({ path: "/download" }).
+      ...text.matchAll(/share\(\{\s*path:\s*"(\/(?!\/)[^"]*)"/g),
     ];
     return hrefs.map((m) => ({ href: m[1]!, where: rel(p, ROOT) }));
   });
@@ -179,6 +181,16 @@ test("the sitemap lists exactly the pages meant for search", () => {
     .map((p) => p.route)
     .sort();
   expect(listed.map((u) => u.pathname).sort()).toEqual(indexable);
+});
+
+test("no page is titled just Ponzu, which the layout's template would print twice", () => {
+  // app/layout.tsx's template is "%s · Ponzu": a page titled "Ponzu" reads "Ponzu · Ponzu".
+  const layout = readFileSync(join(APP, "layout.tsx"), "utf8");
+  expect(layout).toContain('template: "%s · Ponzu"');
+  const doubled = pageFiles.filter((f) =>
+    /\btitle:\s*"Ponzu"/.test(readFileSync(join(APP, f), "utf8")),
+  );
+  expect(doubled).toEqual([]);
 });
 
 test("the retired 1.x pages are landings out of search, or gone", () => {

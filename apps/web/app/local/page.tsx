@@ -11,7 +11,8 @@ import { RetiredLanding } from "@/components/retired";
  */
 
 export const metadata: Metadata = {
-  title: "Ponzu",
+  // The layout adds " · Ponzu".
+  title: "Ponzu 1 link",
   description: "This link opened a design in Ponzu 1.",
   robots: { index: false, follow: false },
 };

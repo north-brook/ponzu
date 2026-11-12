@@ -10,7 +10,8 @@ import { retiredRepo } from "../retired";
  */
 
 export const metadata: Metadata = {
-  title: "Ponzu",
+  // The layout adds " · Ponzu".
+  title: "Viewer retired",
   description: "The public design viewer has retired.",
   robots: { index: false, follow: false },
 };
