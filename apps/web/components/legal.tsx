@@ -26,7 +26,7 @@ export function Open({
   draft = LEGAL_DRAFT,
 }: {
   who: OpenFor;
-  children: ReactNode;
+  children?: ReactNode;
   draft?: boolean;
 }) {
   if (draft) return null;
