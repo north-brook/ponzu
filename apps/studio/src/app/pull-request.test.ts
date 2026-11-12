@@ -4,8 +4,10 @@ import { createFakeBackend, settle } from "@ponzu/client/testing";
 import {
   bodyForTab,
   chromeAction,
+  offeredTab,
   prActionError,
   prSummary,
+  rowPullRequest,
   rulesWant,
   toPullRequestDetail,
 } from "./pull-request-map.ts";
@@ -286,6 +288,46 @@ test("the chrome's mark comes from the design's head, and its button from the AP
   );
 });
 
+test("an answer kept from before is offered only while the row and the head still say the same", () => {
+  const kept = {
+    branch: {
+      name: "pz/hero",
+      base: "main",
+      exists: true,
+      aheadBy: 1,
+      behindBy: 0,
+      unpushed: 0,
+      pushError: null,
+    },
+    pullRequest: API_PULL,
+    mergeMethod: "squash" as const,
+    autoMergeAllowed: true,
+    nextAction: "merge" as const,
+  };
+  const now = {
+    number: 412,
+    state: "open" as const,
+    checks: API_PULL.checks.state,
+    mergeable: null,
+    autoMerge: false,
+  };
+  // The same pull request, as it was: Merge, from the first frame.
+  expect(offeredTab({ tab: kept, confirmed: false }, now)).toBe(kept);
+  // Merged, closed or its checks moved while the design was away: not until the read says.
+  expect(offeredTab({ tab: kept, confirmed: false }, { ...now, state: "merged" })).toBeNull();
+  expect(offeredTab({ tab: kept, confirmed: false }, { ...now, state: "closed" })).toBeNull();
+  expect(offeredTab({ tab: kept, confirmed: false }, { ...now, checks: "failing" })).toBeNull();
+  expect(offeredTab({ tab: kept, confirmed: false }, { ...now, number: 413 })).toBeNull();
+  expect(offeredTab({ tab: kept, confirmed: false }, null)).toBeNull();
+  // Read since it opened: GitHub's word stands, even ahead of the head hearing of it.
+  expect(offeredTab({ tab: kept, confirmed: true }, { ...now, state: "merged" })).toBe(kept);
+  // The row's mark takes whether it can merge only from a read of the same pull request.
+  const design = { pullRequest: now } as unknown as Parameters<typeof rowPullRequest>[0];
+  expect(rowPullRequest(design, kept)?.mergeable).toBe(API_PULL.mergeable);
+  const merged = { pullRequest: { ...now, state: "merged" } } as unknown as typeof design;
+  expect(rowPullRequest(merged, kept)?.mergeable).toBeNull();
+});
+
 test("each refusal says why in a sentence: the API's own where it writes one", () => {
   const conflict = new ApiError(409, "merge_conflicts", "pz/hero conflicts with main.");
   expect(prActionError(conflict)).toBe("pz/hero conflicts with main.");
@@ -317,8 +359,9 @@ async function world() {
   });
   const said: string[] = [];
   const told: string[] = [];
+  const ponzu = storePonzu(client.api);
   const store = new PullRequestStore({
-    ponzu: storePonzu(client.api),
+    ponzu,
     designId: design.id,
     say: (m) => said.push(m),
     tellAgent: (t) => told.push(t),
@@ -334,7 +377,7 @@ async function world() {
     await settle();
     return store.getSnapshot();
   };
-  return { backend, client, design, store, github, said, told, read, run };
+  return { backend, client, ponzu, design, store, github, said, told, read, run };
 }
 
 test("from changes on the branch to a merge: create, ready, merge, and the design settles", async () => {
@@ -369,6 +412,53 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
     notices.map((n) => n.kind === "notice" && n.payload.type === "pull_request" && n.payload.state),
   ).toEqual(["draft", "merged"]);
   expect(w.said).toEqual([]);
+});
+
+test("a design opened again starts from its last answer; a read asked ahead stands for the one on opening", async () => {
+  const w = await world();
+  w.backend.agent(w.design.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  await w.read();
+  w.store.close();
+  // Opened again, on the same cache: the tab is there before anything is read.
+  const { ponzu } = w;
+  const again = new PullRequestStore({ ponzu, designId: w.design.id, say() {}, tellAgent() {} });
+  expect(again.getSnapshot()).toMatchObject({ status: "ready" });
+  expect(chromeAction(again.getSnapshot().tab!)).toBe("create_pr");
+  // Another design never shows this one's.
+  const other = await w.client.api.designs.create({
+    workspaceId: w.design.workspaceId,
+    repoId: w.design.repo!.id,
+    name: "Other",
+  });
+  const elsewhere = new PullRequestStore({ ponzu, designId: other.id, say() {}, tellAgent() {} });
+  expect(elsewhere.getSnapshot()).toMatchObject({ tab: null, status: "loading" });
+  // Just answered (as a read on the row's hover would be): the read on opening stands on it.
+  let reads = 0;
+  const get = w.client.api.designs.pullRequest.get;
+  w.client.api.designs.pullRequest.get = (id) => {
+    reads++;
+    return get(id);
+  };
+  again.refreshOnOpen();
+  expect(reads).toBe(0);
+  // Asked a moment ago, it is as good as confirmed.
+  expect(again.getSnapshot().confirmed).toBe(true);
+  again.close();
+  // Kept from longer ago: shown, but not yet confirmed, and the read on opening goes out.
+  ponzu.queryClient.setQueryData(ponzu.queries.pullRequest(w.design.id).queryKey, (tab) => tab, {
+    updatedAt: Date.now() - 60_000,
+  });
+  const later = new PullRequestStore({ ponzu, designId: w.design.id, say() {}, tellAgent() {} });
+  expect(later.getSnapshot()).toMatchObject({ status: "ready", confirmed: false });
+  const kept = later.getSnapshot().tab;
+  later.refreshOnOpen();
+  await settle();
+  expect(reads).toBeGreaterThan(0);
+  // The same answer again: the same tab (nothing on screen changes), now confirmed.
+  expect(later.getSnapshot()).toMatchObject({ confirmed: true });
+  expect(later.getSnapshot().tab).toBe(kept);
+  later.close();
+  elsewhere.close();
 });
 
 test("commits only the sandbox holds: Create PR is offered, waits for the push, then opens", async () => {

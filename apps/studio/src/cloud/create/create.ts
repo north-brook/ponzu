@@ -166,8 +166,17 @@ export const COMPOSER_REST = 118;
 /** The mark's size, and the gap between it and the statement under it. */
 export const MARK = 56;
 export const MARK_GAP = 24;
-/** How far over the centre of the room above the resting composer the hero sits: optically centred. */
-export const HERO_LIFT = 28;
+/**
+ * How far over the pane's true centre the hero's centre sits, as a share of the pane's height
+ * (5%: 45 in a pane of 900), so it scales with the window: where the eye puts the middle.
+ */
+export const HERO_RISE = 0.05;
+/**
+ * The statement's room: its two lines, the words (the display face at 28, a 35 line) over the
+ * repo's selector (40). Scratch's one line keeps it, so the mark and the first line hold still
+ * whichever is chosen, and while the project is still being found.
+ */
+export const STATEMENT_ROOM = 35 + 40;
 /** The least room kept between the statement and the composer, and above the hero at the top. */
 export const HERO_GAP = 40;
 export const HERO_TOP = 24;
@@ -176,9 +185,9 @@ export const HERO_TOP = 24;
  * Where the statement's top goes, in a pane `pane` tall with the composer `dock` tall (its card
  * and its inset) and the statement `statement` tall; and whether the mark over it shows.
  *
- * The hero (the mark over the statement) is centred in the room the pane has above the composer
- * at rest, a little high of true centre, so it holds still while the composer grows with what is
- * typed or attached. Only once the composer would come within `HERO_GAP` of the statement does
+ * The hero (the mark over the statement) is centred in the pane, `HERO_RISE` of its height high
+ * of true centre, so it holds still while the composer grows with what is typed or attached.
+ * Only once the composer would come within `HERO_GAP` of the statement does
  * the statement give way, rising ahead of it; the mark goes once that would take it past
  * `HERO_TOP`, and the statement rises on to `HERO_TOP`, where the pane scrolls rather than let
  * the two overlap.
@@ -193,8 +202,7 @@ export function heroPlace({
   statement: number;
 }): { top: number; mark: boolean } {
   const above = MARK + MARK_GAP;
-  const room = pane - (COMPOSER_REST + DOCK_INSET);
-  const centred = (room - (above + statement)) / 2 - HERO_LIFT + above;
+  const centred = (pane - (above + statement)) / 2 - pane * HERO_RISE + above;
   const clear = pane - dock - HERO_GAP - statement;
   const top = Math.round(Math.max(HERO_TOP, Math.min(centred, clear)));
   return { top, mark: top - above >= HERO_TOP };

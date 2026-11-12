@@ -9,6 +9,7 @@ import { Icon } from "../ui/icon.tsx";
 import { JUMP_KEY, jumpNumber, jumpTarget, useJumpShortcuts } from "../ui/shortcut.ts";
 import { HintedLabel, ShortcutHint } from "../ui/shortcut-hint.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
+import { Arrival } from "./arrival.tsx";
 
 /**
  * The open design's pages, as tabs. The active one is raised; the one the agent is drawing on
@@ -111,11 +112,21 @@ export function PageTabs({
           })}
         </TabsList>
       </FadeScroll>
-      {onAdd ? (
-        <IconButton label="New page" onClick={onAdd} className="size-7 text-icon-soft">
-          <Icon icon={PlusSignIcon} step="inline" />
-        </IconButton>
-      ) : null}
+      {/* Offered once the API says the viewer may change the design, which can be a moment
+          after the pages: it fades in at the end of them, where nothing moves for it. */}
+      <Arrival
+        show={onAdd !== null}
+        room={false}
+        anchor="start"
+        name="new-page"
+        className="shrink-0"
+      >
+        {onAdd ? (
+          <IconButton label="New page" onClick={onAdd} className="size-7 text-icon-soft">
+            <Icon icon={PlusSignIcon} step="inline" />
+          </IconButton>
+        ) : null}
+      </Arrival>
     </Tabs>
   );
 }

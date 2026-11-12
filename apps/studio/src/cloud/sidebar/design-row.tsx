@@ -35,7 +35,15 @@ export interface RowHandlers {
   onOpen: (design: DesignSummary) => void;
   onAction: (design: DesignSummary, action: Exclude<RowAction, "rename">) => void;
   onRename: (design: DesignSummary, name: string) => void;
+  /**
+   * The person is about to open it: the pointer has come to rest on the row, or the keyboard is
+   * on it. What opening it will ask for can be asked ahead.
+   */
+  onIntent?: (design: DesignSummary) => void;
 }
+
+/** How long the pointer or the keyboard rests on a row before it counts as about to open it. */
+export const INTENT_MS = 80;
 
 /**
  * A design in the sidebar: its preview beside three lines. The first says where it lives (the
@@ -56,6 +64,7 @@ export const DesignRow = memo(function DesignRow({
   onOpen,
   onAction,
   onRename,
+  onIntent,
 }: RowHandlers & {
   design: DesignSummary;
   open: boolean;
@@ -70,6 +79,24 @@ export const DesignRow = memo(function DesignRow({
   const [renaming, setRenaming] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const renamed = useRef(false);
+  const resting = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rest = () => {
+    if (resting.current) clearTimeout(resting.current);
+    resting.current = null;
+  };
+  const intend = () => {
+    rest();
+    if (!onIntent || open) return;
+    resting.current = setTimeout(() => onIntent(design), INTENT_MS);
+  };
+  useEffect(() => rest, []);
+  // Opened: what it would have asked ahead, opening asks itself.
+  useEffect(() => {
+    if (open && resting.current) {
+      clearTimeout(resting.current);
+      resting.current = null;
+    }
+  }, [open]);
   // Back on the row once the name is done, so the keyboard carries on from where it was.
   useEffect(() => {
     if (renaming || !renamed.current) return;
@@ -155,6 +182,12 @@ export const DesignRow = memo(function DesignRow({
           aria-keyshortcuts={shortcut ? `${JUMP_KEY.design.key}+${shortcut}` : undefined}
           tabIndex={tabIndex}
           onClick={() => onOpen(design)}
+          // Resting there, not passing over or through it (a sweep of the pointer, the arrow
+          // keys down the list): only a row the person stops on is asked about ahead.
+          onPointerEnter={intend}
+          onPointerLeave={rest}
+          onFocus={intend}
+          onBlur={rest}
           className={cn(
             rowClass,
             "cursor-default select-none focus-ring active:bg-press",

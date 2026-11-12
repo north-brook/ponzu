@@ -66,6 +66,7 @@ export function RepoPicker({
   onAllowMore,
   open,
   onOpenChange,
+  after,
 }: {
   value: ProjectChoice | null;
   /** The window's workspace's name: its group's heading, and whose Scratch the selector says. */
@@ -79,7 +80,10 @@ export function RepoPicker({
   onAllowMore: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Takes the focus once a project was chosen and the picker has closed: the composer. */
+  after?: () => void;
 }) {
+  const chose = useRef(false);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -89,7 +93,7 @@ export function RepoPicker({
           aria-busy={value ? undefined : true}
           data-project-selector
           // The last words of the create page's statement: its face, size and baseline.
-          className="h-10 min-w-0 shrink items-baseline gap-1.5 rounded-10 pr-1.5 pl-2 font-[inherit] text-[length:inherit] text-ink"
+          className="h-10 min-w-0 max-w-full shrink items-baseline gap-1.5 rounded-10 pr-1.5 pl-2 font-[inherit] text-[length:inherit] text-ink"
         >
           {value === null ? (
             <Skeleton className="h-4 w-[150px] self-center rounded-4" />
@@ -113,6 +117,14 @@ export function RepoPicker({
         aria-label="Choose a repo"
         avoidCollisions={false}
         className="max-h-(--radix-popover-content-available-height) rounded-12 p-1.5"
+        // Chosen, the caret goes on to the composer; closed without a choice, focus goes back
+        // to the selector as any popover's does.
+        onCloseAutoFocus={(e) => {
+          if (!chose.current || !after) return;
+          chose.current = false;
+          e.preventDefault();
+          after();
+        }}
       >
         <PickerBody
           value={value}
@@ -120,6 +132,7 @@ export function RepoPicker({
           repos={repos}
           elsewhere={elsewhere}
           onChoose={(choice, workspaceId) => {
+            chose.current = true;
             onChange(choice, workspaceId);
             onOpenChange(false);
           }}

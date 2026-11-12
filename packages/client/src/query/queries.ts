@@ -93,13 +93,16 @@ export function ponzuQueries(api: Api) {
       }),
     /**
      * The design's pull request as GitHub has it, `nextAction` included. Read again whenever
-     * the design's head says something about it moved: what reads it says when.
+     * the design's head says something about it moved: what reads it says when. Kept for half
+     * an hour once nothing reads it, so a design opened again shows its last answer at once
+     * while the read on opening confirms it.
      */
     pullRequest: (designId: string) =>
       queryOptions({
         queryKey: queryKeys.pullRequest(designId),
         queryFn: () => api.designs.pullRequest.get(designId),
         staleTime: 0,
+        gcTime: 30 * 60_000,
         refetchOnWindowFocus: false,
       }),
     /** One changed file and its diff, at the commit the tab shows: the same commit, the same diff. */

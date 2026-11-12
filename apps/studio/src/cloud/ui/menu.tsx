@@ -47,7 +47,10 @@ export function MenuContent({
   onKeyDown,
   onCloseAutoFocus,
   ...props
-}: ComponentProps<typeof DropdownMenuContent> & { width: number }) {
+}: ComponentProps<typeof DropdownMenuContent> & {
+  /** The design's width, or "max-content" for one that fits what it lists. */
+  width: number | "max-content";
+}) {
   const clicked = useRef<HTMLElement | null>(null);
   return (
     <DropdownMenuContent
