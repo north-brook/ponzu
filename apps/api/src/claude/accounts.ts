@@ -31,6 +31,8 @@ export type ClaudeDeps = Pick<
   | "config"
   | "background"
   | "analytics"
+  | "workos"
+  | "posthogAdmin"
   | "features"
 >;
 

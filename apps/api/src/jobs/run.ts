@@ -32,6 +32,8 @@ export type JobDeps = Pick<
   | "storage"
   | "config"
   | "analytics"
+  | "workos"
+  | "posthogAdmin"
   | "features"
 >;
 

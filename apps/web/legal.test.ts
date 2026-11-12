@@ -118,10 +118,10 @@ test("the privacy draft claims nothing the code does not do yet", () => {
   expect(text).toContain("we have asked Vercel in writing");
   // Nothing sends pings yet (docs/cloud.md "Notifications").
   expect(text).toContain("Pings are not sent yet");
-  // Deleting a canvas does not purge its files yet, nor does deleting an account reach GitHub or
-  // PostHog: those are said only inside an <Open>.
-  expect(text).not.toMatch(/revoke Ponzu's authorization/i);
-  expect(text).not.toMatch(/ask PostHog to delete/i);
+  // Deleting an account revokes the GitHub grant and asks PostHog to forget the person
+  // (apps/api/src/account/delete.ts, forget.ts), and says what happens when either is down.
+  expect(text).toContain("We also revoke Ponzu's authorization on your GitHub account.");
+  expect(text).toContain("We ask PostHog to delete your profile, events and recordings");
   // The settings switch is S10's; until it ships the draft must not send people to it.
   expect(text).not.toMatch(/Share usage data/);
   // Account deletion does rename the person's ops in a canvas's history (anonymiseUser); only a

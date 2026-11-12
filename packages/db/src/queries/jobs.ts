@@ -52,6 +52,30 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<Job | null> {
   return row ?? null;
 }
 
+/**
+ * Whether a job of `kind` whose payload holds every field of `payload` is still to be run or
+ * being run: for a request that must not go ahead while such a job could still act.
+ */
+export async function hasWaitingJob(
+  db: Db,
+  { kind, payload }: { kind: string; payload: Record<string, string> },
+): Promise<boolean> {
+  const [row] = await run(
+    db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.kind, kind),
+          waiting,
+          sql`${jobs.payload} @> ${JSON.stringify(payload)}::jsonb`,
+        ),
+      )
+      .limit(1),
+  );
+  return row !== undefined;
+}
+
 /** The id of `recordOnce`'s row for `kind` and `key`: a query can look for it by its key. */
 export function onceId(kind: string, key: string): string {
   return `once:${kind}:${key}`;

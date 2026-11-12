@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { getGithubUserToken, getUserByWorkosId } from "@ponzu/db";
+import { completeJob, enqueueJob, getGithubUserToken, getUserByWorkosId } from "@ponzu/db";
 import { decodeJwt } from "jose";
+import { accountForgetJob } from "../account/forget.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
 
 let t: TestApp;
@@ -180,6 +181,31 @@ describe("POST /v1/auth/exchange", () => {
     expect(await errorCode(response)).toBe("upstream_unavailable");
     expect(liveSessions()).toHaveLength(live);
     expect(await getUserByWorkosId(t.db, started.workos.id)).toBeNull();
+  });
+
+  test("a WorkOS user an account deletion is still forgetting is refused until that is over", async () => {
+    const started = await t.startSignIn({ login: "leaving" });
+    // Their account was deleted a moment ago, and the job that deletes this WorkOS user waits.
+    const job = await enqueueJob(t.db, {
+      ...accountForgetJob({ userId: "usr_gone", workosUserId: started.workos.id }),
+      lockedBy: "deleter",
+    });
+    const live = liveSessions().length;
+
+    const refused = await exchange({ code: started.code, code_verifier: started.codeVerifier });
+
+    expect(refused.status).toBe(409);
+    expect(await errorCode(refused)).toBe("account_being_deleted");
+    expect(liveSessions()).toHaveLength(live);
+    expect(await getUserByWorkosId(t.db, started.workos.id)).toBeNull();
+
+    // Once the job is over, signing in as this WorkOS user works again.
+    await completeJob(t.db, { id: job!.id, worker: "deleter" });
+    const code = await t.workos.authorize(started.workos.id, {
+      codeVerifier: started.codeVerifier,
+      oauthTokens: t.github.issueTokens(started.github.id),
+    });
+    expect((await exchange({ code, code_verifier: started.codeVerifier })).status).toBe(200);
   });
 
   test("a second GitHub account that has verified the same address is identity_conflict", async () => {

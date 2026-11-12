@@ -1,4 +1,12 @@
-import { admitSession, getUserByWorkosId, QueryError, type User, upsertUser } from "@ponzu/db";
+import {
+  admitSession,
+  getUserByWorkosId,
+  hasWaitingJob,
+  QueryError,
+  type User,
+  upsertUser,
+} from "@ponzu/db";
+import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
 import type { Deps } from "../deps/index.ts";
 import type { AuthenticateResult, CallerInfo, WorkosSession } from "../deps/workos.ts";
 import { storeGithubUserToken } from "../github/user-token.ts";
@@ -140,6 +148,22 @@ async function admit(
   vouched: boolean,
 ): Promise<User & { created: boolean }> {
   const { db, github } = deps;
+  // An account deleted moments ago is still being forgotten at WorkOS: the `account.forget`
+  // job deletes this WorkOS user, so an account made on it now would lose its sign-in. Until
+  // that job is over, this WorkOS user is not let in (account/forget.ts).
+  if (
+    await hasWaitingJob(db, {
+      kind: ACCOUNT_FORGET_JOB,
+      payload: { workosUserId: session.user.id },
+    })
+  ) {
+    log.warn("sign_in_refused", { workosUserId: session.user.id, reason: "account_forgetting" });
+    throw new ApiError(
+      409,
+      "account_being_deleted",
+      "Your account is still being deleted. Try again in a few minutes.",
+    );
+  }
   const tokens = session.githubTokens;
   if (!tokens) {
     // WorkOS offers other ways to sign in (a password, a magic link) and anyone can pick one.

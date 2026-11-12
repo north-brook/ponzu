@@ -4,6 +4,7 @@ import { type Clock, type Sandboxes, systemClock, vercelSandboxes } from "@ponzu
 import manifest from "../../package.json" with { type: "json" };
 import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
+import { createPosthogAdmin, type PosthogAdmin } from "../analytics/posthog-admin.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import type { Env, Environment, SandboxConfig } from "../env.ts";
 import type { Features } from "../features.ts";
@@ -75,6 +76,12 @@ export interface Deps {
   gitTokens: GitTokens;
   /** PostHog: product events, error tracking and model-call traces. A no-op without a key. */
   analytics: Analytics;
+  /**
+   * PostHog's private API, which forgets a deleted person (analytics/posthog-admin.ts). Null
+   * without PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID: deleting an account
+   * then leaves PostHog alone, logged as `analytics_forget_skipped`.
+   */
+  posthogAdmin: PosthogAdmin | null;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
   /**
@@ -176,6 +183,9 @@ export function createDeps(env: Env): Deps {
     }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    posthogAdmin: env.posthogAdmin
+      ? createPosthogAdmin({ config: env.posthogAdmin, fetch: outbound, clock })
+      : null,
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
     rateLimit: selectRateLimit(
       { mode: env.features.rateLimits, onVercel: env.onVercel },

@@ -145,6 +145,7 @@ export {
   enqueueJob,
   failAbandonedJobs,
   failJob,
+  hasWaitingJob,
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
