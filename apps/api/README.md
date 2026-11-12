@@ -31,8 +31,8 @@ src/
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
-                    delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
-    sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
+                    delete, list, delete many), signed with SigV4 by aws4fetch; `archives` is
+                    the same, on R2_PRIVATE_BUCKET when it is set
     poke.ts         real: `POST /poke` to an awake runner on its sandbox's public port, with
                     the port's bearer token; a 502 or 503 just after a start is tried again
     anthropic.ts    real: whether Anthropic takes an API key, a person's or Ponzu's own (the

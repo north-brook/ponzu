@@ -2462,9 +2462,9 @@ any prefix that is not exactly a well-formed asset key followed by `/`, before i
 anything, so no bug can turn it on another canvas's files, on `pull-requests/` or on the whole
 bucket. Nothing records the job yet; deleting a canvas or an account will.
 
-Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
-(`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
-ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
+Uploads are signed (SigV4, by aws4fetch in `apps/api/src/deps/storage.ts`) for their type,
+exact size, SHA-256 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule
+and disposition, for ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
 assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
 PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
 
