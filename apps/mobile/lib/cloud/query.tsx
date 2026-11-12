@@ -25,7 +25,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import { AppState } from "react-native";
 import { backend } from "./backend";
 import { config } from "./config";
-import { buster, PERSIST_KEY, PERSIST_MAX_AGE, persistable } from "./persist";
+import { buster, closableStorage, PERSIST_KEY, PERSIST_MAX_AGE, persistable } from "./persist";
 
 /*
  * One signed-in person's client state: their QueryClient (made at sign-in, dropped at sign-out,
@@ -33,12 +33,6 @@ import { buster, PERSIST_KEY, PERSIST_MAX_AGE, persistable } from "./persist";
  * their `Live`. The providers stay mounted whoever is signed in, so the screens under them are
  * never remounted by a sign-in; only what they hand down changes.
  */
-
-const persister = createAsyncStoragePersister({
-  key: PERSIST_KEY,
-  storage: AsyncStorage,
-  throttleTime: 2_000,
-});
 
 /** Offline only when the phone says so; an unknown answer is not an outage. */
 const reachable = (state: NetworkState) =>
@@ -83,9 +77,18 @@ const CloudContext = createContext<Cloud | null>(null);
 
 function makeCloud(userId: string | null) {
   const queryClient = createQueryClient();
+  // One persister per person, shut when they sign out (persist.ts, closableStorage).
+  const disk = closableStorage(AsyncStorage);
+  const persister = createAsyncStoragePersister({
+    key: PERSIST_KEY,
+    storage: disk.storage,
+    throttleTime: 2_000,
+  });
   return {
     userId,
     queryClient,
+    persister,
+    closeDisk: disk.close,
     live: userId ? backend.makeLive() : idleLive,
     queries: ponzuQueries(backend.api),
     mutations: ponzuMutations(backend.api, queryClient),
@@ -99,7 +102,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [restoring, setRestoring] = useState(userId !== null);
 
   useEffect(() => {
-    const { queryClient, live } = made;
+    const { queryClient, live, persister } = made;
     if (!made.userId) {
       return () => {
         live.close();
@@ -148,11 +151,17 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   const cloud = useMemo<Cloud>(
     () => ({
-      ...made,
+      userId: made.userId,
+      queryClient: made.queryClient,
+      live: made.live,
+      queries: made.queries,
+      mutations: made.mutations,
       restoring: made.userId !== null && restoring,
       async clear() {
+        // Shut first: clearing is itself a change the persister would save.
+        made.closeDisk();
         made.queryClient.clear();
-        await persister.removeClient();
+        await made.persister.removeClient();
       },
     }),
     [made, restoring],

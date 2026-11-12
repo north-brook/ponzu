@@ -38,3 +38,33 @@ export function persistable(key: QueryKey): boolean {
 
 /** A new app version or another person starts from nothing. */
 export const buster = (version: string, userId: string) => `${version}:${userId}`;
+
+/** The little of AsyncStorage the persister uses. */
+export interface PersistStorage {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+}
+
+/**
+ * `storage` for one person's persister, which can be shut. The persister is throttled: a save
+ * asked for in the two seconds before signing out runs after the copy on disk is removed, and
+ * would write the person's answers back. Once shut, every save is dropped; reads and the
+ * removal still go through.
+ */
+export function closableStorage(storage: PersistStorage): {
+  storage: PersistStorage;
+  close(): void;
+} {
+  let closed = false;
+  return {
+    storage: {
+      getItem: (key) => storage.getItem(key),
+      setItem: (key, value) => (closed ? Promise.resolve() : storage.setItem(key, value)),
+      removeItem: (key) => storage.removeItem(key),
+    },
+    close() {
+      closed = true;
+    },
+  };
+}
