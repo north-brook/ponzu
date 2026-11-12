@@ -57,7 +57,7 @@ export function shortDate(at: string): string {
 }
 
 /**
- * The Connected row's second line: "Claude Max · bryce@northbrook.co · connected Nov 2", or for
+ * The Connected row's second line: "Claude Max · ada@example.com · connected Nov 2", or for
  * a key "Anthropic API key · sk-ant-…4f2a · connected Nov 2".
  */
 export function connectionLine(connection: ClaudeConnection): string {

@@ -406,14 +406,14 @@ export const everyKind: ThreadItem[] = [
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "open",
   }),
   notice({
     type: "pull_request",
     number: 412,
-    url: "https://github.com/north-brook/fernwood/pull/412",
+    url: "https://github.com/thistlewick/fernwood/pull/412",
     title: "Quieter hero, editorial take",
     state: "merged",
   }),
@@ -480,7 +480,7 @@ const check = (
   startedAt: seconds === null ? null : at(20),
   completedAt: seconds === null ? null : new Date(NOW - 20 * 60_000 + seconds * 1000).toISOString(),
   description,
-  url: `https://github.com/north-brook/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
+  url: `https://github.com/thistlewick/fernwood/pull/412/checks?name=${encodeURIComponent(name)}`,
 });
 
 const theo = { login: "theob", name: "Theo Barrett", avatarUrl: null, agent: false };
@@ -497,7 +497,7 @@ const HERO_PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
 /** Board 3's pull request. */
 export const pullRequest: PullRequestDetail = {
   number: 412,
-  url: "https://github.com/north-brook/fernwood/pull/412",
+  url: "https://github.com/thistlewick/fernwood/pull/412",
   title: "Quieter hero, editorial take",
   body: "Drops the paragraph from the hero and lets the photo carry it. Headline set in Instrument Serif at 38px; tokens get a `--hero-measure`.",
   head: "pz/hero-refresh",
@@ -526,7 +526,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(14),
       path: "src/components/hero.tsx",
       line: 15,
-      url: "https://github.com/north-brook/fernwood/pull/412#discussion_r1",
+      url: "https://github.com/thistlewick/fernwood/pull/412#discussion_r1",
     },
     {
       id: "c2",
@@ -535,7 +535,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(12),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-2",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-2",
     },
     {
       id: "c3",
@@ -544,7 +544,7 @@ export const pullRequest: PullRequestDetail = {
       at: at(3),
       path: null,
       line: null,
-      url: "https://github.com/north-brook/fernwood/pull/412#issuecomment-3",
+      url: "https://github.com/thistlewick/fernwood/pull/412#issuecomment-3",
     },
   ],
   reviews: [{ id: "r1", author: theo, state: "approved", at: at(12) }],

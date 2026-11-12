@@ -14,15 +14,15 @@ import type { GithubAccount } from "../setup/setup.ts";
 import {
   ada,
   alex,
+  almanac,
   fernwood,
   jordan,
-  lenny,
   leo,
   maya,
   NOW,
-  northbrook,
   repos,
   sam,
+  thistlewick,
   ting,
 } from "./fixtures.ts";
 
@@ -47,23 +47,23 @@ export const accounts: GithubAccount[] = [
   personalAccount,
   {
     githubAccountId: 2001,
-    login: "fablefuel",
-    name: "Fablefuel",
+    login: "quillmoor",
+    name: "Quillmoor",
     avatarUrl: null,
     kind: "org",
     status: "ready",
-    workspaceId: "ws_fablefuel",
+    workspaceId: "ws_quillmoor",
     suspended: false,
     memberCount: 12,
   },
   {
     githubAccountId: 2002,
-    login: northbrook.login,
-    name: northbrook.name,
-    avatarUrl: northbrook.avatarUrl,
+    login: thistlewick.login,
+    name: thistlewick.name,
+    avatarUrl: thistlewick.avatarUrl,
     kind: "org",
     status: "ready",
-    workspaceId: northbrook.id,
+    workspaceId: thistlewick.id,
     suspended: false,
     memberCount: 5,
   },
@@ -170,7 +170,7 @@ export const membersMixed: Member[] = [
 
 export const installation: Installation = {
   state: "installed",
-  accountLogin: northbrook.login,
+  accountLogin: thistlewick.login,
   installedBy: ada.login,
   installedAt: local(10, 28),
 };
@@ -195,7 +195,7 @@ export const environments: RepoEnvironment[] = [
     ],
   },
   {
-    repo: lenny,
+    repo: almanac,
     base: {
       status: "ready",
       builtAt: new Date(NOW - 5 * 24 * 3_600_000).toISOString(),

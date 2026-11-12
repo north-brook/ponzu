@@ -31,6 +31,16 @@ export const SITE_SHOTS = [
   "create",
 ] as const;
 
+/**
+ * The shots whose main pane is the open canvas: drawn with its boards (the gallery's `&boards`),
+ * and refused if the boards don't draw, so the site never shows an empty canvas.
+ */
+export const SITE_BOARDS: ReadonlySet<string> = new Set([
+  "thread-in-the-right-rail",
+  "together-on-a-canvas",
+  "team-sidebar",
+]);
+
 /** Where the shots go unless `--out` says otherwise. */
 export const SITE_PRODUCT = resolve(STUDIO, "../web/public/product");
 
@@ -105,12 +115,14 @@ export async function shootComposition(
   base: string,
   composition: Composition,
   theme: Theme,
-  options: { hideText?: boolean } = {},
+  options: { hideText?: boolean; boards?: boolean } = {},
 ): Promise<Buffer> {
   await prepare(page, composition.width, composition.height, theme);
-  await page.goto(`${base}/gallery.html?board=${composition.id}&theme=${theme}`);
+  const boards = options.boards ? "&boards" : "";
+  await page.goto(`${base}/gallery.html?board=${composition.id}&theme=${theme}${boards}`);
   await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
   await settle(page);
+  if (options.boards) await boardsDrawn(page);
   if (composition.open) {
     await page.click(composition.open);
     await page.waitForTimeout(250);
@@ -149,6 +161,44 @@ export async function shootBoard(
 
 // packages/render's ARTBOARD_BASE_CSS, which the canvas draws boards with.
 const ARTBOARD_BASE = `[data-artboard]{display:flex;flex-direction:column;position:relative;overflow:hidden;box-sizing:border-box;background:#fff;color:#000}[data-artboard] *,[data-artboard] *::before,[data-artboard] *::after{box-sizing:border-box}`;
+
+/**
+ * The canvas's boards (gallery `&boards`) drawn and still: each board's shadow root has its
+ * content and the pictures in it, and nothing on the canvas has moved for ten frames running.
+ * Fails after five seconds, rather than taking a half-drawn picture.
+ */
+async function boardsDrawn(page: Page) {
+  const still = await page.evaluate(async () => {
+    const root = document.querySelector(".pz-root");
+    if (!root) return false;
+    const hosts = () => [...root.querySelectorAll("*")].filter((el) => el.shadowRoot);
+    const pose = () =>
+      [...root.querySelectorAll<HTMLElement>("*")]
+        .map((el) => el.style.transform)
+        .filter(Boolean)
+        .join("|");
+    const frame = () => new Promise((r) => requestAnimationFrame(r));
+    const deadline = performance.now() + 5_000;
+    let last = "";
+    let same = 0;
+    while (performance.now() < deadline) {
+      await frame();
+      const drawn = hosts();
+      const ready =
+        drawn.length > 0 && drawn.every((el) => (el.shadowRoot?.childNodes.length ?? 0) > 0);
+      const now = ready ? pose() : "";
+      same = ready && now === last ? same + 1 : 0;
+      last = now;
+      if (same >= 10) {
+        const images = drawn.flatMap((el) => [...el.shadowRoot!.querySelectorAll("img")]);
+        await Promise.all(images.map((i) => i.decode().catch(() => {})));
+        return true;
+      }
+    }
+    return false;
+  });
+  if (!still) throw new Error("The canvas's boards didn't draw and settle in five seconds.");
+}
 
 async function settle(page: Page) {
   await page.evaluate(async () => {
