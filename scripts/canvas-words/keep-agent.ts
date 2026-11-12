@@ -55,4 +55,9 @@ export const KEEP_AGENT: Keep[] = [
     has: "the way a product designer builds a launch page",
     why: "the product guide casts the agent as a designer judging a launch-page shot: the honest role for visual craft",
   },
+  {
+    path: "packages/tools/src/canvas.ts",
+    has: "store's `Design`",
+    why: "@ponzu/store's class (1.x, kind C) keeps its name",
+  },
 ];

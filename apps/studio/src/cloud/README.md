@@ -584,7 +584,7 @@ person moves it. A field being edited inside one takes Escape for itself with
 ```sh
 cd apps/studio
 bun run gallery                 # opens /gallery.html: ?board=<id>, ?states, &theme=dark
-bun scripts/visual.ts compare --canvas <path to the .design folder>
+bun scripts/visual.ts compare --design <path to the .design folder>
 bun scripts/visual.ts references
 ```
 

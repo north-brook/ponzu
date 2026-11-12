@@ -9,7 +9,7 @@ export interface Applied {
 /**
  * One canvas as the tools reach it: the document, and a way to change it. Where the canvas is
  * kept is the host's business. In the cloud it is a `ReplicaCanvas`, on a replica that syncs
- * with the API; the local server hands over store's `Canvas`, which is a folder of files.
+ * with the API; the local server hands over store's `Design`, which is a folder of files.
  */
 export interface ToolCanvas {
   /**

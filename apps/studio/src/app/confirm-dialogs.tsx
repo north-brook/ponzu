@@ -24,7 +24,7 @@ export function DeleteCanvasDialog({
       open={open}
       onDismiss={onCancel}
       title={`Delete “${name}”?`}
-      body="Its canvas and thread go, for everyone. Its branch and pull request on GitHub stay."
+      body="The canvas and its thread go, for everyone. Its branch and pull request on GitHub stay."
     >
       <DialogActions>
         <DialogButton tone="raised" onClick={onCancel} disabled={busy}>

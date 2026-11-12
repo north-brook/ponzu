@@ -161,7 +161,8 @@ export interface ServerEvents {
   /**
    * No ideas were made this time: the workspace asked for too many this hour, nothing in the
    * model's answers passed the checks and the gate (`rejected`), the gate found an idea asking
-   * the reader for something other than a canvas (`unsafe`), or GitHub or a model failed.
+   * the reader for something other than work on the canvas (`unsafe`), or GitHub or a model
+   * failed.
    */
   "ideas skipped": {
     repo_id: string;

@@ -65,6 +65,29 @@ export const DECIDED: Decided[] = [
   },
   {
     slice: "S4",
+    path: "apps/studio/src/app/confirm-dialogs.tsx",
+    gone: /Its canvas and thread go/,
+    present: [
+      "The canvas and its thread go, for everyone. Its branch and pull request on GitHub stay.",
+    ],
+    why: "the Delete canvas dialog, whose title already names the canvas (6.1)",
+  },
+  {
+    slice: "S5",
+    path: "{docs/analytics.md,apps/api/src/analytics/events.ts}",
+    gone: /other than a canvas\b|are not canvases/,
+    present: ["something other than work on the canvas"],
+    why: "the ideas gate's words: its criterion is visible, and unsafe is anything but work on the canvas",
+  },
+  {
+    slice: "S4",
+    path: "apps/studio/src/cloud/README.md",
+    gone: /compare --canvas/,
+    present: ["bun scripts/visual.ts compare --design <path to the .design folder>"],
+    why: "visual.ts takes the mockup's .design folder as --design",
+  },
+  {
+    slice: "S4",
     path: "apps/studio/src/cloud/setup/sign-in.tsx",
     present: ["Build on a canvas, steer with comments, and ship pull requests to your repos."],
     why: "the sign-in line",

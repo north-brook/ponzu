@@ -231,7 +231,7 @@ export const PROTECT: Protect[] = [
   {
     re: /--design\b|\bvalues\.design\b|\bdesignDir\b|\bdesign(?=: \{ type)/g,
     why: "the .design folder option",
-    paths: ["apps/studio/scripts/**"],
+    paths: ["apps/studio/scripts/**", "apps/studio/src/cloud/README.md"],
   },
 ];
 
