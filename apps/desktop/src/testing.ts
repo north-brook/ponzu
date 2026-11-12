@@ -15,7 +15,7 @@ export function environmentsFile(path = ENVIRONMENTS_FILE): EnvironmentsFile {
   return JSON.parse(readFileSync(path, "utf8")) as EnvironmentsFile;
 }
 
-/** Dev's environment, as Ponzu Dev bakes it today (and the release, until the cutover). */
+/** Dev's environment, as Ponzu Dev bakes it. A release bakes production's. */
 export const DEV_ENVIRONMENT = bakeEnvironment(environmentsFile(), "dev");
 
 export const TEST_COMMIT = "0123456789abcdef0123456789abcdef01234567";

@@ -31,6 +31,7 @@
     "apps/mobile": {
       "release-type": "expo",
       "component": "mobile",
+      "release-as": "1.0.0",
       "include-component-in-tag": true,
       "draft": true,
       "force-tag-creation": true,

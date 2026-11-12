@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadEnvironments, loadInfra } from "../desired.ts";
+import { loadEnvironments } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
   apiHostFor,
@@ -17,7 +18,7 @@ const documented = (): PosthogAnswers =>
   PosthogAnswers.parse(
     JSON.parse(readFileSync(join(FIXTURES, "posthog", "dev-project.json"), "utf8")),
   );
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const desired = (env: "dev" | "production"): PosthogDesired => posthogDesired({ env, infra });
 const byId = (findings: Finding[]) => Object.fromEntries(findings.map((f) => [f.id, f]));
 const KEY = "phx_personal-key-0123456789abcdef";

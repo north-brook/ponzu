@@ -162,7 +162,8 @@ export function releaseProblems(file: Environments, env: EnvironmentName): strin
 /**
  * Fields no two environments may share once a release points at one: sharing any of them would
  * put a production build on dev's API, sign-in, database, files or analytics, or the reverse.
- * Today dev and production both name api.ponzu.design, and founder step D11 moves dev off it.
+ * The Vercel project is not among them: one project, ponzu-api, serves both, dev from its dev
+ * environment and production from its Production target.
  */
 export const SEPARATE_FIELDS = [
   "apiUrl",
@@ -170,7 +171,6 @@ export const SEPARATE_FIELDS = [
   "realtimeUrl",
   "assetsUrl",
   "githubAppSlug",
-  "vercelProject",
   "neonBranch",
   "r2.assets",
   "r2.private",

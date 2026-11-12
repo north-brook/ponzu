@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { CheckContext, Finding } from "./finding.ts";
 import {
   covers,
@@ -21,7 +21,7 @@ const recorded = (): GithubAnswers =>
   GithubAnswers.parse(
     JSON.parse(readFileSync(join(FIXTURES, "github", "dev-answers.json"), "utf8")),
   );
-const infra = loadInfra();
+const infra = infraBeforeLaunch();
 const desired = (env: "dev" | "production"): GithubDesired => githubDesired({ env, infra });
 const NOW = "2026-11-12T15:00:00.000Z";
 const statuses = (findings: Finding[]) => findings.map((f) => `${f.status} ${f.id}`);

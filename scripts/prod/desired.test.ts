@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type Environments,
@@ -38,23 +39,54 @@ describe("infra/", () => {
     expect(() => loadInfra()).not.toThrow();
   });
 
-  test("the release build stays on dev until the cutover PR flips it", () => {
-    expect(loadEnvironments().release).toBe("dev");
+  test("the release build talks to production, and dev has its own address", () => {
+    const file = loadEnvironments();
+    expect(file.release).toBe("production");
+    expect(file.environments.production.apiUrl).toBe("https://api.ponzu.design");
+    expect(file.environments.production.workosClientId).toBe("client_01M72Y00V5GD7G4VZJR56D5JS7");
+    expect(file.environments.production.realtimeUrl).toBe(
+      "https://ep-sweet-wind-bcfbxi95.rt.c-16.us-east-1.aws.neon.tech",
+    );
+    expect(file.environments.production.posthog.projectId).toBe(731171);
+    expect(file.environments.dev.apiUrl).toBe("https://api-dev.ponzu.design");
+    expect(file.environments.dev.apiDomains).toEqual(["api-dev.ponzu.design"]);
   });
 });
 
 describe("assert-release", () => {
-  test("production exits 1 while production has nulls, naming each one", () => {
+  test("production exits 0 on the repository's file, and dev exits 1", () => {
     const { code, lines } = run("assert-release", "production");
-    expect(code).toBe(1);
     expect(lines).toEqual([
-      'fail    release is "dev" in infra/environments.json, not "production"',
-      "fail    production.workosClientId is not set in infra/environments.json (founder step D7)",
-      "fail    production.realtimeUrl is not set in infra/environments.json (founder step D3)",
-      "fail    production.posthog.projectId is not set in infra/environments.json (founder step D8)",
-      "fail    production.apiUrl is the same as dev's, so a release would reach dev",
-      "fail    api.ponzu.design is in both environments' apiDomains; move dev's first",
+      "ok      the release build talks to production, and every field is set",
     ]);
+    expect(code).toBe(0);
+    expect(run("assert-release", "dev")).toEqual({
+      code: 1,
+      lines: ['fail    release is "production" in infra/environments.json, not "dev"'],
+    });
+  });
+
+  test("production exits 1 while production has nulls, naming each one", () => {
+    const file = read(join(INFRA_DIR, "environments.json"));
+    file.environments.production.workosClientId = null;
+    file.environments.production.realtimeUrl = null;
+    file.environments.production.posthog.projectId = null;
+    file.environments.dev.apiUrl = "https://api.ponzu.design";
+    file.environments.dev.apiDomains = ["api.ponzu.design"];
+    expect(releaseProblems(EnvironmentsSchema.parse(file), "production")).toEqual([
+      "production.workosClientId is not set in infra/environments.json (founder step D7)",
+      "production.realtimeUrl is not set in infra/environments.json (founder step D3)",
+      "production.posthog.projectId is not set in infra/environments.json (founder step D8)",
+      "production.apiUrl is the same as dev's, so a release would reach dev",
+      "api.ponzu.design is in both environments' apiDomains; move dev's first",
+    ]);
+  });
+
+  test("dev and production may share the Vercel project, which serves both", () => {
+    const file = read(FILLED);
+    file.environments.production.vercelProject = "ponzu-api";
+    expect(file.environments.dev.vercelProject).toBe("ponzu-api");
+    expect(releaseProblems(EnvironmentsSchema.parse(file), "production")).toEqual([]);
   });
 
   test("a production field copied from dev fails, so a release never reaches dev", () => {
@@ -64,7 +96,6 @@ describe("assert-release", () => {
       realtimeUrl: "https://ep-quiet-butterfly-bc2zsmia.rt.c-16.us-east-1.aws.neon.tech",
       assetsUrl: "https://assets-dev.ponzu.cloud",
       githubAppSlug: "ponzu-dev",
-      vercelProject: "ponzu-api",
       neonBranch: "dev",
       "r2.assets": "example-dev-assets",
       "posthog.projectId": 728454,
@@ -112,7 +143,7 @@ describe("assert-release", () => {
     ]);
   });
 
-  test("the command line runs as a script and exits 1 on today's file", async () => {
+  test("the command line runs as a script: production exits 0 on the repository's file", async () => {
     const proc = Bun.spawn(
       ["bun", join(import.meta.dir, "desired.ts"), "assert-release", "production"],
       {
@@ -120,8 +151,10 @@ describe("assert-release", () => {
         stderr: "pipe",
       },
     );
-    expect(await proc.exited).toBe(1);
-    expect(await new Response(proc.stdout).text()).toContain("fail    production.workosClientId");
+    expect(await proc.exited).toBe(0);
+    expect(await new Response(proc.stdout).text()).toContain(
+      "ok      the release build talks to production",
+    );
   });
 
   test("a bad command or environment is a usage error, exit 2", () => {
@@ -133,19 +166,39 @@ describe("assert-release", () => {
 });
 
 describe("status", () => {
-  test("a production null prints as pending, never as ok", () => {
+  test("the repository's production prints every field as set", () => {
     const { code, lines } = run("status", "production");
     expect(code).toBe(0);
-    const pending = lines.filter((line) => line.startsWith("pending "));
-    expect(pending).toEqual([
-      "pending production.workosClientId: founder step D7",
-      "pending production.realtimeUrl: founder step D3",
-      "pending production.posthog.projectId: founder step D8",
-    ]);
-    for (const path of ["workosClientId", "realtimeUrl", "posthog.projectId"]) {
-      expect(lines.some((l) => l.startsWith("ok") && l.includes(`production.${path}:`))).toBe(
-        false,
-      );
+    expect(lines.filter((line) => line.startsWith("pending "))).toEqual([]);
+    expect(lines).toContain(
+      'ok      production.workosClientId: "client_01M72Y00V5GD7G4VZJR56D5JS7"',
+    );
+  });
+
+  test("a production null prints as pending, never as ok", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ponzu-desired-"));
+    try {
+      const file = read(join(INFRA_DIR, "environments.json"));
+      file.environments.production.workosClientId = null;
+      file.environments.production.realtimeUrl = null;
+      file.environments.production.posthog.projectId = null;
+      const path = join(dir, "environments.json");
+      writeFileSync(path, JSON.stringify(file));
+      const { code, lines } = run("status", "production", "--file", path);
+      expect(code).toBe(0);
+      const pending = lines.filter((line) => line.startsWith("pending "));
+      expect(pending).toEqual([
+        "pending production.workosClientId: founder step D7",
+        "pending production.realtimeUrl: founder step D3",
+        "pending production.posthog.projectId: founder step D8",
+      ]);
+      for (const path of ["workosClientId", "realtimeUrl", "posthog.projectId"]) {
+        expect(lines.some((l) => l.startsWith("ok") && l.includes(`production.${path}:`))).toBe(
+          false,
+        );
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

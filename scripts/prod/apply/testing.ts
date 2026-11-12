@@ -3,7 +3,7 @@
  * every request it was sent, with its body, so a test can say exactly what apply wrote, and that
  * a dry run wrote nothing.
  */
-import { loadInfra } from "../desired.ts";
+import { infraBeforeLaunch } from "../fixtures/infra.ts";
 import type { ApplyContext, WireRequest } from "./area.ts";
 
 export interface Seen {
@@ -72,7 +72,7 @@ export function applyContext(
   const secrets: string[] = [];
   return {
     env,
-    infra: loadInfra(),
+    infra: infraBeforeLaunch(),
     credentials,
     fetch,
     now: () => new Date("2026-11-12T15:00:00Z"),
