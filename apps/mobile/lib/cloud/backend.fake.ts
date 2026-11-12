@@ -37,6 +37,11 @@ export const SCENARIOS = [
   "setup-where",
   /** Ava, through "Where do you build?" with no Claude yet: Connect Claude. */
   "setup-claude",
+  /**
+   * Maya's list in every state (`stockCanvases`): a question for her, the agent working, a
+   * preview, a settled canvas, and a second workspace to switch to.
+   */
+  "canvases",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -137,6 +142,62 @@ export function fakeWorld(fake: FakeBackend = createFakeBackend()): FakeWorld {
   return { fake, maya, sam, lee, ava, acme, leeAccount, ready };
 }
 
+/** The second workspace `stockCanvases` puts Maya in. */
+export const NORTH = { login: "north", name: "Northbrook", canvas: "Brand refresh" } as const;
+
+/**
+ * Acme's canvases in each state the list draws, once the world is ready: Pricing page asks Maya
+ * which blue (needs you, and has a preview), Onboarding is being drawn (working), Launch poster
+ * is settled; and Maya is also in Northbrook, with one canvas of its own.
+ */
+export async function stockCanvases(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, maya } = world;
+  const named = (name: string) =>
+    [...fake.canvases.values()].find(
+      (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === name,
+    );
+  const pricing = named("Pricing page");
+  const onboarding = named("Onboarding");
+  const poster = named("Launch poster");
+  if (pricing) {
+    fake.agent(pricing.id).preview();
+    fake.agent(pricing.id).ask(
+      {
+        kind: "question",
+        payload: {
+          questions: [
+            {
+              header: "Button colour",
+              question: "Which blue for the buttons?",
+              options: [
+                { label: "Royal", description: "" },
+                { label: "Sky", description: "" },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
+      },
+      "Button colour",
+    );
+  }
+  if (onboarding) fake.agent(onboarding.id).work([], "Drawing the welcome");
+  const { api } = fake.connect(maya);
+  if (poster) await api.canvases.settle(poster.id, true);
+  const north = fake.addWorkspace({
+    login: NORTH.login,
+    name: NORTH.name,
+    members: { [maya.id]: "member" },
+    repos: [{ name: "brand" }],
+  });
+  await api.canvases.create({
+    workspaceId: north.id,
+    repoId: north.repos[0]!.id,
+    name: NORTH.canvas,
+  });
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -167,6 +228,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   const clients = new Map<string, FakeClient>();
   let settled: string | null = null;
   const installPages: string[] = [];
+  const stocked = new WeakSet<FakeWorld>();
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -247,7 +309,13 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         "too-old": { status: "too_old", minimumVersion: "1.0.0" },
         "setup-where": signedIn,
         "setup-claude": signedIn,
+        canvases: signedIn,
       };
+      // The rows change under the list as the live query would deliver them.
+      if (scenario === "canvases" && !stocked.has(world)) {
+        stocked.add(world);
+        void stockCanvases(world);
+      }
       session.set(states[scenario]);
       return true;
     },

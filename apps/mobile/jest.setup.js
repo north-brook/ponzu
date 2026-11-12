@@ -48,3 +48,26 @@ jest.mock("expo-clipboard", () => {
       }),
   };
 });
+// The system's menu on a held view, as its items laid out as buttons beside it, in a view named
+// `menu <title>`: a test presses one as a person picks it from the held view's menu.
+jest.mock("@react-native-menu/menu", () => {
+  const { Pressable, View } = require("react-native");
+  const React = require("react");
+  return {
+    MenuView: ({ title, actions, onPressAction, children }) =>
+      React.createElement(
+        View,
+        { testID: `menu ${title ?? ""}` },
+        children,
+        ...actions.map((action) =>
+          React.createElement(Pressable, {
+            key: action.id,
+            testID: `menu-${action.id}`,
+            accessibilityRole: "menuitem",
+            accessibilityLabel: action.title,
+            onPress: () => onPressAction?.({ nativeEvent: { event: action.id } }),
+          }),
+        ),
+      ),
+  };
+});

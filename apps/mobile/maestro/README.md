@@ -11,11 +11,12 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `launch.yaml` | A clean install: the slice and wordmark on yuzu, then Sign in, since nobody is. A link the build doesn't take opens nothing. |
 | `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
 | `setup.yaml` | Lee, with nothing set up: Set up installs the GitHub App through the auth session onto the fake's install page (`authorize.ts /install`), back on `ponzu-dev://github/setup`, and the row turns Ready; Continue; Connect Claude with an API key; the canvases. |
+| `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
 
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
-too-old, setup-where, setup-claude); only a fake build takes it. Every flow checks no development warning
+too-old, setup-where, setup-claude, canvases); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
@@ -23,7 +24,10 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `canvas-<id>`, `tab-canvases`, `tab-search`, `search`, `settings`,
 `settings-sign-out`, `update`, `setup-where`, `setup-account-<login>-set-up`,
 `setup-where-continue`, `setup-claude`, `setup-claude-add-key`,
-`setup-claude-key-field`, `setup-claude-connect`, `setup-code`. Give a new screen a `testID` named after it.
+`setup-claude-key-field`, `setup-claude-connect`, `setup-code`, `settled`,
+`settings-workspaces`, `settings-usage`. A canvas's row reads as its VoiceOver label
+("Pricing page, 1 waiting for you, site, …"), so flows match it with a pattern.
+Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 
 ## Run them

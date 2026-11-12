@@ -69,7 +69,8 @@ whoever imports them; the component tests' resolver does the same.
 | `gate.ts`, `use-gate.ts`, `use-setup.ts` | Where each session state, and each setup step, sends the app. |
 | `install.ts` | Installing the GitHub App: the install page in the auth session, and asking the API how it stands. |
 | `sign-in.ts`, `sign-out.ts` | Continue with GitHub; signing out in order. |
-| `workspace.ts`, `canvases.ts` | The workspace in view, and its canvases. |
+| `workspace.ts`, `canvases.ts`, `list.ts` | The workspace in view, its canvases, and the list's pure rules (below). |
+| `usage.ts` | The workspace's usage this period, read only, from the shared billing rules. |
 
 ### Launch and the gates
 
@@ -121,6 +122,46 @@ and the gates.
 `app/github/setup.tsx` takes the setup page's link when it reaches the app
 outside the auth session, hands it to "Where do you build?" if that is on
 screen (or syncs itself), and goes back.
+
+### The canvases list
+
+The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
+`components/canvas-row.tsx`, `lib/cloud/list.ts`):
+
+- **Rows** come from the live query `workspace.canvases`, painted first from
+  `GET /v1/workspaces/:id/canvases` kept on disk, so the list opens offline
+  onto the last rows, as they were and not dimmed. They are mapped through the
+  shared `toSummary` and ordered by the shared `orderCanvases`: on a team,
+  canvases waiting on the viewer first, then newest activity.
+- **A row** is the Mac's three lines beside a 64×48 preview: the repo (or
+  Scratch) with one indicator at its end, the name, then the branch (or
+  Scratch's place) with the pull request's number. The indicator is the
+  shared `rowIndicator`: the needs-you count in a yuzu pill, else the turning
+  slice while the agent works or wakes, else a yuzu dot for something new.
+  While a canvas waits on the viewer, its third line is the first open
+  question, named as the Mac's needs-you strip names it. Questions are watched
+  live (`canvas.questions`) for at most 8 rows, the top needs-you ones.
+- **Previews** are `<assetsUrl>previews/<previewSeq>-<light|dark>.png`, in the
+  phone's appearance, through `expo-image` with its disk cache. `assetsUrl`
+  comes from `GET /v1/canvases/:id`, asked once for each canvas that has a
+  preview and kept on disk with the list.
+- **A press** opens `/canvas/<id>` (`lib/canvas/open.ts`). **Holding** a row
+  opens the system's menu with Settle, or Reopen in the tray; the live row
+  then moves it. A failure says "“name” couldn't be changed. Try again.", as
+  the Mac does.
+- **Settled** canvases fold into a tray at the foot, closed until tapped,
+  most recently settled first, with no indicators.
+- While nothing has come the rows' shapes stand in, in the chip colour, and
+  the lockup's slice juices. A workspace with no canvases shows a faint trace
+  of rows and "No canvases yet."
+
+The workspace in view is kept per person (`ponzu.workspace.<userId>`) and is
+one choice for the whole app (`lib/cloud/workspace.ts`): settings lists the
+person's usable workspaces when there are more than one, and picking one moves
+the list under it at once and on the next launch. Settings also shows the
+workspace's usage this period, read only: the total, the Mac's line under it
+and the bar, with nothing to raise, add or pay, and no word sending anyone to
+pay elsewhere.
 
 ### Signing in
 
@@ -318,11 +359,11 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup |
+| `select` | A tab changing; a native menu opening; a page picked; typing ⇄ voice; settings opened from the lockup; a workspace picked; the Settled tray opened or closed; a canvas reopened |
 | `tick` | A canvas opened; Back; a board coming into focus or leaving it; a comment's pin dropped |
 | `success` | A comment or reply sent; a thread resolved |
-| `thud` | Sign out; a draft discarded |
-| `fail` | A sign-in that failed; a comment that didn't send |
+| `thud` | Sign out; a draft discarded; a canvas settled |
+| `fail` | A sign-in that failed; a comment that didn't send; a settle or reopen that didn't take |
 
 ## Styling
 

@@ -1,4 +1,5 @@
-# Flows run in this order: a fresh launch first, then signing in, then setup.
+# Flows run in this order: a fresh launch first, then signing in, then setup,
+# then the canvases list.
 flows:
   - "*.yaml"
 executionOrder:
@@ -7,3 +8,4 @@ executionOrder:
     - launch
     - sign-in
     - setup
+    - canvases
