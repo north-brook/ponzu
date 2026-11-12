@@ -457,4 +457,59 @@ describe("release.yml's auto-merge", () => {
     expect(run.code).toBe(0);
     expect(run.calls.length).toBe(1);
   });
+
+  test("fails closed: runs after a failed Release Please, and one app never cancels the other", () => {
+    // A push only, but also when Release Please failed part way through its two PRs.
+    expect(job.if).toBe(expr("!cancelled() && github.event_name == 'push'"));
+    expect((job as Job & { strategy?: { "fail-fast"?: boolean } }).strategy?.["fail-fast"]).toBe(
+      false,
+    );
+    // The fail-closed step is last, so a failure in any step before it runs it.
+    expect(job.steps.at(-1)?.name).toBe("Turn off auto-merge when the hold could not be decided");
+  });
+
+  test("when the hold could not be decided, auto-merge the PR already had is turned off", () => {
+    const last = job.steps.at(-1) as Step & { if?: string };
+    expect(last.if).toBe("failure()");
+    expect(last.env).toEqual({ APP: expr("matrix.app"), GH_TOKEN: expr("secrets.RELEASE_TOKEN") });
+    const dir = mkdtempSync(join(tmpdir(), "auto-merge-off-"));
+    mkdirSync(join(dir, "bin"));
+    const gh = join(dir, "bin", "gh");
+    // gh answers its --jq filter's output: the PRs that have auto-merge.
+    writeFileSync(
+      gh,
+      [
+        "#!/bin/bash",
+        'printf "%s\\n" "$*" >>"$FAKE_LOG"',
+        'case "$1 $2" in',
+        '  "pr list") printf "%s\\n" $FAKE_NUMBERS ;;',
+        "esac",
+      ].join("\n"),
+    );
+    chmodSync(gh, 0o755);
+    const run = (numbers: string) => {
+      const log = join(dir, `gh-${numbers || "none"}.log`);
+      writeFileSync(log, "");
+      const result = Bun.spawnSync(["bash", "-e", "-c", last.run as string], {
+        env: {
+          PATH: `${join(dir, "bin")}:${process.env.PATH}`,
+          APP: "ponzu",
+          GITHUB_REPOSITORY: "o/r",
+          FAKE_LOG: log,
+          FAKE_NUMBERS: numbers,
+        },
+      });
+      const calls = readFileSync(log, "utf8").trim().split("\n").filter(Boolean);
+      return { code: result.exitCode, calls, out: result.stdout.toString() };
+    };
+    const had = run("5");
+    expect(had.code).toBe(0);
+    expect(had.calls[0]).toContain("--jq .[] | select(.autoMergeRequest != null) | .number");
+    expect(merges(had.calls)).toEqual(["pr merge 5 --repo o/r --disable-auto"]);
+    expect(had.out).toContain("::warning title=Auto-merge turned off on release PR #5::");
+    const none = run("");
+    expect(none.code).toBe(0);
+    expect(merges(none.calls)).toEqual([]);
+    rmSync(dir, { recursive: true });
+  });
 });

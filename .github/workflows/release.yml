@@ -77,12 +77,18 @@ jobs:
   # an app named in RELEASES_HELD, or a title it cannot read. A held PR gets no
   # auto-merge, and loses any it had (a 1.81.0 PR that a `feat!:` turns into
   # 2.0.0 keeps auto-merge otherwise), and the run says why. A person merges it.
+  # It fails closed: it runs even when Release Please failed part way (it may
+  # have retitled one PR before failing on the other), neither app's run
+  # cancels the other's, and when the hold cannot be decided the last step
+  # turns off auto-merge the PR already had.
   auto-merge:
     name: Auto-merge the ${{ matrix.app }} release PR
     needs: release-please
+    if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
+      fail-fast: false
       matrix:
         # The branch's component: the root package's name, or the phone's.
         app: [ponzu, mobile]
@@ -138,6 +144,24 @@ jobs:
         env:
           APP: ${{ matrix.app }}
           RELEASES_HELD: ${{ vars.RELEASES_HELD }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      # A step above failed, so whether the PR is held is unknown: a PR that
+      # had auto-merge from an earlier run (and may now be 2.0.0) loses it,
+      # and a person merges it or the next push to main decides again.
+      - name: Turn off auto-merge when the hold could not be decided
+        if: failure()
+        run: |
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
+            --label "autorelease: pending" \
+            --json number,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null) | .number')
+          for number in $numbers; do
+            gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
+            echo "::warning title=Auto-merge turned off on release PR #$number::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+          done
+        env:
+          APP: ${{ matrix.app }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   # The phone's release is built by EAS from its tag, which Release Please

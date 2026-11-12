@@ -214,6 +214,10 @@ describe("the gh calls", () => {
     ]);
     const passed = runs([{ id: 8, conclusion: "success", run_started_at: "t8" }]);
     expect(await ghGitHub(passed.gh, "o/r", "9").previousFailure()).toBeNull();
+    const timedOut = runs([{ id: 8, conclusion: "timed_out", run_started_at: "t8" }]);
+    expect(await ghGitHub(timedOut.gh, "o/r", "9").previousFailure()).toBe("t8");
+    const cancelled = runs([{ id: 8, conclusion: "cancelled", run_started_at: "t8" }]);
+    expect(await ghGitHub(cancelled.gh, "o/r", "9").previousFailure()).toBeNull();
     expect(await ghGitHub(runs([]).gh, "o/r", "9").previousFailure()).toBeNull();
   });
 

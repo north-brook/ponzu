@@ -186,7 +186,10 @@ export function ghGitHub(gh: Gh, repository: string, runId: string): GitHub {
         ]),
       ) as { id: number; conclusion: string | null; run_started_at: string }[];
       const previous = runs.find((run) => String(run.id) !== runId);
-      return previous?.conclusion === "failure" ? previous.run_started_at : null;
+      // A run that hit its timeout waited on production too long, so it counts as failing.
+      return previous?.conclusion === "failure" || previous?.conclusion === "timed_out"
+        ? previous.run_started_at
+        : null;
     },
     async openIssue() {
       const issues = JSON.parse(

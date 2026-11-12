@@ -413,7 +413,9 @@ auto-merge for it after asking `bun scripts/release-hold.ts --app <ponzu|mobile>
 
 A held PR also loses auto-merge it already had, so a `1.81.0` PR that a later `feat!:` turns
 into `2.0.0` stops waiting to merge on the next push to `main`. The run writes a notice saying
-why. To release a held PR, merge it by hand; to stop holding an app, take it out of
+why. The job fails closed: it runs even when Release Please failed part way, one app's run never
+cancels the other's, and when the hold cannot be decided (the script or a GitHub call fails) its
+last step turns off any auto-merge the release PR already had. To release a held PR, merge it by hand; to stop holding an app, take it out of
 `RELEASES_HELD`.
 
 ## Rotating secrets
