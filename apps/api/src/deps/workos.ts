@@ -85,6 +85,11 @@ export interface Workos {
    * new one. Deleting one already gone is not an error.
    */
   deleteUser(userId: string): Promise<void>;
+  /**
+   * Whether WorkOS takes the API key: it lists one user and reads nothing of the answer. Throws
+   * an `UpstreamError`, with WorkOS's status when it answered, for anything but a success.
+   */
+  ping(): Promise<void>;
 }
 
 const BASE_URL = "https://api.workos.com";
@@ -220,6 +225,17 @@ export function createWorkos({
       const response = await call("DELETE", `/user_management/users/${encodeURIComponent(userId)}`);
       if (!response.ok && response.status !== 404) {
         throw new UpstreamError("workos", `DELETE users answered ${response.status}`, {
+          status: response.status,
+        });
+      }
+    },
+
+    async ping() {
+      const response = await call("GET", "/user_management/users?limit=1");
+      // Nothing of a person is read or kept: only whether the key was taken.
+      await response.body?.cancel();
+      if (!response.ok) {
+        throw new UpstreamError("workos", `GET users answered ${response.status}`, {
           status: response.status,
         });
       }

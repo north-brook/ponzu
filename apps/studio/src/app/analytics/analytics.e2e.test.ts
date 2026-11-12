@@ -138,6 +138,8 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
           replay: mode,
           channel: "Ponzu Dev",
           osVersion: "15.1",
+          environment: "dev",
+          commit: "0123456789abcdef0123456789abcdef01234567",
           launch: { first: true, updatedFrom: null },
           apiUrl: host,
         };
@@ -274,11 +276,15 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       expect(String(event.properties.$current_url)).toStartWith("ponzu://app/");
       expect(JSON.stringify(event.properties.$referrer ?? "$direct")).toContain("$direct");
     }
-    // Every event says which app, version and computer.
-    expect(events.find((e) => e.event === "canvas opened")!.properties).toMatchObject({
-      channel: "Ponzu Dev",
-      os_version: "15.1",
-    });
+    // Every event says which app, version, build, environment and computer.
+    for (const event of events.filter((e) => !e.event.startsWith("$"))) {
+      expect(event.properties).toMatchObject({
+        channel: "Ponzu Dev",
+        os_version: "15.1",
+        environment: "dev",
+        app_commit: "0123456789abcdef0123456789abcdef01234567",
+      });
+    }
     // Autocapture keeps no element's words, nor its labels: the sidebar row clicked to open the
     // canvas has the canvas's name in its `aria-label`.
     const clicks = events.filter((e) => e.event === "$autocapture");

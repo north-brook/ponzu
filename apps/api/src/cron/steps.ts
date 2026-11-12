@@ -5,6 +5,7 @@ import { jobsStep } from "./steps/jobs.ts";
 import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
 import { retentionStep } from "./steps/retention.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
+import { selfcheckStep } from "./steps/selfcheck.ts";
 
 /*
  * What the minute's cron does (`routes/cron.ts`), as steps. A feature that needs the cron adds
@@ -41,6 +42,7 @@ export const CRON_STEPS: readonly CronStep[] = [
   installationsStep,
   sandboxesStep,
   pullRequestSweepStep,
+  selfcheckStep,
   retentionStep,
 ];
 

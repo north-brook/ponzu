@@ -215,6 +215,15 @@ export class FakeWorkos {
       session.revoked = true;
       return Response.json({});
     }
+    if (method === "GET" && pathname === "/user_management/users") {
+      const limit = Number(new URL(url).searchParams.get("limit") ?? 10);
+      const data = [...this.#users.values()].slice(0, limit).map(({ id, email }) => ({
+        object: "user",
+        id,
+        email,
+      }));
+      return Response.json({ object: "list", data, list_metadata: {} });
+    }
     const user = /^\/user_management\/users\/([^/]+)$/.exec(pathname);
     if (method === "DELETE" && user) {
       const id = decodeURIComponent(user[1]!);

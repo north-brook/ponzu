@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
+import { AwsV4Signer } from "aws4fetch";
 import { UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
-import { type Credentials, canonicalQuery, encodePath, presign, signHeaders } from "./sigv4.ts";
 
 /**
  * Where bytes live: a canvas's assets, previews and exports, in Cloudflare R2 under the canvas's
@@ -84,7 +84,7 @@ export interface R2Config {
 
 const TIMEOUT_MS = 10_000;
 
-/** `ObjectStorage` on R2's S3 API, signed with SigV4. */
+/** `ObjectStorage` on R2's S3 API, signed with SigV4 by aws4fetch. */
 export function createR2Storage({
   accountId,
   accessKeyId,
@@ -230,6 +230,110 @@ export function createR2Storage({
       }
     },
   };
+}
+
+/*
+ * AWS Signature Version 4, as S3 (and R2's S3 API) takes it, through aws4fetch's signer: the few
+ * requests the API makes of storage, signed in an `Authorization` header, and addresses a client
+ * can PUT bytes to, signed in their query string.
+ * https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
+ */
+
+export interface Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** R2 takes `auto`. */
+  region: string;
+}
+
+export interface Signable {
+  method: string;
+  url: URL;
+  /** Every header the request will carry that the signature should bind, `host` aside. */
+  headers: Record<string, string>;
+  /** Epoch milliseconds. */
+  now: number;
+}
+
+const UNSIGNED = "UNSIGNED-PAYLOAD";
+
+function signer(credentials: Credentials, request: Signable, signQuery: boolean): AwsV4Signer {
+  return new AwsV4Signer({
+    method: request.method,
+    url: request.url.toString(),
+    headers: request.headers,
+    accessKeyId: credentials.accessKeyId,
+    secretAccessKey: credentials.secretAccessKey,
+    region: credentials.region,
+    service: "s3",
+    datetime: stamp(request.now),
+    signQuery,
+    // By default aws4fetch leaves `content-type` and `content-length` out of the signature.
+    // An upload address must bind both, so that storage refuses another type or size.
+    allHeaders: true,
+  });
+}
+
+/**
+ * The headers to send with a request, `Authorization` among them, every name in lowercase. The
+ * body is not signed (`UNSIGNED-PAYLOAD`): every request the API signs this way has none worth
+ * binding, and DeleteObjects binds its body by a signed checksum header instead.
+ */
+export async function signHeaders(
+  credentials: Credentials,
+  request: Signable,
+): Promise<Record<string, string>> {
+  const headers = { ...request.headers, "x-amz-content-sha256": UNSIGNED };
+  const signed = await signer(credentials, { ...request, headers }, false).sign();
+  // `Headers` gives every name in lowercase.
+  return Object.fromEntries(signed.headers);
+}
+
+/**
+ * An address that takes this one request for `expiresIn` seconds, signed in its query string.
+ * Whoever uses it must send every header in `request.headers` with exactly these values, or
+ * storage refuses it.
+ */
+export async function presign(
+  credentials: Credentials,
+  request: Signable & { expiresIn: number },
+): Promise<URL> {
+  const url = new URL(request.url);
+  url.searchParams.set("X-Amz-Expires", String(request.expiresIn));
+  const signed = await signer(credentials, { ...request, url }, true).sign();
+  return signed.url;
+}
+
+/** A path as S3 signs it: each segment encoded, the slashes between them kept. */
+export function encodePath(path: string): string {
+  return path.split("/").map(encodeStrict).join("/");
+}
+
+/**
+ * A query string encoded strictly and sorted by name, as SigV4 signs it. A request whose query
+ * carries text of its own (a listed key, say) is sent with exactly this, so that storage reads
+ * back what was signed: `URLSearchParams` writes a space as `+`, which S3 need not read as a
+ * space.
+ */
+export function canonicalQuery(query: URLSearchParams): string {
+  return [...query]
+    .map(([key, value]) => [encodeStrict(key), encodeStrict(value)] as const)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
+/** `encodeURIComponent`, and the five characters it leaves that S3 wants encoded. */
+function encodeStrict(text: string): string {
+  return encodeURIComponent(text).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/** SigV4's timestamp, `20130524T000000Z`. */
+function stamp(now: number): string {
+  return new Date(now).toISOString().replace(/[-:]|\.\d{3}/g, "");
 }
 
 /** The body of a DeleteObjects request. Quiet: storage answers only with what it could not do. */
