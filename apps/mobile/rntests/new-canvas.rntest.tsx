@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 import { ApiError } from "@ponzu/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react-native";
 import { router } from "expo-router";
 import type { ReactNode } from "react";
 import { Alert, Text } from "react-native";
@@ -76,6 +76,18 @@ describe("new canvas", () => {
     expect(button).toBeDisabled();
     await type("Design a pricing card for the site");
     expect(button).toBeEnabled();
+  });
+
+  test("with the keyboard up, the project control stays above the composer, not under it", async () => {
+    backend.seed("signed-in");
+    await show();
+    // The prompt is focused as the screen opens, so the keyboard is up from the start. The
+    // statement and the composer make way for it together: the composer above the keyboard
+    // and the project control above the composer, where a person can see it and tap it.
+    const avoiding = screen.getByTestId("new-canvas-keyboard");
+    expect(avoiding.props.behavior).toBe("padding");
+    expect(within(avoiding).getByTestId("new-canvas-project")).toBeTruthy();
+    expect(within(avoiding).getByTestId("new-canvas-composer")).toBeTruthy();
   });
 
   test("Send makes the canvas with its first message and opens it in this screen's place", async () => {
