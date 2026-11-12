@@ -77,6 +77,10 @@ test("open with draft false marks it ready too, or says why it stays a draft", a
   expect(opened.text).toContain(
     "Marked pull request #1 ready for review on GitHub, as Ada (@ada).",
   );
+  // Where it stands is after the ready: never the draft it was opened as.
+  expect(opened.text).toContain("Pull request #1 is open, ready for review");
+  expect(opened.text).not.toContain("as a draft:");
+  expect(opened.text).not.toContain("mark_pull_request_ready first");
 
   const t = await tools();
   t.api.refusePullRequest = (action) =>

@@ -534,6 +534,14 @@ export class FakeRunnerApi {
     } else if (action === "merge") {
       this.pullRequest = { ...pr!, state: "merged" };
     } else if (action === "auto_merge") {
+      // As the API answers: nothing is left to wait for on one that can merge now.
+      if (this.standing(request.turn).pullRequest?.mergeState === "clean") {
+        throw new ApiError(
+          409,
+          "already_mergeable",
+          "This pull request can merge now; there is nothing for auto-merge to wait for.",
+        );
+      }
       this.prDetail = { ...this.prDetail, autoMerge: { enabledBy: "ada" } };
     }
     return { did, pushing: false, ...this.standing(request.turn) };

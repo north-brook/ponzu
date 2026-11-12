@@ -114,6 +114,8 @@ export const PullRequestView = z.object({
       line: z.number().nullable(),
       /** For a line comment, whether its thread is resolved on GitHub; null or absent otherwise. */
       resolved: z.boolean().nullable().optional(),
+      /** For a line comment, its author's GitHub id when a person wrote it. */
+      authorId: z.number().nullable().optional(),
     }),
   ),
   files: z.object({

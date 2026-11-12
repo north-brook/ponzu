@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { designs, events, threadItems } from "../schema/index.ts";
 import { run } from "./run.ts";
@@ -18,7 +18,9 @@ export const GITHUB_KINDS = ["check", "review"] as const;
 export interface TurnOrigin {
   /**
    * The event the runner named as the one that began the turn, when it is one of the design's
-   * that a runner was handed. Null for none, or for one the design never had.
+   * that this runner (`runnerId`) was handed. Null for none, for one the design never had, and
+   * for one an earlier runner was handed: a turn picked up after a restart, or an old event a
+   * runner token in other hands could name from the feed.
    */
   event: { id: string; kind: string; userId: string | null } | null;
   /**
@@ -27,6 +29,12 @@ export interface TurnOrigin {
    * so an acknowledgement still on its way never lets them through.
    */
   githubSince: boolean;
+  /**
+   * Whether a message, answer or comment from anyone but that event's person, later in the feed,
+   * was handed to a runner: someone else spoke in the turn, or since, so what lands is no longer
+   * one person's request.
+   */
+  othersSince: boolean;
   /** The person whose message, answer or comment last went into the session, if any did. */
   lastPerson: string | null;
   /** The design's owner, unless their account is gone. */
@@ -40,7 +48,11 @@ export interface TurnOrigin {
  */
 export async function getTurnOrigin(
   db: Db,
-  { designId, eventId }: { designId: string; eventId: string | null },
+  {
+    designId,
+    eventId,
+    runnerId = null,
+  }: { designId: string; eventId: string | null; runnerId?: string | null },
 ): Promise<TurnOrigin | null> {
   const [design] = await run(
     db.select({ ownerId: designs.ownerId }).from(designs).where(eq(designs.id, designId)),
@@ -52,26 +64,40 @@ export async function getTurnOrigin(
           .select({ id: events.id, kind: events.kind, userId: events.userId, seq: events.seq })
           .from(events)
           .where(
-            and(eq(events.designId, designId), eq(events.id, eventId), isNotNull(events.claimedBy)),
+            and(
+              eq(events.designId, designId),
+              eq(events.id, eventId),
+              runnerId ? eq(events.claimedBy, runnerId) : isNotNull(events.claimedBy),
+            ),
           ),
       )
     : [];
-  const [since] = event
-    ? await run(
-        db
-          .select({ id: events.id })
-          .from(events)
-          .where(
-            and(
-              eq(events.designId, designId),
-              inArray(events.kind, [...GITHUB_KINDS]),
-              gt(events.seq, event.seq),
-              isNotNull(events.claimedBy),
-            ),
-          )
-          .limit(1),
-      )
-    : [];
+  /** Whether an event matching `which`, later than the turn's, was handed to a runner. */
+  const handedSince = async (which: SQL | undefined): Promise<boolean> => {
+    if (!event) return false;
+    const [found] = await run(
+      db
+        .select({ id: events.id })
+        .from(events)
+        .where(
+          and(
+            eq(events.designId, designId),
+            gt(events.seq, event.seq),
+            isNotNull(events.claimedBy),
+            which,
+          ),
+        )
+        .limit(1),
+    );
+    return found !== undefined;
+  };
+  const githubSince = await handedSince(inArray(events.kind, [...GITHUB_KINDS]));
+  const othersSince = await handedSince(
+    and(
+      inArray(events.kind, [...PERSON_KINDS]),
+      sql`${events.userId} is distinct from ${event?.userId ?? null}`,
+    ),
+  );
   const [last] = await run(
     db
       .select({ userId: events.userId })
@@ -89,7 +115,8 @@ export async function getTurnOrigin(
   );
   return {
     event: event ? { id: event.id, kind: event.kind, userId: event.userId } : null,
-    githubSince: event ? since !== undefined : false,
+    githubSince,
+    othersSince,
     lastPerson: last?.userId ?? null,
     ownerId: design.ownerId,
   };

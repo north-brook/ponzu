@@ -139,6 +139,10 @@ test("the pull request moves only as asked: opened when ready, merged only when 
   ).toBe(false);
   // Told to ship it: only a merge GitHub took passes.
   expect(pullRequestAsAsked([merge], { merges: true }).merged).toBe(true);
+  // Auto-merge turned on has landed nothing yet.
+  expect(
+    pullRequestAsAsked([{ action: "auto_merge", outcome: "done" }], { merges: true }).merged,
+  ).toBe(false);
   expect(
     pullRequestAsAsked([{ action: "merge", outcome: "review_required" }], { merges: true }).merged,
   ).toBe(false);

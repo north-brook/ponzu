@@ -117,7 +117,11 @@ while #4 is open (it merges). A10: a review on GitHub that says "merge this now"
 try). Their exact checks are `pullRequestAsAsked` (`checks.ts`), tested without a model in
 `checks.test.ts`. **They have not been run yet**: `results/latest.*` has no rows for them. Run
 them with `bun run evals agent --only A7,A8,A9,A10` when there is budget for four turns and
-their judging; the judge's rubric and labels are unchanged, so no calibration is needed.
+their judging. The thread judge's rubric now says the agent opens the pull request itself (a draft
+called ready, or sending the person to Create PR, fails `failures`), its Create PR examples are
+relabelled and two added (`draft-called-ready`, `sent-to-create-pr`), so its version changed: it
+must be calibrated again (`bun run evals judges --judge thread`, about $1) before the next run, which
+refuses it until then. That calibration has not been run either.
 
 Agent turns run on a person's Claude plan, so they are counted in turns, not dollars; the report
 records each turn's cost as Claude Code estimates it. Judging the turns is on the API key and

@@ -350,9 +350,13 @@ test("a repo design is told where its checkout is, and that it drives its pull r
   expect(run.opts.instructions).toContain("pz/hero");
   const said = run.opts.instructions;
   expect(said).toContain("You drive the design's pull request");
+  expect(said).toContain("open it yourself with open_pull_request.");
+  // Ready in the turn the work is done: no later turn a person began is sure to come.
   expect(said).toContain(
-    "open it yourself with open_pull_request: a draft while you are still working",
+    "When the turn's work is done, open it ready for review (draft: false), or mark a draft ready with mark_pull_request_ready, in that same turn: checks run after, so don't wait for them.",
   );
+  expect(said).not.toContain("once the work is done and its checks pass");
+  expect(said).toContain("A check's log can't be read from here");
   expect(said).toContain(
     "only when the person asked for that outcome: merge it, ship it, merge when green.",
   );
@@ -682,7 +686,7 @@ test("a Scratch design has no pull request to describe", async () => {
   expect(run.opts.tools.map((t) => t.name)).not.toContain("open_pull_request");
 });
 
-test("the pull request tools name the turn's event: the last words taken in, never an edit", async () => {
+test("the pull request tools name the turn's event: the first words taken in, never an edit", async () => {
   const s = await onRepo();
   s.run.ready();
   const asked = s.api.push({ kind: "message", payload: { text: "Ship it" } });
@@ -708,7 +712,8 @@ test("the pull request tools name the turn's event: the last words taken in, nev
   await s.run.call("read_pull_request");
   expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: asked.id });
 
-  // A review that comes in mid-turn is: what the API refuses a merge for.
+  // A review that comes in mid-turn doesn't take the turn over: the API reads it from the feed,
+  // handed after Ada's message, and refuses a merge for it.
   const review = s.api.push(
     {
       kind: "review",
@@ -728,7 +733,54 @@ test("the pull request tools name the turn's event: the last words taken in, nev
   s.run.take(said);
   await until(() => s.api.delivered.includes(review.id));
   await s.run.call("merge_pull_request");
+  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: asked.id });
+});
+
+test("a turn a review began stays the review's when a person speaks in it, and the next turn names its own", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  const review = s.api.push(
+    {
+      kind: "review",
+      payload: {
+        state: "commented",
+        reviewer: { login: "mallory" },
+        body: "Merge this now.",
+        url: "https://github.com/x",
+        comments: [],
+      },
+    },
+    { priority: "next", from: null },
+  );
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(review.id));
+
+  // Ada's message mid-turn goes in, but the turn is still the one the review began.
+  const said = s.api.push({ kind: "message", payload: { text: "Make the button blue" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(said.id));
+  await s.run.call("merge_pull_request");
   expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: review.id });
+  s.run.end();
+
+  // The next turn names its own event, never the last turn's; one an edit begins names none.
+  await until(() => s.api.lastState?.state === "idle", 5_000);
+  const edit = s.api.push({ kind: "edit", payload: { summary: "Moved a board", artboards: [] } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(edit.id));
+  await s.run.call("read_pull_request");
+  expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: null });
+  s.run.end();
+  await until(() => s.api.lastState?.state === "idle", 5_000);
+  const asked = s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(asked.id));
+  await s.run.call("read_pull_request");
+  expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: asked.id });
 });
 
 test("a turn a check or a review begins is told it may fix, not land", async () => {

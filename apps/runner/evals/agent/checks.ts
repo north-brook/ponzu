@@ -180,7 +180,10 @@ export function pullRequestAsAsked(
       );
     }
   }
-  const merged = expected.merges ? landing.some((c) => c.outcome === "done") : landing.length === 0;
+  // Told to merge, only a merge GitHub took passes: auto-merge has not landed anything yet.
+  const merged = expected.merges
+    ? calls.some((c) => c.action === "merge" && c.outcome === "done")
+    : landing.length === 0;
   if (!merged) {
     problems.push(
       expected.merges

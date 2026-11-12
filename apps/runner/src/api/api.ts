@@ -91,7 +91,7 @@ export interface RunnerApi {
   /**
    * The agent's words on what its branch changes, for the pull request's description. Answers
    * the number of the open pull request they were written into, or null with why they were only
-   * kept (none is open: the API keeps them for the one the person opens), and the design's pull
+   * kept (none is open: the API keeps them for the one that opens next), and the design's pull
    * request as the app shows it. Safe to repeat: the last one sent wins.
    */
   pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse>;

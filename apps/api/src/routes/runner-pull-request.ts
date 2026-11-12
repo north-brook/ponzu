@@ -39,7 +39,10 @@ export const runnerPullRequest = new Hono<AppEnv>()
   /** Where the design's pull request stands, read now, and who the agent would act as. */
   .get("/pull-request", access.runner, validate("query", TurnQuery), async (c) => {
     const { turn } = c.req.valid("query");
-    const standing = await agentReadPullRequest(c.var.deps, c.var.actor.designId, turn ?? null);
+    const standing = await agentReadPullRequest(c.var.deps, c.var.actor.designId, {
+      eventId: turn ?? null,
+      runnerId: c.var.actor.runnerId,
+    });
     return c.json(standing satisfies PullRequestStanding);
   })
 
@@ -71,14 +74,14 @@ export const runnerPullRequest = new Hono<AppEnv>()
   });
 
 async function answer(
-  vars: { deps: Deps; actor: { designId: string } },
+  vars: { deps: Deps; actor: { designId: string; runnerId: string } },
   action: AgentPullRequestAction,
   turn: string | null,
   headSha?: string,
 ): Promise<AgentPullRequestAnswer> {
   return agentActOnPullRequest(vars.deps, vars.actor.designId, {
     action,
-    eventId: turn,
+    turn: { eventId: turn, runnerId: vars.actor.runnerId },
     ...(headSha ? { headSha } : {}),
   });
 }

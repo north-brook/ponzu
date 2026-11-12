@@ -62,6 +62,7 @@ test("a person's turn: the event, and GitHub's words only once they went in afte
   expect(await getTurnOrigin(db, { designId: design.id, eventId: message.id })).toEqual({
     event: { id: message.id, kind: "message", userId: ada.id },
     githubSince: false,
+    othersSince: false,
     lastPerson: ada.id,
     ownerId: owner.id,
   });
@@ -83,6 +84,28 @@ test("a person's turn: the event, and GitHub's words only once they went in afte
   );
 });
 
+test("anyone else who spoke after the turn's event, in it or since, is said; the same person is not", async () => {
+  const { design, owner, ada } = await seedDesign();
+  const asked = await taken(design.id, "message", ada.id);
+  await taken(design.id, "comment", ada.id);
+  await taken(design.id, "answer", ada.id);
+  const origin = (eventId: string) => getTurnOrigin(db, { designId: design.id, eventId });
+  expect((await origin(asked.id))!.othersSince).toBe(false);
+
+  await taken(design.id, "comment", owner.id);
+  expect(await origin(asked.id)).toMatchObject({ othersSince: true, githubSince: false });
+});
+
+test("only an event the asking runner was handed is its turn's", async () => {
+  const { design, ada } = await seedDesign();
+  const asked = await taken(design.id, "message", ada.id);
+  const as = (runnerId: string) =>
+    getTurnOrigin(db, { designId: design.id, eventId: asked.id, runnerId });
+  expect((await as("rnr_test"))!.event).toMatchObject({ id: asked.id });
+  // An earlier runner's event (a restart, or a runner token in someone else's hands) is none.
+  expect((await as("rnr_other"))!.event).toBeNull();
+});
+
 test("an event of another design, or one no runner was handed, is no turn's", async () => {
   const one = await seedDesign();
   const other = await seedDesign();
@@ -99,6 +122,7 @@ test("an event of another design, or one no runner was handed, is no turn's", as
     expect(await getTurnOrigin(db, { designId: one.design.id, eventId })).toMatchObject({
       event: null,
       githubSince: false,
+      othersSince: false,
       lastPerson: null,
       ownerId: one.owner.id,
     });

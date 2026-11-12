@@ -49,7 +49,8 @@ const NEXT: Record<string, string> = {
   changes_requested:
     "A reviewer asked for changes: read_pull_request lists their unresolved comments. Make the changes, commit and push, and tell the person.",
   checks_failing:
-    "A required check failed: read_pull_request names it and links its log. Fix what fails, commit and push.",
+    "A required check failed: read_pull_request names it. Its log can't be read from the sandbox (its link is for the person): reproduce the failure in the checkout with the repository's own workflow and test commands, fix it, commit and push.",
+  branch_up_to_date: "Nothing to do: the branch already has everything its base has.",
   checks_pending:
     "Required checks are still running. Wait and read the pull request again, or enable_auto_merge where the repository allows it.",
   branch_behind: "The branch is behind its base: update_pull_request_branch brings it up to date.",
@@ -128,11 +129,13 @@ export function pullRequestTools(host: PullRequestHost): ToolDef<any>[] {
     },
     handler: async ({ draft }) => {
       await pushed();
-      const answer = await act("open");
+      let answer = await act("open");
       const said = [openedText(answer)];
       if (!draft && answer.pullRequest?.state === "draft") {
         try {
-          said.push(actionText("ready", await act("ready")));
+          // Where it stands is the ready answer's, said after it: never the draft it was.
+          answer = await act("ready");
+          said.push(actionText("ready", answer));
         } catch (err) {
           said.push(`It stays a draft: ${(err as Error).message}`);
         }
@@ -171,7 +174,7 @@ export function pullRequestTools(host: PullRequestHost): ToolDef<any>[] {
     title: "Mark pull request ready",
     group: "converse",
     description:
-      "Mark the design's draft pull request ready for review, when the work is done and its checks pass. Only in a turn a person in Ponzu began; not in one a check or a review began.",
+      "Mark the design's draft pull request ready for review, in the turn its work is done (checks run after; don't wait for them). Only in a turn a person in Ponzu began; not in one a check or a review began.",
     input: {},
     handler: async () => {
       const answer = await act("ready");

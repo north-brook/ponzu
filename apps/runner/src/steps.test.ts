@@ -57,6 +57,16 @@ describe("the canvas", () => {
     }
   });
 
+  test("a pull request action is recorded as asked, never as done, and never sums up the turn", () => {
+    // GitHub may refuse it: the API's own line in the thread says what happened.
+    for (const tool of Object.values(PULL_REQUEST_TOOLS)) {
+      const step = describeStep(`mcp__ponzu__${tool}`, {}, ctx);
+      expect(step.done, tool).not.toMatch(/^(Opened|Merged|Marked|Updated|Turned)\b/);
+      expect(step.weight, tool).toBe(0);
+    }
+    expect(done("mcp__ponzu__merge_pull_request")).toBe("Asked to merge the pull request");
+  });
+
   test("boards are named by their real names, in both tenses", () => {
     expect(canvas("create_artboard", { name: "7 · Plan ready" })).toBe('Drawing "7 · Plan ready"');
     expect(done("mcp__ponzu__create_artboard", { name: "7 · Plan ready" })).toBe(

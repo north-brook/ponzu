@@ -5,6 +5,7 @@ import {
   getPullRequestContext,
   getTurnOrigin,
   getUser,
+  getUserByGithubId,
   PERSON_KINDS,
   type PullRequestContext,
   randomString,
@@ -16,6 +17,7 @@ import type {
   PullRequestStanding,
 } from "@ponzu/runner/protocol";
 import { requireDesign } from "../auth/authorize.ts";
+import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
 import { ApiError } from "../http/errors.ts";
@@ -33,15 +35,16 @@ import { type PullRequestTab, toTab } from "./view.ts";
  * Who that is, and what they may have it do, is decided here from the design's feed, never from
  * anything the agent says:
  *
- * - The turn's event is the one the runner names: the last message it put into the session that
- *   came from an event (a person's message, answer or comment; a check; a review). It must be
- *   one of this design's that a runner was handed.
+ * - The turn's event is the one the runner names: the event whose message began the turn (a
+ *   person's message or comment; a check; a review), or none for a turn an edit or Ponzu's own
+ *   note began. It must be one of this design's that the runner asking was handed.
  * - A person's event (message, answer, comment) is a person's turn: the agent acts as them.
- * - Any other turn (a check, a review, Ponzu's own notes, none) acts as the last person whose
- *   words went into the session, else the design's owner, and may only open, update the branch
- *   and read: never merge, mark ready or turn on auto-merge. So may a person's turn once a check
- *   or a review was handed to the runner after it: GitHub's words came after the person's, and
- *   text from GitHub is not the person.
+ * - Any other turn (a check, a review, an edit, Ponzu's own notes, none) acts as the last person
+ *   whose words went into the session, else the design's owner, and may only open, update the
+ *   branch and read: never merge, mark ready or turn on auto-merge. Nor may a person's turn once
+ *   a check or a review was handed to the runner after its event (text from GitHub is not the
+ *   person), nor once anyone else's message, answer or comment was (it is no longer one person's
+ *   request, and the agent would land it as the wrong one).
  * - That person must still be allowed: a member of the workspace who can push to the repository
  *   (as GitHub says now), with a GitHub connection Ponzu can use.
  */
@@ -70,6 +73,15 @@ const DONE: Record<AgentPullRequestAction, string> = {
   merge: "merged",
 };
 
+/**
+ * The turn a runner's call is made in: the event the runner says began it, and the runner
+ * asking, which must be the one that was handed that event.
+ */
+export interface Turn {
+  eventId: string | null;
+  runnerId: string;
+}
+
 /** Who the agent acts as in a turn, and whether the turn is a person's. */
 export interface Acting {
   user: User;
@@ -86,9 +98,9 @@ export interface Acting {
 export async function actingFor(
   deps: Pick<Deps, "db">,
   designId: string,
-  eventId: string | null,
+  { eventId, runnerId }: Turn,
 ): Promise<Acting> {
-  const origin = await getTurnOrigin(deps.db, { designId, eventId });
+  const origin = await getTurnOrigin(deps.db, { designId, eventId, runnerId });
   if (!origin) throw new ApiError(404, "not_found", "There is no such design.");
   const { event } = origin;
   const fromPerson =
@@ -109,8 +121,10 @@ export async function actingFor(
       ? `This turn began with ${event.kind === "check" ? "a check" : "a review"} from GitHub, not a person in Ponzu.`
       : "No person in Ponzu began this turn."
     : origin.githubSince
-      ? "Words from GitHub (a check or a review) came in after the person's message."
-      : null;
+      ? "Words from GitHub (a check or a review) came in after the person's message that began this turn."
+      : origin.othersSince
+        ? "Someone else spoke in the design after the person's message that began this turn, so it is no longer one person's request."
+        : null;
   return { user, personTurn: why === null, why };
 }
 
@@ -157,6 +171,42 @@ async function asTool<T>(name: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The GitHub ids, among the authors of the pull request's unresolved line comments, of those
+ * GitHub says can push to the repository: the only ones whose words the agent's read quotes, as
+ * only theirs reach it as a review (`tellDesigns`). A stranger on a public repository can't put
+ * words into a person's turn this way. A question GitHub can't answer now drops the comment.
+ */
+async function pushers(
+  deps: AgentDeps,
+  context: PullRequestContext,
+  tab: PullRequestTab,
+): Promise<Set<number>> {
+  const { design, repo, installationId, suspendedAt } = context;
+  const can = new Set<number>();
+  if (!repo || !design.repoId) return can;
+  const authors = new Map<number, string>();
+  for (const said of tab.pullRequest?.conversation ?? []) {
+    if (said.path === null || said.resolved !== false) continue;
+    if (typeof said.authorId === "number" && said.author && !said.author.bot)
+      authors.set(said.authorId, said.author.login);
+  }
+  for (const [githubUserId, githubLogin] of authors) {
+    try {
+      const person = await getUserByGithubId(deps.db, githubUserId);
+      const permission = await repoPermission(deps, {
+        user: { id: person?.id ?? null, githubUserId, githubLogin },
+        repo: { id: design.repoId, githubRepoId: repo.githubRepoId, fullName: repo.fullName },
+        installation: { installationId, suspendedAt },
+      });
+      if (canWrite(permission)) can.add(githubUserId);
+    } catch (error) {
+      deps.log.warn("pull_request_agent_author_unknown", { designId: design.id, error });
+    }
+  }
+  return can;
+}
+
 async function contextOf(deps: Pick<Deps, "db">, designId: string): Promise<PullRequestContext> {
   const context = await getPullRequestContext(deps.db, designId);
   if (!context) throw new ApiError(404, "not_found", "There is no such design.");
@@ -170,15 +220,16 @@ async function contextOf(deps: Pick<Deps, "db">, designId: string): Promise<Pull
 export async function agentReadPullRequest(
   deps: AgentDeps,
   designId: string,
-  eventId: string | null,
+  turn: Turn,
 ): Promise<PullRequestStanding> {
   const context = await contextOf(deps, designId);
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
   const found = await readPullRequest(deps, target);
   await recordCurrent(deps, target.designId, found);
-  const acting = await actingFor(deps, designId, eventId);
-  return standing(toTab(target, found.read, deps.config.githubApp.slug), acting);
+  const acting = await actingFor(deps, designId, turn);
+  const tab = toTab(target, found.read, deps.config.githubApp.slug);
+  return standing(tab, acting, await pushers(deps, context, tab));
 }
 
 /**
@@ -190,13 +241,9 @@ export async function agentReadPullRequest(
 export async function agentActOnPullRequest(
   deps: AgentDeps,
   designId: string,
-  {
-    action,
-    eventId,
-    headSha,
-  }: { action: AgentPullRequestAction; eventId: string | null; headSha?: string },
+  { action, turn, headSha }: { action: AgentPullRequestAction; turn: Turn; headSha?: string },
 ): Promise<AgentPullRequestAnswer> {
-  const acting = await actingFor(deps, designId, eventId);
+  const acting = await actingFor(deps, designId, turn);
   if (PERSON_ONLY.has(action) && !acting.personTurn) {
     throw new ApiError(
       403,
@@ -251,7 +298,9 @@ export async function agentActOnPullRequest(
     did = result.did;
   }
   const pr = tab.pullRequest;
-  if (did && pr) {
+  // A merge GitHub took but doesn't show yet is not said as merged: GitHub's own line says it
+  // once it does, and the agent is told to read again.
+  if (did && pr && (action !== "merge" || pr.state === "merged")) {
     await appendThreadItemOnce(deps.db, {
       // Not a runner's shape (`ti_` and sixteen letters and digits): no sandbox can write it.
       id: `ti_pra-${randomString(16)}`,
@@ -270,7 +319,7 @@ export async function agentActOnPullRequest(
     });
     deps.log.info("pull_request_agent", { designId, action, number: pr.number, as: user.id });
   }
-  return { did, pushing, ...standing(tab, acting) };
+  return { did, pushing, ...standing(tab, acting, await pushers(deps, context, tab)) };
 }
 
 const ACTION_WORDS: Record<AgentPullRequestAction, string> = {
@@ -282,7 +331,11 @@ const ACTION_WORDS: Record<AgentPullRequestAction, string> = {
 };
 
 /** The pull request as the agent is told it: what the tab shows that it can act on. */
-function standing(tab: PullRequestTab, acting: Acting): PullRequestStanding {
+function standing(
+  tab: PullRequestTab,
+  acting: Acting,
+  canPush: ReadonlySet<number>,
+): PullRequestStanding {
   const p = tab.pullRequest;
   return {
     branch: {
@@ -319,7 +372,13 @@ function standing(tab: PullRequestTab, acting: Acting): PullRequestStanding {
         state: review.state,
       })),
       unresolved: p.conversation
-        .filter((said) => said.path !== null && said.resolved === false)
+        .filter(
+          (said) =>
+            said.path !== null &&
+            said.resolved === false &&
+            typeof said.authorId === "number" &&
+            canPush.has(said.authorId),
+        )
         .map((said) => ({
           author: said.author?.login ?? null,
           path: said.path!,

@@ -150,7 +150,7 @@ docs/cloud.md ("Saving the sandbox", "Getting ready to sleep") is the specificat
   `read_pull_request`, `mark_pull_request_ready`, `update_pull_request_branch`,
   `enable_auto_merge` and `merge_pull_request`: each asks the API, which acts on GitHub as the
   person the turn is for (docs/cloud.md, "The agent's pull request"). Each names the turn's event,
-  the last one Claude Code took into the session other than an edit; the API decides from it who
+  the first one Claude Code took into the session in this turn other than an edit; the API decides from it who
   that person is and whether the turn may merge. The tools that change the branch on GitHub push
   first, and merge and update send the commit the checkout is at.
 

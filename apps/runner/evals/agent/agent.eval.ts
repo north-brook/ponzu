@@ -320,7 +320,7 @@ export function factsText(f: FactInputs): string {
       // A row recorded before the agent drove its pull request: said as it was then.
       lines.push(
         f.summaries
-          ? `describe_pull_request was called ${f.summaries} time(s); no pull request is open, so the description was saved for the one the person opens.`
+          ? `describe_pull_request was called ${f.summaries} time(s); no pull request is open, so the description was saved for the one that opens next.`
           : "describe_pull_request was not called.",
       );
       lines.push("No pull request is open.");
