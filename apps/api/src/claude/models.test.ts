@@ -7,6 +7,7 @@ import {
   CLAUDE_MODELS,
   checkOffered,
   effortOrDefault,
+  modelLabel,
   modelOrDefault,
   offeredEfforts,
   offeredModels,
@@ -76,6 +77,21 @@ test("a model the account is not offered is not offered, and the default gives w
   expect(offer.defaultModel).toBe("claude-fable-5-2");
   expect(modelOrDefault(offer, "claude-opus-5-5")).toBe("claude-fable-5-2");
   expect(modelOrDefault(offer, "claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
+});
+
+test("a model is named as the account is offered it, else as the hand-kept list names it, else by id", () => {
+  const offer = offeredModels([
+    entry({
+      value: "opus",
+      resolvedModel: "claude-opus-6",
+      displayName: "Opus",
+      description: "Opus 6 · The newest Opus",
+    }),
+  ]);
+  expect(modelLabel(offer, "claude-opus-6")).toBe("Opus 6");
+  // No longer offered, still known by name.
+  expect(modelLabel(offer, "claude-fable-5-2")).toBe("Fable 5.2");
+  expect(modelLabel(offer, "claude-gone-1")).toBe("claude-gone-1");
 });
 
 test("without Opus 5.5, what Claude Code calls its default is the default", () => {

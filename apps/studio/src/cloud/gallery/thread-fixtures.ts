@@ -261,6 +261,38 @@ export const failedTurn: ThreadItem[] = (() => {
   ];
 })();
 
+/**
+ * A canvas of Maya's made on Fable, which her Claude no longer offers: the thread says so as
+ * the next turn starts, and that turn runs on Opus 5.5.
+ */
+export const modelChangedTurn: ThreadItem[] = (() => {
+  const start = turn(false);
+  const final = reply("Done: the cards are one size now, and Pro keeps its accent border.");
+  return [
+    said(maya, "Three pricing cards, Pro in the middle."),
+    reply("Drew the three cards on **Pricing**, Pro in the middle."),
+    said(ada, "Make the cards the same height."),
+    notice({
+      type: "model_changed",
+      from: "claude-fable-5-2",
+      to: "claude-opus-5-5",
+      fromName: "Fable 5.2",
+      toName: "Opus 5.5",
+      account: maya,
+    }),
+    ended(start, {
+      final: final.id,
+      ms: 41_000,
+      boards: 1,
+      steps: [
+        [null, "Read the canvas", 1],
+        [null, 'Restyled "Pricing"', 2],
+      ],
+    }),
+    final,
+  ];
+})();
+
 /** Ended on a question: its answer, then the question, which is how it ended. */
 export const askedTurn: ThreadItem[] = (() => {
   const start = turn(false);
