@@ -132,6 +132,14 @@ export const COMPOSITIONS: Composition[] = [
   },
   { id: "create", title: "4 · Create", board: "mac/4-create.html", ...WINDOW, reference: true },
   {
+    // The model and effort, two panes side by side, opening upward from the docked composer.
+    id: "create-model-menu",
+    title: "Create · the model and effort menu",
+    ...WINDOW,
+    open: 'button[aria-label^="Model"]',
+    reference: true,
+  },
+  {
     id: "pick-a-project",
     title: "5 · Pick a project",
     board: "mac/5-pick-a-project.html",
@@ -225,7 +233,13 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
   },
   { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
-  { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },
+  {
+    // Scratch: the statement on one line, in the two lines' room a repo takes.
+    id: "fresh-start-no-repos",
+    title: "Fresh start · no repos yet",
+    ...WINDOW,
+    reference: true,
+  },
   { id: "fresh-start-loading", title: "Fresh start · loading", ...WINDOW },
   { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW, reference: true },
   {

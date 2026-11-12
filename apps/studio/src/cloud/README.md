@@ -205,6 +205,21 @@ The thread and the pull request's keys:
   past the repo's rules still asks first. The desktop's menu has neither accelerator, and no
   Print.
 
+The create page's keys and caret:
+
+- **The caret goes to the composer** (`create/focus.ts`, `focusCreateComposer`, once the page
+  has drawn) after New design (its button, ⌘N), after a workspace is switched to from the
+  sidebar's menu, and after another workspace's Scratch or repo is chosen in the picker; only
+  when the create page is what shows: not where the workspace opens on a design, not under a
+  menu, popover or dialog, and not while a send is under way. Settings' own switcher leaves it.
+- **After a choice** in the project picker or the model menu, the caret goes back to the
+  composer (`after` on `RepoPicker` and `ModelPicker`), to go on typing; closed without one
+  (Escape, a click away), focus goes back to the trigger as any menu's does.
+- **The model menu's two panes**: Up, Down, Home and End move within a pane and stop at its
+  ends; Left and Right move between them, onto the other's chosen row (Right goes nowhere when
+  the model takes no effort); Return or Space chooses. A model keeps the menu open, an effort
+  closes it.
+
 ## Tokens
 
 - Style with Tailwind utilities that name a token, and nothing else: `bg-surface`, `text-muted`,
@@ -282,7 +297,8 @@ statement (its project selector included), 26 the pull request, 18 a Settings se
 price.
 
 The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
-cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
+cards' names 14 medium, and the Share popover's heading is 14 semibold. The create composer's
+field is 16, and its model and effort a step under it, 14. The canvas's comment cards
 are on the ladder too: a message is `body` (13), its author and age `secondary` (12).
 
 **Colour, by role.** `ink` is what is read, chosen or open (body text, the chosen tool, the active
@@ -384,30 +400,52 @@ repaint something or say what isn't so. The usual swaps:
   only the rail knows where a line sat and what the reader is anchored on.
 - The create page departs from board 5 (fresh start) on purpose, at the founder's direction:
   Ponzu's mark (the slice, 56) over one statement in the display face at 28 stands where the
-  question was, "Make something in owner/name ⌄" or "Make something from scratch ⌄", whose last
-  words are the project selector, about making rather than designing; the ideas are not tiles under the composer but take turns as its placeholder
+  question was, "Make something in" over "owner/name ⌄" on a second line, or "Make something
+  from scratch ⌄" on one, whose last words are the project selector, about making rather than
+  designing; the ideas are not tiles under the composer but take turns as its placeholder
   (`create/ideas.tsx`: each for `SUGGESTION_DWELL_MS`, the one before lifting away as the next
   rises in), put away by typing and taken into the field with Tab, to edit and send; and the
   page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
-  its boards with `--pz-dot`), since this is where a canvas starts. Nothing on the page moves
-  when ideas arrive or don't.
+  its boards with `--pz-dot`), since this is where a canvas starts. The dots are
+  `--c-canvas-dot`, 13% ink in light and 15% white in dark (the founder found 8% and 9% too
+  subtle), the same size and spacing, on every canvas. Nothing on the page moves when ideas
+  arrive or don't.
 - The project selector is the statement's last words, not a chip under the composer (the
   founder's direction): the display face at 28 in ink with the owner and slash faint so the name
-  leads, on the statement's baseline, then a `control` chevron in `icon-soft`. A long label stays
-  on one line, the owner giving way first. The trigger draws no folder; the picker's rows keep
-  theirs. While the window's repos load the selector holds its place with a skeleton, never
-  saying scratch before it knows.
+  leads, then a `control` chevron in `icon-soft`. A repository takes a line of its own under
+  "Make something in", centred under it; Scratch ends the one line, on its baseline (the
+  founder's direction: "the project selector in a second line, except for the scratch case").
+  The statement keeps two lines' room either way (`STATEMENT_ROOM`, the 35 line over the 40
+  selector) with its first line at the top, so the mark and the first line hold still whichever
+  is chosen. A long label stays on one line no wider than the statement's 660, the owner giving
+  way first. The trigger draws no folder; the picker's rows keep theirs. While the window's repos
+  load the selector holds the second line with a skeleton, never saying scratch before it knows,
+  and when it resolves (to Scratch or a repo) nothing above it moves. With the selector a line
+  lower, the picker in a window at the app's smallest shows a little less than five and a half
+  rows, and scrolls.
 - The create page's layout (the founder's direction), with its measures in `create/create.ts`:
   the composer is docked at the foot of the canvas pane, centred at its 660, 10 above the pane's
   edge (`DOCK_INSET`, the distance the thread's composer keeps from the rail's foot, so a send
   travels nearly level: the canvas pane ends 6 above the window's edge, so the two feet are 6
   apart), and grows upward with what is typed or attached. The hero (the mark over the
-  statement) is centred in the room above the composer at rest, 28 high of true centre
-  (`HERO_LIFT`), and holds still as the composer grows. Only once the composer would come
-  within 40 of the statement does the statement rise ahead of it; the mark fades once that would
-  take it within 24 of the pane's top, and the statement stops there, the pane scrolling rather
-  than let the two overlap (`heroPlace`). No window the app allows is that short: at the
-  smallest, with the field grown to its most, the whole hero still has its room.
+  statement) has its centre 5% of the pane's height above the pane's true centre (`HERO_RISE`:
+  45 in a pane of 900, so it scales with the window; the founder found the room's centre too
+  high and the pane's exact centre too low), and holds still as the composer grows. Only once
+  the composer would come within 40 of the statement does the statement rise ahead of it; the
+  mark fades once that would take it within 24 of the pane's top, and the statement stops there,
+  the pane scrolling rather than let the two overlap (`heroPlace`). No window the app allows is
+  that short: at the smallest, with the field grown to its most, the whole hero still has its
+  room.
+- The model picker in the create composer departs from the boards (the founder's direction): the
+  chip (Claude's mark, the model, the effort faint) reads 14 beside the field's 16, a step down
+  the ladder, its mark 14. Its menu is two panes side by side with a hairline between, opening
+  upward from the docked composer, its end on the chip's: the models on the left (the pane fits
+  the longest name between 152 and 232, a longer one cut short with its whole name in its
+  title), the efforts the chosen model takes on the right (128). Choosing a model keeps the menu
+  open, since the effort may be what comes next; choosing an effort closes it with the caret back
+  in the composer. A model that takes no effort says "None for this model" in the right pane (the
+  menu's description to assistive tech), shows its name alone on the chip, and closes the menu
+  when chosen. Each pane is a radio group named by its label. `create/model-picker.tsx`.
 - A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
   The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
   width as the pane narrows), the design's view comes (its chrome with the name it will have,

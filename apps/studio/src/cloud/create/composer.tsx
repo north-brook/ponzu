@@ -1,5 +1,5 @@
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
-import { type KeyboardEvent, type Ref, useId } from "react";
+import { type KeyboardEvent, type Ref, useId, useRef } from "react";
 import type { PendingAttachment } from "../model.ts";
 import { AttachmentChip } from "../thread/composer.tsx";
 import { IconButton, SendButton } from "../ui/button.tsx";
@@ -48,6 +48,7 @@ export function NewDesignComposer({
   /** Tab on the empty field: the suggestion showing goes into it. */
   onAcceptSuggestion?: (suggestion: Suggestion) => void;
 }) {
+  const card = useRef<HTMLDivElement>(null);
   const ready = canSend(prompt, sending);
   const suggested = prompt === "" ? suggestion : null;
   const described = useId();
@@ -71,6 +72,7 @@ export function NewDesignComposer({
   return (
     // The whole card is the field's: a press on it, past its controls, writes.
     <div
+      ref={card}
       onMouseDown={pressToFocus}
       data-composer-card
       className="flex min-h-[118px] cursor-text flex-col gap-[18px] rounded-20 bg-surface pt-4 pr-2.5 pb-2.5 pl-[18px] shadow-bar"
@@ -130,7 +132,12 @@ export function NewDesignComposer({
           <Icon icon={PlusSignIcon} step="control" />
         </IconButton>
         <span className="flex-1" />
-        {model ? <ModelPicker {...model} /> : null}
+        {model ? (
+          <ModelPicker
+            {...model}
+            after={() => card.current?.querySelector("textarea")?.focus({ preventScroll: true })}
+          />
+        ) : null}
         <SendButton
           size={32}
           disabled={!ready}

@@ -27,7 +27,7 @@
   --c-chrome-glass: light-dark(rgba(246, 245, 242, 0.62), rgba(30, 30, 28, 0.6));
   --c-canvas: light-dark(#ffffff, #000000);
   /* The dots on the canvas's ground, and on the create page's: there, and no more. */
-  --c-canvas-dot: light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.09));
+  --c-canvas-dot: light-dark(rgba(17, 17, 16, 0.13), rgba(255, 255, 255, 0.15));
   /* What the shell paints: the solid shell, or nothing where <html> carries the glass (below). */
   --c-shell: var(--c-chrome);
   --c-surface: light-dark(#ffffff, #1b1b1a);

@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { RepoShelf } from "../cloud/create/create.ts";
+import { focusCreateComposer } from "../cloud/create/focus.ts";
 import { type Sent, useLanding } from "../cloud/create/landing.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person, ThreadItem } from "../cloud/model.ts";
@@ -195,6 +196,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
         const { [next.workspaceId]: _shown, ...designs } = now.designs;
         return { ...now, workspaceId: next.workspaceId, designs };
       });
+      focusCreateComposer();
     },
     [update],
   );
@@ -712,15 +714,13 @@ function WorkspaceWindow({
                     openDesign(null);
                     // New design, by its button or ⌘N, is to start typing one: the caret goes
                     // to the create page's composer, whether the page was already showing or not.
-                    requestAnimationFrame(() =>
-                      requestAnimationFrame(() =>
-                        document
-                          .querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")
-                          ?.focus({ preventScroll: true }),
-                      ),
-                    );
+                    focusCreateComposer();
                   }}
-                  onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
+                  onSwitchWorkspace={(next) => {
+                    update((now) => ({ ...now, workspaceId: next.id }));
+                    // A workspace that opens on its create page is for typing into at once.
+                    focusCreateComposer();
+                  }}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
                   onPlan={openPlan}

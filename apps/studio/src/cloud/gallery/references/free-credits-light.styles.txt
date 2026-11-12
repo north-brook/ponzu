@@ -77,10 +77,10 @@ icon svg[Project: north-brook/fernwood] 16×16 rgb(128, 124, 115) stroke 1.7px
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "Try a darker footer with the newsletter…" rgb(17, 17, 16) 400 16px Inter
 icon svg[Attach] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "Opus 5.5" rgb(86, 83, 77) 500 12px Inter
-icon svg[Claude] 13×13 rgb(86, 83, 77) stroke 1px
-text "High" rgb(169, 165, 155) 400 12px Inter
-icon svg[Model: Opus 5.5, effort High] 11×11 rgb(86, 83, 77) stroke 2.2px
+text "Opus 5.5" rgb(86, 83, 77) 500 14px Inter
+icon svg[Claude] 14×14 rgb(86, 83, 77) stroke 1px
+text "High" rgb(169, 165, 155) 400 14px Inter
+icon svg[Model: Opus 5.5, effort High] 12×12 rgb(86, 83, 77) stroke 2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
 ground div rgba(17, 17, 16, 0.16)
