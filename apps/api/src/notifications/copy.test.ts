@@ -15,10 +15,10 @@ import {
 } from "./copy.ts";
 import { NOTIFICATION_KINDS } from "./kinds.ts";
 
-const maya = { name: "Maya Lin", login: "maya" };
-const sam = { name: "Sam", login: "sam" };
-const lee = { name: "Lee Ann Park", login: "lee" };
-const kai = { name: null, login: "kai-dev" };
+const maya = { userId: "usr_maya", name: "Maya Lin", login: "maya" };
+const sam = { userId: "usr_sam", name: "Sam", login: "sam" };
+const lee = { userId: "usr_lee", name: "Lee Ann Park", login: "lee" };
+const kai = { userId: "usr_kai", name: null, login: "kai-dev" };
 const team = { name: "Northbrook", personal: false };
 const personal = { name: "Maya's workspace", personal: true };
 const dec9 = new Date("2026-12-09T00:00:00Z");
@@ -222,9 +222,9 @@ describe("a teammate's comments, collapsed", () => {
 
   test("four or more: two named and the others counted", () => {
     expect(commentBody([maya, sam, lee, kai], 5)).toBe("Maya, Sam and 2 others left 5 comments.");
-    expect(commentBody([maya, sam, lee, kai, { name: "Ana", login: "ana" }], 9)).toBe(
-      "Maya, Sam and 3 others left 9 comments.",
-    );
+    expect(
+      commentBody([maya, sam, lee, kai, { userId: "usr_ana", name: "Ana", login: "ana" }], 9),
+    ).toBe("Maya, Sam and 3 others left 9 comments.");
   });
 
   test("someone listed twice is counted once", () => {
@@ -232,6 +232,13 @@ describe("a teammate's comments, collapsed", () => {
     expect(commentBody([maya, sam, lee, kai, maya], 9)).toBe(
       "Maya, Sam and 2 others left 9 comments.",
     );
+  });
+
+  test("a person is their user id, not their name", () => {
+    const renamed = { ...maya, name: "Maya L." };
+    expect(commentBody([maya, renamed], 2)).toBe("Maya left 2 comments.");
+    const otherSam = { userId: "usr_sam2", name: "Sam", login: null };
+    expect(commentBody([sam, otherSam], 2)).toBe("Sam and Sam left 2 comments.");
   });
 
   test("never fewer comments than people", () => {

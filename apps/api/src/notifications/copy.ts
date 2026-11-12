@@ -64,6 +64,11 @@ export interface Named {
   login: string | null;
 }
 
+/** Someone who commented: a person, with their user id so they are counted once. */
+export interface Commenter extends Named {
+  userId: string;
+}
+
 /**
  * The most of a person a ping says: their name up to its first space, else `@login`, else
  * "Someone".
@@ -108,16 +113,15 @@ export function prApprovedBody(number: number, approver: Named): string {
  * A teammate's comments on a canvas, collapsed into one ping: "Maya commented.", "Maya left 2
  * comments.", "Maya and Sam left 3 comments.", "Maya, Sam and Lee left 3 comments.", "Maya, Sam
  * and 2 others left 5 comments." `people` are the commenters, newest first; someone listed
- * twice (the same name and login) is counted once. `count` is how many comments, never fewer
- * than the people.
+ * twice (the same user id, whatever their name says) is counted once. `count` is how many
+ * comments, never fewer than the people.
  */
-export function commentBody(people: readonly Named[], count: number): string {
+export function commentBody(people: readonly Commenter[], count: number): string {
   const seen = new Set<string>();
   const names: string[] = [];
   for (const person of people) {
-    const key = `${person.name ?? ""}\u0000${person.login ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.has(person.userId)) continue;
+    seen.add(person.userId);
     names.push(firstName(person));
   }
   if (names.length === 0) names.push("Someone");
@@ -191,7 +195,7 @@ export type PingWords =
   | { kind: "claude_limit"; canvasName: string }
   | { kind: "pr_ready"; canvasName: string; number: number }
   | { kind: "pr_approved"; canvasName: string; number: number; approver: Named }
-  | { kind: "teammate_comment"; canvasName: string; people: readonly Named[]; count: number }
+  | { kind: "teammate_comment"; canvasName: string; people: readonly Commenter[]; count: number }
   | { kind: "billing_free_used"; workspace: BillingWorkspace }
   | { kind: "billing_cap_warning"; workspace: BillingWorkspace; capCents: number }
   | { kind: "billing_cap_reached"; workspace: BillingWorkspace; capCents: number; resetsOn: Date }
