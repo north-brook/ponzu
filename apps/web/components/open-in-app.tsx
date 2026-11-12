@@ -1,23 +1,31 @@
 "use client";
 
-import { appLink, parseDesignLink } from "@ponzu/core";
 import { HANDOFF_WAIT_MS } from "@ponzu/core/handoff";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DownloadArrow, Slice } from "@/components/icons";
-import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
-import { appOf } from "../canvases/[id]/app-link";
+import { appOf } from "@/app/canvases/[id]/app-link";
+import {
+  handoffCta as cta,
+  handoffBody as missingBody,
+  handoffTitle as missingTitle,
+} from "./handoff-page";
+import { DownloadArrow, Slice } from "./icons";
+import { DOWNLOAD, TESTFLIGHT } from "./links";
 
 /*
- * Hands the design in the page's #fragment to Ponzu as a ponzu://open link, which the Mac app and
- * the iPhone app both take. A browser says nothing when no app takes the link, so the page watches:
- * launching an app takes the page's focus or hides it. If neither happens in two seconds, Ponzu
- * isn't installed and the page offers it: the Mac download, or on an iPhone, word of the TestFlight
- * beta. Focus that leaves later, once the person answers the browser's prompt, still counts. Once
- * Ponzu has it the page closes itself; a browser that won't let it says the tab can go.
+ * Hands a canvas to the app: the canvas link page (app/canvases/[id]) knows the app's link from
+ * its path and passes it as `to`. A browser says nothing when no app takes the link, so the page
+ * watches: launching an app takes the page's focus or hides it. If neither happens in two seconds,
+ * Ponzu isn't installed and the page offers it: the Mac download, or on an iPhone, word of the
+ * TestFlight beta. Focus that leaves later, once the person answers the browser's prompt, still
+ * counts. Once Ponzu has it the page closes itself; a browser that won't let it says the tab can
+ * go.
  *
  * The API's GitHub setup page and the Mac app's sign-in page are this same handoff, as one
  * document that a host can serve as a string (@ponzu/core/handoff); this page shares its wait and
  * the apps' names, and draws the rest with the site's own components.
+ *
+ * Ponzu 1's /local page read its link from the #fragment through this component too. That page
+ * is now a retired landing (app/local/page.tsx), so only `to` is left.
  */
 
 /** How long the app has to take focus before the page offers the download. */
@@ -25,22 +33,9 @@ const WAIT = HANDOFF_WAIT_MS;
 
 type State = "opening" | "opened" | "missing" | "invalid";
 
-/** The ponzu:// link for the design the fragment names, checked as the apps check it. */
-function linkFromHash(hash: string): string | null {
-  const raw = `ponzu://open?${hash.replace(/^#/, "")}`;
-  const design = parseDesignLink(raw);
-  return design
-    ? appLink(design.path, { page: design.page, artboard: design.artboard, mac: design.mac })
-    : null;
-}
-
-/**
- * `to` is the app's link when the page knows it from its path (a design in Ponzu Cloud, at
- * /designs/<id>); without it, the link is read from the fragment.
- */
-export function OpenDesign({ to }: { to?: string | null } = {}) {
-  const [link, setLink] = useState<string | null>(null);
-  const [state, setState] = useState<State>("opening");
+/** `to` is the app's link, or null when the page's path can't name a canvas. */
+export function OpenInApp({ to }: { to: string | null }) {
+  const [state, setState] = useState<State>(to ? "opening" : "invalid");
   /** Stops the attempt in flight: its timer and its watch for the app taking focus. */
   const stop = useRef<() => void>(undefined);
 
@@ -68,51 +63,29 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
     window.location.href = to;
   }, []);
 
-  // The fragment can change without a reload, when another link opens in this tab.
   useEffect(() => {
-    if (to !== undefined) {
-      setLink(to);
-      if (to) open(to);
-      else setState("invalid");
-      return () => stop.current?.();
-    }
-    const read = () => {
-      const to = linkFromHash(window.location.hash);
-      setLink(to);
-      if (to) open(to);
-      else {
-        stop.current?.();
-        setState("invalid");
-      }
-    };
-    read();
-    window.addEventListener("hashchange", read);
-    return () => {
-      window.removeEventListener("hashchange", read);
-      stop.current?.();
-    };
+    if (to) open(to);
+    else setState("invalid");
+    return () => stop.current?.();
   }, [open, to]);
 
-  const retry = link ? () => open(link) : undefined;
+  const retry = to ? () => open(to) : undefined;
 
   if (state === "invalid") {
     return (
-      <Message
-        title="This link doesn't open a design."
-        body="Ask your agent for the design's link again."
-      />
+      <Message title="This link doesn't open a canvas." body="Ask for the canvas's link again." />
     );
   }
 
   // `to` is known on the server too, so the first render already names the right app.
-  const app = appOf(link ?? to ?? null);
+  const app = appOf(to);
 
   // A link for Ponzu Dev that nothing took: no download of an app it isn't, only the way again.
   if (state === "missing" && !app.release) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this design in {app.name}.</h1>
+          <h1 className={missingTitle}>Open this canvas in {app.name}.</h1>
           <p className={missingBody}>
             {app.name} didn't open. On a Mac with it installed, open it and try again.
           </p>
@@ -129,10 +102,9 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this design in Ponzu.</h1>
+          <h1 className={missingTitle}>Open this canvas in Ponzu.</h1>
           <p className={missingBody}>
-            Your agent made it with Ponzu, the open source canvas for agents. Ponzu for iPhone,
-            which opens the designs on your Macs, is in a TestFlight beta.
+            This is a canvas in Ponzu. Ponzu for iPhone is in a TestFlight beta.
           </p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
@@ -156,10 +128,8 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className={missingTitle}>Open this design in Ponzu.</h1>
-          <p className={missingBody}>
-            Your agent made it with Ponzu, the open source canvas for agents. Get the app to see it.
-          </p>
+          <h1 className={missingTitle}>Open this canvas in Ponzu.</h1>
+          <p className={missingBody}>This is a canvas in Ponzu. Get the app to see it.</p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
           <a className={cta} href={DOWNLOAD}>
@@ -197,12 +167,6 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
 function onIPhone() {
   return /iPhone|iPod/.test(navigator.userAgent);
 }
-
-const missingTitle =
-  "m-0 text-[clamp(32px,4.4vw,44px)] leading-[1.09] font-semibold tracking-[-0.035em] text-balance text-ink";
-const missingBody = "m-0 max-w-[480px] text-[17px]/[27px] text-balance text-muted";
-const cta =
-  "inline-flex items-center gap-[9px] rounded-full bg-cta py-[15px] pr-6 pl-5 text-base font-semibold whitespace-nowrap text-cta-ink transition-[translate] duration-150 ease-out hover:-translate-y-px";
 
 const inlineLink =
   "cursor-pointer text-ink underline decoration-outline underline-offset-4 hover:decoration-ink";
