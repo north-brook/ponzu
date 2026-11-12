@@ -34,12 +34,12 @@ import {
   signedInOnce,
   skipWindowState,
 } from "./carry-over.ts";
-import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts";
+import { APP_NAMES, bundleMismatch, claimsScheme, configFor, testBuild } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
 import { launchOnce, recordLaunch } from "./launches.ts";
-import { removeLegacyFor, runProgram } from "./legacy.ts";
+import { removeLegacyFor, runProgram, takeWelcome1x } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
 import { startMainTelemetry } from "./main-telemetry.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
@@ -48,6 +48,7 @@ import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
+import { bakedCommit, bakedEnvironment, requestIdOf, type SupportFacts } from "./support.ts";
 import { telemetryOffBecause } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
@@ -379,6 +380,7 @@ function registerIpc(session: MainSession, updater: Updates) {
     if (link) void shell.openExternal(link);
   });
   listen(CHANNELS.comeForward, () => comeForward());
+  handle(CHANNELS.welcome1x, () => welcome1x());
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -472,6 +474,56 @@ function removeLegacySoon() {
   }, 3000);
 }
 
+/**
+ * Whether the studio shows the welcome from 1.x: once, on a computer 1.x was on, in a release
+ * someone is using (never the smoke check or a test build), recorded in welcome-1x.json.
+ */
+function welcome1x(): boolean {
+  try {
+    return takeWelcome1x({
+      build: config,
+      driven: smoke || testBuild,
+      host: { home: homedir(), env: process.env, exists: existsSync },
+      legacyRecord: join(app.getPath("userData"), "legacy-cleanup.json"),
+      welcomeRecord: join(app.getPath("userData"), "welcome-1x.json"),
+      version: app.getVersion(),
+    });
+  } catch (error) {
+    console.error(`Couldn't tell whether Ponzu 1.x was here: ${error}`);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Support                                                             */
+/* ------------------------------------------------------------------ */
+
+/** The id of the API's last answer to the studio, for Help › Contact Support. Only the id. */
+let lastRequestId: string | null = null;
+
+/** Hear each answer the API gives the window, for its request id; nothing else of it is kept. */
+function watchRequestIds() {
+  // Every http(s) answer, then only the API's: a pattern with a port in it (Ponzu Local's
+  // localhost API) isn't one webRequest takes.
+  const api = new URL(config.apiUrl).origin;
+  sessions.defaultSession.webRequest.onCompleted(
+    { urls: ["https://*/*", "http://*/*"] },
+    (details) => {
+      if (!URL.canParse(details.url) || new URL(details.url).origin !== api) return;
+      lastRequestId = requestIdOf(details.responseHeaders) ?? lastRequestId;
+    },
+  );
+}
+
+function supportFacts(): SupportFacts {
+  return {
+    version: app.getVersion(),
+    commit: bakedCommit(),
+    environment: bakedEnvironment(app.isPackaged),
+    lastRequestId,
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
@@ -504,6 +556,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     await waitForPonzuPreview();
     if (smoke) blockNetwork();
+    else watchRequestIds();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
     const { storage, persistence } = sessionStorage();
@@ -559,6 +612,7 @@ if (!app.requestSingleInstanceLock()) {
       signOut: () => void session.signOut(),
       // Developer tools are a developer's: a release has no way to open them on someone's session.
       devTools: config.remoteDebugging,
+      supportFacts,
     });
     setSignedIn(session.getState().status === "signed_in");
 
