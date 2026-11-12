@@ -1,0 +1,128 @@
+{
+  "firewallEnabled": true,
+  "crs": {
+    "sd": { "active": true, "action": "log" },
+    "ma": { "active": true, "action": "log" },
+    "lfi": { "active": true, "action": "log" },
+    "rfi": { "active": true, "action": "log" },
+    "rce": { "active": true, "action": "log" },
+    "php": { "active": true, "action": "log" },
+    "gen": { "active": true, "action": "log" },
+    "xss": { "active": true, "action": "log" },
+    "sqli": { "active": true, "action": "log" },
+    "sf": { "active": true, "action": "log" },
+    "java": { "active": true, "action": "log" }
+  },
+  "managedRules": {
+    "bot_protection": { "active": true, "action": "log" },
+    "ai_bots": { "active": false, "action": "log" }
+  },
+  "rules": [
+    {
+      "name": "cron needs a bearer",
+      "description": "A request to /v1/cron/ with no Authorization header never reaches the API.",
+      "active": true,
+      "conditionGroup": [
+        {
+          "conditions": [
+            { "type": "path", "op": "pre", "value": "/v1/cron/" },
+            { "type": "header", "op": "ex", "key": "Authorization", "neg": true }
+          ]
+        }
+      ],
+      "action": { "mitigate": { "action": "deny" } }
+    },
+    {
+      "name": "sign-in exchange per ip",
+      "description": "POST /v1/auth/exchange: 20 a minute from one address.",
+      "active": true,
+      "conditionGroup": [
+        {
+          "conditions": [
+            { "type": "path", "op": "eq", "value": "/v1/auth/exchange" },
+            { "type": "method", "op": "eq", "value": "POST" }
+          ]
+        }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 20,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "github setup per ip",
+      "description": "/v1/github/setup: 30 a minute from one address.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "path", "op": "pre", "value": "/v1/github/setup" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 60,
+            "limit": 30,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "claude sign-ins per ip",
+      "description": "/v1/claude/sign-ins: 20 an hour from one address.",
+      "active": true,
+      "conditionGroup": [
+        { "conditions": [{ "type": "path", "op": "pre", "value": "/v1/claude/sign-ins" }] }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "fixed_window",
+            "window": 3600,
+            "limit": 20,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    },
+    {
+      "name": "api per ip",
+      "description": "Everything under /v1/ but the runner, the webhook and the cron: 1,200 a minute from one address.",
+      "active": true,
+      "conditionGroup": [
+        {
+          "conditions": [
+            { "type": "path", "op": "pre", "value": "/v1/" },
+            { "type": "path", "op": "pre", "value": "/v1/runner/", "neg": true },
+            { "type": "path", "op": "eq", "value": "/v1/github/webhook", "neg": true },
+            { "type": "path", "op": "pre", "value": "/v1/cron/", "neg": true }
+          ]
+        }
+      ],
+      "action": {
+        "mitigate": {
+          "action": "rate_limit",
+          "rateLimit": {
+            "algo": "token_bucket",
+            "window": 60,
+            "limit": 1200,
+            "keys": ["ip"],
+            "action": "rate_limit"
+          }
+        }
+      }
+    }
+  ]
+}

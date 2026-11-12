@@ -1,0 +1,19 @@
+{
+  "environments": {
+    "dev": {
+      "realtime": true
+    },
+    "production": {
+      "realtime": true,
+      "compute": {
+        "suspendTimeoutSeconds": -1,
+        "autoscalingLimitMinCu": 0.5,
+        "autoscalingLimitMaxCu": 2
+      },
+      "historyRetentionSeconds": 604800,
+      "backupSchedule": [{ "frequency": "daily", "hour": 7, "retentionSeconds": 3024000 }],
+      "protected": true,
+      "preDeploySnapshot": { "namePrefix": "pre-", "expiresAfterDays": 14 }
+    }
+  }
+}

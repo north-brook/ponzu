@@ -2738,23 +2738,37 @@ is never sent are in [analytics.md](analytics.md).
 
 ## Environments
 
-| | API | Database | Auth | GitHub App |
-|---|---|---|---|---|
-| Development and the `cloud` branch | `api.ponzu.design` until cutover | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
-| Production, from cutover | `api.ponzu.design` | Neon default branch | WorkOS production | `ponzu` |
+| | Vercel project | API | Database | Auth | GitHub App |
+|---|---|---|---|---|---|
+| Development and the `cloud` branch | `ponzu-api` | `api.ponzu.design` until just before cutover, then `api-dev.ponzu.design` | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
+| Production, from cutover | `ponzu-api-prod` | `api.ponzu.design` | Neon default branch, starting empty | WorkOS production | `ponzu` |
 
-The API is deployed from the head of `cloud` by a workflow, which applies the
-pending migrations to the database first; nobody deploys a branch to
-production or migrates the shared database by hand. Every deployment holds the
-environment's secrets, so only production's own domains are public: previews
-and the unique URL of each deployment open only for the team.
+There are two Vercel projects, one per environment. Vercel runs crons only on a project's
+Production target, and the sandbox sweep and the job retries run on the minute cron, so dev
+kept as a Preview of the production project would never sleep a sandbox or retry a wake. Two
+projects also keep the environments apart by more than a name: each has its own OIDC tokens,
+env, image registry, spend and firewall. The production project's Preview target holds no
+secrets and runs nothing. The values each environment uses (its addresses, client ids,
+buckets and analytics project) are public and live in
+[`infra/environments.json`](../infra/environments.json); the resources, the founder's steps
+that create production, rotation, backups and spend are in [production.md](production.md).
+The founder adds `api-dev.ponzu.design` to the dev project early, so dev's webhooks and sign-in
+redirects never have to move at cutover.
 
-Every environment's sandboxes live in the one Vercel project, `ponzu-api`, beside the API's
-functions and the image's registry, kept apart by their names' scope ("The sandbox"): a
-deployment lists, stops and removes only the names its own database's scope begins. A preview
-reaches no sandbox of production's, and the reverse. `PONZU_API_URL` says where a deployment's
-runners call back; unset, it is production's address, so a preview meant to run designs sets
-it.
+The API is deployed by a workflow, which applies the pending migrations to the database first;
+nobody deploys a branch to production or migrates a shared database by hand. Dev deploys from
+the head of `cloud`. Production deploys only from `main`, through the GitHub Environment
+`production`, which needs the founder's approval. The production deploy job is not built yet.
+Every deployment holds its environment's secrets, so only each project's own domains are
+public: previews and the unique URL of each deployment open only for the team.
+
+The sandbox image is built once, into dev's registry, and the production deploy copies it by
+digest, so production runs exactly the bytes dev checked. Within a project, sandboxes sit
+beside the API's functions and the image's registry, kept apart by their names' scope ("The
+sandbox"): a deployment lists, stops and removes only the names its own database's scope
+begins. The scope is a second wall behind the project. `PONZU_API_URL` says where a
+deployment's runners call back; unset, it is production's address, so a dev deployment or a
+preview whose sandboxes must reach it sets it.
 
 ### Checking a deploy's sandboxes
 

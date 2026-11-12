@@ -1,0 +1,52 @@
+{
+  "repository": "north-brook/ponzu",
+  "merge": {
+    "allow_auto_merge": true,
+    "allow_merge_commit": false,
+    "allow_rebase_merge": false,
+    "allow_squash_merge": true,
+    "allow_update_branch": false,
+    "delete_branch_on_merge": true,
+    "squash_merge_commit_message": "PR_BODY",
+    "squash_merge_commit_title": "PR_TITLE"
+  },
+  "environments": {
+    "release-signing": {
+      "branches": ["main"],
+      "requiredReviewers": false,
+      "secrets": [
+        "APPLE_API_ISSUER",
+        "APPLE_API_KEY_BASE64",
+        "APPLE_API_KEY_ID",
+        "APPLE_CERTIFICATE",
+        "APPLE_CERTIFICATE_PASSWORD"
+      ]
+    },
+    "production": {
+      "branches": ["main"],
+      "requiredReviewers": true,
+      "secrets": ["NEON_API_KEY", "VERCEL_TOKEN"]
+    }
+  },
+  "variables": [
+    "API_DEPLOY",
+    "API_DEPLOY_PRODUCTION",
+    "MOBILE_IOS",
+    "NEON_PROJECT_ID",
+    "PONZU_APP_POSTHOG_CLI_PROJECT_ID",
+    "PONZU_APP_POSTHOG_HOST",
+    "PONZU_APP_POSTHOG_KEY",
+    "PONZU_APP_POSTHOG_REPLAY",
+    "RELEASES_HELD",
+    "VERCEL_API_PROD_PROJECT_ID",
+    "VERCEL_API_PROJECT_ID",
+    "VERCEL_TEAM_ID"
+  ],
+  "secrets": [
+    "ANTHROPIC_API_KEY",
+    "NEON_API_KEY",
+    "PONZU_APP_POSTHOG_CLI_API_KEY",
+    "RELEASE_TOKEN",
+    "VERCEL_TOKEN"
+  ]
+}
