@@ -116,11 +116,11 @@ text "Everyone with access to its repos is in…" rgb(118, 115, 105) 400 12px In
 text "Manage" rgb(183, 179, 169) 400 12px Inter
 icon svg[GitHub] 11×11 rgb(142, 138, 130) stroke 2.2px
 text "People" rgb(118, 115, 105) 600 11px Inter
-image img[People] bryce.svg
+image img[People] ada.svg
 ground img[People] shadow rgb(38, 37, 35) 0px 0px 0px 1px
-text "Bryce Bjork" rgb(244, 243, 239) 500 13px Inter
+text "Ada Park" rgb(244, 243, 239) 500 13px Inter
 text "(you)" rgb(118, 115, 105) 400 12px Inter
-text "brycedbjork" rgb(118, 115, 105) 400 12px Inter
+text "adapark" rgb(118, 115, 105) 400 12px Inter
 text "Admin" rgb(183, 179, 169) 400 12px Inter
 image img[People] sam.svg
 ground img[People] shadow rgb(38, 37, 35) 0px 0px 0px 1px

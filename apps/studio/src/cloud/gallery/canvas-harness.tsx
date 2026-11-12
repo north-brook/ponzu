@@ -134,7 +134,7 @@ export function CanvasHarness({
   const rail = (
     <ThreadRail
       canvasId={canvas.id}
-      meId={f.bryce.id}
+      meId={f.ada.id}
       repoName={canvas.project.kind === "repo" ? canvas.project.repo.name : null}
       items={items}
       older={olderState}
@@ -170,7 +170,7 @@ export function CanvasHarness({
         setAttachments((a) => a.map((x) => (x.id === id ? { ...x, status: "ready" } : x)))
       }
       onSend={(text) => {
-        const message = said(f.bryce, text);
+        const message = said(f.ada, text);
         if (message.kind === "message") {
           message.payload.attachments = attachments.map((a) => ({
             ref: `assets/${a.name}`,
@@ -188,7 +188,7 @@ export function CanvasHarness({
         setAgent({ state: "idle", status: null });
         setItems((all) => [
           ...(all ?? []).map((i) => ({ ...i, streaming: false })),
-          notice({ type: "stopped", by: f.bryce }),
+          notice({ type: "stopped", by: f.ada }),
         ]);
       }}
       onAnswer={(id) => {
@@ -229,7 +229,7 @@ export function CanvasHarness({
           team={
             contributors && canvas.project.kind === "repo"
               ? {
-                  meId: f.bryce.id,
+                  meId: f.ada.id,
                   contributors,
                   repo: canvas.project.repo,
                   members: f.members,
@@ -242,7 +242,7 @@ export function CanvasHarness({
             action
               ? {
                   kind: action,
-                  blocked: actionBlock(action, gate, f.bryce.id),
+                  blocked: actionBlock(action, gate, f.ada.id),
                   // What was pressed, for the browser tests to read (`window.actionsRun`).
                   onRun: (kind: NextAction) => {
                     const w = window as { actionsRun?: string[] };
@@ -262,7 +262,7 @@ export function CanvasHarness({
       {prTab && pullRequest ? (
         <PullRequestView
           state={pullRequest}
-          viewerLogin={f.bryce.login}
+          viewerLogin={f.ada.login}
           onOpenLink={ignore}
           onRetry={ignore}
         />

@@ -259,7 +259,7 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
           open={open}
           onCancel={close}
           onConfirm={close}
-          login={f.bryce.login}
+          login={f.ada.login}
           soleAdmin={false}
         />
       )}

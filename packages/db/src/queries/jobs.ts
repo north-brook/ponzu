@@ -53,6 +53,27 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<Job | null> {
 }
 
 /**
+ * Record that `kind` was done for `key`, once ever: true for the first caller, false for
+ * every caller after, including one at the same moment. For work that must happen at most
+ * once per window, like a cron step's hour (`apps/api/src/cron/steps.ts`): the key names the
+ * window.
+ *
+ * The row is a job recorded already completed, so nothing claims or runs it. Its id is made
+ * from the kind and key, so the primary key is what refuses a second: a concurrent insert of
+ * the same id waits for the first to commit and then does nothing.
+ */
+export async function recordOnce(db: Db, { kind, key }: { kind: string; key: string }) {
+  const [row] = await run(
+    db
+      .insert(jobs)
+      .values({ id: `once:${kind}:${key}`, kind, key, completedAt: sql`now()` })
+      .onConflictDoNothing()
+      .returning({ id: jobs.id }),
+  );
+  return row !== undefined;
+}
+
+/**
  * Take up to `limit` jobs that are due and that nobody holds, or whose holder's lock has run
  * out, and count an attempt on each, oldest first. A job out of attempts is not taken;
  * `failAbandonedJobs` closes it.

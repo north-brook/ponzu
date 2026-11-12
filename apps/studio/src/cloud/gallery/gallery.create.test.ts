@@ -1266,7 +1266,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await openLater("pick-a-project-three-workspaces");
     await openPicker();
     const opened = await listed();
-    expect(opened.slice(6)).toEqual(["# Lenny Learning", "Scratch", "# Bryce Bjork", "Scratch"]);
+    expect(opened.slice(6)).toEqual(["# Lenny Learning", "Scratch", "# Ada Park", "Scratch"]);
     // The pointer rests on Lenny Learning's Scratch, under which its repos would go (the list
     // scrolls it into view first).
     await page.hover('[data-choice="scratch:ws_lennylearning"] span');
@@ -1274,7 +1274,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
     await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 8);
     // The last workspace's repo joined at the foot; Lenny Learning's wait, so nothing moved.
-    expect(await listed()).toEqual([...opened, "brycedbjork/dotfiles"]);
+    expect(await listed()).toEqual([...opened, "adapark/dotfiles"]);
     expect((await rowTops()).slice(0, open_.length)).toEqual(open_);
     expect(
       await page.getAttribute('[data-choice="scratch:ws_lennylearning"]', "data-selected"),
@@ -1289,9 +1289,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       "lennylearning/app",
       "lennylearning/site",
       "lennylearning/curriculum",
-      "# Bryce Bjork",
+      "# Ada Park",
       "Scratch",
-      "brycedbjork/dotfiles",
+      "adapark/dotfiles",
     ]);
     await page.keyboard.press("Escape");
   });

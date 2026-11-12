@@ -16,6 +16,3 @@ examples/**/exports
 
 # Results of the phone harness (apps/mobile/perf).
 apps/mobile/perf/results
-
-# The npm package (scripts/npm-package.ts).
-apps/cli/npm

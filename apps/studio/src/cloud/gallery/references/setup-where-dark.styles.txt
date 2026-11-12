@@ -9,10 +9,10 @@ ground span[Setup] rgb(58, 57, 54)
 text "Where do you build?" rgb(244, 243, 239) 600 28px Funnel Display
 text "Build on your real product, with your t…" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
-image img bryce.svg
+image img ada.svg
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
 text "Personal" rgb(244, 243, 239) 500 14px Inter
-text "brycedbjork" rgb(118, 115, 105) 400 12px Inter
+text "adapark" rgb(118, 115, 105) 400 12px Inter
 text "Set up" rgb(244, 243, 239) 500 12px Inter
 ground button rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px
 icon svg 12×12 rgb(183, 179, 169) stroke 2px

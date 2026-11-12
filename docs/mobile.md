@@ -23,8 +23,8 @@ design's `notes/brief.md`.
 
 `ios/` is generated (`expo prebuild`) and never committed.
 
-Code here may import `@ponzu/core`, never `@ponzu/canvas`, `@ponzu/render` or
-`@ponzu/server`, which need a browser or Node. `lib/polyfills.ts`, imported
+Code here may import `@ponzu/core`, never `@ponzu/canvas` or `@ponzu/render`,
+which need a browser or Node. `lib/polyfills.ts`, imported
 first, gives core what Hermes lacks.
 
 ### Data
@@ -41,7 +41,7 @@ into its catalog query; nothing else holds a copy. Search and the cards are
 read from those queries. A Mac's changes are asked again when its catalog
 stream says an agent edited a design.
 
-Each Mac keeps a history of what agents changed (`packages/server/src/changes.ts`):
+Each Mac keeps a history of what agents changed (`changes.ts` in 1.x's local server, on `main`):
 an agent's edits to artboards in one design, a couple of minutes apart at
 most, are one change ("Claude changed 12 artboards"), with the artboards and
 whether they were added, removed or changed. The last 200 per design live in
@@ -180,13 +180,15 @@ page menu and thread open in the system's bar and the comments panel there.
 A Mac running Ponzu on the tailnet is what the app talks to; the simulator
 uses the Mac's own Tailscale.
 
-To try a branch's server while the installed Ponzu holds port 7777, run it
-on another port and point the app at it in `apps/mobile/.env.local`.
-`PONZU_TAILSCALE=none` keeps it off the tailnet: a server otherwise takes the
-tailnet's port 7777 whenever it's free, and your phone would pair with it.
+To try another server while the installed Ponzu holds port 7777, run it
+on another port and point the app at it in `apps/mobile/.env.local`. The
+server is Ponzu 1.x, whose command line is on `main`, not this branch:
+`bunx ponzu` runs the published one. `PONZU_TAILSCALE=none` keeps it off the
+tailnet: a server otherwise takes the tailnet's port 7777 whenever it's free,
+and your phone would pair with it.
 
 ```sh
-PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bun apps/cli/src/index.ts serve examples/*.design --port 7792
+PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bunx ponzu serve examples/*.design --port 7792
 echo EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792 > apps/mobile/.env.local
 ```
 

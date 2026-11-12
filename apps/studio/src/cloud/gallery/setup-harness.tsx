@@ -193,7 +193,7 @@ export const TEAM_SETTINGS: SettingsData = {
   limits: s.limits,
   devices: [s.iphone],
   members: s.members,
-  meId: f.bryce.id,
+  meId: f.ada.id,
   syncFailed: false,
   installation: s.installation,
   repos: s.githubRepos,
@@ -227,7 +227,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
   const content: Record<SettingsSection, () => ReactNode> = {
     account: () => (
       <AccountSection
-        me={f.bryce}
+        me={f.ada}
         email={s.email}
         teams={data.teams}
         onSignOut={ignore}
