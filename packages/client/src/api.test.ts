@@ -4,11 +4,11 @@ import { emptyDoc, newOpId } from "@ponzu/core";
 // may run the API's code; the package itself only ever imports its types.
 import {
   call,
-  designIn,
+  canvasIn,
   startRunner,
   type Workspace,
   workspaceWithRepo,
-} from "../../../apps/api/src/testing/designs.ts";
+} from "../../../apps/api/src/testing/canvases.ts";
 import { createTestApp, type TestApp } from "../../../apps/api/src/testing/index.ts";
 import { authStates } from "../../db/src/index.ts";
 import { type Api, createApi } from "./api.ts";
@@ -112,21 +112,21 @@ describe("against the API's own routes", () => {
     expect([refused.status, refused.code]).toEqual([409, "last_admin"]);
   });
 
-  test("a design from creation to deletion", async () => {
+  test("a canvas from creation to deletion", async () => {
     const maya = clientFor("maya");
-    const created = await maya.designs.create({
+    const created = await maya.canvases.create({
       workspaceId: ws.id,
       repoId: ws.repo.id,
       name: "Kettle",
     });
     expect([created.name, created.access, created.seq]).toEqual(["Kettle", "write", 0]);
     expect(created.assetsUrl).toEndWith("/");
-    expect((await maya.workspaces.designs(ws.id)).designs.map((d) => d.id)).toContain(created.id);
+    expect((await maya.workspaces.canvases(ws.id)).canvases.map((d) => d.id)).toContain(created.id);
 
-    const { doc, seq } = await maya.designs.doc(created.id);
+    const { doc, seq } = await maya.canvases.doc(created.id);
     expect([doc.name, seq, doc.pages.length]).toEqual(["Kettle", 0, 1]);
     const page = doc.pages[0]!.id;
-    const committed = await maya.designs.commit(created.id, [
+    const committed = await maya.canvases.commit(created.id, [
       { id: newOpId(), op: { op: "page.update", id: page, name: "Brand" } },
       { id: newOpId(), op: { op: "page.update", id: "pg_nothere", name: "Nope" } },
     ]);
@@ -137,36 +137,36 @@ describe("against the API's own routes", () => {
       kind: "user",
       id: ws.people.maya!.userId,
     });
-    expect((await maya.designs.ops(created.id, 0)).ops.map((op) => op.seq)).toEqual([1]);
+    expect((await maya.canvases.ops(created.id, 0)).ops.map((op) => op.seq)).toEqual([1]);
 
-    const undone = await maya.designs.undo(created.id);
+    const undone = await maya.canvases.undo(created.id);
     expect(undone.seq).toBe(2);
-    expect((await maya.designs.redo(created.id)).seq).toBe(3);
+    expect((await maya.canvases.redo(created.id)).seq).toBe(3);
 
-    const renamed = await maya.designs.rename(created.id, { name: "Kettle 2", icon: "code" });
+    const renamed = await maya.canvases.rename(created.id, { name: "Kettle 2", icon: "code" });
     expect([renamed.name, renamed.icon]).toEqual(["Kettle 2", "code"]);
-    expect((await maya.designs.settle(created.id, true)).status).toBe("settled");
+    expect((await maya.canvases.settle(created.id, true)).status).toBe("settled");
 
-    const { present } = await maya.designs.presence(created.id, page);
+    const { present } = await maya.canvases.presence(created.id, page);
     expect(present.map((p) => [p.githubLogin, p.pageId])).toEqual([["maya", page]]);
-    await maya.designs.leave(created.id);
-    await maya.designs.seen(created.id, { seq: 1 });
+    await maya.canvases.leave(created.id);
+    await maya.canvases.seen(created.id, { seq: 1 });
 
-    await maya.designs.delete(created.id);
-    const gone = await maya.designs.get(created.id).catch((error) => error);
+    await maya.canvases.delete(created.id);
+    const gone = await maya.canvases.get(created.id).catch((error) => error);
     expect([gone.status, gone.code]).toEqual([404, "not_found"]);
   });
 
   test("someone who may only read is told so by code", async () => {
     const maya = clientFor("maya");
     const ines = clientFor("ines");
-    const created = await maya.designs.create({ workspaceId: ws.id, repoId: ws.repo.id });
-    expect((await ines.designs.get(created.id)).access).toBe("read");
-    const refused = await ines.designs
+    const created = await maya.canvases.create({ workspaceId: ws.id, repoId: ws.repo.id });
+    expect((await ines.canvases.get(created.id)).access).toBe("read");
+    const refused = await ines.canvases
       .commit(created.id, [{ id: newOpId(), op: { op: "file.rename", name: "Mine" } }])
       .catch((error) => error);
     expect([refused.status, refused.code]).toEqual([403, "forbidden"]);
-    const nothing = await maya.designs.undo(created.id).catch((error) => error);
+    const nothing = await maya.canvases.undo(created.id).catch((error) => error);
     expect([nothing.status, nothing.code]).toEqual([409, "nothing_to_undo"]);
   });
 
@@ -195,7 +195,7 @@ describe("against the API's own routes", () => {
     expect((await maya.claude.get()).account).toBeNull();
   });
 
-  test("a design made with its first message, once however often it is sent, and its thread", async () => {
+  test("a canvas made with its first message, once however often it is sent, and its thread", async () => {
     const maya = clientFor("maya");
     const body = {
       workspaceId: ws.id,
@@ -205,28 +205,28 @@ describe("against the API's own routes", () => {
       createKey: "create-key-client-1",
     };
     const [first, again] = await Promise.all([
-      maya.designs.create(body),
-      maya.designs.create(body),
+      maya.canvases.create(body),
+      maya.canvases.create(body),
     ]);
     expect(again.id).toBe(first.id);
 
-    const said = await maya.designs.sendMessage(first.id, { text: "And a summary" });
+    const said = await maya.canvases.sendMessage(first.id, { text: "And a summary" });
     expect(said.kind).toBe("message");
-    const { items } = await maya.designs.thread(first.id);
+    const { items } = await maya.canvases.thread(first.id);
     expect(items.map((item) => (item.kind === "message" ? item.payload.text : item.kind))).toEqual([
       "Make checkout one page",
       "And a summary",
     ]);
-    await maya.designs.stop(first.id);
+    await maya.canvases.stop(first.id);
   });
 
   test("live queries are sealed in one call, each answered on its own", async () => {
     const maya = clientFor("maya");
-    const created = await maya.designs.create({ workspaceId: ws.id, name: "Scratch" });
+    const created = await maya.canvases.create({ workspaceId: ws.id, name: "Scratch" });
     const { url, results } = await maya.live([
-      { name: "design.head", args: { designId: created.id } },
-      { name: "workspace.designs", args: { workspaceId: ws.id } },
-      { name: "design.head", args: { designId: "dsn_unknown" } },
+      { name: "canvas.head", args: { canvasId: created.id } },
+      { name: "workspace.canvases", args: { workspaceId: ws.id } },
+      { name: "canvas.head", args: { canvasId: "cnv_unknown" } },
     ]);
     expect(url).toBe(t.realtime.url);
     expect(results.map((r) => ("sealed" in r ? "sealed" : r.error.code))).toEqual([
@@ -238,15 +238,15 @@ describe("against the API's own routes", () => {
 
   test("the thread: a message, its page, an answer that wins once, and a stop", async () => {
     const maya = clientFor("maya");
-    const design = await designIn(t, ws, "maya", emptyDoc("Thread"));
-    const sent = await maya.designs.sendMessage(design.id, { text: "Make it calmer" });
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Thread"));
+    const sent = await maya.canvases.sendMessage(canvas.id, { text: "Make it calmer" });
     expect(sent).toMatchObject({ kind: "message", streaming: false });
     expect(sent.kind === "message" && sent.payload.text).toBe("Make it calmer");
-    const page = await maya.designs.thread(design.id, { limit: 10 });
+    const page = await maya.canvases.thread(canvas.id, { limit: 10 });
     expect(page.items.map((item) => item.id)).toEqual([sent.id]);
-    expect((await maya.designs.thread(design.id, { before: sent.seq })).items).toEqual([]);
+    expect((await maya.canvases.thread(canvas.id, { before: sent.seq })).items).toEqual([]);
 
-    const runner = await startRunner(t, design.id);
+    const runner = await startRunner(t, canvas.id);
     const questionId = "q_abcdefghjkmnpqrs";
     const asked = {
       header: "Headline",
@@ -264,25 +264,25 @@ describe("against the API's own routes", () => {
     });
     expect(raised.status).toBe(200);
     const answer = { answers: { "Which way?": "Shorten it" } };
-    expect(await maya.designs.answer(design.id, questionId, answer)).toEqual({
+    expect(await maya.canvases.answer(canvas.id, questionId, answer)).toEqual({
       id: questionId,
       status: "answered",
     });
-    const again = await maya.designs.answer(design.id, questionId, answer).catch((e) => e);
+    const again = await maya.canvases.answer(canvas.id, questionId, answer).catch((e) => e);
     expect([again.status, again.code]).toEqual([409, "question_closed"]);
 
-    expect(await maya.designs.stop(design.id)).toBeUndefined();
+    expect(await maya.canvases.stop(canvas.id)).toBeUndefined();
     const ines = await clientFor("ines")
-      .designs.stop(design.id)
+      .canvases.stop(canvas.id)
       .catch((e) => e);
     expect([ines.status, ines.code]).toEqual([403, "forbidden"]);
   });
 
   test("the pull request: the tab, opening it, a file's diff, and a refusal by code", async () => {
     const maya = clientFor("maya");
-    const design = await designIn(t, ws, "maya", emptyDoc("Shorter checkout"));
-    await t.db.execute(`update designs set branch = 'pz/checkout' where id = '${design.id}'`);
-    const before = await maya.designs.pullRequest.get(design.id);
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Shorter checkout"));
+    await t.db.execute(`update canvases set branch = 'pz/checkout' where id = '${canvas.id}'`);
+    const before = await maya.canvases.pullRequest.get(canvas.id);
     expect([before.branch.exists, before.pullRequest, before.nextAction]).toEqual([
       false,
       null,
@@ -290,17 +290,19 @@ describe("against the API's own routes", () => {
     ]);
 
     t.github.pulls.push(t.github.repo(ws.repo.fullName)!, "pz/checkout");
-    expect((await maya.designs.pullRequest.get(design.id)).nextAction).toBe("create_pr");
-    const opened = await maya.designs.pullRequest.open(design.id);
+    expect((await maya.canvases.pullRequest.get(canvas.id)).nextAction).toBe("create_pr");
+    const opened = await maya.canvases.pullRequest.open(canvas.id);
     expect(opened.pullRequest).toMatchObject({ state: "draft", title: "Shorter checkout" });
     const [file] = opened.pullRequest!.files.items;
-    const diff = await maya.designs.pullRequest.file(design.id, file!.path);
+    const diff = await maya.canvases.pullRequest.file(canvas.id, file!.path);
     expect(diff.path).toBe(file!.path);
     expect(["text", "binary", "too_large"]).toContain(diff.diff.kind);
 
     const sha = opened.pullRequest!.head.sha;
-    const draft = await maya.designs.pullRequest.merge(design.id, { headSha: sha }).catch((e) => e);
+    const draft = await maya.canvases.pullRequest
+      .merge(canvas.id, { headSha: sha })
+      .catch((e) => e);
     expect([draft.status, draft.code]).toEqual([409, "pull_request_draft"]);
-    expect((await maya.designs.pullRequest.ready(design.id)).pullRequest!.state).toBe("open");
+    expect((await maya.canvases.pullRequest.ready(canvas.id)).pullRequest!.state).toBe("open");
   });
 });

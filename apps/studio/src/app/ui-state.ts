@@ -1,9 +1,9 @@
-import { type DesignFilter, NO_FILTER } from "../cloud/filter.ts";
+import { type CanvasFilter, NO_FILTER } from "../cloud/filter.ts";
 import { PANES, paneWidth } from "../cloud/window/panes.ts";
 
 /*
  * What the window remembers between launches, for one person on this computer: the workspace
- * they were in, the design open in each, the sidebar and rail (open or not, and how wide), and
+ * they were in, the canvas open in each, the sidebar and rail (open or not, and how wide), and
  * each workspace's filter.
  * Kept in localStorage, which can be full, cleared or unavailable: then it is simply forgotten,
  * never an error.
@@ -11,19 +11,19 @@ import { PANES, paneWidth } from "../cloud/window/panes.ts";
 
 export interface UiState {
   workspaceId: string | null;
-  /** The design last open in each workspace. Absent: its create page. */
-  designs: Record<string, string>;
+  /** The canvas last open in each workspace. Absent: its create page. */
+  canvases: Record<string, string>;
   sidebarOpen: boolean;
   railOpen: boolean;
   /** Each pane's width as the person last dragged it, which it opens at again (panes.ts). */
   sidebarWidth: number;
   railWidth: number;
-  filters: Record<string, DesignFilter>;
+  filters: Record<string, CanvasFilter>;
 }
 
 export const DEFAULT_UI: UiState = {
   workspaceId: null,
-  designs: {},
+  canvases: {},
   sidebarOpen: true,
   railOpen: true,
   sidebarWidth: PANES.sidebar.default,
@@ -44,7 +44,7 @@ export function loadUi(personId: string, store: Store | null = safeLocalStorage(
   const s = saved as Partial<Record<keyof UiState, unknown>>;
   return {
     workspaceId: typeof s.workspaceId === "string" ? s.workspaceId : null,
-    designs: stringRecord(s.designs),
+    canvases: stringRecord(s.canvases),
     sidebarOpen: typeof s.sidebarOpen === "boolean" ? s.sidebarOpen : DEFAULT_UI.sidebarOpen,
     railOpen: typeof s.railOpen === "boolean" ? s.railOpen : DEFAULT_UI.railOpen,
     sidebarWidth: paneWidth("sidebar", s.sidebarWidth),
@@ -59,7 +59,7 @@ export function saveUi(personId: string, ui: UiState, store: Store | null = safe
   } catch {}
 }
 
-export function filterFor(ui: UiState, workspaceId: string): DesignFilter {
+export function filterFor(ui: UiState, workspaceId: string): CanvasFilter {
   return ui.filters[workspaceId] ?? NO_FILTER;
 }
 
@@ -80,11 +80,11 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
-function filterRecord(value: unknown): Record<string, DesignFilter> {
+function filterRecord(value: unknown): Record<string, CanvasFilter> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const filters: Record<string, DesignFilter> = {};
+  const filters: Record<string, CanvasFilter> = {};
   for (const [id, filter] of Object.entries(value)) {
-    const f = filter as Partial<DesignFilter> | null;
+    const f = filter as Partial<CanvasFilter> | null;
     const person = typeof f?.person === "string" ? f.person : null;
     const projects = Array.isArray(f?.projects)
       ? f.projects.filter((p): p is string => typeof p === "string")

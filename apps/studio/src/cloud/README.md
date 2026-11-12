@@ -37,7 +37,7 @@ dialogs/          what a send can need first: a card, a higher cap, Claude again
 gallery/          dev-only: every board composed from fixtures, every component's states
 ```
 
-`AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
+`AppWindow` takes the sidebar, the chrome past its left block (`CanvasChrome`, or nothing on the
 create page), the rail's content (null while closed) and the main pane's content. `ThreadRail`
 is the rail's content, needs you included; `PullRequestView` fills the main pane while the pull
 request tab is open. Settings plugs in the same way.
@@ -53,7 +53,7 @@ was (open at its width or closed, its scroll, its draft, its working state), so 
 sidebar, both toggles and ⌘B, ⌥⌘B keep working, the chrome reads as on any page, and no pane
 moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
 `inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
-`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
+`canvas-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
 page, position, zoom and selection. The tab fits whatever width the middle has: details over
 files in one column at a reading measure below 1080, the board's two columns from there
 (`Columns` in `pr-tab/pull-request-view.tsx`).
@@ -86,7 +86,7 @@ so the rest is still checked against the boards.
 
 The chrome reads, left to right (the founder's order), the right side the left's mirror:
 
-- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`.
+- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [canvas name] | [tabs] +`.
   The name is the row's type (13, medium), cut with an ellipsis at 240, and not a control: a
   double-click there zooms the window, as on any Mac title bar, so renaming stays on the row.
 - sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +`, the divider on the
@@ -153,7 +153,7 @@ GitHub through the API (`pullRequest`). In that order of preference, each is:
 
 The pull request tab, opened while its read is on its way, shows its skeleton and then settles
 what GitHub said in over it (`settle`); opened with the last answer kept, it is simply there.
-The gallery's `design-opening` and `design-opening-launch` draw a design opening with its answers
+The gallery's `canvas-opening` and `canvas-opening-launch` draw a design opening with its answers
 late, delivered on demand (`window.galleryArrive`, or `?later` on a schedule);
 `gallery/arrivals.test.ts` steps each arrival on its own clock (`stepArrival` in
 `scripts/visual-lib.ts`) and holds every piece that was on screen to a pixel, but the designed
@@ -201,7 +201,7 @@ lists, strikethrough, bare addresses; not footnotes, whose parser is slow on str
 in-page links we drop, so `[^1]` reads as written) and GitHub's line breaks, drawn into our
 elements: raw HTML stays text (no rehype-raw), images become links so nothing loads by itself, a
 link survives only to http, https or mailto and opens outside the app, except one to a design's
-own address with a page or board on it (`design-address.ts`), which in an open design's thread
+own address with a page or board on it (`canvas-address.ts`), which in an open design's thread
 moves the canvas there (`place-link.tsx`: dotted where an outside link is solid, muted once what
 it names is gone). While a reply streams, a link still being written shows as its words alone
 (`settled`). Text shaped to make the
@@ -391,7 +391,7 @@ file won't typecheck until the icon is swapped. `styles/shadcn-names.test.ts` fa
 behind.
 
 Then build the product's piece on it. Name that for what it is in the product and give it the
-product's types (a row takes a `DesignSummary`, not strings per pixel); where shadcn's API
+product's types (a row takes a `CanvasSummary`, not strings per pixel); where shadcn's API
 differs from what callers use, keep the product's names in a wrapper (`menu.tsx` over
 `dropdown-menu.tsx`, `modal.tsx` over `dialog.tsx`, `TextField` over `input-group.tsx`). Keep
 fixtures out of it. Give every control hover, pressed, keyboard focus (`focus-ring`) and disabled
@@ -584,7 +584,7 @@ person moves it. A field being edited inside one takes Escape for itself with
 ```sh
 cd apps/studio
 bun run gallery                 # opens /gallery.html: ?board=<id>, ?states, &theme=dark
-bun scripts/visual.ts compare --design <path to the .design folder>
+bun scripts/visual.ts compare --canvas <path to the .design folder>
 bun scripts/visual.ts references
 ```
 

@@ -26,11 +26,11 @@ import { validate } from "../http/validate.ts";
 const PingPrefs = z.object({
   /** "Ponzu needs you": a question, a permission, a sign-in. */
   needsYou: z.boolean(),
-  /** "Ponzu replies to my comment", on designs they commented on. */
+  /** "Ponzu replies to my comment", on canvases they commented on. */
   replies: z.boolean(),
   /** "A pull request is ready": checks passed and it can merge. */
   prReady: z.boolean(),
-  /** "A teammate comments", on designs they own. */
+  /** "A teammate comments", on canvases they own. */
   teammateComments: z.boolean(),
   /** One email a day, and nothing else by email. */
   emailDigest: z.boolean(),

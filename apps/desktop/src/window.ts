@@ -79,7 +79,7 @@ export function createMainWindow(opts: {
     return { action: "deny" };
   });
   win.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  // Copying a design's link is the one permission the studio uses.
+  // Copying a canvas's link is the one permission the studio uses.
   const session = win.webContents.session;
   session.setPermissionRequestHandler((_contents, permission, grant) =>
     grant(permission === "clipboard-sanitized-write"),

@@ -14,7 +14,7 @@
 const ANY_ASSETS = "https://*.ponzu.cloud";
 const ANY_REALTIME = "https://*.neon.tech";
 /**
- * The Google Fonts designs name, which the canvas loads to draw a board as its author meant. The
+ * The Google Fonts canvases name, which the canvas loads to draw a board as its author meant. The
  * studio's own fonts ship with it and come from 'self'.
  */
 const FONT_CSS = "https://fonts.googleapis.com";

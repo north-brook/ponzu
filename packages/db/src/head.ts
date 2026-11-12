@@ -1,15 +1,15 @@
-import type { AgentState, DesignStatus, PrChecks, PrState } from "./enums.ts";
+import type { AgentState, CanvasStatus, PrChecks, PrState } from "./enums.ts";
 
 /**
- * The part of a design that clients watch live. It is small and changes often; when `seq`
+ * The part of a canvas that clients watch live. It is small and changes often; when `seq`
  * moves, a client fetches the ops after its own seq from the API.
  */
-export interface DesignHead {
+export interface CanvasHead {
   id: string;
   workspaceId: string;
   name: string;
   icon: string | null;
-  status: DesignStatus;
+  status: CanvasStatus;
   /** The seq of the last committed op: the version of the document. */
   seq: number;
   /** The seq the uploaded previews show. */
@@ -28,10 +28,10 @@ export interface DesignHead {
 }
 
 /**
- * The columns of `designs` a live query for the head selects, by their own names, which is
- * what Realtime wants its keys to be: `select ${DESIGN_HEAD_COLUMNS.join(", ")} from designs …`.
+ * The columns of `canvases` a live query for the head selects, by their own names, which is
+ * what Realtime wants its keys to be: `select ${CANVAS_HEAD_COLUMNS.join(", ")} from canvases …`.
  */
-export const DESIGN_HEAD_COLUMNS = [
+export const CANVAS_HEAD_COLUMNS = [
   "id",
   "workspace_id",
   "name",
@@ -52,19 +52,19 @@ export const DESIGN_HEAD_COLUMNS = [
 ] as const;
 
 /** A head as Realtime delivers it: keyed by column, with each `bigint` as a string. */
-export type LiveDesignHead = Record<(typeof DESIGN_HEAD_COLUMNS)[number], unknown>;
+export type LiveCanvasHead = Record<(typeof CANVAS_HEAD_COLUMNS)[number], unknown>;
 
 /**
- * Turn a row from a live query into a `DesignHead`. Realtime hands a `bigint` over as a string,
+ * Turn a row from a live query into a `CanvasHead`. Realtime hands a `bigint` over as a string,
  * and two seqs compared as strings put "10" before "9", so nothing should read the row raw.
  */
-export function toDesignHead(row: LiveDesignHead): DesignHead {
+export function toCanvasHead(row: LiveCanvasHead): CanvasHead {
   return {
     id: row.id as string,
     workspaceId: row.workspace_id as string,
     name: row.name as string,
     icon: row.icon as string | null,
-    status: row.status as DesignStatus,
+    status: row.status as CanvasStatus,
     seq: Number(row.seq),
     previewSeq: row.preview_seq === null ? null : Number(row.preview_seq),
     agentState: row.agent_state as AgentState,

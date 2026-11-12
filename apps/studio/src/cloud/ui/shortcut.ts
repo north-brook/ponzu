@@ -141,11 +141,11 @@ const mac = typeof navigator !== "undefined" && navigator.userAgent.includes("Ma
 export const HINT_DELAY = 250;
 
 /** ⌘ jumps between designs; ⌃ between pages. */
-export type Jump = "design" | "page";
+export type Jump = "canvas" | "page";
 
 /** The key each jump goes with, as its hints write it and as KeyboardEvent.key names it. */
 export const JUMP_KEY = {
-  design: { glyph: mac ? "⌘" : "Ctrl", key: mac ? "Meta" : "Control" },
+  canvas: { glyph: mac ? "⌘" : "Ctrl", key: mac ? "Meta" : "Control" },
   page: { glyph: mac ? "⌃" : "Alt", key: mac ? "Control" : "Alt" },
 } as const;
 
@@ -165,7 +165,7 @@ export function jumpDigit(e: KeyLike, jump: Jump, onMac = mac): number | null {
   if (!digit) return null;
   const only = (key: "metaKey" | "ctrlKey" | "altKey") =>
     e[key] && (["metaKey", "ctrlKey", "altKey"] as const).every((k) => k === key || !e[k]);
-  if (jump === "design") return only(onMac ? "metaKey" : "ctrlKey") ? Number(digit) : null;
+  if (jump === "canvas") return only(onMac ? "metaKey" : "ctrlKey") ? Number(digit) : null;
   return only(onMac ? "ctrlKey" : "altKey") && digit !== "0" ? Number(digit) : null;
 }
 

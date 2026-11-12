@@ -268,7 +268,7 @@ export const FONT_LINT_SCRIPT = `(() => {
   const cjk = ${JSON.stringify(CJK_NAMES.map((n) => n.toLowerCase()))};
   const unquote = (s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
   const links = new Map([...document.querySelectorAll('link[data-font]')].map((l) => [l.dataset.font.toLowerCase(), l]));
-  // The faces the renderer declares for stand-ins are first in the page, so first here. The rest are the design's.
+  // The faces the renderer declares for stand-ins are first in the page, so first here. The rest are the canvas's.
   const all = [...document.fonts];
   const ours = all.splice(0, document.querySelector('style[data-stand-ins]')?.sheet?.cssRules.length ?? 0);
   const loaded = (list) => {

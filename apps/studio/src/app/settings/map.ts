@@ -5,7 +5,7 @@ import type { RepoEnvironment } from "../../cloud/settings/environments.ts";
 import type { Installation } from "../../cloud/settings/github.tsx";
 import type { Member } from "../../cloud/settings/members.ts";
 import type { PingDevice } from "../../cloud/settings/notifications.tsx";
-import type { DesignUsage, TeamUsage } from "../../cloud/settings/plan.tsx";
+import type { CanvasUsage, TeamUsage } from "../../cloud/settings/plan.tsx";
 import { githubPersonId, toPerson } from "../map.ts";
 
 /*
@@ -165,13 +165,13 @@ export function toTeamUsage(usage: ApiUsage, name: string): TeamUsage {
   };
 }
 
-/** Use by design, for an admin; the unnamed rows last: deleted designs, then those they can't open. */
-export function toDesignUsage(usage: ApiUsage): DesignUsage[] | null {
+/** Use by design, for an admin; the unnamed rows last: deleted canvases, then those they can't open. */
+export function toCanvasUsage(usage: ApiUsage): CanvasUsage[] | null {
   return (
-    usage.byDesign?.map(({ kind, design, usedCredits }) => ({
+    usage.byCanvas?.map(({ kind, canvas, usedCredits }) => ({
       kind,
-      id: design?.id ?? null,
-      name: design?.name ?? null,
+      id: canvas?.id ?? null,
+      name: canvas?.name ?? null,
       usedCredits,
     })) ?? null
   );

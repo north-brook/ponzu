@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 // The real API, in process, to hold the typed client to the routes it is typed from.
-import { type Workspace, workspaceWithRepo } from "../../../apps/api/src/testing/designs.ts";
+import { type Workspace, workspaceWithRepo } from "../../../apps/api/src/testing/canvases.ts";
 import { createTestApp, type TestApp } from "../../../apps/api/src/testing/index.ts";
 import { type Api, createApi } from "./api.ts";
 import { systemClock } from "./clock.ts";

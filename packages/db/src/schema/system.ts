@@ -22,7 +22,7 @@ export const jobs = pgTable(
     id: text("id").primaryKey(),
     // Free text: the kinds belong to the code that runs them.
     kind: text("kind").notNull(),
-    /** What the job is about, like a design id. One waiting job per kind and key. */
+    /** What the job is about, like a canvas id. One waiting job per kind and key. */
     key: text("key"),
     payload: jsonb("payload").$type<Json>().notNull().default({}),
     runAt: instant("run_at").notNull().defaultNow(),

@@ -41,7 +41,7 @@ test("artboard sizes given as plain numbers keep their px on every path", async 
   const file = "sizes.design";
   await client.callTool({ name: "create_file", arguments: { path: file } });
   const sizeOf = async (id: string) => {
-    const { design } = await ws.resolve(file);
+    const { canvas: design } = await ws.resolve(file);
     const s = design.doc.pages[0]!.artboards.find((a) => a.id === id)!.root.style;
     return `${s.width}×${s.height}`;
   };
@@ -60,7 +60,7 @@ test("artboard sizes given as plain numbers keep their px on every path", async 
   expect(text(first)).toContain("1440px×900px");
   const abId = /artboard (ab_\w+)/.exec(text(first))![1]!;
   expect(await sizeOf(abId)).toBe("1440px×900px");
-  const { design } = await ws.resolve(file);
+  const { canvas: design } = await ws.resolve(file);
   expect(design.doc.pages[0]!.artboards[0]!.root.style).toMatchObject({
     padding: "24px",
     "min-height": "900px",

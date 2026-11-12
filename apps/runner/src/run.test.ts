@@ -51,7 +51,7 @@ async function until(check: () => unknown, ms = 2_000): Promise<void> {
   }
 }
 
-/** A design with one page and a Pricing artboard, as the API has it. */
+/** A canvas with one page and a Pricing artboard, as the API has it. */
 function pricing(): Doc {
   const doc = emptyDoc("Fern");
   doc.pages.push({
@@ -252,7 +252,7 @@ test("a runner with nothing to claim goes from waking to idle once its claim is 
   expect(said.indexOf("idle")).toBeGreaterThan(said.indexOf("working"));
 });
 
-test("a design with a session resumes it, and what an earlier run asked stays open", async () => {
+test("a canvas with a session resumes it, and what an earlier run asked stays open", async () => {
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_old", { messages: new Set(), toolResults: new Set() });
   const api = new FakeRunnerApi({
@@ -268,7 +268,7 @@ test("a design with a session resumes it, and what an earlier run asked stays op
   expect(run.opts.resume).toBe("sess_old");
   await until(() => api.items()[0] && !api.items()[0]!.streaming);
   expect(api.items()[0]!.payload).toEqual({ type: "resumed" });
-  // Nobody waits on it, but the person can still answer, so the design needs them.
+  // Nobody waits on it, but the person can still answer, so the canvas needs them.
   await until(() => api.lastState?.state === "needs_you");
   expect(api.lastState?.claudeSessionId).toBe("sess_old");
   expect(api.questions.get("q_stale")?.status).toBe("open");
@@ -340,7 +340,7 @@ test("a clone that fails is said in the thread and the state, and the agent is t
   expect(run.opts.instructions).not.toContain("no repository");
 });
 
-test("a repo design is told where its checkout is, and that it drives its pull request", async () => {
+test("a repo canvas is told where its checkout is, and that it drives its pull request", async () => {
   const root = await temp();
   const { run } = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
@@ -371,10 +371,10 @@ test("a repo design is told where its checkout is, and that it drives its pull r
   expect(said).toContain(
     "Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.",
   );
-  expect(run.opts.instructions).toContain("give it one in your first turn with update_design");
+  expect(run.opts.instructions).toContain("give it one in your first turn with update_canvas");
 });
 
-test("a repo design's agent describes its pull request, which the API keeps", async () => {
+test("a repo canvas's agent describes its pull request, which the API keeps", async () => {
   const root = await temp();
   const { run, api } = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
@@ -456,7 +456,7 @@ const GIT_ENV = {
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
 
-/** "GitHub" (a bare repository) and the design's checkout of it on pz/hero, with a runner on it. */
+/** "GitHub" (a bare repository) and the canvas's checkout of it on pz/hero, with a runner on it. */
 async function onRepo(
   timing: Partial<Timing> = {},
   more: { flush?: () => void; api?: FakeRunnerApi; agent?: ScriptedAgent } = {},
@@ -520,7 +520,7 @@ test("a turn that ends with commits GitHub lacks gets them pushed, whatever the 
 
   await until(() => s.onGithub() === head, 5_000);
   await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle");
-  // While it pushed, the design said so.
+  // While it pushed, the canvas said so.
   expect(s.api.states.some((st) => st.status === "Pushing to GitHub")).toBe(true);
   expect(notices(s.api, "error")).toEqual([]);
 });
@@ -673,7 +673,7 @@ test("Create PR with commits only the sandbox holds: the runner pushes them, wit
   await until(() => s.api.delivered.includes(asked.id));
 });
 
-test("a turn on a repo design starts with where its pull request stands", async () => {
+test("a turn on a repo canvas starts with where its pull request stands", async () => {
   const s = await onRepo();
   s.run.ready();
   s.api.push({ kind: "message", payload: { text: "Ship it" } });
@@ -693,7 +693,7 @@ test("a turn on a repo design starts with where its pull request stands", async 
   expect(second.text).toContain("pull request #12 is open as a draft from pz/hero");
 });
 
-test("a Scratch design has no pull request to describe", async () => {
+test("a Scratch canvas has no pull request to describe", async () => {
   const { run } = await setup();
   expect(run.opts.tools.map((t) => t.name)).not.toContain("describe_pull_request");
   expect(run.opts.tools.map((t) => t.name)).not.toContain("open_pull_request");
@@ -898,7 +898,7 @@ test("a turn a check or a review begins is told it may fix, not land", async () 
 /* The lease                                                           */
 /* ------------------------------------------------------------------ */
 
-test("a second runner for the design takes over: the first stops for good, and nothing goes in twice", async () => {
+test("a second runner for the canvas takes over: the first stops for good, and nothing goes in twice", async () => {
   const api = new FakeRunnerApi();
   const first = await setup({ api });
   const second = await setup({ api });
@@ -939,7 +939,7 @@ test("git's credential is asked through the lease, and only the live runner gets
   await first.runner.eraseGitCredential(ask);
   expect(api.erased).toEqual([ask]);
 
-  // A newer runner took the design: the older one's git gets nothing, and it stops.
+  // A newer runner took the canvas: the older one's git gets nothing, and it stops.
   await setup({ api });
   await expect(first.runner.gitCredential(ask)).rejects.toThrow("A newer runner");
   await until(() => first.fatal.length === 1);
@@ -1856,7 +1856,7 @@ test("a turn's usage is recorded by model, as the change in the running totals",
   expect(s.api.usage.get("res_2")?.claudeSessionId).toBe("sess_1");
 });
 
-test("a failed turn is said in the thread, and a refused credential on the design's row until a turn works", async () => {
+test("a failed turn is said in the thread, and a refused credential on the canvas's row until a turn works", async () => {
   const s = await setup();
   await turn(s);
   s.run.end({ error: { code: "claude_auth", message: "Claude refused the credential." } });
@@ -1925,7 +1925,7 @@ test("an event of a kind this runner does not know is acknowledged, not held for
   expect(logs.join("\n")).toContain("deploy");
 });
 
-test("a message a repo's hook refused is acknowledged, said in the thread, and leaves the design idle", async () => {
+test("a message a repo's hook refused is acknowledged, said in the thread, and leaves the canvas idle", async () => {
   const { api, runner, run } = await setup();
   const event = api.push({ kind: "message", payload: { text: "Go" } });
   runner.poke();
@@ -2011,7 +2011,7 @@ function recordingTelemetry() {
 
 const ANALYTICS: RunnerAnalytics = { key: "phc_test", host: "https://ph.test", content: false };
 
-test("with analytics on, each turn is traced under its design and workspace, for whoever began it", async () => {
+test("with analytics on, each turn is traced under its canvas and workspace, for whoever began it", async () => {
   const t = recordingTelemetry();
   const s = await setup({
     session: { analytics: ANALYTICS, workspaceId: "ws_test" },
@@ -2019,7 +2019,7 @@ test("with analytics on, each turn is traced under its design and workspace, for
   });
   expect(t.made).toEqual([ANALYTICS]);
   const trace = s.run.opts.trace!;
-  expect(trace).toMatchObject({ content: false, designId: "des_test", workspaceId: "ws_test" });
+  expect(trace).toMatchObject({ content: false, canvasId: "cnv_test", workspaceId: "ws_test" });
 
   s.run.ready("sess_1");
   const sent = s.api.push(

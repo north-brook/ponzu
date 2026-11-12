@@ -1,8 +1,8 @@
 /*
  * A send from the create page, as the window drives it (app/main-window.tsx): the composer
- * travels to the thread, the design's view arrives with the sent words as its first line, and
+ * travels to the thread, the canvas's view arrives with the sent words as its first line, and
  * after the beat the thread's pane closes, unless the person has gone to it. Local state stands
- * in for the API. `?fail=<ms>` makes the design fail that long after the send; `?beat=<ms>`
+ * in for the API. `?fail=<ms>` makes the canvas fail that long after the send; `?beat=<ms>`
  * changes the beat (so a test can hold the pane open long enough to step past it).
  *
  * For the browser tests: `window.gallerySends` counts sends that went, `window.gallerySettled`
@@ -16,7 +16,7 @@ import { takeOff } from "../create/flight.ts";
 import { LANDING_BEAT_MS, type Sent, useLanding } from "../create/landing.ts";
 import type { Effort, ThreadItem } from "../model.ts";
 import { ThreadRail } from "../thread/rail.tsx";
-import { DesignChrome } from "../window/design-chrome.tsx";
+import { CanvasChrome } from "../window/canvas-chrome.tsx";
 import * as f from "./fixtures.ts";
 import { Harness } from "./harness.tsx";
 import { said } from "./thread-fixtures.ts";
@@ -36,7 +36,7 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
   const [prompt, setPrompt] = useState(initialPrompt);
   const [project, setProject] = useState<ProjectChoice>({ kind: "repo", repo: f.fernwood });
   const [model, setModel] = useState({ model: f.models[0]!.id, effort: "high" as Effort });
-  // The design's view: shown from the send, gone again if it fails.
+  // The canvas's view: shown from the send, gone again if it fails.
   const [items, setItems] = useState<ThreadItem[] | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
   const [railOpen, setRailOpen] = useState(true);
@@ -71,7 +71,7 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
         // Back to the page as it was: the words, the project; no second travel.
         setSent(null);
         setItems(null);
-        setError("That design couldn't be made. Try again.");
+        setError("That canvas couldn't be made. Try again.");
         requestAnimationFrame(() =>
           document.querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")?.focus(),
         );
@@ -83,13 +83,13 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
 
   return (
     <Harness
-      designs={f.soloDesigns}
+      canvases={f.soloCanvases}
       openId={null}
       rail={rail}
       railContent={
         items ? (
           <ThreadRail
-            designId="dsn_sent"
+            canvasId="cnv_sent"
             meId={f.bryce.id}
             repoName={project.kind === "repo" ? project.repo.name : null}
             items={items}
@@ -117,7 +117,7 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
       chrome={
         launched
           ? (sidebarOpen) => (
-              <DesignChrome
+              <CanvasChrome
                 name="Pricing page"
                 sidebarOpen={sidebarOpen}
                 pages={[]}

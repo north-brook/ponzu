@@ -5,7 +5,7 @@ import { ApiError } from "../errors.ts";
 /*
  * A person's own Claude, in memory, behind `/v1/claude` as the API answers it: an API key that
  * Anthropic takes or not, a claude.ai sign-in good for ten minutes and one code, and the model
- * and effort new designs start on. Tests say which keys and codes are good.
+ * and effort new canvases start on. Tests say which keys and codes are good.
  */
 
 type ClaudeView = NonNullable<Awaited<ReturnType<Api["claude"]["get"]>>["account"]>;
@@ -14,7 +14,7 @@ type Effort = Defaults["effort"];
 
 type OfferedModel = Defaults["models"][number];
 
-/** The API's `DEFAULT_MODEL` and `DEFAULT_EFFORT`: what new designs run on until a person chooses. */
+/** The API's `DEFAULT_MODEL` and `DEFAULT_EFFORT`: what new canvases run on until a person chooses. */
 const DEFAULT_MODEL = "claude-opus-5-5";
 const DEFAULT_EFFORT: Effort = "medium";
 const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
@@ -259,7 +259,7 @@ export class FakeClaude {
   }
 
   /**
-   * What `userId`'s new designs start on: the saved choice while the account offers it, or the
+   * What `userId`'s new canvases start on: the saved choice while the account offers it, or the
    * default (Opus 5.5 on medium when offered, else the first offered), as the API answers it.
    */
   defaultsOf(userId: string): Defaults {

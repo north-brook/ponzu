@@ -10,7 +10,7 @@ import type { Artboard } from "@ponzu/core";
  *
  * The live board measures its root's radii as the browser resolves them (measureCorners), so a
  * token, a calc() or a % rounds the sheet, ring and frame just as it rounds the content. Until a
- * board has been live the canvas guesses from the document (designCorners), which reads only px.
+ * board has been live the canvas guesses from the document (ownCorners), which reads only px.
  */
 
 /** Top left, top right, bottom right, bottom left, in board px. */
@@ -39,7 +39,7 @@ function px(v: string): number | null {
  * The radii the design gives its root (inline, as the document keeps them), or null when it gives
  * one the canvas can't read as px: the first paint's guess, before the live board measures them.
  */
-export function designCorners(ab: Pick<Artboard, "root">): Corners | null {
+export function ownCorners(ab: Pick<Artboard, "root">): Corners | null {
   // The document keeps properties kebab-case (core's parseStyle and toKebab).
   const style = ab.root.style as Record<string, string | undefined>;
   const corners = [0, 0, 0, 0];
@@ -150,8 +150,8 @@ function pair(r: Radii, each: (n: number) => string): string {
  * The board's border-radius: each of the design's corners, or the canvas's own `least` (a CSS
  * length, `var(--pz-board-radius)` say) where that is larger.
  */
-export function cornersCss(design: Radii, least: string): string {
-  return pair(design, (r) => (r > 0 ? `max(${round(r)}px, ${least})` : least));
+export function cornersCss(own: Radii, least: string): string {
+  return pair(own, (r) => (r > 0 ? `max(${round(r)}px, ${least})` : least));
 }
 
 /**

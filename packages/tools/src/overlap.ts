@@ -26,7 +26,7 @@ type Size = { w: number; h: number };
 const PX = /^-?\d+(?:\.\d+)?px$/;
 
 /**
- * Measured sizes by design key and artboard id, with the source they were
+ * Measured sizes by canvas key and artboard id, with the source they were
  * measured from: an unchanged artboard isn't rendered again.
  */
 const measured = new Map<string, Size & { source: string }>();

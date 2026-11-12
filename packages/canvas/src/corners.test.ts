@@ -1,24 +1,24 @@
 import { expect, test } from "bun:test";
 import type { Artboard } from "@ponzu/core";
-import { circular, cornersCss, designCorners, largest, lengths, ringCorners } from "./corners.ts";
+import { circular, cornersCss, largest, lengths, ownCorners, ringCorners } from "./corners.ts";
 
 const board = (style: Record<string, string>) =>
   ({ root: { style: { width: "320px", height: "200px", ...style } } }) as unknown as Artboard;
 
 test("a design's root radius is read per corner, as the shorthand and longhands give it", () => {
-  expect(designCorners(board({}))).toEqual([0, 0, 0, 0]);
-  expect(designCorners(board({ "border-radius": "16px" }))).toEqual([16, 16, 16, 16]);
-  expect(designCorners(board({ "border-radius": "16px 0" }))).toEqual([16, 0, 16, 0]);
-  expect(designCorners(board({ "border-radius": "1px 2px 3px" }))).toEqual([1, 2, 3, 2]);
-  expect(
-    designCorners(board({ "border-radius": "24px", "border-bottom-left-radius": "0" })),
-  ).toEqual([24, 24, 24, 0]);
+  expect(ownCorners(board({}))).toEqual([0, 0, 0, 0]);
+  expect(ownCorners(board({ "border-radius": "16px" }))).toEqual([16, 16, 16, 16]);
+  expect(ownCorners(board({ "border-radius": "16px 0" }))).toEqual([16, 0, 16, 0]);
+  expect(ownCorners(board({ "border-radius": "1px 2px 3px" }))).toEqual([1, 2, 3, 2]);
+  expect(ownCorners(board({ "border-radius": "24px", "border-bottom-left-radius": "0" }))).toEqual([
+    24, 24, 24, 0,
+  ]);
 });
 
 test("a radius the document can't give as px waits for the live board to measure it", () => {
-  expect(designCorners(board({ "border-radius": "var(--radius)" }))).toBeNull();
-  expect(designCorners(board({ "border-radius": "50%" }))).toBeNull();
-  expect(designCorners(board({ "border-radius": "16px / 8px" }))).toBeNull();
+  expect(ownCorners(board({ "border-radius": "var(--radius)" }))).toBeNull();
+  expect(ownCorners(board({ "border-radius": "50%" }))).toBeNull();
+  expect(ownCorners(board({ "border-radius": "16px / 8px" }))).toBeNull();
 });
 
 test("a computed radius splits into its lengths at top-level spaces only", () => {

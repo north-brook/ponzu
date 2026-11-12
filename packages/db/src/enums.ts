@@ -19,7 +19,7 @@ export const DEVICE_PLATFORMS = ["ios", "macos"] as const;
 export const PUSH_ENVIRONMENTS = ["development", "production"] as const;
 export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in"] as const;
 
-export const DESIGN_STATUSES = ["active", "settled"] as const;
+export const CANVAS_STATUSES = ["active", "settled"] as const;
 export const AGENT_STATES = ["idle", "waking", "working", "needs_you", "limited"] as const;
 export const PR_STATES = ["draft", "open", "merged", "closed"] as const;
 export const PR_CHECKS = ["none", "running", "failing", "passing"] as const;
@@ -47,7 +47,7 @@ export const QUESTION_KINDS = [
 ] as const;
 export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
 /**
- * A design's sandbox as the API drives it (docs/cloud.md, "The sandbox"):
+ * A canvas's sandbox as the API drives it (docs/cloud.md, "The sandbox"):
  *
  *   asleep     no session the row holds is running (a wake that gave up says why in `failure`)
  *   waking     a wake job holds the row: a create, a resume, or a restart in place
@@ -59,7 +59,7 @@ export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
  */
 export const SANDBOX_STATES = ["asleep", "waking", "awake", "stopping"] as const;
 /**
- * Why a design's agent cannot run, when something outside the design must change first: its
+ * Why a canvas's agent cannot run, when something outside the canvas must change first: its
  * owner's Claude is not connected, or has expired; its owner, whose Claude it runs on, is no
  * longer in its workspace; no machine can be started for now, so the wake is waiting (and
  * retrying by itself); or the sandbox failed to start for good.
@@ -72,9 +72,9 @@ export const AGENT_BLOCKERS = [
   "sandbox_failed",
 ] as const;
 /**
- * What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's
+ * What uploaded bytes are for: a file of the canvas, a file a link reaches, the sidebar's
  * picture; and two the runner keeps that no client ever reads: the Claude session's transcript
- * and a Scratch design's work in progress, each a compressed archive (docs/cloud.md, "Saving
+ * and a Scratch canvas's work in progress, each a compressed archive (docs/cloud.md, "Saving
  * the sandbox"). A `comment` is a person's picture of where they left a comment, as the thread
  * shows it.
  */
@@ -100,7 +100,7 @@ export type GithubAccess = (typeof GITHUB_ACCESS)[number];
 export type BaseStatus = (typeof BASE_STATUSES)[number];
 export type ClaudeAccountKind = (typeof CLAUDE_ACCOUNT_KINDS)[number];
 export type ClaudeAccountStatus = (typeof CLAUDE_ACCOUNT_STATUSES)[number];
-export type DesignStatus = (typeof DESIGN_STATUSES)[number];
+export type CanvasStatus = (typeof CANVAS_STATUSES)[number];
 export type AgentState = (typeof AGENT_STATES)[number];
 export type PrState = (typeof PR_STATES)[number];
 export type PrChecks = (typeof PR_CHECKS)[number];

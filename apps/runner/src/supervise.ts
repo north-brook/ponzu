@@ -1,7 +1,7 @@
 /*
  * The runner's supervisor, for a sandbox that runs no init and no service manager. The API
  * starts it at every start of the sandbox, as root, with one detached command whose environment
- * is the runner's (the design, the runner and port tokens, the one Claude credential, the repo's
+ * is the runner's (the canvas, the runner and port tokens, the one Claude credential, the repo's
  * secrets). Nothing of that environment is written anywhere: it lives in this process and the
  * runner's, and neither is readable by the agent's user.
  *
@@ -10,7 +10,7 @@
  * It runs the runner as its own user (`ponzu`, group `agent`, umask 002, CAP_DAC_READ_SEARCH so
  * it can read Claude Code's 0600 transcripts), restarts it when it fails, with a backoff, and
  * stops for good when it exits 78 (the environment is wrong, the token was revoked, or a newer
- * runner took the design: a restart will not mend it) or 0. SIGTERM is passed to the runner,
+ * runner took the canvas: a restart will not mend it) or 0. SIGTERM is passed to the runner,
  * which finishes in order; what it started is killed once it has exited or after 20 s.
  */
 import { type ChildProcess, spawn as spawnChild } from "node:child_process";

@@ -16,7 +16,7 @@ test("each person's window comes back as they left it", () => {
   const store = memory();
   const ui = {
     workspaceId: "ws_1",
-    designs: { ws_1: "dsn_1" },
+    canvases: { ws_1: "cnv_1" },
     sidebarOpen: false,
     railOpen: true,
     sidebarWidth: 344,
@@ -37,14 +37,14 @@ test("what storage holds is checked, field by field: anything else counts as not
     "ponzu.ui.usr_maya",
     JSON.stringify({
       workspaceId: 7,
-      designs: { ws_1: "dsn_1", ws_2: 3 },
+      canvases: { ws_1: "cnv_1", ws_2: 3 },
       sidebarOpen: "yes",
       filters: { ws_1: { person: 1, projects: ["repo:a", 2] } },
     }),
   );
   expect(loadUi("usr_maya", store)).toEqual({
     ...DEFAULT_UI,
-    designs: { ws_1: "dsn_1" },
+    canvases: { ws_1: "cnv_1" },
     filters: { ws_1: { person: null, projects: ["repo:a"] } },
   });
   store.values.set("ponzu.ui.usr_maya", "{not json");
@@ -61,7 +61,7 @@ test("a pane's width comes back within its limits, in whole pixels", () => {
   expect(widths(333.6, 401.2)).toEqual([334, 401]);
   // Past the limits (a build that allowed more, a hand-edited store): to the nearest limit.
   expect(widths(90, 2000)).toEqual([PANES.sidebar.min, PANES.rail.max]);
-  // Not a width: the design's.
+  // Not a width: the canvas's.
   expect(widths("wide", null)).toEqual([PANES.sidebar.default, PANES.rail.default]);
   expect(widths(Number.NaN, undefined)).toEqual([300, 360]);
 });

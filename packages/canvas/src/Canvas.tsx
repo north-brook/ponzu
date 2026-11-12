@@ -34,8 +34,8 @@ import { type CanvasSource, viewOnly } from "./connection.ts";
 import {
   circular,
   cornersCss,
-  designCorners,
   largest,
+  ownCorners,
   type Radii,
   ringCorners,
   sameRadii,
@@ -321,7 +321,7 @@ export function Canvas({
     [],
   );
   const cornersOf = (ab: Artboard): Radii | null => {
-    const guess = designCorners(ab);
+    const guess = ownCorners(ab);
     return rounding.get(ab.id) ?? (guess ? circular(guess) : null);
   };
   const [pending, setPending] = useState<Pending | null>(null);
@@ -2388,7 +2388,7 @@ const Board = memo(function Board({
   // sheet and its shadow take the radii ArtboardView gives the live root (corners.ts).
   // Measured where it has been live, so a token's, a calc()'s or a % radius counts; the
   // document's px before that.
-  const guess = useMemo(() => designCorners(ab), [ab]);
+  const guess = useMemo(() => ownCorners(ab), [ab]);
   const own = measuredCorners ?? (guess ? circular(guess) : null);
   const corners = own ? cornersCss(own, "var(--pz-board-radius)") : "var(--pz-board-radius)";
   const id = ab.id;

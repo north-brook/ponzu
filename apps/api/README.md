@@ -27,7 +27,7 @@ src/
     github-octokit.ts  how all of it reaches GitHub: Octokit on our fetch and clock, the App's
                     JWT and installation tokens (auth-app), pages, GraphQL, and GitHub's
                     failures as the API's errors. No retry or throttling plugin, on purpose
-    github-pull-requests.ts  a design's pull request: the one GraphQL read and describing
+    github-pull-requests.ts  a canvas's pull request: the one GraphQL read and describing
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
@@ -45,24 +45,24 @@ src/
                   reconcileInstallation: workspaces, members and repos in line with GitHub;
                   the install round trip and its setup page; what each webhook does;
                   people.ts: everyone GitHub gives access, read once per installation
-  designs/        committing ops, undo, the current document and its cache, who may send
-                  which op (op-rules.ts), and the events a design's feed gets
+  canvases/        committing ops, undo, the current document and its cache, who may send
+                  which op (op-rules.ts), and the events a canvas's feed gets
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
                   session, thread writes, git credentials, checkpoints (checkpoint.ts: the
                   transcript and work-in-progress archives, kept where no client reads them,
                   restoring them, and rebuilds and rollbacks logged); runner.e2e.test.ts runs the
                   real runner against these routes
-  pull-requests/  a design's pull request: sync.ts reads it and records it (the one place a
-                  merge settles a design), refresh.ts reads it again after webhooks, as jobs,
+  pull-requests/  a canvas's pull request: sync.ts reads it and records it (the one place a
+                  merge settles a canvas), refresh.ts reads it again after webhooks, as jobs,
                   open.ts opens it and keeps the agent's summary and picture in it, actions.ts
                   is what a person does to it, view.ts is what the tab is sent;
                   pull-requests.live.test.ts runs it against the real test repository
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
-  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
+  sandboxes/      wake.ts: requestWake, the one door from what people do to a canvas's sandbox;
                   orchestrate.ts: the wake job, one path for a create, a resume and a restart
                   in place (`up()`, `ponzu-stop` if it was running, `ponzu-start`);
                   stop.ts: putToSleep (`ponzu-stop`, then Vercel's stop, then the pending
-                  rule); retire.ts: a settled or deleted design's sandbox, holding its row
+                  rule); retire.ts: a settled or deleted canvas's sandbox, holding its row
                   until the delete; environment.ts: what a runner starts with; sweep.ts: the
                   minute's look (retire, stop, restart, lapse, sleep, cycle, extend, repair)
                   and the tenth minute's reconcile; constants.ts: the session's numbers
@@ -78,14 +78,14 @@ src/
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
                   its checks (prompt.ts), when they are made and kept (ideas.ts)
   routes/         one file per area, mounted under /v1 in routes/index.ts
-  testing/        createTestApp and the fakes behind it; designs.ts for workspaces to test in
+  testing/        createTestApp and the fakes behind it; canvases.ts for workspaces to test in
 scripts/
   dev.ts          bun run dev
   dev-signin.ts   a real sign-in from a terminal, saved for end-to-end tests
   neon.ts         a Neon branch's connection string and Realtime, by branch name
   github-webhook.ts  the App's webhook: where it points, its secret, redelivering failures
   ideas.ts        a real repo's ideas, made as the API makes them, with what they cost
-  images.ts       which image each design's sandbox runs, and what its next wake does about it
+  images.ts       which image each canvas's sandbox runs, and what its next wake does about it
   build.ts        bun run build: the runner bundle, then the API with it inlined
 ```
 
@@ -95,15 +95,15 @@ Hono preset treats both as entry points.
 The code runs on Node and is tested on Bun. `src/` outside the tests may use only what Node
 has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
-**Sandboxes.** Designs' sandboxes are Vercel Sandboxes in the ponzu-api project, named
-`pz-<scope>-<designId>` (the scope is the database's, `SandboxConfig.scope`, so deployments
+**Sandboxes.** Canvases' sandboxes are Vercel Sandboxes in the ponzu-api project, named
+`pz-<scope>-<canvasId>` (the scope is the database's, `SandboxConfig.scope`, so deployments
 sharing the project keep apart). On Vercel the API reaches them with its functions' OIDC token,
 which exists only inside a request: `@ponzu/sandbox` is called from a handler, or from work a
 handler handed to `deps.background` (the cron is a request too), never at module load or from a
 stray timer. Off Vercel, set `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` together.
 
 The image is not a variable: `apps/runner/image/current.json` names it by digest, and the build
-inlines it, so an image ships with the API deploy. A design on another image is recreated on
+inlines it, so an image ships with the API deploy. A canvas on another image is recreated on
 this one at its next wake, unless its last checkpoint is behind its session
 (`bun scripts/images.ts` shows where a rollout stands). The runner itself is not in the image:
 `bun run build` builds it, inlines it, and `GET /v1/runner/bundle` serves it to `ponzu-start`,
@@ -121,13 +121,13 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
 
    ```ts
    .get("/", access.user, (c) => …)           // a signed-in person; c.var.actor.user
-   .post("/x", access.runner, (c) => …)       // a sandbox's runner; c.var.actor.designId
+   .post("/x", access.runner, (c) => …)       // a sandbox's runner; c.var.actor.canvasId
    .post("/z", access.userOrRunner, (c) => …) // either; tell them apart by c.var.actor.kind
    .get("/y", access.public, (c) => …)        // anyone
    ```
 
-   A runner holds its design's lease (docs/cloud.md, "The runner protocol"): `access.runner` and
-   `access.userOrRunner` take a runner only with the design's current `X-Ponzu-Runner`, and
+   A runner holds its canvas's lease (docs/cloud.md, "The runner protocol"): `access.runner` and
+   `access.userOrRunner` take a runner only with the canvas's current `X-Ponzu-Runner`, and
    answer 409 `superseded` to anything else, so no route checks it again. The one route that
    takes the lease, `POST /v1/runner/session`, declares `access.runnerStarting` instead.
 
@@ -140,15 +140,15 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    `await requireWorkspace(c, workspaceId)` returns the workspace as the person sees it, or
    throws 404 `not_found` when they are not a member (the same as when it does not exist), and
    `requireWorkspace(c, id, "admin")` throws 403 `forbidden` for a member who is not an admin.
-   `await requireDesign(c, designId, "read" | "write")` does the same for a design, with
+   `await requireCanvas(c, canvasId, "read" | "write")` does the same for a canvas, with
    membership of its workspace and the access GitHub gives the person in its repo, and lets a
-   runner at its own design only. Get a row another person could not see only through a
+   runner at its own canvas only. Get a row another person could not see only through a
    function there, and add the next one beside them with the same two answers.
 
    **Repo access has one home**, `repo_access`, and one module, `auth/repo-access.ts`. Ask it
    with `repoPermission` (a fresh answer, or GitHub asked as the App, with the ten-minute
    fallback); a person's sync and `refreshWorkspaceRepoAccess` write a whole workspace's
-   answers at once with `recordReposReachedBy`; a list of repos or designs (or a live query
+   answers at once with `recordReposReachedBy`; a list of repos or canvases (or a live query
    over one) joins the table, after `refreshWorkspaceRepoAccess` where it must be current.
    A webhook that cannot say whose access changed calls `markRepoAccessStale`. Never keep a
    second copy of who can reach what. The one exception is for show:
@@ -243,11 +243,11 @@ which names the hash it wants (`PONZU_RUNNER_BUNDLE`) at every start.
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
    convert one of the others when your module comes to depend on its timing.
 
-   For designs, `testing/designs.ts` makes a workspace whose repository each named person can
-   reach as given (`workspaceWithRepo(t, { maya: "write", ines: "read" })`), designs in it,
-   and their runners: `startRunner(t, designId)` takes a token and the lease through the real
-   session route (`runner.headers` carry both), and `designWithRunner` makes a design with one.
-   `feedOf(db, designId)` from `@ponzu/db/testing` is a design's whole feed, for asserting the
+   For canvases, `testing/canvases.ts` makes a workspace whose repository each named person can
+   reach as given (`workspaceWithRepo(t, { maya: "write", ines: "read" })`), canvases in it,
+   and their runners: `startRunner(t, canvasId)` takes a token and the lease through the real
+   session route (`runner.headers` carry both), and `canvasWithRunner` makes a canvas with one.
+   `feedOf(db, canvasId)` from `@ponzu/db/testing` is a canvas's whole feed, for asserting the
    events something added.
 
    Branches and pull requests are `t.github.pulls` (`testing/fake-pull-requests.ts`), for the
@@ -277,7 +277,7 @@ row-level security, so a query's SQL is its access control: its `authorize` thro
 404 or 403 the matching route would, and answers the values the SQL binds, which is constant
 text. Realtime delivers a change as a small delta only for plain filters and joins, so no
 `ORDER BY`, `LIMIT`, aggregate, subquery or `now()`; it sends a row whole on every change,
-so never a design's content, an `encrypted_…` column or an asset key. A test holds every query
+so never a canvas's content, an `encrypted_…` column or an asset key. A test holds every query
 to that.
 
 `live/realtime.live.test.ts` runs the real thing against the `dev` branch: it seals a query,

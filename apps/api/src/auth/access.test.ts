@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
-  createDesign,
+  createCanvas,
   createRunnerToken,
   revokeRunnerTokens,
   takeRunnerLease,
@@ -210,8 +210,8 @@ function workspace() {
   });
 }
 
-async function design() {
-  return createDesign(t.db, {
+async function canvas() {
+  return createCanvas(t.db, {
     workspaceId: (await workspace()).id,
     repoId: null,
     ownerId: person.userId,
@@ -224,40 +224,40 @@ async function design() {
 
 describe("a route for a runner", () => {
   const withRunnerRoute = () => {
-    const routes = new Hono<AppEnv>().get("/v1/test/design", access.runner, (c) =>
-      c.json({ designId: c.var.actor.designId, runnerId: c.var.actor.runnerId }),
+    const routes = new Hono<AppEnv>().get("/v1/test/canvas", access.runner, (c) =>
+      c.json({ canvasId: c.var.actor.canvasId, runnerId: c.var.actor.runnerId }),
     );
     return createApp(t.deps).route("/", routes);
   };
 
-  test("takes a runner token with its design's lease, and is told the one design it is for", async () => {
+  test("takes a runner token with its canvas's lease, and is told the one canvas it is for", async () => {
     const app = withRunnerRoute();
-    const { id: designId } = await design();
-    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
-    const { runnerId } = await takeRunnerLease(t.db, { designId, now: new Date() });
+    const { id: canvasId } = await canvas();
+    const { token } = await createRunnerToken(t.db, { canvasId, ttlSeconds: 600 });
+    const { runnerId } = await takeRunnerLease(t.db, { canvasId, now: new Date() });
 
-    const response = await app.request("/v1/test/design", {
+    const response = await app.request("/v1/test/canvas", {
       headers: { authorization: `Bearer ${token}`, [RUNNER_HEADER]: runnerId },
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ designId, runnerId });
+    expect(await response.json()).toEqual({ canvasId, runnerId });
   });
 
-  test("refuses a runner without the design's current lease as superseded", async () => {
+  test("refuses a runner without the canvas's current lease as superseded", async () => {
     const app = withRunnerRoute();
-    const { id: designId } = await design();
-    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
+    const { id: canvasId } = await canvas();
+    const { token } = await createRunnerToken(t.db, { canvasId, ttlSeconds: 600 });
     const ask = async (lease?: string) => {
-      const response = await app.request("/v1/test/design", {
+      const response = await app.request("/v1/test/canvas", {
         headers: { authorization: `Bearer ${token}`, ...(lease ? { [RUNNER_HEADER]: lease } : {}) },
       });
       return [response.status, ((await response.json()) as any).error?.code];
     };
     // Before any runner has started, nobody holds it.
     expect(await ask()).toEqual([409, "superseded"]);
-    const older = await takeRunnerLease(t.db, { designId, now: new Date() });
-    const newer = await takeRunnerLease(t.db, { designId, now: new Date() });
+    const older = await takeRunnerLease(t.db, { canvasId, now: new Date() });
+    const newer = await takeRunnerLease(t.db, { canvasId, now: new Date() });
 
     expect(await ask(older.runnerId)).toEqual([409, "superseded"]);
     expect(await ask()).toEqual([409, "superseded"]);
@@ -266,11 +266,11 @@ describe("a route for a runner", () => {
 
   test("refuses no token, a made-up one, a revoked one and a person's", async () => {
     const app = withRunnerRoute();
-    const { id: designId } = await design();
-    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
-    await revokeRunnerTokens(t.db, designId);
+    const { id: canvasId } = await canvas();
+    const { token } = await createRunnerToken(t.db, { canvasId, ttlSeconds: 600 });
+    await revokeRunnerTokens(t.db, canvasId);
     const ask = async (authorization?: string) => {
-      const response = await app.request("/v1/test/design", {
+      const response = await app.request("/v1/test/canvas", {
         headers: authorization ? { authorization } : {},
       });
       return [response.status, ((await response.json()) as any).error.code];
@@ -287,7 +287,7 @@ describe("a route for a person or a runner", () => {
   const withSharedRoute = () => {
     const routes = new Hono<AppEnv>().get("/v1/test/either", access.userOrRunner, (c) => {
       const { actor } = c.var;
-      return c.json(actor.kind === "user" ? { user: actor.user.id } : { design: actor.designId });
+      return c.json(actor.kind === "user" ? { user: actor.user.id } : { canvas: actor.canvasId });
     });
     return createApp(t.deps).route("/", routes);
   };
@@ -303,12 +303,12 @@ describe("a route for a person or a runner", () => {
   };
 
   test("knows which of the two is asking, and holds a runner to its lease", async () => {
-    const { id: designId } = await design();
-    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
-    const { runnerId } = await takeRunnerLease(t.db, { designId, now: new Date() });
+    const { id: canvasId } = await canvas();
+    const { token } = await createRunnerToken(t.db, { canvasId, ttlSeconds: 600 });
+    const { runnerId } = await takeRunnerLease(t.db, { canvasId, now: new Date() });
 
     expect(await ask(person.headers.authorization)).toEqual({ user: person.userId });
-    expect(await ask(`Bearer ${token}`, runnerId)).toEqual({ design: designId });
+    expect(await ask(`Bearer ${token}`, runnerId)).toEqual({ canvas: canvasId });
     expect(await ask(`Bearer ${token}`)).toEqual([409, "superseded"]);
   });
 

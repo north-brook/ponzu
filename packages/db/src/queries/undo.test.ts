@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { actorFor, agent, rename, seedDesign, seedUser } from "../fixtures.ts";
+import { actorFor, agent, rename, seedCanvas, seedUser } from "../fixtures.ts";
 import { createTestDb } from "../testing.ts";
+import { getCanvas } from "./canvases.ts";
 import { UNDO_DEPTH } from "./checkpoints.ts";
-import { getDesign } from "./designs.ts";
 import { type Actor, commitOps, type NewOp, readOps, type StoredOp } from "./ops.ts";
 import { commitReversal, nextRedo, nextUndo } from "./undo.ts";
 
@@ -12,17 +12,17 @@ beforeAll(async () => {
 });
 afterAll(() => db.$client.close());
 
-/** A design and the moves a test makes on it, each at the design's current seq. */
+/** A canvas and the moves a test makes on it, each at the canvas's current seq. */
 async function session() {
-  const { design, user } = await seedDesign(db);
-  const designId = design.id;
+  const { canvas, user } = await seedCanvas(db);
+  const canvasId = canvas.id;
   const me = actorFor(user);
-  const seq = async () => (await getDesign(db, designId))!.seq;
+  const seq = async () => (await getCanvas(db, canvasId))!.seq;
   let made = 0;
 
   const act = async (actor: Actor, name: string) => {
     const result = await commitOps(db, {
-      designId,
+      canvasId,
       expectedSeq: await seq(),
       actor,
       ops: [rename(`op-${++made}`, name)],
@@ -37,10 +37,10 @@ async function session() {
     inverse: target.op,
   });
   const undo = async (actor: Actor) => {
-    const target = await nextUndo(db, { designId, actorId: actor.id });
+    const target = await nextUndo(db, { canvasId, actorId: actor.id });
     if (!target) return null;
     return commitReversal(db, {
-      designId,
+      canvasId,
       expectedSeq: await seq(),
       actor,
       kind: "undo",
@@ -49,10 +49,10 @@ async function session() {
     });
   };
   const redo = async (actor: Actor) => {
-    const target = await nextRedo(db, { designId, actorId: actor.id });
+    const target = await nextRedo(db, { canvasId, actorId: actor.id });
     if (!target) return null;
     return commitReversal(db, {
-      designId,
+      canvasId,
       expectedSeq: await seq(),
       actor,
       kind: "redo",
@@ -61,11 +61,11 @@ async function session() {
     });
   };
   const log = async () => {
-    const read = await readOps(db, { designId, after: 0 });
+    const read = await readOps(db, { canvasId, after: 0 });
     if (read?.kind !== "ok") throw new Error("expected ops");
     return read.ops;
   };
-  return { designId, me, seq, act, undo, redo, log, reversalOf };
+  return { canvasId, me, seq, act, undo, redo, log, reversalOf };
 }
 
 describe("undo", () => {
@@ -105,14 +105,14 @@ describe("undo", () => {
     await s.act(agent, "The agent's");
     await s.act(teammate, "Maya's");
 
-    expect(await nextUndo(db, { designId: s.designId, actorId: s.me.id })).toMatchObject({
+    expect(await nextUndo(db, { canvasId: s.canvasId, actorId: s.me.id })).toMatchObject({
       seq: 2,
     });
-    expect(await nextUndo(db, { designId: s.designId, actorId: teammate.id })).toMatchObject({
+    expect(await nextUndo(db, { canvasId: s.canvasId, actorId: teammate.id })).toMatchObject({
       seq: 3,
     });
     // The agent undoes only its own.
-    expect(await nextUndo(db, { designId: s.designId, actorId: agent.id })).toMatchObject({
+    expect(await nextUndo(db, { canvasId: s.canvasId, actorId: agent.id })).toMatchObject({
       seq: 2,
     });
   });
@@ -122,7 +122,7 @@ describe("undo", () => {
     await s.act(s.me, "One");
     await s.act(s.me, "Two");
 
-    const skipped = await nextUndo(db, { designId: s.designId, actorId: s.me.id, olderThan: 2 });
+    const skipped = await nextUndo(db, { canvasId: s.canvasId, actorId: s.me.id, olderThan: 2 });
 
     expect(skipped).toMatchObject({ seq: 1 });
   });
@@ -132,18 +132,18 @@ describe("undo", () => {
     const teammate = actorFor(await seedUser(db, "maya"));
     await s.act(s.me, "Mine, long ago");
     await commitOps(db, {
-      designId: s.designId,
+      canvasId: s.canvasId,
       expectedSeq: 1,
       actor: teammate,
       ops: Array.from({ length: UNDO_DEPTH - 1 }, (_, i) => rename(`maya-${i}`, `m${i}`)),
     });
-    expect(await nextUndo(db, { designId: s.designId, actorId: s.me.id })).toMatchObject({
+    expect(await nextUndo(db, { canvasId: s.canvasId, actorId: s.me.id })).toMatchObject({
       seq: 1,
     });
 
     await s.act(teammate, "One more");
 
-    expect(await nextUndo(db, { designId: s.designId, actorId: s.me.id })).toBeNull();
+    expect(await nextUndo(db, { canvasId: s.canvasId, actorId: s.me.id })).toBeNull();
   });
 
   test("the same op cannot be taken back twice", async () => {
@@ -151,7 +151,7 @@ describe("undo", () => {
     const target = await s.act(s.me, "One");
     const reversal = (id: string, expectedSeq: number) =>
       commitReversal(db, {
-        designId: s.designId,
+        canvasId: s.canvasId,
         expectedSeq,
         actor: s.me,
         kind: "undo",
@@ -170,7 +170,7 @@ describe("undo", () => {
     const target = await s.act(s.me, "One");
     const reversal = (id: string) =>
       commitReversal(db, {
-        designId: s.designId,
+        canvasId: s.canvasId,
         expectedSeq: 1,
         actor: s.me,
         kind: "undo",
@@ -189,7 +189,7 @@ describe("undo", () => {
     const done = await s.act(s.me, "One");
     const attempt = (kind: "undo" | "redo", reverses: number) =>
       commitReversal(db, {
-        designId: s.designId,
+        canvasId: s.canvasId,
         expectedSeq: 1,
         actor: s.me,
         kind,
@@ -241,7 +241,7 @@ describe("redo", () => {
     const s = await session();
     await s.act(s.me, "One");
     await s.undo(s.me);
-    expect(await nextRedo(db, { designId: s.designId, actorId: s.me.id })).not.toBeNull();
+    expect(await nextRedo(db, { canvasId: s.canvasId, actorId: s.me.id })).not.toBeNull();
 
     await s.act(s.me, "Something else");
 
@@ -255,12 +255,12 @@ describe("redo", () => {
     await s.undo(s.me);
 
     await s.act(teammate, "Maya's");
-    expect(await nextRedo(db, { designId: s.designId, actorId: s.me.id })).toMatchObject({
+    expect(await nextRedo(db, { canvasId: s.canvasId, actorId: s.me.id })).toMatchObject({
       seq: 2,
     });
 
     await s.act(agent, "The agent's");
-    expect(await nextRedo(db, { designId: s.designId, actorId: s.me.id })).toBeNull();
+    expect(await nextRedo(db, { canvasId: s.canvasId, actorId: s.me.id })).toBeNull();
   });
 
   test("is the caller's own: nobody redoes someone else's undo", async () => {

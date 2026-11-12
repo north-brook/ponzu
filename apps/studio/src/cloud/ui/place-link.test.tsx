@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { parseDesignAddress } from "./design-address.ts";
+import { parseCanvasAddress } from "./canvas-address.ts";
 import { settled } from "./markdown.ts";
-import { type DesignPlaces, DesignPlacesProvider } from "./place-link.tsx";
+import { type CanvasPlaces, CanvasPlacesProvider } from "./place-link.tsx";
 import { Prose } from "./prose.tsx";
 import { TipProvider } from "./tooltip.tsx";
 
@@ -12,60 +12,60 @@ import { TipProvider } from "./tooltip.tsx";
  * thread draws them, and a link still being written while a reply streams in.
  */
 
-const ORIGIN = "https://ponzu.design/designs/des_1";
+const ORIGIN = "https://ponzu.design/canvases/cnv_1";
 
 test("our own design's address, and a page or board of it, are recognised exactly", () => {
-  expect(parseDesignAddress(ORIGIN)).toEqual({ designId: "des_1" });
-  expect(parseDesignAddress(`${ORIGIN}/`)).toEqual({ designId: "des_1" });
-  expect(parseDesignAddress(`${ORIGIN}?artboard=ab_x1`)).toEqual({
-    designId: "des_1",
+  expect(parseCanvasAddress(ORIGIN)).toEqual({ canvasId: "cnv_1" });
+  expect(parseCanvasAddress(`${ORIGIN}/`)).toEqual({ canvasId: "cnv_1" });
+  expect(parseCanvasAddress(`${ORIGIN}?artboard=ab_x1`)).toEqual({
+    canvasId: "cnv_1",
     artboard: "ab_x1",
   });
-  expect(parseDesignAddress(`${ORIGIN}?page=pg_2#top`)).toEqual({
-    designId: "des_1",
+  expect(parseCanvasAddress(`${ORIGIN}?page=pg_2#top`)).toEqual({
+    canvasId: "cnv_1",
     page: "pg_2",
   });
   // What the web page adds for Ponzu Preview doesn't change the place.
-  expect(parseDesignAddress(`${ORIGIN}?artboard=ab_1&app=ponzu-preview`)).toEqual({
-    designId: "des_1",
+  expect(parseCanvasAddress(`${ORIGIN}?artboard=ab_1&app=ponzu-preview`)).toEqual({
+    canvasId: "cnv_1",
     artboard: "ab_1",
   });
 });
 
 test("an address dressed as ours, but not ours, is an ordinary link", () => {
   for (const href of [
-    "http://ponzu.design/designs/des_1?artboard=ab_1",
-    "https://ponzu.design.evil.test/designs/des_1?artboard=ab_1",
-    "https://evil.test/designs/des_1?artboard=ab_1",
-    "https://ponzu.design@evil.test/designs/des_1",
-    "https://user:pw@ponzu.design/designs/des_1",
-    "https://ponzu.design:8443/designs/des_1",
-    "https://www.ponzu.design/designs/des_1",
-    "https://ponzu.design/designs/des_1/settings",
-    "https://ponzu.design/designs/",
+    "http://ponzu.design/canvases/cnv_1?artboard=ab_1",
+    "https://ponzu.design.evil.test/canvases/cnv_1?artboard=ab_1",
+    "https://evil.test/canvases/cnv_1?artboard=ab_1",
+    "https://ponzu.design@evil.test/canvases/cnv_1",
+    "https://user:pw@ponzu.design/canvases/cnv_1",
+    "https://ponzu.design:8443/canvases/cnv_1",
+    "https://www.ponzu.design/canvases/cnv_1",
+    "https://ponzu.design/canvases/cnv_1/settings",
+    "https://ponzu.design/canvases/",
     "https://ponzu.design/local#file=/x.design&artboard=ab_1",
-    "https://ponzu.design/designs/des 1",
-    "https://ponzu.design/designs/des_1?artboard=ab_1&artboard=ab_2",
-    "https://ponzu.design/designs/des_1?artboard=%3Cscript%3E",
-    "https://ponzu.design/designs/des_1?page=",
-    "ponzu://design/des_1?artboard=ab_1",
-    "javascript:alert(1)//https://ponzu.design/designs/des_1",
+    "https://ponzu.design/canvases/des 1",
+    "https://ponzu.design/canvases/cnv_1?artboard=ab_1&artboard=ab_2",
+    "https://ponzu.design/canvases/cnv_1?artboard=%3Cscript%3E",
+    "https://ponzu.design/canvases/cnv_1?page=",
+    "ponzu://canvas/cnv_1?artboard=ab_1",
+    "javascript:alert(1)//https://ponzu.design/canvases/cnv_1",
   ]) {
-    expect(parseDesignAddress(href)).toBeNull();
+    expect(parseCanvasAddress(href)).toBeNull();
   }
 });
 
-const places = (over: Partial<DesignPlaces> = {}): DesignPlaces => ({
-  designId: "des_1",
+const places = (over: Partial<CanvasPlaces> = {}): CanvasPlaces => ({
+  canvasId: "cnv_1",
   has: (at) => at.artboard !== "ab_gone" && at.page !== "pg_gone",
   open: () => {},
   ...over,
 });
 
-const drawn = (text: string, value: DesignPlaces | null = places()) => {
+const drawn = (text: string, value: CanvasPlaces | null = places()) => {
   const prose = <Prose text={text} />;
   const tree: ReactNode = value ? (
-    <DesignPlacesProvider value={value}>{prose}</DesignPlacesProvider>
+    <CanvasPlacesProvider value={value}>{prose}</CanvasPlacesProvider>
   ) : (
     prose
   );
@@ -81,8 +81,8 @@ test("in a design's thread a link to one of its boards or pages stays in the app
   const page = drawn(`See [Mobile](${ORIGIN}?page=pg_2).`);
   expect(page).toContain('data-place="page"');
   // Another design's address opens that design, in the app too.
-  expect(drawn(`[Checkout](https://ponzu.design/designs/des_9?artboard=ab_1)`)).toContain(
-    'data-place="other-design"',
+  expect(drawn(`[Checkout](https://ponzu.design/canvases/cnv_9?artboard=ab_1)`)).toContain(
+    'data-place="other-canvas"',
   );
 });
 
@@ -100,7 +100,7 @@ test("a link to a board that isn't there any more reads as muted text, not a lin
 
 test("everything else is the link it was, and outside a design ours is too", () => {
   const out = drawn(
-    "[docs](https://ponzu.design/docs) and [evil](https://evil.test/designs/des_1)",
+    "[docs](https://ponzu.design/docs) and [evil](https://evil.test/canvases/cnv_1)",
   );
   expect(out.match(/target="_blank"/g)).toHaveLength(2);
   expect(out).not.toContain("data-place");
@@ -109,7 +109,7 @@ test("everything else is the link it was, and outside a design ours is too", () 
   expect(outside).toContain('target="_blank"');
   expect(outside).not.toContain("data-place");
   // Nothing the rules refuse becomes one by looking like ours.
-  expect(drawn("[x](javascript:alert('https://ponzu.design/designs/des_1'))")).not.toContain("<a");
+  expect(drawn("[x](javascript:alert('https://ponzu.design/canvases/cnv_1'))")).not.toContain("<a");
 });
 
 test("a link still being written at a streaming reply's end shows as its words alone", () => {
@@ -123,8 +123,8 @@ test("a link still being written at a streaming reply's end shows as its words a
   expect(settled(`${closed} and the`)).toBe(`${closed} and the`);
   expect(settled("a [b](c) then [d")).toBe("a [b](c) then d");
   // A title still being written, and an image's link, show only their words too.
-  expect(settled('on [Note](https://ponzu.design/designs/des_1 "ti')).toBe("on Note");
-  expect(settled('on [Note](https://ponzu.design/designs/des_1 "title"')).toBe("on Note");
+  expect(settled('on [Note](https://ponzu.design/canvases/cnv_1 "ti')).toBe("on Note");
+  expect(settled('on [Note](https://ponzu.design/canvases/cnv_1 "title"')).toBe("on Note");
   expect(settled("see ![the chart](https://exa")).toBe("see the chart");
   // In code it is what was written.
   expect(settled("run `arr[i")).toBe("run `arr[i");

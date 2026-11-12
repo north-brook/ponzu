@@ -165,12 +165,12 @@ describe.skipIf(!chromiumPath)("the thread's keyboard and the pull request's key
     await settled();
     await page.click("#sidebar [aria-current]", { button: "right" });
     await page.click('[role=menuitem]:has-text("Rename")');
-    await page.waitForSelector('input[aria-label="Design name"]');
+    await page.waitForSelector('input[aria-label="Canvas name"]');
     await page.waitForSelector("[role=menu]", { state: "detached" });
     await page.keyboard.press("Meta+Alt+b");
     expect(await expanded()).toBe("true");
     await settled();
-    expect((await focused()).name).toBe("Design name");
+    expect((await focused()).name).toBe("Canvas name");
   });
 
   test("⌘P shows and hides the pull request from anywhere, and not under a menu", async () => {

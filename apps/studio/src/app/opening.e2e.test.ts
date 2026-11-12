@@ -1,7 +1,7 @@
 /*
- * Opening a design with every answer slowed, in the studio as it ships (fake-host.ts, a real
+ * Opening a canvas with every answer slowed, in the studio as it ships (fake-host.ts, a real
  * Chromium): what its chrome shows at the first paint. The pull request's mark comes from the
- * sidebar's row at once, with the room for its action held; a design opened again shows its mark
+ * sidebar's row at once, with the room for its action held; a canvas opened again shows its mark
  * and its action from its last answer, kept in the query cache; and the read on opening confirms
  * them without a change. Skips where there is no Chrome or Chromium.
  */
@@ -47,14 +47,14 @@ function firstPaint(page: Page, selector: string): Promise<Painted> {
           };
         };
         document.querySelector<HTMLElement>(selector)!.click();
-        // The click's render and the design's opening land before the next frame is painted.
+        // The click's render and the canvas's opening land before the next frame is painted.
         requestAnimationFrame(() => resolve(look()));
       }),
     selector,
   );
 }
 
-describe.skipIf(!chromiumPath)("opening a design, its answers slow", () => {
+describe.skipIf(!chromiumPath)("opening a canvas, its answers slow", () => {
   let dir: string;
   let server: ReturnType<typeof serve>;
   let browser: Browser;
@@ -68,29 +68,29 @@ describe.skipIf(!chromiumPath)("opening a design, its answers slow", () => {
     page = await browser.newPage();
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${server.url}?as=returning&latency=${LATENCY}`);
-    await page.locator("[data-design-row]").first().waitFor({ timeout: 30_000 });
-    // Two designs on the team's repo, each with a draft pull request.
+    await page.locator("[data-canvas-row]").first().waitFor({ timeout: 30_000 });
+    // Two canvases on the team's repo, each with a draft pull request.
     ids = await page.evaluate(async () => {
       const w = window.ponzuFake!;
       const api = w.backend.connect(w.me).api;
-      const first = [...w.backend.designs.values()][0]!;
-      const second = await api.designs.create({
+      const first = [...w.backend.canvases.values()][0]!;
+      const second = await api.canvases.create({
         workspaceId: w.workspaceId,
         repoId: first.repoId!,
         name: "Pricing page",
       });
       for (const id of [first.id, second.id]) {
-        const github = w.backend.design(id).github!;
+        const github = w.backend.canvas(id).github!;
         github.push([{ path: "src/hero.tsx", additions: 12 }]);
         github.open("maya", "Calmer hero");
       }
       return { first: first.id, second: second.id };
     });
     // The create page, with both rows saying their pull requests.
-    await page.getByRole("button", { name: "New design" }).click();
+    await page.getByRole("button", { name: "New canvas" }).click();
     await waitUntil(() =>
       page.evaluate(
-        () => document.querySelectorAll('[data-design-row] [class*="ml-auto"]').length >= 2,
+        () => document.querySelectorAll('[data-canvas-row] [class*="ml-auto"]').length >= 2,
       ),
     );
   });
@@ -100,7 +100,7 @@ describe.skipIf(!chromiumPath)("opening a design, its answers slow", () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  const row = (id: string) => `[data-design-row="${id}"]`;
+  const row = (id: string) => `[data-canvas-row="${id}"]`;
   /** The action, once its answer is in. */
   const actionIn = () =>
     waitUntil(

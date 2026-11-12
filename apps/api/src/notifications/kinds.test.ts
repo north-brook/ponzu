@@ -96,7 +96,7 @@ describe("triggers carry ids only", () => {
     expect(
       NotifyTrigger.safeParse({
         kind: "comment_posted",
-        canvasId: "des_a",
+        canvasId: "cnv_a",
         messageId: "ti_a",
         authorId: "usr_a",
         body: "Looks great",
@@ -115,7 +115,7 @@ describe("triggers carry ids only", () => {
   test("a branch can't pass as a sha or a login", () => {
     const ready = {
       kind: "pull_request_ready",
-      canvasId: "des_a",
+      canvasId: "cnv_a",
       number: 12,
       headSha: "pz/secret-launch",
       authorLogin: null,
@@ -130,7 +130,7 @@ describe("triggers carry ids only", () => {
   test("an unknown error code is refused", () => {
     const report = {
       kind: "turn_finished",
-      canvasId: "des_a",
+      canvasId: "cnv_a",
       turnId: "0b6f3c2e-6a0e-4f61-9d39-0f1f2a3b4c5d",
       eventId: "evt_a",
       outcome: "failed",

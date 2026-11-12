@@ -1,11 +1,11 @@
 /* Every component in every state it has, one section each. */
 import { GitMergeIcon } from "@hugeicons/core-free-icons";
 import { type ReactNode, useState } from "react";
-import { NewDesignComposer } from "../create/composer.tsx";
-import { type DesignFilter, NO_FILTER, projectCounts, repoKey } from "../filter.ts";
-import type { DesignSummary, Effort, PullRequestSummary } from "../model.ts";
+import { NewCanvasComposer } from "../create/composer.tsx";
+import { type CanvasFilter, NO_FILTER, projectCounts, repoKey } from "../filter.ts";
+import type { CanvasSummary, Effort, PullRequestSummary } from "../model.ts";
 import { type NextAction, nextAction } from "../pull-request.ts";
-import { DesignList, DesignListSkeleton } from "../sidebar/design-list.tsx";
+import { CanvasList, CanvasListSkeleton } from "../sidebar/canvas-list.tsx";
 import { FilterMenu } from "../sidebar/filter-menu.tsx";
 import { SearchResultsView } from "../sidebar/search.tsx";
 import { WorkspaceMenu } from "../sidebar/workspace-menu.tsx";
@@ -85,8 +85,8 @@ const SIGNALS: [string, RailSignal, boolean][] = [
   ["Open", { needsYou: 2 }, true],
 ];
 
-const base = f.teamDesigns[4]!;
-const ROWS: DesignSummary[] = [
+const base = f.teamCanvases[4]!;
+const ROWS: CanvasSummary[] = [
   { ...base, id: "s_idle", name: "Nothing new" },
   { ...base, id: "s_unseen", name: "Unseen activity", unseen: true },
   { ...base, id: "s_working", name: "Working", agentState: "working", unseen: true },
@@ -107,7 +107,7 @@ const ROWS: DesignSummary[] = [
   {
     ...base,
     id: "s_long",
-    name: "A design with a name far too long to fit in the sidebar's row",
+    name: "A canvas with a name far too long to fit in the sidebar's row",
     project: {
       kind: "repo",
       repo: f.fernwood,
@@ -125,7 +125,7 @@ const ROWS: DesignSummary[] = [
 ];
 
 function FilterDemo() {
-  const [filter, setFilter] = useState<DesignFilter>({
+  const [filter, setFilter] = useState<CanvasFilter>({
     person: null,
     projects: [repoKey(f.fernwood)],
   });
@@ -135,7 +135,7 @@ function FilterDemo() {
       onChange={setFilter}
       me={f.bryce}
       teammates={f.teammates}
-      projects={projectCounts(f.teamDesigns)}
+      projects={projectCounts(f.teamCanvases)}
     />
   );
 }
@@ -144,7 +144,7 @@ function ComposerDemo({ initial, sending }: { initial: string; sending?: boolean
   const [prompt, setPrompt] = useState(initial);
   return (
     <div className="w-[520px]">
-      <NewDesignComposer
+      <NewCanvasComposer
         prompt={prompt}
         onPromptChange={setPrompt}
         onSend={ignore}
@@ -174,7 +174,7 @@ function ReportedModelsDemo() {
   });
   return (
     <div className="w-[520px]">
-      <NewDesignComposer
+      <NewCanvasComposer
         prompt={prompt}
         onPromptChange={setPrompt}
         onSend={ignore}
@@ -239,10 +239,10 @@ export function States() {
               <ThreadToggle open={open} signal={signal} onToggle={ignore} />
             </Labelled>
           ))}
-          <Labelled label="from a design that needs you">
+          <Labelled label="from a canvas that needs you">
             <ThreadToggle
               open={false}
-              signal={railSignal(f.teamDesigns[0]!, true)}
+              signal={railSignal(f.teamCanvases[0]!, true)}
               onToggle={ignore}
             />
           </Labelled>
@@ -307,10 +307,10 @@ export function States() {
           </div>
         </Section>
 
-        <Section title="Design rows">
+        <Section title="Canvas rows">
           <div className="w-[284px]">
-            <DesignList
-              designs={ROWS}
+            <CanvasList
+              canvases={ROWS}
               openId="s_pr"
               label="States"
               onOpen={ignore}
@@ -319,7 +319,7 @@ export function States() {
             />
           </div>
           <div className="w-[284px]">
-            <DesignListSkeleton />
+            <CanvasListSkeleton />
           </div>
         </Section>
 
@@ -351,7 +351,7 @@ export function States() {
               onChange={ignore}
               me={f.bryce}
               teammates={null}
-              projects={projectCounts(f.soloDesigns)}
+              projects={projectCounts(f.soloCanvases)}
             />
           </Labelled>
           <Labelled label="checkbox">
@@ -375,7 +375,7 @@ export function States() {
           <div className="flex w-[284px] flex-col">
             <SearchResultsView
               query="zebra"
-              results={{ query: "zebra", designs: [], boards: [], comments: [] }}
+              results={{ query: "zebra", canvases: [], boards: [], comments: [] }}
               selected={null}
               onSelect={ignore}
               onOpenResult={ignore}

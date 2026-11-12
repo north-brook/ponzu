@@ -10,7 +10,7 @@ import { STAND_INS, type StandIn, standInFor } from "../stand-ins.ts";
 export interface FontCase {
   /** The node to measure, and the key its size is recorded under. */
   id: string;
-  /** The family as a design names it, or a few words for a line that names none. */
+  /** The family as a canvas names it, or a few words for a line that names none. */
   name: string;
   standIn: StandIn;
   /** The CSS `font` value, with no family after it to fall back to. */

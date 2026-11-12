@@ -22,7 +22,7 @@ import {
 
 /*
  * A whole cloud host in memory, for tests: the API's side of the sync protocol (core's
- * `Sequencer`), a replica of the design talking to it, and a host that records what the tools
+ * `Sequencer`), a replica of the canvas talking to it, and a host that records what the tools
  * hand it. Nothing touches a network or a clock but the replica's own retry timer.
  */
 
@@ -58,7 +58,7 @@ export function memoryHost(): MemoryHost {
       host.published.push(file);
       return `https://exports.ponzu.test/${file.name}`;
     },
-    link: () => "https://ponzu.test/designs/dsn_test",
+    link: () => "https://ponzu.test/canvases/cnv_test",
     theme: () => host.viewerTheme,
   };
   return host;
@@ -82,7 +82,7 @@ export function memoryTransport(api: Sequencer, actor: Actor): SyncTransport {
 }
 
 export interface MemoryCloud {
-  /** The API's side: the design as committed, and its log. */
+  /** The API's side: the canvas as committed, and its log. */
   api: Sequencer;
   replica: Replica;
   host: MemoryHost;
@@ -91,7 +91,7 @@ export interface MemoryCloud {
   ctx: ToolContext;
   /**
    * Commit an op as someone else, straight to the API. The replica doesn't know until
-   * `synced` tells it, as it wouldn't until the design's head row moved.
+   * `synced` tells it, as it wouldn't until the canvas's head row moved.
    */
   commitAs(actor: Actor, op: Op): void;
   /** Tell the replica where the head is, and wait until it is there with nothing of its own pending. */
@@ -126,7 +126,7 @@ export function memoryCloud(
   });
   const host = opts.host ?? memoryHost();
   const ws = createCloudWorkspace({
-    id: "dsn_test",
+    id: "cnv_test",
     replica,
     renderer: opts.renderer,
     host,

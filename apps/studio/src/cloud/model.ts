@@ -9,7 +9,7 @@
  * doesn't depend on the database package. The typed API client will carry them.
  */
 export type WorkspaceKind = "personal" | "org";
-export type DesignStatus = "active" | "settled";
+export type CanvasStatus = "active" | "settled";
 export type AgentState = "idle" | "waking" | "working" | "needs_you" | "limited";
 export type PrState = "draft" | "open" | "merged" | "closed";
 export type PrChecks = "none" | "running" | "failing" | "passing";
@@ -47,7 +47,7 @@ export interface Repo {
   name: string;
 }
 
-/** Where a design's work lives: a branch of a repo, or Scratch, kept in Ponzu and named after a city. */
+/** Where a canvas's work lives: a branch of a repo, or Scratch, kept in Ponzu and named after a city. */
 export type Project =
   | { kind: "repo"; repo: Repo; branch: string }
   | { kind: "scratch"; city: string };
@@ -61,19 +61,19 @@ export interface PullRequestSummary {
   autoMerge: boolean;
 }
 
-/** Light and dark pictures of a design's first page, drawn by its sandbox. */
-export interface DesignPreview {
+/** Light and dark pictures of a canvas's first page, drawn by its sandbox. */
+export interface CanvasPreview {
   light: string;
   dark: string;
 }
 
-/** A design as a list shows it: the sidebar, search, the phone. */
-export interface DesignSummary {
+/** A canvas as a list shows it: the sidebar, search, the phone. */
+export interface CanvasSummary {
   id: string;
   name: string;
   project: Project;
-  preview: DesignPreview | null;
-  status: DesignStatus;
+  preview: CanvasPreview | null;
+  status: CanvasStatus;
   agentState: AgentState;
   /** Questions waiting for the viewer. */
   needsYou: number;
@@ -87,7 +87,7 @@ export interface DesignSummary {
   settledAt: string | null;
 }
 
-/** A page of the open design, as its tab shows it. */
+/** A page of the open canvas, as its tab shows it. */
 export interface PageTab {
   id: string;
   name: string;
@@ -97,7 +97,7 @@ export interface PageTab {
   working: boolean;
 }
 
-/** Someone who has worked on a design, for the presence avatars. */
+/** Someone who has worked on a canvas, for the presence avatars. */
 export interface Contributor {
   person: Person;
   here: boolean;
@@ -105,12 +105,12 @@ export interface Contributor {
   lastHereAt: string | null;
 }
 
-/** What someone may do with a design, as Share lists it. GitHub decides it. */
-export type DesignAccess = "owner" | "edit" | "view";
+/** What someone may do with a canvas, as Share lists it. GitHub decides it. */
+export type CanvasAccess = "owner" | "edit" | "view";
 
-export interface DesignMember {
+export interface CanvasMember {
   person: Person;
-  access: DesignAccess;
+  access: CanvasAccess;
   /** Whether they have opened Ponzu: GitHub gives access to people who haven't yet. */
   joined: boolean;
 }
@@ -163,13 +163,13 @@ export type Match = readonly [start: number, end: number];
 
 export interface SearchResults {
   query: string;
-  designs: DesignHit[];
+  canvases: CanvasHit[];
   boards: BoardHit[];
   comments: CommentHit[];
 }
 
-export interface DesignHit {
-  design: DesignSummary;
+export interface CanvasHit {
+  canvas: CanvasSummary;
   matches: Match[];
 }
 
@@ -177,7 +177,7 @@ export interface BoardHit {
   id: string;
   name: string;
   matches: Match[];
-  design: { id: string; name: string };
+  canvas: { id: string; name: string };
 }
 
 export interface CommentHit {
@@ -186,7 +186,7 @@ export interface CommentHit {
   text: string;
   matches: Match[];
   author: Person;
-  design: { id: string; name: string };
+  canvas: { id: string; name: string };
   at: string;
 }
 
@@ -196,7 +196,7 @@ export interface CommentHit {
  * message's attachments and a comment's picture to their addresses.
  */
 
-/** An image a person sent with a message: one of the design's files. */
+/** An image a person sent with a message: one of the canvas's files. */
 export interface Attachment {
   /** `assets/<name>`, as the message names it. */
   ref: string;
@@ -316,7 +316,7 @@ export type ThreadItem = {
   | { kind: "notice"; payload: ThreadNotice }
 );
 
-/** What the agent is doing, from the design's head: its state and its working line. */
+/** What the agent is doing, from the canvas's head: its state and its working line. */
 export interface AgentActivity {
   state: AgentState;
   status: string | null;
@@ -340,7 +340,7 @@ export interface PendingAttachment {
 }
 
 /**
- * Why nobody can steer the design right now. The run waits on its owner's Claude, for everyone;
+ * Why nobody can steer the canvas right now. The run waits on its owner's Claude, for everyone;
  * someone with read access can watch it but not steer it.
  */
 export type SteerGate =
@@ -400,7 +400,7 @@ export type Ask = {
 );
 
 /**
- * An answer, as `POST /v1/designs/:id/questions/:questionId/answer` takes it: a question's
+ * An answer, as `POST /v1/canvases/:id/questions/:questionId/answer` takes it: a question's
  * answers by question text; yes or no to a plan, a permission or a hand-off; a secret's value,
  * which the API keeps in the repo's secrets and never in a row.
  */
@@ -410,7 +410,7 @@ export type AskAnswer =
   | { secret: string };
 
 /*
- * The pull request tab: the design's pull request as GitHub has it, read through the App. These
+ * The pull request tab: the canvas's pull request as GitHub has it, read through the App. These
  * are the fields the tab draws; the API's answer is mapped onto them.
  */
 

@@ -113,7 +113,7 @@ test("a view-only wrapper made before its source knows where the assets are stil
   const source: CanvasSource = new MemorySource(emptyDoc("Kettle"));
   const view = viewOnly(source);
   expect(view.assetBase).toBeUndefined();
-  source.assetBase = "https://assets.test/dsn_1/";
+  source.assetBase = "https://assets.test/cnv_1/";
   source.renditions = false;
-  expect([view.assetBase, view.renditions]).toEqual(["https://assets.test/dsn_1/", false]);
+  expect([view.assetBase, view.renditions]).toEqual(["https://assets.test/cnv_1/", false]);
 });

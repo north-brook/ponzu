@@ -34,8 +34,8 @@ function failing() {
       });
     })
     .get("/refused", access.public, () => {
-      throw new ApiError(403, "forbidden", "You cannot open this design.", {
-        details: { designId: "des_1" },
+      throw new ApiError(403, "forbidden", "You cannot open this canvas.", {
+        details: { canvasId: "cnv_1" },
         cause: new Error("membership row missing for usr_secretinternal"),
       });
     })
@@ -103,8 +103,8 @@ describe("the error body", () => {
     expect(JSON.parse(text)).toEqual({
       error: {
         code: "forbidden",
-        message: "You cannot open this design.",
-        details: { designId: "des_1" },
+        message: "You cannot open this canvas.",
+        details: { canvasId: "cnv_1" },
       },
     });
     expect(text).not.toContain("usr_secretinternal");

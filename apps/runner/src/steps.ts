@@ -31,7 +31,7 @@ export interface Step {
 }
 
 export interface StepContext {
-  /** The design as the runner holds it, to name boards. */
+  /** The canvas as the runner holds it, to name boards. */
   doc: Doc;
   /** The checkout, which paths are said relative to. */
   cwd?: string;
@@ -190,16 +190,16 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
     case "add_asset": {
       const file = typeof input.path === "string" ? shown(basename(input.path), NAME) : null;
       return file
-        ? step(`Adding ${file} to the design`, `Added ${file} to the design`, 2)
-        : step("Adding a file to the design", "Added a file to the design", 2);
+        ? step(`Adding ${file} to the canvas`, `Added ${file} to the canvas`, 2)
+        : step("Adding a file to the canvas", "Added a file to the canvas", 2);
     }
-    case "update_design": {
+    case "update_canvas": {
       const name = shown(input.name, NAME);
-      if (name) return step(`Naming the design "${name}"`, `Named the design "${name}"`, 1);
+      if (name) return step(`Naming the canvas "${name}"`, `Named the canvas "${name}"`, 1);
       if (input.icon !== undefined)
-        return step("Choosing the design's icon", "Chose the design's icon", 1);
+        return step("Choosing the canvas's icon", "Chose the canvas's icon", 1);
       // Its input still to come, or a name that may not be said.
-      return step("Naming the design", "Named the design", 1);
+      return step("Naming the canvas", "Named the canvas", 1);
     }
     case "create_page": {
       const name = shown(input.name, NAME);
@@ -212,7 +212,7 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
         ? step("Deleting a page", "Deleted a page", 2)
         : step("Arranging pages", "Arranged pages", 2);
     case "set_tokens":
-      return step("Setting the design's tokens", "Set the design's tokens", 2);
+      return step("Setting the canvas's tokens", "Set the canvas's tokens", 2);
     case "write_note": {
       const name = shown(input.name, NAME);
       return name
@@ -254,18 +254,18 @@ function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContex
       return step("Merging the pull request", "Asked to merge the pull request");
     case "wait_for_activity":
       return step("Waiting for comments", "Waited for comments");
-    // The local server's tools for a folder of designs: the cloud has one design a sandbox,
+    // The local server's tools for a folder of canvases: the cloud has one canvas a sandbox,
     // but the same server can be the agent's elsewhere.
     case "list_files":
-      return step("Looking through the designs", "Looked through the designs");
+      return step("Looking through the canvases", "Looked through the canvases");
     case "create_file": {
       const name = shown(input.name, NAME);
       return name
-        ? step(`Starting the design "${name}"`, `Started the design "${name}"`, 2)
-        : step("Starting a new design", "Started a new design", 2);
+        ? step(`Starting the canvas "${name}"`, `Started the canvas "${name}"`, 2)
+        : step("Starting a new canvas", "Started a new canvas", 2);
     }
     case "update_file":
-      return ponzuStep("update_design", input, ctx);
+      return ponzuStep("update_canvas", input, ctx);
     case "set_status": {
       // The agent saying what it is about: not a step, but the state until it next speaks.
       const intent = shown(input.status, 60);

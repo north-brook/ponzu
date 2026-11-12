@@ -37,11 +37,11 @@ export async function createTestDb() {
 }
 
 /**
- * A design's whole feed, oldest first, whatever has been claimed or delivered: what a test
+ * A canvas's whole feed, oldest first, whatever has been claimed or delivered: what a test
  * looks at to see which events something added. (A runner reads it through `claimEvents`.)
  */
-export function feedOf(db: Db, designId: string) {
-  return db.select().from(events).where(eq(events.designId, designId)).orderBy(events.seq);
+export function feedOf(db: Db, canvasId: string) {
+  return db.select().from(events).where(eq(events.canvasId, canvasId)).orderBy(events.seq);
 }
 
 /** How long a process waits on another that is making the copy before making its own. */

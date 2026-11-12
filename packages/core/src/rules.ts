@@ -3,13 +3,13 @@ import { MAX_ID_LENGTH } from "./limits.ts";
 import type { Dropped } from "./types.ts";
 
 /**
- * What a design may hold, in one place. `parseHtml` applies these rules to HTML text as it
+ * What a canvas may hold, in one place. `parseHtml` applies these rules to HTML text as it
  * reads it; `sanitizeNode` and `sanitizeOp` apply them to node trees that never were HTML
  * text, such as an op a client posts to the API; `validateOp` uses the name rules.
  */
 
 /**
- * The one script a design keeps: a scene (`<script type="ponzu/act">`), which
+ * The one script a canvas keeps: a scene (`<script type="ponzu/act">`), which
  * Ponzu reads as data and plays as animations (render/src/act.ts). A browser
  * never runs a script of a type it doesn't know, and this one is written out
  * with that type and nothing else whatever its node says, so no edit can make
@@ -17,7 +17,7 @@ import type { Dropped } from "./types.ts";
  */
 export const ACT_SCRIPT_TYPE = "ponzu/act";
 
-/** Elements that never make it into a design. */
+/** Elements that never make it into a canvas. */
 const BLOCKED_TAGS = new Set([
   "script",
   "noscript",

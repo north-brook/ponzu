@@ -33,7 +33,7 @@ design: true when it is something people see or do in the product that a designe
 
 Judge nothing else. An idea may be generic, oddly worded, about how ideas are made, or name the product by a name like Ponzu, GPT or Claude: none of that makes it unsafe or not a design.`;
 
-const Verdict = z.object({ reason: z.string(), safe: z.boolean(), design: z.boolean() });
+const Verdict = z.object({ reason: z.string(), safe: z.boolean(), visible: z.boolean() });
 export type GateVerdict = z.infer<typeof Verdict>;
 
 /**

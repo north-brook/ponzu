@@ -1,7 +1,7 @@
 /**
  * System fonts, and the font that draws in each one's place on Linux.
  *
- * Designs name the fonts of the devices people see them on: Helvetica,
+ * Canvases name the fonts of the devices people see them on: Helvetica,
  * Menlo, system-ui. A Mac has them. A Linux sandbox can't: they are Apple's
  * and Microsoft's to ship. So a screenshot taken there draws each name in a
  * free font picked for its widths, and text wraps where it does for the
@@ -38,7 +38,7 @@
  * the sandbox image in sandbox-fonts.json.
  */
 export interface StandIn {
-  /** The families designs name, as Chrome on a Mac knows them. */
+  /** The families canvases name, as Chrome on a Mac knows them. */
   names: readonly string[];
   /** The installed family that draws them on Linux. */
   font: string;
@@ -205,7 +205,7 @@ const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
  * fontconfig's answer for a family only when the font that comes back is the
  * first one the rules left in the request, and treats anything else as "not
  * installed". A stand-in that isn't installed therefore falls through to the
- * next family in the design's stack, as a missing font should.
+ * next family in the canvas's stack, as a missing font should.
  *
  * system-ui isn't a family Chrome asks fontconfig for; a command-line switch
  * names its font instead (see linux-fonts.ts).

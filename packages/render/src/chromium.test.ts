@@ -399,7 +399,7 @@ esac
     const assetIssues = (issues: { kind: string; id: string }[]) =>
       issues.filter((i) => i.kind === "broken-image" || i.kind === "missing-font").map((i) => i.id);
 
-    test("a design can't reach servers on this machine unless the renderer is told it may", async () => {
+    test("a canvas can't reach servers on this machine unless the renderer is told it may", async () => {
       requests.length = 0;
       const out = await ordinary.render({ artboard: page, tokens, lint: true });
       // Chrome refuses a public page's requests to this machine before they are sent.
@@ -547,7 +547,7 @@ esac
     });
 
     test("a remote https asset base with a key in its path is loaded by Chrome itself", async () => {
-      // As the cloud serves a design's files: the path is the capability.
+      // As the cloud serves a canvas's files: the path is the capability.
       const assetBase = "https://assets.ponzu.test/k3y-9fQ2xLr7";
       const asked: string[] = [];
       const renderer = new ChromiumRenderer({

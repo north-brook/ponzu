@@ -11,7 +11,7 @@ export type ThreadItem = typeof threadItems.$inferSelect;
 export interface NewThreadItem {
   /** Give the same id to post the same item again safely. Made up when left out. */
   id?: string;
-  designId: string;
+  canvasId: string;
   kind: ThreadItem["kind"];
   /** The person who wrote it. Null for the agent and for Ponzu. */
   userId?: string | null;
@@ -21,9 +21,9 @@ export interface NewThreadItem {
 }
 
 /**
- * Add an item to the end of a design's thread, for what the API writes itself (a pull
- * request's notice). Posting an id the design's thread already has changes nothing and answers
- * with the item as it stands; the same id in another design is another item.
+ * Add an item to the end of a canvas's thread, for what the API writes itself (a pull
+ * request's notice). Posting an id the canvas's thread already has changes nothing and answers
+ * with the item as it stands; the same id in another canvas is another item.
  *
  * A NUL or half a surrogate pair in the payload, which tool output can hold and Postgres
  * cannot, is stored as U+FFFD. So it is in every write here.
@@ -34,7 +34,7 @@ export async function appendThreadItem(db: Db, item: NewThreadItem): Promise<Thr
       .insert(threadItems)
       .values({ ...item, payload: scrubbed(item.payload), id: item.id ?? newId("ti") })
       .onConflictDoUpdate({
-        target: [threadItems.designId, threadItems.id],
+        target: [threadItems.canvasId, threadItems.id],
         // Sets the row to what it already holds, so that `returning` has it to return.
         set: { updatedAt: sql`${threadItems.updatedAt}` },
       })
@@ -44,7 +44,7 @@ export async function appendThreadItem(db: Db, item: NewThreadItem): Promise<Thr
 }
 
 /**
- * Add an item whose id the caller made to the end of a design's thread, unless the thread has
+ * Add an item whose id the caller made to the end of a canvas's thread, unless the thread has
  * it already: true when it was added. Unlike `appendThreadItem`, posting it again writes
  * nothing at all, so the thread's watchers hear of it once.
  */
@@ -56,7 +56,7 @@ export async function appendThreadItemOnce(
     db
       .insert(threadItems)
       .values({ ...item, payload: scrubbed(item.payload) })
-      .onConflictDoNothing({ target: [threadItems.designId, threadItems.id] })
+      .onConflictDoNothing({ target: [threadItems.canvasId, threadItems.id] })
       .returning({ id: threadItems.id }),
   );
   return added.length > 0;
@@ -78,7 +78,7 @@ export interface WrittenItem {
 }
 
 /**
- * Write a runner's items to a design's thread by their ids, in one statement: an id the thread
+ * Write a runner's items to a canvas's thread by their ids, in one statement: an id the thread
  * does not have is appended (in the order given), an item still streaming has its payload and
  * `streaming` replaced, and a finished one, or one of another kind, is left as it is. Every item
  * comes back as it stands, in the order given, so sending the same write again is safe and a
@@ -86,7 +86,7 @@ export interface WrittenItem {
  */
 export async function writeThreadItems(
   db: Db,
-  { designId, items }: { designId: string; items: ThreadWrite[] },
+  { canvasId, items }: { canvasId: string; items: ThreadWrite[] },
 ): Promise<WrittenItem[]> {
   if (items.length === 0) return [];
   const ids = items.map((item) => item.id);
@@ -94,9 +94,9 @@ export async function writeThreadItems(
   const written = db.$with("written").as(
     db
       .insert(threadItems)
-      .values(items.map((item) => ({ ...item, designId, payload: scrubbed(item.payload) })))
+      .values(items.map((item) => ({ ...item, canvasId, payload: scrubbed(item.payload) })))
       .onConflictDoUpdate({
-        target: [threadItems.designId, threadItems.id],
+        target: [threadItems.canvasId, threadItems.id],
         set: {
           payload: sql`excluded.payload`,
           streaming: sql`excluded.streaming`,
@@ -121,7 +121,7 @@ export async function writeThreadItems(
       .leftJoin(written, sql`${written.id} = asked.id`)
       .leftJoin(
         threadItems,
-        and(eq(threadItems.designId, designId), sql`${threadItems.id} = asked.id`),
+        and(eq(threadItems.canvasId, canvasId), sql`${threadItems.id} = asked.id`),
       )
       .orderBy(sql`asked.ord`),
   );
@@ -135,13 +135,13 @@ export async function writeThreadItems(
 export async function postMessage(
   db: Db,
   {
-    designId,
+    canvasId,
     userId,
     item,
     event,
     posthogSessionId = null,
   }: {
-    designId: string;
+    canvasId: string;
     userId: string;
     item: Json;
     event: Json;
@@ -154,7 +154,7 @@ export async function postMessage(
     db
       .insert(events)
       .values({
-        designId,
+        canvasId,
         ...eventRow({ kind: "message", priority: "now", payload: event, userId, posthogSessionId }),
       })
       .returning({ id: events.id }),
@@ -163,7 +163,7 @@ export async function postMessage(
     db
       .with(queued)
       .insert(threadItems)
-      .values({ id: newId("ti"), designId, kind: "message", userId, payload: scrubbed(item) })
+      .values({ id: newId("ti"), canvasId, kind: "message", userId, payload: scrubbed(item) })
       .returning(),
   );
   return row!;
@@ -172,7 +172,7 @@ export async function postMessage(
 /** The `comment` item of `messageId` that `userId` wrote, or null while there is none. */
 export async function getComment(
   db: Db,
-  { designId, messageId, userId }: { designId: string; messageId: string; userId: string },
+  { canvasId, messageId, userId }: { canvasId: string; messageId: string; userId: string },
 ): Promise<ThreadItem | null> {
   const [row] = await run(
     db
@@ -180,7 +180,7 @@ export async function getComment(
       .from(threadItems)
       .where(
         and(
-          eq(threadItems.designId, designId),
+          eq(threadItems.canvasId, canvasId),
           eq(threadItems.kind, "comment"),
           eq(threadItems.userId, userId),
           sql`${threadItems.payload}->>'messageId' = ${messageId}`,
@@ -194,20 +194,20 @@ export async function getComment(
 /**
  * Give a person's comment its picture (`payload.picture`): the `comment` item of `messageId`
  * that `userId` wrote. The first picture is the one it keeps, as a photo sent is: attaching
- * again changes nothing. Answers the item as it stands, picture and all, or null when the design
+ * again changes nothing. Answers the item as it stands, picture and all, or null when the canvas
  * has no such comment of theirs (its op not committed yet, or never).
  */
 export async function attachCommentPicture(
   db: Db,
   {
-    designId,
+    canvasId,
     messageId,
     userId,
     picture,
-  }: { designId: string; messageId: string; userId: string; picture: Json },
+  }: { canvasId: string; messageId: string; userId: string; picture: Json },
 ): Promise<ThreadItem | null> {
   const theirs = and(
-    eq(threadItems.designId, designId),
+    eq(threadItems.canvasId, canvasId),
     eq(threadItems.kind, "comment"),
     eq(threadItems.userId, userId),
     sql`${threadItems.payload}->>'messageId' = ${messageId}`,
@@ -243,10 +243,10 @@ export async function attachCommentPicture(
     : { ...before, payload, updatedAt: updatedAt ? new Date(updatedAt) : before.updatedAt };
 }
 
-/** A page of a design's thread, oldest first: the newest `limit` items, or those before `before`. */
+/** A page of a canvas's thread, oldest first: the newest `limit` items, or those before `before`. */
 export async function listThreadItems(
   db: Db,
-  { designId, before, limit = 100 }: { designId: string; before?: number; limit?: number },
+  { canvasId, before, limit = 100 }: { canvasId: string; before?: number; limit?: number },
 ): Promise<ThreadItem[]> {
   const rows = await run(
     db
@@ -254,7 +254,7 @@ export async function listThreadItems(
       .from(threadItems)
       .where(
         and(
-          eq(threadItems.designId, designId),
+          eq(threadItems.canvasId, canvasId),
           before === undefined ? undefined : lt(threadItems.seq, before),
         ),
       )

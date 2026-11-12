@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
-  createDesign,
+  createCanvas,
   getWorkspaceByInstallation,
   listWorkspacePeople,
   repos,
@@ -613,7 +613,7 @@ describe("what each person is shown", () => {
     await sync(writer);
     await sync(reader);
     const workspace = await workspaceOf(org);
-    const design = await createDesign(t.db, {
+    const canvas = await createCanvas(t.db, {
       workspaceId: workspace.id,
       repoId: await repoIdOf(workspace.id, "readco/site"),
       ownerId: writer.userId,
@@ -623,7 +623,7 @@ describe("what each person is shown", () => {
       doc: emptyDoc("Calmer pricing"),
     });
     const shareFor = async (person: SignedInPerson) => {
-      const response = await t.app.request(`/v1/designs/${design.id}/people`, {
+      const response = await t.app.request(`/v1/canvases/${canvas.id}/people`, {
         headers: person.headers,
       });
       expect(response.status).toBe(200);
@@ -635,7 +635,7 @@ describe("what each person is shown", () => {
     expect(await shareFor(writer)).toEqual(["writer-s", "reader-s", "guest-s"]);
   });
 
-  test("Share lists everyone with access to the design's repo, and nobody else", async () => {
+  test("Share lists everyone with access to the canvas's repo, and nobody else", async () => {
     const maya = await t.signInAs({ login: "maya-p" });
     const ines = await t.signInAs({ login: "ines-share" });
     const reader = onGithubOnly("reader-p", "Rita Reader");
@@ -655,7 +655,7 @@ describe("what each person is shown", () => {
     await sync(ines);
     const workspace = await workspaceOf(org);
     const repoId = await repoIdOf(workspace.id, "shareco/fernwood");
-    const design = await createDesign(t.db, {
+    const canvas = await createCanvas(t.db, {
       workspaceId: workspace.id,
       repoId,
       ownerId: ines.userId,
@@ -665,7 +665,7 @@ describe("what each person is shown", () => {
       doc: emptyDoc("Quieter shop hero"),
     });
 
-    const response = await t.app.request(`/v1/designs/${design.id}/people`, {
+    const response = await t.app.request(`/v1/canvases/${canvas.id}/people`, {
       headers: maya.headers,
     });
     expect(response.status).toBe(200);
@@ -678,9 +678,9 @@ describe("what each person is shown", () => {
       ["reader-p", false, "view"],
     ]);
 
-    // Someone outside the workspace is told there is no such design.
+    // Someone outside the workspace is told there is no such canvas.
     const stranger = await t.signInAs({ login: "stranger-p" });
-    const refused = await t.app.request(`/v1/designs/${design.id}/people`, {
+    const refused = await t.app.request(`/v1/canvases/${canvas.id}/people`, {
       headers: stranger.headers,
     });
     expect(refused.status).toBe(404);

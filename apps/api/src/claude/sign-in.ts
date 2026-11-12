@@ -13,7 +13,7 @@ import { SIGN_IN_DRIVER } from "./driver.ts";
 /*
  * Signing in with a Claude subscription (docs/cloud.md, "Credentials"). Claude Code's own
  * `claude setup-token` does the sign-in, in a utility sandbox made for it alone from the
- * design image, with no credential at all and nothing kept after it: it gives a claude.ai
+ * canvas image, with no credential at all and nothing kept after it: it gives a claude.ai
  * address, the person approves there and claude.ai shows them a code, and the code pasted back
  * makes Claude Code print a one-year token. The sandbox cannot be reached by claude.ai's
  * redirect, which is why the code is pasted.

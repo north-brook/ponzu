@@ -1,11 +1,11 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { designs, events, threadItems } from "../schema/index.ts";
+import { canvases, events, threadItems } from "../schema/index.ts";
 import { run } from "./run.ts";
 
 /*
- * What started the turn a design's agent is in, as the API reads it from the design's feed, and
- * what the agent has done to the design's pull request lately (docs/cloud.md, "The agent's pull
+ * What started the turn a canvas's agent is in, as the API reads it from the canvas's feed, and
+ * what the agent has done to the canvas's pull request lately (docs/cloud.md, "The agent's pull
  * request"). The agent acts on its pull request as a person; these say which one, and whether
  * that person's words are the last outside words the agent took in.
  */
@@ -17,8 +17,8 @@ export const GITHUB_KINDS = ["check", "review"] as const;
 
 export interface TurnOrigin {
   /**
-   * The event the runner named as the one that began the turn, when it is one of the design's
-   * that this runner (`runnerId`) was handed. Null for none, for one the design never had, and
+   * The event the runner named as the one that began the turn, when it is one of the canvas's
+   * that this runner (`runnerId`) was handed. Null for none, for one the canvas never had, and
    * for one an earlier runner was handed: a turn picked up after a restart, or an old event a
    * runner token in other hands could name from the feed.
    */
@@ -38,27 +38,27 @@ export interface TurnOrigin {
   othersSince: boolean;
   /** The person whose message, answer or comment last went into the session, if any did. */
   lastPerson: string | null;
-  /** The design's owner, unless their account is gone. */
+  /** The canvas's owner, unless their account is gone. */
   ownerId: string | null;
 }
 
 /**
- * Where the turn `eventId` began stands, for the design: the event itself, whether GitHub has
+ * Where the turn `eventId` began stands, for the canvas: the event itself, whether GitHub has
  * spoken since, and who the agent works for when no person began the turn. Null when there is
- * no such design.
+ * no such canvas.
  */
 export async function getTurnOrigin(
   db: Db,
   {
-    designId,
+    canvasId,
     eventId,
     runnerId = null,
-  }: { designId: string; eventId: string | null; runnerId?: string | null },
+  }: { canvasId: string; eventId: string | null; runnerId?: string | null },
 ): Promise<TurnOrigin | null> {
-  const [design] = await run(
-    db.select({ ownerId: designs.ownerId }).from(designs).where(eq(designs.id, designId)),
+  const [canvas] = await run(
+    db.select({ ownerId: canvases.ownerId }).from(canvases).where(eq(canvases.id, canvasId)),
   );
-  if (!design) return null;
+  if (!canvas) return null;
   const [event] = eventId
     ? await run(
         db
@@ -71,7 +71,7 @@ export async function getTurnOrigin(
           .from(events)
           .where(
             and(
-              eq(events.designId, designId),
+              eq(events.canvasId, canvasId),
               eq(events.id, eventId),
               runnerId ? eq(events.claimedBy, runnerId) : isNotNull(events.claimedBy),
             ),
@@ -98,7 +98,7 @@ export async function getTurnOrigin(
         .from(events)
         .where(
           and(
-            eq(events.designId, designId),
+            eq(events.canvasId, canvasId),
             ne(events.id, event.id),
             isNotNull(events.claimedBy),
             after,
@@ -122,7 +122,7 @@ export async function getTurnOrigin(
       .from(events)
       .where(
         and(
-          eq(events.designId, designId),
+          eq(events.canvasId, canvasId),
           inArray(events.kind, [...PERSON_KINDS]),
           isNotNull(events.userId),
           isNotNull(events.deliveredAt),
@@ -136,18 +136,18 @@ export async function getTurnOrigin(
     githubSince,
     othersSince,
     lastPerson: last?.userId ?? null,
-    ownerId: design.ownerId,
+    ownerId: canvas.ownerId,
   };
 }
 
 /**
- * How many times the design's agent did `action` to its pull request since `since`, as its
+ * How many times the canvas's agent did `action` to its pull request since `since`, as its
  * thread's notices of it say (`pull_request_agent`, by the `at` the API wrote in each): what
  * its limits count.
  */
 export async function countAgentPullRequestActions(
   db: Db,
-  { designId, action, since }: { designId: string; action: string; since: Date },
+  { canvasId, action, since }: { canvasId: string; action: string; since: Date },
 ): Promise<number> {
   const [row] = await run(
     db
@@ -155,7 +155,7 @@ export async function countAgentPullRequestActions(
       .from(threadItems)
       .where(
         and(
-          eq(threadItems.designId, designId),
+          eq(threadItems.canvasId, canvasId),
           eq(threadItems.kind, "notice"),
           sql`${threadItems.payload}->>'type' = 'pull_request_agent'`,
           sql`${threadItems.payload}->>'action' = ${action}`,

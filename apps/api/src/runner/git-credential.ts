@@ -6,8 +6,8 @@ import type { Deps } from "../deps/index.ts";
 import { ApiError, UpstreamError } from "../http/errors.ts";
 
 /*
- * Git's credentials for a design's checkout (docs/cloud.md, "The runner protocol", "Git"): a
- * one-hour installation token for exactly the design's repository, `contents: write` and
+ * Git's credentials for a canvas's checkout (docs/cloud.md, "The runner protocol", "Git"): a
+ * one-hour installation token for exactly the canvas's repository, `contents: write` and
  * `metadata: read`, minted as the App when git asks. The sandbox stores none; this instance
  * keeps one for reuse while it has ten minutes or more left, and nowhere else does.
  */
@@ -29,7 +29,7 @@ export interface GitToken {
  * cache: git is handed a token only with ten minutes left, and `erase` drops one at once.
  *
  * A token goes to git only when GitHub's answer to the mint says it grants what git needs:
- * `contents: write` on the design's repository. One that says less is minted again once, and
+ * `contents: write` on the canvas's repository. One that says less is minted again once, and
  * then refused (502): git would only be told the repository is not found.
  */
 export class GitTokens {
@@ -111,7 +111,7 @@ const keyOf = ({
 }) => `${installationId}/${repositoryId}`;
 
 /**
- * What git asked about, if it is the design's own repository on GitHub over https: the
+ * What git asked about, if it is the canvas's own repository on GitHub over https: the
  * installation and repository to mint for. 404 for Scratch, which has none; 403 for any other
  * host, path or protocol, and for a repository the App cannot reach now.
  */
@@ -120,14 +120,14 @@ export function gitTarget(
   ask: GitCredentialRequest,
 ): { installationId: number; repositoryId: number } {
   const { repo, installationId, suspendedAt } = context;
-  if (!repo) throw new ApiError(404, "not_found", "This design has no repository.");
+  if (!repo) throw new ApiError(404, "not_found", "This canvas has no repository.");
   const path = ask.path.replace(/\.git$/, "").toLowerCase();
   if (
     ask.protocol !== "https" ||
     ask.host.toLowerCase() !== "github.com" ||
     path !== repo.fullName.toLowerCase()
   ) {
-    throw new ApiError(403, "forbidden", "Git credentials are only for this design's repository.");
+    throw new ApiError(403, "forbidden", "Git credentials are only for this canvas's repository.");
   }
   if (installationId === null || suspendedAt !== null) {
     throw new ApiError(403, "forbidden", "Ponzu cannot reach this repository on GitHub now.");

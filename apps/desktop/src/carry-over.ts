@@ -30,7 +30,7 @@ import { APP_NAMES } from "./config.ts";
  *
  * Signed out, the app forgets what the studio kept (main.ts). What came over waits for the first
  * sign-in instead, while the record says so (`awaitingSignIn`); a sign-out wipes it as ever.
- * Ponzu Preview's cached designs come over in the same copy, and the studio drops them on that
+ * Ponzu Preview's cached canvases come over in the same copy, and the studio drops them on that
  * signed-out launch (desktop-host.ts, `signedInCache`): only the window state stays.
  */
 

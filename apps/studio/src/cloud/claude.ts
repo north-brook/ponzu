@@ -1,5 +1,5 @@
 /*
- * The person's own Claude, which every design of theirs runs on: how it is connected, and the
+ * The person's own Claude, which every canvas of theirs runs on: how it is connected, and the
  * plan's limits as Settings › Agents shows them. Never its credential.
  */
 
@@ -8,7 +8,7 @@ export type ClaudeMethod = "subscription" | "api_key";
 
 export interface ClaudeConnection {
   method: ClaudeMethod;
-  /** `expired` and `revoked` are signed out: designs wait until it is connected again. */
+  /** `expired` and `revoked` are signed out: canvases wait until it is connected again. */
   status: "connected" | "expired" | "revoked";
   /** "Claude Max", when Claude has said. */
   planLabel: string | null;
@@ -25,7 +25,7 @@ export type LimitWindow = "session" | "week" | "week_opus";
 
 export interface ClaudeLimit {
   window: LimitWindow;
-  /** 0 to 1, as last seen by a sandbox; null before any design has run. */
+  /** 0 to 1, as last seen by a sandbox; null before any canvas has run. */
   utilization: number | null;
   resetsAt: string | null;
 }
@@ -75,7 +75,7 @@ function weekdayTime(at: number): string {
   return `${day} ${clock(date)}`;
 }
 
-/** "9:00", "16:00": the design writes times on a 24-hour clock without a leading zero. */
+/** "9:00", "16:00": the canvas writes times on a 24-hour clock without a leading zero. */
 function clock(date: Date): string {
   return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
@@ -103,7 +103,7 @@ export function limitView(
   if (resets === null || lapsed) return { percent, line: null, full: false };
   if (full) {
     const until = limit.window === "session" ? clock(new Date(resets)) : weekdayTime(resets);
-    return { percent: 100, line: `Designs wait until ${until}`, full };
+    return { percent: 100, line: `Canvases wait until ${until}`, full };
   }
   const line =
     limit.window === "session"

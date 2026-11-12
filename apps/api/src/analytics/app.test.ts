@@ -6,7 +6,7 @@ import { access } from "../auth/access.ts";
 import { createApp } from "../create-app.ts";
 import { reconcileInstallation } from "../github/installations.ts";
 import type { AppEnv } from "../http/context.ts";
-import { call, designWithRunner, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, canvasWithRunner, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type FakeInstallation, type TestApp } from "../testing/index.ts";
 import { DISTINCT_ID_HEADER, SESSION_HEADER } from "./middleware.ts";
 import { withScope } from "./scope.ts";
@@ -122,7 +122,7 @@ describe("workspaces and ideas", () => {
     // in their request.
     const setup = {
       userId: () => installer,
-      designId: () => null,
+      canvasId: () => null,
       sessionId: SESSION,
       requestId: "req_setup",
       route: () => "GET /v1/github/accounts",
@@ -180,9 +180,9 @@ describe("workspaces and ideas", () => {
   });
 });
 
-describe("designs and the thread", () => {
-  test("a design made from an idea, with its first message, under the app's session", async () => {
-    const { status, body } = await call(t, maya(), "POST", "/v1/designs", {
+describe("canvases and the thread", () => {
+  test("a canvas made from an idea, with its first message, under the app's session", async () => {
+    const { status, body } = await call(t, maya(), "POST", "/v1/canvases", {
       workspaceId: ws.id,
       repoId: ws.repo.id,
       message: { text: "Make checkout one page" },
@@ -190,12 +190,12 @@ describe("designs and the thread", () => {
     });
     expect(status).toBe(201);
 
-    const [created] = t.analytics.of("design created");
+    const [created] = t.analytics.of("canvas created");
     expect(created).toMatchObject({
       distinctId: ws.people.maya!.userId,
       groups: { workspace: ws.id },
       properties: {
-        design_id: body.id,
+        canvas_id: body.id,
         source: "idea",
         with_message: true,
         workspace_id: ws.id,
@@ -203,45 +203,45 @@ describe("designs and the thread", () => {
       },
     });
     expect(t.analytics.of("message sent")[0]!.properties).toMatchObject({
-      design_id: body.id,
+      canvas_id: body.id,
       first: true,
       characters: "Make checkout one page".length,
     });
-    // A design's name, and what the person typed, never go.
+    // A canvas's name, and what the person typed, never go.
     expect(JSON.stringify(t.analytics.events)).not.toContain("checkout one page");
   });
 
   test("Scratch is its own source, and a create sent again is no second design", async () => {
     const body = { workspaceId: ws.id, createKey: "scratch-key-1" };
-    await call(t, maya(), "POST", "/v1/designs", body);
-    await call(t, maya(), "POST", "/v1/designs", body);
-    const created = t.analytics.of("design created");
+    await call(t, maya(), "POST", "/v1/canvases", body);
+    await call(t, maya(), "POST", "/v1/canvases", body);
+    const created = t.analytics.of("canvas created");
     expect(created).toHaveLength(1);
     expect(created[0]!.properties.source).toBe("scratch");
   });
 
   test("the app's distinct id header is never who a request is about", async () => {
-    await call(t, maya({ [DISTINCT_ID_HEADER]: "usr_someone_else" }), "POST", "/v1/designs", {
+    await call(t, maya({ [DISTINCT_ID_HEADER]: "usr_someone_else" }), "POST", "/v1/canvases", {
       workspaceId: ws.id,
     });
-    expect(t.analytics.of("design created")[0]!.distinctId).toBe(ws.people.maya!.userId);
+    expect(t.analytics.of("canvas created")[0]!.distinctId).toBe(ws.people.maya!.userId);
   });
 
   test("a session header that is not a PostHog session id is not kept", async () => {
-    await call(t, maya({ [SESSION_HEADER]: "not a session" }), "POST", "/v1/designs", {
+    await call(t, maya({ [SESSION_HEADER]: "not a session" }), "POST", "/v1/canvases", {
       workspaceId: ws.id,
     });
-    expect(t.analytics.of("design created")[0]!.properties.$session_id).toBeUndefined();
+    expect(t.analytics.of("canvas created")[0]!.properties.$session_id).toBeUndefined();
   });
 
   test("a message's app session goes with it to the runner, which traces the turn under it", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
-    const sent = await call(t, maya(), "POST", `/v1/designs/${design.id}/messages`, {
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    const sent = await call(t, maya(), "POST", `/v1/canvases/${canvas.id}/messages`, {
       text: "Make it blue",
     });
     expect(sent.status).toBe(201);
     expect(t.analytics.of("message sent")[0]!.properties).toMatchObject({
-      design_id: design.id,
+      canvas_id: canvas.id,
       first: false,
       $session_id: SESSION,
     });
@@ -252,13 +252,13 @@ describe("designs and the thread", () => {
     expect(claimed.body.events[0]).toMatchObject({ kind: "message", posthogSessionId: SESSION });
   });
 
-  test("stopping the agent and deleting the design are the person's", async () => {
-    const { design } = await designWithRunner(t, ws, "maya", sampleDoc());
-    await call(t, maya(), "POST", `/v1/designs/${design.id}/stop`);
-    await call(t, maya(), "DELETE", `/v1/designs/${design.id}`);
-    expect(t.analytics.names()).toEqual(expect.arrayContaining(["turn stopped", "design deleted"]));
-    expect(t.analytics.of("design deleted")[0]!.properties).toMatchObject({
-      design_id: design.id,
+  test("stopping the agent and deleting the canvas are the person's", async () => {
+    const { canvas } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    await call(t, maya(), "POST", `/v1/canvases/${canvas.id}/stop`);
+    await call(t, maya(), "DELETE", `/v1/canvases/${canvas.id}`);
+    expect(t.analytics.names()).toEqual(expect.arrayContaining(["turn stopped", "canvas deleted"]));
+    expect(t.analytics.of("canvas deleted")[0]!.properties).toMatchObject({
+      canvas_id: canvas.id,
       by_owner: true,
     });
   });
@@ -266,9 +266,9 @@ describe("designs and the thread", () => {
 
 describe("turns", () => {
   test("a turn's report is its start and finish, for the person whose message began it", async () => {
-    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const { canvas, runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const event = await appendEvent(t.db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "message",
       priority: "now",
       payload: { text: "Go" },
@@ -310,7 +310,7 @@ describe("turns", () => {
       distinctId: ws.people.maya!.userId,
       groups: { workspace: ws.id },
       timestamp: new Date("2026-11-11T10:00:00.000Z"),
-      properties: { design_id: design.id, turn_id: turn.id, $session_id: SESSION },
+      properties: { canvas_id: canvas.id, turn_id: turn.id, $session_id: SESSION },
     });
     expect(finished[0]).toMatchObject({
       distinctId: ws.people.maya!.userId,
@@ -333,11 +333,11 @@ describe("turns", () => {
     expect(started[0]!.uuid).not.toBe(finished[0]!.uuid);
   });
 
-  test("an event of another design names nobody: the sandbox cannot say whose a turn is", async () => {
-    const { runner } = await designWithRunner(t, ws, "maya", sampleDoc());
-    const other = await designWithRunner(t, ws, "maya", sampleDoc());
+  test("an event of another canvas names nobody: the sandbox cannot say whose a turn is", async () => {
+    const { runner } = await canvasWithRunner(t, ws, "maya", sampleDoc());
+    const other = await canvasWithRunner(t, ws, "maya", sampleDoc());
     const elsewhere = await appendEvent(t.db, {
-      designId: other.design.id,
+      canvasId: other.canvas.id,
       kind: "message",
       priority: "now",
       payload: { text: "Go" },
@@ -378,7 +378,7 @@ describe("error tracking", () => {
     );
 
   test("a 500 goes to error tracking with its route as declared, its person and its request id", async () => {
-    const response = await failing().request("/v1/test/crash/des_123?token=abc", {
+    const response = await failing().request("/v1/test/crash/cnv_123?token=abc", {
       headers: maya(),
     });
     expect(response.status).toBe(500);
@@ -399,7 +399,7 @@ describe("error tracking", () => {
 
   test("a refusal is the API working, and is not an exception", async () => {
     await call(t, {}, "GET", "/v1/me");
-    await call(t, maya(), "GET", "/v1/designs/des_nothere");
+    await call(t, maya(), "GET", "/v1/canvases/cnv_nothere");
     expect(t.analytics.exceptions).toEqual([]);
   });
 });

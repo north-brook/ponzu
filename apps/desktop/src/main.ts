@@ -416,13 +416,13 @@ function sessionStorage() {
   });
 }
 
-/** Signed out, or let go until GitHub lets the person in again: nobody's designs belong here. */
+/** Signed out, or let go until GitHub lets the person in again: nobody's canvases belong here. */
 function endsSession(state: SessionState): boolean {
   return state.status === "signed_out" || state.status === "github_reauth";
 }
 
 /**
- * Everything the studio kept: the designs last opened (whole documents, and the asset keys that
+ * Everything the studio kept: the canvases last opened (whole documents, and the asset keys that
  * open their files) and the person's window state. The studio stops writing them as it signs
  * out (desktop-host.ts).
  */

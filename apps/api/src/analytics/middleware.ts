@@ -27,9 +27,9 @@ export const analyticsScope: MiddlewareHandler<AppEnv> = (c, next) => {
         const actor = c.get("actor");
         return actor?.kind === "user" ? actor.user.id : null;
       },
-      designId: () => {
+      canvasId: () => {
         const actor = c.get("actor");
-        return actor?.kind === "runner" ? actor.designId : null;
+        return actor?.kind === "runner" ? actor.canvasId : null;
       },
       sessionId: given && SESSION_ID.test(given) ? given.toLowerCase() : null,
       requestId: c.var.requestId,

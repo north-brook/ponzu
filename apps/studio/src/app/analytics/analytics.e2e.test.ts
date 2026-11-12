@@ -106,7 +106,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
   });
 
   /** Signs in as someone whose setup is done, and opens the seeded design from the sidebar. */
-  async function openDesign(mode: "full" | "private") {
+  async function openCanvas(mode: "full" | "private") {
     const sink = postHogSink();
     // PostHog drops HeadlessChrome as a bot; the app's Electron says it is Chrome and Electron.
     const page: Page = await browser.newPage({
@@ -121,7 +121,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     page.on("request", (r) => r.url().startsWith(sink.url) && pending.add(r));
     page.on("requestfinished", (r) => pending.delete(r));
     page.on("requestfailed", (r) => pending.delete(r));
-    // A design's files, played here: the in-memory backend serves them at `https://assets.test/`.
+    // A canvas's files, played here: the in-memory backend serves them at `https://assets.test/`.
     await page.route("https://assets.test/**", (route) =>
       route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(PNG, "base64") }),
     );
@@ -160,23 +160,23 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       ),
     );
     await page.getByText("I drew the welcome screen").first().waitFor();
-    // A picture of the person's own in the thread, at an address under the design's asset key.
+    // A picture of the person's own in the thread, at an address under the canvas's asset key.
     const attachment = await page.evaluate(
       async ({ png }) => {
         const fake = window.ponzuFake!;
-        const designId = [...fake.backend.designs.keys()][0]!;
+        const canvasId = [...fake.backend.canvases.keys()][0]!;
         const api = fake.backend.connect(fake.me).api;
         const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-        const upload = await api.designs.upload(designId, {
+        const upload = await api.canvases.upload(canvasId, {
           name: "my-sketch.png",
           type: "image/png",
           bytes,
         });
-        await api.designs.sendMessage(designId, {
+        await api.canvases.sendMessage(canvasId, {
           text: "Here is my sketch",
           attachments: [upload.ref!],
         });
-        return { designId, url: upload.url! };
+        return { canvasId, url: upload.url! };
       },
       { png: PNG },
     );
@@ -184,7 +184,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       const img = document.querySelector<HTMLImageElement>(`#thread img[src="${src}"]`);
       return !!img?.complete && img.naturalWidth > 0;
     }, attachment.url);
-    // A search: its results name the designs it found, and the boards and comments.
+    // A search: its results name the canvases it found, and the boards and comments.
     await page.getByRole("button", { name: "Search" }).first().click();
     await page.keyboard.type("Onboard");
     await page.locator("#search-results [role=option]").first().waitFor();
@@ -238,11 +238,11 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
   test("full: the app's events, its views as synthetic URLs, and the boards and thread recorded", async () => {
     // Network timing isn't recorded on localhost (PostHog's own rule), so what it keeps of an
     // address is held by privacy.test.ts.
-    const { sink, requested, meId } = await openDesign("full");
+    const { sink, requested, meId } = await openCanvas("full");
     const events = sink.events();
     const names = events.map((e) => e.event);
 
-    // Nothing came from PostHog's CDN or anywhere but the app, the sink and the design's files.
+    // Nothing came from PostHog's CDN or anywhere but the app, the sink and the canvas's files.
     const elsewhere = (url: string) =>
       !url.startsWith(app.url) &&
       !url.startsWith(sink.url) &&
@@ -259,9 +259,9 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     expect(identify.properties.distinct_id ?? identify.distinct_id).toBe(meId);
     const group = events.find((e) => e.event === "$groupidentify")!;
     expect(group.properties.$group_type).toBe("workspace");
-    const opened = events.find((e) => e.event === "design opened")!;
+    const opened = events.find((e) => e.event === "canvas opened")!;
     expect(opened.properties.via).toBe("sidebar");
-    expect(String(opened.properties.design_id)).toMatch(/\S/);
+    expect(String(opened.properties.canvas_id)).toMatch(/\S/);
     expect(opened.properties.$groups).toBeDefined();
 
     // Views: synthetic URLs, and the page's own address nowhere in what events say.
@@ -269,18 +269,18 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       .filter((e) => e.event === "$pageview")
       .map((e) => e.properties.$current_url);
     expect(views).toContain("ponzu://app/sign-in");
-    expect(views).toContain("ponzu://app/design");
+    expect(views).toContain("ponzu://app/canvas");
     for (const event of events) {
       expect(String(event.properties.$current_url)).toStartWith("ponzu://app/");
       expect(JSON.stringify(event.properties.$referrer ?? "$direct")).toContain("$direct");
     }
     // Every event says which app, version and computer.
-    expect(events.find((e) => e.event === "design opened")!.properties).toMatchObject({
+    expect(events.find((e) => e.event === "canvas opened")!.properties).toMatchObject({
       channel: "Ponzu Dev",
       os_version: "15.1",
     });
     // Autocapture keeps no element's words, nor its labels: the sidebar row clicked to open the
-    // design has the design's name in its `aria-label`.
+    // canvas has the canvas's name in its `aria-label`.
     const clicks = events.filter((e) => e.event === "$autocapture");
     expect(clicks.length).toBeGreaterThan(0);
     for (const click of clicks) {
@@ -319,23 +319,23 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
   });
 
   test("private: the window and how it is used, without the boards or the thread's words", async () => {
-    const { sink, attachment } = await openDesign("private");
+    const { sink, attachment } = await openCanvas("private");
     const events = sink.events();
     const recorded = snapshotText(events);
     expect(recorded.length).toBeGreaterThan(1000);
     // The chrome is there: the sidebar and the thread's pane as boxes, blocked boards as boxes.
     expect(recorded).toContain("sidebar");
     expect(recorded).toContain("rr_width");
-    // A design's words and pixels are not.
+    // A canvas's words and pixels are not.
     expect(recorded).not.toContain("Welcome");
     expect(recorded).not.toContain("I drew the welcome screen");
     expect(recorded).not.toContain("Onboarding flow");
-    // Nor the search's results: the design it found, its match highlighted apart from the rest.
+    // Nor the search's results: the canvas it found, its match highlighted apart from the rest.
     expect(recorded).not.toContain("ing flow");
     // Nor the person's picture, nor the address that would fetch it.
     expect(recorded).not.toContain("Here is my sketch");
     expect(recorded).not.toContain(attachment.url);
-    expect(recorded).not.toContain(`assets.test/${attachment.designId}`);
-    expect(events.map((e) => e.event)).toContain("design opened");
+    expect(recorded).not.toContain(`assets.test/${attachment.canvasId}`);
+    expect(events.map((e) => e.event)).toContain("canvas opened");
   });
 });

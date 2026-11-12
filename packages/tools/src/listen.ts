@@ -1,7 +1,7 @@
 import { findArtboard, INTENT_MAX } from "@ponzu/core";
 import { z } from "zod";
 import { ToolError, tool } from "./define.ts";
-import { apply, designOf } from "./util.ts";
+import { apply, canvasOf } from "./util.ts";
 
 export const listenTools = [
   tool({
@@ -18,7 +18,7 @@ export const listenTools = [
         .max(INTENT_MAX)
         .optional()
         .describe(
-          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the design's history. Not your plan, and only once per request.",
+          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the canvas's history. Not your plan, and only once per request.",
         ),
       artboards: z
         .array(z.string())
@@ -29,9 +29,9 @@ export const listenTools = [
     },
     async handler(args, ctx) {
       const { ws, caller } = ctx;
-      const { key, design } = await designOf(ctx, args.artboards);
+      const { key, canvas } = await canvasOf(ctx, args.artboards);
       for (const id of args.artboards ?? [])
-        if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
+        if (!findArtboard(canvas.doc, id)) throw new ToolError(`No artboard ${id}.`);
       if (args.artboards) ws.presence.claimed(caller, key, args.artboards, args.status);
       else ws.presence.worked(caller, key, { status: args.status });
       if (args.intent) ws.intent?.(key, args.intent.trim(), caller.author);
@@ -44,7 +44,7 @@ export const listenTools = [
     title: "Write note",
     group: "listen",
     description:
-      "Save a markdown note with the design: decisions, the brief, open questions, what you learned about the person's taste. Notes outlive the conversation, so a later session can pick up where you left off. Overwrites; read first to append.",
+      "Save a markdown note with the canvas: decisions, the brief, open questions, what you learned about the person's taste. Notes outlive the conversation, so a later session can pick up where you left off. Overwrites; read first to append.",
     input: {
       name: z
         .string()
@@ -53,8 +53,8 @@ export const listenTools = [
       content: z.string().nullable().describe("Markdown. null deletes the note."),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx);
-      apply(design, { op: "note", name: args.name, content: args.content }, ctx);
+      const { canvas } = await canvasOf(ctx);
+      apply(canvas, { op: "note", name: args.name, content: args.content }, ctx);
       return { text: `${args.content === null ? "Deleted" : "Saved"} note ${args.name}.` };
     },
   }),
@@ -65,11 +65,11 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Read the design's notes. Omit name to read them all. Do this at the start of a session.",
+      "Read the canvas's notes. Omit name to read them all. Do this at the start of a session.",
     input: { name: z.string().optional() },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx);
-      const notes = design.doc.notes;
+      const { canvas } = await canvasOf(ctx);
+      const notes = canvas.doc.notes;
       if (args.name) {
         const n = notes[args.name];
         if (n === undefined)

@@ -60,7 +60,7 @@ export function FirstRun({
   // Fresh start's model picker shows the person's defaults: asked for alongside `me`, so the
   // create page opens whole. If they can't be had it opens anyway, and the API applies them.
   const defaults = useQuery({ ...queries.claudeDefaults(), enabled: me.data !== undefined });
-  // The window opens whole too: the workspace it will show, its repos and its designs are read
+  // The window opens whole too: the workspace it will show, its repos and its canvases are read
   // ahead from the moment there is one, as the window asks for them, so it finds them in hand
   // and the create page knows from its first frame whether ideas come (their room left, the
   // composer never moving).
@@ -72,7 +72,7 @@ export function FirstRun({
       ? shownWorkspace(me.data.workspaces, loadUi(userId).workspaceId)
       : null;
   const detail = useQuery({ ...queries.workspace(ahead?.id ?? ""), enabled: ahead !== null });
-  const designs = useDesignsAhead(host.live, ahead?.id ?? null);
+  const canvases = useCanvasesAhead(host.live, ahead?.id ?? null);
   /** The step on screen, which stays while the next one can't show yet. */
   const shown = useRef<Shown | null>(null);
 
@@ -88,7 +88,7 @@ export function FirstRun({
     !me.data && me.isError,
   );
 
-  const windowReady = !defaults.isPending && !(ahead && (detail.isPending || !designs));
+  const windowReady = !defaults.isPending && !(ahead && (detail.isPending || !canvases));
   if (step === "done" && (handedOver.current || windowReady)) {
     handedOver.current = true;
     return children;
@@ -101,7 +101,7 @@ export function FirstRun({
     content = (
       <PaneMessage
         title="Can't reach Ponzu"
-        body="Check your connection. Your designs are safe in the cloud and open as soon as Ponzu is back."
+        body="Check your connection. Your canvases are safe in the cloud and open as soon as Ponzu is back."
         action={{ label: "Try again", onClick: () => void me.refetch() }}
         busy={me.isFetching}
       />
@@ -166,29 +166,29 @@ function IphoneView() {
   );
 }
 
-/** How long the window waits on its designs before it opens without them. */
-const DESIGNS_AHEAD_MS = 3_000;
+/** How long the window waits on its canvases before it opens without them. */
+const CANVASES_AHEAD_MS = 3_000;
 
 /**
- * Subscribes ahead to the designs of the workspace the window will open on, true once they
- * have answered (or failed, or `DESIGNS_AHEAD_MS` passed, so a slow Realtime never holds setup
+ * Subscribes ahead to the canvases of the workspace the window will open on, true once they
+ * have answered (or failed, or `CANVASES_AHEAD_MS` passed, so a slow Realtime never holds setup
  * up). The window's own subscription to the same query shares this one; letting go waits a
  * moment, so the rows are still there when the window subscribes in the commit after.
  */
-function useDesignsAhead(live: Live, workspaceId: string | null): boolean {
+function useCanvasesAhead(live: Live, workspaceId: string | null): boolean {
   const [settled, setSettled] = useState<string | null>(null);
   useEffect(() => {
     if (workspaceId === null) return;
     const args = { workspaceId };
     const settle = () => setSettled(workspaceId);
-    const timer = setTimeout(settle, DESIGNS_AHEAD_MS);
-    const off = live.subscribe("workspace.designs", args, (snapshot) => {
+    const timer = setTimeout(settle, CANVASES_AHEAD_MS);
+    const off = live.subscribe("workspace.canvases", args, (snapshot) => {
       if (snapshot.status !== "connecting") settle();
     });
-    if (live.snapshot("workspace.designs", args).status !== "connecting") settle();
+    if (live.snapshot("workspace.canvases", args).status !== "connecting") settle();
     return () => {
       clearTimeout(timer);
-      setTimeout(off, DESIGNS_AHEAD_MS);
+      setTimeout(off, CANVASES_AHEAD_MS);
     };
   }, [live, workspaceId]);
   return workspaceId !== null && settled === workspaceId;

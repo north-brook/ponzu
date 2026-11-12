@@ -1,6 +1,6 @@
 import { and, eq, exists, inArray, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { designs, type RepoPermission, repoAccess, repos } from "../schema/index.ts";
+import { canvases, type RepoPermission, repoAccess, repos } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
@@ -11,9 +11,9 @@ import { run } from "./run.ts";
  * Whoever reads it also requires the person's membership of the repo's workspace.
  */
 
-/** The permissions that let a person open a design in the repo, and see the repo listed. */
+/** The permissions that let a person open a canvas in the repo, and see the repo listed. */
 export const READABLE_PERMISSIONS = ["admin", "write", "read"] as const satisfies RepoPermission[];
-/** The permissions that let a person steer a design in the repo, and start one there. */
+/** The permissions that let a person steer a canvas in the repo, and start one there. */
 export const WRITABLE_PERMISSIONS = ["admin", "write"] as const satisfies RepoPermission[];
 
 /** What GitHub said one person may do in one repo, and when. */
@@ -183,15 +183,15 @@ export interface WorkspaceRepoAccess {
   repoId: string;
   githubRepoId: number;
   fullName: string;
-  /** Whether it holds a design. */
-  hasDesign: boolean;
+  /** Whether it holds a canvas. */
+  hasCanvas: boolean;
   /** Null when nobody has asked GitHub about this person and repo yet. */
   permission: RepoPermission | null;
   checkedAt: Date | null;
 }
 
 /**
- * Every repo of a workspace, the App's removed ones too (a design may still be in one), with
+ * Every repo of a workspace, the App's removed ones too (a canvas may still be in one), with
  * what `userId` may do in each: every answer some reader of the workspace may act on.
  */
 export function listWorkspaceRepoAccess(
@@ -204,8 +204,8 @@ export function listWorkspaceRepoAccess(
         repoId: repos.id,
         githubRepoId: repos.githubRepoId,
         fullName: repos.fullName,
-        hasDesign: exists(
-          db.select({ one: sql`1` }).from(designs).where(eq(designs.repoId, repos.id)),
+        hasCanvas: exists(
+          db.select({ one: sql`1` }).from(canvases).where(eq(canvases.repoId, repos.id)),
         ).mapWith(Boolean),
         permission: repoAccess.permission,
         checkedAt: repoAccess.checkedAt,

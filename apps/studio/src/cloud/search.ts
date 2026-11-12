@@ -22,12 +22,12 @@ export function segments(text: string, matches: readonly Match[]): Segment[] {
   return out;
 }
 
-export type ResultKey = `design:${string}` | `board:${string}` | `comment:${string}`;
+export type ResultKey = `canvas:${string}` | `board:${string}` | `comment:${string}`;
 
 /** Every result in the order the list shows them, for moving through with the keyboard. */
 export function resultKeys(results: SearchResults): ResultKey[] {
   return [
-    ...results.designs.map((h) => `design:${h.design.id}` as const),
+    ...results.canvases.map((h) => `canvas:${h.canvas.id}` as const),
     ...results.boards.map((h) => `board:${h.id}` as const),
     ...results.comments.map((h) => `comment:${h.id}` as const),
   ];

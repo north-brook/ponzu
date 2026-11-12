@@ -29,14 +29,14 @@ test("matches out of order, overlapping or past the end are tolerated", () => {
   expect(segments("abc", [])).toEqual([{ text: "abc", match: false }]);
 });
 
-test("the keyboard goes through designs, then boards, then comments, stopping at the ends", () => {
+test("the keyboard goes through canvases, then boards, then comments, stopping at the ends", () => {
   const results = {
     query: "x",
-    designs: [{ design: { id: "d1" } }, { design: { id: "d2" } }],
+    canvases: [{ canvas: { id: "d1" } }, { canvas: { id: "d2" } }],
     boards: [{ id: "b1" }],
     comments: [{ id: "c1" }],
   } as unknown as SearchResults;
-  expect(resultKeys(results)).toEqual(["design:d1", "design:d2", "board:b1", "comment:c1"]);
+  expect(resultKeys(results)).toEqual(["canvas:d1", "canvas:d2", "board:b1", "comment:c1"]);
   expect(moveSelection(4, 0, "ArrowDown")).toBe(1);
   expect(moveSelection(4, 3, "ArrowDown")).toBe(3);
   expect(moveSelection(4, 0, "ArrowUp")).toBe(0);

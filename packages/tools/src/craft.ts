@@ -1,5 +1,5 @@
 /**
- * The guides that are about the work and not about where a design lives: every host serves
+ * The guides that are about the work and not about where a canvas lives: every host serves
  * them as they are. Product shots, scenes and the kit are in product.ts.
  */
 
@@ -27,7 +27,7 @@ export const TYPOGRAPHY_GUIDE = `# Typography
 
 export const MOTION_GUIDE = `# Motion and states
 
-Designs run no scripts, so motion is CSS (@keyframes, transitions, animation-timeline), SVG <animate>, and scenes: a product demo written as beats (click, type, show, count) that Ponzu turns into animations (get_guide('act')). Ponzu pauses all of it and seeks to exact times, so frames are the same every time and cost no real waiting.
+Canvases run no scripts, so motion is CSS (@keyframes, transitions, animation-timeline), SVG <animate>, and scenes: a product demo written as beats (click, type, show, count) that Ponzu turns into animations (get_guide('act')). Ponzu pauses all of it and seeks to exact times, so frames are the same every time and cost no real waiting.
 
 See it
 - screenshot shows the settled page: every finite animation has finished. at: 0 shows the first frame; any other at shows that moment.

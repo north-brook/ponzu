@@ -13,8 +13,8 @@ import { readPeopleSoon } from "./people.ts";
 import {
   type PullRequestRef,
   refreshAfterPush,
-  refreshDesigns,
-  tellDesigns,
+  refreshCanvases,
+  tellCanvases,
   withdrawRepoPictures,
 } from "./pull-requests.ts";
 import { forgetRevokedAuthorization } from "./revoked.ts";
@@ -26,8 +26,8 @@ import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
  * A delivery is a signal, not a record. GitHub sends one late, twice, or after a later one, so
  * nothing here writes what a payload says about an installation or its repos: it asks GitHub
  * for the installation as it is now (`reconcileInstallation`), syncs the people it concerns, or
- * reads a design's pull request again (`refreshDesigns`). Every handler can run again with the
- * same delivery and change nothing more, but for the news it tells a design's agent.
+ * reads a canvas's pull request again (`refreshCanvases`). Every handler can run again with the
+ * same delivery and change nothing more, but for the news it tells a canvas's agent.
  *
  * Only the fields used are read; the schemas below are that list.
  */
@@ -171,13 +171,13 @@ const CHECK_RUN_ACTIONS = ["completed", "rerequested"];
 const REVIEW_ACTIONS = ["submitted", "edited", "dismissed"];
 /** Check conclusions that are something the agent should hear about. */
 const FAILED = ["failure", "timed_out", "action_required", "startup_failure"];
-/** The most of a review's text a design's feed keeps. */
+/** The most of a review's text a canvas's feed keeps. */
 const REVIEW_BODY_CHARS = 4_000;
 /**
  * Whose reviews are worth asking about: the repo's owner, its organization's members and its
  * collaborators. On a public repo anyone can review a pull request, and a review is text the
  * agent reads, so a stranger's is dropped at once; of these, only one GitHub says can push to
- * the repo reaches the agent (`tellDesigns`).
+ * the repo reaches the agent (`tellCanvases`).
  */
 const REVIEWERS = ["OWNER", "MEMBER", "COLLABORATOR"];
 
@@ -271,7 +271,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
         return (deps) => forgetRevokedAuthorization(deps, e.sender.id);
       });
 
-    // Each of these makes the design's pull request be read again from GitHub. A failed check
+    // Each of these makes the canvas's pull request be read again from GitHub. A failed check
     // and a review are also news for the agent, told after the read: a read that fails runs
     // again with the job, and the news is told once.
 
@@ -279,7 +279,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
       return plan(PullRequestEvent, payload, (e) => {
         if (!PULL_REQUEST_ACTIONS.includes(e.action)) return null;
         return (deps) =>
-          refreshDesigns(deps, { githubRepoId: e.repository.id, pullRequests: [e.pull_request] });
+          refreshCanvases(deps, { githubRepoId: e.repository.id, pullRequests: [e.pull_request] });
       });
 
     case "push":
@@ -309,9 +309,9 @@ export function planDelivery(event: string, payload: unknown): Plan {
         const failed = e.action === "completed" && FAILED.includes(run.conclusion ?? "");
         return async (deps) => {
           const githubRepoId = e.repository.id;
-          await refreshDesigns(deps, { githubRepoId, pullRequests: run.pull_requests });
+          await refreshCanvases(deps, { githubRepoId, pullRequests: run.pull_requests });
           if (!failed) return;
-          await tellDesigns(deps, {
+          await tellCanvases(deps, {
             githubRepoId,
             pullRequests: run.pull_requests,
             kind: "check",
@@ -334,9 +334,9 @@ export function planDelivery(event: string, payload: unknown): Plan {
         const failed = FAILED.includes(suite.conclusion ?? "");
         return async (deps) => {
           const githubRepoId = e.repository.id;
-          await refreshDesigns(deps, { githubRepoId, pullRequests: suite.pull_requests });
+          await refreshCanvases(deps, { githubRepoId, pullRequests: suite.pull_requests });
           if (!failed) return;
-          await tellDesigns(deps, {
+          await tellCanvases(deps, {
             githubRepoId,
             pullRequests: suite.pull_requests,
             kind: "check",
@@ -362,9 +362,9 @@ export function planDelivery(event: string, payload: unknown): Plan {
           REVIEWERS.includes(review.author_association);
         return async (deps) => {
           const githubRepoId = e.repository.id;
-          await refreshDesigns(deps, { githubRepoId, pullRequests: [e.pull_request] });
+          await refreshCanvases(deps, { githubRepoId, pullRequests: [e.pull_request] });
           if (!news) return;
-          await tellDesigns(deps, {
+          await tellCanvases(deps, {
             githubRepoId,
             pullRequests: [e.pull_request],
             kind: "review",

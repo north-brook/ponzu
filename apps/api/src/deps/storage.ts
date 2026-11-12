@@ -4,7 +4,7 @@ import type { Fetch } from "./fetch.ts";
 import { type Credentials, encodePath, presign, signHeaders } from "./sigv4.ts";
 
 /**
- * Where bytes live: a design's assets, previews and exports, in Cloudflare R2 under the design's
+ * Where bytes live: a canvas's assets, previews and exports, in Cloudflare R2 under the canvas's
  * asset key (docs/cloud.md, "Assets and previews"). Bytes never pass through the API: an
  * uploader is handed an address that takes exactly the bytes it declared, and the API looks
  * at what arrived before it records anything.

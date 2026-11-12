@@ -30,7 +30,7 @@ const trace = (person: string | null): AiEvent[] => [
   {
     event: "$ai_generation",
     distinctId: person,
-    properties: { $ai_trace_id: "res-1", $ai_model: "claude-haiku-5-5", design_id: "des_1" },
+    properties: { $ai_trace_id: "res-1", $ai_model: "claude-haiku-5-5", canvas_id: "cnv_1" },
     groups: { workspace: "ws_1" },
   },
   { event: "$ai_trace", distinctId: person, properties: { $ai_trace_id: "res-1" } },
@@ -57,7 +57,7 @@ test("a turn's events reach PostHog as one batch on flush, under the project's t
   ]);
   expect(body.batch[0]!.properties).toMatchObject({
     $ai_trace_id: "res-1",
-    design_id: "des_1",
+    canvas_id: "cnv_1",
     $groups: { workspace: "ws_1" },
   });
   await telemetry.shutdown();

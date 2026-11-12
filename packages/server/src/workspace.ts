@@ -93,6 +93,10 @@ export class LocalWorkspace implements Workspace {
     return [...this.entries.values()].map(({ key, design }) => ({ key, design }));
   }
 
+  canvases() {
+    return this.designs().map(({ key, design }) => ({ key, canvas: design }));
+  }
+
   get(key: string): Design | undefined {
     return this.entries.get(key)?.design;
   }
@@ -180,7 +184,7 @@ export class LocalWorkspace implements Workspace {
     return { key: entry.key, design: entry.design };
   }
 
-  async create(path: string, doc: Doc): Promise<{ key: string; design: Design }> {
+  async create(path: string, doc: Doc): Promise<{ key: string; canvas: Design }> {
     const key = this.keyOf(path);
     if (this.entries.has(key) || existsSync(join(key, "design.json")))
       throw new ToolError(`${key} already exists. Open it instead.`);
@@ -189,11 +193,11 @@ export class LocalWorkspace implements Workspace {
     await design.close();
     const opened = await this.open(key);
     for (const l of this.createListeners) l(opened.key);
-    return opened;
+    return { key: opened.key, canvas: opened.design };
   }
 
-  async resolve(file?: string): Promise<{ key: string; design: Design }> {
-    const all = this.designs();
+  async resolve(file?: string): Promise<{ key: string; canvas: Design }> {
+    const all = this.canvases();
     if (!file) {
       if (all.length === 1) return all[0]!;
       if (!all.length)
@@ -208,11 +212,11 @@ export class LocalWorkspace implements Workspace {
       );
     }
     const byKey = this.entries.get(this.keyOf(file));
-    if (byKey) return byKey;
+    if (byKey) return { key: byKey.key, canvas: byKey.design };
     const lower = file.toLowerCase().replace(/\.design$/, "");
     const byName = all.filter(
       (d) =>
-        d.design.doc.name.toLowerCase() === lower ||
+        d.canvas.doc.name.toLowerCase() === lower ||
         basename(d.key)
           .toLowerCase()
           .replace(/\.design$/, "") === lower,
@@ -229,12 +233,13 @@ export class LocalWorkspace implements Workspace {
       file.endsWith(".design") &&
       existsSync(join(this.keyOf(file), "design.json"))
     ) {
-      return this.open(file);
+      const opened = await this.open(file);
+      return { key: opened.key, canvas: opened.design };
     }
     throw new ToolError(
       all.length > 5
         ? `No open file matches "${file}". ${all.length} are open; list_files lists them.`
-        : `No open file matches "${file}". Open: ${all.map((d) => d.design.doc.name).join(", ") || "none"}`,
+        : `No open file matches "${file}". Open: ${all.map((d) => d.canvas.doc.name).join(", ") || "none"}`,
       "file_not_found",
     );
   }

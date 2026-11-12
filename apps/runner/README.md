@@ -78,8 +78,8 @@ output and the runner's in `/var/log/ponzu/runner.log` rather than in Vercel's c
 supervisor starts `runner.js` as `ponzu` (group `agent`, `CAP_DAC_READ_SEARCH` to read Claude
 Code's 0600 transcripts) and restarts it on failure, after 1, 2, 4 … 30 seconds, except on exit
 0 or 78. 78 means only a new start of the sandbox can mend it: the environment is wrong, the API
-revoked the runner token (the design was deleted or settled), or a newer runner took over the
-design's lease. Before every stop the API runs `ponzu-stop`: SIGTERM to the supervisor, which
+revoked the runner token (the canvas was deleted or settled), or a newer runner took over the
+canvas's lease. Before every stop the API runs `ponzu-stop`: SIGTERM to the supervisor, which
 passes it to the runner; the runner stops the turn, lets the agent's edits reach the API,
 reports its final state, saves a checkpoint and closes Claude Code, and the supervisor kills
 what is left of its group after 20 seconds at most; then `sync`. Every wake boots the sandbox
@@ -99,8 +99,8 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | Variable | |
 |---|---|
 | `PONZU_API_URL` | `https://api.ponzu.design` |
-| `PONZU_DESIGN_ID` | The design this sandbox works on. |
-| `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this design only. |
+| `PONZU_CANVAS_ID` | The canvas this sandbox works on. |
+| `PONZU_RUNNER_TOKEN` | The runner token: the bearer on every call, good for this canvas only. |
 | `PONZU_PORT_TOKEN` | The bearer every request to the runner's port must carry. New at every start. |
 | `PONZU_RUNNER_BUNDLE` | The SHA-256 of the bundle this start runs; the runner names it in `X-Ponzu-Client`. |
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | Exactly one. With both the runner refuses to start: Claude Code would silently use the key and bill its account. |
@@ -138,14 +138,14 @@ address, which anyone with the URL can reach, so every request must carry
 answers 401. `POST /poke` (204) means "there may be something to claim". It carries nothing and
 the runner trusts nothing about it: it only starts a claim, which the runner makes to the API
 with its own token. The runner also claims every minute without one. `GET /health` answers
-`{ started, state }`: `started` once the design is open, Claude Code is up and the claims run.
+`{ started, state }`: `started` once the canvas is open, Claude Code is up and the claims run.
 
 ## Sleep, and what the disk keeps
 
 docs/cloud.md ("The sandbox", "Saving the sandbox") is the specification.
 
 - **After each turn** has settled, the runner saves a checkpoint: the Claude session's
-  transcript and the work in progress (a repo's as a commit, never on the design's branch nor
+  transcript and the work in progress (a repo's as a commit, never on the canvas's branch nor
   anywhere on GitHub, carried in a git bundle; Scratch's as an archive), both uploaded where no
   client reads them, under a turn marker the API keeps the highest of, then runs `sync`. Files
   over the size limits, or that look like or hold a secret (a `.env`, a key, a file with a repo
@@ -183,14 +183,14 @@ stops the turn, `/quit` shuts the runner down. The thread prints as it is writte
 `--bundle` it runs `dist/runner.js` instead of the source.
 
 Against a local API, run `bun src/main.ts` with `PONZU_API_URL` pointed at it and a runner
-token it issued for the design. A local API that wakes designs in real sandboxes needs `dist/`
+token it issued for the canvas. A local API that wakes canvases in real sandboxes needs `dist/`
 (`bun run build`) for the bundle it serves, and an address a sandbox can reach.
 
 ## Claude Code's configuration
 
-- `bypassPermissions`: a VM per design, running as a non-root user (`agent`), with nobody to click
+- `bypassPermissions`: a VM per canvas, running as a non-root user (`agent`), with nobody to click
   "allow". AskUserQuestion, plan approval (ExitPlanMode) and any other prompt still reach
-  `canUseTool` and become questions in the design's needs-you; the SDK's warning that
+  `canUseTool` and become questions in the canvas's needs-you; the SDK's warning that
   `canUseTool` "will not be invoked" in this mode is about ordinary tool calls.
 - `settingSources: ["project"]`: the repo's own CLAUDE.md, `.claude/settings.json` (hooks,
   permission rules), skills, commands and agents apply. The sandbox user's settings

@@ -1,31 +1,31 @@
 import { createContext, type MouseEvent, type ReactNode, useContext } from "react";
-import type { DesignAddress } from "./design-address.ts";
+import type { CanvasAddress } from "./canvas-address.ts";
 import { Tip } from "./tooltip.tsx";
 
 /**
- * What lets a link in Prose to a design's own address (design-address.ts) go there in place:
+ * What lets a link in Prose to a design's own address (canvas-address.ts) go there in place:
  * the thread of an open design provides it. Without it (a pull request's tab) such a link is an
  * ordinary one.
  */
-export interface DesignPlaces {
+export interface CanvasPlaces {
   /** The open design's id. */
-  designId: string;
+  canvasId: string;
   /**
    * Whether a page or board of the open design is there now: true, false once it is known not
    * to be (deleted, or an id that never was), undefined while the design is still loading.
    */
   has(at: { page?: string; artboard?: string }): boolean | undefined;
   /** Shows the place: on this design's canvas, or by opening the design it is in. */
-  open(at: DesignAddress): void;
+  open(at: CanvasAddress): void;
 }
 
-const Places = createContext<DesignPlaces | null>(null);
+const Places = createContext<CanvasPlaces | null>(null);
 
-export function DesignPlacesProvider({
+export function CanvasPlacesProvider({
   value,
   children,
 }: {
-  value: DesignPlaces;
+  value: CanvasPlaces;
   children: ReactNode;
 }) {
   return <Places.Provider value={value}>{children}</Places.Provider>;
@@ -52,14 +52,14 @@ export function PlaceLink({
   external,
   children,
 }: {
-  address: DesignAddress;
+  address: CanvasAddress;
   href: string;
   external: ReactNode;
   children: ReactNode;
 }) {
   const places = useContext(Places);
   if (!places) return <>{external}</>;
-  const here = address.designId === places.designId;
+  const here = address.canvasId === places.canvasId;
   const named = address.artboard ? "board" : address.page ? "page" : null;
   if (here && named && places.has(address) === false) {
     return (
@@ -79,7 +79,7 @@ export function PlaceLink({
     <a
       href={href}
       onClick={open}
-      data-place={here ? (named ?? "design") : "other-design"}
+      data-place={here ? (named ?? "canvas") : "other-canvas"}
       aria-description={here ? "Shows it on the canvas" : "Opens that design"}
       className={placeLinkClass}
     >

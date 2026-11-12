@@ -228,7 +228,7 @@ export function workingLine(
 }
 
 /**
- * What the thread's foot says while the design's sandbox can't run, in place of the working
+ * What the thread's foot says while the canvas's sandbox can't run, in place of the working
  * line: a quiet wait for a machine, or a start that failed. Messages are kept either way.
  */
 export function sandboxLine(agent: AgentActivity): { text: string; failed: boolean } | null {
@@ -240,7 +240,7 @@ export function sandboxLine(agent: AgentActivity): { text: string; failed: boole
   }
   if (agent.sandbox === "failed") {
     return {
-      text: "Ponzu couldn't start a machine for this design. Send a message to try again.",
+      text: "Ponzu couldn't start a machine for this canvas. Send a message to try again.",
       failed: true,
     };
   }
@@ -250,16 +250,16 @@ export function sandboxLine(agent: AgentActivity): { text: string; failed: boole
 /** What each way a turn can fail means to a person, in a sentence. */
 export const ERROR_COPY: Record<RunErrorCode, string> = {
   clone_failed:
-    "Couldn't check out the repo, so Claude is working without it. It tries again the next time the design wakes.",
+    "Couldn't check out the repo, so Claude is working without it. It tries again the next time the canvas wakes.",
   claude_auth: "Claude turned down the owner's account. Reconnect Claude in Settings to go on.",
-  claude_limit: "The owner's Claude plan hit its limit. This design waits until it resets.",
+  claude_limit: "The owner's Claude plan hit its limit. This canvas waits until it resets.",
   model_unavailable: "The chosen model isn't available. Pick another in Settings, under Agents.",
   max_turns: "Claude stopped after a long stretch of work. Send a message to keep it going.",
   turn_failed: "Something went wrong in that turn.",
   agent_exited: "Claude stopped unexpectedly and started again.",
   message_refused: "The repo's Claude Code settings turned that message away.",
   question_failed: "Claude couldn't ask its question, so it went on without an answer.",
-  push_failed: "Ponzu couldn't push the branch to GitHub. The commits are safe in the design.",
+  push_failed: "Ponzu couldn't push the branch to GitHub. The commits are safe in the canvas.",
 };
 
 /** Errors whose own message says more than the sentence does. */

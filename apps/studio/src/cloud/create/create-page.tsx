@@ -2,7 +2,7 @@ import { type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { Idea, PendingAttachment, Repo } from "../model.ts";
 import { cn } from "../ui/cn.ts";
 import { Slice } from "../ui/marks.tsx";
-import { NewDesignComposer } from "./composer.tsx";
+import { NewCanvasComposer } from "./composer.tsx";
 import {
   DOCK_INSET,
   heroPlace,
@@ -29,7 +29,7 @@ export interface CreatePageProps {
    * finds everything where it was.
    */
   launched?: boolean;
-  /** Null until the person's defaults are known: a design sent then starts on them. */
+  /** Null until the person's defaults are known: a canvas sent then starts on them. */
   model: ModelChoice | null;
   /** Null until the window's repos are known: the selector holds its place meanwhile. */
   project: ProjectChoice | null;
@@ -44,7 +44,7 @@ export interface CreatePageProps {
   onAllowMore: () => void;
   /**
    * Prompts for the chosen repo, which take turns as the composer's placeholder; null (the
-   * workspace has designs, or Scratch) and "loading" (they are being made) show the plain
+   * workspace has canvases, or Scratch) and "loading" (they are being made) show the plain
    * placeholder.
    */
   ideas: Idea[] | "loading" | null;
@@ -204,7 +204,7 @@ export function CreatePage({
         className={cn("mx-auto w-[660px] shrink-0", launched && "invisible")}
         style={{ paddingBottom: DOCK_INSET }}
       >
-        <NewDesignComposer
+        <NewCanvasComposer
           prompt={prompt}
           onPromptChange={onPromptChange}
           onSend={onSend}

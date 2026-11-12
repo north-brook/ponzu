@@ -3,26 +3,26 @@ import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   type AgentState,
-  designRunners,
-  designs,
+  canvases,
+  canvasRunners,
   repos,
   sandboxes,
   users,
   workspaces,
 } from "../schema/index.ts";
-import type { Design } from "./designs.ts";
+import type { Canvas } from "./canvases.ts";
 import { appendEvent } from "./events.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
 /*
- * A design's runner (docs/cloud.md, "The runner protocol"): the lease that makes one process
- * the design's runner, when it was last heard from, and the state it reports.
+ * A canvas's runner (docs/cloud.md, "The runner protocol"): the lease that makes one process
+ * the canvas's runner, when it was last heard from, and the state it reports.
  */
 
-/** What a design's runner works with: the design, its repository, and the person behind it. */
+/** What a canvas's runner works with: the canvas, its repository, and the person behind it. */
 export interface RunnerContext {
-  design: Design;
+  canvas: Canvas;
   assetKey: string;
   /** Null for Scratch. */
   repo: { githubRepoId: number; fullName: string; defaultBranch: string } | null;
@@ -30,17 +30,17 @@ export interface RunnerContext {
   installationId: number | null;
   /** Set while the App is suspended on the workspace. */
   suspendedAt: Date | null;
-  /** The design's owner, whom commits are authored by. Null once they are deleted. */
+  /** The canvas's owner, whom commits are authored by. Null once they are deleted. */
   owner: { id: string; name: string | null; githubLogin: string; githubUserId: number } | null;
 }
 
-/** A design with what its runner works with, in one read. Null when there is no such design. */
-export async function getRunnerContext(db: Db, designId: string): Promise<RunnerContext | null> {
-  const { assetKey, ...design } = getTableColumns(designs);
+/** A canvas with what its runner works with, in one read. Null when there is no such canvas. */
+export async function getRunnerContext(db: Db, canvasId: string): Promise<RunnerContext | null> {
+  const { assetKey, ...canvas } = getTableColumns(canvases);
   const [row] = await run(
     db
       .select({
-        design,
+        canvas,
         assetKey,
         repoGithubId: repos.githubRepoId,
         repoFullName: repos.fullName,
@@ -52,15 +52,15 @@ export async function getRunnerContext(db: Db, designId: string): Promise<Runner
         ownerLogin: users.githubLogin,
         ownerGithubId: users.githubUserId,
       })
-      .from(designs)
-      .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
-      .leftJoin(repos, eq(repos.id, designs.repoId))
-      .leftJoin(users, eq(users.id, designs.ownerId))
-      .where(eq(designs.id, designId)),
+      .from(canvases)
+      .innerJoin(workspaces, eq(workspaces.id, canvases.workspaceId))
+      .leftJoin(repos, eq(repos.id, canvases.repoId))
+      .leftJoin(users, eq(users.id, canvases.ownerId))
+      .where(eq(canvases.id, canvasId)),
   );
   if (!row) return null;
   return {
-    design: row.design,
+    canvas: row.canvas,
     assetKey: row.assetKey,
     repo:
       row.repoGithubId === null || row.repoFullName === null || row.repoDefaultBranch === null
@@ -85,30 +85,30 @@ export async function getRunnerContext(db: Db, designId: string): Promise<Runner
 }
 
 /**
- * Make a new runner id the design's lease, replacing whichever was there: the runner that
+ * Make a new runner id the canvas's lease, replacing whichever was there: the runner that
  * started last is the one the API takes calls from. Answers the new id and the Claude session
- * the design's events went into, for the runner to resume.
+ * the canvas's events went into, for the runner to resume.
  */
 export async function takeRunnerLease(
   db: Db,
   {
-    designId,
+    canvasId,
     now,
     client = null,
   }: {
-    designId: string;
+    canvasId: string;
     now: Date;
-    /** What the runner said it is (`design_runners.client`). */
+    /** What the runner said it is (`canvas_runners.client`). */
     client?: string | null;
   },
 ): Promise<{ runnerId: string; claudeSessionId: string | null; saved: SavedPoint | null }> {
   const at = sql`${timeParam(now)}::timestamptz`;
   const [lease] = await run(
     db
-      .insert(designRunners)
-      .values({ designId, runnerId: newId("rnr"), startedAt: at, heardAt: at, client })
+      .insert(canvasRunners)
+      .values({ canvasId, runnerId: newId("rnr"), startedAt: at, heardAt: at, client })
       .onConflictDoUpdate({
-        target: designRunners.designId,
+        target: canvasRunners.canvasId,
         set: {
           runnerId: sql`excluded.runner_id`,
           startedAt: sql`excluded.started_at`,
@@ -117,8 +117,8 @@ export async function takeRunnerLease(
         },
       })
       .returning({
-        runnerId: designRunners.runnerId,
-        claudeSessionId: designRunners.claudeSessionId,
+        runnerId: canvasRunners.runnerId,
+        claudeSessionId: canvasRunners.claudeSessionId,
         ...SAVED,
       }),
   );
@@ -127,27 +127,27 @@ export async function takeRunnerLease(
 }
 
 /**
- * A design's last checkpoint (docs/cloud.md, "Saving the sandbox"): the turn marker, which only
+ * A canvas's last checkpoint (docs/cloud.md, "Saving the sandbox"): the turn marker, which only
  * goes up, and what was saved with it.
  */
 export interface SavedPoint {
   turn: number;
   at: Date;
   claudeSessionId: string | null;
-  /** The work in progress pushed to `refs/ponzu/wip/<design>`, for a repo design. */
+  /** The work in progress pushed to `refs/ponzu/wip/<canvas>`, for a repo canvas. */
   wipCommit: string | null;
-  /** The uploads that hold the session's transcript and a Scratch design's files. */
+  /** The uploads that hold the session's transcript and a Scratch canvas's files. */
   sessionUploadId: string | null;
   workspaceUploadId: string | null;
 }
 
 const SAVED = {
-  turn: designRunners.savedTurn,
-  at: designRunners.savedAt,
-  savedClaudeSessionId: designRunners.savedClaudeSessionId,
-  wipCommit: designRunners.savedWipCommit,
-  sessionUploadId: designRunners.sessionUploadId,
-  workspaceUploadId: designRunners.workspaceUploadId,
+  turn: canvasRunners.savedTurn,
+  at: canvasRunners.savedAt,
+  savedClaudeSessionId: canvasRunners.savedClaudeSessionId,
+  wipCommit: canvasRunners.savedWipCommit,
+  sessionUploadId: canvasRunners.sessionUploadId,
+  workspaceUploadId: canvasRunners.workspaceUploadId,
 };
 
 type SavedRow = {
@@ -171,10 +171,10 @@ function savedPoint(row: SavedRow): SavedPoint | null {
   };
 }
 
-/** The design's last checkpoint, or null when its runner has saved none. */
-export async function getSavedPoint(db: Db, designId: string): Promise<SavedPoint | null> {
+/** The canvas's last checkpoint, or null when its runner has saved none. */
+export async function getSavedPoint(db: Db, canvasId: string): Promise<SavedPoint | null> {
   const [row] = await run(
-    db.select(SAVED).from(designRunners).where(eq(designRunners.designId, designId)),
+    db.select(SAVED).from(canvasRunners).where(eq(canvasRunners.canvasId, canvasId)),
   );
   return row ? savedPoint(row) : null;
 }
@@ -188,7 +188,7 @@ export async function getSavedPoint(db: Db, designId: string): Promise<SavedPoin
 export async function recordCheckpoint(
   db: Db,
   point: Omit<SavedPoint, "at"> & {
-    designId: string;
+    canvasId: string;
     runnerId: string;
     now: Date;
     /**
@@ -208,17 +208,17 @@ export async function recordCheckpoint(
         .map((column) => `${of}.${column}`)
         .join(", "),
     );
-  const cols = columns("design_runners");
+  const cols = columns("canvas_runners");
   const result = await queryJson<{ before: SavedJson | null; moved: SavedJson | null }>(
     db,
     sql`
       with before as (
-        select design_runners.design_id, ${cols} from design_runners
-         where design_id = ${point.designId} and runner_id = ${point.runnerId}
+        select canvas_runners.canvas_id, ${cols} from canvas_runners
+         where canvas_id = ${point.canvasId} and runner_id = ${point.runnerId}
            for update
       ),
       moved as (
-        update design_runners
+        update canvas_runners
            set saved_turn = ${point.turn},
                saved_at = ${timeParam(point.now)}::timestamptz,
                saved_claude_session_id = case when ${keepSession}::boolean
@@ -232,10 +232,10 @@ export async function recordCheckpoint(
                -- What it holds: the runner saves once a turn has settled, so every event that
                -- had gone into the session by now.
                saved_through = (select max(e.seq) from events e
-                                 where e.design_id = before.design_id
+                                 where e.canvas_id = before.canvas_id
                                    and e.delivered_at is not null)
           from before
-         where design_runners.design_id = before.design_id
+         where canvas_runners.canvas_id = before.canvas_id
            and (before.turn is null or before.turn < ${point.turn})
         returning ${cols}
       )
@@ -272,56 +272,56 @@ function fromJson(row: SavedJson): SavedPoint | null {
 }
 
 /**
- * Create PR asked the design's runner to push what only its sandbox holds: the `push` event that
+ * Create PR asked the canvas's runner to push what only its sandbox holds: the `push` event that
  * asks it, and the reason the last push failed forgotten, since this one is a new try. The
  * runner says how it went with its next state report.
  */
 export async function askRunnerToPush(
   db: Db,
-  { designId, userId }: { designId: string; userId: string },
+  { canvasId, userId }: { canvasId: string; userId: string },
 ): Promise<void> {
-  await appendEvent(db, { designId, kind: "push", priority: "now", payload: {}, userId });
+  await appendEvent(db, { canvasId, kind: "push", priority: "now", payload: {}, userId });
   await run(
-    db.update(designRunners).set({ pushError: null }).where(eq(designRunners.designId, designId)),
+    db.update(canvasRunners).set({ pushError: null }).where(eq(canvasRunners.canvasId, canvasId)),
   );
 }
 
 /**
- * The design's runner wrote something of a turn to the thread as of `now`: everything delivered
+ * The canvas's runner wrote something of a turn to the thread as of `now`: everything delivered
  * before it has had its answer begun (docs/cloud.md, "A turn that never came").
  */
 export async function noteRunnerSaid(
   db: Db,
-  { designId, now }: { designId: string; now: Date },
+  { canvasId, now }: { canvasId: string; now: Date },
 ): Promise<void> {
   await run(
     db
-      .update(designRunners)
+      .update(canvasRunners)
       .set({
-        saidAt: sql`greatest(${designRunners.saidAt}, ${timeParam(now)}::timestamptz)`,
+        saidAt: sql`greatest(${canvasRunners.saidAt}, ${timeParam(now)}::timestamptz)`,
       })
-      .where(eq(designRunners.designId, designId)),
+      .where(eq(canvasRunners.canvasId, canvasId)),
   );
 }
 
 /**
- * Whether the design's runner has shown it is alive since `since`: it reported its state or took
+ * Whether the canvas's runner has shown it is alive since `since`: it reported its state or took
  * the lease, or claimed or acknowledged an event, by the API's clock. What a wake asks when the
  * runner's `/health` does not answer through its address: a runner that is calling the API is
  * up, whatever its address does.
  */
 export async function runnerHeardSince(
   db: Db,
-  { designId, since }: { designId: string; since: Date },
+  { canvasId, since }: { canvasId: string; since: Date },
 ): Promise<boolean> {
   const after = sql`${timeParam(since)}::timestamptz`;
   const result = await queryJson<{ heard: boolean }>(
     db,
     sql`
       select json_build_object('heard',
-        exists (select 1 from design_runners r where r.design_id = ${designId} and r.heard_at >= ${after})
-        or exists (select 1 from events e join design_runners r on r.design_id = e.design_id
-                    where e.design_id = ${designId} and e.claimed_by = r.runner_id
+        exists (select 1 from canvas_runners r where r.canvas_id = ${canvasId} and r.heard_at >= ${after})
+        or exists (select 1 from events e join canvas_runners r on r.canvas_id = e.canvas_id
+                    where e.canvas_id = ${canvasId} and e.claimed_by = r.runner_id
                       and (e.claimed_at >= ${after} or e.delivered_at >= ${after}))
       ) as result
     `,
@@ -336,39 +336,39 @@ export interface RunnerState {
   /** Stored for the next resume when not null. */
   claudeSessionId: string | null;
   /**
-   * The design's branch in the sandbox against GitHub: commits GitHub lacks, and why the last
+   * The canvas's branch in the sandbox against GitHub: commits GitHub lacks, and why the last
    * push of them failed. Undefined leaves what was said before; null clears it.
    */
   branch?: { unpushed: number; error: string | null } | null;
 }
 
-/** What a state report answers: the design's head. */
+/** What a state report answers: the canvas's head. */
 export interface StateAnswer {
   seq: number;
 }
 
 /**
- * Record what the design's runner says it is doing, as of `now`, and answer the design's head
- * `seq`. The design's row, which clients
+ * Record what the canvas's runner says it is doing, as of `now`, and answer the canvas's head
+ * `seq`. The canvas's row, which clients
  * watch, is written only when what it shows changed, so a heartbeat that says the same again
- * touches only `design_runners`. Null when there is no such design or it has no runner.
+ * touches only `canvas_runners`. Null when there is no such canvas or it has no runner.
  */
 export async function reportRunnerState(
   db: Db,
-  { designId, now, branch, ...report }: RunnerState & { designId: string; now: Date },
+  { canvasId, now, branch, ...report }: RunnerState & { canvasId: string; now: Date },
 ): Promise<StateAnswer | null> {
   const heard = db.$with("heard").as(
     db
-      .update(designRunners)
+      .update(canvasRunners)
       .set({
         heardAt: sql`${timeParam(now)}::timestamptz`,
-        claudeSessionId: sql`coalesce(${report.claudeSessionId}::text, ${designRunners.claudeSessionId})`,
+        claudeSessionId: sql`coalesce(${report.claudeSessionId}::text, ${canvasRunners.claudeSessionId})`,
         ...(branch !== undefined
           ? { unpushed: branch?.unpushed ?? 0, pushError: branch?.error ?? null }
           : {}),
       })
-      .where(eq(designRunners.designId, designId))
-      .returning({ designId: designRunners.designId }),
+      .where(eq(canvasRunners.canvasId, canvasId))
+      .returning({ canvasId: canvasRunners.canvasId }),
   );
   // A runner heard from is alive, so its restarts in a row are over; and while its agent works,
   // its sandbox stays awake.
@@ -386,35 +386,35 @@ export async function reportRunnerState(
       })
       .where(
         and(
-          eq(sandboxes.designId, designId),
+          eq(sandboxes.canvasId, canvasId),
           eq(sandboxes.state, "awake"),
           sql`exists (select 1 from ${heard})`,
           working ? undefined : sql`${sandboxes.restarts} <> 0`,
         ),
       )
-      .returning({ designId: sandboxes.designId }),
+      .returning({ canvasId: sandboxes.canvasId }),
   );
-  const artboards = sql`${sql.param(report.artboards, designs.agentArtboards)}::text[]`;
+  const artboards = sql`${sql.param(report.artboards, canvases.agentArtboards)}::text[]`;
   const shown = db.$with("shown").as(
     db
-      .update(designs)
+      .update(canvases)
       .set({ agentState: report.state, agentStatus: report.status, agentArtboards: artboards })
       .where(
         and(
-          eq(designs.id, designId),
+          eq(canvases.id, canvasId),
           sql`exists (select 1 from ${heard})`,
-          sql`(${designs.agentState}, ${designs.agentStatus}, ${designs.agentArtboards})
+          sql`(${canvases.agentState}, ${canvases.agentStatus}, ${canvases.agentArtboards})
                 is distinct from (${report.state}::text, ${report.status}::text, ${artboards})`,
         ),
       )
-      .returning({ id: designs.id }),
+      .returning({ id: canvases.id }),
   );
   const [row] = await run(
     db
       .with(heard, kept, shown)
-      .select({ seq: designs.seq })
-      .from(designs)
-      .where(and(eq(designs.id, designId), sql`exists (select 1 from ${heard})`)),
+      .select({ seq: canvases.seq })
+      .from(canvases)
+      .where(and(eq(canvases.id, canvasId), sql`exists (select 1 from ${heard})`)),
   );
   if (!row) return null;
   return { seq: row.seq };

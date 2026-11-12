@@ -1,8 +1,8 @@
 /*
- * A design opening with its answers late, on demand: the chrome as the app draws it while the
- * design's head, its document, presence and its pull request's read are still on their way.
+ * A canvas opening with its answers late, on demand: the chrome as the app draws it while the
+ * canvas's head, its document, presence and its pull request's read are still on their way.
  *
- * `known` is what the window has at the first paint: `row`, the sidebar's row (the design's
+ * `known` is what the window has at the first paint: `row`, the sidebar's row (the canvas's
  * name, its repo and so its people's cluster, its pull request's number and state, and so the
  * action it most likely offers, whose room is held); `nothing`, a launch, before the row.
  * Everything else arrives when the page calls `window.galleryArrive(part)`:
@@ -10,17 +10,17 @@
  * - `pages`, `people`, `title`, `pull-request`: the document's pages, the others in it, the
  *   name and the mark (the last two only with `known: nothing`);
  * - `action` the read's action, or `action:<kind>` another, `action:none` none (it leaves);
- * - `switch`: another design opens (the chrome made anew, as the app's is), its row known;
+ * - `switch`: another canvas opens (the chrome made anew, as the app's is), its row known;
  * - `everything`: all of them at once.
  *
  * `?later` delivers them on a schedule a person can watch, each at a time a slow network gives.
  */
 import { useEffect, useState } from "react";
 import { flushSync } from "react-dom";
-import type { Contributor, DesignSummary } from "../model.ts";
+import type { CanvasSummary, Contributor } from "../model.ts";
 import { type NextAction, nextAction } from "../pull-request.ts";
 import { railSignal } from "../status.ts";
-import { DesignChrome } from "../window/design-chrome.tsx";
+import { CanvasChrome } from "../window/canvas-chrome.tsx";
 import * as f from "./fixtures.ts";
 import { Harness } from "./harness.tsx";
 
@@ -50,8 +50,8 @@ export function OpeningWindow({
   known: "row" | "nothing";
   sidebar?: "open" | "closed";
 }) {
-  const [designId, setDesignId] = useState("dsn_quieter");
-  const design = f.teamDesigns.find((d) => d.id === designId)!;
+  const [canvasId, setCanvasId] = useState("cnv_quieter");
+  const canvas = f.teamCanvases.find((d) => d.id === canvasId)!;
   const [arrived, setArrived] = useState<Set<Part>>(new Set());
   // The action the read says, once it has: its own kind, or another, or none.
   const [action, setAction] = useState<NextAction | null | undefined>(undefined);
@@ -59,7 +59,7 @@ export function OpeningWindow({
   useEffect(() => {
     const arrive = (part: string) => {
       if (part === "switch") {
-        setDesignId((id) => (id === "dsn_quieter" ? "dsn_pricing" : "dsn_quieter"));
+        setCanvasId((id) => (id === "cnv_quieter" ? "cnv_pricing" : "cnv_quieter"));
         setArrived(new Set());
         setAction(undefined);
         return;
@@ -85,23 +85,23 @@ export function OpeningWindow({
 
   const has = (part: Part) => arrived.has(part);
   const rowKnown = known === "row";
-  const pr = rowKnown || has("pull-request") ? design.pullRequest : null;
-  // The read's action: `action` alone is the design's own, as its pull request offers.
+  const pr = rowKnown || has("pull-request") ? canvas.pullRequest : null;
+  // The read's action: `action` alone is the canvas's own, as its pull request offers.
   const read = has("action")
     ? action === undefined
-      ? nextAction(design.pullRequest, true)
+      ? nextAction(canvas.pullRequest, true)
       : action
     : undefined;
   const people: Contributor[] = has("people") ? f.contributors : f.justYou;
   return (
     <Harness
-      designs={f.teamDesigns}
-      openId={designId}
+      canvases={f.teamCanvases}
+      openId={canvasId}
       sidebar={sidebar}
       rail={rail}
       chrome={(sidebarOpen) =>
         openingChrome({
-          design,
+          canvas,
           sidebarOpen,
           known: rowKnown || has("title"),
           team: rowKnown || has("people"),
@@ -119,20 +119,20 @@ export function OpeningWindow({
   );
 }
 
-/** The chrome as the app's slot draws it from what has arrived; made anew for each design. */
+/** The chrome as the app's slot draws it from what has arrived; made anew for each canvas. */
 function openingChrome(props: {
-  design: DesignSummary;
+  canvas: CanvasSummary;
   sidebarOpen: boolean;
   known: boolean;
   team: boolean;
   people: Contributor[];
   pages: boolean;
-  pr: DesignSummary["pullRequest"];
+  pr: CanvasSummary["pullRequest"];
   action: NextAction | null | undefined;
   rail: boolean;
   onToggleRail: () => void;
 }) {
-  const { design } = props;
+  const { canvas } = props;
   const expected =
     props.action === undefined &&
     props.pr &&
@@ -140,20 +140,20 @@ function openingChrome(props: {
       ? nextAction(props.pr, false)
       : null;
   return (
-    <DesignChrome
-      key={design.id}
-      name={props.known ? design.name : ""}
+    <CanvasChrome
+      key={canvas.id}
+      name={props.known ? canvas.name : ""}
       sidebarOpen={props.sidebarOpen}
       pages={props.pages ? f.homePages : []}
       activePageId={props.pages ? f.homePages[0]!.id : null}
       onSelectPage={ignore}
       onAddPage={props.pages ? ignore : null}
       team={
-        props.team && design.project.kind === "repo"
+        props.team && canvas.project.kind === "repo"
           ? {
               meId: f.bryce.id,
               contributors: props.people,
-              repo: design.project.repo,
+              repo: canvas.project.repo,
               members: f.members,
               onOpenRepo: ignore,
             }
@@ -162,7 +162,7 @@ function openingChrome(props: {
       pullRequest={props.pr ? { pr: props.pr, tabOpen: false, onToggleTab: ignore } : null}
       action={props.action ? { kind: props.action, onRun: ignore } : null}
       actionExpected={expected}
-      rail={{ open: props.rail, signal: railSignal(design, false), onToggle: props.onToggleRail }}
+      rail={{ open: props.rail, signal: railSignal(canvas, false), onToggle: props.onToggleRail }}
     />
   );
 }

@@ -19,9 +19,9 @@ import {
 
 setDefaultTimeout(60_000);
 
-const ROW = "dsn_quieter";
+const ROW = "cnv_quieter";
 /** The row's preview tile, the first box beside its name. */
-const TILE = `[data-design-row="${ROW}"] span.relative > span:first-child`;
+const TILE = `[data-canvas-row="${ROW}"] span.relative > span:first-child`;
 const PICTURES = ["hero", "pricing", "checkout", "brand"].map((name) =>
   join(STUDIO, "src/cloud/gallery/previews", `${name}.png`),
 );
@@ -94,7 +94,7 @@ describe.skipIf(!chromiumPath)("a sidebar row's live preview", () => {
         return `${r.x},${r.y},${r.width},${r.height}`;
       };
       const tick = () => {
-        const el = document.querySelector(`[data-design-row="${row}"]`);
+        const el = document.querySelector(`[data-canvas-row="${row}"]`);
         const tile = el?.querySelector("span.relative > span:first-child");
         if (el && tile) {
           frames.push({

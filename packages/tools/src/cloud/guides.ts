@@ -2,7 +2,7 @@ import { LAYOUT_GUIDE, MOBILE_GUIDE, MOTION_GUIDE, TYPOGRAPHY_GUIDE } from "../c
 import { ACT_GUIDE, KIT_GUIDE, PRODUCT_GUIDE } from "../product.ts";
 
 /**
- * The guides get_guide serves in a design's sandbox. Written for the agent: short, specific,
+ * The guides get_guide serves in a canvas's sandbox. Written for the agent: short, specific,
  * and in the order things go wrong. Each stands alone, and each is true of `cloudTools` as
  * they are: a test fails when one names a tool, an argument or a place the cloud doesn't have.
  */
@@ -13,7 +13,7 @@ This design is a canvas: pages of artboards, each artboard a tree of HTML with i
 
 Workflow
 1. get_basic_info, then read_notes. When the person says "this", look for the comment they pinned to it.
-2. Name a new design. Once you know what you're making, update_design gives it a name and an icon.
+2. Name a new design. Once you know what you're making, update_canvas gives it a name and an icon.
 3. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 4. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. People see the canvas change as you work.
 5. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why. Keep working with these tools rather than rendering the design some other way.
@@ -41,7 +41,7 @@ HTML and CSS
 Assets
 - add_asset takes the absolute path of a file in the sandbox (one in the repo, one you downloaded or generated) and returns its reference, like assets/hero.jpg. Use the reference as it is: src="assets/hero.jpg" in markup, url(assets/hero.jpg) in styles and tokens.
 - A font file works the same way: add it, then declare it with @font-face in the tokens stylesheet (set_tokens with css), src: url(assets/name.woff2).
-- A design can't load a file by its path in the sandbox, and a long data URL is refused. Anything bigger than an icon goes in as an asset.
+- A canvas can't load a file by its path in the sandbox, and a long data URL is refused. Anything bigger than an icon goes in as an asset.
 
 Big HTML
 - A whole artboard's content can go in one write_html call: target the artboard with mode replace-children.
@@ -129,7 +129,7 @@ The canvas is the spec. Read it with the tools; don't screenshot and guess.
 - read_notes has the brief and decisions. Read them before you start.
 - "Note: …" artboards explain the screens beside them. Read them alongside the screens they sit next to.
 - A <script type="ponzu/act"> is a scene: a scripted demo of the screen, not the product's behavior. Read it for intent and build real interactions.
-- An asset reference in the design names a file you added. In code, use the repo's own copy of it.
+- An asset reference in the canvas names a file you added. In code, use the repo's own copy of it.
 - When something can't be built as drawn, leave a comment on the node explaining what you did instead.
 - For a picture of a board in the repo or in a pull request, export it to a path in the checkout. When the result has a Link, that is the one to put in a pull request description.`,
 
@@ -152,7 +152,7 @@ export type CloudGuideTopic = keyof typeof cloudGuides;
  */
 export const CLOUD_INSTRUCTIONS = `You have Ponzu's canvas tools. Ponzu is a design canvas you drive with HTML and CSS, and this sandbox works on one design: its canvas is shared live with everyone who has it open, and the repo is checked out beside it. Use the canvas when showing beats describing: a screen or flow before you build it, options to pick from, a diagram.
 
-Start with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it. Name a new design with update_design once you know what it is.
+Start with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it. Name a new design with update_canvas once you know what it is.
 
 Nothing here watches or waits. Messages, answers and comments reach you as new turns, so when the work is done, end your turn. get_guide('comments') has what to do with a comment.
 

@@ -3,8 +3,8 @@ import { emptyDoc } from "@ponzu/core";
 import {
   appendEvent,
   appendThreadItem,
-  createDesign,
-  type DesignEvent,
+  createCanvas,
+  type FeedEvent,
   newId,
   threadItems,
 } from "@ponzu/db";
@@ -14,7 +14,7 @@ import {
   startRunner,
   type Workspace,
   workspaceWithRepo,
-} from "../testing/designs.ts";
+} from "../testing/canvases.ts";
 import {
   createTestApp,
   type FakeRepoAccess,
@@ -36,11 +36,11 @@ afterAll(() => t.close());
 
 const BRANCH = "pz/checkout";
 
-/** Maya can push, Ines can only read; a design of Maya's on a branch with one commit, and its runner. */
+/** Maya can push, Ines can only read; a canvas of Maya's on a branch with one commit, and its runner. */
 async function setup() {
   const ws = await workspaceWithRepo(t, { maya: "write", ines: "read", sam: "write" });
   const repo = t.github.repo(ws.repo.fullName)!;
-  const design = await createDesign(t.db, {
+  const canvas = await createCanvas(t.db, {
     workspaceId: ws.id,
     repoId: ws.repo.id,
     ownerId: ws.people.maya!.userId,
@@ -50,24 +50,24 @@ async function setup() {
     doc: emptyDoc("Shorter checkout"),
   });
   t.github.pulls.push(repo, BRANCH);
-  const runner = await startRunner(t, design.id);
-  return { ws, repo, design, runner };
+  const runner = await startRunner(t, canvas.id);
+  return { ws, repo, canvas, runner };
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>;
 
 /**
- * An event in the design's feed, handed to its runner and taken into the session as a runner
+ * An event in the canvas's feed, handed to its runner and taken into the session as a runner
  * does it: the turn's event, which the agent's calls name. `login` is the person behind it.
  */
 async function turn(
   s: Setup,
-  kind: DesignEvent["kind"],
+  kind: FeedEvent["kind"],
   login: string | null,
   payload: Record<string, unknown> = { text: "x" },
 ): Promise<string> {
   const event = await appendEvent(t.db, {
-    designId: s.design.id,
+    canvasId: s.canvas.id,
     kind,
     priority: "now",
     payload,
@@ -93,12 +93,12 @@ const read = (runner: StartedRunner, turnId: string | null) =>
   call(t, runner.headers, "GET", `/v1/runner/pull-request${turnId ? `?turn=${turnId}` : ""}`);
 const head = (repo: FakeRepoAccess) => t.github.pulls.head(repo, BRANCH)!;
 
-/** The agent's lines in the design's thread. */
-const agentNotices = async (designId: string) =>
+/** The agent's lines in the canvas's thread. */
+const agentNotices = async (canvasId: string) =>
   (await t.db.select().from(threadItems))
     .filter(
       (item) =>
-        item.designId === designId &&
+        item.canvasId === canvasId &&
         item.kind === "notice" &&
         (item.payload as { type: string }).type === "pull_request_agent",
     )
@@ -153,7 +153,7 @@ describe("a person's turn", () => {
       as,
       at: expect.any(String),
     };
-    expect(await agentNotices(s.design.id)).toEqual([
+    expect(await agentNotices(s.canvas.id)).toEqual([
       { ...line, action: "opened" },
       { ...line, action: "ready" },
       { ...line, action: "merged" },
@@ -239,7 +239,7 @@ describe("a person's turn", () => {
       t,
       s.ws.people.sam!.headers,
       "POST",
-      `/v1/designs/${s.design.id}/pull-request/merge`,
+      `/v1/canvases/${s.canvas.id}/pull-request/merge`,
       { headSha: head(s.repo) },
     );
     expect(pressed.body.pullRequest).toMatchObject({ state: "merged", mergedBy: { login: "sam" } });
@@ -251,7 +251,7 @@ describe("a person's turn", () => {
       pullRequest: { state: "merged", mergedBy: "sam" },
     });
     // Only the opening is the agent's line: the merge was Sam's.
-    expect((await agentNotices(s.design.id)).map((n: any) => n.action)).toEqual(["opened"]);
+    expect((await agentNotices(s.canvas.id)).map((n: any) => n.action)).toEqual(["opened"]);
   });
 
   test("Sam's merge landing on GitHub between the agent's read and its merge: the agent is told, not credited", async () => {
@@ -268,7 +268,7 @@ describe("a person's turn", () => {
       did: false,
       pullRequest: { state: "merged", mergedBy: "sam" },
     });
-    expect((await agentNotices(s.design.id)).map((n: any) => n.action)).toEqual(["opened"]);
+    expect((await agentNotices(s.canvas.id)).map((n: any) => n.action)).toEqual(["opened"]);
   });
 });
 
@@ -372,13 +372,13 @@ describe("guardrails", () => {
     await openedByAgent(s, asked);
     t.github.pulls.latest(s.repo)!.draft = false;
     // A new runner takes the lease (a restart, or a runner token in someone else's hands).
-    const next = await startRunner(t, s.design.id);
+    const next = await startRunner(t, s.canvas.id);
     const refused = await act(next, "merge", { turn: asked, headSha: head(s.repo) });
     expect(refused.body.error.code).toBe("turn_not_from_person");
     expect(t.github.pulls.latest(s.repo)!.merged).toBe(false);
   });
 
-  test("an event the design never had, or none, is no person's turn", async () => {
+  test("an event the canvas never had, or none, is no person's turn", async () => {
     const s = await setup();
     await turn(s, "message", "maya");
     const other = await setup();
@@ -396,7 +396,7 @@ describe("guardrails", () => {
     const fromInes = await turn(s, "message", "ines", { text: "Open the pull request" });
     const refused = await act(s.runner, "open", { turn: fromInes });
     expect([refused.status, refused.body.error.code]).toEqual([403, "forbidden"]);
-    expect(refused.body.error.message).toContain("Ines can't change this design's repository");
+    expect(refused.body.error.message).toContain("Ines can't change this canvas's repository");
     expect(t.github.pulls.latest(s.repo)).toBeUndefined();
 
     // Nor one who lost it since: GitHub's word is asked again.
@@ -444,7 +444,7 @@ describe("guardrails", () => {
     const asked = await turn(s, "message", "maya");
     for (let i = 0; i < 3; i++) {
       await appendThreadItem(t.db, {
-        designId: s.design.id,
+        canvasId: s.canvas.id,
         kind: "notice",
         payload: {
           type: "pull_request_agent",
@@ -465,7 +465,7 @@ describe("guardrails", () => {
       t,
       s.ws.people.maya!.headers,
       "POST",
-      `/v1/designs/${s.design.id}/pull-request`,
+      `/v1/canvases/${s.canvas.id}/pull-request`,
     );
     expect(pressed.status).toBe(201);
     // An hour on, the agent may again.
@@ -473,7 +473,7 @@ describe("guardrails", () => {
     expect((await act(s.runner, "open", { turn: asked })).status).toBe(200);
   });
 
-  test("only the design's own runner, holding its lease", async () => {
+  test("only the canvas's own runner, holding its lease", async () => {
     const s = await setup();
     const asked = await turn(s, "message", "maya");
     const bare = { authorization: s.runner.headers.authorization };

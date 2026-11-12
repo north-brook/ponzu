@@ -11,7 +11,7 @@ import { type Suggestion, SuggestionLine } from "./ideas.tsx";
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx";
 
 /**
- * The new design's prompt: one white card with the text, attach, the model and send. Return
+ * The new canvas's prompt: one white card with the text, attach, the model and send. Return
  * sends and Shift-Return breaks the line; send waits until there is something to send. The
  * field grows with the prompt, then scrolls.
  *
@@ -19,7 +19,7 @@ import { type ModelChoice, ModelPicker } from "./model-picker.tsx";
  * as the placeholder, each idea taking its turn; Tab takes the one showing into the field, to
  * edit and send. Typing anything puts it away, and Tab is the keyboard's again.
  */
-export function NewDesignComposer({
+export function NewCanvasComposer({
   prompt,
   onPromptChange,
   onSend,
@@ -96,7 +96,7 @@ export function NewDesignComposer({
         <textarea
           ref={fieldRef}
           {...FIELD}
-          aria-label="Describe the design"
+          aria-label="Describe the canvas"
           aria-describedby={suggested ? described : undefined}
           placeholder="Describe what you want to make"
           rows={1}

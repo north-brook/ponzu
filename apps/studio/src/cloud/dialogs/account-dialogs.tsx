@@ -1,5 +1,5 @@
 /*
- * Dialogs about the person's own account: their Claude signed out (on send, or from a design
+ * Dialogs about the person's own account: their Claude signed out (on send, or from a canvas
  * waiting on it), getting the iPhone app, disconnecting Claude, and deleting the account.
  */
 import { useEffect, useId, useState } from "react";
@@ -16,8 +16,8 @@ import {
 
 /**
  * The person's Claude is signed out (its year ran out, or it was revoked) and they sent: connect
- * it again, with the setup's own card, and the prompt goes. From an open design that waits on
- * it (`resume`), connecting is all it takes for the design to pick up again.
+ * it again, with the setup's own card, and the prompt goes. From an open canvas that waits on
+ * it (`resume`), connecting is all it takes for the canvas to pick up again.
  */
 export function ClaudeSignedOutDialog({
   open,
@@ -34,12 +34,12 @@ export function ClaudeSignedOutDialog({
   connected?: boolean;
   /** Its sign-in ran out, rather than being revoked: said as the design's strip says it. */
   expired?: boolean;
-  /** Opened from a design waiting on the person's Claude, not from a send. */
+  /** Opened from a canvas waiting on the person's Claude, not from a send. */
   resume?: boolean;
 }) {
   const { state } = card;
   const then = resume
-    ? "and this design picks up where it waited."
+    ? "and this canvas picks up where it waited."
     : "and Ponzu sends this. Your prompt is saved.";
   const title = !connected
     ? "Connect Claude"
@@ -87,7 +87,7 @@ export function GetIphoneDialog({ open, onDismiss }: { open: boolean; onDismiss:
       open={open}
       onDismiss={onDismiss}
       title="Get Ponzu on your iPhone"
-      body="Comment on designs and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
+      body="Comment on canvases and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
       wide
     >
       <div className="mt-0.5 flex flex-col">
@@ -102,7 +102,7 @@ export function GetIphoneDialog({ open, onDismiss }: { open: boolean; onDismiss:
   );
 }
 
-/** Disconnecting Claude stops the person's designs until they connect again: asked first. */
+/** Disconnecting Claude stops the person's canvases until they connect again: asked first. */
 export function DisconnectClaudeDialog({
   open,
   onCancel,
@@ -120,7 +120,7 @@ export function DisconnectClaudeDialog({
       onDismiss={onCancel}
       title="Disconnect Claude?"
       confirm
-      body="Your designs will wait until you connect again. Running turns stop."
+      body="Your canvases will wait until you connect again. Running turns stop."
     >
       <DialogActions>
         <DialogButton tone="raised" onClick={onCancel} disabled={busy}>
@@ -175,7 +175,7 @@ export function DeleteAccountDialog({
       onDismiss={onCancel}
       title="Delete your Ponzu account?"
       confirm
-      body="Your designs, threads and settings are deleted. Your repos and pull requests on GitHub are not touched."
+      body="Your canvases, threads and settings are deleted. Your repos and pull requests on GitHub are not touched."
     >
       <form
         className="flex flex-col gap-3"

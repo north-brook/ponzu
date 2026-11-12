@@ -1,11 +1,11 @@
 import { findPage, newId, type Op, PAGE_ICONS, parseTokens, setTokens } from "@ponzu/core";
 import { z } from "zod";
 import { ToolError, tool } from "./define.ts";
-import { apply, designOf, plural } from "./util.ts";
+import { apply, canvasOf, plural } from "./util.ts";
 
 /** What an icon is for, on every field that takes one. */
 export const ICON_HINT =
-  'Name what\'s inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one design read best with different icons. star means a favourite, not "interesting".';
+  'Name what\'s inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one canvas read best with different icons. star means a favourite, not "interesting".';
 
 export const icon = z.enum(PAGE_ICONS);
 
@@ -27,13 +27,13 @@ export const organizeTools = [
         .describe("Position in the page list. Default last."),
     },
     async handler(args, ctx) {
-      const { key, design } = await designOf(ctx);
+      const { key, canvas } = await canvasOf(ctx);
       const id = newId("pg");
       apply(
-        design,
+        canvas,
         {
           op: "page.create",
-          index: args.index ?? design.doc.pages.length,
+          index: args.index ?? canvas.doc.pages.length,
           page: { id, name: args.name, ...(args.icon ? { icon: args.icon } : {}) },
         },
         ctx,
@@ -57,13 +57,13 @@ export const organizeTools = [
       delete: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, [args.page]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.page]);
+      const doc = canvas.doc;
       const page = findPage(doc, args.page);
       if (!page) throw new ToolError(`No page ${args.page}.`);
       if (args.delete) {
-        if (doc.pages.length === 1) throw new ToolError("A design needs at least one page.");
-        apply(design, { op: "page.delete", id: page.id }, ctx);
+        if (doc.pages.length === 1) throw new ToolError("A canvas needs at least one page.");
+        apply(canvas, { op: "page.delete", id: page.id }, ctx);
         return {
           text: `Deleted page "${page.name}" and ${plural(page.artboards.length, "artboard")}.`,
         };
@@ -73,7 +73,7 @@ export const organizeTools = [
         ops.push({ op: "page.update", id: page.id, name: args.name, icon: args.icon });
       if (args.index !== undefined) ops.push({ op: "page.move", id: page.id, index: args.index });
       if (!ops.length) return { text: "Nothing to change." };
-      apply(design, { op: "batch", ops }, ctx);
+      apply(canvas, { op: "batch", ops }, ctx);
       return { text: `Updated page ${page.id}.` };
     },
   }),
@@ -86,8 +86,8 @@ export const organizeTools = [
       "Move superseded artboards to an Archive page (created if needed, kept last) and pack them into a grid. Keeps the working pages clean without losing history.",
     input: { ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx, args.ids);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, args.ids);
+      const doc = canvas.doc;
       const ops: Op[] = [];
       const archive = doc.pages.find((p) => p.name.toLowerCase() === "archive");
       const archiveId = archive?.id ?? newId("pg");
@@ -121,7 +121,7 @@ export const organizeTools = [
         x += w + 80;
         rowH = Math.max(rowH, h);
       }
-      apply(design, { op: "batch", ops }, ctx);
+      apply(canvas, { op: "batch", ops }, ctx);
       return { text: `Archived ${plural(args.ids.length, "artboard")} to page ${archiveId}.` };
     },
   }),
@@ -134,8 +134,8 @@ export const organizeTools = [
     description: "The design tokens as plain CSS. Use them in styles as var(--name).",
     input: {},
     async handler(_args, ctx) {
-      const { design } = await designOf(ctx);
-      return { text: design.doc.tokens.trim() || ":root {}" };
+      const { canvas } = await canvasOf(ctx);
+      return { text: canvas.doc.tokens.trim() || ":root {}" };
     },
   }),
 
@@ -144,17 +144,17 @@ export const organizeTools = [
     title: "Set tokens",
     group: "organize",
     description:
-      'Set or remove custom properties in the design\'s tokens; null removes. Values are any CSS, including light-dark(#fff, #111) for themes. Or pass `css` to replace the whole stylesheet (it may hold @font-face and @import too). Example: {"--color-ink": "#0E0E0E", "--radius-md": "10px"}',
+      'Set or remove custom properties in the canvas\'s tokens; null removes. Values are any CSS, including light-dark(#fff, #111) for themes. Or pass `css` to replace the whole stylesheet (it may hold @font-face and @import too). Example: {"--color-ink": "#0E0E0E", "--radius-md": "10px"}',
     input: {
       tokens: z.record(z.string(), z.union([z.string(), z.null()])).optional(),
       css: z.string().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await designOf(ctx);
-      let css = args.css ?? design.doc.tokens;
+      const { canvas } = await canvasOf(ctx);
+      let css = args.css ?? canvas.doc.tokens;
       if (args.tokens) css = setTokens(css, args.tokens);
       if (!args.css && !args.tokens) throw new ToolError("Pass tokens or css.");
-      apply(design, { op: "tokens", css }, ctx);
+      apply(canvas, { op: "tokens", css }, ctx);
       return { text: `Tokens: ${parseTokens(css).length} defined.` };
     },
   }),

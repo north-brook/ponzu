@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's components in a real Chromium, beside gallery.test.ts: creating a
- * design, the repo picker, the page tabs and the pull request tab, their keyboard and focus
+ * canvas, the repo picker, the page tabs and the pull request tab, their keyboard and focus
  * behaviour. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
@@ -308,7 +308,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector('input[aria-label="Search repositories"]', { state: "detached" });
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("north-brook/lenny");
     // Chosen, the caret goes on to the composer, to say what to make there.
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
   });
   /**
    * Checks the arrows, Home and End move the highlight while `focused` (the field, or the list)
@@ -366,7 +366,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector(list, { state: "detached" });
     // The statement's last words: "Make something from scratch".
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
   });
   test("the repo picker on pick-a-project-many-repos: the search field keeps the keys; the arrows, Home and End move the highlight; Escape changes nothing", async () => {
     const field = 'input[aria-label="Search repositories"]';
@@ -448,7 +448,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       };
     });
 
-  /** How far the thread's composer rests from the foot of its pane, on a design. */
+  /** How far the thread's composer rests from the foot of its pane, on a canvas. */
   const threadInset = async () => {
     await open("thread-in-the-right-rail");
     return page.evaluate(() => {
@@ -697,7 +697,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await pressIn("ArrowDown", "effort:Extra high");
     await page.keyboard.press("Enter");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
     expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Sonnet 5, effort Extra high");
     // The same with the pointer: a model keeps it open, an effort closes it onto the composer.
     await page.click(chip);
@@ -705,7 +705,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await page.$('[role="menu"]')).not.toBeNull();
     await page.click('[role="menuitemradio"]:has-text("Low")');
     await page.waitForSelector('[role="menu"]', { state: "detached" });
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
     expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Opus 5.5, effort Low");
     expect(await page.inputValue("textarea")).toBe(words);
   });
@@ -743,7 +743,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // composer, and the chip says the model alone.
     await page.click('[role="menuitemradio"]:has-text("Haiku 4.5")');
     await page.waitForSelector('[role="menu"]', { state: "detached" });
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
     expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Haiku 4.5");
     // Opened again, the efforts' pane says it takes none, in a row's place, and Right goes nowhere.
     await page.click(chip);
@@ -958,7 +958,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // Once the thread's pane has closed again, the composer is where it was.
     await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
     expect(await sendCard()).toEqual(before);
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
   });
 
   test("send pressed twice makes one send and one travel", async () => {
@@ -1193,7 +1193,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       "Project: lennylearning/app",
     );
     expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
-    await focusOn("Describe the design");
+    await focusOn("Describe the canvas");
     // There, its own group comes first and Northbrook's after.
     await openPicker();
     expect(await listed()).toEqual([
@@ -1370,7 +1370,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
   test("the create composer: a press anywhere on its card writes; its controls keep theirs", async () => {
     await open("create");
-    const field = 'textarea[aria-label="Describe the design"]';
+    const field = 'textarea[aria-label="Describe the canvas"]';
     const card = await page.$eval(field, (el) => {
       const r = el.closest(".cursor-text")!.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };

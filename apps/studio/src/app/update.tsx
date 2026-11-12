@@ -100,7 +100,7 @@ export function UpdateNotes({
         <p className="m-0 mt-1.5 text-13 text-muted">Fixes and improvements.</p>
       )}
       <p className="m-0 mt-3 text-12 text-faint">
-        Restarting takes a moment. Your designs and agents carry on in the cloud.
+        Restarting takes a moment. Your canvases and agents carry on in the cloud.
       </p>
       <div className="mt-3.5 flex justify-end gap-1.5">
         <Button variant="quiet" className="px-3" onClick={onLater} disabled={installing}>
@@ -133,10 +133,10 @@ export function UpdateRequired({ updater }: { updater: Updater | null }) {
       </h1>
       <p className="m-0 mt-3.5 max-w-[420px] text-center text-[15px] text-muted leading-[1.55]">
         {!canUpdate
-          ? "This copy of Ponzu is too old to reach your designs. Download the newest one from ponzu.design."
+          ? "This copy of Ponzu is too old to reach your canvases. Download the newest one from ponzu.design."
           : ready
             ? `Ponzu ${ready.version} is ready. Restart to keep working; everything you made is waiting.`
-            : "This version is too old to reach your designs. The new one is downloading."}
+            : "This version is too old to reach your canvases. The new one is downloading."}
       </p>
       {canUpdate ? (
         <Button

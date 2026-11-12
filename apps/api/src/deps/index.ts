@@ -4,7 +4,7 @@ import { type Clock, type Sandboxes, systemClock, vercelSandboxes } from "@ponzu
 import manifest from "../../package.json" with { type: "json" };
 import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
-import { DocCache } from "../designs/doc-cache.ts";
+import { DocCache } from "../canvases/doc-cache.ts";
 import type { Env, SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
@@ -49,7 +49,7 @@ export interface Deps {
   runnerBundle: () => RunnerBundle;
   /** Checks a person's Anthropic API key. */
   anthropic: Anthropic;
-  /** Cloudflare R2: the bytes of designs' files, previews and exports. */
+  /** Cloudflare R2: the bytes of canvases' files, previews and exports. */
   storage: ObjectStorage;
   /**
    * Where a checkpoint's archives (a session's transcript, work in progress) are kept: a bucket
@@ -67,7 +67,7 @@ export interface Deps {
    * sees it (the ideas gate, `ideas/gate.ts`).
    */
   reviewer: Model;
-  /** The design documents this instance has built lately. */
+  /** The canvas documents this instance has built lately. */
   docs: DocCache;
   /** The git tokens this instance hands runners, kept while they may be reused. */
   gitTokens: GitTokens;
@@ -83,9 +83,9 @@ export interface Config {
   /** What `/v1/health` reports about this build. */
   build: { version: string; commit: string | null };
   minimumClientVersions: MinimumVersions;
-  /** Where design files are served from; a design's are under `<assetsUrl>/<asset key>/`. */
+  /** Where design files are served from; a canvas's are under `<assetsUrl>/<asset key>/`. */
   assetsUrl: string;
-  /** What a design's runner reports its turns to PostHog with, or null when analytics is off. */
+  /** What a canvas's runner reports its turns to PostHog with, or null when analytics is off. */
   posthog: PosthogConfig | null;
   /**
    * The GitHub App's slug, where installs begin, the secret its webhooks are signed with, and
@@ -94,7 +94,7 @@ export interface Config {
   githubApp: { slug: string; webhookSecret: string; botUserId: number };
   /** What the scheduler's requests carry (`routes/cron.ts`). */
   cronSecret: string;
-  /** How designs' sandboxes are made and kept. */
+  /** How canvases' sandboxes are made and kept. */
   sandbox: SandboxConfig;
 }
 

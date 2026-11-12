@@ -3,7 +3,7 @@ import { imageHold, sameImage } from "./orchestrate.ts";
 
 /*
  * Where a rollout of a new sandbox image stands (docs/cloud.md, "How images roll out"): for each
- * design's sandbox, the image it runs and what its next wake will do about the image this build
+ * canvas's sandbox, the image it runs and what its next wake will do about the image this build
  * ships (`current.json`). A wake on another image recreates the sandbox (its disk is lost and
  * the runner restores the last checkpoint), unless that checkpoint is behind. `scripts/images.ts`
  * prints it; it changes nothing.
@@ -20,11 +20,11 @@ export type Next =
   | "recreates_after_a_checkpoint"
   /** It stays: its runner never saved a checkpoint, so a recreate would lose what is on disk. */
   | "stays_no_checkpoint"
-  /** Its design is settled: the sweep retires it. */
+  /** Its canvas is settled: the sweep retires it. */
   | "retired";
 
 export interface RolloutRow {
-  designId: string;
+  canvasId: string;
   state: string;
   /** The image it runs; null before its first wake. */
   image: string | null;
@@ -39,21 +39,21 @@ export function rollout(
   { image }: { image: string },
 ): RolloutRow[] {
   return sandboxes.map((row) => ({
-    designId: row.sandbox.designId,
+    canvasId: row.sandbox.canvasId,
     state: row.sandbox.state,
     image: row.sandbox.image,
     client: row.client,
-    next: nextFor(row, covers.get(row.sandbox.designId) ?? "none", image),
+    next: nextFor(row, covers.get(row.sandbox.canvasId) ?? "none", image),
   }));
 }
 
 /** What the next wake of one sandbox does about `image`. */
 export function nextFor(
-  { sandbox, designStatus }: SandboxImage,
+  { sandbox, canvasStatus }: SandboxImage,
   cover: CheckpointCover,
   image: string,
 ): Next {
-  if (designStatus === "settled") return "retired";
+  if (canvasStatus === "settled") return "retired";
   if (!sandbox.image || sameImage(sandbox.image, image)) return "current";
   const hold = imageHold(cover);
   if (hold === "no_checkpoint") return "stays_no_checkpoint";

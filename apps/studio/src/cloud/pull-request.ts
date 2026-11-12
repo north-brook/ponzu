@@ -45,7 +45,7 @@ const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["fix_checks", "resolve"]
 
 /**
  * Why the next action can't be taken now, for its tip, or null when it can. Every action steers
- * the design, so it needs write access; the agent's actions also wait while its Claude can't run.
+ * the canvas, so it needs write access; the agent's actions also wait while its Claude can't run.
  */
 export function actionBlock(
   action: NextAction,

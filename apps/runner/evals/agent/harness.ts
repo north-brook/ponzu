@@ -52,8 +52,8 @@ export const REFUSAL =
 const BRANCH = "pz/onboarding";
 
 export interface TurnSetup {
-  /** The design's id: its links are `https://ponzu.design/designs/<id>…`. */
-  designId: string;
+  /** The design's id: its links are `https://ponzu.design/canvases/<id>…`. */
+  canvasId: string;
   doc: Doc;
   /** A design on the fitness app's repository, or Scratch. */
   repo: boolean;
@@ -157,12 +157,12 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
   const api = new FakeRunnerApi({
     doc: structuredClone(setup.doc),
     session: {
-      design: { id: setup.designId, name: setup.doc.name },
+      canvas: { id: setup.canvasId, name: setup.doc.name },
       repo: setup.repo ? { owner: "ada", name: "fitness-app", defaultBranch: "main" } : null,
       branch: setup.repo ? BRANCH : null,
       model: "claude-opus-5-5",
       effort: "high",
-      link: `https://ponzu.design/designs/${setup.designId}`,
+      link: `https://ponzu.design/canvases/${setup.canvasId}`,
     },
   });
   api.pullRequest = setup.pullRequest ?? null;

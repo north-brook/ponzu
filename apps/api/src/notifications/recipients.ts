@@ -79,7 +79,7 @@ export function needsYouRecipients(
     stage: "now" | "escalate";
     /** The person behind the newest delivered message, answer or comment, if any. */
     driverId: string | null;
-    /** Everyone with a `design_reads` row for the canvas: they have opened it. */
+    /** Everyone with a `canvas_reads` row for the canvas: they have opened it. */
     openedBy: ReadonlySet<string>;
     actorId?: string | null;
   },

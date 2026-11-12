@@ -1,6 +1,6 @@
 import type { Repo } from "../model.ts";
 
-/** What a new design is made in: a repo, or Scratch. */
+/** What a new canvas is made in: a repo, or Scratch. */
 export type ProjectChoice = { kind: "repo"; repo: Repo } | { kind: "scratch" };
 
 /**

@@ -2,8 +2,8 @@ import { Cancel01Icon, DashboardSquare01Icon, Search01Icon } from "@hugeicons/co
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useState } from "react";
 import {
   type BoardHit,
+  type CanvasHit,
   type CommentHit,
-  type DesignHit,
   firstName,
   type Match,
   type SearchResults,
@@ -15,7 +15,7 @@ import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { TEXT } from "../ui/ladder.ts";
-import { DesignPreviewImage } from "./design-preview.tsx";
+import { CanvasPreviewImage } from "./canvas-preview.tsx";
 
 const LIST_ID = "search-results";
 const optionId = (key: ResultKey) => `search-${key.replace(":", "-")}`;
@@ -75,7 +75,7 @@ export function SearchField({
       <input
         type="search"
         role="combobox"
-        aria-label="Search designs, boards and comments"
+        aria-label="Search canvases, boards and comments"
         aria-expanded={keys.length > 0}
         aria-controls={LIST_ID}
         aria-autocomplete="list"
@@ -121,7 +121,7 @@ export function useResultSelection(results: SearchResults | null) {
 }
 
 /**
- * Results as you type, in up to three groups (Designs, Boards, Comments) with what matched
+ * Results as you type, in up to three groups (Canvases, Boards, Comments) with what matched
  * highlighted. `results` is null while the first answer for the query is on its way; a line says
  * so only if that takes longer than a moment.
  */
@@ -181,18 +181,18 @@ export function SearchResultsView({
         id={LIST_ID}
         role="listbox"
         aria-label="Search results"
-        // Designs' and boards' names and people's comments: masked in a private recording
+        // Canvases' and boards' names and people's comments: masked in a private recording
         // (app/analytics/privacy.ts).
         data-replay="mask"
         className="flex flex-col"
       >
-        <Group label="Designs" hits={results.designs}>
-          {(hit: DesignHit) =>
+        <Group label="Canvases" hits={results.canvases}>
+          {(hit: CanvasHit) =>
             option(
-              `design:${hit.design.id}`,
-              <DesignPreviewImage preview={hit.design.preview} width={40} height={26} />,
-              <Highlighted text={hit.design.name} matches={hit.matches} />,
-              designLine(hit, now),
+              `canvas:${hit.canvas.id}`,
+              <CanvasPreviewImage preview={hit.canvas.preview} width={40} height={26} />,
+              <Highlighted text={hit.canvas.name} matches={hit.matches} />,
+              canvasLine(hit, now),
             )
           }
         </Group>
@@ -204,7 +204,7 @@ export function SearchResultsView({
                 <Icon icon={DashboardSquare01Icon} step="inline" />
               </span>,
               <Highlighted text={hit.name} matches={hit.matches} />,
-              `in ${hit.design.name}`,
+              `in ${hit.canvas.name}`,
             )
           }
         </Group>
@@ -216,7 +216,7 @@ export function SearchResultsView({
               <>
                 “<Highlighted text={hit.text} matches={hit.matches} />”
               </>,
-              `${firstName(hit.author)} · ${hit.design.name} · ${ago(hit.at, now, "short")}`,
+              `${firstName(hit.author)} · ${hit.canvas.name} · ${ago(hit.at, now, "short")}`,
             )
           }
         </Group>
@@ -265,14 +265,14 @@ export function Highlighted({ text, matches }: { text: string; matches: readonly
   );
 }
 
-/** An open design says where it is; a settled one, whose it was and when. */
-function designLine({ design }: DesignHit, now: number): string {
-  const { project } = design;
+/** An open canvas says where it is; a settled one, whose it was and when. */
+function canvasLine({ canvas }: CanvasHit, now: number): string {
+  const { project } = canvas;
   const where = project.kind === "repo" ? project.repo.name : project.city;
-  if (design.status === "settled") {
+  if (canvas.status === "settled") {
     const parts = [where];
-    if (design.owner) parts.push(firstName(design.owner));
-    if (design.settledAt) parts.push(ago(design.settledAt, now, "long"));
+    if (canvas.owner) parts.push(firstName(canvas.owner));
+    if (canvas.settledAt) parts.push(ago(canvas.settledAt, now, "long"));
     return parts.join(" · ");
   }
   return project.kind === "repo" ? `${where} · ${project.branch}` : `Scratch · ${where}`;

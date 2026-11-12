@@ -66,7 +66,7 @@ that acts on it.
 ```ts
 const api = createApi(session);
 const { workspaces } = await api.me();
-const design = await api.designs.create({ workspaceId, repoId });
+const canvas = await api.canvases.create({ workspaceId, repoId });
 ```
 
 One method per thing the apps ask (`api.ts`), typed from the API's own routes (`AppType`).
@@ -92,9 +92,9 @@ const connect = useMutation(mutations.connectApiKey());
 ```
 
 What is asked for by request (`me`, the GitHub accounts, a workspace, the person's Claude and
-their defaults; Settings' notifications, environments and usage; an open design's thread pages,
+their defaults; Settings' notifications, environments and usage; an open canvas's thread pages,
 its pull request and each file's diff at a commit) is cached by TanStack Query, the phone's
-library too. A design's sends, answers, uploads, stop and pull request actions are mutations
+library too. A canvas's sends, answers, uploads, stop and pull request actions are mutations
 here as well; its thread and questions are live queries. Each mutation writes what
 its answer says into the cache and asks again for what it may have changed. Where a live query
 covers the same rows, it says when an answer is out of date: `invalidateFromLive` asks for
@@ -105,13 +105,13 @@ was refused (a 403, a 404) is not asked again; one that got no answer is, twice.
 
 ```ts
 const live = createLive({ api });
-const off = live.subscribe("design.head", { designId }, ({ rows, status, error }) => …);
+const off = live.subscribe("canvas.head", { canvasId }, ({ rows, status, error }) => …);
 // in React, under <LiveProvider live={live}>:
-const { rows, status } = useLiveQuery("workspace.designs", { workspaceId });
+const { rows, status } = useLiveQuery("workspace.canvases", { workspaceId });
 ```
 
-The names are the API's (`me`, `workspace.designs`, `design.head`, `design.thread`,
-`design.questions`, `design.presence`); `LiveRows` types each one's rows. `status` is
+The names are the API's (`me`, `workspace.canvases`, `canvas.head`, `canvas.thread`,
+`canvas.questions`, `canvas.presence`); `LiveRows` types each one's rows. `status` is
 `connecting` (no rows yet), `live`, `offline` (the last rows known, while reconnecting, paused
 or failing) or `ended` (refused, for good: `error.code` says why). Rows come unordered: sort
 with `byRecentActivity`, `bySeq` and `presentNow`.
@@ -124,18 +124,18 @@ with a full fresh result. Neon Realtime is used only in `live/realtime.ts`.
 ## The canvas
 
 ```ts
-const source = new CloudSource({ api, live, designId, me, cache: new DocCache(storage) });
+const source = new CloudSource({ api, live, canvasId, me, cache: new DocCache(storage) });
 <Canvas source={source} me={me} readOnly={!source.writable} />
 source.onUnsaved(({ reason }) => toast("That change could not be saved."));
-source.close();   // on leaving the design
+source.close();   // on leaving the canvas
 ```
 
 `me` is the signed-in person as the API stamps their ops: `{ kind: "user", id, name, avatarUrl }`.
 Edits show at once and are posted behind; undo and redo are the API's. `source.setPage(id)` tells
 the others which page you are on, and `source.retryNow()` skips a wait when the network is back.
-A design deleted or taken away while open turns the state to `error`, and whatever had not been
+A canvas deleted or taken away while open turns the state to `error`, and whatever had not been
 saved yet is reported through `onUnsaved`.
-`DocCache` keeps the last designs opened, shown read only while the API cannot be reached; give
+`DocCache` keeps the last canvases opened, shown read only while the API cannot be reached; give
 it storage meant for size (a file), not the keychain.
 
 ## On the phone
@@ -165,7 +165,7 @@ const backend = createFakeBackend();
 const maya = backend.addPerson({ login: "maya" });
 const ws = backend.addWorkspace({ login: "acme", members: { [maya.id]: "admin" }, repos: [{ name: "site" }] });
 const { session, api, live } = backend.connect(maya);
-backend.agent(designId).say("Drawing the hero");
+backend.agent(canvasId).say("Drawing the hero");
 ```
 
 `bun test packages/client` runs everything in memory. `src/cloud.live.test.ts` runs against the

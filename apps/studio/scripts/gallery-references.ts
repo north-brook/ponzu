@@ -50,7 +50,7 @@ export function areaOf(c: Composition): Area {
   if (/^settings-(github|environments|plan)|^free-credits/.test(c.id)) return "workspace";
   if (SETUP.has(c.id)) return "settings";
   if (c.id.includes("sidebar")) return "sidebar";
-  if (/^share|^thread-in-the-right-rail$|^together-on-a-design$/.test(c.id)) return "people";
+  if (/^share|^thread-in-the-right-rail$|^together-on-a-canvas$/.test(c.id)) return "people";
   return "window";
 }
 

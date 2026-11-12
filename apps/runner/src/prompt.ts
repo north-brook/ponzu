@@ -6,7 +6,7 @@ import type { AnswerEvent, Person, PullRequestState, RunnerEvent } from "./api/p
  * it is given as written. What anyone else wrote (a comment, a review, a check's log) is
  * quoted, line by line, after a line that says whose it is: on a public repository anyone can
  * review the pull request, and the agent is told (`RUNNER_INSTRUCTIONS`) that quoted text asks
- * for changes to the design and never directs it otherwise. Ids are given whole, as the tools
+ * for changes to the canvas and never directs it otherwise. Ids are given whole, as the tools
  * take them, so the agent can act on a thread or an artboard without searching for it.
  */
 
@@ -18,7 +18,7 @@ export const RUNNER_INSTRUCTIONS = [
 ].join(" ");
 
 /**
- * What a turn on a repo design starts with, after the event: where the design's pull request
+ * What a turn on a repo canvas starts with, after the event: where the canvas's pull request
  * and branch stand as the app shows them, so the agent never speaks of a pull request that does
  * not exist, and, for a turn GitHub began, that it may not land it.
  */

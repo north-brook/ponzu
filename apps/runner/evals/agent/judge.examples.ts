@@ -21,7 +21,7 @@ const GREEN =
   'Comment from Ada on the canvas: "Make the accent a deep green instead of orange, everywhere."';
 const FLOW_FACTS =
   "Made 7 iPhone screen boards on the Onboarding page and a board named 'Note: How the flow works'. Committed a spec and screenshots under docs/onboarding/ and pushed pz/fitness-onboarding. describe_pull_request was called. No pull request is open. Nothing failed.";
-const LINK = "https://ponzu.design/designs/des_q4f8k2trial";
+const LINK = "https://ponzu.design/canvases/cnv_q4f8k2trial";
 
 export const THREAD_JUDGE_EXAMPLES: ThreadExample[] = [
   {
@@ -501,7 +501,7 @@ On your phone, look at [Yearly plan – mobile](${LINK}?artboard=ab_bd49f) first
         "Made a board named 'Note: Button color' explaining that the button uses var(--accent). No repository change. Nothing failed.",
       midTurn: [],
       closing:
-        "I've put the answer on [Note: Button color](https://ponzu.design/designs/des_x?artboard=ab_c1).",
+        "I've put the answer on [Note: Button color](https://ponzu.design/canvases/cnv_x?artboard=ab_c1).",
       prDescription: null,
     },
     expect: { canvas_detail: "fail" },

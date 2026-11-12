@@ -136,8 +136,8 @@ async function settle(page: Page) {
     await document.fonts.ready;
     await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
     // An avatar, and a design's preview, draw their picture only once it has loaded
-    // (ui/avatar.tsx, sidebar/design-preview.tsx).
-    const loading = ["avatar", "design-preview"]
+    // (ui/avatar.tsx, sidebar/canvas-preview.tsx).
+    const loading = ["avatar", "canvas-preview"]
       .map((slot) => `[data-slot="${slot}"][data-status="loading"]`)
       .join(", ");
     for (let tries = 0; tries < 100; tries++) {

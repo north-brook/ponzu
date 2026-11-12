@@ -2,7 +2,7 @@ import { app, Menu, shell } from "electron";
 import type { MenuCommand } from "./bridge.ts";
 
 /*
- * The app's menus. What the studio carries out (a new design, Settings) goes to it as a
+ * The app's menus. What the studio carries out (a new canvas, Settings) goes to it as a
  * command, so a shortcut does the same thing from anywhere in the window; signing out and
  * updating are the main process's own.
  */
@@ -59,9 +59,9 @@ export function buildMenu(actions: MenuActions): void {
       label: "File",
       submenu: [
         {
-          label: "New Design",
+          label: "New Canvas",
           accelerator: "CmdOrCtrl+N",
-          click: () => actions.command("new-design"),
+          click: () => actions.command("new-canvas"),
         },
         { type: "separator" },
         mac ? { role: "close" } : { role: "quit" },

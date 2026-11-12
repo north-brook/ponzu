@@ -1,7 +1,7 @@
-import { ApiError, type DesignHeadRow, type PullRequestTab } from "@ponzu/client";
+import { ApiError, type CanvasHeadRow, type PullRequestTab } from "@ponzu/client";
 import type {
+  CanvasSummary,
   CheckRun,
-  DesignSummary,
   GithubAuthor,
   PrFile,
   PullRequestDetail,
@@ -11,7 +11,7 @@ import type { NextAction } from "../cloud/pull-request.ts";
 
 /*
  * The API's pull request (`PullRequestTab`, apps/api/src/pull-requests/view.ts) as the UI's
- * model, in one place: the tab's detail, the chrome's mark from the design's head, and the
+ * model, in one place: the tab's detail, the chrome's mark from the canvas's head, and the
  * action button. Every title, body and name is GitHub's, and untrusted: the tab draws them
  * through Prose.
  */
@@ -110,7 +110,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
 
 /**
  * A description as the tab shows it: what Ponzu wrote for GitHub's readers taken out. The
- * design's picture is HTML for GitHub's page (the tab draws HTML as text, and the design is open
+ * canvas's picture is HTML for GitHub's page (the tab draws HTML as text, and the canvas is open
  * beside it anyway), the way back to Ponzu leads where the tab already is, and the markers around
  * the agent's summary are for rewriting it. What anyone else wrote stays as written.
  */
@@ -124,11 +124,11 @@ export function bodyForTab(body: string): string {
 }
 
 type HeadPr = Pick<
-  DesignHeadRow,
+  CanvasHeadRow,
   "prNumber" | "prState" | "prChecks" | "prMergeable" | "prAutoMerge"
 >;
 
-/** The chrome's mark, from the design's head: what the sidebar and the chrome watch live. */
+/** The chrome's mark, from the canvas's head: what the sidebar and the chrome watch live. */
 export function prSummary(head: HeadPr | undefined): PullRequestSummary | null {
   if (!head || head.prNumber === null || head.prState === null) return null;
   return {
@@ -141,12 +141,12 @@ export function prSummary(head: HeadPr | undefined): PullRequestSummary | null {
 }
 
 /**
- * The pull request as the sidebar's row has it, before the design's head has come: the same
+ * The pull request as the sidebar's row has it, before the canvas's head has come: the same
  * columns, with what the last read of GitHub said of whether it can merge, where that read is of
  * the same pull request as it stands.
  */
 export function rowPullRequest(
-  summary: DesignSummary | null,
+  summary: CanvasSummary | null,
   tab: PullRequestTab | null,
 ): PullRequestSummary | null {
   const pr = summary?.pullRequest;

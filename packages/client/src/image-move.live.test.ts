@@ -8,18 +8,18 @@ import { createSession } from "./session.ts";
 import { sessionFile } from "./testing/session-file.ts";
 
 /*
- * A design recreated on a new sandbox image, for real, opt in, in two runs with a deploy between
+ * A canvas recreated on a new sandbox image, for real, opt in, in two runs with a deploy between
  * (docs/cloud.md, "How images roll out"). Observed through the API alone, like
  * lifecycle.live.test.ts, whose environment it takes.
  *
- * Before: a design in the test repository is asked to remember a code word and to write a line to
+ * Before: a canvas in the test repository is asked to remember a code word and to write a line to
  * a file it does not commit; the agent goes idle and the idle stop puts the sandbox to sleep.
  * What the second run needs is written to PONZU_IMAGE_MOVE_STATE (a file in the temp folder by
  * default). Between: deploy the API with another image in apps/runner/image/current.json (or
  * restart `bun run dev` with it). After: a message wakes it, which recreates its sandbox on that
  * image; the agent must answer with the code word without a tool and find the line in the file,
  * uncommitted: the conversation and the work in progress came over from the checkpoint. Then the
- * design is deleted with its sandbox. The API captures `sandbox woke` with `recreated: true` (or
+ * canvas is deleted with its sandbox. The API captures `sandbox woke` with `recreated: true` (or
  * logs `sandbox_move_held` with why it waited).
  *
  *   PONZU_IMAGE_MOVE_LIVE=before PONZU_API_URL=… PONZU_SESSION_FILE=… WORKOS_CLIENT_ID=… \
@@ -63,7 +63,7 @@ interface Item {
   payload: Record<string, unknown>;
 }
 
-describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
+describe.skipIf(!ready)("a canvas recreated on a new image, for real", () => {
   test(
     `${phase}: the conversation and the work in progress come over to the new sandbox`,
     async () => {
@@ -99,19 +99,19 @@ describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
           await new Promise((resolve) => setTimeout(resolve, SECOND));
         }
       };
-      const thread = (designId: string) =>
-        call<{ items: Item[] }>("GET", `designs/${designId}/thread`);
-      const lastAnswer = async (designId: string) => {
-        const items = (await thread(designId)).items.filter(
+      const thread = (canvasId: string) =>
+        call<{ items: Item[] }>("GET", `canvases/${canvasId}/thread`);
+      const lastAnswer = async (canvasId: string) => {
+        const items = (await thread(canvasId)).items.filter(
           (item) => item.kind !== "message" && item.kind !== "comment",
         );
         const last = items.at(-1);
         return last?.kind === "assistant" ? String(last.payload.text ?? "") : undefined;
       };
-      const idle = (designId: string) =>
+      const idle = (canvasId: string) =>
         until("the agent to be idle", 5 * MINUTE, async () => {
-          const design = await call<{ agentState: string }>("GET", `designs/${designId}`);
-          return design.agentState === "idle" || undefined;
+          const canvas = await call<{ agentState: string }>("GET", `canvases/${canvasId}`);
+          return canvas.agentState === "idle" || undefined;
         });
 
       if (phase === "before") {
@@ -132,14 +132,14 @@ describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
         }
         await call("POST", "claude/api-key", { key: env.ANTHROPIC_API_KEY });
 
-        const created = await call<{ id: string }>("POST", "designs", {
+        const created = await call<{ id: string }>("POST", "canvases", {
           ...found,
           message: { text: FIRST },
           model: "claude-haiku-5-5",
           effort: "low",
           createKey: `image-move-live-${Date.now()}`,
         });
-        writeFileSync(STATE, JSON.stringify({ designId: created.id, word: WORD }));
+        writeFileSync(STATE, JSON.stringify({ canvasId: created.id, word: WORD }));
         console.log(`design ${created.id}, code word ${WORD}, state in ${STATE}`);
         await until("the first answer", 5 * MINUTE, () => lastAnswer(created.id));
         await idle(created.id);
@@ -147,7 +147,7 @@ describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
         try {
           await until("the idle stop", 5 * MINUTE, async () => {
             await cron();
-            const row = live.snapshot("design.head", { designId: created.id }).rows?.[0];
+            const row = live.snapshot("canvas.head", { canvasId: created.id }).rows?.[0];
             return row?.sandboxState === "asleep" || undefined;
           });
         } finally {
@@ -159,15 +159,15 @@ describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
         return;
       }
 
-      const { designId, word } = JSON.parse(readFileSync(STATE, "utf8")) as {
-        designId: string;
+      const { canvasId, word } = JSON.parse(readFileSync(STATE, "utf8")) as {
+        canvasId: string;
         word: string;
       };
       try {
         const asked = Date.now();
-        await call("POST", `designs/${designId}/messages`, { text: SECOND_MESSAGE });
+        await call("POST", `canvases/${canvasId}/messages`, { text: SECOND_MESSAGE });
         const answer = await until("the answer on the new sandbox", 8 * MINUTE, async () => {
-          const text = await lastAnswer(designId);
+          const text = await lastAnswer(canvasId);
           return text && text.includes(word) && /moved/i.test(text) ? text : undefined;
         });
         console.log(`answered in ${(Date.now() - asked) / 1000} s: ${answer}`);
@@ -176,9 +176,9 @@ describe.skipIf(!ready)("a design recreated on a new image, for real", () => {
         expect(answer).toContain(`moved ${word}`);
         expect(answer.toLowerCase()).toMatch(/uncommitted|untracked|not committed/);
       } finally {
-        await call("DELETE", `designs/${designId}`);
+        await call("DELETE", `canvases/${canvasId}`);
         await call("DELETE", "claude");
-        console.log("Design deleted. Its `sandbox woke` should say recreated: true.");
+        console.log("Canvas deleted. Its `sandbox woke` should say recreated: true.");
       }
     },
     20 * MINUTE,

@@ -4,7 +4,7 @@ import {
   checkMessages,
   describedAfterLastCommit,
   idsOf,
-  parseDesignAddress,
+  parseCanvasAddress,
   pullRequestAsAsked,
 } from "./checks.ts";
 import { pricingDoc } from "./seeds.ts";
@@ -14,10 +14,10 @@ import { pricingDoc } from "./seeds.ts";
 const doc = pricingDoc();
 const [home, mobile] = doc.pages;
 const hero = home!.artboards[0]!;
-const design = "des_eval";
-const link = (q: string) => `https://ponzu.design/designs/${design}${q}`;
+const canvas = "cnv_eval";
+const link = (q: string) => `https://ponzu.design/canvases/${canvas}${q}`;
 const check = (...messages: string[]) =>
-  checkMessages(messages, { designId: design, docAfter: doc, docBefore: doc });
+  checkMessages(messages, { canvasId: canvas, docAfter: doc, docBefore: doc });
 
 test("a link to a board or page of this design passes; one to a board that is gone fails", () => {
   expect(
@@ -36,14 +36,14 @@ test("a link to a board or page of this design passes; one to a board that is go
 
 test("another design's address, or one dressed up as ours, fails", () => {
   expect(
-    check(`[x](https://ponzu.design/designs/des_other?artboard=${hero.id})`).results.links,
+    check(`[x](https://ponzu.design/canvases/cnv_other?artboard=${hero.id})`).results.links,
   ).toBe(false);
   expect(
-    check(`[x](https://ponzu.design/designs/${design}?artboard=${hero.id}&artboard=${hero.id})`)
+    check(`[x](https://ponzu.design/canvases/${canvas}?artboard=${hero.id}&artboard=${hero.id})`)
       .results.links,
   ).toBe(false);
   // Not our host at all: not one of our links, so not checked as one.
-  expect(check(`[x](https://ponzu.design.evil.test/designs/${design})`).links).toHaveLength(0);
+  expect(check(`[x](https://ponzu.design.evil.test/canvases/${canvas})`).links).toHaveLength(0);
 });
 
 test("an address pasted as text, or a bare one, fails; one only as a link's address passes", () => {
@@ -64,18 +64,18 @@ test("an id people would read fails, in text or in code; in a link's address it 
 });
 
 test("our address parser reads only the exact form", () => {
-  expect(parseDesignAddress(link(`?page=${mobile!.id}`))).toEqual({
-    designId: design,
+  expect(parseCanvasAddress(link(`?page=${mobile!.id}`))).toEqual({
+    canvasId: canvas,
     page: mobile!.id,
   });
   for (const href of [
-    `http://ponzu.design/designs/${design}`,
-    `https://ponzu.design:8443/designs/${design}`,
-    `https://ada@ponzu.design/designs/${design}`,
-    `https://ponzu.design/d/${design}`,
-    `https://ponzu.design/designs/${design}?artboard=a%20b`,
+    `http://ponzu.design/canvases/${canvas}`,
+    `https://ponzu.design:8443/canvases/${canvas}`,
+    `https://ada@ponzu.design/canvases/${canvas}`,
+    `https://ponzu.design/d/${canvas}`,
+    `https://ponzu.design/canvases/${canvas}?artboard=a%20b`,
   ]) {
-    expect(parseDesignAddress(href)).toBeNull();
+    expect(parseCanvasAddress(href)).toBeNull();
   }
 });
 

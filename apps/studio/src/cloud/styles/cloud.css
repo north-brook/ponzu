@@ -496,7 +496,7 @@
 }
 
 /* A design's new preview and the one it replaces: a short, quiet cross-fade. The two run on
-   the same timing so, added with plus-lighter, they always sum to one (design-preview.tsx). */
+   the same timing so, added with plus-lighter, they always sum to one (canvas-preview.tsx). */
 @keyframes preview-in {
   from {
     opacity: 0;

@@ -90,7 +90,7 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   settings("settings-plan-solo", "Settings · Plan and usage, solo", "plan-and-usage-solo.html"),
   {
     id: "settings-plan-breakdown",
-    title: "Settings · Plan and usage, by design, with deleted designs and a deleted account",
+    title: "Settings · Plan and usage, by design, with deleted canvases and a deleted account",
     ...WINDOW,
   },
   {

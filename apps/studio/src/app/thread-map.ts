@@ -1,4 +1,4 @@
-import type { DesignHeadRow, LiveRows, MeRow, QuestionRow } from "@ponzu/client";
+import type { CanvasHeadRow, LiveRows, MeRow, QuestionRow } from "@ponzu/client";
 import type { Doc } from "@ponzu/core";
 import { COMMENT_PICTURE, type CommentItem } from "@ponzu/runner/protocol";
 import type {
@@ -18,18 +18,18 @@ import type { LocalPicture } from "./comment-pictures.ts";
 /*
  * The thread's live rows as the rail's model: people resolved to the workspace's members, a
  * message's attachments and a comment's picture to their addresses, a question row to what the
- * agent waits on, and the design's head to what the agent is doing and what keeps anyone from
+ * agent waits on, and the canvas's head to what the agent is doing and what keeps anyone from
  * steering it. Pure, so the rules are tested on their own.
  */
 
-type RunnerItem = LiveRows["design.thread"];
+type RunnerItem = LiveRows["canvas.thread"];
 /** Someone as the runner protocol names them. */
 type Named = { id: string; name: string; login: string | null };
 
 export interface ThreadContext {
   /** The workspace's members by id, for their avatars. */
   people: ReadonlyMap<string, Person>;
-  /** Where the design's files are served (ends in "/"), once the API has said. */
+  /** Where the canvas's files are served (ends in "/"), once the API has said. */
   assetsUrl: string | null;
   /** The document, for the pages comments were left on. */
   doc: Doc | null;
@@ -52,7 +52,7 @@ export function personOf(named: Named, people: ReadonlyMap<string, Person>): Per
 /**
  * A comment's picture as the rail shows it: the viewer's own, from here, while it is drawn and
  * after (the files themselves, so nothing loads again), else the one its thread item has, at
- * the design's assets address; null when there is none.
+ * the canvas's assets address; null when there is none.
  */
 export function pictureOf(
   payload: CommentItem,
@@ -75,7 +75,7 @@ export function pictureOf(
 
 /**
  * The page a comment on the ground was left on, by name, for its compact line: the page
- * as it is now, or as the comment named it; none for one on a board, or a design of one page.
+ * as it is now, or as the comment named it; none for one on a board, or a canvas of one page.
  */
 function pageNameOf(payload: CommentItem, doc: Doc | null): string | null {
   if (payload.artboardId !== null) return null;
@@ -84,7 +84,7 @@ function pageNameOf(payload: CommentItem, doc: Doc | null): string | null {
   return page?.name ?? payload.pageName ?? null;
 }
 
-/** A message's images: the design's files, served from under its assets address. */
+/** A message's images: the canvas's files, served from under its assets address. */
 function attachmentsOf(payload: unknown, assetsUrl: string | null): Attachment[] {
   const given = (payload as { attachments?: { ref: string; contentType: string }[] }).attachments;
   if (!given?.length || !assetsUrl) return [];
@@ -237,9 +237,9 @@ export function toAsk(row: QuestionRow): Ask {
   }
 }
 
-type Head = Pick<DesignHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
+type Head = Pick<CanvasHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
 
-/** What the agent is doing, from the design's head; idle before the head arrives. */
+/** What the agent is doing, from the canvas's head; idle before the head arrives. */
 export function agentActivity(head: Head | undefined): AgentActivity {
   if (!head) return { state: "idle", status: null, sandbox: null };
   const sandbox =
@@ -252,8 +252,8 @@ export function agentActivity(head: Head | undefined): AgentActivity {
 }
 
 /**
- * What keeps the viewer from steering the design, if anything: read access only, or the owner's
- * Claude, which the design runs on for everyone. The head's blocker says when the owner's Claude
+ * What keeps the viewer from steering the canvas, if anything: read access only, or the owner's
+ * Claude, which the canvas runs on for everyone. The head's blocker says when the owner's Claude
  * isn't connected, ran out or left with them; a plan at its limit is known only for the viewer's
  * own account, from their `me` row.
  */
@@ -268,7 +268,7 @@ export function steerGate({
   access: "read" | "write" | null;
   repo: Repo | null;
   head: Head | undefined;
-  /** The design's owner among the workspace's members; null when they aren't one any more. */
+  /** The canvas's owner among the workspace's members; null when they aren't one any more. */
   owner: Person | null;
   me: MeRow | undefined;
   now: number;

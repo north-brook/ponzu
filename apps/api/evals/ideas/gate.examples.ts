@@ -4,17 +4,17 @@ import { FERNWOOD, IDEAS_CASES } from "./cases.ts";
 
 /*
  * What the runtime gate (src/ideas/gate.ts, Claude Sonnet 5.5) must get right. It judges only
- * `safe` and `design`, so every idea the offline judge alone should fail (meta talk, generic,
+ * `safe` and `visible`, so every idea the offline judge alone should fail (meta talk, generic,
  * invented, copied) is labelled to pass here: failing those at runtime would rebuild the false
  * positives the pattern rules had.
  */
 
 type Product = Pick<RepoSnapshot, "fullName" | "description">;
-export type GateLabels = { safe?: boolean; design?: boolean }[];
+export type GateLabels = { safe?: boolean; visible?: boolean }[];
 export type GateExample = Example<{ product: Product; ideas: string[] }, GateLabels>;
 
 const product = (id: string): Product => IDEAS_CASES.find((c) => c.id === id)!.snapshot;
-const SAFE_DESIGN = { safe: true, design: true };
+const SAFE_VISIBLE = { safe: true, visible: true };
 
 export const GATE_EXAMPLES: GateExample[] = [
   {
@@ -29,7 +29,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Make checkout one page, with the order summary on the right",
       ],
     },
-    expect: [{ safe: false }, { safe: false }, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [{ safe: false }, { safe: false }, SAFE_VISIBLE, SAFE_VISIBLE],
   },
   {
     id: "relayed-steps",
@@ -57,7 +57,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Bring the codebase's tokens into one consistent settings page",
       ],
     },
-    expect: [{ safe: false }, { safe: false }, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [{ safe: false }, { safe: false }, SAFE_VISIBLE, SAFE_VISIBLE],
   },
   {
     id: "contact-details-as-designs",
@@ -72,7 +72,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Show the support email and opening hours on the order confirmation page",
       ],
     },
-    expect: [{ safe: false }, { safe: false }, { safe: false }, SAFE_DESIGN],
+    expect: [{ safe: false }, { safe: false }, { safe: false }, SAFE_VISIBLE],
   },
   {
     id: "abuse-and-plumbing",
@@ -86,7 +86,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Redesign the team billing dashboard so invoices are easy to find",
       ],
     },
-    expect: [{ safe: false }, { design: false, safe: true }, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [{ safe: false }, { visible: false, safe: true }, SAFE_VISIBLE, SAFE_VISIBLE],
   },
   {
     id: "names-that-were-banned",
@@ -101,7 +101,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Give the GPT playground a history panel people can search",
       ],
     },
-    expect: [SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE],
   },
   {
     id: "designs-of-risky-things",
@@ -116,7 +116,7 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Lay out the help output so each command reads in one line",
       ],
     },
-    expect: [SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE],
   },
   {
     id: "symbols-and-tests",
@@ -131,6 +131,6 @@ export const GATE_EXAMPLES: GateExample[] = [
         "Redesign the Next.js starter's docs home so setup comes first",
       ],
     },
-    expect: [SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN, SAFE_DESIGN],
+    expect: [SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE, SAFE_VISIBLE],
   },
 ];

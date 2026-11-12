@@ -50,8 +50,8 @@ export interface ParseOptions {
    */
   parent?: Pick<PElement, "tag" | "ns" | "attrs">;
   /**
-   * Ids already in the design the fragment goes into. A made-up id never takes one: five
-   * random characters clash, now and then, with one of a large design's thousands.
+   * Ids already in the canvas the fragment goes into. A made-up id never takes one: five
+   * random characters clash, now and then, with one of a large canvas's thousands.
    */
   taken?: ReadonlySet<string>;
 }
@@ -87,7 +87,7 @@ interface IdState {
   written: Set<string>;
   /** Ids made up for elements without a usable data-id. */
   assigned: Set<string>;
-  /** Ids in the design already. */
+  /** Ids in the canvas already. */
   taken: ReadonlySet<string>;
 }
 

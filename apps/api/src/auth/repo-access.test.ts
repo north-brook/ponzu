@@ -2,20 +2,20 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { getUserByWorkosId, listWorkspaceRepoAccess, type User } from "@ponzu/db";
 import { createGithub } from "../deps/github.ts";
-import { designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
-import { requireDesign } from "./authorize.ts";
+import { requireCanvas } from "./authorize.ts";
 import { refreshWorkspaceRepoAccess } from "./repo-access.ts";
 
 // Answers about access are kept in Postgres, where every function instance finds them.
 
 let t: TestApp;
 let ws: Workspace;
-let designId: string;
+let canvasId: string;
 beforeAll(async () => {
   t = await createTestApp();
   ws = await workspaceWithRepo(t, { maya: "write", ines: "read", omar: "none" });
-  designId = (await designIn(t, ws, "maya", emptyDoc("Shared"))).id;
+  canvasId = (await canvasIn(t, ws, "maya", emptyDoc("Shared"))).id;
 });
 afterAll(() => t.close());
 
@@ -37,15 +37,15 @@ function instance() {
 }
 
 const open = async (deps: typeof t.deps, login: string) =>
-  requireDesign(
+  requireCanvas(
     { var: { deps, actor: { kind: "user", user: await userOf(login), sessionId: "s" } } },
-    designId,
+    canvasId,
     "read",
   );
 
 const asked = (calls: string[]) => calls.filter((path) => path.endsWith("/permission")).length;
 
-describe("opening a design", () => {
+describe("opening a canvas", () => {
   test("one instance's answer serves every instance for a minute; then GitHub is asked again", async () => {
     const [a, b, c] = [instance(), instance(), instance()];
 
@@ -77,7 +77,7 @@ describe("opening a design", () => {
   });
 });
 
-describe("the workspace's design list", () => {
+describe("the workspace's canvas list", () => {
   const listed = (calls: string[]) => calls.filter((path) => path.endsWith("/repositories")).length;
   const refresh = async (deps: typeof t.deps, login: string) =>
     refreshWorkspaceRepoAccess(deps, {

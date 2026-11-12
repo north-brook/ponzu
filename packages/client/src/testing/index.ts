@@ -3,8 +3,8 @@ export {
   createFakeBackend,
   type FakeAgent,
   FakeBackend,
+  type FakeCanvas,
   type FakeClient,
-  type FakeDesign,
   type FakePerson,
   fakeSession,
 } from "./backend.ts";

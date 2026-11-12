@@ -5,9 +5,9 @@ const OVER = ['[role="menu"]', '[role="dialog"]', '[data-slot="popover-content"]
 
 /**
  * Puts the caret in the create page's composer once the page that is coming has drawn: after
- * New design, after a workspace is switched to from the sidebar, after a project in another
+ * New canvas, after a workspace is switched to from the sidebar, after a project in another
  * workspace is chosen. Only when the create page is what shows: where the workspace opened on a
- * design there is no composer to find, and nothing happens; nor under a menu, popover or dialog
+ * canvas there is no composer to find, and nothing happens; nor under a menu, popover or dialog
  * still open, nor while a send is under way (the page's composer is away travelling).
  */
 export function focusCreateComposer(): void {

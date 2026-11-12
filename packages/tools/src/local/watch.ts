@@ -1,9 +1,9 @@
 import { type Doc, findArtboard, type PonzuEvent, type Thread } from "@ponzu/core";
 import { z } from "zod";
+import type { OpenCanvas } from "../canvas.ts";
 import type { KeyedEvent, ToolContext } from "../context.ts";
 import { threadLine } from "../converse.ts";
 import { type ToolDef, tool } from "../define.ts";
-import type { OpenDesign } from "../design.ts";
 import { fileArg, label, resolveFile } from "./files.ts";
 
 /*
@@ -60,15 +60,15 @@ function waitingOn(threads: Thread[]): Thread[] {
 }
 
 /** The waiting threads in each design, naming the design for any but the one the call is on. */
-function waitingText(files: OpenDesign[], all: OpenDesign[]): { text: string; ids: string[] } {
+function waitingText(files: OpenCanvas[], all: OpenCanvas[]): { text: string; ids: string[] } {
   const lines: string[] = [];
   const ids: string[] = [];
   for (const [i, f] of files.entries()) {
-    for (const t of waitingOn(f.design.doc.threads)) {
+    for (const t of waitingOn(f.canvas.doc.threads)) {
       ids.push(t.id);
       // threadLine ends "last from Sam" on a thread with replies: say what they said last.
       const latest = t.messages.length > 1 ? `: "${t.messages.at(-1)!.text}"` : "";
-      lines.push(`${threadLine(f.design.doc, t)}${latest}${i ? ` (in ${label(f, all)})` : ""}`);
+      lines.push(`${threadLine(f.canvas.doc, t)}${latest}${i ? ` (in ${label(f, all)})` : ""}`);
     }
   }
   if (!lines.length) return { text: "No open threads are waiting on you.", ids };
@@ -84,12 +84,12 @@ const COMMENT_EVENTS = new Set(["comment.created", "comment.replied"]);
  * Comments the person left after `cursor` in designs the wait didn't hear
  * from: what a wider watch would have caught. Counted, never shown.
  */
-function missedElsewhere(events: KeyedEvent[], scope: string[], all: OpenDesign[]): number {
+function missedElsewhere(events: KeyedEvent[], scope: string[], all: OpenCanvas[]): number {
   return events.filter((e) => {
     if (scope.includes(e.key) || !COMMENT_EVENTS.has(e.event.type) || !("thread" in e.event))
       return false;
     const { thread, author } = e.event as { thread: string; author: string };
-    const doc = all.find((d) => d.key === e.key)?.design.doc;
+    const doc = all.find((d) => d.key === e.key)?.canvas.doc;
     const t = doc?.threads.find((x) => x.id === thread);
     return !!t?.messages.some((m) => m.author.kind === "user" && m.author.name === author);
   }).length;
@@ -128,7 +128,7 @@ export const waitForActivity = tool({
     // Going back to listening ends a pass: what it was working on is done.
     ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
     // Every design this agent has worked in, so moving to a new one doesn't deafen it to the last.
-    const all = ws.designs();
+    const all = ws.canvases();
     const scope = [key, ...(ctx.session?.files ?? []).filter((k) => k !== key)];
     const files = scope.flatMap((k) => all.filter((d) => d.key === k));
     // What happened after the cursor can't all be told: say so, with what still needs the agent.
@@ -159,7 +159,7 @@ export const waitForActivity = tool({
       : Math.max(cursor, ws.events.cursor);
     ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
     // Designs can open while the wait runs: look again, so their comments are counted and named.
-    const open = ws.designs();
+    const open = ws.canvases();
     const metrics = {
       cursor: args.since === undefined ? "none" : "ok",
       events: events.length,
@@ -175,7 +175,7 @@ export const waitForActivity = tool({
     const line = (e: KeyedEvent) => {
       const f = open.find((d) => d.key === e.key);
       const where = f && e.key !== key ? ` (in ${label(f, open)})` : "";
-      return describeEvent(f?.design.doc, e.event) + where;
+      return describeEvent(f?.canvas.doc, e.event) + where;
     };
     return {
       text: `${events.map(line).join("\n")}\ncursor=${next}`,

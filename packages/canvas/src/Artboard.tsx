@@ -13,7 +13,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
-import { circular, cornersCss, designCorners, measureCorners, type Radii } from "./corners.ts";
+import { circular, cornersCss, measureCorners, ownCorners, type Radii } from "./corners.ts";
 import { BoardImages, firstStep, markupUrl } from "./images.ts";
 import { BoardDetail, type Detail, holdLoops, STILL_CSS } from "./lod.ts";
 import { animationsOf, MOTION_CSS, Motion } from "./motion.ts";
@@ -260,7 +260,7 @@ function roundRoot(root: ShadowRoot, artboard: AB, report?: (corners: Radii) => 
   root.querySelector("style[data-pz-round]")?.remove();
   const el = root.querySelector<HTMLElement>("[data-artboard]");
   const measured = el ? measureCorners(el) : null;
-  const guess = designCorners(artboard);
+  const guess = ownCorners(artboard);
   const corners = measured ?? (guess ? circular(guess) : null);
   // Nothing to go on: the root keeps the design's corners as they are until it is laid out.
   if (!corners) return;

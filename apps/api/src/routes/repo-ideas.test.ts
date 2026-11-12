@@ -10,7 +10,7 @@ import { CLAUDE_HAIKU, CLAUDE_SONNET } from "../deps/model.ts";
 import { GATE_SYSTEM_PROMPT } from "../ideas/gate.ts";
 import { IDEAS_POLICY } from "../ideas/ideas.ts";
 import { FRESH_SYSTEM_PROMPT, IDEAS_SYSTEM_PROMPT, RETRY_REASONS } from "../ideas/prompt.ts";
-import { call, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import type { FakeRepository } from "../testing/fake-github.ts";
 import { createTestApp, type TestApp, verdict } from "../testing/index.ts";
 
@@ -217,18 +217,18 @@ describe("GET /v1/repos/:id/ideas", () => {
   });
 
   test("ideas the gate finds are not designs are dropped after a second ask, and the rest kept", async () => {
-    const notDesign = verdict({ notDesign: [2] });
-    t.reviewer.reply({ output: notDesign }, { output: notDesign });
+    const notVisible = verdict({ notVisible: [2] });
+    t.reviewer.reply({ output: notVisible }, { output: notVisible });
     await ideasOf("maya");
     await t.backgroundDone();
     expect(t.model.requests).toHaveLength(2);
-    expect(t.model.requests[1]!.instructions).toContain(RETRY_REASONS.not_design);
+    expect(t.model.requests[1]!.instructions).toContain(RETRY_REASONS.not_visible);
     expect((await ideasOf("maya")).body).toEqual({
       status: "ready",
       ideas: [IDEAS[0], IDEAS[2], IDEAS[3]].map((prompt) => ({ prompt })),
     });
     expect(logged("ideas_generated")).toMatchObject([
-      { ideas: 3, failures: [{ idea: 2, criteria: ["design"] }] },
+      { ideas: 3, failures: [{ idea: 2, criteria: ["visible"] }] },
     ]);
   });
 

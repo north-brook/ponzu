@@ -14,8 +14,8 @@ import { ApiError } from "../http/errors.ts";
  * previews"). Everything is served from the assets domain, `ponzu.cloud`, which shares no origin
  * or cookie with `ponzu.design`, at `<assets url>/<asset key>/…`:
  *
- *   assets/<name>               a design's file, as markup references it (`assets/<name>`)
- *   previews/<seq>-<theme>.png  the sidebar's picture of the design at `seq`
+ *   assets/<name>               a canvas's file, as markup references it (`assets/<name>`)
+ *   previews/<seq>-<theme>.png  the sidebar's picture of the canvas at `seq`
  *   exports/<upload id>-<name>  a file a link reaches
  *   comments/<message id>-<theme>-<random>.webp
  *                               the picture of where a comment was left, as the thread shows it
@@ -32,7 +32,7 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 const MB = 1024 * 1024;
 
-/** The kinds of file a design can hold as an asset, by extension: what `add_asset` takes. */
+/** The kinds of file a canvas can hold as an asset, by extension: what `add_asset` takes. */
 const ASSET_TYPES: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -49,7 +49,7 @@ const ASSET_TYPES: Record<string, string> = {
   webm: "video/webm",
 };
 
-/** What a person may upload to a design: images, for attachments and pasted pictures. */
+/** What a person may upload to a canvas: images, for attachments and pasted pictures. */
 const IMAGE_TYPES: Record<string, string> = Object.fromEntries(
   Object.entries(ASSET_TYPES).filter(([, type]) => type.startsWith("image/")),
 );
@@ -64,7 +64,7 @@ const EXPORT_TYPES: Record<string, string> = {
 
 /**
  * Who is uploading what: a runner for any purpose but a comment's picture, a person images for
- * the design and the pictures of their comments.
+ * the canvas and the pictures of their comments.
  */
 export type UploadKind = UploadPurpose | "image";
 

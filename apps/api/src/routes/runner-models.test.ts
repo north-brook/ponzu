@@ -3,8 +3,8 @@ import { getSandbox } from "@ponzu/db";
 import recorded from "@ponzu/runner/fixtures/supported-models.api-key.json";
 import { reportedModels } from "@ponzu/runner/models";
 import { IMAGE_COMMANDS, type ReportedModel, RUNNER_HEADER } from "@ponzu/runner/protocol";
-import { designSandboxName } from "@ponzu/sandbox";
-import { call, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
+import { canvasSandboxName } from "@ponzu/sandbox";
+import { call, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_SCOPE, type TestApp } from "../testing/index.ts";
 
 /*
@@ -34,9 +34,9 @@ async function connectKey(key: string) {
   await t.backgroundDone();
 }
 
-/** The runner the design's last start started, with the session it was answered. */
-async function runnerIn(designId: string) {
-  const name = designSandboxName(TEST_SCOPE, designId);
+/** The runner the canvas's last start started, with the session it was answered. */
+async function runnerIn(canvasId: string) {
+  const name = canvasSandboxName(TEST_SCOPE, canvasId);
   const start = t.sandboxes
     .commands(name)
     .filter((c) => c.kind === "start" && c.command.cmd === IMAGE_COMMANDS.start)
@@ -52,9 +52,9 @@ async function runnerIn(designId: string) {
   };
 }
 
-/** A design of Maya's, made as the composer makes it, its sandbox awake. */
+/** A canvas of Maya's, made as the composer makes it, its sandbox awake. */
 async function designed(body: Record<string, unknown> = {}) {
-  const made = await call(t, await maya(), "POST", "/v1/designs", {
+  const made = await call(t, await maya(), "POST", "/v1/canvases", {
     workspaceId: ws.id,
     message: { text: "Draw a calmer pricing page" },
     ...body,
@@ -112,14 +112,14 @@ test("an account is offered what its runner reported, and the hand-kept list bef
   });
   expect(labels(later.body)).toEqual(["Opus 5.5", "Sonnet 5.5", "Haiku 5.5", "Opus 6"]);
 
-  // The next runner hears what the API holds, and the design made on Fable runs on the
+  // The next runner hears what the API holds, and the canvas made on Fable runs on the
   // default in its place, at the effort it chose while that model takes it.
   const next = await runnerIn(onFable);
   expect(next.session.models).toMatchObject({ claudeCode: "2.1.400", models: LATER });
   expect(next.session.models.at).toEqual(expect.any(String));
   expect(next.session).toMatchObject({ model: "claude-opus-5-5", effort: "max" });
   expect(t.logs.findLast((l) => l.event === "model_unoffered")).toMatchObject({
-    designId: onFable,
+    canvasId: onFable,
     chosen: "claude-fable-5-2",
     runs: "claude-opus-5-5",
   });
@@ -130,7 +130,7 @@ test("only what the account offers can be chosen, and a saved choice it no longe
   const setTo = (body: Record<string, unknown>) =>
     call(t, headers, "PATCH", "/v1/claude/defaults", body);
   const create = (body: Record<string, unknown>) =>
-    call(t, headers, "POST", "/v1/designs", { workspaceId: ws.id, ...body });
+    call(t, headers, "POST", "/v1/canvases", { workspaceId: ws.id, ...body });
 
   // Offered now (the last test's report): Opus 6, on its efforts.
   expect((await setTo({ model: "claude-opus-6", effort: "high" })).body).toMatchObject({
@@ -158,8 +158,8 @@ test("only what the account offers can be chosen, and a saved choice it no longe
 });
 
 test("a runner on a credential since replaced reports nothing for the one there now", async () => {
-  const designId = await designed();
-  const runner = await runnerIn(designId);
+  const canvasId = await designed();
+  const runner = await runnerIn(canvasId);
   expect((await runner.report(LATER)).body).toEqual({ kept: true });
 
   // Connected again before this runner was restarted: it still holds the old key.

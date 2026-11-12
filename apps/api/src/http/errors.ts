@@ -49,10 +49,10 @@ export type ErrorCode =
   | "identity_conflict"
   /** GitHub no longer accepts what Ponzu holds for this person. Sign in again. */
   | "github_reauth_required"
-  /** A design's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
+  /** A canvas's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
   | "ops_pruned"
-  /** A design changed too often while this request tried to commit to it. Nothing was committed; try again. */
-  | "design_busy"
+  /** A canvas changed too often while this request tried to commit to it. Nothing was committed; try again. */
+  | "canvas_busy"
   /** Undo: nothing of the caller's or the agent's is left that can be taken back. */
   | "nothing_to_undo"
   /** Redo: the caller has no undo left to take back. */
@@ -70,8 +70,8 @@ export type ErrorCode =
   /** GitHub says this person owns the workspace's account, so they are always an admin. */
   | "owner_is_admin"
   /**
-   * A runner call without the design's current lease (`X-Ponzu-Runner`): a newer runner has
-   * started for the design. The runner stops for good.
+   * A runner call without the canvas's current lease (`X-Ponzu-Runner`): a newer runner has
+   * started for the canvas. The runner stops for good.
    */
   | "superseded"
   /**
@@ -99,15 +99,15 @@ export type ErrorCode =
   | "claude_sign_in_expired"
   /** A Claude sign-in whose one code was already sent, or that was given up. Open sign-in again. */
   | "claude_sign_in_used"
-  /** A pull request needs a repo, and this design is Scratch. */
+  /** A pull request needs a repo, and this canvas is Scratch. */
   | "no_repository"
-  /** Nothing has been pushed to the design's branch yet, so GitHub does not have it. */
+  /** Nothing has been pushed to the canvas's branch yet, so GitHub does not have it. */
   | "branch_not_pushed"
-  /** The design's branch has no commits that the branch it merges into lacks. */
+  /** The canvas's branch has no commits that the branch it merges into lacks. */
   | "no_changes"
-  /** The design has no open pull request to do this to. */
+  /** The canvas has no open pull request to do this to. */
   | "no_pull_request"
-  /** The design's pull request is merged or closed. */
+  /** The canvas's pull request is merged or closed. */
   | "pull_request_closed"
   /** The pull request is a draft: mark it ready first. */
   | "pull_request_draft"

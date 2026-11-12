@@ -7,10 +7,10 @@ import { toEnvironment } from "./map.ts";
 import { SectionUnavailable } from "./unavailable.tsx";
 
 /*
- * Settings › Environments: per repo, the base its designs start from (Rebuild, for whoever can
+ * Settings › Environments: per repo, the base its canvases start from (Rebuild, for whoever can
  * push to it) and the secrets its sandboxes get, by name. Admins add, replace and remove them;
  * a value is written and never read back. A sandbox takes its secrets as it starts, so a change
- * reaches a design at its next start. Which repos are shown open is kept on this device.
+ * reaches a canvas at its next start. Which repos are shown open is kept on this device.
  */
 
 /** How long a refused change is said. */
@@ -57,8 +57,8 @@ export function EnvironmentsView({ workspaceId }: { workspaceId: string }) {
         canRebuild={(repo) => pushable.has(repo.id)}
         note={
           answer.data.canManageSecrets
-            ? "A design gets its repo's secrets as it starts, so a changed secret reaches it at its next start."
-            : "Only an admin can change secrets. A design gets them as it starts."
+            ? "A canvas gets its repo's secrets as it starts, so a changed secret reaches it at its next start."
+            : "Only an admin can change secrets. A canvas gets them as it starts."
         }
         onRebuild={(repo) => rebuild.mutate({ workspaceId, repoId: repo.id })}
         onSaveSecret={(repo, name, value) => {

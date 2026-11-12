@@ -58,7 +58,7 @@ const RUNNER_NOTICES = new Set<string>([
 export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
   return {
     runnerId: "rnr_test",
-    design: { id: "des_test", name: "Fern" },
+    canvas: { id: "cnv_test", name: "Fern" },
     repo: null,
     branch: null,
     claudeSessionId: null,
@@ -67,7 +67,7 @@ export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
     author: { name: "Ada", email: "1+ada@users.noreply.github.com" },
     committer: { name: "ponzu[bot]", email: "2+ponzu[bot]@users.noreply.github.com" },
     assetBase: "https://assets.ponzu.test/key",
-    link: "https://ponzu.test/d/des_test",
+    link: "https://ponzu.test/d/cnv_test",
     theme: null,
     openQuestions: [],
     seq: 0,
@@ -127,7 +127,7 @@ export class FakeRunnerApi {
   readonly calls: Call[] = [];
   /** The runner process that holds the lease. */
   runner: string | null = null;
-  /** The design's last checkpoint, and its archives as they were uploaded. */
+  /** The canvas's last checkpoint, and its archives as they were uploaded. */
   saved: SavedPoint | null = null;
   archives: { session: Uint8Array | null; workspace: Uint8Array | null } = {
     session: null,
@@ -158,7 +158,7 @@ export class FakeRunnerApi {
     this.seq = opts.feedSeq ?? 0;
   }
 
-  /** The last event's seq in the design's feed. */
+  /** The last event's seq in the canvas's feed. */
   get feedSeq(): number {
     return this.seq;
   }
@@ -213,7 +213,7 @@ export class FakeRunnerApi {
     return client;
   }
 
-  /** Add something to the design's feed, as the API does when it happens. */
+  /** Add something to the canvas's feed, as the API does when it happens. */
   push(
     body: EventBody,
     opts: { priority?: Priority; from?: Person | null; posthogSessionId?: string | null } = {},
@@ -255,7 +255,7 @@ export class FakeRunnerApi {
   }
 
   /**
-   * The design's branch as the API's row holds it (`design_runners.unpushed`, `push_error`):
+   * The canvas's branch as the API's row holds it (`canvas_runners.unpushed`, `push_error`):
    * what the runner last reported, until it reports again. Create PR clears its error
    * (`askRunnerToPush`), as `askToPush` does here.
    */
@@ -421,9 +421,9 @@ export class FakeRunnerApi {
   async gitCredential(runner: string, ask: GitCredentialRequest): Promise<GitCredentialResponse> {
     await this.enter("gitCredential", runner);
     const { repo } = this.sessionInfo;
-    if (!repo) throw new ApiError(404, "not_found", "This design has no repository.");
+    if (!repo) throw new ApiError(404, "not_found", "This canvas has no repository.");
     if (ask.host !== "github.com" || ask.path !== `${repo.owner}/${repo.name}.git`)
-      throw new ApiError(403, "forbidden", "That is not this design's repository.");
+      throw new ApiError(403, "forbidden", "That is not this canvas's repository.");
     return {
       username: "x-access-token",
       password: this.gitToken?.password ?? "ghs_fake",
@@ -465,7 +465,7 @@ export class FakeRunnerApi {
 
   /** The agent's pull request summaries, in the order they came. */
   readonly summaries: string[] = [];
-  /** The design's pull request as the app shows it: what claims and summaries answer. None here. */
+  /** The canvas's pull request as the app shows it: what claims and summaries answer. None here. */
   pullRequest: PullRequestState | null = null;
   /** Answer as an API older than the pull request's state did: claims without `pullRequest`. */
   older = false;
@@ -535,7 +535,7 @@ export class FakeRunnerApi {
       // Merged already, as by someone else first: answered as it is, done by nobody now.
       did = false;
     } else if (!open) {
-      throw new ApiError(409, "no_pull_request", "This design has no pull request yet.");
+      throw new ApiError(409, "no_pull_request", "This canvas has no pull request yet.");
     } else if (action === "ready") {
       did = pr!.state === "draft";
       this.pullRequest = { ...pr!, state: "open" };
@@ -564,7 +564,7 @@ export class FakeRunnerApi {
       pullRequest: pr && {
         number: pr.number,
         url: `https://github.com/north/fern/pull/${pr.number}`,
-        title: this.sessionInfo.design.name,
+        title: this.sessionInfo.canvas.name,
         state: pr.state,
         headSha: "a".repeat(40),
         author: "ada",
@@ -612,7 +612,7 @@ export class FakeRunnerApi {
     if (notice.type !== "stopped") return structuredClone(notice);
     const stop = this.events.find((e) => e.event.id === notice.eventId)?.event;
     if (stop?.kind !== "stop")
-      throw new ApiError(400, "invalid_request", "That is not one of this design's stops.");
+      throw new ApiError(400, "invalid_request", "That is not one of this canvas's stops.");
     return { type: "stopped", by: stop.from } satisfies Notice;
   }
 
@@ -625,6 +625,6 @@ export class FakeRunnerApi {
     const failure = this.failing.get(call);
     if (failure) throw failure;
     if (runner !== undefined && runner !== this.runner)
-      throw new ApiError(409, "superseded", "A newer runner has started for this design.");
+      throw new ApiError(409, "superseded", "A newer runner has started for this canvas.");
   }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ApiError, type DesignHeadRow, type MeRow } from "@ponzu/client";
+import { ApiError, type CanvasHeadRow, type MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import type { Person } from "../cloud/model.ts";
 import { AskStore } from "./ask-store.ts";
@@ -16,7 +16,7 @@ import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
 
 /*
- * An open design's thread and what its agent waits on, against Ponzu Cloud in memory, which
+ * An open canvas's thread and what its agent waits on, against Ponzu Cloud in memory, which
  * answers as the API does: every kind of item arriving live, a message sent at once and its
  * failure, questions answered by the viewer and by a teammate, a stop, each blocker, and
  * read-only access.
@@ -40,17 +40,17 @@ async function world() {
     repos: [{ name: "site", access: { [ines.id]: "read" } }],
   });
   const client = backend.connect(maya);
-  const design = await client.api.designs.create({
+  const canvas = await client.api.canvases.create({
     workspaceId: ws.id,
     repoId: ws.repos[0]!.id,
     name: "Pricing",
   });
-  const agent = backend.agent(design.id);
+  const agent = backend.agent(canvas.id);
   const thread = (who = client, meId = maya.id) =>
     new ThreadStore({
       ponzu: storePonzu(who.api),
       live: who.live,
-      designId: design.id,
+      canvasId: canvas.id,
       meId,
     }).start();
   const errors: string[] = [];
@@ -58,11 +58,11 @@ async function world() {
     new AskStore({
       ponzu: storePonzu(who.api),
       live: who.live,
-      designId: design.id,
+      canvasId: canvas.id,
       onError: (m) => errors.push(m),
     }).start();
   const people = new Map([maya, sam, ines].map((p) => [p.id, person(p)]));
-  return { backend, maya, sam, ines, ws, client, design, agent, thread, asks, errors, people };
+  return { backend, maya, sam, ines, ws, client, canvas, agent, thread, asks, errors, people };
 }
 
 const ctx = (people: ReadonlyMap<string, Person>) => ({
@@ -85,7 +85,7 @@ test("every kind of item arrives live, in order, and a streaming reply grows in 
   w.agent.say("Reading the repo and the current page.", { id: reply, streaming: false });
   w.agent.tool("Drew Pricing · B", { id: work, streaming: false, steps: 4, artboards: ["ab_1"] });
   w.agent.fail("turn_failed", "The model stopped.");
-  await w.client.api.designs.stop(w.design.id);
+  await w.client.api.canvases.stop(w.canvas.id);
   await settle();
 
   const items = store.getSnapshot().items!.map((item) => toThreadItem(item, ctx(w.people)));
@@ -106,10 +106,10 @@ test("a teammate's message and comment carry them, as the members they are", asy
   const w = await world();
   const store = w.thread();
   const sam = w.backend.connect(w.sam);
-  await sam.api.designs.sendMessage(w.design.id, { text: "Keep the green" });
+  await sam.api.canvases.sendMessage(w.canvas.id, { text: "Keep the green" });
   await settle();
   // A comment on a 400 × 300 board, pinned at its middle.
-  const page = w.backend.design(w.design.id).sequencer.doc.pages[0]!;
+  const page = w.backend.canvas(w.canvas.id).sequencer.doc.pages[0]!;
   const root = {
     kind: "el" as const,
     id: "ab_hero",
@@ -138,9 +138,9 @@ test("a teammate's message and comment carry them, as the members they are", asy
     updatedAt: 0,
     messages: [said],
   };
-  await sam.api.designs.commit(w.design.id, [{ id: "op_1", op: { op: "thread.create", thread } }]);
+  await sam.api.canvases.commit(w.canvas.id, [{ id: "op_1", op: { op: "thread.create", thread } }]);
   await settle();
-  const doc = w.backend.design(w.design.id).sequencer.doc;
+  const doc = w.backend.canvas(w.canvas.id).sequencer.doc;
   const [message, comment] = store
     .getSnapshot()
     .items!.map((i) => toThreadItem(i, { ...ctx(w.people), doc }));
@@ -160,12 +160,12 @@ test("a teammate's message and comment carry them, as the members they are", asy
     },
   });
 
-  // Sam's app gives it its picture: everyone's thread shows it, from the design's files.
-  const uploads = await sam.api.designs.uploadCommentPicture(w.design.id, "m_1", {
+  // Sam's app gives it its picture: everyone's thread shows it, from the canvas's files.
+  const uploads = await sam.api.canvases.uploadCommentPicture(w.canvas.id, "m_1", {
     light: new Uint8Array([1]),
     dark: new Uint8Array([2]),
   });
-  await sam.api.designs.attachCommentPicture(w.design.id, "m_1", uploads);
+  await sam.api.canvases.attachCommentPicture(w.canvas.id, "m_1", uploads);
   await settle();
   const item = store.getSnapshot().items![1]!;
   const shown = toThreadItem(item, { ...ctx(w.people), doc });
@@ -194,7 +194,7 @@ test("a teammate's message and comment carry them, as the members they are", asy
   });
   // Only its author can give it one.
   await expect(
-    w.client.api.designs.attachCommentPicture(w.design.id, "m_1", uploads),
+    w.client.api.canvases.attachCommentPicture(w.canvas.id, "m_1", uploads),
   ).rejects.toThrow();
   store.close();
 });
@@ -203,7 +203,7 @@ test("a comment on the ground names its page, where the design has more than one
   const w = await world();
   const store = w.thread();
   const sam = w.backend.connect(w.sam);
-  const doc = () => w.backend.design(w.design.id).sequencer.doc;
+  const doc = () => w.backend.canvas(w.canvas.id).sequencer.doc;
   const first = doc().pages[0]!;
   const author = { kind: "user" as const, id: w.sam.id, name: "Sam Lee" };
   const thread = {
@@ -216,7 +216,7 @@ test("a comment on the ground names its page, where the design has more than one
     updatedAt: 0,
     messages: [{ id: "m_open", author, text: "Between these", createdAt: 0 }],
   };
-  await sam.api.designs.commit(w.design.id, [{ id: "op_o", op: { op: "thread.create", thread } }]);
+  await sam.api.canvases.commit(w.canvas.id, [{ id: "op_o", op: { op: "thread.create", thread } }]);
   await settle();
   const [item] = store.getSnapshot().items!.filter((i) => i.kind === "comment");
   expect(item!.payload).toMatchObject({ pageId: first.id, at: { x: -60, y: 40 } });
@@ -246,8 +246,8 @@ test("a message shows at once, then is the thread's own; one that fails stays, t
   expect(items!.map((i) => i.kind === "message" && i.payload.text)).toEqual([
     "Make the middle plan stand out",
   ]);
-  // It went to the design's feed as the viewer's.
-  expect(w.backend.design(w.design.id).thread.map((e) => e.userId)).toEqual([w.maya.id]);
+  // It went to the canvas's feed as the viewer's.
+  expect(w.backend.canvas(w.canvas.id).thread.map((e) => e.userId)).toEqual([w.maya.id]);
 
   w.backend.online = false;
   store.send("And a fourth plan", []);
@@ -278,10 +278,10 @@ test("a message the live rows hold before the API answers shows once, not twice"
     answer = resolve;
   });
   const api = {
-    designs: {
-      ...w.client.api.designs,
-      sendMessage: async (...args: Parameters<typeof w.client.api.designs.sendMessage>) => {
-        const item = await w.client.api.designs.sendMessage(...args);
+    canvases: {
+      ...w.client.api.canvases,
+      sendMessage: async (...args: Parameters<typeof w.client.api.canvases.sendMessage>) => {
+        const item = await w.client.api.canvases.sendMessage(...args);
         await held;
         return item;
       },
@@ -290,12 +290,12 @@ test("a message the live rows hold before the API answers shows once, not twice"
   const store = new ThreadStore({
     ponzu: storePonzu({ ...w.client.api, ...api }),
     live: w.client.live,
-    designId: w.design.id,
+    canvasId: w.canvas.id,
     meId: w.maya.id,
   }).start();
   await settle();
   // An older message with the same words is not this one.
-  await w.client.api.designs.sendMessage(w.design.id, { text: "Add a yearly toggle" });
+  await w.client.api.canvases.sendMessage(w.canvas.id, { text: "Add a yearly toggle" });
   await settle();
   store.send("Add a yearly toggle", []);
   expect(store.getSnapshot().pending).toHaveLength(1);
@@ -322,7 +322,7 @@ test("history comes a page at a time until the live rows have the whole thread",
   const store = new ThreadStore({
     ponzu: storePonzu(w.client.api),
     live,
-    designId: w.design.id,
+    canvasId: w.canvas.id,
     meId: w.maya.id,
   }).start();
   await settle();
@@ -346,7 +346,7 @@ test("an image uploads as it is added, and goes with the next message", async ()
   const w = await world();
   const uploads = new Uploads({
     ponzu: storePonzu(w.client.api),
-    designId: w.design.id,
+    canvasId: w.canvas.id,
     preview: (file) => `blob:${file.name}`,
     release: () => {},
   });
@@ -413,7 +413,7 @@ test("a question waits in the composer's place, and the viewer's answer closes i
   expect(store.getSnapshot()[0]?.status).toBe("sending");
   await settle();
   expect(store.getSnapshot()).toEqual([]);
-  expect(w.backend.design(w.design.id).questions[0]?.answer).toEqual({
+  expect(w.backend.canvas(w.canvas.id).questions[0]?.answer).toEqual({
     userId: w.maya.id,
     body: { answers: { "Which way?": "Shorten it" } },
   });
@@ -434,7 +434,7 @@ test("a plan and a permission are answered yes or no, with a note", async () => 
   store.answer(plan, { approved: false, note: "Two plans" });
   store.answer(tool, { approved: true });
   await settle();
-  const answers = w.backend.design(w.design.id).questions.map((q) => q.answer?.body);
+  const answers = w.backend.canvas(w.canvas.id).questions.map((q) => q.answer?.body);
   expect(answers).toEqual([{ approved: false, note: "Two plans" }, { approved: true }]);
   store.close();
 });
@@ -446,14 +446,14 @@ test("when a teammate answered first, the viewer's answer is turned away calmly"
   const sam = w.backend.connect(w.sam);
   const id = w.agent.ask(HEADLINE);
   await settle();
-  const answered = sam.api.designs.answer(w.design.id, id, {
+  const answered = sam.api.canvases.answer(w.canvas.id, id, {
     answers: { "Which way?": "Let it wrap" },
   });
   store.answer(id, { answers: { "Which way?": "Shorten it" } });
   await answered;
   await settle();
   // Sam's answer won; Maya's own is kept as answered, by Sam, to put away.
-  expect(w.backend.design(w.design.id).questions[0]?.answer?.userId).toBe(w.sam.id);
+  expect(w.backend.canvas(w.canvas.id).questions[0]?.answer?.userId).toBe(w.sam.id);
   expect(store.getSnapshot()).toMatchObject([
     {
       id,
@@ -476,8 +476,8 @@ test("a question the viewer had started on stays when it leaves without their an
   const untouched = w.agent.ask(HEADLINE);
   await settle();
   store.touch(id);
-  await sam.api.designs.answer(w.design.id, id, { answers: { "Which way?": "Let it wrap" } });
-  await sam.api.designs.answer(w.design.id, untouched, {
+  await sam.api.canvases.answer(w.canvas.id, id, { answers: { "Which way?": "Let it wrap" } });
+  await sam.api.canvases.answer(w.canvas.id, untouched, {
     answers: { "Which way?": "Let it wrap" },
   });
   await settle();
@@ -508,13 +508,13 @@ test("a question the viewer had started on stays when it leaves without their an
   const unread = new AskStore({
     ponzu: storePonzu({
       ...w.client.api,
-      designs: {
-        ...w.client.api.designs,
+      canvases: {
+        ...w.client.api.canvases,
         question: () => Promise.reject(new ApiError(404, "not_found", "Gone.")),
       },
     }),
     live: w.client.live,
-    designId: w.design.id,
+    canvasId: w.canvas.id,
     onError: () => {},
   }).start();
   const last = w.agent.ask(HEADLINE);
@@ -585,16 +585,16 @@ test("a withdrawn question leaves, and an answer that can't reach Ponzu says so"
   store.close();
 });
 
-test("each blocker is what keeps the design from running, in the composer or the thread's foot", async () => {
+test("each blocker is what keeps the canvas from running, in the composer or the thread's foot", async () => {
   const w = await world();
   const maya = w.people.get(w.maya.id)!;
   const repo = { id: w.ws.repos[0]!.id, owner: "north-brook", name: "site" };
-  const head = (agentBlocker: DesignHeadRow["agentBlocker"]) => ({
+  const head = (agentBlocker: CanvasHeadRow["agentBlocker"]) => ({
     agentState: "idle" as const,
     agentStatus: null,
     agentBlocker,
   });
-  const gate = (blocker: DesignHeadRow["agentBlocker"], owner: Person | null = maya) =>
+  const gate = (blocker: CanvasHeadRow["agentBlocker"], owner: Person | null = maya) =>
     steerGate({ access: "write", repo, head: head(blocker), owner, me: undefined, now: 0 });
 
   expect(gate(null)).toBeNull();
@@ -620,14 +620,14 @@ test("each blocker is what keeps the design from running, in the composer or the
 
   // The live head carries the blocker the API sets.
   w.agent.block("sandbox_busy");
-  const view = await w.client.api.designs.get(w.design.id);
+  const view = await w.client.api.canvases.get(w.canvas.id);
   expect(view.agentBlocker).toBe("sandbox_busy");
 });
 
 test("someone who may only read sees the thread and is told so, and can't send or answer", async () => {
   const w = await world();
   const ines = w.backend.connect(w.ines);
-  const view = await ines.api.designs.get(w.design.id);
+  const view = await ines.api.canvases.get(w.canvas.id);
   expect(view.access).toBe("read");
   const repo = { id: w.ws.repos[0]!.id, owner: "north-brook", name: "site" };
   expect(
@@ -642,7 +642,7 @@ test("someone who may only read sees the thread and is told so, and can't send o
   await settle();
   // The API refuses it; it stays, marked, rather than vanishing.
   expect(store.getSnapshot().pending[0]?.status).toBe("failed");
-  const refused = await ines.api.designs.stop(w.design.id).catch((error) => error);
+  const refused = await ines.api.canvases.stop(w.canvas.id).catch((error) => error);
   expect(refused.code).toBe("forbidden");
   store.close();
 });

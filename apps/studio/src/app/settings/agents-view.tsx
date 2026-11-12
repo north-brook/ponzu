@@ -9,7 +9,7 @@ import { toConnection } from "./map.ts";
 
 /*
  * Settings › Agents: the person's Claude (disconnect, after asking; switch to the other way, or
- * sign in again, through the setup's own card) and the model and effort new designs start on.
+ * sign in again, through the setup's own card) and the model and effort new canvases start on.
  * The plan's limits are not in the API yet, so the section shows none (the spec's default).
  *
  * A claude.ai sign-in starts only when the person presses Switch or Reconnect, and is let go of

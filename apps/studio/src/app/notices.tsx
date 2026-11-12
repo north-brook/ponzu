@@ -5,7 +5,7 @@ import { Slice } from "../cloud/ui/marks.tsx";
 /*
  * The window's calm states. Something gone wrong is said in a sentence where the work would be,
  * with the one thing to do about it, never as a dialog or a crash: offline, access lost, a
- * design deleted while open.
+ * canvas deleted while open.
  */
 
 /** The main pane's whole content, when there is nothing to show but why. */

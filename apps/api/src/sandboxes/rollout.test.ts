@@ -6,18 +6,18 @@ const NOW = `ponzu-runner@sha256:${"b".repeat(64)}`;
 const OLD = `ponzu-runner@sha256:${"a".repeat(64)}`;
 
 function row(
-  designId: string,
+  canvasId: string,
   sandbox: Partial<SandboxRow>,
   { status = "active", client = null }: { status?: string; client?: string | null } = {},
 ): SandboxImage {
   return {
-    sandbox: { designId, state: "asleep", image: OLD, ...sandbox } as SandboxRow,
-    designStatus: status as SandboxImage["designStatus"],
+    sandbox: { canvasId, state: "asleep", image: OLD, ...sandbox } as SandboxRow,
+    canvasStatus: status as SandboxImage["canvasStatus"],
     client,
   };
 }
 
-test("each design's sandbox says what its next wake does about the image this build ships", () => {
+test("each canvas's sandbox says what its next wake does about the image this build ships", () => {
   const sandboxes = [
     // As Vercel reports it, with its full repository path: the digest is what counts.
     row("current", { image: `team/project/${NOW}` }, { client: "runner/0.1.0" }),
@@ -35,7 +35,7 @@ test("each design's sandbox says what its next wake does about the image this bu
     ["never_saved", "none"],
   ]);
   const rows = rollout(sandboxes, covers, { image: NOW });
-  expect(rows.map((r) => [r.designId, r.next])).toEqual([
+  expect(rows.map((r) => [r.canvasId, r.next])).toEqual([
     ["current", "current"],
     ["asleep", "recreates"],
     ["never_woke", "current"],

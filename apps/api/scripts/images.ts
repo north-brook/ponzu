@@ -1,4 +1,4 @@
-// `bun scripts/images.ts`: where a rollout of a new sandbox image stands. For every design's
+// `bun scripts/images.ts`: where a rollout of a new sandbox image stands. For every canvas's
 // sandbox: the image it runs, what its runner says it is, and what its next wake will do about
 // the image this checkout ships, apps/runner/image/current.json (docs/cloud.md, "How images roll
 // out"). It only reads. Run it from the commit the deployed API was built from.
@@ -30,7 +30,7 @@ const covers = new Map(
   await Promise.all(
     sandboxes.map(
       async ({ sandbox }) =>
-        [sandbox.designId, await getCheckpointCover(db, sandbox.designId)] as const,
+        [sandbox.canvasId, await getCheckpointCover(db, sandbox.canvasId)] as const,
     ),
   ),
 );
@@ -52,7 +52,7 @@ if (args.includes("--json")) {
   console.log(`Current image: ${image}\n`);
   for (const row of rows) {
     console.log(
-      `${row.designId}  ${row.state.padEnd(8)} ${row.image ?? "(no session yet)"}` +
+      `${row.canvasId}  ${row.state.padEnd(8)} ${row.image ?? "(no session yet)"}` +
         `  runner says ${row.client ?? "(nothing)"}\n    ${SAYS[row.next]}`,
     );
   }

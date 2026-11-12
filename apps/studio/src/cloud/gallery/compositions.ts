@@ -44,7 +44,7 @@ export const CHROME_HEIGHT = 44;
 /** The panes under our 38px chrome. */
 const MAIN: Rect = { x: 300, y: 38, width: 780, height: 856 };
 const RAIL: Rect = { x: 1080, y: 38, width: 360, height: 862 };
-const DESIGN = [MAIN, RAIL];
+const CANVAS = [MAIN, RAIL];
 const WINDOW = { width: 1440, height: 900 };
 /** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
 const MIN = { width: 1100, height: 640 };
@@ -55,7 +55,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "Team sidebar",
     board: "teams/team-sidebar.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -64,7 +64,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/sidebar-team-menu.html",
     ...WINDOW,
     open: 'button[aria-label^="Workspace"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -73,7 +73,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/sidebar-filter.html",
     ...WINDOW,
     open: 'button[aria-label^="Filter"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -81,14 +81,14 @@ export const COMPOSITIONS: Composition[] = [
     title: "Sidebar · Search",
     board: "mac/sidebar-search.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
   },
   {
     id: "sidebar-search-results",
     title: "Sidebar · Search results",
     board: "mac/sidebar-search-results.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -97,16 +97,16 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
   },
   {
-    // For the tests and a look: a design opening with its answers late, delivered on demand
+    // For the tests and a look: a canvas opening with its answers late, delivered on demand
     // (`window.galleryArrive`, or `?later` on a schedule). Its first paint: the row's mark, the
     // action's room held, you alone, no pages yet.
-    id: "design-opening",
-    title: "Opening a design · its answers arriving late",
+    id: "canvas-opening",
+    title: "Opening a canvas · its answers arriving late",
     ...WINDOW,
   },
   {
-    id: "design-opening-launch",
-    title: "Opening a design at launch · nothing known yet, the sidebar collapsed",
+    id: "canvas-opening-launch",
+    title: "Opening a canvas at launch · nothing known yet, the sidebar collapsed",
     ...WINDOW,
   },
   {
@@ -115,7 +115,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "teams/share.html",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
   },
   {
@@ -125,7 +125,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "Share · some haven't opened Ponzu",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: "styles",
   },
   {
@@ -257,7 +257,7 @@ export const COMPOSITIONS: Composition[] = [
   { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW, reference: true },
   {
     id: "sidebar-collapsed-long-name",
-    title: "Sidebar collapsed · a long design name",
+    title: "Sidebar collapsed · a long canvas name",
     ...WINDOW,
     reference: true,
   },
@@ -285,14 +285,14 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/3-pull-request-tab.html",
     ...WINDOW,
     open: 'button[aria-controls="file-src/components/hero.tsx"]',
-    masks: DESIGN,
+    masks: CANVAS,
     reference: true,
     differs:
       "the tab no longer folds the thread away: the rail stays as it was (open here), and the pull request fits the canvas's column, stacked at this width (both masked)",
   },
   {
-    id: "together-on-a-design",
-    title: "Together on a design",
+    id: "together-on-a-canvas",
+    title: "Together on a canvas",
     board: "teams/together-on-a-design.html",
     ...WINDOW,
     masks: [MAIN],

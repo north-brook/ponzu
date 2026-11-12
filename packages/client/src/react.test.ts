@@ -6,7 +6,7 @@ import { createFakeBackend } from "./testing/backend.ts";
 import { FakeClock } from "./testing/clock.ts";
 
 function Sidebar({ workspaceId }: { workspaceId: string }) {
-  const { rows, status } = useLiveQuery("workspace.designs", { workspaceId });
+  const { rows, status } = useLiveQuery("workspace.canvases", { workspaceId });
   return createElement("p", null, `${status}: ${(rows ?? []).map((row) => row.name).join(", ")}`);
 }
 
@@ -16,7 +16,7 @@ test("useLiveQuery reads what the query holds, and needs a provider", async () =
   const maya = backend.addPerson({ login: "maya" });
   const ws = backend.addWorkspace({ login: "acme", members: { [maya.id]: "admin" } });
   const { api, live } = backend.connect(maya);
-  await api.designs.create({ workspaceId: ws.id, name: "Kettle" });
+  await api.canvases.create({ workspaceId: ws.id, name: "Kettle" });
   const render = () =>
     renderToStaticMarkup(
       createElement(LiveProvider, { live }, createElement(Sidebar, { workspaceId: ws.id })),
@@ -24,7 +24,7 @@ test("useLiveQuery reads what the query holds, and needs a provider", async () =
 
   expect(render()).toBe("<p>connecting: </p>");
   // Held open elsewhere (a mounted screen), the query's rows reach every reader of it.
-  live.subscribe("workspace.designs", { workspaceId: ws.id }, () => {});
+  live.subscribe("workspace.canvases", { workspaceId: ws.id }, () => {});
   await clock.advance(0);
   expect(render()).toBe("<p>live: Kettle</p>");
 

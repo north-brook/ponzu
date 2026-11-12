@@ -12,7 +12,7 @@ function storage(objects: Record<string, number>) {
     accountId: "acct",
     accessKeyId: "id",
     secretAccessKey: "secret",
-    bucket: "designs",
+    bucket: "canvases",
     clock: new FakeClock(Date.UTC(2026, 10, 10)),
     fetch: async (input, init) => {
       const request = new Request(input, init);
@@ -30,7 +30,7 @@ function storage(objects: Record<string, number>) {
 }
 
 test("a HEAD asks for the object's checksum and reads it back as hex", async () => {
-  const { r2, seen } = storage({ "/designs/k/assets/a.png": 5 });
+  const { r2, seen } = storage({ "/canvases/k/assets/a.png": 5 });
 
   expect(await r2.head("k/assets/a.png")).toEqual({
     size: 5,

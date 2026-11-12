@@ -9,11 +9,11 @@ import {
   SCRATCH,
   toggleProject,
 } from "./filter.ts";
-import type { DesignSummary, Person, Repo } from "./model.ts";
+import type { CanvasSummary, Person, Repo } from "./model.ts";
 
 const repo = (name: string): Repo => ({ id: name, owner: "north-brook", name });
 const person = (id: string): Person => ({ id, name: id, login: id, avatarUrl: null });
-const design = (id: string, owner: string, repoName: string | null): DesignSummary => ({
+const canvas = (id: string, owner: string, repoName: string | null): CanvasSummary => ({
   id,
   name: id,
   project: repoName
@@ -31,37 +31,37 @@ const design = (id: string, owner: string, repoName: string | null): DesignSumma
   settledAt: null,
 });
 
-const designs = [
-  design("a", "sam", "fernwood"),
-  design("b", "maya", "fernwood"),
-  design("c", "sam", "lenny"),
-  design("d", "sam", null),
+const canvases = [
+  canvas("a", "sam", "fernwood"),
+  canvas("b", "maya", "fernwood"),
+  canvas("c", "sam", "lenny"),
+  canvas("d", "sam", null),
 ];
-const ids = (list: DesignSummary[]) => list.map((d) => d.id);
-const FERNWOOD = projectKey(designs[0]!.project);
-const LENNY = projectKey(designs[2]!.project);
+const ids = (list: CanvasSummary[]) => list.map((d) => d.id);
+const FERNWOOD = projectKey(canvases[0]!.project);
+const LENNY = projectKey(canvases[2]!.project);
 const ALL = [FERNWOOD, LENNY, SCRATCH];
 
 test("no filter keeps everything, Scratch included", () => {
-  expect(ids(applyFilter(designs, NO_FILTER))).toEqual(["a", "b", "c", "d"]);
+  expect(ids(applyFilter(canvases, NO_FILTER))).toEqual(["a", "b", "c", "d"]);
   expect(isFiltering(NO_FILTER)).toBe(false);
 });
 
-test("a person keeps the designs they started", () => {
-  expect(ids(applyFilter(designs, { person: "sam", projects: null }))).toEqual(["a", "c", "d"]);
+test("a person keeps the canvases they started", () => {
+  expect(ids(applyFilter(canvases, { person: "sam", projects: null }))).toEqual(["a", "c", "d"]);
 });
 
-test("unchecking a repo hides only that repo's designs; Scratch's stay", () => {
+test("unchecking a repo hides only that repo's canvases; Scratch's stay", () => {
   const filter = toggleProject(NO_FILTER, FERNWOOD, ALL);
   expect(filter.projects).toEqual([LENNY, SCRATCH]);
   expect(isFiltering(filter)).toBe(true);
-  expect(ids(applyFilter(designs, filter))).toEqual(["c", "d"]);
-  expect(ids(applyFilter(designs, { person: "sam", projects: [FERNWOOD] }))).toEqual(["a"]);
+  expect(ids(applyFilter(canvases, filter))).toEqual(["c", "d"]);
+  expect(ids(applyFilter(canvases, { person: "sam", projects: [FERNWOOD] }))).toEqual(["a"]);
 });
 
 test("Scratch is unchecked like a repo", () => {
   const filter = toggleProject(NO_FILTER, SCRATCH, ALL);
-  expect(ids(applyFilter(designs, filter))).toEqual(["a", "b", "c"]);
+  expect(ids(applyFilter(canvases, filter))).toEqual(["a", "b", "c"]);
 });
 
 test("a repo named like Scratch is still a repo", () => {
@@ -75,8 +75,8 @@ test("checking every project again, or unchecking the last, is no filter", () =>
   expect(toggleProject(toggleProject(one, FERNWOOD, ALL), SCRATCH, ALL).projects).toBeNull();
 });
 
-test("project counts: repos with designs, most first, then Scratch", () => {
-  expect(projectCounts(designs).map((p) => [p.repo?.name ?? p.key, p.count])).toEqual([
+test("project counts: repos with canvases, most first, then Scratch", () => {
+  expect(projectCounts(canvases).map((p) => [p.repo?.name ?? p.key, p.count])).toEqual([
     ["fernwood", 2],
     ["lenny", 1],
     [SCRATCH, 1],

@@ -2,7 +2,7 @@
  * Sandbox names. A name is unique per Vercel project and is the only identifier we keep: the
  * API's database scope keeps environments sharing one project apart.
  *
- *   pz-<scope>-<designId>             a design
+ *   pz-<scope>-<canvasId>             a design
  *   pz-<scope>-signin-<authStateId>   a Claude sign-in
  *   pz-test-<tag>-<8 random>          live suites and image checks; no sweep matches it
  *
@@ -30,10 +30,10 @@ export function scopePrefix(scope: string): string {
   return `pz-${scope}-`;
 }
 
-/** `pz-${scope}-${designId}`. */
-export function designSandboxName(scope: string, designId: string): string {
-  if (designId.startsWith("signin-")) throw new Error(`a design id cannot start with signin-`);
-  return checked(`${scopePrefix(scope)}${designId}`);
+/** `pz-${scope}-${canvasId}`. */
+export function canvasSandboxName(scope: string, canvasId: string): string {
+  if (canvasId.startsWith("signin-")) throw new Error(`a design id cannot start with signin-`);
+  return checked(`${scopePrefix(scope)}${canvasId}`);
 }
 
 /** `pz-${scope}-signin-${authStateId}`. */
@@ -52,7 +52,7 @@ export function testSandboxName(tag: string): string {
 
 export interface ParsedSandboxName {
   scope: string;
-  kind: "design" | "signin";
+  kind: "canvas" | "signin";
   id: string;
 }
 
@@ -65,5 +65,5 @@ export function parseSandboxName(name: string): ParsedSandboxName | null {
     const id = rest.slice("signin-".length);
     return id ? { scope, kind: "signin", id } : null;
   }
-  return { scope, kind: "design", id: rest };
+  return { scope, kind: "canvas", id: rest };
 }

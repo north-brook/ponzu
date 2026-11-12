@@ -96,7 +96,7 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * limits); the pane between them, the canvas's, takes the rest.
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
- * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
+ * - `chrome` is everything past the left block (CanvasChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
  * - `children` fill the main pane.
  * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
@@ -105,7 +105,7 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  *
  * The chrome draws no lockup, in any state (the founder asked for it gone; the boards still
  * draw one). The sidebar toggle comes first at the left, just past the traffic lights, and
- * DesignChrome ends with the thread toggle at the window's right edge.
+ * CanvasChrome ends with the thread toggle at the window's right edge.
  *
  * The panes are react-resizable-panels' (shadcn's Resizable, ui/resizable.tsx), in pixels. Each
  * edge between a pane and the canvas is a separator: the gutter there is its grab area, it
@@ -129,15 +129,15 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  */
 function useThreadFocus(
   open: boolean,
-  onDesign: boolean,
+  canvasShowing: boolean,
   box: RefObject<HTMLElement | null>,
   motion: PaneMotion,
 ) {
-  const was = useRef({ open, onDesign });
+  const was = useRef({ open, canvasShowing });
   const before = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     const prev = was.current;
-    was.current = { open, onDesign };
+    was.current = { open, canvasShowing };
     const pane = box.current;
     if (!pane || prev.open === open) return;
     if (!open) {
@@ -150,7 +150,7 @@ function useThreadFocus(
       before.current = null;
       return;
     }
-    if (!prev.onDesign || !onDesign) return;
+    if (!prev.canvasShowing || !canvasShowing) return;
     let live = true;
     // After the toggle's own layout effect has started the easing (a microtask on).
     queueMicrotask(() =>
@@ -164,7 +164,7 @@ function useThreadFocus(
     return () => {
       live = false;
     };
-  }, [open, onDesign, box, motion]);
+  }, [open, canvasShowing, box, motion]);
 }
 
 export function AppWindow({
@@ -620,7 +620,7 @@ export function AppWindow({
             >
               <aside
                 id="sidebar"
-                aria-label="Designs"
+                aria-label="Canvases"
                 inert={!sidebar.open}
                 // Its width less the gutter past it (the edge), which is its right padding.
                 className="flex h-full w-[calc(var(--pane-sidebar)-8px)] shrink-0 flex-col pt-[2px] pb-2.5 pl-2"

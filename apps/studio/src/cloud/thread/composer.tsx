@@ -243,7 +243,7 @@ export function AttachmentChip({
 }
 
 /**
- * Someone who can read the design but not steer it: one line where the composer would be. The
+ * Someone who can read the canvas but not steer it: one line where the composer would be. The
  * repo's name, when the line has one, wraps whole rather than at its hyphen or slash.
  */
 export function ReadOnlyLine({ message, whole }: { message: string; whole?: string | null }) {

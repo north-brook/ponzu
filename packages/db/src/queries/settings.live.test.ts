@@ -7,12 +7,12 @@ import { seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
 import { anonymiseUser, deleteUser, planAccountDeletion } from "./account-deletion.ts";
 import { upsertMembership } from "./accounts.ts";
-import { createDesign } from "./designs.ts";
+import { createCanvas } from "./canvases.ts";
 import {
   addRepoSecret,
   deleteRepoSecret,
   getRepoEnvironment,
-  listDesignSecrets,
+  listCanvasSecrets,
   listWorkspaceEnvironments,
   markBaseForRebuild,
   replaceRepoSecret,
@@ -109,7 +109,7 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       base: { status: "none", rebuildRequestedAt: new Date("2026-11-11T11:00:00Z") },
       secrets: [{ name: "DATABASE_URL", updatedAt: new Date("2026-11-11T10:00:00Z") }],
     });
-    const design = await createDesign(db, {
+    const canvas = await createCanvas(db, {
       workspaceId: workspace.id,
       repoId: repo.id,
       ownerId: user.id,
@@ -118,7 +118,7 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       branch: null,
       doc: emptyDoc("Env"),
     });
-    expect(await listDesignSecrets(db, design.id)).toEqual([
+    expect(await listCanvasSecrets(db, canvas.id)).toEqual([
       { repoId: repo.id, name: "DATABASE_URL", encryptedValue: "pzv1.k.n.d" },
     ]);
     const listed = await listWorkspaceEnvironments(db, {
@@ -134,7 +134,7 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
     const user = await seedUser(db, "spender");
     const workspace = await seedWorkspace(db, "spend");
     await upsertMembership(db, { workspaceId: workspace.id, userId: user.id, role: "member" });
-    const design = await createDesign(db, {
+    const canvas = await createCanvas(db, {
       workspaceId: workspace.id,
       repoId: null,
       ownerId: user.id,
@@ -144,9 +144,9 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       doc: emptyDoc("Spend"),
     });
     await recordUsage(db, {
-      id: `live-${design.id}`,
+      id: `live-${canvas.id}`,
       workspaceId: workspace.id,
-      designId: design.id,
+      canvasId: canvas.id,
       userId: user.id,
       kind: "sandbox",
       seconds: 3600,
@@ -168,20 +168,20 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
     expect(read).toMatchObject({
       current: { version: 1, creditMicrousd: 100_000, sandboxCreditsPerAwakeHour: 5 },
       monthlyCapCents: 5000,
-      rows: [{ userId: user.id, designId: design.id, rateCardVersion: 1, seconds: 3600 }],
+      rows: [{ userId: user.id, canvasId: canvas.id, rateCardVersion: 1, seconds: 3600 }],
       people: [{ id: user.id, role: "member" }],
-      designs: [{ id: design.id, readable: true }],
+      canvases: [{ id: canvas.id, readable: true }],
     });
 
     await postMessage(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       userId: user.id,
       item: { text: "hi", from: { id: user.id, name: "Spender", login: "spender" } },
       event: { text: "hi" },
     });
     expect(await planAccountDeletion(db, user.id)).toEqual({
       soleAdminOf: [],
-      deleted: [design.id],
+      deleted: [canvas.id],
       kept: [],
     });
     expect(await anonymiseUser(db, user.id)).toBeGreaterThan(0);

@@ -307,11 +307,11 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
 
     await page.click("#sidebar [aria-current]", { button: "right" });
     await page.click('[role=menuitem]:has-text("Rename")');
-    await page.waitForSelector('input[aria-label="Design name"]');
+    await page.waitForSelector('input[aria-label="Canvas name"]');
     await page.waitForSelector("[role=menu]", { state: "detached" });
     await page.keyboard.press("Meta+b");
     expect(await expanded(SIDEBAR)).toBe("true");
-    expect(await page.$('input[aria-label="Design name"]')).not.toBeNull();
+    expect(await page.$('input[aria-label="Canvas name"]')).not.toBeNull();
     await page.keyboard.press("Escape");
     await page.keyboard.press("Meta+b");
     expect(await expanded(SIDEBAR)).toBe("false");
@@ -407,9 +407,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(await rings()).toEqual([]);
       await page.keyboard.up(key);
     }
-    // A click on a control that keeps its focus (a design's row), then shortcuts, Return and
+    // A click on a control that keeps its focus (a canvas's row), then shortcuts, Return and
     // the modifiers: quiet throughout, and no tip.
-    await page.click('#sidebar [data-design-row="dsn_pricing"]');
+    await page.click('#sidebar [data-canvas-row="cnv_pricing"]');
     for (const key of [
       "Meta",
       "Alt",
@@ -434,7 +434,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     await page.keyboard.up("Meta");
     // Focus our own code moves after a key (a row back from renaming) is quiet too.
     await page.evaluate(() => {
-      document.querySelector<HTMLElement>('[data-design-row="dsn_pricing"]')!.focus();
+      document.querySelector<HTMLElement>('[data-canvas-row="cnv_pricing"]')!.focus();
     });
     expect(await rings()).toEqual([]);
   });
@@ -461,13 +461,13 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       () => document.activeElement?.getAttribute("aria-label") === "Search",
     );
     expect(await rings()).toEqual(["Search"]);
-    // Arrows in the design list move the ring with them.
-    await page.focus('[data-design-row="dsn_quieter"]');
+    // Arrows in the canvas list move the ring with them.
+    await page.focus('[data-canvas-row="cnv_quieter"]');
     await page.keyboard.press("ArrowDown");
     expect((await rings()).length).toBe(1);
     expect(
-      await page.evaluate(() => document.activeElement?.getAttribute("data-design-row")),
-    ).not.toBe("dsn_quieter");
+      await page.evaluate(() => document.activeElement?.getAttribute("data-canvas-row")),
+    ).not.toBe("cnv_quieter");
   });
 
   test("a popover the keyboard opens rings where it puts focus; one a click opens doesn't", async () => {

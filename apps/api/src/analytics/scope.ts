@@ -10,12 +10,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export interface AnalyticsScope {
   /** The signed-in person, once the route's access declaration has said who it is. */
   userId(): string | null;
-  /** The design a runner acts on, for a runner's request. */
-  designId(): string | null;
+  /** The canvas a runner acts on, for a runner's request. */
+  canvasId(): string | null;
   /** The app's PostHog session (`X-POSTHOG-SESSION-ID`), so a recording links to what it did. */
   readonly sessionId: string | null;
   readonly requestId: string;
-  /** The route as it was declared (`POST /v1/designs/:id/messages`), never the address asked. */
+  /** The route as it was declared (`POST /v1/canvases/:id/messages`), never the address asked. */
   route(): string;
   /** The workspace the request turned out to be about: the first one it was authorized for. */
   workspaceId: string | null;
@@ -43,7 +43,7 @@ export function appSession(): string | null {
 
 /**
  * Says which workspace the request is about. The authorization helpers call this as they hand
- * back a workspace's, a design's or a repo's row, which is where the API first knows it; the
+ * back a workspace's, a canvas's or a repo's row, which is where the API first knows it; the
  * first one wins, so a request that reads another workspace on the way stays with its own.
  */
 export function noteWorkspace(workspaceId: string): void {

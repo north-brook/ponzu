@@ -26,7 +26,7 @@ export interface PageOptions {
   colorScheme?: "light" | "dark";
   /**
    * Device px per artboard px when the render is shown small, like a
-   * thumbnail. The design's raster assets then load as copies no wider than
+   * thumbnail. The canvas's raster assets then load as copies no wider than
    * the board drawn at that scale. Leave it out for screenshots and exports:
    * they need the originals.
    */
@@ -40,7 +40,7 @@ export interface PageOptions {
 }
 
 /**
- * CSS to put inside a <style> element. A design's tokens are any CSS, and a
+ * CSS to put inside a <style> element. A canvas's tokens are any CSS, and a
  * `</style` in them would end the element and go on as markup, script
  * handlers and all. CSS can't use the sequence, so escaping it changes nothing.
  */
@@ -119,7 +119,7 @@ export function isRasterUrl(url: string): boolean {
 
 /**
  * The URL of a copy of the image at `url` that's `w` px wide: `?w=` on one of
- * the design's assets (under `assetBase`), the server's /api/image for a
+ * the canvas's assets (under `assetBase`), the server's /api/image for a
  * remote one. Null for anything else (data:, blob:, another server's path).
  */
 export function renditionUrl(url: string, w: number, assetBase: string): string | null {
@@ -178,7 +178,7 @@ function originOf(url: string): string {
 }
 
 /**
- * Tokens with their relative url()s resolved against the design's assets, so an
+ * Tokens with their relative url()s resolved against the canvas's assets, so an
  * `@font-face { src: url(assets/brand.woff2) }` in tokens.css loads wherever the
  * artboard renders, not only beside the files.
  */

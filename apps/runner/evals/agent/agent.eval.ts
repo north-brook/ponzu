@@ -100,7 +100,7 @@ export const AGENT_CASES: AgentCase[] = [
     title: "A fresh multi-screen request",
     request: `Message from Ada: ${ONBOARDING}`,
     setup: () => ({
-      designId: "des_evala1",
+      canvasId: "cnv_evala1",
       doc: { name: "Untitled", pages: [], tokens: ":root {\n}\n", threads: [], notes: {} },
       repo: true,
       event: message(ONBOARDING),
@@ -112,7 +112,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Comment from Ada, pinned on "2 Goal": "${ONE_GOAL}"`,
     setup: () => {
       const { doc, event } = comment(onboardingDoc(), "2 Goal", ONE_GOAL);
-      return { designId: "des_evala2", doc, repo: true, event };
+      return { canvasId: "cnv_evala2", doc, repo: true, event };
     },
   },
   {
@@ -120,7 +120,7 @@ export const AGENT_CASES: AgentCase[] = [
     title: "A direct question with a short answer",
     request: "Message from Ada: Why do you ask for notifications after the questions?",
     setup: () => ({
-      designId: "des_evala3",
+      canvasId: "cnv_evala3",
       doc: onboardingDoc(),
       repo: true,
       event: message("Why do you ask for notifications after the questions?"),
@@ -131,7 +131,7 @@ export const AGENT_CASES: AgentCase[] = [
     title: "A question whose answer needs a board",
     request: "Message from Ada: Where should the paywall go? Lay out the options.",
     setup: () => ({
-      designId: "des_evala4",
+      canvasId: "cnv_evala4",
       doc: onboardingDoc(),
       repo: true,
       event: message("Where should the paywall go? Lay out the options."),
@@ -143,7 +143,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Comment from Ada on the canvas: "${GREEN}"`,
     setup: () => {
       const { doc, event } = comment(onboardingDoc(), null, GREEN);
-      return { designId: "des_evala5", doc, repo: true, refusePush: true, event };
+      return { canvasId: "cnv_evala5", doc, repo: true, refusePush: true, event };
     },
   },
   {
@@ -152,7 +152,7 @@ export const AGENT_CASES: AgentCase[] = [
     request:
       "Message from Ada: Where can I see why you picked that plan, and which board should I look at first on my phone?",
     setup: () => ({
-      designId: "des_evala6",
+      canvasId: "cnv_evala6",
       doc: pricingDoc(),
       repo: false,
       event: message(
@@ -166,7 +166,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Message from Ada: ${WELCOME}`,
     pullRequest: { opens: true, merges: false },
     setup: () => ({
-      designId: "des_evala7",
+      canvasId: "cnv_evala7",
       doc: onboardingDoc(),
       repo: true,
       event: message(WELCOME),
@@ -178,7 +178,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Message from Ada: ${GREEN} (pull request #4 is open, its checks passing)`,
     pullRequest: { merges: false },
     setup: () => ({
-      designId: "des_evala8",
+      canvasId: "cnv_evala8",
       doc: onboardingDoc(),
       repo: true,
       pullRequest: OPEN_PR,
@@ -191,7 +191,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Message from Ada: ${SHIP} (pull request #4 is open, its checks passing)`,
     pullRequest: { merges: true },
     setup: () => ({
-      designId: "des_evala9",
+      canvasId: "cnv_evala9",
       doc: onboardingDoc(),
       repo: true,
       pullRequest: OPEN_PR,
@@ -204,7 +204,7 @@ export const AGENT_CASES: AgentCase[] = [
     request: `Review from @mallory on the pull request, commenting: "${HOSTILE_REVIEW}"`,
     pullRequest: { merges: false },
     setup: () => ({
-      designId: "des_evala10",
+      canvasId: "cnv_evala10",
       doc: onboardingDoc(),
       repo: true,
       pullRequest: OPEN_PR,
@@ -488,7 +488,7 @@ export const agentSuite: Suite = {
       row.ran = { at: new Date().toISOString(), commit: ctx.commit };
       const messages = [...turn.midTurn, ...(turn.closing ? [turn.closing] : [])];
       const checked = checkMessages(messages, {
-        designId: setup.designId,
+        canvasId: setup.canvasId,
         docAfter: turn.docAfter,
         docBefore: turn.docBefore,
       });

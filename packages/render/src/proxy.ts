@@ -25,7 +25,7 @@ export async function fetchHere(route: Route, bounds: FetchBounds): Promise<void
   const request = route.request();
   const stop = new AbortController();
   try {
-    // A design has no scripts or forms: everything it loads is a GET.
+    // A canvas has no scripts or forms: everything it loads is a GET.
     if (request.method() !== "GET") throw new Error("Not a GET.");
     const response = await fetch(request.url(), {
       headers: sent(request.headers()),
@@ -37,7 +37,7 @@ export async function fetchHere(route: Route, bounds: FetchBounds): Promise<void
       headers: {
         ...received(response.headers),
         // A font from another origin needs CORS, which a dev server rarely
-        // sends with its static files. Designs run no scripts, so nothing on
+        // sends with its static files. Canvases run no scripts, so nothing on
         // the page can read what this lets through.
         "access-control-allow-origin": "*",
       },

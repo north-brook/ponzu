@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 // The real API, in process, to hold the in-memory backend to what it answers.
-import { call, type Workspace, workspaceWithRepo } from "../../../apps/api/src/testing/designs.ts";
+import { call, type Workspace, workspaceWithRepo } from "../../../apps/api/src/testing/canvases.ts";
 import { createTestApp, type TestApp } from "../../../apps/api/src/testing/index.ts";
 import { getClaudeAccount, recordClaudeModels } from "../../db/src/index.ts";
 import { type Api, createApi } from "./api.ts";
@@ -70,12 +70,12 @@ async function steps(api: Api, workspaceId: string) {
   };
   await refused(api.claude.setDefaults({ model: "claude-fable-5-2" }));
   await refused(api.claude.setDefaults({ model: "claude-haiku-5-5", effort: "max" }));
-  await refused(api.designs.create({ workspaceId, model: "claude-fable-5-2" }));
+  await refused(api.canvases.create({ workspaceId, model: "claude-fable-5-2" }));
   expect(await api.claude.setDefaults({ model: "claude-haiku-5-5", effort: "low" })).toMatchObject({
     model: "claude-haiku-5-5",
     effort: "low",
   });
-  expect((await api.designs.create({ workspaceId, model: "claude-opus-6" })).id).toBeString();
+  expect((await api.canvases.create({ workspaceId, model: "claude-opus-6" })).id).toBeString();
 }
 
 describe("models an account reported", () => {

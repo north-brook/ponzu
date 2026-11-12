@@ -3,8 +3,8 @@ import type { Binding } from "../vault/vault.ts";
 
 /*
  * A repo's secrets (docs/cloud.md, "Environments"): what may be one, and how one is sealed.
- * A secret reaches the agent's side of every sandbox of the repo's designs as an environment
- * variable, beside Ponzu's own and the design owner's Claude credential, so a name that would
+ * A secret reaches the agent's side of every sandbox of the repo's canvases as an environment
+ * variable, beside Ponzu's own and the canvas owner's Claude credential, so a name that would
  * replace or steer those, or change how a program there loads code or checks TLS, is refused:
  * on the way in, and again when a sandbox's environment is made.
  */

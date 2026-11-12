@@ -1,7 +1,7 @@
 // The real GitHub, through this module's own functions: a branch pushed with git and a one-hour
 // installation token, its pull request opened as the developer with their own GitHub token, read
 // as the App until GitHub knows whether it can merge, marked ready, brought up to date with its
-// base and merged as the developer, the design settled, and the branches deleted. It merges into
+// base and merged as the developer, the canvas settled, and the branches deleted. It merges into
 // a branch of its own made from the default branch, which the database calls the repo's default
 // branch while it runs, so the repository's own is left as it was; the closed pull request
 // stays, as GitHub cannot delete one.
@@ -21,10 +21,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emptyDoc } from "@ponzu/core";
 import {
+  createCanvas,
   createDb,
-  createDesign,
-  deleteDesign,
-  getDesign,
+  deleteCanvas,
+  getCanvas,
   getPullRequestContext,
   getUser,
   listThreadItems,
@@ -52,7 +52,7 @@ const configured =
   env.PONZU_VAULT_KEY &&
   env.PONZU_SESSION_FILE;
 
-describe.skipIf(!configured)("a design's pull request on GitHub, for real", () => {
+describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () => {
   const fullName = env.GITHUB_TEST_REPO ?? "";
   const background: Promise<unknown>[] = [];
   /** The real services, made only once the test runs: a skipped one reads no key. */
@@ -74,7 +74,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     },
     // Only where previews are served from is read, for the pull request's description.
     config: { assetsUrl: "https://assets.ponzu.cloud" } as Config,
-    // A design with no previews yet copies none into its pull request.
+    // A canvas with no previews yet copies none into its pull request.
     storage: new Proxy({} as ObjectStorage, {
       get: () => () => Promise.reject(new Error("The live test uses no storage.")),
     }),
@@ -139,7 +139,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     }
   }
 
-  test("pushed, opened and merged as the person, read as the App, and the design settled", async () => {
+  test("pushed, opened and merged as the person, read as the App, and the canvas settled", async () => {
     const deps = liveDeps();
     const { db, github } = deps;
     const repo = (await db.select().from(repos)).find((row) => row.fullName === fullName);
@@ -148,7 +148,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     const user = await getUser(db, session.user.id);
     if (!user) throw new Error("The developer in the session file has no user on this database.");
 
-    const design = await createDesign(db, {
+    const canvas = await createCanvas(db, {
       workspaceId: repo.workspaceId,
       repoId: repo.id,
       ownerId: user.id,
@@ -157,8 +157,8 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
       branch,
       doc: emptyDoc(`Live check ${tag}`),
     });
-    cleanup.push(() => deleteDesign(db, design.id));
-    const stored = await getPullRequestContext(db, design.id);
+    cleanup.push(() => deleteCanvas(db, canvas.id));
+    const stored = await getPullRequestContext(db, canvas.id);
     if (!stored?.installationId)
       throw new Error("The App is not installed on the repo's workspace.");
     const { token, rest } = await asApp(github, stored.installationId, repo.githubRepoId);
@@ -171,13 +171,13 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
         .status,
     ).toBe(201);
     cleanup.push(() => rest("DELETE", `/git/refs/heads/${base}`));
-    // The design's pull request is the one into the repo's default branch, as Ponzu has it: for
+    // The canvas's pull request is the one into the repo's default branch, as Ponzu has it: for
     // the test, that base, until it is over.
     const setDefaultBranch = (name: string) =>
       db.execute(`update repos set default_branch = '${name}' where id = '${repo.id}'`);
     await setDefaultBranch(base);
     cleanup.push(() => setDefaultBranch(repo.defaultBranch));
-    const context = (await getPullRequestContext(db, design.id))!;
+    const context = (await getPullRequestContext(db, canvas.id))!;
 
     // One commit, pushed with git as the sandbox pushes: authored by the person.
     const dir = mkdtempSync(join(tmpdir(), "ponzu-live-"));
@@ -218,16 +218,16 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
       head: { ref: branch },
       author: { login: user.githubLogin, bot: false },
     });
-    expect(tab.pullRequest!.body).toContain(`https://ponzu.design/designs/${design.id}`);
+    expect(tab.pullRequest!.body).toContain(`https://ponzu.design/canvases/${canvas.id}`);
     expect((await openPullRequest(deps, context, user)).opened).toBe(false);
-    expect(await savePullRequestSummary(deps, design.id, `Adds live-${tag}.md.`)).toMatchObject({
+    expect(await savePullRequestSummary(deps, canvas.id, `Adds live-${tag}.md.`)).toMatchObject({
       pullRequest: tab.pullRequest!.number,
       kept: null,
     });
 
     // GitHub works out whether it can merge over a few seconds.
     await Promise.all(background);
-    await refreshPullRequest(deps, design.id);
+    await refreshPullRequest(deps, canvas.id);
     const read = await readPullRequest(deps, target);
     expect(read.read.pullRequest).toMatchObject({
       body: expect.stringContaining(`Adds live-${tag}.md.`),
@@ -278,7 +278,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
       await systemClock.sleep(1_000);
       updated = await readPullRequest(deps, target);
     }
-    await refreshPullRequest(deps, design.id);
+    await refreshPullRequest(deps, canvas.id);
     updated = await readPullRequest(deps, target);
     expect(updated.read.branch).toMatchObject({ behindBy: 0 });
     expect(updated.read.pullRequest!.head.sha).not.toBe(ready.pullRequest!.head.sha);
@@ -292,12 +292,12 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
       state: "merged",
       mergedBy: { login: user.githubLogin, bot: false },
     });
-    expect(await getDesign(db, design.id)).toMatchObject({
+    expect(await getCanvas(db, canvas.id)).toMatchObject({
       prNumber: tab.pullRequest!.number,
       prState: "merged",
       status: "settled",
     });
-    const notices = (await listThreadItems(db, { designId: design.id }))
+    const notices = (await listThreadItems(db, { canvasId: canvas.id }))
       .filter((item) => item.kind === "notice")
       .map((item) => (item.payload as { state: string }).state);
     expect(notices).toEqual(["draft", "merged"]);

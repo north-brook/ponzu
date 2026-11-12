@@ -249,7 +249,7 @@ describe("vercel-firewall.json", () => {
     expect(FirewallSchema.safeParse(bare).success).toBe(false);
   });
 
-  test("the per-IP limits are the design's numbers", () => {
+  test("the per-IP limits are the canvas's numbers", () => {
     const fw = loadInfraFile("vercel-firewall.json");
     const limits = Object.fromEntries(
       fw.rules

@@ -11,7 +11,7 @@ import { RUNNER_HEADER } from "./protocol.ts";
  */
 export function fakeApiHandler(
   fake: FakeRunnerApi,
-  opts: { designId: string; token: string },
+  opts: { canvasId: string; token: string },
 ): (request: Request) => Promise<Response> {
   const pending = new Map<string, { purpose: string; name: string; contentType: string }>();
   /** A checkpoint's archives, by upload id, until the checkpoint names them. */
@@ -19,7 +19,7 @@ export function fakeApiHandler(
   /** What `/v1/runner/restore` hands out, by download id. */
   const downloads = new Map<string, Uint8Array>();
   let uploads = 0;
-  const design = `/v1/designs/${opts.designId}`;
+  const canvas = `/v1/canvases/${opts.canvasId}`;
   const archive = (purpose: string) => purpose === "session" || purpose === "workspace";
 
   return async (request) => {
@@ -152,14 +152,14 @@ export function fakeApiHandler(
           const action = url.pathname.slice("/v1/runner/pull-request/".length).replace("-", "_");
           return Response.json(await fake.actOnPullRequest(runner, action as never, body));
         }
-        case `POST ${design}/ops`:
+        case `POST ${canvas}/ops`:
           return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
-        case `GET ${design}/ops`: {
+        case `GET ${canvas}/ops`: {
           const ops = await fake.fetchOps(runner, Number(url.searchParams.get("after")));
           if (ops === "gone") throw new ApiError(410, "gone", "Those ops are no longer kept.");
           return Response.json(ops);
         }
-        case `GET ${design}/doc`:
+        case `GET ${canvas}/doc`:
           return Response.json(await fake.fetchDoc(runner));
       }
       throw new ApiError(404, "not_found", "There is nothing at this address.");

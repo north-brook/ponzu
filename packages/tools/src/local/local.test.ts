@@ -48,8 +48,8 @@ test("a path passed to write_html or create_artboard is never read", async () =>
     { saveDelay: 0 },
   );
   const ws: Workspace = {
-    designs: () => [{ key: "fern", design }],
-    resolve: async () => ({ key: "fern", design }),
+    canvases: () => [{ key: "fern", canvas: design }],
+    resolve: async () => ({ key: "fern", canvas: design }),
     events: new EventHub(),
     presence: new PresenceHub(),
   };

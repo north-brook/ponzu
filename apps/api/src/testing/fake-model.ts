@@ -23,13 +23,13 @@ export const FAKE_IDEAS = [
   "Bring the leaf green into a dark theme for the whole shop",
 ];
 
-/** A gate verdict on four ideas where those numbered in `unsafe` or `notDesign` fail. */
+/** A gate verdict on four ideas where those numbered in `unsafe` or `notVisible` fail. */
 export function verdict({
   unsafe = [],
-  notDesign = [],
+  notVisible = [],
 }: {
   unsafe?: number[];
-  notDesign?: number[];
+  notVisible?: number[];
 } = {}) {
   return Object.fromEntries(
     [1, 2, 3, 4].map((n) => [
@@ -37,11 +37,11 @@ export function verdict({
       {
         reason: unsafe.includes(n)
           ? "It asks the reader to reconnect at an address."
-          : notDesign.includes(n)
+          : notVisible.includes(n)
             ? "Caching is invisible."
             : "A design.",
         safe: !unsafe.includes(n),
-        design: !notDesign.includes(n),
+        visible: !notVisible.includes(n),
       },
     ]),
   );

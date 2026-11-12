@@ -72,7 +72,7 @@ export interface RenderRequest {
   at?: number;
   /** Hover, focus or press a node first; `at` then counts from that moment. */
   interact?: Interaction;
-  /** Base URL for this design's assets/ paths, when it differs from the renderer's own. */
+  /** Base URL for this canvas's assets/ paths, when it differs from the renderer's own. */
   assetBase?: string;
   /**
    * A small picture (a thumbnail, a preview, a canvas snapshot), not a

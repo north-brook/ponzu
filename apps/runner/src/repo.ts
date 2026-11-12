@@ -26,8 +26,8 @@ export class CheckoutError extends Error {
 }
 
 /**
- * Get the design's working directory ready, and return it. For a repo: git's identity and
- * credential helper, the clone (or, when the disk kept it, a fetch), and the design's branch,
+ * Get the canvas's working directory ready, and return it. For a repo: git's identity and
+ * credential helper, the clone (or, when the disk kept it, a fetch), and the canvas's branch,
  * made from the default branch the first time. Work already on disk is never reset: a sandbox
  * that slept comes back to the checkout it left. Scratch gets an empty folder.
  */

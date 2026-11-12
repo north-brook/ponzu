@@ -48,20 +48,20 @@ export interface WorkspaceUsage {
   mine: UsagePersonView;
   /** Everyone's use, highest first: admins only, and not someone who sees no other member. */
   byPerson: UsagePersonView[] | null;
-  /** Use put down to nobody: deleted accounts, and designs nobody's action woke. Admins only. */
+  /** Use put down to nobody: deleted accounts, and canvases nobody's action woke. Admins only. */
   unattributedCredits: number | null;
   /**
-   * Use by design, highest first: admins only. After the named ones, designs since deleted in
-   * one entry (`deleted`), then designs the viewer may not know of (in a repo GitHub hides from
+   * Use by design, highest first: admins only. After the named ones, canvases since deleted in
+   * one entry (`deleted`), then canvases the viewer may not know of (in a repo GitHub hides from
    * them) in another (`hidden`). It adds up to `usedCredits` exactly, as `byPerson` with
    * `unattributedCredits` does.
    */
-  byDesign: DesignUsageView[] | null;
+  byCanvas: CanvasUsageView[] | null;
 }
 
-export type DesignUsageView =
-  | { kind: "design"; design: { id: string; name: string }; usedCredits: number }
-  | { kind: "deleted" | "hidden"; design: null; usedCredits: number };
+export type CanvasUsageView =
+  | { kind: "canvas"; canvas: { id: string; name: string }; usedCredits: number }
+  | { kind: "deleted" | "hidden"; canvas: null; usedCredits: number };
 
 export interface UsageViewer {
   user: { id: string; name: string | null; githubLogin: string; avatarUrl: string | null };
@@ -81,12 +81,12 @@ export function workspaceUsage(
 
   let total = 0;
   const byUser = new Map<string | null, Units>();
-  const byDesign = new Map<string | null, Units>();
+  const byCanvas = new Map<string | null, Units>();
   for (const row of read.rows) {
     const units = unitsOf(row);
     total += units;
     byUser.set(row.userId, (byUser.get(row.userId) ?? 0) + units);
-    byDesign.set(row.designId, (byDesign.get(row.designId) ?? 0) + units);
+    byCanvas.set(row.canvasId, (byCanvas.get(row.canvasId) ?? 0) + units);
   }
 
   const { current } = read;
@@ -137,7 +137,7 @@ export function workspaceUsage(
     mine,
     byPerson: seesPeople ? highestFirst(read.people.map(personView)) : null,
     unattributedCredits: seesPeople ? (userCredits.get(null) ?? 0) : null,
-    byDesign: admin ? designBreakdown(read, byDesign) : null,
+    byCanvas: admin ? canvasBreakdown(read, byCanvas) : null,
   };
 }
 
@@ -159,43 +159,43 @@ export function ungranted(read: Pick<WorkspaceUsageRead, "people" | "granted">):
     .map((person) => person.id);
 }
 
-/** The two unnamed lines' keys, beside designs' own ids (which are `des_…`). */
+/** The two unnamed lines' keys, beside canvases' own ids (which are `des_…`). */
 const DELETED = "deleted";
 const HIDDEN = "hidden";
 
 /**
- * Use by design: each design the viewer may read, by name; then what was used in designs since
- * deleted (their usage keeps no design); then in designs they may not know of. Every line is
+ * Use by design: each canvas the viewer may read, by name; then what was used in canvases since
+ * deleted (their usage keeps no canvas); then in canvases they may not know of. Every line is
  * shared out of the rounded total, so the lines add up to it.
  */
-function designBreakdown(
+function canvasBreakdown(
   read: WorkspaceUsageRead,
   units: Map<string | null, Units>,
-): NonNullable<WorkspaceUsage["byDesign"]> {
-  const known = new Map(read.designs.map((design) => [design.id, design]));
+): NonNullable<WorkspaceUsage["byCanvas"]> {
+  const known = new Map(read.canvases.map((canvas) => [canvas.id, canvas]));
   const lines = new Map<string, Units>();
   for (const [id, used] of units) {
-    const design = id === null ? undefined : known.get(id);
-    const line = id === null ? DELETED : design?.readable ? design.id : HIDDEN;
+    const canvas = id === null ? undefined : known.get(id);
+    const line = id === null ? DELETED : canvas?.readable ? canvas.id : HIDDEN;
     lines.set(line, (lines.get(line) ?? 0) + used);
   }
   const credits = apportionMap(lines);
-  const named: DesignUsageView[] = [];
+  const named: CanvasUsageView[] = [];
   for (const line of lines.keys()) {
-    const design = line === DELETED || line === HIDDEN ? undefined : known.get(line);
-    if (!design) continue;
+    const canvas = line === DELETED || line === HIDDEN ? undefined : known.get(line);
+    if (!canvas) continue;
     named.push({
-      kind: "design",
-      design: { id: design.id, name: design.name },
+      kind: "canvas",
+      canvas: { id: canvas.id, name: canvas.name },
       usedCredits: credits.get(line) ?? 0,
     });
   }
   const unnamed = ([DELETED, HIDDEN] as const)
     .filter((line) => lines.has(line))
     .map(
-      (line): DesignUsageView => ({
+      (line): CanvasUsageView => ({
         kind: line,
-        design: null,
+        canvas: null,
         usedCredits: credits.get(line) ?? 0,
       }),
     );

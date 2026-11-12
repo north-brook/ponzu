@@ -74,10 +74,10 @@ test("erase tells the runner, and store keeps nothing", async () => {
 test("the API's refusal reaches git as an error, so git gets no credential", async () => {
   const { path } = await runner({
     get: async () => {
-      throw new ApiError(403, "forbidden", "Not this design's.");
+      throw new ApiError(403, "forbidden", "Not this canvas's.");
     },
   });
-  await expect(helper("get", ASK, path)).rejects.toThrow("Not this design's.");
+  await expect(helper("get", ASK, path)).rejects.toThrow("Not this canvas's.");
 });
 
 test("a runner that is not listening is an error too", async () => {

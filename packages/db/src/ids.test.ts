@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { isId, newId, randomString } from "./ids.ts";
 
 test("an id says what it is and is not guessable from another", () => {
-  const ids = Array.from({ length: 1000 }, () => newId("des"));
+  const ids = Array.from({ length: 1000 }, () => newId("cnv"));
 
-  for (const id of ids) expect(id).toMatch(/^des_[0-9a-hjkmnp-tv-z]{16}$/);
+  for (const id of ids) expect(id).toMatch(/^cnv_[0-9a-hjkmnp-tv-z]{16}$/);
   expect(new Set(ids).size).toBe(1000);
 });
 

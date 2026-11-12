@@ -34,20 +34,20 @@ export function ponzuQueries(api: Api) {
         queryFn: () => api.workspaces.get(workspaceId),
       }),
     /**
-     * Who can open a design, as Share lists them: everyone GitHub gives access to its repo,
+     * Who can open a canvas, as Share lists them: everyone GitHub gives access to its repo,
      * whether or not they have opened Ponzu.
      */
-    designPeople: (designId: string) =>
+    canvasPeople: (canvasId: string) =>
       queryOptions({
-        queryKey: queryKeys.designPeople(designId),
-        queryFn: () => api.designs.people(designId),
+        queryKey: queryKeys.canvasPeople(canvasId),
+        queryFn: () => api.canvases.people(canvasId),
       }),
     claudeAccount: () =>
       queryOptions({
         queryKey: queryKeys.claudeAccount(),
         queryFn: async () => (await api.claude.get()).account,
       }),
-    /** The model and effort new designs start on, and what there is to choose from. */
+    /** The model and effort new canvases start on, and what there is to choose from. */
     claudeDefaults: () =>
       queryOptions({ queryKey: queryKeys.claudeDefaults(), queryFn: () => api.claude.defaults() }),
 
@@ -71,45 +71,45 @@ export function ponzuQueries(api: Api) {
       }),
 
     /**
-     * A page of a design's thread, oldest first: the newest `limit` items before `before`. A
+     * A page of a canvas's thread, oldest first: the newest `limit` items before `before`. A
      * page before a seq never changes, so it is kept; the newest is asked for each time, and the
      * live query keeps it current from there.
      */
-    threadPage: (designId: string, page: { before?: number; limit: number }) =>
+    threadPage: (canvasId: string, page: { before?: number; limit: number }) =>
       queryOptions({
-        queryKey: queryKeys.threadPage(designId, page.before ?? null, page.limit),
-        queryFn: () => api.designs.thread(designId, page),
+        queryKey: queryKeys.threadPage(canvasId, page.before ?? null, page.limit),
+        queryFn: () => api.canvases.thread(canvasId, page),
         staleTime: page.before === undefined ? 0 : Number.POSITIVE_INFINITY,
       }),
     /**
      * One of the agent's questions as it stands: once answered, the answer that won and who
-     * gave it. Read when a question leaves `design.questions`, to say how it closed.
+     * gave it. Read when a question leaves `canvas.questions`, to say how it closed.
      */
-    question: (designId: string, questionId: string) =>
+    question: (canvasId: string, questionId: string) =>
       queryOptions({
-        queryKey: queryKeys.question(designId, questionId),
-        queryFn: () => api.designs.question(designId, questionId),
+        queryKey: queryKeys.question(canvasId, questionId),
+        queryFn: () => api.canvases.question(canvasId, questionId),
         staleTime: 0,
       }),
     /**
-     * The design's pull request as GitHub has it, `nextAction` included. Read again whenever
-     * the design's head says something about it moved: what reads it says when. Kept for half
-     * an hour once nothing reads it, so a design opened again shows its last answer at once
+     * The canvas's pull request as GitHub has it, `nextAction` included. Read again whenever
+     * the canvas's head says something about it moved: what reads it says when. Kept for half
+     * an hour once nothing reads it, so a canvas opened again shows its last answer at once
      * while the read on opening confirms it.
      */
-    pullRequest: (designId: string) =>
+    pullRequest: (canvasId: string) =>
       queryOptions({
-        queryKey: queryKeys.pullRequest(designId),
-        queryFn: () => api.designs.pullRequest.get(designId),
+        queryKey: queryKeys.pullRequest(canvasId),
+        queryFn: () => api.canvases.pullRequest.get(canvasId),
         staleTime: 0,
         gcTime: 30 * 60_000,
         refetchOnWindowFocus: false,
       }),
     /** One changed file and its diff, at the commit the tab shows: the same commit, the same diff. */
-    pullRequestFile: (designId: string, path: string, headSha: string | null) =>
+    pullRequestFile: (canvasId: string, path: string, headSha: string | null) =>
       queryOptions({
-        queryKey: queryKeys.pullRequestFile(designId, path, headSha),
-        queryFn: () => api.designs.pullRequest.file(designId, path),
+        queryKey: queryKeys.pullRequestFile(canvasId, path, headSha),
+        queryFn: () => api.canvases.pullRequest.file(canvasId, path),
         staleTime: headSha ? Number.POSITIVE_INFINITY : 0,
       }),
   };

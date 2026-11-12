@@ -25,7 +25,7 @@ import { KETTLE_IDEAS } from "./fake-host.ts";
 setDefaultTimeout(60_000);
 
 const PROMPT = "A pricing page with three plans";
-/** What the design made from it is called until its agent names it. */
+/** What the canvas made from it is called until its agent names it. */
 const NAME = nameFor(PROMPT);
 const SHOTS = process.env.PONZU_SHOTS;
 
@@ -67,17 +67,17 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** The design the test made, as the in-memory API holds it. */
+  /** The canvas the test made, as the in-memory API holds it. */
   const made = () =>
     page.evaluate((name) => {
-      const designs = [...window.ponzuFake!.backend.designs.values()];
-      const design = designs.find((d) => d.sequencer.doc.name === name)!;
+      const canvases = [...window.ponzuFake!.backend.canvases.values()];
+      const canvas = canvases.find((d) => d.sequencer.doc.name === name)!;
       return {
-        id: design.id,
-        said: design.thread.flatMap(({ item }) =>
+        id: canvas.id,
+        said: canvas.thread.flatMap(({ item }) =>
           item.kind === "message" ? [item.payload.text] : [],
         ),
-        threads: design.sequencer.doc.threads.map((t) => ({
+        threads: canvas.sequencer.doc.threads.map((t) => ({
           id: t.id,
           texts: t.messages.map((m) => m.text),
         })),
@@ -237,7 +237,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(KETTLE_IDEAS).toContain(await field.inputValue());
   });
 
-  test("Fresh start makes one design however often send is pressed, and opens it", async () => {
+  test("Fresh start makes one canvas however often send is pressed, and opens it", async () => {
     await page.getByPlaceholder(/Describe what you want to make/).fill("A quieter checkout");
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
@@ -258,7 +258,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     );
     await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
     const made = await page.evaluate(() =>
-      [...window.ponzuFake!.backend.designs.values()]
+      [...window.ponzuFake!.backend.canvases.values()]
         .filter((d) => d.sequencer.doc.name === "Quieter checkout")
         .map((d) => ({
           workspaceId: d.workspaceId,
@@ -300,7 +300,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByText("Signed in with").waitFor();
     await shoot("settings-account");
     await nav.getByRole("button", { name: "Agents" }).click();
-    await page.getByText("Defaults for new designs").waitFor();
+    await page.getByText("Defaults for new canvases").waitFor();
     await shoot("settings-agents");
 
     // Switching ways, pressed anywhere along the row: a key first, then back to a subscription,
@@ -347,12 +347,12 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await nav.waitFor({ state: "detached" });
   });
 
-  test("the team menu switches to the team's workspace, where the sidebar lists its designs", async () => {
+  test("the team menu switches to the team's workspace, where the sidebar lists its canvases", async () => {
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
     await page.getByRole("button", { name: /Onboarding flow/ }).waitFor();
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
-    // The create page fills the main pane until a design is opened, with the caret in its
+    // The create page fills the main pane until a canvas is opened, with the caret in its
     // composer: a workspace that opens on its create page is for typing into at once.
     await page.getByText("Make something").waitFor();
     await caretStaysInCreate();
@@ -410,7 +410,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
     await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
     expect(await field.inputValue()).toBe("A kettle that whistles");
-    // The create page, not the design last open there, with the caret in its composer.
+    // The create page, not the canvas last open there, with the caret in its composer.
     await page.getByText("Make something").waitFor();
     expect((await selectorSaid())?.slice(1)).toEqual(["Project: maya/kettle"]);
     await caretStaysInCreate();
@@ -446,9 +446,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.keyboard.press("Enter");
     await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
     await page.getByRole("button", { name: new RegExp(NAME) }).waitFor();
-    const design = await made();
+    const canvas = await made();
     // The first message went to the agent.
-    expect(design.said).toEqual([PROMPT]);
+    expect(canvas.said).toEqual([PROMPT]);
     // The pointer goes to the thread before the beat is out: it stays open, and is kept open.
     await page.locator("#thread").getByText(PROMPT).waitFor();
     await page.mouse.move(1300, 500);
@@ -463,7 +463,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       ),
     );
 
-    await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), design.id);
+    await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), canvas.id);
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
     expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe("true");
@@ -531,7 +531,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     const { id } = await made();
     await page.evaluate(
-      ([designId, threadId]) => window.ponzuFake!.reply(designId!, threadId!, "On it"),
+      ([canvasId, threadId]) => window.ponzuFake!.reply(canvasId!, threadId!, "On it"),
       [id, thread!.id],
     );
     await page.locator('button[title="Drag to move"]', { hasText: "2" }).waitFor();
@@ -549,30 +549,30 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     const field = rail().getByPlaceholder("Steer, or ask more");
     await field.fill("Add a yearly toggle");
     await field.press("Enter");
-    // The bubble is there at once, and the message reached the design's feed.
+    // The bubble is there at once, and the message reached the canvas's feed.
     await rail().getByText("Add a yearly toggle").waitFor();
     await waitUntil(async () => (await made()).said.includes("Add a yearly toggle"));
 
     // The agent works: the working line, then its reply streaming in, and a board drawn.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.work([], "Drawing Yearly toggle");
       agent.tool("Drawing Yearly toggle", { id: "ti_work0000000001" });
     }, id);
     await rail().getByRole("status").getByText("Drawing Yearly toggle").waitFor();
     await rail().getByRole("button", { name: "Stop" }).waitFor();
-    await page.evaluate((designId) => {
+    await page.evaluate((canvasId) => {
       const world = window.ponzuFake!;
-      const agent = world.backend.agent(designId);
+      const agent = world.backend.agent(canvasId);
       agent.tool("Drew Yearly toggle", { id: "ti_work0000000001", streaming: false, steps: 3 });
       agent.say("Adding a toggle", { id: "ti_reply000000001", streaming: true });
-      world.drawBoard(designId, "Yearly toggle", "#e8efe4");
+      world.drawBoard(canvasId, "Yearly toggle", "#e8efe4");
     }, id);
     await rail().getByText("Adding a toggle").waitFor();
     await page.locator('[data-board-name][title="Yearly toggle"]').waitFor();
-    await page.evaluate((designId) => {
+    await page.evaluate((canvasId) => {
       window
-        .ponzuFake!.backend.agent(designId)
+        .ponzuFake!.backend.agent(canvasId)
         .say("Adding a toggle above the plans. Yearly saves 20%.", {
           id: "ti_reply000000001",
           streaming: false,
@@ -585,8 +585,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
 
     // It asks; the question takes the composer's place, and the answer goes to the API.
     const question = await page.evaluate(
-      (designId) =>
-        window.ponzuFake!.backend.agent(designId).ask(
+      (canvasId) =>
+        window.ponzuFake!.backend.agent(canvasId).ask(
           {
             kind: "question",
             payload: {
@@ -616,8 +616,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await asked.getByRole("button", { name: "Send" }).click();
     await waitUntil(() =>
       page.evaluate(
-        ([designId, q]) =>
-          window.ponzuFake!.backend.design(designId!).questions.find((x) => x.id === q)?.status ===
+        ([canvasId, q]) =>
+          window.ponzuFake!.backend.canvas(canvasId!).questions.find((x) => x.id === q)?.status ===
           "answered",
         [id, question],
       ),
@@ -627,8 +627,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await rail().getByText("Asked:").waitFor();
 
     // It pushes and its turn ends: Create PR, then Ready, then Merge.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.push([{ path: "src/pricing.tsx", additions: 42, deletions: 3 }]);
       agent.idle();
     }, id);
@@ -679,8 +679,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await card.getAttribute("aria-expanded")).toBe("true");
     await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
     // The agent pushes again while the file is open: the diff shown is the new head's.
-    await page.evaluate((designId) => {
-      const agent = window.ponzuFake!.backend.agent(designId);
+    await page.evaluate((canvasId) => {
+      const agent = window.ponzuFake!.backend.agent(canvasId);
       agent.push([
         { path: "src/pricing.tsx", patch: "@@ -1 +1,2 @@\n context\n+const yearly = true;" },
       ]);
@@ -695,11 +695,11 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       .waitFor();
     await waitUntil(() =>
       page.evaluate(
-        (designId) => window.ponzuFake!.backend.design(designId).settledAt !== null,
+        (canvasId) => window.ponzuFake!.backend.canvas(canvasId).settledAt !== null,
         id,
       ),
     );
-    // Merged: no button, and the design settled on its own.
+    // Merged: no button, and the canvas settled on its own.
     expect(await action("Merge").count()).toBe(0);
     await page.getByRole("tab", { name: "Page 1" }).click();
     await rail()
@@ -710,8 +710,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator('[data-board-name][title="Yearly toggle"]').count()).toBe(1);
   });
 
-  test("a workspace switched to from the sidebar takes the caret to its create page, and not where it opens on a design", async () => {
-    // From Northbrook, with the design open, to Personal, which opens on its create page.
+  test("a workspace switched to from the sidebar takes the caret to its create page, and not where it opens on a canvas", async () => {
+    // From Northbrook, with the canvas open, to Personal, which opens on its create page.
     await page
       .locator("[data-artboard-host]")
       .first()
@@ -720,7 +720,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("menuitemradio", { name: "Personal" }).click();
     await page.getByText("Make something").waitFor();
     await caretStaysInCreate();
-    // Back to Northbrook, which opens on the design: no create page, and the caret stays out of
+    // Back to Northbrook, which opens on the canvas: no create page, and the caret stays out of
     // anything until the person puts it somewhere.
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
@@ -737,14 +737,14 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
   });
 
-  test("a design deleted while it's open says so calmly, and leads back", async () => {
+  test("a canvas deleted while it's open says so calmly, and leads back", async () => {
     const { id } = await made();
-    await page.evaluate(async (designId) => {
+    await page.evaluate(async (canvasId) => {
       const world = window.ponzuFake!;
-      await world.backend.connect(world.me).api.designs.delete(designId);
+      await world.backend.connect(world.me).api.canvases.delete(canvasId);
     }, id);
-    await page.getByText("This design isn't here any more").waitFor();
-    await page.getByRole("button", { name: "Back to designs" }).click();
+    await page.getByText("This canvas isn't here any more").waitFor();
+    await page.getByRole("button", { name: "Back to canvases" }).click();
     await page.getByText("Make something").waitFor();
     expect(await page.getByRole("button", { name: new RegExp(NAME) }).count()).toBe(0);
     expect(errors).toEqual([]);

@@ -10,7 +10,7 @@
  * `private`, besides: a design's boards are blocked wherever they are drawn (the canvas's live
  * boards and their pictures, the thread's miniatures and attachments, the sidebar's previews),
  * and the text of the canvas (board names, comments), the thread and its composer, the create
- * page's ideas, the pull request tab, the sidebar's design names and its search results, and
+ * page's ideas, the pull request tab, the sidebar's canvas names and its search results, and
  * the open design's name in the chrome is masked. The chrome, the layout and every
  * pointer and key stay watchable.
  */
@@ -21,7 +21,7 @@ export type ReplayMode = "full" | "private";
 export const SECRET_CLASS = "ph-no-capture";
 
 /** A design's own pixels: its boards, their pictures, its previews. */
-const DESIGN_PIXELS = [
+const CANVAS_PIXELS = [
   // A live board's shadow host, and in the canvas the tier around it with its picture.
   "[data-artboard-host]",
   "[data-pz-tier]",
@@ -32,10 +32,10 @@ const DESIGN_PIXELS = [
   "#thread img",
 ];
 
-/** Where a design's or a person's words are: masked to asterisks, kept in place. */
-const DESIGN_WORDS = [".pz-root", "#thread", '[data-replay="mask"]'];
+/** Where a canvas's or a person's words are: masked to asterisks, kept in place. */
+const CANVAS_WORDS = [".pz-root", "#thread", '[data-replay="mask"]'];
 
-/** Attributes that say in words what an element is: a design's or board's name, often. */
+/** Attributes that say in words what an element is: a canvas's or board's name, often. */
 const WORDY_ATTRIBUTES = new Set(["aria-label", "title", "alt", "placeholder", "aria-description"]);
 
 export interface ReplayPrivacy {
@@ -47,10 +47,10 @@ export interface ReplayPrivacy {
 }
 
 export function replayPrivacy(mode: ReplayMode): ReplayPrivacy {
-  const words = DESIGN_WORDS.join(", ");
+  const words = CANVAS_WORDS.join(", ");
   return {
     blockClass: SECRET_CLASS,
-    blockSelector: mode === "private" ? DESIGN_PIXELS.join(", ") : null,
+    blockSelector: mode === "private" ? CANVAS_PIXELS.join(", ") : null,
     maskTextSelector: mode === "private" ? words : null,
     maskAllInputs: true,
     // Masked text would still be read out of a label: a row's `aria-label`, a board's `title`.
@@ -76,8 +76,8 @@ export function scrubUrl(value: string, page: { origin: string; replacement: str
 }
 
 /**
- * A request's address for replay's network timing: the API's keep their path (`/v1/designs/…`
- * says what was slow), everything else only its origin. A design's files are served under its
+ * A request's address for replay's network timing: the API's keep their path (`/v1/canvases/…`
+ * says what was slow), everything else only its origin. A canvas's files are served under its
  * asset key (`https://assets.ponzu.cloud/<asset key>/…`, docs/cloud.md), and that key is the
  * capability to read them: a path off the API's origin may be one, so none is kept.
  */
@@ -142,7 +142,7 @@ export interface ViewPlace {
 
 /**
  * Properties with every trace of the page's real location replaced by the view's synthetic URL
- * (`ponzu://app/design`): `$current_url` and its kin, and the referrer, always `$direct`, since
+ * (`ponzu://app/canvas`): `$current_url` and its kin, and the referrer, always `$direct`, since
  * nothing refers anyone to a desktop app. An event's own properties always say where it
  * happened (`current`); its `$set` and `$set_once`, where PostHog keeps the first ones, have only
  * what they already held rewritten.

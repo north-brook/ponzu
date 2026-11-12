@@ -42,7 +42,7 @@ export interface TraceOptions {
   sink: TraceSink;
   /** Whether prompts, replies, tool arguments and results go with the events. */
   content: boolean;
-  designId: string;
+  canvasId: string;
   workspaceId: string | null;
 }
 
@@ -360,11 +360,11 @@ export class TurnTrace {
       const person = turn.origin?.userId ?? null;
       const common = {
         $ai_trace_id: traceId,
-        // A design's turns read as one conversation, whatever Claude session each ran in.
-        $ai_session_id: options.designId,
+        // A canvas's turns read as one conversation, whatever Claude session each ran in.
+        $ai_session_id: options.canvasId,
         $ai_provider: PROVIDER,
         $ai_framework: FRAMEWORK,
-        design_id: options.designId,
+        canvas_id: options.canvasId,
         ...(options.workspaceId ? { workspace_id: options.workspaceId } : {}),
         ...(turn.origin?.sessionId ? { $session_id: turn.origin.sessionId } : {}),
         ...(person ? {} : { $process_person_profile: false }),

@@ -10,8 +10,8 @@ import type { Deps } from "../deps/index.ts";
 import { credentialMark } from "../sandboxes/environment.ts";
 
 /*
- * What Claude Code offers the account a design runs on, as its runner reports it (docs/cloud.md,
- * "Models"). Kept on the account, for every design and app that asks what it may run on.
+ * What Claude Code offers the account a canvas runs on, as its runner reports it (docs/cloud.md,
+ * "Models"). Kept on the account, for every canvas and app that asks what it may run on.
  */
 
 /**
@@ -20,14 +20,14 @@ import { credentialMark } from "../sandboxes/environment.ts";
  */
 export async function recordReportedModels(
   deps: Pick<Deps, "db" | "clock" | "log">,
-  designId: string,
+  canvasId: string,
   report: ModelsReport,
 ): Promise<boolean> {
   const [context, sandbox] = await Promise.all([
-    getRunnerContext(deps.db, designId),
-    getSandbox(deps.db, designId),
+    getRunnerContext(deps.db, canvasId),
+    getSandbox(deps.db, canvasId),
   ]);
-  const accountId = context?.design.claudeAccountId;
+  const accountId = context?.canvas.claudeAccountId;
   const account = accountId ? await getClaudeAccountById(deps.db, accountId) : null;
   const current =
     account !== null &&
@@ -43,7 +43,7 @@ export async function recordReportedModels(
       now: new Date(deps.clock.now()),
     }));
   deps.log.info("claude_models_reported", {
-    designId,
+    canvasId,
     claudeCode: report.claudeCode,
     models: report.models.length,
     kept,

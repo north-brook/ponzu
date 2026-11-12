@@ -1,6 +1,6 @@
 /**
  * How large an op may be. `validateOp` enforces these on everything the API is sent, so a
- * design, its op log and every replica of it stay bounded whatever a client posts.
+ * canvas, its op log and every replica of it stay bounded whatever a client posts.
  */
 
 /** One op as JSON, in UTF-8 bytes. A batch counts whole, children included. */

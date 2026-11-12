@@ -6,18 +6,18 @@ import { fingerprint } from "./fingerprint.ts";
 import { type AgentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
- * A design's work in progress: what is in its working folder and in no commit on GitHub. A
+ * A canvas's work in progress: what is in its working folder and in no commit on GitHub. A
  * checkpoint saves it after each turn and before the sandbox sleeps, and a runner whose disk is
  * behind the checkpoint puts it back (docs/cloud.md, "Saving the sandbox").
  *
- * - A repo design's is a commit whose parent is the checkout's HEAD (so commits not yet pushed
+ * - A repo canvas's is a commit whose parent is the checkout's HEAD (so commits not yet pushed
  *   travel with it) and whose tree is the working tree, untracked files included and ignored
- *   ones not. It is made with an index of its own, so the design's branch, the index and the
+ *   ones not. It is made with an index of its own, so the canvas's branch, the index and the
  *   person's history are never touched, and it goes nowhere on GitHub: a git bundle of it (the
  *   commits GitHub does not have) is the checkpoint's workspace archive, kept where no client
  *   reads it. A ref on the repository would be readable by everyone who can read the repository
- *   (everyone, for a public one), and writable by every other design's agent there.
- * - A Scratch design's is a gzipped tar of its folder.
+ *   (everyone, for a public one), and writable by every other canvas's agent there.
+ * - A Scratch canvas's is a gzipped tar of its folder.
  *
  * Neither ever carries a secret: a file whose name says it holds one (`.env`, a key), or that
  * holds the value of one of the repo's secrets or the Claude credential, is left out, as a
@@ -157,8 +157,8 @@ export class GitWork implements WorkSaver {
   constructor(
     private readonly opts: {
       cwd: string;
-      designId: string;
-      /** The design's branch, and the repository's default branch it was made from. */
+      canvasId: string;
+      /** The canvas's branch, and the repository's default branch it was made from. */
       branch: string;
       defaultBranch: string;
       git: Git;
@@ -172,7 +172,7 @@ export class GitWork implements WorkSaver {
 
   /** A local ref only, which keeps the commit the bundle is made from. Never pushed. */
   private get ref(): string {
-    return wipRef(this.opts.designId);
+    return wipRef(this.opts.canvasId);
   }
 
   private async git(args: string[], opts?: Parameters<Git>[1]): Promise<string> {
@@ -439,7 +439,7 @@ export function parseBundle(
 /* Scratch                                                             */
 /* ------------------------------------------------------------------ */
 
-/** A Scratch design's folder, as an archive uploaded with each checkpoint. */
+/** A Scratch canvas's folder, as an archive uploaded with each checkpoint. */
 export class ScratchWork implements WorkSaver {
   constructor(
     private readonly opts: {

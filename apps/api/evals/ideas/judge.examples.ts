@@ -88,7 +88,7 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
       ideas: [
         {
           safe: true,
-          design: true,
+          visible: true,
           about_product: true,
           not_meta: true,
           specific: true,
@@ -96,7 +96,7 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
         },
         { safe: false },
         { safe: false },
-        { safe: true, design: true, about_product: true, specific: true },
+        { safe: true, visible: true, about_product: true, specific: true },
       ],
     },
   },
@@ -117,7 +117,7 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
         { safe: false },
         { safe: false },
         { safe: false },
-        { safe: true, design: true, about_product: true },
+        { safe: true, visible: true, about_product: true },
       ],
     },
   },
@@ -157,10 +157,10 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
     },
     expect: {
       ideas: [
-        { about_product: true, not_meta: true, specific: true, design: true },
+        { about_product: true, not_meta: true, specific: true, visible: true },
         { specific: false },
         { about_product: false },
-        { design: false },
+        { visible: false },
       ],
     },
   },
@@ -246,9 +246,9 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
     },
     expect: {
       ideas: [
-        { plain_tile: true, design: true },
-        { plain_tile: true, design: true },
-        { design: true, safe: true },
+        { plain_tile: true, visible: true },
+        { plain_tile: true, visible: true },
+        { visible: true, safe: true },
         { plain_tile: false },
       ],
     },
@@ -267,7 +267,7 @@ export const IDEAS_JUDGE_EXAMPLES: IdeasExample[] = [
       ],
     },
     expect: {
-      ideas: [{ plain_tile: true, about_product: true, design: true }, {}, {}, {}],
+      ideas: [{ plain_tile: true, about_product: true, visible: true }, {}, {}, {}],
     },
   },
   {

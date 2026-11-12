@@ -66,15 +66,15 @@ const Usage = z.object({
   /** Use put down to nobody (a deleted account). Admins only. */
   unattributedCredits: z.number().int().nullable(),
   /**
-   * Use by design, highest first, then designs since deleted (`deleted`) and designs the admin
-   * may not see by name (`hidden`), each as one line with no design. Shared out of the rounded
+   * Use by design, highest first, then canvases since deleted (`deleted`) and canvases the admin
+   * may not see by name (`hidden`), each as one line with no canvas. Shared out of the rounded
    * total, so it adds up to `usedCredits` exactly, as `byPerson` with `unattributedCredits` does.
    */
-  byDesign: z
+  byCanvas: z
     .array(
       z.object({
-        kind: z.enum(["design", "deleted", "hidden"]),
-        design: z.object({ id: z.string(), name: z.string() }).nullable(),
+        kind: z.enum(["canvas", "deleted", "hidden"]),
+        canvas: z.object({ id: z.string(), name: z.string() }).nullable(),
         usedCredits: z.number().int(),
       }),
     )
@@ -96,7 +96,7 @@ async function usageFor(c: UserContext, workspaceId: string): Promise<WorkspaceU
   if (!workspace) throw new ApiError(404, "not_found", "There is no such workspace.");
   const now = new Date(deps.clock.now());
   const period = billingPeriod(workspace.billingPeriodAnchor, now);
-  // An admin's breakdown names designs by the repos they can read, as of the last minute.
+  // An admin's breakdown names canvases by the repos they can read, as of the last minute.
   if (member.role === "admin") {
     await refreshWorkspaceRepoAccess(
       { ...deps, log: c.var.log },

@@ -82,7 +82,7 @@ export interface Box {
 }
 
 /**
- * Runs in the page and installs `window.__ponzuMotion`. Designs run no
+ * Runs in the page and installs `window.__ponzuMotion`. Canvases run no
  * scripts, so every animation is CSS, SVG, video or a scene script's Web
  * Animations (act.ts), and can be paused and seeked exactly: frames are
  * repeatable and take no real time to reach.

@@ -137,7 +137,7 @@ async function proof(): Promise<void> {
   const wip = {
     commit: two.wipCommit,
     archived: two.workspace,
-    wipRefOnGithub: await onGithub(`/git/ref/ponzu/wip/${start.designId}`),
+    wipRefOnGithub: await onGithub(`/git/ref/ponzu/wip/${start.canvasId}`),
     branchOnGithub: await onGithub(`/branches/${encodeURIComponent(branch)}`),
   };
   say("checkpoints", { one, two, wip });

@@ -1,5 +1,5 @@
 import {
-  getDesign,
+  getCanvas,
   hasPendingEvents,
   moveSandbox,
   revokeRunnerTokens,
@@ -50,10 +50,10 @@ export async function putToSleep(
   options: SleepOptions = {},
 ): Promise<boolean> {
   const { db, clock, log, sandboxes } = deps;
-  const { designId } = row;
+  const { canvasId } = row;
   const by = `stop:${crypto.randomUUID()}`;
   const stopping = await moveSandbox(db, {
-    designId,
+    canvasId,
     from: ["awake"],
     to: "stopping",
     now: new Date(clock.now()),
@@ -64,9 +64,9 @@ export async function putToSleep(
   if (!stopping) return false;
   const awakeMs = row.awakeSince ? clock.now() - row.awakeSince.getTime() : 0;
   const began = clock.now();
-  if (options.silenced) await revokeRunnerTokens(db, designId);
+  if (options.silenced) await revokeRunnerTokens(db, canvasId);
   if (stopping.sessionId) {
-    const at: At = { name: sandboxName(deps, designId), sessionId: stopping.sessionId };
+    const at: At = { name: sandboxName(deps, canvasId), sessionId: stopping.sessionId };
     try {
       const done = await sandboxes.exec(at, {
         cmd: IMAGE_COMMANDS.stop,
@@ -74,17 +74,17 @@ export async function putToSleep(
         timeoutMs: STOP_COMMAND_MS,
       });
       if (done.exitCode !== 0)
-        log.warn("runner_stop_failed", { designId, exitCode: done.exitCode });
+        log.warn("runner_stop_failed", { canvasId, exitCode: done.exitCode });
     } catch (error) {
       // Not running any more (Vercel stopped it): nothing to shut down, and the stop is a no-op.
       if (!(error instanceof SandboxError && error.code === "not_running")) {
-        log.warn("runner_stop_failed", { designId, error });
+        log.warn("runner_stop_failed", { canvasId, error });
       }
     }
     try {
       const stopped = await sandboxes.stop(at);
       log.info("sandbox_stopped", {
-        designId,
+        canvasId,
         why,
         stopped: stopped.stopped,
         snapshotBytes: stopped.snapshotBytes,
@@ -93,13 +93,13 @@ export async function putToSleep(
     } catch (error) {
       // Left running: a wake's `up()` finds it running and shuts it down before it starts, and
       // reconcile stops a session no awake row holds.
-      log.warn("sandbox_stop_failed", { designId, why, error });
+      log.warn("sandbox_stop_failed", { canvasId, why, error });
     }
   }
   // While the row is still held, so a wake after it keeps the token it makes.
-  await revokeRunnerTokens(db, designId);
+  await revokeRunnerTokens(db, canvasId);
   const asleep = await moveSandbox(db, {
-    designId,
+    canvasId,
     from: ["stopping"],
     to: "asleep",
     now: new Date(clock.now()),
@@ -107,31 +107,31 @@ export async function putToSleep(
     ...(options.failure ? { changes: { failure: options.failure } } : {}),
   });
   if (!asleep) return true;
-  await captureSlept(deps, designId, why, awakeMs);
-  if (options.wake) await startWake(deps, designId, options.wake);
+  await captureSlept(deps, canvasId, why, awakeMs);
+  if (options.wake) await startWake(deps, canvasId, options.wake);
   // A sandbox put down as failed waits for the person's next message: the pending rule would
   // wake it straight back into whatever failed, over and over.
-  else if (!options.failure) await wakeIfPending(deps, designId);
+  else if (!options.failure) await wakeIfPending(deps, canvasId);
   return true;
 }
 
 /** The pending rule: an asleep design whose feed holds work no runner took is woken for it. */
-export async function wakeIfPending(deps: JobDeps, designId: string): Promise<void> {
-  if (await hasPendingEvents(deps.db, designId)) await startWake(deps, designId, "pending");
+export async function wakeIfPending(deps: JobDeps, canvasId: string): Promise<void> {
+  if (await hasPendingEvents(deps.db, canvasId)) await startWake(deps, canvasId, "pending");
 }
 
-/** `sandbox slept`, about the design's owner under its workspace. Never fails the stop. */
+/** `sandbox slept`, about the canvas's owner under its workspace. Never fails the stop. */
 export async function captureSlept(
   deps: JobDeps,
-  designId: string,
+  canvasId: string,
   why: SleepWhy,
   awakeMs: number,
 ): Promise<void> {
-  const design = await getDesign(deps.db, designId).catch(() => null);
-  if (!design) return;
+  const canvas = await getCanvas(deps.db, canvasId).catch(() => null);
+  if (!canvas) return;
   deps.analytics.capture(
     "sandbox slept",
-    { design_id: designId, why, awake_ms: Math.max(0, awakeMs) },
-    { distinctId: design.ownerId, workspaceId: design.workspaceId },
+    { canvas_id: canvasId, why, awake_ms: Math.max(0, awakeMs) },
+    { distinctId: canvas.ownerId, workspaceId: canvas.workspaceId },
   );
 }

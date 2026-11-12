@@ -47,7 +47,7 @@ export type AgentsSectionProps = AgentsConnection & {
 };
 
 /**
- * Agents: which agent account is connected, the defaults a new design starts with, and the
+ * Agents: which agent account is connected, the defaults a new canvas starts with, and the
  * Claude plan's own limits. Claude Code is the one agent today.
  */
 export function AgentsSection({
@@ -95,13 +95,16 @@ export function AgentsSection({
               leading={<AgentMark client="claude" size={18} />}
               trailing={<QuietButton onClick={onReconnect}>Reconnect</QuietButton>}
             >
-              <TwoLine title="Claude was signed out" line="Designs wait until you connect again." />
+              <TwoLine
+                title="Claude was signed out"
+                line="Canvases wait until you connect again."
+              />
             </Row>
           )}
           {connected?.expiresAt && needsRenewal(connected, now) ? (
             <Row trailing={<QuietButton onClick={onReconnect}>Sign in</QuietButton>}>
               <span className="text-12 text-muted">
-                Sign in again before {shortDate(connected.expiresAt)} to keep designs running.
+                Sign in again before {shortDate(connected.expiresAt)} to keep canvases running.
               </span>
             </Row>
           ) : null}
@@ -118,7 +121,7 @@ export function AgentsSection({
           </ActionRow>
         </Section>
       ) : null}
-      <Section label="Defaults for new designs">
+      <Section label="Defaults for new canvases">
         <Row
           trailing={
             <ValuePicker
@@ -186,8 +189,8 @@ function Limits({
       label="Limits"
       note={
         seen
-          ? `From ${plan}. When a limit is hit, designs wait and Ponzu pings you when they can run again.`
-          : `From ${plan}. Ponzu shows these once a design has run.`
+          ? `From ${plan}. When a limit is hit, canvases wait and Ponzu pings you when they can run again.`
+          : `From ${plan}. Ponzu shows these once a canvas has run.`
       }
     >
       {limits.map((limit) => {

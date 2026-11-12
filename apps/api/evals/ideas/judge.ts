@@ -40,7 +40,7 @@ const IdeaVerdict = z.object({
   idea: z.number().int().describe("The idea's number, 1 to 4"),
   reason: z.string(),
   safe: z.boolean(),
-  design: z.boolean(),
+  visible: z.boolean(),
   about_product: z.boolean(),
   not_meta: z.boolean(),
   honest: z.enum(["pass", "fail", "n/a"]),
@@ -63,7 +63,7 @@ export type SetCriterion = Exclude<keyof IdeasVerdict["set"], "reason">;
 
 export const IDEA_CRITERIA: IdeaCriterion[] = [
   "safe",
-  "design",
+  "visible",
   "about_product",
   "not_meta",
   "honest",

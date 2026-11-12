@@ -26,7 +26,7 @@ export function authorOf(actor: Actor): Author {
  *
  * Stamping says who and when, not whether they may. Editing or deleting someone else's
  * comment (`thread.edit`, `thread.unmessage`, `thread.delete`) depends on who wrote it, which
- * is in the design: the API checks that against the document before it applies the op.
+ * is in the canvas: the API checks that against the document before it applies the op.
  *
  * Stamp what a client sends, never an inverse the API stored: undoing a deleted thread puts
  * back other people's messages with their own names and times.

@@ -1,7 +1,7 @@
 import {
   appendThreadItemOnce,
   countSandboxRestart,
-  getDesign,
+  getCanvas,
   getSandbox,
   getSandboxOwners,
   lapseEvents,
@@ -35,7 +35,7 @@ import { captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
  * sandbox"). It never resumes anything: every call it makes is pinned to a session, or reads.
  * Each sandbox gets at most one step, the first that applies, in this order:
  *
- *   retire     the design is settled
+ *   retire     the canvas is settled
  *   stop       its Claude can no longer run it, or its owner left the workspace
  *   restart    awake and its runner unheard for 90 s (after 3 in a row, it fails)
  *   lapse      a turn it owes is past waiting for (docs/cloud.md, "A turn that never came")
@@ -64,7 +64,7 @@ const SIGN_IN_MAX_MS = 3600_000;
 /*
  * A turn that never came (docs/cloud.md). An event that begins a turn and was delivered, so the
  * Claude session holds it, is owed an answer until the runner writes anything of a turn
- * (`design_runners.said_at`). While it is owed the sandbox does not sleep. It lapses, and the
+ * (`canvas_runners.said_at`). While it is owed the sandbox does not sleep. It lapses, and the
  * thread says so and the event goes in again as a copy (once; a copy that lapses says to send
  * it again), when its runner says it is not working for two minutes, or says it is but has
  * written nothing for fifteen. Both are counted from the delivery or from when the runner that
@@ -95,7 +95,7 @@ export type SweepStep =
   | "repair";
 
 /**
- * Whether the design owes a turn: `wait` while the one it owes may still come (the sandbox stays
+ * Whether the canvas owes a turn: `wait` while the one it owes may still come (the sandbox stays
  * awake), `lapse` once it is past waiting for, null when it owes none.
  */
 export function owing(row: SweptSandbox, now: number): "wait" | "lapse" | null {
@@ -117,7 +117,7 @@ function stalled(row: SweptSandbox, now: number): boolean {
 /** What the sweep does with one sandbox now, or null for nothing. */
 export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepStep | null {
   const { sandbox } = row;
-  if (row.designStatus === "settled") return "retire";
+  if (row.canvasStatus === "settled") return "retire";
   if (sandbox.state === "awake") {
     // Nothing more may run on the credential its runner holds, or for an owner who left.
     if (!row.claudeUsable || !row.ownerMember) return "stop";
@@ -181,8 +181,8 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
       try {
         if (await STEPS[step](deps, row, now - idleMs)) counts[step]++;
       } catch (error) {
-        deps.log.warn("sweep_failed", { designId: row.sandbox.designId, step, error });
-        deps.analytics.exception(error, { sweep_step: step, design_id: row.sandbox.designId });
+        deps.log.warn("sweep_failed", { canvasId: row.sandbox.canvasId, step, error });
+        deps.analytics.exception(error, { sweep_step: step, canvas_id: row.sandbox.canvasId });
       }
     }),
   );
@@ -202,51 +202,51 @@ type Step = (deps: JobDeps, row: SweptSandbox, idleBefore: number) => Promise<bo
 /** Each step; exported for the lifecycle tests' races. */
 export const STEPS: Record<SweepStep, Step> = {
   retire: async (deps, { sandbox }) => {
-    await retire(deps, sandbox.designId);
+    await retire(deps, sandbox.canvasId);
     return true;
   },
 
   stop: async (deps, row) => {
-    const { designId } = row.sandbox;
+    const { canvasId } = row.sandbox;
     const why = row.ownerMember ? "claude_unusable" : "owner_left";
     const slept = await putToSleep(deps, row.sandbox, why);
     if (!row.ownerMember) {
-      await showAgentWaiting(deps.db, { designId, waking: false, blocker: "claude_owner_left" });
+      await showAgentWaiting(deps.db, { canvasId, waking: false, blocker: "claude_owner_left" });
     }
     return slept;
   },
 
   restart: async (deps, { sandbox }) => {
     const { db, log } = deps;
-    const { designId } = sandbox;
+    const { canvasId } = sandbox;
     // Unheard because Vercel ended its session (its timeout): asleep, and woken only for work.
     if (sandbox.sessionId) {
-      const seen = await deps.sandboxes.status(sandboxName(deps, designId));
+      const seen = await deps.sandboxes.status(sandboxName(deps, canvasId));
       if (seen?.status !== "running" || seen.sessionId !== sandbox.sessionId) {
         return followEnded(deps, sandbox, sandbox.sessionId);
       }
     }
-    const restarts = await countSandboxRestart(db, designId);
+    const restarts = await countSandboxRestart(db, canvasId);
     if (restarts > MAX_RESTARTS) {
       const failure = `Its runner stopped answering ${restarts} times in a row.`;
       if (!(await putToSleep(deps, sandbox, "failed", { failure }))) return false;
-      await showAgentWaiting(db, { designId, waking: false, blocker: "sandbox_failed" });
-      log.error("runner_dead", { designId, restarts });
+      await showAgentWaiting(db, { canvasId, waking: false, blocker: "sandbox_failed" });
+      log.error("runner_dead", { canvasId, restarts });
       return true;
     }
     // A runner that exited for good (a revoked token, a lost lease, a bad environment) comes
     // back only with a new start: shut down what is left, and wake it.
-    log.warn("runner_dead", { designId, restarts });
+    log.warn("runner_dead", { canvasId, restarts });
     return putToSleep(deps, sandbox, "restart", { wake: "restart" });
   },
 
   lapse: async (deps, row) => {
     const { db, clock, log } = deps;
     const { sandbox } = row;
-    const { designId } = sandbox;
+    const { canvasId } = sandbox;
     const now = clock.now();
     const lapsed = await lapseEvents(db, {
-      designId,
+      canvasId,
       ids: row.owed.map((event) => event.id),
       now: new Date(now),
     });
@@ -256,7 +256,7 @@ export const STEPS: Record<SweepStep, Step> = {
     // Under the event's id, so a sweep that runs this twice says it once.
     await appendThreadItemOnce(db, {
       id: `ti_lapsed-${lapsed.at(-1)!.id}`,
-      designId,
+      canvasId,
       kind: "notice",
       payload: {
         type: "error",
@@ -266,7 +266,7 @@ export const STEPS: Record<SweepStep, Step> = {
     });
     const starting = row.agentState === "working" || row.agentState === "waking";
     const fields = {
-      designId,
+      canvasId,
       runnerId: row.runnerId,
       events: lapsed.map((event) => event.id),
       copies,
@@ -277,7 +277,7 @@ export const STEPS: Record<SweepStep, Step> = {
       heardMs: row.heardAt ? now - row.heardAt.getTime() : null,
     };
     log.warn("turn_lapsed", fields);
-    await captureAbout(deps, designId, "turn lapsed", {
+    await captureAbout(deps, canvasId, "turn lapsed", {
       kinds: lapsed.map((event) => event.kind),
       sent_again: copies.length > 0,
       agent_state: row.agentState,
@@ -297,21 +297,21 @@ export const STEPS: Record<SweepStep, Step> = {
   stalled: async (deps, row) => {
     const { db, clock, log } = deps;
     const { sandbox } = row;
-    const { designId } = sandbox;
+    const { canvasId } = sandbox;
     const now = clock.now();
     await appendThreadItemOnce(db, {
-      id: `ti_stalled-${row.runnerId ?? designId}`,
-      designId,
+      id: `ti_stalled-${row.runnerId ?? canvasId}`,
+      canvasId,
       kind: "notice",
       payload: { type: "error", code: "turn_failed", message: STALLED_SAID },
     });
     log.warn("turn_stalled", {
-      designId,
+      canvasId,
       runnerId: row.runnerId,
       saidMs: row.saidAt ? now - row.saidAt.getTime() : null,
       runnerMs: row.runnerStartedAt ? now - row.runnerStartedAt.getTime() : null,
     });
-    await captureAbout(deps, designId, "turn stalled", {});
+    await captureAbout(deps, canvasId, "turn stalled", {});
     // The thread has said so: the runner's own notice of the cut turn would say it twice.
     return putToSleep(deps, sandbox, "restart", { wake: "stalled", silenced: true });
   },
@@ -323,15 +323,15 @@ export const STEPS: Record<SweepStep, Step> = {
   cycle: (deps, { sandbox }) => putToSleep(deps, sandbox, "cycle"),
 
   extend: async (deps, { sandbox }) => {
-    const { designId, sessionId } = sandbox;
+    const { canvasId, sessionId } = sandbox;
     const by = extendBy(sandbox);
     if (by <= 0 || !sessionId) return false;
     const deadline = await deps.sandboxes.extend(
-      { name: sandboxName(deps, designId), sessionId },
+      { name: sandboxName(deps, canvasId), sessionId },
       by,
     );
     if (deadline !== null) {
-      await setSandboxExpiry(deps.db, { designId, sessionId, expiresAt: new Date(deadline) });
+      await setSandboxExpiry(deps.db, { canvasId, sessionId, expiresAt: new Date(deadline) });
       return true;
     }
     return followEnded(deps, sandbox, sessionId);
@@ -340,13 +340,13 @@ export const STEPS: Record<SweepStep, Step> = {
   repair: async (deps, row) => {
     const { db, clock, sandboxes } = deps;
     const { sandbox } = row;
-    const { designId } = sandbox;
-    // (A settled design's row, a retire that died among them, is the retire step's.)
+    const { canvasId } = sandbox;
+    // (A settled canvas's row, a retire that died among them, is the retire step's.)
     // Taken first, and only if nobody has made progress on it since the sweep looked: a wake
     // that moved it meanwhile keeps the session it started.
     const by = `repair:${crypto.randomUUID()}`;
     const held = await moveSandbox(db, {
-      designId,
+      canvasId,
       from: ["waking", "stopping"],
       to: "stopping",
       now: new Date(clock.now()),
@@ -354,22 +354,22 @@ export const STEPS: Record<SweepStep, Step> = {
       stateBefore: new Date(sandbox.stateAt.getTime() + 1),
     });
     if (!held) return false;
-    const name = sandboxName(deps, designId);
+    const name = sandboxName(deps, canvasId);
     const seen = await sandboxes.status(name);
     if (seen?.status === "running" && seen.sessionId) {
       await sandboxes.stop({ name, sessionId: seen.sessionId });
     }
-    await revokeRunnerTokens(db, designId);
+    await revokeRunnerTokens(db, canvasId);
     const asleep = await moveSandbox(db, {
-      designId,
+      canvasId,
       from: ["stopping"],
       to: "asleep",
       now: new Date(clock.now()),
       by,
     });
     if (!asleep) return false;
-    deps.log.warn("sandbox_repaired", { designId, was: sandbox.state, by: sandbox.wakingBy });
-    await wakeIfPending(deps, designId);
+    deps.log.warn("sandbox_repaired", { canvasId, was: sandbox.state, by: sandbox.wakingBy });
+    await wakeIfPending(deps, canvasId);
     return true;
   },
 };
@@ -379,20 +379,20 @@ export const STEPS: Record<SweepStep, Step> = {
  * follows, pinned to that session, and the pending rule wakes it only if there is work.
  */
 async function followEnded(deps: JobDeps, sandbox: SandboxRow, sessionId: string) {
-  const { designId } = sandbox;
+  const { canvasId } = sandbox;
   const asleep = await moveSandbox(deps.db, {
-    designId,
+    canvasId,
     from: ["awake"],
     to: "asleep",
     now: new Date(deps.clock.now()),
     sessionId,
   });
   if (!asleep) return false;
-  await revokeRunnerTokens(deps.db, designId);
-  deps.log.warn("sandbox_expired", { designId, sessionId });
+  await revokeRunnerTokens(deps.db, canvasId);
+  deps.log.warn("sandbox_expired", { canvasId, sessionId });
   const awakeMs = sandbox.awakeSince ? deps.clock.now() - sandbox.awakeSince.getTime() : 0;
-  await captureSlept(deps, designId, "expired", awakeMs);
-  await wakeIfPending(deps, designId);
+  await captureSlept(deps, canvasId, "expired", awakeMs);
+  await wakeIfPending(deps, canvasId);
   return true;
 }
 
@@ -410,22 +410,22 @@ async function pokeRunner(deps: JobDeps, sandbox: SandboxRow): Promise<void> {
     const target = await runnerTarget(deps, sandbox);
     if (target) await deps.poke(target);
   } catch (error) {
-    deps.log.info("poke_missed", { designId: sandbox.designId, error });
+    deps.log.info("poke_missed", { canvasId: sandbox.canvasId, error });
   }
 }
 
-/** An analytics event about the design's owner, under its workspace. Never fails the sweep. */
+/** An analytics event about the canvas's owner, under its workspace. Never fails the sweep. */
 async function captureAbout<E extends "turn lapsed" | "turn stalled">(
   deps: JobDeps,
-  designId: string,
+  canvasId: string,
   event: E,
-  properties: Omit<ServerEvents[E], "design_id">,
+  properties: Omit<ServerEvents[E], "canvas_id">,
 ): Promise<void> {
-  const design = await getDesign(deps.db, designId).catch(() => null);
-  if (!design) return;
-  deps.analytics.capture(event, { design_id: designId, ...properties } as ServerEvents[E], {
-    distinctId: design.ownerId,
-    workspaceId: design.workspaceId,
+  const canvas = await getCanvas(deps.db, canvasId).catch(() => null);
+  if (!canvas) return;
+  deps.analytics.capture(event, { canvas_id: canvasId, ...properties } as ServerEvents[E], {
+    distinctId: canvas.ownerId,
+    workspaceId: canvas.workspaceId,
   });
 }
 
@@ -433,10 +433,10 @@ async function captureAbout<E extends "turn lapsed" | "turn stalled">(
  * This database's names at Vercel against its rows, at most `RECONCILE_ACTIONS` actions a run.
  * Answers how many it took.
  *
- *   design names   a row waking or stopping inside its lease is left alone, whatever its
+ *   canvas names   a row waking or stopping inside its lease is left alone, whatever its
  *                  session; a running sandbox is stopped, pinned to its own session, when its
  *                  row is missing, asleep, or awake on another session (`sandbox_leak`); a name
- *                  whose design was deleted is removed. A settled design's is retire's.
+ *                  whose canvas was deleted is removed. A settled canvas's is retire's.
  *   sign-in names  removed once the sign-in is over or an hour old.
  */
 export async function reconcile(deps: JobDeps): Promise<number> {
@@ -449,15 +449,15 @@ export async function reconcile(deps: JobDeps): Promise<number> {
     return parsed && parsed.scope === scope ? [{ info, parsed }] : [];
   });
   const owners = await getSandboxOwners(deps.db, {
-    designIds: named.filter((n) => n.parsed.kind === "design").map((n) => n.parsed.id),
+    canvasIds: named.filter((n) => n.parsed.kind === "canvas").map((n) => n.parsed.id),
     signInIds: named.filter((n) => n.parsed.kind === "signin").map((n) => n.parsed.id),
   });
   let actions = 0;
   for (const { info, parsed } of named) {
     if (actions >= RECONCILE_ACTIONS) break;
     const action =
-      parsed.kind === "design"
-        ? designAction(info, owners.designs.get(parsed.id)!, now)
+      parsed.kind === "canvas"
+        ? sandboxAction(info, owners.canvases.get(parsed.id)!, now)
         : signInAction(owners.signIns.get(parsed.id)!, now);
     if (!action) continue;
     try {
@@ -467,7 +467,7 @@ export async function reconcile(deps: JobDeps): Promise<number> {
       } else {
         // Looked at again just before: a wake may have claimed it since the list.
         const sandbox = await getSandbox(deps.db, parsed.id);
-        if (designAction(info, { exists: true, sandbox }, deps.clock.now()) !== "stop") continue;
+        if (sandboxAction(info, { exists: true, sandbox }, deps.clock.now()) !== "stop") continue;
         await deps.sandboxes.stop({ name: info.name, sessionId: info.sessionId! });
         deps.log.warn("sandbox_leak", { name: info.name, sessionId: info.sessionId });
       }
@@ -479,14 +479,14 @@ export async function reconcile(deps: JobDeps): Promise<number> {
   return actions;
 }
 
-function designAction(
+function sandboxAction(
   info: SandboxInfo,
   { exists, sandbox }: { exists: boolean; sandbox: SandboxRow | null },
   now: number,
 ): "remove" | "stop" | null {
   const held = sandbox && (sandbox.state === "waking" || sandbox.state === "stopping");
   if (held && sandbox.stateAt.getTime() >= now - WAKING_LEASE_MS) return null;
-  // Its design was deleted; its id never comes back.
+  // Its canvas was deleted; its id never comes back.
   if (!exists) return "remove";
   if (info.status !== "running" || !info.sessionId) return null;
   if (!sandbox || sandbox.state === "asleep") return "stop";

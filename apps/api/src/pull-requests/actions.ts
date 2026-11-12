@@ -22,14 +22,14 @@ import {
 import { type PullRequestTab, toTab } from "./view.ts";
 
 /*
- * What a person does to a design's pull request: mark it ready, merge it, set auto-merge, close
+ * What a person does to a canvas's pull request: mark it ready, merge it, set auto-merge, close
  * it, or bring its branch up to date. Each is done as them, with their GitHub user token
  * (docs/cloud.md, "Pull requests"): GitHub then holds them to the rules of the repo as they
  * apply to that person, and its history names them.
  *
  * Each reads the pull request first, refuses what it can name before asking GitHub, and says
  * why GitHub refused with a code a client can show. Each ends by reading it again, and that is
- * what it answers: GitHub's word on what happened, recorded on the design.
+ * what it answers: GitHub's word on what happened, recorded on the canvas.
  */
 
 export type PullRequestAction =
@@ -93,7 +93,7 @@ async function act(
   const { github } = deps;
   let current = await readAndRecord(deps, target);
   const pr = current.read.pullRequest;
-  if (!pr) throw new ApiError(409, "no_pull_request", "This design has no pull request yet.");
+  if (!pr) throw new ApiError(409, "no_pull_request", "This canvas has no pull request yet.");
   const personToken = () => githubUserToken(deps, user.id);
   const { fullName } = target.repo.repository;
   const { number } = pr;
@@ -211,7 +211,7 @@ async function act(
       // GitHub makes the merge commit a moment later, and then works out mergeability again.
       deps.background(
         "pull_request_refresh",
-        refreshPullRequest(deps, target.designId, { number }),
+        refreshPullRequest(deps, target.canvasId, { number }),
       );
       break;
     }
@@ -225,7 +225,7 @@ async function readAndRecord(
   number?: number,
 ): Promise<Read> {
   const read = await readPullRequest(deps, target, number);
-  await recordCurrent(deps, target.designId, read);
+  await recordCurrent(deps, target.canvasId, read);
   return read;
 }
 
@@ -246,8 +246,8 @@ async function untilMergeable(
 
 /**
  * Read a pull request GitHub has just merged until its reads show it merged, which settles the
- * design, for a few seconds. If they still do not, it is read again in a minute by a job, so the
- * design settles even if GitHub's webhook for the merge never comes.
+ * canvas, for a few seconds. If they still do not, it is read again in a minute by a job, so the
+ * canvas settles even if GitHub's webhook for the merge never comes.
  */
 async function untilMerged(
   deps: PullRequestDeps,
@@ -261,12 +261,12 @@ async function untilMerged(
     current = await readAndRecord(deps, target, number);
   }
   if (current.read.pullRequest?.state !== "merged") {
-    await refreshLater(deps, { designId: target.designId, number }, MERGE_CHECKED_AFTER_MS);
+    await refreshLater(deps, { canvasId: target.canvasId, number }, MERGE_CHECKED_AFTER_MS);
   }
   return current;
 }
 
-/** Deletes a merged design's branch; a refusal (protected, or no right to) leaves it be. */
+/** Deletes a merged canvas's branch; a refusal (protected, or no right to) leaves it be. */
 async function deleteMergedBranch(
   deps: ActDeps,
   userToken: string,

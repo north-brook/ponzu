@@ -1,5 +1,5 @@
 /*
- * The wire protocol between a design's runner and the API (docs/cloud.md, "The runner
+ * The wire protocol between a canvas's runner and the API (docs/cloud.md, "The runner
  * protocol"): every body that crosses it, as JSON. The apps import the thread's types from here
  * (`@ponzu/runner/protocol`) to render what the runner writes; this file imports nothing, so
  * it adds nothing to a client's bundle.
@@ -47,7 +47,7 @@ export const IMAGE_COMMANDS = {
  */
 export type StartEnv = {
   PONZU_API_URL: string;
-  PONZU_DESIGN_ID: string;
+  PONZU_CANVAS_ID: string;
   /** `pzr_…`, 25 h, new at every start. */
   PONZU_RUNNER_TOKEN: string;
   /** 32 random bytes, base64url: the bearer of the runner's port. */
@@ -74,11 +74,11 @@ export const RUNNER_HEADER = "x-ponzu-runner";
 /** `POST /v1/runner/session`: everything the runner needs to start, and its lease. */
 export interface RunnerSession {
   /**
-   * This process, `rnr_` and 16 characters: minted by this call, which makes it the design's
+   * This process, `rnr_` and 16 characters: minted by this call, which makes it the canvas's
    * one runner. Sent as `X-Ponzu-Runner` on every later call.
    */
   runnerId: string;
-  design: { id: string; name: string };
+  canvas: { id: string; name: string };
   /** Null for Scratch. */
   repo: { owner: string; name: string; defaultBranch: string } | null;
   /** The branch to work on, `pz/<topic>`. Null for Scratch. */
@@ -103,14 +103,14 @@ export interface RunnerSession {
    * a message. They stay open until the next turn ends.
    */
   openQuestions: string[];
-  /** The design's head: its latest committed op. */
+  /** The canvas's head: its latest committed op. */
   seq: number;
   /**
-   * The design's last checkpoint, as the API recorded it: a runner whose disk is behind it
+   * The canvas's last checkpoint, as the API recorded it: a runner whose disk is behind it
    * (a rollback) or holds none of it (a new sandbox) restores from it before it resumes.
    */
   saved: SavedPoint | null;
-  /** The workspace the design is in: the group its turns are reported under. */
+  /** The workspace the canvas is in: the group its turns are reported under. */
   workspaceId?: string;
   /**
    * Where the runner reports each turn's trace to PostHog's LLM analytics, or null (or absent,
@@ -118,7 +118,7 @@ export interface RunnerSession {
    */
   analytics?: RunnerAnalytics | null;
   /**
-   * What the API holds of the models Claude Code offers the Claude account the design runs on,
+   * What the API holds of the models Claude Code offers the Claude account the canvas runs on,
    * as a runner on its credential last reported them: the runner reports again only when what
    * its Claude Code says differs, or this is stale. Null when nothing is held; absent from an
    * older API.
@@ -149,7 +149,7 @@ export interface ModelsReport {
 }
 
 export interface ModelsResponse {
-  /** False when the account the design runs on is no longer the credential this runner holds. */
+  /** False when the account the canvas runs on is no longer the credential this runner holds. */
   kept: boolean;
 }
 
@@ -185,17 +185,17 @@ export interface SavedPoint {
   /** The Claude session whose transcript is stored, if one is. */
   claudeSessionId: string | null;
   /**
-   * A repo design's work in progress: a commit on `refs/ponzu/wip/<design id>` whose parent is
+   * A repo canvas's work in progress: a commit on `refs/ponzu/wip/<canvas id>` whose parent is
    * the checkout's HEAD and whose tree is its working tree, untracked files included.
    */
   wipCommit: string | null;
-  /** Whether the transcript, and a Scratch design's files, are stored with it. */
+  /** Whether the transcript, and a Scratch canvas's files, are stored with it. */
   session: boolean;
   workspace: boolean;
 }
 
-/** The hidden ref a repo design's work in progress is pushed to. Never a branch. */
-export const wipRef = (designId: string) => `refs/ponzu/wip/${designId}`;
+/** The hidden ref a repo canvas's work in progress is pushed to. Never a branch. */
+export const wipRef = (canvasId: string) => `refs/ponzu/wip/${canvasId}`;
 
 /** The names and type of the two archives a checkpoint uploads. */
 export const SESSION_ARCHIVE = "session.tar.gz";
@@ -239,7 +239,7 @@ export interface SavedArchive {
   sha256: string;
 }
 
-/** `POST /v1/runner/restore`: the design's last checkpoint and where to read its archives. */
+/** `POST /v1/runner/restore`: the canvas's last checkpoint and where to read its archives. */
 export interface RestoreResponse {
   saved: SavedPoint | null;
   session: SavedArchive | null;
@@ -247,7 +247,7 @@ export interface RestoreResponse {
 }
 
 /**
- * `POST /v1/runner/restored`: the runner found its disk behind the design's last checkpoint and
+ * `POST /v1/runner/restored`: the runner found its disk behind the canvas's last checkpoint and
  * restored from it. The API logs it with the sandbox it happened in, and counts a rollback.
  */
 export interface RestoredReport {
@@ -268,10 +268,10 @@ export interface RestoredReport {
 
 export type Priority = "now" | "next" | "later";
 
-/** Something that happened to the design, for the agent to take up. */
+/** Something that happened to the canvas, for the agent to take up. */
 export type RunnerEvent = {
   id: string;
-  /** Its place in the design's feed. Increasing, with gaps. */
+  /** Its place in the canvas's feed. Increasing, with gaps. */
   seq: number;
   /** When it happened, as an ISO 8601 time. */
   at: string;
@@ -388,16 +388,16 @@ export const CLAIM_LIMIT = 100;
 
 export interface ClaimResponse {
   events: RunnerEvent[];
-  /** The design's head, so the runner's replica can catch up. */
+  /** The canvas's head, so the runner's replica can catch up. */
   seq: number;
   /**
-   * The design's pull request as the app shows it (the design's row): what the agent is told
+   * The canvas's pull request as the app shows it (the canvas's row): what the agent is told
    * when a turn starts. Null when it has none; absent from an API that does not say.
    */
   pullRequest?: PullRequestState | null;
 }
 
-/** A design's pull request, as the app shows it. */
+/** A canvas's pull request, as the app shows it. */
 export interface PullRequestState {
   number: number;
   state: "draft" | "open" | "merged" | "closed";
@@ -407,7 +407,7 @@ export interface PullRequestState {
 export interface AckRequest {
   ids: string[];
   /**
-   * The Claude session that holds them, stored as the design's session in the same
+   * The Claude session that holds them, stored as the canvas's session in the same
    * transaction, so the next runner resumes the session its events went into. Null only when
    * none of them went into a session (a stop, a kind this runner does not know).
    */
@@ -423,7 +423,7 @@ export interface AckResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * One item of a design's thread, as clients read it. People's messages and comments are the
+ * One item of a canvas's thread, as clients read it. People's messages and comments are the
  * API's to write; the runner writes the rest. A client renders the thread from these alone.
  */
 export type ThreadItem = {
@@ -482,10 +482,10 @@ export interface CommentItem {
 
 /**
  * A comment's picture: the area round its pin, the pin drawn in, in each theme. Each is a WebP
- * under the design's assets address, `COMMENT_PICTURE.scale` times its size as shown.
+ * under the canvas's assets address, `COMMENT_PICTURE.scale` times its size as shown.
  */
 export interface CommentPicture {
-  /** `comments/<message id>-light.webp`, relative to the design's assets address. */
+  /** `comments/<message id>-light.webp`, relative to the canvas's assets address. */
   light: string;
   dark: string;
   /** Its size as shown, in CSS px. */
@@ -568,7 +568,7 @@ export type Notice =
   | Exclude<RunnerNotice, { type: "stopped" }>
   /** A person stopped the run: the API names them from the stop event the runner wrote. */
   | { type: "stopped"; by: Person | null }
-  /** Written by the API: the design's pull request opened, merged or closed. */
+  /** Written by the API: the canvas's pull request opened, merged or closed. */
   | {
       type: "pull_request";
       number: number;
@@ -597,9 +597,9 @@ export type AgentPullRequestDone = "opened" | "ready" | "updated_branch" | "auto
 export type RunnerNotice =
   /** The runner is starting; it becomes `resumed` or `started` once Claude is up. */
   | { type: "waking" }
-  /** Claude picked up the design's session where it left off. */
+  /** Claude picked up the canvas's session where it left off. */
   | { type: "resumed" }
-  /** Claude started a new session for the design. */
+  /** Claude started a new session for the canvas. */
   | { type: "started" }
   /** The agent asked something; the question itself is a question row. */
   | { type: "question"; questionId: string; header: string; text: string }
@@ -626,7 +626,7 @@ export type RunErrorCode =
   | "message_refused"
   /** The API would not take a question, so nobody could answer it and the agent went on. */
   | "question_failed"
-  /** Commits on the design's branch could not be pushed to GitHub; the message says why. */
+  /** Commits on the canvas's branch could not be pushed to GitHub; the message says why. */
   | "push_failed";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
@@ -643,7 +643,7 @@ export type ThreadWrite = {
 );
 
 /**
- * `POST /v1/runner/thread`. Each item is written by id within the design: an id the thread
+ * `POST /v1/runner/thread`. Each item is written by id within the canvas: an id the thread
  * does not have is appended, one that is still streaming has its payload replaced, and one
  * that has finished stays as it is.
  */
@@ -665,7 +665,7 @@ export const MAX_THREAD_WRITE = 32;
 export type AgentState = "working" | "needs_you" | "idle";
 
 /**
- * `PUT /v1/runner/state`: what the agent is doing, as the design's row shows it. Sent when it
+ * `PUT /v1/runner/state`: what the agent is doing, as the canvas's row shows it. Sent when it
  * changes and at least every `HEARTBEAT_MS` while the runner is alive.
  */
 export interface StateRequest {
@@ -681,14 +681,14 @@ export interface StateRequest {
   /** The Claude session, once Claude Code has said which it is. Stored for the next resume. */
   claudeSessionId: string | null;
   /**
-   * The design's branch in this sandbox against GitHub, once the runner has looked: what Create
+   * The canvas's branch in this sandbox against GitHub, once the runner has looked: what Create
    * PR goes by while GitHub lacks commits. Absent: unchanged. Null for Scratch, or a checkout
    * that failed.
    */
   branch?: BranchReport | null;
 }
 
-/** The design's branch in the sandbox against GitHub. */
+/** The canvas's branch in the sandbox against GitHub. */
 export interface BranchReport {
   /** Commits on the branch that GitHub does not have. */
   unpushed: number;
@@ -697,7 +697,7 @@ export interface BranchReport {
 }
 
 export interface StateResponse {
-  /** The design's head, so the runner's replica can catch up. */
+  /** The canvas's head, so the runner's replica can catch up. */
   seq: number;
 }
 
@@ -752,9 +752,9 @@ export interface WithdrawResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * `asset`: one of the design's files. `export`: a file a link reaches. `preview`: the sidebar's
+ * `asset`: one of the canvas's files. `export`: a file a link reaches. `preview`: the sidebar's
  * picture. `session` and `workspace`: a checkpoint's archives (the transcript, a Scratch
- * design's files), stored where no client reads them and recorded only by `/v1/runner/checkpoint`.
+ * canvas's files), stored where no client reads them and recorded only by `/v1/runner/checkpoint`.
  */
 export type UploadPurpose = "asset" | "export" | "preview" | "session" | "workspace";
 
@@ -783,7 +783,7 @@ export interface UploadResponse {
 /** `POST /v1/runner/uploads/complete`: the bytes are there. */
 export interface CompleteRequest {
   ids: string[];
-  /** For previews: the design's seq they show. */
+  /** For previews: the canvas's seq they show. */
   seq?: number;
 }
 
@@ -860,7 +860,7 @@ export interface PullRequestSummaryResponse {
   /** The open pull request whose description now says it; null while it waits for one. */
   pullRequest: number | null;
   /**
-   * The design's pull request as the app shows it, whether or not the summary reached it: so the
+   * The canvas's pull request as the app shows it, whether or not the summary reached it: so the
    * agent can say truly whether one exists. Absent from an API that does not say.
    */
   open?: PullRequestState | null;
@@ -873,7 +873,7 @@ export interface PullRequestSummaryResponse {
 }
 
 /**
- * What the agent does to its design's pull request through the API, which acts as a person
+ * What the agent does to its canvas's pull request through the API, which acts as a person
  * (docs/cloud.md, "The agent's pull request"): `POST /v1/runner/pull-request/<action>`.
  */
 export type AgentPullRequestAction = "open" | "ready" | "update_branch" | "auto_merge" | "merge";
@@ -896,7 +896,7 @@ export interface AgentPullRequestRequest {
   headSha?: string;
 }
 
-/** Where the design's pull request stands, for the agent: `GET /v1/runner/pull-request?turn=`. */
+/** Where the canvas's pull request stands, for the agent: `GET /v1/runner/pull-request?turn=`. */
 export interface PullRequestStanding {
   branch: { name: string; base: string; exists: boolean; aheadBy: number; behindBy: number };
   pullRequest: {
@@ -1014,7 +1014,7 @@ export interface ErrorBody {
 /* ------------------------------------------------------------------ */
 
 /**
- * The one variable a design's repo's secrets reach its sandbox in. The runner, a Bun process
+ * The one variable a canvas's repo's secrets reach its sandbox in. The runner, a Bun process
  * that holds the runner token, never has them as variables of its own: a name like
  * `BUN_OPTIONS` would load code into it before it starts. It hands them only to the agent's
  * side, beside what it has itself (`agentEnv`). And whatever writes the sandbox's environment

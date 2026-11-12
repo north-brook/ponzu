@@ -91,7 +91,7 @@ const schema = z.object({
   EXPO_ACCESS_TOKEN: z.string().min(20).optional(),
 });
 
-/** How designs' sandboxes are made and kept. */
+/** How canvases' sandboxes are made and kept. */
 export interface SandboxConfig {
   /**
    * The image every sandbox runs: `ponzu-runner@sha256:…` in the ponzu-api project's container

@@ -27,12 +27,12 @@ export function parseDeepLink(url: string, scheme: string): DeepLink | null {
     return value && ID.test(value) ? value : undefined;
   };
 
-  if (path[0] === "design" && path.length === 2 && ID.test(path[1]!)) {
+  if (path[0] === "canvas" && path.length === 2 && ID.test(path[1]!)) {
     const pageId = id("page");
     const artboardId = id("artboard");
     return {
-      kind: "design",
-      designId: path[1]!,
+      kind: "canvas",
+      canvasId: path[1]!,
       ...(pageId ? { pageId } : {}),
       ...(artboardId ? { artboardId } : {}),
     };

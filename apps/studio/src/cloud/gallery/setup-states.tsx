@@ -109,12 +109,12 @@ const STATES: [string, SettingsSection, SettingsData][] = [
   ],
   ["Plan and usage · a team's member", "plan", team({ meId: f.maya.id, byPerson: null })],
   [
-    "Plan and usage · by design, a deleted account and deleted designs",
+    "Plan and usage · by design, a deleted account and deleted canvases",
     "plan",
     team({
       byPerson: s.byPersonWithNobody,
       unattributedCredits: s.unattributedCredits,
-      byDesign: s.byDesign,
+      byCanvas: s.byCanvas,
     }),
   ],
 ];

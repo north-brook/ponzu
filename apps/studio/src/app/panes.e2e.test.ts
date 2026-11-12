@@ -41,7 +41,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     page.on("pageerror", (error) => errors.push(String(error)));
     // Signed in past setup: the first run is app.e2e's and the slow-answer walks'.
     await page.goto(`${server.url}?as=returning`);
-    await openTheDesign(page);
+    await openTheCanvas(page);
     await measureEachMove(page);
   });
   afterAll(async () => {
@@ -466,7 +466,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     });
     await page.setViewportSize({ width: 1100, height: HEIGHT });
     await page.reload();
-    await openTheDesign(page);
+    await openTheCanvas(page);
     const small = await geometry(page);
     expect(small.mainWidth).toBeCloseTo(400, 0);
     // Each gave up some of its width, in proportion to its room above its minimum: neither
@@ -486,18 +486,18 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
 });
 
 /** Opens the team's design, as its link does, for someone signed in past setup. */
-async function openTheDesign(page: Page) {
+async function openTheCanvas(page: Page) {
   await page.locator("#sidebar").waitFor();
   const find = () =>
     page.evaluate(
       () =>
-        [...window.ponzuFake!.backend.designs.values()].find(
+        [...window.ponzuFake!.backend.canvases.values()].find(
           (d) => d.sequencer.doc.name === "Onboarding flow",
         )?.id ?? null,
     );
   await waitUntil(async () => (await find()) !== null);
-  const designId = (await find())!;
-  await page.evaluate((id) => window.ponzuFake!.link({ kind: "design", designId: id }), designId);
+  const canvasId = (await find())!;
+  await page.evaluate((id) => window.ponzuFake!.link({ kind: "canvas", canvasId: id }), canvasId);
   await page.locator('[data-board-name][title="Welcome"]').waitFor();
   await page.locator("#thread").waitFor();
   await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);

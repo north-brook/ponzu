@@ -3,9 +3,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { eq, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign, seedRepo } from "../fixtures.ts";
+import { actorFor, rename, seedCanvas, seedRepo } from "../fixtures.ts";
 import { migrationsFolder } from "../migrations.ts";
-import { getDesign } from "../queries/designs.ts";
+import { getCanvas } from "../queries/canvases.ts";
 import { commitOps } from "../queries/ops.ts";
 import { createQuestion } from "../queries/questions.ts";
 import { appendThreadItem } from "../queries/thread.ts";
@@ -53,15 +53,15 @@ describe("migrations", () => {
     expect(rows).toEqual([]);
   });
 
-  test("index every foreign key that deleting a design follows", async () => {
+  test("index every foreign key that deleting a canvas follows", async () => {
     // Postgres finds the rows that point at a deleted row by scanning for them. Without an
-    // index whose first columns are the key's (a partial index does not count), every design
+    // index whose first columns are the key's (a partial index does not count), every canvas
     // deleted reads the whole table, and usage and events only ever grow.
     const { rows } = await db.execute<{ key: string }>(sql`
       select c.conrelid::regclass::text || '.' || c.conname as key
         from pg_constraint c
        where c.contype = 'f'
-         and c.confrelid in ('designs'::regclass, 'sandboxes'::regclass)
+         and c.confrelid in ('canvases'::regclass, 'sandboxes'::regclass)
          and not exists (
            select 1
              from pg_index i
@@ -79,14 +79,14 @@ describe("migrations", () => {
         from information_schema.columns
        where table_schema = 'public'
          and (table_name, column_name) in (
-           ('design_ops', 'op'), ('design_ops', 'inverse'), ('design_checkpoints', 'doc')
+           ('canvas_ops', 'op'), ('canvas_ops', 'inverse'), ('canvas_checkpoints', 'doc')
          )
        order by 1
     `);
     expect(rows).toEqual([
-      { column: "design_checkpoints.doc", data_type: "json" },
-      { column: "design_ops.inverse", data_type: "json" },
-      { column: "design_ops.op", data_type: "json" },
+      { column: "canvas_checkpoints.doc", data_type: "json" },
+      { column: "canvas_ops.inverse", data_type: "json" },
+      { column: "canvas_ops.op", data_type: "json" },
     ]);
   });
 
@@ -106,35 +106,35 @@ describe("migrations", () => {
 });
 
 describe("deleting", () => {
-  test("a design takes everything that was only its own", async () => {
-    const { design, user } = await seedDesign(db);
+  test("a canvas takes everything that was only its own", async () => {
+    const { canvas, user } = await seedCanvas(db);
     await commitOps(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       expectedSeq: 0,
       actor: actorFor(user),
       ops: [rename("a", "One")],
     });
-    await appendThreadItem(db, { designId: design.id, kind: "notice", payload: {} });
-    await createQuestion(db, { designId: design.id, kind: "question", payload: {} });
+    await appendThreadItem(db, { canvasId: canvas.id, kind: "notice", payload: {} });
+    await createQuestion(db, { canvasId: canvas.id, kind: "question", payload: {} });
 
-    await db.delete(schema.designs).where(eq(schema.designs.id, design.id));
+    await db.delete(schema.canvases).where(eq(schema.canvases.id, canvas.id));
 
     for (const table of [
-      schema.designOps,
-      schema.designCheckpoints,
+      schema.canvasOps,
+      schema.canvasCheckpoints,
       schema.threadItems,
       schema.questions,
     ]) {
-      expect(await db.$count(table, eq(table.designId, design.id))).toBe(0);
+      expect(await db.$count(table, eq(table.canvasId, canvas.id))).toBe(0);
     }
   });
 
-  test("a design leaves its usage behind, for the bill", async () => {
-    const seeded = await seedDesign(db);
+  test("a canvas leaves its usage behind, for the bill", async () => {
+    const seeded = await seedCanvas(db);
     await recordUsage(db, {
       id: "use_kept",
       workspaceId: seeded.workspace.id,
-      designId: seeded.design.id,
+      canvasId: seeded.canvas.id,
       userId: seeded.user.id,
       kind: "sandbox",
       seconds: 720,
@@ -146,30 +146,30 @@ describe("deleting", () => {
       periodStart: new Date("2026-11-01T00:00:00Z"),
     });
 
-    await db.delete(schema.designs).where(eq(schema.designs.id, seeded.design.id));
+    await db.delete(schema.canvases).where(eq(schema.canvases.id, seeded.canvas.id));
 
     const [usage] = await db
       .select()
       .from(schema.usageEvents)
       .where(eq(schema.usageEvents.id, "use_kept"));
-    expect(usage).toMatchObject({ designId: null, credits: 1 });
+    expect(usage).toMatchObject({ canvasId: null, credits: 1 });
   });
 
-  test("a person leaves their designs to the workspace", async () => {
-    const { design, user } = await seedDesign(db);
+  test("a person leaves their canvases to the workspace", async () => {
+    const { canvas, user } = await seedCanvas(db);
 
     await db.delete(schema.users).where(eq(schema.users.id, user.id));
 
-    expect(await getDesign(db, design.id)).toMatchObject({ id: design.id, ownerId: null });
+    expect(await getCanvas(db, canvas.id)).toMatchObject({ id: canvas.id, ownerId: null });
   });
 
-  test("a workspace or a repo is refused while it has designs", async () => {
-    const { design, workspace } = await seedDesign(db);
+  test("a workspace or a repo is refused while it has canvases", async () => {
+    const { canvas, workspace } = await seedCanvas(db);
     const repo = await seedRepo(db, workspace.id);
     await db
-      .update(schema.designs)
+      .update(schema.canvases)
       .set({ repoId: repo.id })
-      .where(eq(schema.designs.id, design.id));
+      .where(eq(schema.canvases.id, canvas.id));
 
     await expect(
       run(db.delete(schema.repos).where(eq(schema.repos.id, repo.id))),
@@ -177,43 +177,43 @@ describe("deleting", () => {
     await expect(
       run(db.delete(schema.workspaces).where(eq(schema.workspaces.id, workspace.id))),
     ).rejects.toThrow();
-    expect(await getDesign(db, design.id)).not.toBeNull();
+    expect(await getCanvas(db, canvas.id)).not.toBeNull();
   });
 });
 
 describe("constraints", () => {
-  test("one design, one branch in a repo", async () => {
-    const one = await seedDesign(db);
-    const two = await seedDesign(db);
+  test("one canvas, one branch in a repo", async () => {
+    const one = await seedCanvas(db);
+    const two = await seedCanvas(db);
     const repo = await seedRepo(db, one.workspace.id);
-    const onBranch = (designId: string) =>
+    const onBranch = (canvasId: string) =>
       run(
         db
-          .update(schema.designs)
+          .update(schema.canvases)
           .set({ repoId: repo.id, branch: "pz/shorter-onboarding" })
-          .where(eq(schema.designs.id, designId)),
+          .where(eq(schema.canvases.id, canvasId)),
       );
 
-    await onBranch(one.design.id);
+    await onBranch(one.canvas.id);
 
-    await expect(onBranch(two.design.id)).rejects.toThrow();
+    await expect(onBranch(two.canvas.id)).rejects.toThrow();
   });
 
-  test("one design, one sandbox", async () => {
-    const { design } = await seedDesign(db);
+  test("one canvas, one sandbox", async () => {
+    const { canvas } = await seedCanvas(db);
     const sandbox = (state: "asleep" | "waking") =>
-      run(db.insert(schema.sandboxes).values({ designId: design.id, state }));
+      run(db.insert(schema.sandboxes).values({ canvasId: canvas.id, state }));
 
     await sandbox("asleep");
     await expect(sandbox("waking")).rejects.toThrow();
   });
 
   test("a value outside an enum is refused by the database, not only by the types", async () => {
-    const { design } = await seedDesign(db);
+    const { canvas } = await seedCanvas(db);
     const set = (column: string, value: string) =>
       run(
         db.execute(
-          sql`update designs set ${sql.identifier(column)} = ${value} where id = ${design.id}`,
+          sql`update canvases set ${sql.identifier(column)} = ${value} where id = ${canvas.id}`,
         ),
       );
 
@@ -223,7 +223,9 @@ describe("constraints", () => {
     // Settled needs its time, and a pull request number needs its state.
     await expect(set("status", "settled")).rejects.toThrow();
     await expect(
-      run(db.update(schema.designs).set({ prNumber: 12 }).where(eq(schema.designs.id, design.id))),
+      run(
+        db.update(schema.canvases).set({ prNumber: 12 }).where(eq(schema.canvases.id, canvas.id)),
+      ),
     ).rejects.toThrow();
   });
 });

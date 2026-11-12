@@ -8,9 +8,9 @@ import {
   type Workspace,
 } from "../context.ts";
 import type { AgentFiles } from "../disk.ts";
-import { ReplicaDesign } from "./replica-design.ts";
+import { ReplicaCanvas } from "./replica-canvas.ts";
 
-/** What the agent is doing, as the design's row shows it to everyone who has it open. */
+/** What the agent is doing, as the canvas's row shows it to everyone who has it open. */
 export interface AgentStatus {
   /** The artboards it is working on. Empty once it has gone quiet. */
   artboards: string[];
@@ -34,7 +34,7 @@ export interface CloudHost {
   /** What the person asked for, as the agent distilled it (set_status's intent). */
   intent(text: string): void | Promise<void>;
   /**
-   * Keep a file as one of the design's assets and resolve to the reference markup uses for
+   * Keep a file as one of the canvas's assets and resolve to the reference markup uses for
    * it, `assets/<name>`, once the bytes can be loaded from `assetBase`.
    */
   storeAsset(asset: NamedBytes): Promise<string>;
@@ -49,9 +49,9 @@ export interface CloudHost {
 }
 
 export interface CloudWorkspaceOptions {
-  /** The design's id: the key its events and presence go by. */
+  /** The canvas's id: the key its events and presence go by. */
   id: string;
-  /** The design. The runner opened it and closes it. */
+  /** The canvas. The runner opened it and closes it. */
   replica: Replica;
   /** Without one, screenshot, record and export say they can't run. */
   renderer?: Renderer;
@@ -65,8 +65,8 @@ export interface CloudWorkspaceOptions {
 }
 
 /**
- * The design's link (`https://ponzu.design/designs/<id>`) narrowed to one page or board:
- * `?page=<id>` or `?artboard=<id>`, the query the app's `ponzu://design/<id>` links take, so it
+ * The canvas's link (`https://ponzu.design/canvases/<id>`) narrowed to one page or board:
+ * `?page=<id>` or `?artboard=<id>`, the query the app's `ponzu://canvas/<id>` links take, so it
  * means the same in the thread (which follows it in place), on GitHub and anywhere it is pasted.
  */
 export function linkTo(
@@ -82,9 +82,9 @@ export function linkTo(
   return url.href;
 }
 
-/** The workspace for the one design a sandbox works on. */
+/** The workspace for the one canvas a sandbox works on. */
 export interface CloudWorkspace extends Workspace {
-  readonly design: ReplicaDesign;
+  readonly canvas: ReplicaCanvas;
   /**
    * The agent's edits that were undone and that no tool result has said yet. `runTool` takes
    * them for each result; the runner takes what is left once a turn's edits have settled.
@@ -96,10 +96,10 @@ export interface CloudWorkspace extends Workspace {
 
 /**
  * The `Workspace` the runner hands to `runTool`, with `cloudTools`, for its sandbox's one
- * design. Events and presence are kept in this process, which lives as long as the sandbox is
+ * canvas. Events and presence are kept in this process, which lives as long as the sandbox is
  * awake.
  *
- * At the end of a turn, and before the sandbox sleeps, the runner waits on `design.settled`,
+ * At the end of a turn, and before the sandbox sleeps, the runner waits on `canvas.settled`,
  * tells the agent whatever `notices` still holds, and calls `presence.leave` with the caller's
  * id so nothing shows as worked on.
  */
@@ -107,8 +107,8 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
   const { id: key, host } = opts;
   const events = new EventHub();
   const presence = new PresenceHub();
-  const design = new ReplicaDesign(opts.replica, { key, events, presence });
-  const open = { key, design };
+  const canvas = new ReplicaCanvas(opts.replica, { key, events, presence });
+  const open = { key, canvas };
 
   /**
    * Tell the host something, and keep its failure here. These calls are made from inside a
@@ -145,13 +145,13 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
   });
 
   return {
-    design,
+    canvas,
     events,
     presence,
     renderer: opts.renderer,
     files: opts.files,
     telemetry: opts.telemetry,
-    designs: () => [open],
+    canvases: () => [open],
     resolve: async () => open,
     get theme() {
       return host.theme();
@@ -162,10 +162,10 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
     intent: (_key, text) => tell("intent", () => host.intent(text)),
     storeAsset: (_key, asset) => host.storeAsset(asset),
     publish: host.publish && ((_key, file) => host.publish!(file)),
-    notices: () => design.notices(),
+    notices: () => canvas.notices(),
     close() {
       offPresence();
-      design.close();
+      canvas.close();
     },
   };
 }

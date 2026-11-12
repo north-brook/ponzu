@@ -56,9 +56,9 @@ export const access = {
   }),
 
   /**
-   * The runner inside a design's sandbox: a runner token as the bearer, and the design's lease
-   * as `X-Ponzu-Runner` (409 `superseded` without it). The handler reads the one design it may
-   * act on from `c.var.actor.designId`, and must not act on any other.
+   * The runner inside a canvas's sandbox: a runner token as the bearer, and the canvas's lease
+   * as `X-Ponzu-Runner` (409 `superseded` without it). The handler reads the one canvas it may
+   * act on from `c.var.actor.canvasId`, and must not act on any other.
    */
   runner: declare<Declaration<LeasedRunner>>("authenticated", async (c, next) => {
     c.set("actor", await authenticateRunner(c.var.deps, bearer(c), c.req.header(RUNNER_HEADER)));
@@ -72,7 +72,7 @@ export const access = {
   }),
 
   /**
-   * Either a person or a runner that holds its lease, for a route both call (a design's ops are
+   * Either a person or a runner that holds its lease, for a route both call (a canvas's ops are
    * posted by people and by its runner). The handler tells them apart by `c.var.actor.kind`.
    */
   userOrRunner: declare<Declaration<Actor>>("authenticated", async (c, next) => {

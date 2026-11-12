@@ -1,5 +1,5 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
-export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
+export { CANVAS_HEAD_COLUMNS, type CanvasHead, type LiveCanvasHead, toCanvasHead } from "./head.ts";
 export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
 export {
   type AccountDeletionPlan,
@@ -51,6 +51,26 @@ export {
   recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
+  BRANCH_TAKEN,
+  type Canvas,
+  type CanvasAccess,
+  type CanvasListItem,
+  CREATE_KEY_TAKEN,
+  createCanvas,
+  deleteCanvas,
+  findCanvasByCreateKey,
+  getCanvas,
+  getCanvasAccess,
+  getCanvasAssetKey,
+  getCanvasHead,
+  getWorkspaceRepo,
+  listRepoBranches,
+  listWorkspaceCanvases,
+  markCanvasSeen,
+  type NewCanvas,
+  settleCanvas,
+} from "./queries/canvases.ts";
+export {
   type DocSource,
   OP_RETENTION_DAYS,
   pruneOps,
@@ -70,30 +90,10 @@ export {
 } from "./queries/claude.ts";
 export { openClaudeSignIn, setClaudeSignInSession } from "./queries/claude-sign-ins.ts";
 export {
-  BRANCH_TAKEN,
-  CREATE_KEY_TAKEN,
-  createDesign,
-  type Design,
-  type DesignAccess,
-  type DesignListItem,
-  deleteDesign,
-  findDesignByCreateKey,
-  getDesign,
-  getDesignAccess,
-  getDesignAssetKey,
-  getDesignHead,
-  getWorkspaceRepo,
-  listRepoBranches,
-  listWorkspaceDesigns,
-  markDesignSeen,
-  type NewDesign,
-  settleDesign,
-} from "./queries/designs.ts";
-export {
   addRepoSecret,
   deleteRepoSecret,
   getRepoEnvironment,
-  listDesignSecrets,
+  listCanvasSecrets,
   listWorkspaceEnvironments,
   markBaseForRebuild,
   type RepoEnvironmentRow,
@@ -106,8 +106,8 @@ export {
   appendEvent,
   type ClaimedEvent,
   claimEvents,
-  type DesignEvent,
   type EventPerson,
+  type FeedEvent,
   findStops,
   getEventOrigins,
   hasPendingEvents,
@@ -196,10 +196,10 @@ export {
   touchPresence,
 } from "./queries/presence.ts";
 export {
-  type BranchDesign,
-  findDesignByBranch,
+  type BranchCanvas,
+  findCanvasByBranch,
   getPullRequestContext,
-  listPullRequestDesigns,
+  listPullRequestCanvases,
   type PullRequestContext,
   type PullRequestRead,
   recordPullRequestRead,
@@ -270,14 +270,14 @@ export {
   getSandbox,
   getSandboxOwners,
   getWakeContext,
-  listDesignsWithSandboxOn,
+  listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,
   type Move,
   moveSandbox,
-  type ReconciledDesign,
+  type ReconciledCanvas,
   type ReconciledSignIn,
-  recordDesignClaudeAccount,
+  recordCanvasClaudeAccount,
   type SandboxChanges,
   type SandboxClaim,
   type SandboxImage,
@@ -346,7 +346,7 @@ export {
   type RateCardNumbers,
   readWorkspaceUsage,
   setMonthlyCap,
-  type UsageDesign,
+  type UsageCanvas,
   type UsagePerson,
   type UsageRow,
   type WorkspaceUsageRead,

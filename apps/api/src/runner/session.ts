@@ -15,39 +15,39 @@ import { modelsHeld } from "./models.ts";
 
 /*
  * The runner's first call (docs/cloud.md, "The runner protocol", "Session"): it takes the
- * design's lease, and is answered with everything the runner needs to start.
+ * canvas's lease, and is answered with everything the runner needs to start.
  */
 
-/** Where a design opens in Ponzu. */
-export const designLink = (designId: string) => `https://ponzu.design/designs/${designId}`;
+/** Where a canvas opens in Ponzu. */
+export const canvasLink = (canvasId: string) => `https://ponzu.design/canvases/${canvasId}`;
 
 export async function startRunnerSession(
   deps: Pick<Deps, "db" | "clock" | "config" | "log">,
-  designId: string,
+  canvasId: string,
   /** What the runner said it is (`X-Ponzu-Client`), recorded with its lease. */
   client: string | null = null,
 ): Promise<RunnerSession> {
-  // The lease first: from here on, any runner of this design but this one is refused.
+  // The lease first: from here on, any runner of this canvas but this one is refused.
   const lease = await takeRunnerLease(deps.db, {
-    designId,
+    canvasId,
     now: new Date(deps.clock.now()),
     client,
   });
   const [context, open, sandbox] = await Promise.all([
-    getRunnerContext(deps.db, designId),
-    listOpenQuestions(deps.db, designId),
-    getSandbox(deps.db, designId),
+    getRunnerContext(deps.db, canvasId),
+    listOpenQuestions(deps.db, canvasId),
+    getSandbox(deps.db, canvasId),
   ]);
-  if (!context) throw new ApiError(404, "not_found", "There is no such design.");
-  logStart(deps, designId, client, sandbox);
-  const { design, repo, owner, assetKey } = context;
-  const claude = design.claudeAccountId
-    ? await getClaudeAccountById(deps.db, design.claudeAccountId)
+  if (!context) throw new ApiError(404, "not_found", "There is no such canvas.");
+  logStart(deps, canvasId, client, sandbox);
+  const { canvas, repo, owner, assetKey } = context;
+  const claude = canvas.claudeAccountId
+    ? await getClaudeAccountById(deps.db, canvas.claudeAccountId)
     : null;
-  const run = runsOn(offerFor(claude), design);
-  if (design.model !== null && run.model !== design.model) {
+  const run = runsOn(offerFor(claude), canvas);
+  if (canvas.model !== null && run.model !== canvas.model) {
     // What it was made with is no longer offered: it runs on what the account offers now.
-    deps.log.info("model_unoffered", { designId, chosen: design.model, runs: run.model });
+    deps.log.info("model_unoffered", { canvasId, chosen: canvas.model, runs: run.model });
   }
   const { slug, botUserId } = deps.config.githubApp;
   const committer = {
@@ -57,13 +57,13 @@ export async function startRunnerSession(
   const [repoOwner, repoName] = repo ? splitName(repo.fullName) : [];
   return {
     runnerId: lease.runnerId,
-    design: { id: design.id, name: design.name },
+    canvas: { id: canvas.id, name: canvas.name },
     repo: repo ? { owner: repoOwner!, name: repoName!, defaultBranch: repo.defaultBranch } : null,
-    branch: repo ? design.branch : null,
+    branch: repo ? canvas.branch : null,
     claudeSessionId: lease.claudeSessionId,
     model: run.model,
     effort: run.effort,
-    // A design whose owner is gone is still worked on; its commits are then the App's own.
+    // A canvas whose owner is gone is still worked on; its commits are then the App's own.
     author: owner
       ? {
           name: owner.name ?? owner.githubLogin,
@@ -72,13 +72,13 @@ export async function startRunnerSession(
       : committer,
     committer,
     assetBase: `${deps.config.assetsUrl}/${assetKey}`,
-    link: designLink(design.id),
+    link: canvasLink(canvas.id),
     // Nothing records the theme of a person's canvas yet.
     theme: null,
     openQuestions: open.map((question) => question.id),
-    seq: design.seq,
+    seq: canvas.seq,
     saved: lease.saved ? savedView(lease.saved) : null,
-    workspaceId: design.workspaceId,
+    workspaceId: canvas.workspaceId,
     // Public values: the runner reports each turn's trace to LLM analytics itself.
     analytics: deps.config.posthog
       ? {
@@ -92,31 +92,31 @@ export async function startRunnerSession(
 }
 
 /**
- * What a design's turns run on: what it was made with while its account offers that, or what
+ * What a canvas's turns run on: what it was made with while its account offers that, or what
  * the account runs in its place; nothing chosen is Claude Code's own default. The effort is the
  * one chosen while the model takes it.
  */
 export function runsOn(
   offer: ModelOffer,
-  design: { model: string | null; effort: string | null },
+  canvas: { model: string | null; effort: string | null },
 ): { model: string | null; effort: Effort | null } {
-  const model = design.model === null ? null : modelOrDefault(offer, design.model);
+  const model = canvas.model === null ? null : modelOrDefault(offer, canvas.model);
   const effort =
-    design.effort === null
+    canvas.effort === null
       ? null
-      : effortOrDefault(offer, model ?? offer.defaultModel, design.effort);
+      : effortOrDefault(offer, model ?? offer.defaultModel, canvas.effort);
   return { model, effort };
 }
 
 /** Which runner started, in which session, on which image, and what it says it is. */
 function logStart(
   deps: Pick<Deps, "log">,
-  designId: string,
+  canvasId: string,
   client: string | null,
   sandbox: SandboxRow | null,
 ) {
   deps.log.info("runner_started", {
-    designId,
+    canvasId,
     sessionId: sandbox?.sessionId ?? null,
     image: sandbox?.image ?? null,
     client,

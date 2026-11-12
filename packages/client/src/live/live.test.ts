@@ -9,8 +9,8 @@ import type { RawRow } from "./rows.ts";
 
 type LiveAnswer = Awaited<ReturnType<Api["live"]>>;
 
-const head = (seq: number): Partial<RawRow<"design.head">> => ({
-  id: "dsn_1",
+const head = (seq: number): Partial<RawRow<"canvas.head">> => ({
+  id: "cnv_1",
   name: "Kettle",
   seq: String(seq),
   agent_state: "idle",
@@ -26,9 +26,9 @@ const head = (seq: number): Partial<RawRow<"design.head">> => ({
 function harness() {
   const clock = new FakeClock();
   const tables: Record<string, unknown[]> = {
-    "design.head": [head(1)],
-    "design.thread": [],
-    "workspace.designs": [],
+    "canvas.head": [head(1)],
+    "canvas.thread": [],
+    "workspace.canvases": [],
   };
   const realtime = new FakeRealtime((query: FakeQuery) => tables[query.name] ?? [], clock);
   const calls: string[][] = [];
@@ -39,7 +39,7 @@ function harness() {
       calls.push(queries.map((q) => q.name));
       if (!online) throw networkError(new Error("offline"));
       // As the API does: too many in one call, or one it cannot read, and the call is refused.
-      const unreadable = queries.some((q) => (q.args as { designId?: string }).designId === "bad");
+      const unreadable = queries.some((q) => (q.args as { canvasId?: string }).canvasId === "bad");
       if (queries.length > 32 || unreadable) {
         throw new ApiError(400, "invalid_request", "That is not what this route takes.");
       }
@@ -55,9 +55,9 @@ function harness() {
     },
   };
   const live = createLive({ api, transport: realtime, clock });
-  const watch = <Name extends "design.head" | "design.thread">(name: Name) => {
+  const watch = <Name extends "canvas.head" | "canvas.thread">(name: Name) => {
     const seen: LiveSnapshot<unknown>[] = [];
-    const off = live.subscribe(name, { designId: "dsn_1" }, (snapshot) => seen.push(snapshot));
+    const off = live.subscribe(name, { canvasId: "cnv_1" }, (snapshot) => seen.push(snapshot));
     return { seen, off, last: () => seen.at(-1) };
   };
   return {
@@ -77,12 +77,12 @@ function harness() {
 describe("sealing and renewing", () => {
   test("queries asked for together are sealed in one call, and delivered decoded", async () => {
     const h = harness();
-    const headWatch = h.watch("design.head");
-    h.watch("design.thread");
-    h.live.subscribe("workspace.designs", { workspaceId: "ws_1" }, () => {});
+    const headWatch = h.watch("canvas.head");
+    h.watch("canvas.thread");
+    h.live.subscribe("workspace.canvases", { workspaceId: "ws_1" }, () => {});
     await h.clock.advance(0);
 
-    expect(h.calls).toEqual([["design.head", "design.thread", "workspace.designs"]]);
+    expect(h.calls).toEqual([["canvas.head", "canvas.thread", "workspace.canvases"]]);
     const snapshot = headWatch.last() as LiveSnapshot<{ seq: number; name: string }>;
     expect(snapshot.status).toBe("live");
     // A bigint arrives as text; the row says it as a number.
@@ -91,8 +91,8 @@ describe("sealing and renewing", () => {
 
   test("every subscription is renewed in one call every 50 seconds, and none goes stale", async () => {
     const h = harness();
-    const a = h.watch("design.head");
-    const b = h.watch("design.thread");
+    const a = h.watch("canvas.head");
+    const b = h.watch("canvas.thread");
     await h.clock.advance(0);
     await h.clock.advance(10 * 60_000);
 
@@ -106,26 +106,26 @@ describe("sealing and renewing", () => {
 
   test("a query asked for later brings forward a renewal that was nearly due", async () => {
     const h = harness();
-    h.watch("design.head");
+    h.watch("canvas.head");
     await h.clock.advance(40_000);
-    h.watch("design.thread");
+    h.watch("canvas.thread");
     await h.clock.advance(60_000);
 
     // The head, due at 50 s, rode along with the thread at 40 s; from then on they renew as one.
     expect(h.calls).toEqual([
-      ["design.head"],
-      ["design.head", "design.thread"],
-      ["design.head", "design.thread"],
+      ["canvas.head"],
+      ["canvas.head", "canvas.thread"],
+      ["canvas.head", "canvas.thread"],
     ]);
   });
 
   test("the same query watched twice is one subscription, and lives until the last lets go", async () => {
     const h = harness();
-    const first = h.watch("design.head");
-    const second = h.watch("design.head");
+    const first = h.watch("canvas.head");
+    const second = h.watch("canvas.head");
     await h.clock.advance(0);
     expect(h.realtime.open()).toHaveLength(1);
-    expect(h.live.snapshot("design.head", { designId: "dsn_1" }) as unknown).toBe(second.last());
+    expect(h.live.snapshot("canvas.head", { canvasId: "cnv_1" }) as unknown).toBe(second.last());
 
     first.off();
     expect(h.realtime.open()).toHaveLength(1);
@@ -139,8 +139,8 @@ describe("sealing and renewing", () => {
     const h = harness();
     const seen = new Map<string, LiveSnapshot<unknown>>();
     for (let i = 0; i < 33; i++) {
-      const designId = `dsn_${i}`;
-      h.live.subscribe("design.head", { designId }, (snapshot) => seen.set(designId, snapshot));
+      const canvasId = `cnv_${i}`;
+      h.live.subscribe("canvas.head", { canvasId }, (snapshot) => seen.set(canvasId, snapshot));
     }
     await h.clock.advance(0);
     expect(h.calls.map((names) => names.length)).toEqual([32, 1]);
@@ -153,15 +153,15 @@ describe("sealing and renewing", () => {
   test("a call refused whole is halved until the query at fault ends alone", async () => {
     const h = harness();
     const seen = new Map<string, LiveSnapshot<unknown>>();
-    for (const designId of ["dsn_1", "dsn_2", "bad", "dsn_3"]) {
-      h.live.subscribe("design.head", { designId }, (snapshot) => seen.set(designId, snapshot));
+    for (const canvasId of ["cnv_1", "cnv_2", "bad", "cnv_3"]) {
+      h.live.subscribe("canvas.head", { canvasId }, (snapshot) => seen.set(canvasId, snapshot));
     }
     await h.clock.advance(0);
 
     expect(h.calls.map((names) => names.length)).toEqual([4, 2, 2, 1, 1]);
     expect(seen.get("bad")?.status).toBe("ended");
     expect(seen.get("bad")?.error?.code).toBe("invalid_request");
-    for (const id of ["dsn_1", "dsn_2", "dsn_3"]) expect(seen.get(id)?.status).toBe("live");
+    for (const id of ["cnv_1", "cnv_2", "cnv_3"]) expect(seen.get(id)?.status).toBe("live");
     // From then on the rest renew together, without it.
     await h.clock.advance(50_000);
     expect(h.calls.at(-1)).toHaveLength(3);
@@ -169,20 +169,20 @@ describe("sealing and renewing", () => {
 
   test("joining a query already answered hears where it stands, ended or live", async () => {
     const h = harness();
-    h.refuse["design.thread"] = "forbidden";
-    h.watch("design.head");
-    h.watch("design.thread");
+    h.refuse["canvas.thread"] = "forbidden";
+    h.watch("canvas.head");
+    h.watch("canvas.thread");
     await h.clock.advance(0);
 
-    const head = h.watch("design.head");
-    const thread = h.watch("design.thread");
+    const head = h.watch("canvas.head");
+    const thread = h.watch("canvas.thread");
     // Not before `subscribe` has returned, so the caller has its way to let go first.
     expect([head.seen, thread.seen]).toEqual([[], []]);
     await Promise.resolve();
     expect(head.seen.map((s) => s.status)).toEqual(["live"]);
     expect(thread.seen.map((s) => [s.status, s.error?.code])).toEqual([["ended", "forbidden"]]);
 
-    const gone = h.watch("design.head");
+    const gone = h.watch("canvas.head");
     gone.off();
     await Promise.resolve();
     expect(gone.seen).toEqual([]);
@@ -190,15 +190,15 @@ describe("sealing and renewing", () => {
 
   test("a snapshot is the same object until something changes", async () => {
     const h = harness();
-    h.watch("design.head");
+    h.watch("canvas.head");
     await h.clock.advance(0);
-    const before = h.live.snapshot("design.head", { designId: "dsn_1" });
+    const before = h.live.snapshot("canvas.head", { canvasId: "cnv_1" });
     await h.clock.advance(50_000);
-    expect(h.live.snapshot("design.head", { designId: "dsn_1" })).toBe(before);
+    expect(h.live.snapshot("canvas.head", { canvasId: "cnv_1" })).toBe(before);
 
-    h.tables["design.head"] = [head(2)];
+    h.tables["canvas.head"] = [head(2)];
     h.realtime.refresh();
-    const after = h.live.snapshot("design.head", { designId: "dsn_1" }) as LiveSnapshot<{
+    const after = h.live.snapshot("canvas.head", { canvasId: "cnv_1" }) as LiveSnapshot<{
       seq: number;
     }>;
     expect(after).not.toBe(before);
@@ -209,9 +209,9 @@ describe("sealing and renewing", () => {
 describe("one query failing", () => {
   test("no access ends that query alone, and it is not asked for again", async () => {
     const h = harness();
-    h.refuse["design.thread"] = "not_found";
-    const thread = h.watch("design.thread");
-    const headWatch = h.watch("design.head");
+    h.refuse["canvas.thread"] = "not_found";
+    const thread = h.watch("canvas.thread");
+    const headWatch = h.watch("canvas.head");
     await h.clock.advance(0);
     await h.clock.advance(3 * 60_000);
 
@@ -220,14 +220,14 @@ describe("one query failing", () => {
     expect(ended.error).toBeInstanceOf(ApiError);
     expect([ended.error?.status, ended.error?.code]).toEqual([404, "not_found"]);
     expect(headWatch.last()?.status).toBe("live");
-    expect(h.calls.slice(1).every((names) => names.join() === "design.head")).toBe(true);
+    expect(h.calls.slice(1).every((names) => names.join() === "canvas.head")).toBe(true);
   });
 
   test("a query the API could not seal for now is tried again alone, sooner and sooner no more", async () => {
     const h = harness();
-    h.refuse["design.thread"] = "upstream_unavailable";
-    const thread = h.watch("design.thread");
-    h.watch("design.head");
+    h.refuse["canvas.thread"] = "upstream_unavailable";
+    const thread = h.watch("canvas.thread");
+    h.watch("canvas.head");
     await h.clock.advance(0);
     expect(thread.seen).toEqual([]);
 
@@ -235,23 +235,23 @@ describe("one query failing", () => {
     await h.clock.advance(1_000);
     await h.clock.advance(2_000);
     expect(h.calls).toEqual([
-      ["design.thread", "design.head"],
-      ["design.thread"],
-      ["design.thread"],
+      ["canvas.thread", "canvas.head"],
+      ["canvas.thread"],
+      ["canvas.thread"],
     ]);
-    h.refuse["design.thread"] = undefined;
+    h.refuse["canvas.thread"] = undefined;
     await h.clock.advance(4_000);
     expect(thread.last()?.status).toBe("live");
   });
 
   test("a subscription that errors is made again, and brings its whole result", async () => {
     const h = harness();
-    const watch = h.watch("design.head");
+    const watch = h.watch("canvas.head");
     await h.clock.advance(0);
     const [broken] = h.realtime.open();
 
-    h.tables["design.head"] = [head(5)];
-    h.realtime.fail("design.head");
+    h.tables["canvas.head"] = [head(5)];
+    h.realtime.fail("canvas.head");
     expect(watch.last()?.status).toBe("offline");
     await h.clock.advance(1_000);
 
@@ -266,11 +266,11 @@ describe("one query failing", () => {
 describe("offline and in the background", () => {
   test("the API out of reach: rows stay, seals run out, and coming back renews with a fresh result", async () => {
     const h = harness();
-    const watch = h.watch("design.head");
+    const watch = h.watch("canvas.head");
     await h.clock.advance(0);
     h.setOnline(false);
     h.realtime.disconnect();
-    h.tables["design.head"] = [head(9)];
+    h.tables["canvas.head"] = [head(9)];
     await h.clock.advance(3 * 60_000);
 
     const offline = watch.last() as LiveSnapshot<{ seq: number }>;
@@ -287,13 +287,13 @@ describe("offline and in the background", () => {
 
   test("paused, nothing is held open or renewed; resumed, each query starts again whole", async () => {
     const h = harness();
-    const watch = h.watch("design.head");
+    const watch = h.watch("canvas.head");
     await h.clock.advance(0);
 
     h.live.pause();
     expect(h.realtime.open()).toHaveLength(0);
     expect(watch.last()?.status).toBe("offline");
-    h.tables["design.head"] = [head(3)];
+    h.tables["canvas.head"] = [head(3)];
     await h.clock.advance(10 * 60_000);
     expect(h.calls).toHaveLength(1);
 
@@ -325,8 +325,8 @@ test("a transport that answers before subscribe returns is heard", async () => {
     }),
   };
   const live = createLive({ api, transport, clock });
-  live.subscribe("design.head", { designId: "dsn_1" }, () => {});
+  live.subscribe("canvas.head", { canvasId: "cnv_1" }, () => {});
   await clock.advance(0);
-  const snapshot = live.snapshot("design.head", { designId: "dsn_1" });
+  const snapshot = live.snapshot("canvas.head", { canvasId: "cnv_1" });
   expect([snapshot.status, snapshot.rows?.[0]?.seq]).toEqual(["live", 4]);
 });

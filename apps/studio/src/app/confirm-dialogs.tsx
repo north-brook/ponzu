@@ -1,12 +1,12 @@
 import { BlockingDialog, DialogActions, DialogButton } from "../cloud/dialogs/blocking-dialog.tsx";
 
 /*
- * The open design's confirmations: what can't be taken back, or goes past the repo's rules,
+ * The open canvas's confirmations: what can't be taken back, or goes past the repo's rules,
  * is asked first.
  */
 
 /** Deleting a design takes its canvas and thread from everyone. */
-export function DeleteDesignDialog({
+export function DeleteCanvasDialog({
   name,
   open,
   busy,

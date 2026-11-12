@@ -4,7 +4,7 @@
 // what PGlite gave. Runs only when PONZU_TEST_DATABASE_URL is set (see ../live.ts).
 import { afterAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { actorFor, rename, seedDesign, seedRepo, seedUser } from "../fixtures.ts";
+import { actorFor, rename, seedCanvas, seedRepo, seedUser } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
 import { feedOf } from "../testing.ts";
@@ -20,14 +20,14 @@ import {
   wasUninstalled,
 } from "./accounts.ts";
 import { consumeAuthState, createAuthState } from "./auth-states.ts";
-import { readDocSource, writeCheckpoint } from "./checkpoints.ts";
 import {
-  createDesign,
-  getDesignAssetKey,
-  getDesignHead,
-  listWorkspaceDesigns,
-  markDesignSeen,
-} from "./designs.ts";
+  createCanvas,
+  getCanvasAssetKey,
+  getCanvasHead,
+  listWorkspaceCanvases,
+  markCanvasSeen,
+} from "./canvases.ts";
+import { readDocSource, writeCheckpoint } from "./checkpoints.ts";
 import { appendEvent, claimEvents, findStops, markEventsDelivered } from "./events.ts";
 import {
   claimGithubTokenRefresh,
@@ -46,9 +46,9 @@ import { commitOps, findOps, readOps } from "./ops.ts";
 import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import {
-  findDesignByBranch,
+  findCanvasByBranch,
   getPullRequestContext,
-  listPullRequestDesigns,
+  listPullRequestCanvases,
   recordPullRequestRead,
   setPullRequestSummary,
 } from "./pull-requests.ts";
@@ -85,12 +85,12 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
   afterAll(close);
 
   test("ops, checkpoints and undo keep their json, their order and their types", async () => {
-    const { design, user } = await seedDesign(db);
+    const { canvas, user } = await seedCanvas(db);
     const actor = { ...actorFor(user), avatarUrl: "https://example.com/a.png" };
     const style = { "margin-top": "4px", margin: "0", color: "red", a: "1" };
 
     const committed = await commitOps(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       expectedSeq: 0,
       actor,
       ops: [
@@ -108,24 +108,24 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     });
 
     if (committed.kind !== "committed") throw new Error("expected a commit");
-    const [event] = await feedOf(db, design.id);
+    const [event] = await feedOf(db, canvas.id);
     expect(event).toMatchObject({ kind: "edit", payload: { summary: "x", seq: 1 } });
-    expect((await getDesignHead(db, design.id))!.name).toBe("One 😀");
+    expect((await getCanvasHead(db, canvas.id))!.name).toBe("One 😀");
     expect(committed).toMatchObject({ seq: 2, replayed: [] });
     expect(committed.ops[0]).toMatchObject({ seq: 1, id: "a", op: { name: "One 😀" }, actor });
     expect(committed.ops[0]!.at).toBeInstanceOf(Date);
-    const read = await readOps(db, { designId: design.id, after: 0 });
+    const read = await readOps(db, { canvasId: canvas.id, after: 0 });
     if (read?.kind !== "ok") throw new Error("expected ops");
     expect(read.ops).toEqual(committed.ops);
     const stored = read.ops[1]!.op;
     if (stored.op !== "style") throw new Error("wrong op");
     expect(Object.keys(stored.style)).toEqual(Object.keys(style));
-    expect(await findOps(db, { designId: design.id, ids: ["b", "nope"] })).toEqual([
+    expect(await findOps(db, { canvasId: canvas.id, ids: ["b", "nope"] })).toEqual([
       committed.ops[1]!,
     ]);
     expect(
       await commitOps(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         expectedSeq: 0,
         actor,
         ops: [rename("a", "x")],
@@ -138,7 +138,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     });
     expect(
       await commitOps(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         expectedSeq: 2,
         actor,
         ops: [rename("nul", "\u0000")],
@@ -147,18 +147,18 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
 
     const doc = emptyDoc("ordered");
     doc.notes = { zebra: "1", apple: "2" };
-    expect(await writeCheckpoint(db, { designId: design.id, seq: 2, doc })).toEqual({
+    expect(await writeCheckpoint(db, { canvasId: canvas.id, seq: 2, doc })).toEqual({
       written: true,
       prunedOps: 0,
     });
-    const source = await readDocSource(db, design.id);
+    const source = await readDocSource(db, canvas.id);
     expect(source).toEqual({ seq: 2, checkpoint: { seq: 2, doc }, ops: [] });
     expect(Object.keys(source!.checkpoint.doc.notes)).toEqual(["zebra", "apple"]);
 
-    const target = await nextUndo(db, { designId: design.id, actorId: user.id });
+    const target = await nextUndo(db, { canvasId: canvas.id, actorId: user.id });
     expect(target).toMatchObject({ seq: 2, id: "b" });
     const undone = await commitReversal(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       expectedSeq: 2,
       actor,
       kind: "undo",
@@ -170,24 +170,24 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       seq: 3,
       ops: [{ kind: "undo", reverses: 2 }],
     });
-    expect(await nextRedo(db, { designId: design.id, actorId: user.id })).toMatchObject({
+    expect(await nextRedo(db, { canvasId: canvas.id, actorId: user.id })).toMatchObject({
       seq: 3,
     });
   }, 60_000);
 
-  test("designs, their head and their list come back with numbers and dates", async () => {
-    const { design, user, workspace } = await seedDesign(db);
-    const repo = await seedRepo(db, workspace.id, `north-brook/live-${design.id}`);
-    const inRepo = await createDesign(db, {
+  test("canvases, their head and their list come back with numbers and dates", async () => {
+    const { canvas, user, workspace } = await seedCanvas(db);
+    const repo = await seedRepo(db, workspace.id, `north-brook/live-${canvas.id}`);
+    const inRepo = await createCanvas(db, {
       workspaceId: workspace.id,
       repoId: repo.id,
       ownerId: user.id,
       claudeAccountId: null,
       name: "checkout",
-      branch: `pz/checkout-${design.id}`,
+      branch: `pz/checkout-${canvas.id}`,
       doc: emptyDoc("checkout"),
     });
-    await markDesignSeen(db, { userId: user.id, designId: inRepo.id, seq: 4, threadSeq: 9 });
+    await markCanvasSeen(db, { userId: user.id, canvasId: inRepo.id, seq: 4, threadSeq: 9 });
     const checkedAt = new Date("2026-11-10T12:00:00.123Z");
     await recordRepoAccess(db, [
       { userId: user.id, repoId: repo.id, permission: "read", checkedAt },
@@ -198,12 +198,12 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       repoId: repo.id,
       githubRepoId: repo.githubRepoId,
       fullName: repo.fullName,
-      hasDesign: true,
+      hasCanvas: true,
       permission: "read",
       checkedAt,
     });
 
-    const head = await getDesignHead(db, inRepo.id);
+    const head = await getCanvasHead(db, inRepo.id);
     expect(head).toMatchObject({
       seq: 0,
       previewSeq: null,
@@ -211,23 +211,23 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       needsYouCount: 0,
     });
     expect(head!.lastActivityAt).toBeInstanceOf(Date);
-    expect(await getDesignAssetKey(db, inRepo.id)).toMatch(/^[0-9a-z]{32}$/);
-    const list = await listWorkspaceDesigns(db, { workspaceId: workspace.id, userId: user.id });
+    expect(await getCanvasAssetKey(db, inRepo.id)).toMatch(/^[0-9a-z]{32}$/);
+    const list = await listWorkspaceCanvases(db, { workspaceId: workspace.id, userId: user.id });
     expect(list.find((row) => row.id === inRepo.id)).toMatchObject({
       ...head!,
       repoFullName: repo.fullName,
-      // Nothing past what there is: the design is at 0 and has no thread.
+      // Nothing past what there is: the canvas is at 0 and has no thread.
       seenSeq: 0,
       seenThreadSeq: 0,
     });
   }, 60_000);
 
   test("the thread, events, questions and presence keep their payloads", async () => {
-    const { design, user, workspace } = await seedDesign(db);
+    const { canvas, user, workspace } = await seedCanvas(db);
     const payload = { text: "hello", nested: { list: [1, "two", null] } };
 
     const item = await appendThreadItem(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "notice",
       payload: { text: "cut \ud83d" },
     });
@@ -235,11 +235,11 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(typeof item.seq).toBe("number");
     const id = newId("ti");
     const streamed = { id, kind: "assistant" as const, payload: { text: "par" }, streaming: true };
-    const [first] = await writeThreadItems(db, { designId: design.id, items: [streamed] });
+    const [first] = await writeThreadItems(db, { canvasId: canvas.id, items: [streamed] });
     expect(first).toEqual({ id, seq: expect.any(Number), streaming: true });
     expect(
       await writeThreadItems(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         items: [
           { ...streamed, payload, streaming: false },
           { ...streamed, id: item.id },
@@ -250,27 +250,27 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       { id: item.id, seq: item.seq, streaming: false },
     ]);
     const message = await postMessage(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       userId: user.id,
       item: payload,
       event: payload,
     });
-    expect(await listThreadItems(db, { designId: design.id })).toMatchObject([
+    expect(await listThreadItems(db, { canvasId: canvas.id })).toMatchObject([
       { kind: "notice" },
       { payload },
       { id: message.id, payload, userId: user.id },
     ]);
 
-    const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
     const stop = await appendEvent(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "stop",
       priority: "now",
       payload: {},
       userId: user.id,
     });
-    const claim = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
-    expect(claim!.seq).toBe(design.seq);
+    const claim = await claimEvents(db, { canvasId: canvas.id, runnerId, claimId: newId("clm") });
+    expect(claim!.seq).toBe(canvas.seq);
     const claimed = claim!.events;
     expect(claimed).toMatchObject([
       { kind: "message", payload, deliveredAt: null, claimedBy: runnerId, from: { id: user.id } },
@@ -278,42 +278,42 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     ]);
     expect(claimed[0]!.claimedAt).toBeInstanceOf(Date);
     expect(typeof claimed[0]!.seq).toBe("number");
-    expect(await findStops(db, { designId: design.id, ids: [stop.id] })).toEqual([
+    expect(await findStops(db, { canvasId: canvas.id, ids: [stop.id] })).toEqual([
       { id: stop.id, from: { id: user.id, name: user.name!, login: user.githubLogin } },
     ]);
     expect(
       await markEventsDelivered(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         runnerId,
         ids: claimed.map((event) => event.id),
         claudeSessionId: "sess-live",
       }),
     ).toBe(2);
     expect(
-      (await takeRunnerLease(db, { designId: design.id, now: new Date() })).claudeSessionId,
+      (await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() })).claudeSessionId,
     ).toBe("sess-live");
 
-    const repo = await seedRepo(db, workspace.id, `north-brook/live-${design.id}`);
-    const inRepo = await createDesign(db, {
+    const repo = await seedRepo(db, workspace.id, `north-brook/live-${canvas.id}`);
+    const inRepo = await createCanvas(db, {
       workspaceId: workspace.id,
       repoId: repo.id,
       ownerId: user.id,
       claudeAccountId: null,
       name: "secrets",
-      branch: `pz/secrets-${design.id}`,
+      branch: `pz/secrets-${canvas.id}`,
       doc: emptyDoc("secrets"),
     });
-    const question = await createQuestion(db, { designId: inRepo.id, kind: "secret", payload });
-    const asked = { designId: inRepo.id, id: newId("q"), kind: "plan" as const, payload };
+    const question = await createQuestion(db, { canvasId: inRepo.id, kind: "secret", payload });
+    const asked = { canvasId: inRepo.id, id: newId("q"), kind: "plan" as const, payload };
     expect(await createQuestion(db, asked)).toEqual({ id: asked.id, status: "open", raised: true });
     expect(await createQuestion(db, asked)).toEqual({
       id: asked.id,
       status: "open",
       raised: false,
     });
-    await createQuestion(db, { designId: inRepo.id, kind: "question", payload });
+    await createQuestion(db, { canvasId: inRepo.id, kind: "question", payload });
     const answered = await answerSecretQuestion(db, {
-      designId: inRepo.id,
+      canvasId: inRepo.id,
       id: question.id,
       name: "API_KEY",
       encryptedValue: "v1.ciphertext",
@@ -323,37 +323,37 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(answered).toMatchObject({ status: "answered", answer: { name: "API_KEY" }, payload });
     expect(
       await answerQuestion(db, {
-        designId: inRepo.id,
+        canvasId: inRepo.id,
         id: asked.id,
         answer: { approved: true },
         userId: user.id,
       }),
     ).toMatchObject({ status: "answered", answer: { approved: true } });
-    expect(await getQuestion(db, { designId: inRepo.id, id: asked.id })).toMatchObject({ payload });
+    expect(await getQuestion(db, { canvasId: inRepo.id, id: asked.id })).toMatchObject({ payload });
     expect((await feedOf(db, inRepo.id))[0]).toMatchObject({
       kind: "answer",
       payload: { questionId: asked.id, question: { kind: "plan", payload }, approved: true },
     });
-    expect(await cancelQuestions(db, { designId: inRepo.id })).toBe(1);
-    expect((await getDesignHead(db, inRepo.id))!.needsYouCount).toBe(0);
+    expect(await cancelQuestions(db, { canvasId: inRepo.id })).toBe(1);
+    expect((await getCanvasHead(db, inRepo.id))!.needsYouCount).toBe(0);
 
     const now = new Date();
-    await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_1", now });
-    await touchPresence(db, { designId: design.id, userId: user.id, now });
-    const [here] = await listPresence(db, { designId: design.id, now });
+    await touchPresence(db, { canvasId: canvas.id, userId: user.id, pageId: "pg_1", now });
+    await touchPresence(db, { canvasId: canvas.id, userId: user.id, now });
+    const [here] = await listPresence(db, { canvasId: canvas.id, now });
     expect(here).toMatchObject({ userId: user.id, pageId: "pg_1" });
     expect(here!.joinedAt).toBeInstanceOf(Date);
   }, 60_000);
 
   test("runner tokens and the ledger", async () => {
-    const { design, user, workspace } = await seedDesign(db);
+    const { canvas, user, workspace } = await seedCanvas(db);
 
     const { token, expiresAt } = await createRunnerToken(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       ttlSeconds: 600,
     });
     expect(expiresAt).toBeInstanceOf(Date);
-    expect(await verifyRunnerToken(db, token)).toMatchObject({ designId: design.id });
+    expect(await verifyRunnerToken(db, token)).toMatchObject({ canvasId: canvas.id });
 
     const periodStart = new Date(Date.UTC(2020, 0, 1) + Math.floor(Math.random() * 1e9) * 1000);
     await addLedgerEntry(db, {
@@ -364,9 +364,9 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       userId: user.id,
     });
     const usage = {
-      id: `use_live_${design.id}`,
+      id: `use_live_${canvas.id}`,
       workspaceId: workspace.id,
-      designId: design.id,
+      canvasId: canvas.id,
       userId: user.id,
       kind: "sandbox" as const,
       seconds: 1800,
@@ -398,13 +398,13 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
         },
       ],
     };
-    expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(1);
-    expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(0);
+    expect(await recordTurnUsage(db, { canvasId: canvas.id, turns: [turn] })).toBe(1);
+    expect(await recordTurnUsage(db, { canvasId: canvas.id, turns: [turn] })).toBe(0);
   }, 60_000);
 
   test("a runner's state, its lease, and uploads", async () => {
-    const { design, user } = await seedDesign(db);
-    await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const { canvas, user } = await seedCanvas(db);
+    await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
     const report = {
       state: "working" as const,
       status: 'Drawing "A, B"',
@@ -413,12 +413,12 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     };
 
     expect(
-      await reportRunnerState(db, { designId: design.id, now: new Date(), ...report }),
+      await reportRunnerState(db, { canvasId: canvas.id, now: new Date(), ...report }),
     ).toEqual({ seq: 0 });
     expect(
-      await reportRunnerState(db, { designId: design.id, now: new Date(), ...report }),
+      await reportRunnerState(db, { canvasId: canvas.id, now: new Date(), ...report }),
     ).toEqual({ seq: 0 });
-    expect(await getDesignHead(db, design.id)).toMatchObject({
+    expect(await getCanvasHead(db, canvas.id)).toMatchObject({
       agentState: "working",
       agentStatus: report.status,
       agentArtboards: report.artboards,
@@ -427,7 +427,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     const [made] = await createUploads(db, [
       {
         id: newId("up"),
-        designId: design.id,
+        canvasId: canvas.id,
         purpose: "asset",
         name: "logo.png",
         objectKey: "k/uploads/logo.png",
@@ -439,26 +439,26 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       },
     ]);
     expect(made!.expiresAt).toBeInstanceOf(Date);
-    expect(await getUploads(db, { designId: design.id, ids: [made!.id] })).toEqual([made!]);
+    expect(await getUploads(db, { canvasId: canvas.id, ids: [made!.id] })).toEqual([made!]);
     expect(
       await completeUpload(db, {
-        designId: design.id,
+        canvasId: canvas.id,
         id: made!.id,
         servedKey: "k/assets/logo.png",
         asset: { path: "assets/logo.png" },
       }),
     ).toMatchObject({ servedKey: "k/assets/logo.png" });
-    expect(await listAssets(db, { designId: design.id, paths: ["assets/logo.png"] })).toMatchObject(
+    expect(await listAssets(db, { canvasId: canvas.id, paths: ["assets/logo.png"] })).toMatchObject(
       [{ size: 10, createdByUserId: user.id }],
     );
-    expect(await advancePreviewSeq(db, { designId: design.id, seq: 3 })).toEqual({
+    expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 3 })).toEqual({
       previous: null,
     });
-    expect(await advancePreviewSeq(db, { designId: design.id, seq: 5 })).toEqual({ previous: 3 });
+    expect(await advancePreviewSeq(db, { canvasId: canvas.id, seq: 5 })).toEqual({ previous: 3 });
   }, 60_000);
 
   test("a GitHub token's times come back as the dates that went in, and the database answers", async () => {
-    const { user } = await seedDesign(db);
+    const { user } = await seedCanvas(db);
     const expiresAt = new Date(Date.UTC(2031, 4, 6, 7, 8, 9, 123));
     await saveGithubUserToken(db, {
       userId: user.id,
@@ -490,7 +490,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
   }, 60_000);
 
   test("workspaces, members, install states, deliveries and pull requests", async () => {
-    const { workspace, user } = await seedDesign(db);
+    const { workspace, user } = await seedCanvas(db);
     const heir = await seedUser(db, "heir");
     const key = { workspaceId: workspace.id, userId: user.id };
     await upsertMembership(db, { ...key, role: "admin", githubAccess: "member" });
@@ -534,7 +534,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     ).toHaveLength(1);
 
     const branch = { githubRepoId: repo.githubRepoId, branch: "pz/live" };
-    const onBranch = await createDesign(db, {
+    const onBranch = await createCanvas(db, {
       workspaceId: workspace.id,
       repoId: repo.id,
       ownerId: user.id,
@@ -543,7 +543,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       branch: branch.branch,
       doc: emptyDoc("Live"),
     });
-    expect(await setPullRequestSummary(db, { designId: onBranch.id, summary: "Live." })).toEqual({
+    expect(await setPullRequestSummary(db, { canvasId: onBranch.id, summary: "Live." })).toEqual({
       prNumber: null,
       prState: null,
     });
@@ -551,7 +551,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     const updatedAt = new Date("2026-11-10T12:00:00.123Z");
     expect(
       await recordPullRequestRead(db, {
-        designId: onBranch.id,
+        canvasId: onBranch.id,
         number: 2,
         state: "draft",
         checks: "running",
@@ -564,7 +564,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     // Read again, finding the same: nothing is written.
     expect(
       await recordPullRequestRead(db, {
-        designId: onBranch.id,
+        canvasId: onBranch.id,
         number: 2,
         state: "draft",
         checks: "running",
@@ -575,10 +575,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       }),
     ).toBeNull();
     expect(
-      await listPullRequestDesigns(db, { githubRepoId: repo.githubRepoId, open: true }),
+      await listPullRequestCanvases(db, { githubRepoId: repo.githubRepoId, open: true }),
     ).toEqual([onBranch.id]);
     const settled = await recordPullRequestRead(db, {
-      designId: onBranch.id,
+      canvasId: onBranch.id,
       number: 2,
       state: "merged",
       checks: "passing",
@@ -589,10 +589,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     });
     expect(settled).toMatchObject({ status: "settled", prMergeable: true });
     expect(await getPullRequestContext(db, onBranch.id)).toMatchObject({
-      design: { prSummary: "Live.", prState: "merged" },
+      canvas: { prSummary: "Live.", prState: "merged" },
       repo: { githubRepoId: repo.githubRepoId, private: true },
     });
-    expect(await findDesignByBranch(db, branch)).toMatchObject({
+    expect(await findCanvasByBranch(db, branch)).toMatchObject({
       id: onBranch.id,
       status: "settled",
     });
@@ -626,10 +626,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
   }, 60_000);
 
   test("a refused statement is a QueryError that names the constraint", async () => {
-    const { design } = await seedDesign(db);
+    const { canvas } = await seedCanvas(db);
 
     const error = await appendThreadItem(db, {
-      designId: design.id,
+      canvasId: canvas.id,
       kind: "tool",
       payload: { output: `sk-live-secret ${"x".repeat(300_000)}` },
     }).catch((thrown: unknown) => thrown);

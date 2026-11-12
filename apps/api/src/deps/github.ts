@@ -140,7 +140,7 @@ export interface Github extends GithubPullRequests {
   }): Promise<GithubInstallationToken>;
   /**
    * As the App: what a person may do in one repository, which is what decides who may open and
-   * steer a design. Every call asks GitHub, except that calls about the same person and
+   * steer a canvas. Every call asks GitHub, except that calls about the same person and
    * repository at the same time share one question; keeping answers is `auth/repo-access.ts`'s.
    */
   getRepoPermission(input: RepoPermissionQuery): Promise<RepoPermission>;

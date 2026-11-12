@@ -1,4 +1,4 @@
-import type { DesignAccess, DesignMember, Repo } from "../model.ts";
+import type { CanvasAccess, CanvasMember, Repo } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
 import { ExternalLink } from "../ui/external-link.tsx";
@@ -6,7 +6,7 @@ import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { GithubMark } from "../ui/marks.tsx";
 import { PopoverContent } from "../ui/popover.tsx";
 
-const ACCESS: Record<DesignAccess, string> = {
+const ACCESS: Record<CanvasAccess, string> = {
   owner: "Owner",
   edit: "Can edit",
   view: "Can view",
@@ -22,15 +22,15 @@ const NOT_JOINED_SHORT = "hasn't opened Ponzu yet";
  * under their login. Render it inside the Popover whose anchor is the chrome's right cluster.
  */
 export function SharePopover({
-  designName,
+  canvasName,
   repo,
   members,
   meId,
   onOpenRepo,
 }: {
-  designName: string;
+  canvasName: string;
   repo: Repo;
-  members: DesignMember[];
+  members: CanvasMember[];
   meId: string;
   onOpenRepo: () => void;
 }) {
@@ -41,11 +41,11 @@ export function SharePopover({
       align="end"
       sideOffset={10}
       alignOffset={-3}
-      aria-label={`Share ${designName}`}
+      aria-label={`Share ${canvasName}`}
       className="max-h-[420px]"
     >
       <div className="flex flex-col gap-[7px] px-4 pt-4 pb-2">
-        <h2 className="m-0 font-semibold text-14">Share {designName}</h2>
+        <h2 className="m-0 font-semibold text-14">Share {canvasName}</h2>
         <ExternalLink onClick={onOpenRepo} className="self-start text-12">
           <GithubMark size={12} />
           <span className="font-mono text-11">

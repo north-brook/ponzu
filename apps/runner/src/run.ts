@@ -193,8 +193,8 @@ export interface RunnerOptions {
    */
   secrets?: readonly string[];
   /**
-   * The checkout's git, as the agent, for a repo design checked out at `cwd`: what the runner
-   * pushes the design's branch with (push.ts). Without it the runner never pushes.
+   * The checkout's git, as the agent, for a repo canvas checked out at `cwd`: what the runner
+   * pushes the canvas's branch with (push.ts). Without it the runner never pushes.
    */
   checkoutGit?(cwd: string): Git;
   /**
@@ -352,7 +352,7 @@ export class Runner {
   private claudeProblem: string | null = null;
   /** Hands git tokens GitHub honours for a push. */
   private readonly credentials: GitCredentials;
-  /** Pushes the design's branch; null for Scratch and a checkout that failed. */
+  /** Pushes the canvas's branch; null for Scratch and a checkout that failed. */
   private pusher: BranchPush | null = null;
   /** The pushes asked for, one after another. */
   private pushes: Promise<void> = Promise.resolve();
@@ -360,7 +360,7 @@ export class Runner {
   private pushAsked = false;
   /** A push the person may want to know is happening: the state says so while it lasts. */
   private pushingNow = false;
-  /** The design's branch against GitHub, as the last push found it. */
+  /** The canvas's branch against GitHub, as the last push found it. */
   private branch: PushOutcome | null = null;
   /** The last push failure the thread was told of (head and kind), so it is said once. */
   private toldPushFailure: string | null = null;
@@ -373,7 +373,7 @@ export class Runner {
    */
   private turnEvent: string | null = null;
   /**
-   * The design's pull request as the app shows it, from the last claim or tool answer: null for
+   * The canvas's pull request as the app shows it, from the last claim or tool answer: null for
    * none, undefined until an API says (one older than this never does).
    */
   private pullRequest: PullRequestState | null | undefined = undefined;
@@ -440,7 +440,7 @@ export class Runner {
     });
   }
 
-  /** Start: read the session, ready the checkout, open the design, start Claude, claim. */
+  /** Start: read the session, ready the checkout, open the canvas, start Claude, claim. */
   async start(): Promise<void> {
     this.session = await this.retry(() => this.api.session());
     this.modelsHeld = this.session.models ?? null;
@@ -459,11 +459,11 @@ export class Runner {
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
-    // Stopped while the checkout or the design was on its way: there is nothing to start.
+    // Stopped while the checkout or the canvas was on its way: there is nothing to start.
     if (this.stopping) return;
     this.replica.notify(this.session.seq);
     this.ws = createCloudWorkspace({
-      id: this.session.design.id,
+      id: this.session.canvas.id,
       replica: this.replica,
       renderer: this.opts.renderer,
       ...(this.opts.files ? { files: this.opts.files } : {}),
@@ -472,7 +472,7 @@ export class Runner {
     if (this.opts.renderer) {
       this.previews = new Previews({
         replica: this.replica,
-        design: this.ws.design,
+        canvas: this.ws.canvas,
         renderer: this.opts.renderer,
         api: this.api,
         assetBase: this.session.assetBase,
@@ -502,7 +502,7 @@ export class Runner {
   }
 
   /**
-   * What `/health` says: `started` once the design is open, Claude Code is up and the claims
+   * What `/health` says: `started` once the canvas is open, Claude Code is up and the claims
    * have begun, until the runner starts stopping.
    */
   health(): { started: boolean; state: AgentState } {
@@ -554,8 +554,8 @@ export class Runner {
         this.marker.clear();
       }
     }
-    // A runner the API has let go of can deliver nothing more: the next one has the design.
-    if (this.ws && !this.fatalReason) await this.ws.design.settled(this.timing.stopStepMs);
+    // A runner the API has let go of can deliver nothing more: the next one has the canvas.
+    if (this.ws && !this.fatalReason) await this.ws.canvas.settled(this.timing.stopStepMs);
     this.dropAsks("The sandbox is going to sleep.");
     this.closeStreams("stopped");
     this.inTurn = false;
@@ -610,7 +610,7 @@ export class Runner {
     this.fatalReason =
       err.status === 401
         ? `The API refused the runner token: ${err.message}`
-        : `Another runner took over this design: ${err.message}`;
+        : `Another runner took over this canvas: ${err.message}`;
     this.log(this.fatalReason);
     const reason = this.fatalReason;
     void this.stop().then(() => this.opts.onFatal?.(reason));
@@ -665,7 +665,7 @@ export class Runner {
 
   private event(name: string, fields: Record<string, unknown>): void {
     if (this.opts.event) this.opts.event(name, fields);
-    else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
+    else this.log(JSON.stringify({ event: name, canvasId: this.session?.canvas.id, ...fields }));
   }
 
   /**
@@ -811,7 +811,7 @@ export class Runner {
     });
   }
 
-  /** Where each turn's trace goes, under this design and its workspace. */
+  /** Where each turn's trace goes, under this canvas and its workspace. */
   private traceOptions(telemetry: Telemetry): TraceOptions {
     return {
       sink: (events) => {
@@ -822,14 +822,14 @@ export class Runner {
         }
       },
       content: this.session.analytics?.content ?? false,
-      designId: this.session.design.id,
+      canvasId: this.session.canvas.id,
       workspaceId: this.session.workspaceId ?? null,
     };
   }
 
   /** What Claude is told about this sandbox, after Ponzu's own instructions. */
   private instructions(): string {
-    const { design, repo, branch, link } = this.session;
+    const { canvas, repo, branch, link } = this.session;
     const T = PULL_REQUEST_TOOLS;
     const where = !repo
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
@@ -843,8 +843,8 @@ export class Runner {
             `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why; this, not the thread, is where the full account goes. Never say you opened, readied, updated or merged a pull request unless a tool's answer said it did.`,
             "Your closing message ends on where the work stands, in plain words: what is committed and on GitHub, and the pull request: its number, and whether it's a draft, ready for review, waiting on checks or a review, or merged, as the last tool's answer said it is.",
           ].join(" ");
-    const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
-    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+    const naming = `The canvas's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_canvas: two to four words for what is being designed, like "Quieter shop hero".`;
+    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's canvas is "${canvas.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
   }
 
   /** The canvas tools, and for a design with a repo, the ones that describe and drive its pull request. */
@@ -941,7 +941,7 @@ export class Runner {
 
   private claim(): void {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
-    // the design and Claude Code are ready for.
+    // the canvas and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
     if (this.claiming) {
       this.claimAgain = true;
@@ -1598,7 +1598,7 @@ export class Runner {
    */
   private endTurn(): void {
     const end = async () => {
-      await this.ws.design.settled(this.timing.settleMs);
+      await this.ws.canvas.settled(this.timing.settleMs);
       if (this.working || this.stopping) return;
       const notices = this.ws.notices();
       if (notices.length) {
@@ -1677,7 +1677,7 @@ export class Runner {
   /* The branch on GitHub                                              */
   /* ---------------------------------------------------------------- */
 
-  /** What pushes the design's branch, for a repo design that is checked out. */
+  /** What pushes the canvas's branch, for a repo canvas that is checked out. */
   private branchPush(): BranchPush | null {
     const { repo, branch } = this.session;
     if (!repo || !branch || this.cloneError || !this.opts.checkoutGit) return null;
@@ -1695,7 +1695,7 @@ export class Runner {
   }
 
   /**
-   * Push the design's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
+   * Push the canvas's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
    * how it stands: to the API with the state (what Create PR goes by), and in the thread when a
    * push failed for good. The end of a turn, a stop, a start and a person's Create PR ask for it.
    */

@@ -11,12 +11,12 @@ export const STUDIO_ORIGIN = "ponzu-studio://app";
 /**
  * A `ponzu://` link the studio acts on (deep-links.ts has the grammar):
  *
- *   ponzu://design/<design id>?page=<page id>&artboard=<artboard id>
+ *   ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
  *   ponzu://github/setup?result=installed&workspace=<workspace id>
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
  */
 export type DeepLink =
-  | { kind: "design"; designId: string; pageId?: string; artboardId?: string }
+  | { kind: "canvas"; canvasId: string; pageId?: string; artboardId?: string }
   | { kind: "github_setup"; result: GithubSetupResult; workspaceId?: string };
 
 export type GithubSetupResult = "installed" | "requested" | "pending" | "sign_in" | "failed";
@@ -89,7 +89,7 @@ export interface UpdateState {
 }
 
 /** A menu item the studio carries out. */
-export type MenuCommand = "new-design" | "settings" | "toggle-sidebar" | "toggle-thread";
+export type MenuCommand = "new-canvas" | "settings" | "toggle-sidebar" | "toggle-thread";
 
 export interface PonzuDesktop {
   platform: string;

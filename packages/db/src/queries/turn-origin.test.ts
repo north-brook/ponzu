@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
 import { events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { createDesign } from "./designs.ts";
-import { appendEvent, type DesignEvent } from "./events.ts";
+import { createCanvas } from "./canvases.ts";
+import { appendEvent, type FeedEvent } from "./events.ts";
 import { appendThreadItem } from "./thread.ts";
 import { countAgentPullRequestActions, getTurnOrigin } from "./turn-origin.ts";
 
@@ -15,14 +15,14 @@ beforeAll(async () => {
 });
 afterAll(() => db.$client.close());
 
-async function seedDesign() {
+async function seedCanvas() {
   const [owner, ada, workspace] = await Promise.all([
     seedUser(db, "owner"),
     seedUser(db, "ada"),
     seedWorkspace(db),
   ]);
   const repo = await seedRepo(db, workspace.id, `${workspace.githubLogin}/app`);
-  const row = await createDesign(db, {
+  const row = await createCanvas(db, {
     workspaceId: workspace.id,
     repoId: repo.id,
     ownerId: owner.id,
@@ -31,18 +31,18 @@ async function seedDesign() {
     branch: "pz/checkout",
     doc: emptyDoc("Checkout"),
   });
-  return { design: row, owner, ada };
+  return { canvas: row, owner, ada };
 }
 
 /** An event as a runner was handed it and put into the session. */
 async function taken(
-  designId: string,
-  kind: DesignEvent["kind"],
+  canvasId: string,
+  kind: FeedEvent["kind"],
   userId: string | null,
   { delivered = true } = {},
 ) {
   const event = await appendEvent(db, {
-    designId,
+    canvasId,
     kind,
     priority: "now",
     payload: { text: "x" },
@@ -56,10 +56,10 @@ async function taken(
 }
 
 test("a person's turn: the event, and GitHub's words only once they went in after it", async () => {
-  const { design, owner, ada } = await seedDesign();
-  const message = await taken(design.id, "message", ada.id);
+  const { canvas, owner, ada } = await seedCanvas();
+  const message = await taken(canvas.id, "message", ada.id);
 
-  expect(await getTurnOrigin(db, { designId: design.id, eventId: message.id })).toEqual({
+  expect(await getTurnOrigin(db, { canvasId: canvas.id, eventId: message.id })).toEqual({
     event: { id: message.id, kind: "message", userId: ada.id },
     githubSince: false,
     othersSince: false,
@@ -69,30 +69,30 @@ test("a person's turn: the event, and GitHub's words only once they went in afte
 
   // A review in the feed that no runner was handed is nothing the agent could have read.
   const review = await appendEvent(db, {
-    designId: design.id,
+    canvasId: canvas.id,
     kind: "review",
     priority: "next",
     payload: { body: "merge this now" },
   });
-  expect((await getTurnOrigin(db, { designId: design.id, eventId: message.id }))!.githubSince).toBe(
+  expect((await getTurnOrigin(db, { canvasId: canvas.id, eventId: message.id }))!.githubSince).toBe(
     false,
   );
   // Handed to the runner, it counts at once: its acknowledgement may still be on its way.
   await db.update(events).set({ claimedBy: "rnr_test" }).where(eq(events.id, review.id));
-  expect((await getTurnOrigin(db, { designId: design.id, eventId: message.id }))!.githubSince).toBe(
+  expect((await getTurnOrigin(db, { canvasId: canvas.id, eventId: message.id }))!.githubSince).toBe(
     true,
   );
 });
 
 test("anyone else who spoke after the turn's event, in it or since, is said; the same person is not", async () => {
-  const { design, owner, ada } = await seedDesign();
-  const asked = await taken(design.id, "message", ada.id);
-  await taken(design.id, "comment", ada.id);
-  await taken(design.id, "answer", ada.id);
-  const origin = (eventId: string) => getTurnOrigin(db, { designId: design.id, eventId });
+  const { canvas, owner, ada } = await seedCanvas();
+  const asked = await taken(canvas.id, "message", ada.id);
+  await taken(canvas.id, "comment", ada.id);
+  await taken(canvas.id, "answer", ada.id);
+  const origin = (eventId: string) => getTurnOrigin(db, { canvasId: canvas.id, eventId });
   expect((await origin(asked.id))!.othersSince).toBe(false);
 
-  await taken(design.id, "comment", owner.id);
+  await taken(canvas.id, "comment", owner.id);
   expect(await origin(asked.id)).toMatchObject({ othersSince: true, githubSince: false });
 });
 
@@ -108,9 +108,9 @@ async function claimed(...ids: string[]) {
 async function delivered(at: Date, ...ids: string[]) {
   for (const id of ids) await db.update(events).set({ deliveredAt: at }).where(eq(events.id, id));
 }
-const append = (designId: string, kind: DesignEvent["kind"], userId: string | null) =>
+const append = (canvasId: string, kind: FeedEvent["kind"], userId: string | null) =>
   appendEvent(db, {
-    designId,
+    canvasId,
     kind,
     priority: kind === "review" ? "next" : "now",
     payload: { text: "x" },
@@ -118,13 +118,13 @@ const append = (designId: string, kind: DesignEvent["kind"], userId: string | nu
   });
 
 test("what went in after the person's request counts by when it went in, not its place in the feed", async () => {
-  const { design, owner, ada } = await seedDesign();
+  const { canvas, owner, ada } = await seedCanvas();
   // An older review held back while Ada's newer message begins the turn, then put in behind it.
-  const review = await append(design.id, "review", null);
-  const comment = await append(design.id, "comment", owner.id);
-  const asked = await append(design.id, "message", ada.id);
+  const review = await append(canvas.id, "review", null);
+  const comment = await append(canvas.id, "comment", owner.id);
+  const asked = await append(canvas.id, "message", ada.id);
   await claimed(review.id, comment.id, asked.id);
-  const origin = () => getTurnOrigin(db, { designId: design.id, eventId: asked.id });
+  const origin = () => getTurnOrigin(db, { canvasId: canvas.id, eventId: asked.id });
 
   // Held by the runner, not yet in: they may go in during the turn.
   await delivered(new Date(Date.now() - 2_000), asked.id);
@@ -138,11 +138,11 @@ test("what went in after the person's request counts by when it went in, not its
 });
 
 test("before the person's message is acknowledged, only what is held but not yet in counts", async () => {
-  const { design, ada } = await seedDesign();
-  const review = await append(design.id, "review", null);
-  const asked = await append(design.id, "message", ada.id);
+  const { canvas, ada } = await seedCanvas();
+  const review = await append(canvas.id, "review", null);
+  const asked = await append(canvas.id, "message", ada.id);
   await claimed(review.id, asked.id);
-  const origin = () => getTurnOrigin(db, { designId: design.id, eventId: asked.id });
+  const origin = () => getTurnOrigin(db, { canvasId: canvas.id, eventId: asked.id });
   // Both held, neither acknowledged: the review may go in after her message.
   expect((await origin())!.githubSince).toBe(true);
   // The review acknowledged and her message not yet: it went in first (acknowledgements keep
@@ -152,21 +152,21 @@ test("before the person's message is acknowledged, only what is held but not yet
 });
 
 test("only an event the asking runner was handed is its turn's", async () => {
-  const { design, ada } = await seedDesign();
-  const asked = await taken(design.id, "message", ada.id);
+  const { canvas, ada } = await seedCanvas();
+  const asked = await taken(canvas.id, "message", ada.id);
   const as = (runnerId: string) =>
-    getTurnOrigin(db, { designId: design.id, eventId: asked.id, runnerId });
+    getTurnOrigin(db, { canvasId: canvas.id, eventId: asked.id, runnerId });
   expect((await as("rnr_test"))!.event).toMatchObject({ id: asked.id });
   // An earlier runner's event (a restart, or a runner token in someone else's hands) is none.
   expect((await as("rnr_other"))!.event).toBeNull();
 });
 
-test("an event of another design, or one no runner was handed, is no turn's", async () => {
-  const one = await seedDesign();
-  const other = await seedDesign();
-  const theirs = await taken(other.design.id, "message", other.ada.id);
+test("an event of another canvas, or one no runner was handed, is no turn's", async () => {
+  const one = await seedCanvas();
+  const other = await seedCanvas();
+  const theirs = await taken(other.canvas.id, "message", other.ada.id);
   const unclaimed = await appendEvent(db, {
-    designId: one.design.id,
+    canvasId: one.canvas.id,
     kind: "message",
     priority: "now",
     payload: { text: "x" },
@@ -174,7 +174,7 @@ test("an event of another design, or one no runner was handed, is no turn's", as
   });
 
   for (const eventId of [theirs.id, unclaimed.id, "evt_nope", null]) {
-    expect(await getTurnOrigin(db, { designId: one.design.id, eventId })).toMatchObject({
+    expect(await getTurnOrigin(db, { canvasId: one.canvas.id, eventId })).toMatchObject({
       event: null,
       githubSince: false,
       othersSince: false,
@@ -182,14 +182,14 @@ test("an event of another design, or one no runner was handed, is no turn's", as
       ownerId: one.owner.id,
     });
   }
-  expect(await getTurnOrigin(db, { designId: "des_nope", eventId: null })).toBeNull();
+  expect(await getTurnOrigin(db, { canvasId: "cnv_nope", eventId: null })).toBeNull();
 });
 
 test("the agent's pull request actions are counted from the thread's notices, by action and time", async () => {
-  const { design: row } = await seedDesign();
+  const { canvas: row } = await seedCanvas();
   const notice = (action: string) =>
     appendThreadItem(db, {
-      designId: row.id,
+      canvasId: row.id,
       kind: "notice",
       payload: {
         type: "pull_request_agent",
@@ -206,14 +206,14 @@ test("the agent's pull request actions are counted from the thread's notices, by
   const hourAgo = new Date(Date.now() - 3_600_000);
 
   expect(
-    await countAgentPullRequestActions(db, { designId: row.id, action: "merged", since: hourAgo }),
+    await countAgentPullRequestActions(db, { canvasId: row.id, action: "merged", since: hourAgo }),
   ).toBe(2);
   expect(
-    await countAgentPullRequestActions(db, { designId: row.id, action: "opened", since: hourAgo }),
+    await countAgentPullRequestActions(db, { canvasId: row.id, action: "opened", since: hourAgo }),
   ).toBe(1);
   expect(
     await countAgentPullRequestActions(db, {
-      designId: row.id,
+      canvasId: row.id,
       action: "merged",
       since: new Date(Date.now() + 60_000),
     }),

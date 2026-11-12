@@ -486,7 +486,7 @@ function NoticeLine({
 }
 
 /**
- * The thread's newest line while the design's sandbox can't run: a quiet still slice while it
+ * The thread's newest line while the canvas's sandbox can't run: a quiet still slice while it
  * waits its turn for a machine, or the error mark when starting one failed.
  */
 export function SandboxLine({ text, failed }: { text: string; failed: boolean }) {

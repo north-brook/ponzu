@@ -36,10 +36,10 @@ test("an action is blocked without write access, and the agent's wait on its Cla
   // Merging is GitHub's: the owner's Claude being at its limit doesn't stop it.
   expect(actionBlock("merge", limit, "usr_maya")).toBeNull();
   expect(actionBlock("fix_checks", limit, "usr_maya")).toMatch(
-    /^Bryce's plan is at its limit until \d+:\d\d [AP]M\. This design waits\.$/,
+    /^Bryce's plan is at its limit until \d+:\d\d [AP]M\. This canvas waits\.$/,
   );
   expect(actionBlock("resolve", { kind: "claude_disconnected", owner: bryce }, bryce.id)).toBe(
-    "Your Claude isn't connected. This design waits.",
+    "Your Claude isn't connected. This canvas waits.",
   );
   // The API opens a pull request as the person: no Claude needed.
   expect(

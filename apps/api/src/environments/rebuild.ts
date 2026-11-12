@@ -8,7 +8,7 @@ import { type JobDeps, type RunningJob, runJob } from "../jobs/run.ts";
  * repo up again from its default branch and the result saved as its snapshot, is not built
  * yet. Until it is, the job's handler does only what can be done now: it marks the base to be
  * rebuilt at the repo's next start (`repos.base_rebuild_requested_at`), which nothing reads
- * yet. Designs that have a sandbox keep it either way.
+ * yet. Canvases that have a sandbox keep it either way.
  */
 
 /** The job a rebuild is. One waits per repo: its key is the repo's id. */

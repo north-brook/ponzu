@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { MAX_DEVICES_PER_USER } from "@ponzu/db";
-import { call } from "../testing/designs.ts";
+import { call } from "../testing/canvases.ts";
 import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
 
 let t: TestApp;

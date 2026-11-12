@@ -311,7 +311,7 @@ export const newTally = (): Tally => ({
 /** An idea the gate failed: its number (1 to 4), what it failed, and the gate's reason. */
 export interface GateFailure {
   idea: number;
-  criteria: ("safe" | "design")[];
+  criteria: ("safe" | "visible")[];
   reason: string;
 }
 
@@ -373,7 +373,7 @@ export async function askForIdeas(
     const failures = gated.verdicts.flatMap((verdict, i): GateFailure[] => {
       const criteria = [
         ...(verdict.safe ? [] : (["safe"] as const)),
-        ...(verdict.design ? [] : (["design"] as const)),
+        ...(verdict.visible ? [] : (["visible"] as const)),
       ];
       return criteria.length ? [{ idea: i + 1, criteria, reason: verdict.reason }] : [];
     });
@@ -384,7 +384,7 @@ export async function askForIdeas(
       const passing = checked.ideas.filter((_, i) => !failures.some((f) => f.idea === i + 1));
       if (!best || passing.length >= best.ideas.length) best = { ideas: passing, failures };
     }
-    codes = [unsafe ? "unsafe" : "not_design"];
+    codes = [unsafe ? "unsafe" : "not_visible"];
   }
   if (last?.some((failure) => failure.criteria.includes("safe"))) {
     return { kind: "withheld", failures: last };

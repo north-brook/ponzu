@@ -1,9 +1,9 @@
 import type { Doc, PNode } from "@ponzu/core";
 import { fromMarkdown } from "mdast-util-from-markdown";
 // The thread's own reader of our address (#451): what the studio follows in place is what passes.
-import { parseDesignAddress } from "../../../studio/src/cloud/ui/design-address.ts";
+import { parseCanvasAddress } from "../../../studio/src/cloud/ui/canvas-address.ts";
 
-export { parseDesignAddress };
+export { parseCanvasAddress };
 
 /*
  * What code decides exactly about a turn's messages: each check has one right answer, so a
@@ -84,7 +84,7 @@ export interface MessageChecks {
  */
 export function checkMessages(
   messages: readonly string[],
-  { designId, docAfter, docBefore }: { designId: string; docAfter: Doc; docBefore: Doc },
+  { canvasId, docAfter, docBefore }: { canvasId: string; docAfter: Doc; docBefore: Doc },
 ): MessageChecks {
   const problems: string[] = [];
   const links: Link[] = [];
@@ -103,11 +103,11 @@ export function checkMessages(
       } catch {}
       if (host !== "ponzu.design") continue;
       links.push(link);
-      const at = parseDesignAddress(link.href);
+      const at = parseCanvasAddress(link.href);
       if (!at) {
         linksOk = false;
         problems.push(`not our address: ${link.href}`);
-      } else if (at.designId !== designId) {
+      } else if (at.canvasId !== canvasId) {
         linksOk = false;
         problems.push(`another design's address: ${link.href}`);
       } else if (at.page && !pages.has(at.page)) {
@@ -118,7 +118,7 @@ export function checkMessages(
         problems.push(`a board not in the design: ${link.href}`);
       }
     }
-    if (parsed.readable.includes("ponzu.design/designs/")) {
+    if (parsed.readable.includes("ponzu.design/canvases/")) {
       bareOk = false;
       problems.push("a design address pasted as text");
     }

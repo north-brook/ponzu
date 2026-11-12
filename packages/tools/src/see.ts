@@ -1,12 +1,12 @@
 import { type Artboard, findArtboard, findNode, isThemed, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo, Renderer } from "@ponzu/render";
 import { z } from "zod";
+import type { OpenCanvas } from "./canvas.ts";
 import type { ToolContext, Workspace } from "./context.ts";
 import { ToolError, type ToolImage, tool } from "./define.ts";
-import type { OpenDesign } from "./design.ts";
 import { fileSize, localFiles, writeGiven } from "./disk.ts";
 import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
-import { designOf } from "./util.ts";
+import { canvasOf } from "./util.ts";
 
 // The local tool list adds this to a look at the work, and its tests import it from here.
 export { WATCH_REMINDER } from "./local/watch.ts";
@@ -85,8 +85,8 @@ export const seeTools = [
     async handler(args, ctx) {
       const { ws } = ctx;
       const renderer = rendererFor(ws, "screenshot");
-      const { key, design } = await designOf(ctx, [args.id]);
-      const doc = design.doc;
+      const { key, canvas } = await canvasOf(ctx, [args.id]);
+      const doc = canvas.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
       checkTargets(ab, args);
@@ -199,8 +199,8 @@ export const seeTools = [
         throw new ToolError("scroll steps through a scroll range, so from and to don't apply.");
       if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
         throw new ToolError("to has to be after from.");
-      const { key, design } = await designOf(ctx, [args.id]);
-      const doc = design.doc;
+      const { key, canvas } = await canvasOf(ctx, [args.id]);
+      const doc = canvas.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
       checkTargets(ab, args);
@@ -281,18 +281,18 @@ export interface Exported {
 
 /**
  * Render what `export` was asked for and write it where `pathFor` says. `pathFor` is given a
- * file name made from the artboard's name, the node, the theme and the format, and the design
+ * file name made from the artboard's name, the node, the theme and the format, and the canvas
  * the call is on. It runs before the render, so a path that won't do costs nothing.
  */
 export async function exportTo(
   ctx: ToolContext,
   args: z.infer<z.ZodObject<typeof exportInput>>,
-  pathFor: (name: string, open: OpenDesign) => string,
+  pathFor: (name: string, open: OpenCanvas) => string,
 ): Promise<Exported> {
   const { ws } = ctx;
   const renderer = rendererFor(ws, "export");
-  const open = await designOf(ctx, [args.id]);
-  const doc = open.design.doc;
+  const open = await canvasOf(ctx, [args.id]);
+  const doc = open.canvas.doc;
   const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
   if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
   const format = args.format ?? "png";

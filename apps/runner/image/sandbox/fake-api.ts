@@ -2,7 +2,7 @@
  * The runner's fake API, served inside a test sandbox so the runner can be driven there before
  * the real API is deployed: `bun fake-api.js`, started by the driver (live.ts) as the sandbox's
  * own user at every start of the sandbox, before ponzu-start, with the runner's own
- * PONZU_DESIGN_ID, PONZU_RUNNER_TOKEN and PONZU_PORT_TOKEN in its command's env. The runner
+ * PONZU_CANVAS_ID, PONZU_RUNNER_TOKEN and PONZU_PORT_TOKEN in its command's env. The runner
  * reaches it on localhost as it would reach the API.
  *
  * It serves `GET /v1/runner/bundle` as the API does: the runner bundle's tgz (from
@@ -34,7 +34,7 @@ import type {
 } from "../../src/api/protocol.ts";
 import { writeDurably } from "../../src/durable.ts";
 
-const designId = need("PONZU_DESIGN_ID");
+const canvasId = need("PONZU_CANVAS_ID");
 const token = need("PONZU_RUNNER_TOKEN");
 const port = Number(process.env.PONZU_FAKE_API_PORT ?? 8790);
 const runnerPort = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
@@ -63,7 +63,7 @@ const fake = new FakeRunnerApi({
   doc: kept?.doc ?? emptyDoc("Untitled"),
   // Every live run's turns are on the development key: Haiku, at low effort.
   session: kept?.session ?? {
-    design: { id: designId, name: "Untitled" },
+    canvas: { id: canvasId, name: "Untitled" },
     model: "haiku",
     effort: "low",
   },
@@ -88,7 +88,7 @@ const started = Date.now();
 const states: (StateRequest & { at: number })[] = [];
 const calls: { at: number; route: string }[] = [];
 
-const api = fakeApiHandler(fake, { designId, token });
+const api = fakeApiHandler(fake, { canvasId, token });
 Bun.serve({
   port,
   hostname: "0.0.0.0",
@@ -241,4 +241,4 @@ function need(name: string): string {
   return value;
 }
 
-console.log(`fake API for ${designId} on ${port}${held ? " (held)" : ""}`);
+console.log(`fake API for ${canvasId} on ${port}${held ? " (held)" : ""}`);
