@@ -360,8 +360,9 @@ export class Runner {
   /** The last push failure the thread was told of (head and kind), so it is said once. */
   private toldPushFailure: string | null = null;
   /**
-   * The event of the turn the agent is in: the first one whose message Claude Code took into the
-   * session in this turn, other than an edit; null for a turn none began. Its pull request tools
+   * The event of the turn the agent is in: the one whose message began it, taken into the session
+   * as the turn began, other than an edit; null for a turn none began (Ponzu's own note, an edit),
+   * which stays null for the rest of that turn. Its pull request tools
    * name it, and the API decides from it who the agent acts as and whether it may merge.
    */
   private turnEvent: string | null = null;
@@ -1346,11 +1347,11 @@ export class Runner {
     }
     if (uuids.every((u) => this.asideUuids.has(u))) return;
     // The turn's event, for what its pull request tools may do (the API decides from it): the
-    // first outside words of the turn, never one an earlier turn began, nor any words that come
-    // in later in it. A turn begun by Ponzu's own note or an edit has none until words come in.
-    // What came in after (GitHub's, or someone else's), the API reads from the feed.
+    // outside words the turn began with, set once as it begins and never after, so never one an
+    // earlier turn began nor any words that come in later in it. A turn begun by Ponzu's own note
+    // or an edit has none, and keeps none when a person's words come in during it: no person
+    // began it. What came in after (GitHub's, or someone else's), the API reads from the feed.
     if (!this.inTurn) this.turnEvent = words;
-    else this.turnEvent ??= words;
     // A new turn that no stop is ending: the last stop is spent.
     if (!this.inTurn && !interrupt && !this.ending?.cancelled.size) this.ending = null;
     this.inTurn = true;
@@ -1627,6 +1628,8 @@ export class Runner {
     // A question cannot outlive the turn that asked it, nor one an earlier run left open.
     this.dropAsks("The turn ended before anyone answered.");
     this.inTurn = false;
+    // No turn, no event: nothing of this one is left for whatever comes before the next begins.
+    this.turnEvent = null;
     if (!this.working) {
       // Answered, or ended in a way the thread has said: nothing is left to pick up. Not a turn
       // the runner's own shutdown cut off, which the next start picks up.
@@ -1675,6 +1678,7 @@ export class Runner {
     this.later = [];
     this.ending = null;
     this.inTurn = false;
+    this.turnEvent = null;
     this.run = null;
     if (++this.restarts > MAX_RESTARTS) {
       // Until the next event, which starts it again (`send`) with a fresh count.

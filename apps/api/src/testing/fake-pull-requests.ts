@@ -128,6 +128,11 @@ export class FakePullRequests {
   readonly botLogin = "ponzu-test";
   /** How many GraphQL requests it answered. */
   queries = 0;
+  /**
+   * How many of a pull request's newest review threads GraphQL answers for, as the query's
+   * `reviewThreads(last: 100)` caps them, while its reviews can hold line comments of more.
+   */
+  threadsShown = 100;
   /** How long GraphQL goes on showing a merged pull request open (`hideMerges`). */
   #mergesHiddenMs = 0;
 
@@ -920,14 +925,15 @@ export class FakePullRequests {
             })),
         ],
       },
-      // One thread for each line comment, as a comment that starts one.
+      // One thread for each line comment, as a comment that starts one; only the newest.
       reviewThreads: {
         nodes: pull.comments
           .filter((comment) => comment.path)
           .map((comment) => ({
             isResolved: comment.resolved === true,
             comments: { nodes: [{ id: comment.id }] },
-          })),
+          }))
+          .filter((_, i, all) => i >= all.length - this.threadsShown),
       },
     };
   }

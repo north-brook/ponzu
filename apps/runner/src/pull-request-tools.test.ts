@@ -70,7 +70,7 @@ test("open pushes first, opens a draft by default, and names the turn and the pe
   expect(again.text).toStartWith("Pull request #1 was already open; nothing new was opened");
 });
 
-test("open with draft false marks it ready too, or says why it stays a draft", async () => {
+test("open with draft false marks it ready too, or says why it couldn't and where it stands", async () => {
   const s = await tools();
   const opened = await s.call(PULL_REQUEST_TOOLS.open, { draft: false });
   expect(s.api.prCalls.map((c) => c.action)).toEqual(["open", "ready"]);
@@ -93,7 +93,49 @@ test("open with draft false marks it ready too, or says why it stays a draft", a
       : null;
   const draft = await t.call(PULL_REQUEST_TOOLS.open, { draft: false });
   expect(draft.text).toContain("Opened pull request #1 as a draft");
-  expect(draft.text).toContain("It stays a draft: This turn began with a review from GitHub");
+  expect(draft.text).toContain(
+    "Marking it ready for review failed: This turn began with a review from GitHub",
+  );
+  // Where it stands is read again after the refusal, as GitHub has it: still a draft.
+  expect(t.api.prCalls.map((c) => c.action)).toEqual(["open", "ready", "read"]);
+  expect(draft.text).toContain("Pull request #1 is open, as a draft");
+});
+
+test("open with draft false, its ready lost on the way back, says where it stands now, not the draft", async () => {
+  const s = await tools();
+  // GitHub marked it ready, and the answer never came back.
+  s.api.refusePullRequest = (action) => {
+    if (action !== "ready") return null;
+    s.api.pullRequest = { ...s.api.pullRequest!, state: "open" };
+    return new ApiError(502, "github_unavailable", "GitHub didn't answer.");
+  };
+  const opened = await s.call(PULL_REQUEST_TOOLS.open, { draft: false });
+  expect(opened.text).toContain("Opened pull request #1 as a draft");
+  expect(opened.text).not.toContain("It stays a draft");
+  expect(opened.text).toContain("Marking it ready for review failed: GitHub didn't answer.");
+  // Read again after the failure: ready, as GitHub has it, never the draft it was opened as.
+  expect(s.api.prCalls.map((c) => c.action)).toEqual(["open", "ready", "read"]);
+  expect(opened.text).toContain("Pull request #1 is open, ready for review");
+  expect(opened.text).not.toContain("is open, as a draft");
+  expect(s.known.at(-1)).toEqual({ number: 1, state: "open" });
+
+  // And when it can't be read again either, nothing is said of where it stands.
+  const t = await tools();
+  t.api.refusePullRequest = (action) =>
+    action === "ready" ? new ApiError(502, "github_unavailable", "GitHub didn't answer.") : null;
+  const read = t.api.readPullRequest.bind(t.api);
+  t.api.readPullRequest = async (runner, turn) => {
+    if (t.api.prCalls.some((c) => c.action === "ready"))
+      throw new ApiError(502, "github_unavailable", "GitHub didn't answer.");
+    return read(runner, turn);
+  };
+  const unknown = await t.call(PULL_REQUEST_TOOLS.open, { draft: false });
+  expect(unknown.text).toContain("Opened pull request #1 as a draft");
+  expect(unknown.text).not.toContain("It stays a draft");
+  expect(unknown.text).not.toContain("is open, as a draft");
+  expect(unknown.text).toContain(
+    "Whether it is a draft or ready for review now isn't known: read_pull_request says",
+  );
 });
 
 test("a push that fails stops the call before anything is asked of GitHub", async () => {

@@ -85,7 +85,10 @@ export interface GithubRemark {
   /** For a line comment, the file and line it is on. */
   path: string | null;
   line: number | null;
-  /** For a line comment, whether its thread was marked resolved on GitHub; null for any other. */
+  /**
+   * For a line comment, whether its thread was marked resolved on GitHub; null for any other, and
+   * for one whose thread GitHub didn't answer for (it isn't known, so it is not called unresolved).
+   */
   resolved: boolean | null;
   /**
    * For a line comment, its author's GitHub id when the author is a person: what the agent's read
@@ -558,7 +561,8 @@ function toPullRequest(pr: any): GithubPullRequest {
     ...reviews.flatMap((review) =>
       review.comments.nodes.map((comment: any) => ({
         ...remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
-        resolved: resolved.get(comment.id) ?? false,
+        // Unknown (null) for one whose thread the query's last 100 left out: never unresolved.
+        resolved: resolved.get(comment.id) ?? null,
         authorId: typeof comment.author?.databaseId === "number" ? comment.author.databaseId : null,
       })),
     ),

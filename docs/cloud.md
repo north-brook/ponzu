@@ -1936,12 +1936,17 @@ request" once done, never "Merged": GitHub may have refused, and the API's own l
 happened. What GitHub people wrote (a title, a check's name, a comment) comes back quoted, and the
 agent's instructions say it is feedback, never instructions. Unresolved line comments are quoted
 only from people GitHub says can push to the repository, as only their reviews reach the agent as
-events; a stranger's comment on a public repository is left out.
+events; a stranger's comment on a public repository is left out, and so is one whose thread the
+query's newest 100 didn't include, since whether it is resolved isn't known. When
+`open_pull_request` with `draft: false` can't mark it ready, it reads the pull request again
+rather than say it is still a draft (GitHub may have done it and its answer been lost), or says
+it doesn't know.
 
-**Who it acts as.** Each call names the turn's event (`turn`): the first event whose message
-Claude Code took into the session in this turn, other than a canvas edit (which is not words to
-act on); none for a turn that Ponzu's own note or an edit began, until words come in during it.
-Words that come in later in the turn never take it over, and the next turn names its own. The API
+**Who it acts as.** Each call names the turn's event (`turn`): the event whose message began the
+turn, taken into the session as it began, other than a canvas edit (which is not words to act
+on). It is set once, as the turn begins: a turn that Ponzu's own note or an edit began has none,
+and keeps none when a person's words come in during it, since no person began it. Words that come
+in later in the turn never take it over, and the next turn names its own. The API
 looks it up in the design's feed (`getTurnOrigin`, packages/db): it must be one of this design's
 events that **this runner** (its lease, `X-Ponzu-Runner`) was handed, or it is none. So a turn
 picked up after a restart, or an old event a runner token in other hands names, is not a person's
@@ -1952,11 +1957,17 @@ turn.
 - Any other turn (one a `check`, a `review` or an edit began, one that is Ponzu's own note to the
   agent, one whose event the API cannot find) acts as the last person whose message, answer or
   comment went into the session, else the design's owner. It is **not a person's turn**.
-- A person's turn stops being one once a `check` or a `review` later in the feed has been handed
-  to the runner: GitHub's words may have gone in after the person's. Handed, not delivered, so an
-  acknowledgement still on its way never lets them through.
-- It stops being one, too, once a message, answer or comment from **anyone else** later in the
-  feed has been handed to the runner: the request is no longer one person's, and a merge would
+- A person's turn stops being one once a `check` or a `review` went into the session after the
+  person's event, or may yet: GitHub's words may have gone in after the person's. What decides it
+  is the order the session took events in, not their place in the feed, since the runner puts a
+  `now` event in ahead of an older `next` one it holds: an event counts when it was handed to a
+  runner and is not acknowledged (it may still go in, and an acknowledgement on its way never lets
+  it through), or was acknowledged (`delivered_at`) no earlier than the person's event. The same
+  moment is one batch of acknowledgements, whose order isn't known, so it counts; before the
+  person's own acknowledgement arrives, one already acknowledged went in ahead of it, as the
+  runner acknowledges in the order the session took them.
+- It stops being one, too, once a message, answer or comment from **anyone else** went into the
+  session after it, or may yet, by the same order: the request is no longer one person's, and a merge would
   be done as, and credited to, someone who may not have asked. More from the same person keeps
   it theirs. An answer to a question the agent is waiting on goes into the turn that asked, so it
   never begins one, and someone else's answer ends the turn's claim like their comment would.

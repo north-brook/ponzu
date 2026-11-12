@@ -796,6 +796,35 @@ test("a turn a review began stays the review's when a person speaks in it, and t
   expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: asked.id });
 });
 
+test("a turn an edit began names no event, even once a person's message comes in during it", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  const edit = s.api.push({ kind: "edit", payload: { summary: "Moved a board", artboards: [] } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(edit.id));
+  await s.run.call("read_pull_request");
+  expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: null });
+
+  // Ada's message taken in mid-turn doesn't make it her turn: no person began it.
+  const said = s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(said.id));
+  await s.run.call("merge_pull_request");
+  expect(s.api.prCalls.at(-1)).toMatchObject({ action: "merge", turn: null });
+  s.run.end();
+
+  // Her next turn is hers.
+  await until(() => s.api.lastState?.state === "idle", 5_000);
+  const asked = s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => s.api.delivered.includes(asked.id));
+  await s.run.call("read_pull_request");
+  expect(s.api.prCalls.at(-1)).toEqual({ action: "read", turn: asked.id });
+});
+
 test("a turn a check or a review begins is told it may fix, not land", async () => {
   const s = await onRepo();
   s.run.ready();

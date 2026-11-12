@@ -37,14 +37,16 @@ import { type PullRequestTab, toTab } from "./view.ts";
  *
  * - The turn's event is the one the runner names: the event whose message began the turn (a
  *   person's message or comment; a check; a review), or none for a turn an edit or Ponzu's own
- *   note began. It must be one of this design's that the runner asking was handed.
+ *   note began, even once a person's words come in during it. It must be one of this design's
+ *   that the runner asking was handed.
  * - A person's event (message, answer, comment) is a person's turn: the agent acts as them.
  * - Any other turn (a check, a review, an edit, Ponzu's own notes, none) acts as the last person
  *   whose words went into the session, else the design's owner, and may only open, update the
  *   branch and read: never merge, mark ready or turn on auto-merge. Nor may a person's turn once
- *   a check or a review was handed to the runner after its event (text from GitHub is not the
- *   person), nor once anyone else's message, answer or comment was (it is no longer one person's
- *   request, and the agent would land it as the wrong one).
+ *   a check or a review went into the session after its event, or may yet (text from GitHub is
+ *   not the person), nor once anyone else's message, answer or comment did (it is no longer one
+ *   person's request, and the agent would land it as the wrong one). After is the order the
+ *   session took them in, not the feed's (`getTurnOrigin`).
  * - That person must still be allowed: a member of the workspace who can push to the repository
  *   (as GitHub says now), with a GitHub connection Ponzu can use.
  */

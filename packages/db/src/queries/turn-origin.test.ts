@@ -96,6 +96,61 @@ test("anyone else who spoke after the turn's event, in it or since, is said; the
   expect(await origin(asked.id)).toMatchObject({ othersSince: true, githubSince: false });
 });
 
+/** Hand events to the runner as one claim, none in the session yet. */
+async function claimed(...ids: string[]) {
+  for (const id of ids)
+    await db
+      .update(events)
+      .set({ claimedBy: "rnr_test", claimedAt: new Date(), deliveredAt: null })
+      .where(eq(events.id, id));
+}
+/** The session took these in, at `at`. */
+async function delivered(at: Date, ...ids: string[]) {
+  for (const id of ids) await db.update(events).set({ deliveredAt: at }).where(eq(events.id, id));
+}
+const append = (designId: string, kind: DesignEvent["kind"], userId: string | null) =>
+  appendEvent(db, {
+    designId,
+    kind,
+    priority: kind === "review" ? "next" : "now",
+    payload: { text: "x" },
+    userId,
+  });
+
+test("what went in after the person's request counts by when it went in, not its place in the feed", async () => {
+  const { design, owner, ada } = await seedDesign();
+  // An older review held back while Ada's newer message begins the turn, then put in behind it.
+  const review = await append(design.id, "review", null);
+  const comment = await append(design.id, "comment", owner.id);
+  const asked = await append(design.id, "message", ada.id);
+  await claimed(review.id, comment.id, asked.id);
+  const origin = () => getTurnOrigin(db, { designId: design.id, eventId: asked.id });
+
+  // Held by the runner, not yet in: they may go in during the turn.
+  await delivered(new Date(Date.now() - 2_000), asked.id);
+  expect(await origin()).toMatchObject({ githubSince: true, othersSince: true });
+  // Put in after Ada's message.
+  await delivered(new Date(Date.now() - 1_000), review.id, comment.id);
+  expect(await origin()).toMatchObject({ githubSince: true, othersSince: true });
+  // Put in before it (an earlier turn's), they are not after her request.
+  await delivered(new Date(Date.now() - 3_000), review.id, comment.id);
+  expect(await origin()).toMatchObject({ githubSince: false, othersSince: false });
+});
+
+test("before the person's message is acknowledged, only what is held but not yet in counts", async () => {
+  const { design, ada } = await seedDesign();
+  const review = await append(design.id, "review", null);
+  const asked = await append(design.id, "message", ada.id);
+  await claimed(review.id, asked.id);
+  const origin = () => getTurnOrigin(db, { designId: design.id, eventId: asked.id });
+  // Both held, neither acknowledged: the review may go in after her message.
+  expect((await origin())!.githubSince).toBe(true);
+  // The review acknowledged and her message not yet: it went in first (acknowledgements keep
+  // the order the session took them in).
+  await delivered(new Date(), review.id);
+  expect((await origin())!.githubSince).toBe(false);
+});
+
 test("only an event the asking runner was handed is its turn's", async () => {
   const { design, ada } = await seedDesign();
   const asked = await taken(design.id, "message", ada.id);

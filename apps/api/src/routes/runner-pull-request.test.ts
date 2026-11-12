@@ -77,6 +77,9 @@ async function turn(
     claimId: newId("clm"),
   });
   expect(claimed.body.events.map((e: { id: string }) => e.id)).toContain(event.id);
+  // Each its own acknowledgement, later than the last: the order the session took them in, which
+  // is what decides whether words came in after a person's request (one moment is one batch).
+  t.clock.advance(1);
   await call(t, s.runner.headers, "POST", "/v1/runner/events/ack", {
     ids: [event.id],
     claudeSessionId: "sess_1",
@@ -186,6 +189,26 @@ describe("a person's turn", () => {
       mergeHold: { code: "changes_requested" },
     });
     expect(open).not.toBe(done);
+  });
+
+  test("a line comment whose thread GitHub didn't answer for is not called unresolved", async () => {
+    const s = await setup();
+    const asked = await turn(s, "message", "maya");
+    await openedByAgent(s, asked);
+    const pull = t.github.pulls.latest(s.repo)!;
+    const old = t.github.pulls.comment(pull, "sam", "Rename this.", { path: "a.ts", line: 1 });
+    t.github.pulls.resolve(pull, old);
+    t.github.pulls.comment(pull, "sam", "Tighten this.", { path: "a.ts", line: 3 });
+    // Only the newest thread is answered for: the older one, resolved, is unknown here.
+    t.github.pulls.threadsShown = 1;
+    try {
+      const { body } = await read(s.runner, asked);
+      expect(body.pullRequest.unresolved).toEqual([
+        { author: "sam", path: "a.ts", line: 3, body: "Tighten this." },
+      ]);
+    } finally {
+      t.github.pulls.threadsShown = 100;
+    }
   });
 
   test("quotes line comments only from people who can push, as a review reaches it only from them", async () => {

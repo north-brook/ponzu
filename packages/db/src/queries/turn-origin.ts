@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, ne, or, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { designs, events, threadItems } from "../schema/index.ts";
 import { run } from "./run.ts";
@@ -24,15 +24,16 @@ export interface TurnOrigin {
    */
   event: { id: string; kind: string; userId: string | null } | null;
   /**
-   * Whether a check or a review later in the feed than that event was handed to a runner: GitHub's
-   * words may have gone in after the person's, in the turn or since. Handed, not only delivered,
-   * so an acknowledgement still on its way never lets them through.
+   * Whether a check or a review went into the session after that event, or may yet: one handed
+   * to a runner and not acknowledged, or acknowledged no earlier than that event was. By when it
+   * went in, not its place in the feed, since a runner holds an older event back behind a newer
+   * one; held, not only delivered, so an acknowledgement still on its way never lets it through.
    */
   githubSince: boolean;
   /**
-   * Whether a message, answer or comment from anyone but that event's person, later in the feed,
-   * was handed to a runner: someone else spoke in the turn, or since, so what lands is no longer
-   * one person's request.
+   * Whether a message, answer or comment from anyone but that event's person went into the
+   * session after that event, or may yet, by the same rule: someone else spoke in the turn, or
+   * since, so what lands is no longer one person's request.
    */
   othersSince: boolean;
   /** The person whose message, answer or comment last went into the session, if any did. */
@@ -61,7 +62,12 @@ export async function getTurnOrigin(
   const [event] = eventId
     ? await run(
         db
-          .select({ id: events.id, kind: events.kind, userId: events.userId, seq: events.seq })
+          .select({
+            id: events.id,
+            kind: events.kind,
+            userId: events.userId,
+            deliveredAt: events.deliveredAt,
+          })
           .from(events)
           .where(
             and(
@@ -72,9 +78,20 @@ export async function getTurnOrigin(
           ),
       )
     : [];
-  /** Whether an event matching `which`, later than the turn's, was handed to a runner. */
+  /**
+   * Whether an event matching `which` went into the session after the turn's, or may yet. Handoff
+   * order is the order the session took events in, which acknowledgements keep (`delivered_at`,
+   * by the API's clock): not the feed's, since a runner puts a `now` event in ahead of an older
+   * `next` one it holds. So it counts when it was handed to a runner and is not acknowledged (it
+   * may still go in), or was acknowledged no earlier than the turn's event: the same moment is
+   * one batch of acknowledgements, whose order is not known, so it counts. Before the turn's own
+   * acknowledgement arrives, one already acknowledged went in ahead of it.
+   */
   const handedSince = async (which: SQL | undefined): Promise<boolean> => {
     if (!event) return false;
+    const after = event.deliveredAt
+      ? or(isNull(events.deliveredAt), gte(events.deliveredAt, event.deliveredAt))
+      : isNull(events.deliveredAt);
     const [found] = await run(
       db
         .select({ id: events.id })
@@ -82,8 +99,9 @@ export async function getTurnOrigin(
         .where(
           and(
             eq(events.designId, designId),
-            gt(events.seq, event.seq),
+            ne(events.id, event.id),
             isNotNull(events.claimedBy),
+            after,
             which,
           ),
         )
