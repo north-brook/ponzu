@@ -95,7 +95,7 @@ export function NewDesignComposer({
           {...FIELD}
           aria-label="Describe the design"
           aria-describedby={suggested ? described : undefined}
-          placeholder="Describe a screen, a flow or a brand"
+          placeholder="Describe what you want to make"
           rows={1}
           value={prompt}
           onChange={(e) => onPromptChange(e.currentTarget.value)}

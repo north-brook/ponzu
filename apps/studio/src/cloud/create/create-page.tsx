@@ -1,14 +1,14 @@
 import { type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { Idea, PendingAttachment, Repo } from "../model.ts";
-import { Lockup } from "../ui/marks.tsx";
+import { Slice } from "../ui/marks.tsx";
 import { NewDesignComposer } from "./composer.tsx";
-import type { ProjectChoice, RepoShelf } from "./create.ts";
+import { type ProjectChoice, projectLabel, type RepoShelf } from "./create.ts";
 import { type Suggestion, useSuggestion } from "./ideas.tsx";
 import type { ModelChoice } from "./model-picker.tsx";
 import { RepoPicker } from "./repo-picker.tsx";
 
-/** The logo's word size: under the 46 it had alone, so the selector beside it balances. */
-const LOGO = 40;
+/** The mark over the statement: twice its type, so it leads the page. */
+const MARK = 56;
 
 /** The least room above the column: where its top sits in a pane too short to centre it. */
 const TOP = 130;
@@ -109,17 +109,20 @@ export function CreatePage({
         className="mx-auto flex w-[660px] flex-col"
         style={{ paddingTop: TOP, transform: `translateY(${centre}px)` }}
       >
-        <div
-          data-create-header
-          className="mb-9 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center"
-        >
-          {/* The logo stands where a question did; the question is still the page's heading. */}
-          <h1 className="m-0 mr-4 flex justify-end text-ink">
-            <Lockup size={LOGO} />
-            <span className="sr-only">What do you want to design?</span>
-          </h1>
-          <div aria-hidden data-create-divider className="h-7 w-px bg-rule" />
-          <div className="ml-2 flex min-w-0">
+        <div data-create-header className="mb-8 flex flex-col items-center">
+          <Slice size={MARK} className="text-ink" />
+          {/* One statement: what this page is for, ending in where. Its last words are the
+              project selector, so the two sit on one baseline and centre as one line. */}
+          <div
+            data-create-statement
+            className="mt-6 flex max-w-full items-baseline justify-center font-display font-semibold text-28 text-ink"
+          >
+            <h1 className="m-0 shrink-0 whitespace-nowrap font-[inherit] text-[length:inherit]">
+              {project?.kind === "scratch" ? "Make something from" : "Make something in"}
+              <span className="sr-only">
+                {project ? ` ${project.kind === "scratch" ? "scratch" : projectLabel(project)}` : ""}
+              </span>
+            </h1>
             <RepoPicker
               value={project}
               repos={repos}

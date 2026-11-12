@@ -78,19 +78,19 @@ export function RepoPicker({
           aria-label={label ? `Project: ${label}` : "Project"}
           aria-busy={label ? undefined : true}
           data-project-selector
-          // The display face at the header's size; ink, so it stands beside the logo.
-          className="h-10 min-w-0 max-w-full shrink gap-1 rounded-10 pr-1.5 pl-2 font-display font-semibold text-22 text-ink"
+          // The last words of the create page's statement: its face, size and baseline.
+          className="h-10 min-w-0 shrink items-baseline gap-1.5 rounded-10 pr-1.5 pl-2 font-[inherit] text-[length:inherit] text-ink"
         >
           {value === null ? (
-            <Skeleton className="h-3.5 w-[150px] rounded-4" />
+            <Skeleton className="h-4 w-[150px] self-center rounded-4" />
           ) : value.kind === "scratch" ? (
-            <span data-project-label className={cn("min-w-0 truncate", ON_THE_MARK)}>
-              Scratch
+            <span data-project-label className="min-w-0 truncate">
+              scratch
             </span>
           ) : (
-            <RepoTitle repo={value.repo} className={ON_THE_MARK} data-project-label />
+            <RepoTitle repo={value.repo} data-project-label />
           )}
-          <Icon icon={ArrowDown01Icon} step="control" className="text-icon-soft" />
+          <Icon icon={ArrowDown01Icon} step="control" className="self-center text-icon-soft" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -357,13 +357,6 @@ function wholeWidth(el: Element): number {
 
 /** A tip's own padding and the least margin it keeps from the window's edge, past its words. */
 const TIP_ROOM = 32;
-
-/**
- * The selector's words sit on the row's line (the logo's mark's centre) by the centre of their
- * x-height, as the logo's word does, rather than by the middle of their line box, which in Funnel
- * Display at 22 is 2.4 lower: so their box, centred on the line, keeps 5 of room under them.
- */
-const ON_THE_MARK = "pb-[5px]";
 
 /**
  * Wide enough for most full names (one cut short shows whole in its tip), and ending on the
