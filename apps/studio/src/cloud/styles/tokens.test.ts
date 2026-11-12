@@ -45,6 +45,22 @@ function contrast(a: string, b: string): number {
 }
 
 const GROUNDS = ["chrome", "canvas", "surface", "selected"];
+
+/** The glassy shell as measured (see the test): over the worst, a usual and the best backdrop. */
+const GLASS = {
+  light: {
+    tint: "rgba(242, 241, 238, 0.6)",
+    worst: "#e6e4e3",
+    usual: "#eeedeb",
+    best: "#f7f6f4",
+  },
+  dark: {
+    tint: "rgba(22, 22, 21, 0.78)",
+    worst: "#3b3d3d",
+    usual: "#272727",
+    best: "#161616",
+  },
+};
 const worst = (fg: string, theme: 0 | 1) =>
   Math.min(...GROUNDS.map((g) => contrast(token(fg)[theme], token(g)[theme])));
 
@@ -65,20 +81,24 @@ for (const [theme, i] of [
     expect(contrast(i === 0 ? ring[0]! : ring[1]!, token("chrome")[i])).toBeGreaterThanOrEqual(3);
   });
 
-  // The Mac's material is its own appearance's grey with the wallpaper blurred into it; this
-  // takes it as far from the tint as a mid grey, past what a light or dark sidebar shows, so text
-  // on the glassy shell holds AA over any wallpaper.
+  // The shell over the Mac's material, as measured on a real desktop (macOS 27.2, 11 Nov 2026:
+  // the material from apps/desktop/src/shell-ground.ts with this tint over it, against a black,
+  // a grey and a white backdrop). The worst for text is the backdrop furthest from the tint:
+  // black in light, white in dark. These hold for exactly these tints and materials: change
+  // either and the shell is measured again before these numbers are.
   test(`text holds AA on the glass in ${theme}`, () => {
-    const glass = channels(token("chrome-glass")[i], "#808080");
-    const hex = `#${glass
-      .map((c) =>
-        Math.round(c * 255)
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")}`;
-    expect(contrast(token("ink")[i], hex)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(token("muted")[i], hex)).toBeGreaterThanOrEqual(4.5);
+    const measured = GLASS[theme];
+    expect(token("chrome-glass")[i]).toBe(measured.tint);
+    expect(contrast(token("ink")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("muted")[i], measured.worst)).toBeGreaterThanOrEqual(4.5);
+    // And it is a shade off the boards' ground, a clear step whatever is behind the window (the
+    // nearest backdrop included: white behind a light window, black behind a dark one), and
+    // never a mid grey.
+    for (const shell of [measured.worst, measured.usual, measured.best]) {
+      const off = contrast(shell, token("canvas")[i]);
+      expect(off).toBeGreaterThan(1.07);
+      expect(off).toBeLessThan(2);
+    }
   });
 
   test(`faint stays where the mockup puts it in ${theme}`, () => {

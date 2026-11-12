@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MATERIAL, SHELL, shellGround } from "./shell-ground.ts";
+import { MATERIAL, MATERIAL_STATE, SHELL, shellGround } from "./shell-ground.ts";
 
 const tokens = await Bun.file(
   new URL("../../studio/src/cloud/styles/tokens.css", import.meta.url),
@@ -8,7 +8,13 @@ const tokens = await Bun.file(
 test("a Mac's window is the system's material, with no colour of its own over it", () => {
   const ground = shellGround("darwin", false);
   expect(ground.glass).toBe(true);
-  expect(ground.options).toMatchObject(MATERIAL);
+  // Each appearance has its own material, and it stays live when the window is not in front.
+  expect(ground.options).toMatchObject({ vibrancy: MATERIAL.light, visualEffectState: "active" });
+  expect(shellGround("darwin", true).options).toMatchObject({
+    vibrancy: MATERIAL.dark,
+    visualEffectState: MATERIAL_STATE,
+  });
+  expect(MATERIAL.light).not.toBe(MATERIAL.dark);
   // A backgroundColor would paint the page's ground over the material.
   expect(ground.options.backgroundColor).toBeUndefined();
   expect(ground.options.transparent).toBeUndefined();
