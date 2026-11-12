@@ -94,7 +94,8 @@ test("a check with no answer in 500 ms lets the request through, logged", async 
   void answer.then(() => {
     settled = true;
   });
-  await Promise.resolve();
+  // Let every queued callback run, so an answer already on its way would have arrived.
+  await new Promise((resolve) => setImmediate(resolve));
   expect(settled).toBe(false);
   clock.advance(1);
   expect(await answer).toBe("ok");

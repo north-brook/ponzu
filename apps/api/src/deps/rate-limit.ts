@@ -2,7 +2,8 @@
  * Per-caller rate limits, through Vercel's firewall with Vercel's own SDK (@vercel/firewall,
  * pinned exactly). This is the only file that imports the SDK (rate-limit.surface.test.ts holds
  * it to that). Which route counts against which id, and by whose key, is http/rate-limits.ts;
- * each id's window and limit are a rule in infra/vercel-firewall.json, never in code.
+ * each id's window and limit are a rule in Vercel's firewall, which is what holds in a
+ * deployment. RATE_LIMITS states the same numbers so the fake counts to them.
  *
  * It is off, as `noRateLimit`, unless PONZU_RATE_LIMITS is `vercel` and the API runs on Vercel
  * (`VERCEL=1`): off Vercel there is no firewall to ask. On, it fails open. A check that times out

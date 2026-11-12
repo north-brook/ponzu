@@ -115,11 +115,20 @@ export function rateLimitFor(route: string, actor: Actor): { id: RateLimitId; ke
 }
 
 /**
+ * The requests already counted. A request can pass two access declarations: an area's
+ * `.use(access.user)` also runs for another area's routes under the same prefix (workspaces'
+ * for `/v1/workspaces/:id/billing`, which usage.ts declares itself). Each is counted once.
+ */
+const counted = new WeakSet<Request>();
+
+/**
  * Counts this request against its rate limit, once the caller is known, and refuses it with 429
  * `rate_limited` and `Retry-After` when it is over. Off, `deps.rateLimit` answers "ok" without
  * asking anyone.
  */
 export async function limitCaller<E extends AppEnv>(c: Context<E>, actor: Actor): Promise<void> {
+  if (counted.has(c.req.raw)) return;
+  counted.add(c.req.raw);
   const route = `${c.req.method} ${routePath(c, -1)}`;
   const limit = rateLimitFor(route, actor);
   if (!limit) return;

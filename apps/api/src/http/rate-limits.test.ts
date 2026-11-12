@@ -80,6 +80,16 @@ describe("which limit a request counts against", () => {
     ]);
   });
 
+  test("a request that passes two access declarations is counted once", async () => {
+    // workspaces.ts's `.use(access.user)` also runs for usage.ts's own `access.user` route.
+    const before = t.rateLimit.checks.length;
+    const { status } = await call(t, as("ada"), "PATCH", `/v1/workspaces/${ws.id}/billing`, {
+      capUsd: 100,
+    });
+    expect(status).toBe(200);
+    expect(t.rateLimit.checks.slice(before).map(({ id }) => id)).toEqual(["user-writes"]);
+  });
+
   test("a limited runner is refused the same way, by its canvas", async () => {
     const { canvas, runner } = await canvasWithRunner(t, ws, "ada", emptyDoc("Busy runner"));
     t.rateLimit.limit("runner", 0);
