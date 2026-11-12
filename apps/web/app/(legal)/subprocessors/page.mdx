@@ -1,0 +1,33 @@
+import { Mail, SubprocessorTable } from "@/components/legal";
+import { share } from "@/components/share";
+
+export const metadata = {
+  title: "Subprocessors",
+  description: "The companies that process data for Ponzu, what each one holds, and where.",
+  ...share({
+    path: "/subprocessors",
+    title: "Subprocessors · Ponzu",
+    description: "The companies that process data for Ponzu, what each one holds, and where.",
+  }),
+};
+
+{/* The table is components/subprocessors.ts, which the privacy policy's summary also reads. */}
+
+# Subprocessors
+
+These are the companies that process people's data for Ponzu. "When it ships" means the feature that needs them is not built yet, and they hold nothing until it is.
+
+<SubprocessorTable />
+
+## Services you connect
+
+Two services you connect yourself are not our subprocessors: they work for you, under your own account with them.
+
+- **GitHub** holds your repositories, branches and pull requests, under GitHub's terms. Ponzu reaches them through the GitHub App you install.
+- **Anthropic,** for Claude Code's turns, under your own Claude account or API key and your plan's terms. (Separately, Ponzu's own Anthropic account suggests prompts for a repository; that is the Anthropic row above.)
+
+## Other requests your browser makes
+
+A canvas can name fonts from Google Fonts, which the apps load from Google, and images from any https address, which load from wherever they live. Their hosts learn that the canvas was opened, as they would in any browser.
+
+Questions: <Mail to="privacy" />.

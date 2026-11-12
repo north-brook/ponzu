@@ -1304,6 +1304,13 @@ holds, came from another Claude Code, or is more than a day old, so a plan that 
 model shows up within a day. The API keeps it on the account (`claude_accounts.models`, with
 `models_reported_at` and `models_claude_code`), only while the sandbox that reported it runs on
 the credential the account holds now; connecting another key or subscription clears it.
+A runner's first report is kept, and after it at most one in ten minutes: the window is held on
+the account (`models_reported_at`), so a report is refused while the account's last was kept in
+the past ten minutes and after this runner took its lease. Runners on one account share the
+window, which only matters when two images report different answers within ten minutes: the
+second is said again at its runner's next start. A refused report is answered 200 with
+`kept: false`, never 429, so the runner does not try again, and logged as
+`claude_models_reported` with `refused: "too_soon"` (or `"old_credential"`).
 
 `supportedModels()` answers aliases, not model ids. For the development API key on Claude Code
 2.1.322 it was `default`, `opus`, `fable`, `sonnet` and `haiku`, each with `resolvedModel` (the
@@ -1335,8 +1342,20 @@ and `POST /v1/canvases` take only a model the account offers and an effort that 
 sent with it is let through; it is never run with one. A saved choice the account no longer offers is not an error: the defaults
 answer what will run in its place, which the picker shows, and a canvas made on it runs on that
 at its next start (the runner session's `model`), logged as `model_unoffered`, so Claude Code is
-never handed a model it would refuse once a runner has reported. Nothing in the canvas's thread
-says so yet. The apps hear of a new report only when they read the defaults again (the `me`
+never handed a model it would refuse once a runner has reported. The canvas's thread says so:
+as that runner's session starts, the API (never the runner, which is refused with 400 if it
+tries) writes a notice `{ type: "model_changed", from, to, fromName, toName, account }` under
+the id `ti_model-` and the first 12 hex digits of the SHA-256 of `from→to`, so each change is
+said once however often the canvas starts (a canvas that goes back to its model and then loses
+it again to the same one is not told twice). It is written only once a runner has reported what
+the account offers: before that (a credential just connected again, or one revoked) the canvas
+still runs on the default in its place, but nobody knows its model is gone, so the thread says
+nothing and only the log does (`reported: false`). The names are the ones the API knows then (what the
+account is offered, else the hand-kept list, else the id), since the model gone is no longer in
+what the account offers; `account` is whose Claude it is, the canvas's owner when they hold the
+account, else null. The apps say it as "Maya's Claude doesn't offer Fable 5.2 any more, so this
+canvas now runs on Opus 5.5." ("Your Claude" to the person whose it is), and it is not an answer
+to anyone's message. The apps hear of a new report only when they read the defaults again (the `me`
 live query does not carry the report): a create or a defaults change refused with
 `model_not_offered` reads them again, as does connecting another credential, so the picker
 then shows what the account offers. Before the first report the hand-kept list is offered as
@@ -1423,7 +1442,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }` |
+| POST | `/v1/runner/models` | `{ claudeCode, models: ReportedModel[] }` ("Models") | `{ kept: boolean }`; at most one kept in ten minutes after a runner's first, never 429 |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | GET | `/v1/runner/pull-request?turn=` | none | `PullRequestStanding` ("The agent's pull request") |
 | POST | `/v1/runner/pull-request/open`, `/ready`, `/auto-merge` | `{ turn }` | `AgentPullRequestAnswer` |
@@ -1982,7 +2001,7 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | POST | `/v1/canvases/:id/pull-request/ready` | none | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/canvases/:id/pull-request/auto-merge` | none | `PullRequestTab` |
-| POST | `/v1/canvases/:id/pull-request/close` | none | `PullRequestTab` |
+| POST | `/v1/canvases/:id/pull-request/close?number=` | none (`number` optional) | `PullRequestTab` |
 | POST | `/v1/canvases/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the canvas; the rest takes write access. `PullRequestTab` is the
@@ -1992,7 +2011,10 @@ last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
 hundred comments and reviews) with line comments, each saying whether its thread is resolved, the first hundred changed files with their
-counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+counts, the last hundred commits), `summary` (the agent's kept words on what the branch changes,
+"Pull request summary", while no pull request is open: none yet, or the newest closed or merged;
+null while one is open, since its description says them, or when the agent kept none), the merge
+method Merge would use, whether the repo allows
 auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the canvas
 has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
 commits since its pull request merged), `ready` (a
@@ -2004,7 +2026,19 @@ running in a repo without auto-merge, or GitHub still working out whether it can
 a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/canvases/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
-the person (which failing checks, or which base to merge in), once for a commit. A file's diff
+the person (which failing checks, or which base to merge in), once for a commit. Beside the
+button, the Mac app's tab has a menu by the pull request's title, for anyone who can steer the
+canvas, while it is open or a draft: Turn off auto-merge (`DELETE …/auto-merge`) while auto-merge
+is on, and Close pull request (`POST …/close`), asked first ("Close #N without merging? The
+branch and its commits stay. Create PR opens a new one later.") and sent with the number it
+named, so a newer pull request opened meanwhile is never closed in its place (409
+`pull_request_changed`). One that auto-merge merged meanwhile, before the API's read or between
+that read and GitHub's close, is answered `pull_request_closed` ("#N is merged."), never
+reopened. A closed pull request shows its closed
+mark in muted and offers Create PR once the branch has commits its base lacks, and the tab shows
+`summary` under "The description it opens with" whenever Create PR is offered. The tab is
+reached from the chrome's pull request mark, so before the first pull request there is no tab to
+show it on. A file's diff
 is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
 are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,
@@ -2147,6 +2181,7 @@ canvas settles whether or not the merge's webhook arrives.
 |---|---|
 | `no_pull_request` | nothing is open to act on |
 | `pull_request_closed`, `pull_request_draft` | merged or closed; a draft, for a merge or auto-merge |
+| `pull_request_changed` | a close named a pull request that is no longer the canvas's newest |
 | `head_moved` | the branch has commits since `headSha`, or moved under the request |
 | `mergeability_unknown` | GitHub is still working out whether it can merge |
 | `merge_conflicts` | the branch conflicts with its base |

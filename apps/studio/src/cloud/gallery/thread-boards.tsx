@@ -1,6 +1,7 @@
 /* The compositions of the thread rail, needs you and the pull request tab (compositions.ts). */
 import type { ReactNode } from "react";
 import type { AgentActivity, CanvasSummary } from "../model.ts";
+import { teamHeroBoards } from "./canvas-fixtures.ts";
 import { CanvasHarness } from "./canvas-harness.tsx";
 import * as f from "./fixtures.ts";
 import { LiveTurnRail } from "./live-turn.tsx";
@@ -78,6 +79,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       contributors={f.contributors}
       thread={t.teamThread}
       agent={t.teamAgent}
+      boards={teamHeroBoards}
     />
   ),
   "crowded-chrome": () => (
@@ -138,6 +140,15 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       contributors={f.contributors}
       thread={t.everyKind}
       agent={WORKING}
+    />
+  ),
+  "thread-model-changed": () => (
+    <CanvasHarness
+      canvases={f.teamCanvases}
+      canvas={quieter(f.teamCanvases)}
+      contributors={f.contributors}
+      thread={t.modelChangedTurn}
+      agent={IDLE}
     />
   ),
   "thread-read-only": () => (
@@ -250,6 +261,47 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       thread={t.heroThread}
       agent={t.heroAgent}
       pullRequest={{ kind: "loading", summary: f.pr412 }}
+      tab="pull-request"
+    />
+  ),
+  // Closed without merging: the closed glyph, muted; the branch is still ahead, so Create PR.
+  "pull-request-closed": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "closed" } }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.closedPullRequest }}
+      tab="pull-request"
+    />
+  ),
+  // The same, with the agent's kept words: what Create PR opens the next one with.
+  "pull-request-summary": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{ ...quieter(f.soloCanvases), pullRequest: { ...f.pr412, state: "closed" } }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.closedPullRequest }}
+      opensWith={t.keptSummary}
+      tab="pull-request"
+    />
+  ),
+  // Checks running with auto-merge on: the details' menu, open, offers to turn it off or close.
+  "pull-request-menu": () => (
+    <CanvasHarness
+      canvases={f.soloCanvases}
+      canvas={{
+        ...quieter(f.soloCanvases),
+        pullRequest: { ...f.pr412, checks: "running", autoMerge: true },
+      }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{ kind: "ready", pr: t.runningPullRequest }}
+      autoMerge
       tab="pull-request"
     />
   ),

@@ -31,6 +31,7 @@ import {
   type Page,
   paintedStyles,
   REFERENCES,
+  SITE_BOARDS,
   SITE_PRODUCT,
   SITE_SCALE,
   SITE_SHOTS,
@@ -77,7 +78,11 @@ try {
       const c = COMPOSITIONS.find((c) => c.id === id);
       if (!c) throw new Error(`SITE_SHOTS names ${id}, which isn't a composition.`);
       for (const theme of THEMES) {
-        const shot = await shootComposition(sharp, server.url, c, theme, { hideText: false });
+        // With the canvas's boards drawn (gallery `&boards`), which the references leave out.
+        const shot = await shootComposition(sharp, server.url, c, theme, {
+          hideText: false,
+          boards: SITE_BOARDS.has(id),
+        });
         if (!(await fontsLoaded(sharp)))
           throw new Error("The app's fonts didn't load; the shots would be wrong.");
         await Bun.write(join(out, `${id}-${theme}.png`), shot);

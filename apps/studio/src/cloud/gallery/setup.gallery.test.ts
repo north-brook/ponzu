@@ -68,7 +68,7 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     await open("settings-account");
     await page.click('nav[aria-label="Settings"] button:has-text("Members")');
     expect(await title()).toBe("Members");
-    await page.click(`${dialog} button[aria-label="Workspace: Northbrook"]`);
+    await page.click(`${dialog} button[aria-label="Workspace: Thistlewick"]`);
     await page.click('[role="menuitemradio"]:has-text("Personal")');
     // Members gives way to Plan and usage, and leaves the nav.
     expect(await title()).toBe("Plan and usage");

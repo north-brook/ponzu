@@ -141,7 +141,8 @@ export interface ReportedModel {
 /**
  * `POST /v1/runner/models`: what Claude Code offers the account this runner runs as, and which
  * Claude Code said so. Answered 200 with whether the API kept it (`ModelsResponse`). Safe to
- * repeat: the last one sent wins.
+ * repeat: the last one kept wins. A runner's first report is kept, then at most one in ten
+ * minutes; one sent sooner is answered `kept: false`, never 429.
  */
 export interface ModelsReport {
   claudeCode: string;
@@ -149,7 +150,10 @@ export interface ModelsReport {
 }
 
 export interface ModelsResponse {
-  /** False when the account the canvas runs on is no longer the credential this runner holds. */
+  /**
+   * False when the account the canvas runs on is no longer the credential this runner holds, or
+   * the report came within ten minutes of the account's last one kept since this runner started.
+   */
   kept: boolean;
 }
 
@@ -589,6 +593,21 @@ export type Notice =
       url: string;
       title: string;
       as: Person | null;
+    }
+  /**
+   * Written by the API, once per change, as a runner session starts: the model the canvas was
+   * made with is no longer one the Claude account offers, so it runs on `to` in its place
+   * ("Models"). Both are model ids, each with the name Ponzu knew it by then (the id itself when
+   * it knew none). `account` is whose Claude it is, as they were then; null when the canvas's
+   * owner is gone or is not the account's holder.
+   */
+  | {
+      type: "model_changed";
+      from: string;
+      to: string;
+      fromName: string;
+      toName: string;
+      account: Person | null;
     };
 
 /** What the agent did to its pull request, as its thread's line says. */

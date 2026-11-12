@@ -74,6 +74,23 @@ test("what the agent did to the pull request is its own line, naming who it acte
   });
   // A line that moves the branch, like any pull request notice.
   expect(branchMoment(items.slice(1, 3))).toBe(3);
+
+  // The API's word that the canvas runs on another model: shown, with whose Claude as a member.
+  const changed = notice("ti_model-0123456789ab", 5, {
+    type: "model_changed",
+    from: "claude-fable-5-2",
+    to: "claude-opus-5-5",
+    fromName: "Fable 5.2",
+    toName: "Opus 5.5",
+    account: as,
+  });
+  expect(shownItems([changed], new Set()).map((i) => i.id)).toEqual(["ti_model-0123456789ab"]);
+  expect(toThreadItem(changed, ctx(people)).payload).toMatchObject({
+    type: "model_changed",
+    fromName: "Fable 5.2",
+    account: maya,
+  });
+  expect(branchMoment([changed])).toBe(0);
 });
 
 test("a closed question's line says what was picked: the labels, or yes or no", () => {

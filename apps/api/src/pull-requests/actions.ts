@@ -42,7 +42,11 @@ export type PullRequestAction =
    */
   | { kind: "merge"; headSha: string; bypass: boolean }
   | { kind: "auto_merge"; enabled: boolean }
-  | { kind: "close" }
+  /**
+   * `number` is the pull request the person said to close: refused if the canvas's newest is
+   * another one by now. Without it, whichever is newest.
+   */
+  | { kind: "close"; number?: number }
   | { kind: "update_branch"; headSha: string };
 
 type ActDeps = PullRequestDeps & Pick<Deps, "vault" | "background" | "config">;
@@ -182,11 +186,26 @@ async function act(
     }
 
     case "close": {
+      // The route closes the canvas's newest pull request: one opened since the person looked
+      // (the agent opens them too) is not the one they said to close.
+      if (action.number !== undefined && action.number !== number) {
+        throw new ApiError(
+          409,
+          "pull_request_changed",
+          `This canvas's pull request is #${number} now, not #${action.number}. Look again first.`,
+        );
+      }
       if (pr.state === "closed") return current;
       if (pr.state === "merged") throw closed(pr);
-      expectDone(await github.closePullRequest(await personToken(), { fullName, number }), pr);
+      const result = await github.closePullRequest(await personToken(), { fullName, number });
+      // Auto-merge (or a teammate) can merge it between the read above and the close: GitHub
+      // then has it merged, whatever it answered the close, and the person is told so.
+      const after = await readAndRecord(deps, target, number);
+      const now = after.read.pullRequest;
+      if (now?.state === "merged") throw closed(now);
+      expectDone(result, pr);
       done.did = true;
-      break;
+      return after;
     }
 
     case "update_branch": {

@@ -228,6 +228,16 @@ export class FakePullRequests {
     this.#mergedFirstBy = login;
   }
 
+  #mergedBeforeCloseBy: string | null = null;
+
+  /**
+   * The next close asked for finds the pull request merged a moment before it, as auto-merge
+   * landing does, with `login` the person who turned auto-merge on.
+   */
+  mergeBeforeCloseAs(login: string): void {
+    this.#mergedBeforeCloseBy = login;
+  }
+
   /** GraphQL goes on showing a pull request open for `ms` after it merges, as a replica lags. */
   hideMerges(ms: number): void {
     this.#mergesHiddenMs = ms;
@@ -577,6 +587,16 @@ export class FakePullRequests {
       return forbidden();
     }
     if (typeof input.body === "string") pull.body = input.body;
+    const mergedBy = this.#mergedBeforeCloseBy;
+    if (input.state === "closed" && mergedBy && pull.state === "open") {
+      this.#mergedBeforeCloseBy = null;
+      pull.state = "closed";
+      pull.merged = true;
+      pull.mergedBy = mergedBy;
+      pull.mergedHead = this.head(repo, pull.head) ?? null;
+      pull.closedAt = this.#clock.now();
+      this.actions.push({ kind: "merge", number: pull.number, by: mergedBy });
+    }
     if (input.state === "closed" && pull.state === "open") {
       pull.state = "closed";
       pull.closedAt = this.#clock.now();

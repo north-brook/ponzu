@@ -495,6 +495,41 @@ describe("the agent's summary", () => {
     });
     expect(pull.body).toBe("Rewritten by hand.");
   });
+
+  test("the tab carries the kept words while no pull request is open, and not while one is", async () => {
+    const { ws, repo, canvas } = await setup();
+    const runner = await startRunner(t, canvas.id);
+    const read = async () => (await call(t, as(ws, "ines"), "GET", path(canvas.id))).body;
+    // Nothing kept yet.
+    expect(await read()).toMatchObject({ pullRequest: null, summary: null });
+
+    await call(t, runner.headers, "POST", "/v1/runner/pull-request-summary", {
+      summary: "Shortens checkout to **one** page.",
+    });
+    expect(await read()).toMatchObject({
+      pullRequest: null,
+      summary: "Shortens checkout to **one** page.",
+      nextAction: "create_pr",
+    });
+
+    // Open, its description on GitHub says them: the tab doesn't say them twice.
+    await opened(ws, canvas.id);
+    expect((await read()).summary).toBeNull();
+    t.github.pulls.latest(repo)!.draft = false;
+    expect((await read()).summary).toBeNull();
+
+    // Closed, they are what Create PR opens the next one with.
+    await call(t, as(ws, "maya"), "POST", path(canvas.id, "/close"));
+    expect(await read()).toMatchObject({
+      pullRequest: { state: "closed" },
+      summary: "Shortens checkout to **one** page.",
+      nextAction: "create_pr",
+    });
+
+    // Only blank words are as good as none.
+    await call(t, runner.headers, "POST", "/v1/runner/pull-request-summary", { summary: "  \n" });
+    expect((await read()).summary).toBeNull();
+  });
 });
 
 describe("acting", () => {
@@ -799,6 +834,79 @@ describe("acting", () => {
       "closed",
     ]);
     expect(await codeOf(act(ws, canvas.id, "ready"))).toBe("pull_request_closed");
+  });
+
+  test("close while auto-merge is on closes it; one auto-merge merged first is refused, not reopened", async () => {
+    const { ws, repo, canvas } = await ready();
+    t.github.pulls.settings(repo, { autoMerge: true });
+    t.github.pulls.protect(repo, "main", { requiredChecks: ["ci"] });
+    t.github.pulls.setChecks(head(repo), [{ name: "ci", state: "in_progress" }]);
+    expect((await act(ws, canvas.id, "auto-merge")).body.pullRequest.autoMerge).not.toBeNull();
+
+    const closed = await act(ws, canvas.id, "close");
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({
+      pullRequest: { state: "closed" },
+      nextAction: "create_pr",
+    });
+    expect(t.github.pulls.actions.at(-1)).toMatchObject({ kind: "close", by: "maya" });
+
+    // Another canvas's pull request, whose auto-merge landed before the person's Close did.
+    const other = await setup();
+    await opened(other.ws, other.canvas.id);
+    const pull = t.github.pulls.latest(other.repo)!;
+    pull.draft = false;
+    await call(t, as(other.ws, "maya"), "GET", path(other.canvas.id));
+    Object.assign(pull, { state: "closed", merged: true, mergedBy: "maya" });
+    const acted = t.github.pulls.actions.length;
+    const refused = await act(other.ws, other.canvas.id, "close");
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "pull_request_closed",
+      message: `#${pull.number} is merged.`,
+    });
+    // GitHub never heard a Close for it.
+    expect(t.github.pulls.actions.length).toBe(acted);
+  });
+
+  test("auto-merge landing between the read and the close is told as merged, not closed", async () => {
+    const { ws, repo, canvas, pull } = await ready();
+    t.github.pulls.mergeBeforeCloseAs("ines");
+    const refused = await act(ws, canvas.id, "close");
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "pull_request_closed",
+      message: `#${pull.number} is merged.`,
+    });
+    expect(t.github.pulls.latest(repo)).toMatchObject({ merged: true, mergedBy: "ines" });
+    // The canvas has it merged, as the next read does.
+    expect((await call(t, as(ws, "maya"), "GET", path(canvas.id))).body).toMatchObject({
+      pullRequest: { state: "merged" },
+    });
+  });
+
+  test("close names the pull request it means: a newer one is not closed in its place", async () => {
+    const { ws, repo, canvas, pull: first } = await ready();
+    // Someone closes it on GitHub, and a new one opens from the branch before the tab reads.
+    Object.assign(first, { state: "closed" });
+    await opened(ws, canvas.id);
+    const second = t.github.pulls.latest(repo)!;
+    expect(second.number).not.toBe(first.number);
+
+    const acted = t.github.pulls.actions.length;
+    const refused = await act(ws, canvas.id, `close?number=${first.number}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "pull_request_changed",
+      message: `This canvas's pull request is #${second.number} now, not #${first.number}. Look again first.`,
+    });
+    expect(t.github.pulls.actions.length).toBe(acted);
+    expect(second.state).toBe("open");
+
+    expect(await codeOf(act(ws, canvas.id, "close?number=abc"))).toBe("invalid_request");
+    const closed = await act(ws, canvas.id, `close?number=${second.number}`);
+    expect(closed.status).toBe(200);
+    expect(closed.body.pullRequest).toMatchObject({ number: second.number, state: "closed" });
   });
 
   test("a person whose GitHub token GitHub no longer takes is asked to sign in again", async () => {

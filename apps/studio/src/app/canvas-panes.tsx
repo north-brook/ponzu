@@ -6,7 +6,7 @@ import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { BoardsView, CanvasChromeSlot, type OpenCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
-import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
+import { PullRequestConfirmations, PullRequestPane } from "./pull-request-pane.tsx";
 import { CanvasRail, type CommentLink } from "./thread-rail.tsx";
 
 type BoardsJump = NonNullable<CanvasProps["link"]>;
@@ -197,7 +197,7 @@ export function useCanvasPanes({
             <PullRequestPane host={host} open={open} viewerLogin={me.login} />
           </div>
         ) : null}
-        <BypassConfirmation open={open} />
+        <PullRequestConfirmations open={open} />
       </>
     ),
   };

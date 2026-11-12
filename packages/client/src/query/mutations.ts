@@ -26,7 +26,7 @@ export type PullRequestAction =
   | { kind: "auto_merge"; on: boolean }
   | { kind: "update_branch"; headSha: string }
   | { kind: "merge"; headSha: string; bypass?: boolean }
-  | { kind: "close" };
+  | { kind: "close"; number?: number };
 
 /**
  * The mutation options for what the apps change with a request, bound to one `Api` and the
@@ -202,7 +202,7 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
                 ...(action.bypass ? { bypass: true } : {}),
               });
             case "close":
-              return pr.close(canvasId);
+              return pr.close(canvasId, action.number);
           }
         },
         onSuccess: (tab: PullRequestTab, { canvasId }) =>

@@ -330,7 +330,17 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
           const route = pullRequest["auto-merge"];
           return (await (on ? route.$post(canvas(id)) : route.$delete(canvas(id)))).json();
         },
-        close: async (id: string) => (await pullRequest.close.$post(canvas(id))).json(),
+        /**
+         * Closes it without merging. `number` is the one the person said to close: 409
+         * `pull_request_changed` if the canvas's newest is another by now.
+         */
+        close: async (id: string, number?: number) =>
+          (
+            await pullRequest.close.$post({
+              ...canvas(id),
+              query: number === undefined ? {} : { number: String(number) },
+            })
+          ).json(),
         updateBranch: async (id: string, body: { headSha: string }) =>
           (await pullRequest["update-branch"].$post({ ...canvas(id), json: body })).json(),
       },

@@ -192,7 +192,7 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
-    // Lenny Learning's heading and Scratch are there at once; its repos haven't arrived. Its
+    // Bramble School's heading and Scratch are there at once; its repos haven't arrived. Its
     // group is under the fold, so the picture would be pick-a-project-workspaces': the styles
     // hold its heading, its Scratch and the place kept for its repos.
     id: "pick-a-project-workspaces-loading",
@@ -322,6 +322,11 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  {
+    id: "thread-model-changed",
+    title: "Thread · the canvas's model is no longer offered",
+    ...WINDOW,
+  },
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
   { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
   { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },
@@ -354,6 +359,20 @@ export const COMPOSITIONS: Composition[] = [
     title: "Pull request · a wide screen, the sidebar closed",
     width: 2240,
     height: 1100,
+  },
+  { id: "pull-request-closed", title: "Pull request · closed, Create PR offered", ...WINDOW },
+  {
+    id: "pull-request-summary",
+    title: "Pull request · closed, with the description the next one opens with",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "pull-request-menu",
+    title: "Pull request · the details' menu, auto-merge on",
+    ...WINDOW,
+    open: 'button[aria-label="More actions"]',
+    reference: true,
   },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },
