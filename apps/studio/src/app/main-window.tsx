@@ -182,7 +182,9 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        openCanvas(link);
+        // A card setup's and a settings link have their own listeners, once billing and
+        // notifications add them.
+        if (link.kind === "canvas") openCanvas(link);
       }),
     [host, sync, update, tell, openCanvas],
   );

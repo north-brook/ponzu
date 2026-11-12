@@ -4,24 +4,27 @@
  * so the studio can import it (`@ponzu/desktop/bridge`) without pulling in Electron.
  */
 import type { SessionState } from "@ponzu/client";
+import type { AppLink } from "@ponzu/core/links";
+
+export type { GithubSetupResult } from "@ponzu/core/links";
 
 /** The studio's origin inside the app: a privileged scheme of our own (studio-protocol.ts). */
 export const STUDIO_ORIGIN = "ponzu-studio://app";
 
 /**
- * A `ponzu://` link the studio acts on (deep-links.ts has the grammar):
+ * A `ponzu://` link the studio may act on, in the grammar every client shares
+ * (@ponzu/core/links; deep-links.ts reads it):
  *
- *   ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
+ *   ponzu://canvas/<canvas id>?page=&artboard=&open=&question=&comment=&message=&n=
  *   ponzu://github/setup?result=installed&workspace=<workspace id>
  *   ponzu://github/setup?result=requested | pending | sign_in | failed
+ *   ponzu://billing/card?setup=<setup id>&result=added | cancelled
+ *   ponzu://settings?section=usage | notifications | account
  *
- * A canvas's link from before canvases had their name opens the same way (deep-links.ts).
+ * A canvas's link from before canvases had their name (`design/<id>`) opens the same way. A
+ * sign-in's way back is the iPhone's, never the Mac's, so it is not among them.
  */
-export type DeepLink =
-  | { kind: "canvas"; canvasId: string; pageId?: string; artboardId?: string }
-  | { kind: "github_setup"; result: GithubSetupResult; workspaceId?: string };
-
-export type GithubSetupResult = "installed" | "requested" | "pending" | "sign_in" | "failed";
+export type DeepLink = Exclude<AppLink, { kind: "auth_callback" }>;
 
 /** An error as it crosses the bridge: an `ApiError`'s fields, which the studio rebuilds. */
 export interface BridgeError {

@@ -2662,15 +2662,22 @@ Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
 session and everything the studio kept: the canvases last opened and their asset keys.
 
-Links into the app (`apps/desktop/README.md`):
+Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
+`@ponzu/core/links`):
 
 ```
-ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>
+ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usage&question=&comment=&message=&n=
 ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
+ponzu://billing/card?setup=<setup id>&result=added|cancelled
+ponzu://settings?section=usage|notifications|account
 ```
 
-A link only asks to show something; one that doesn't parse is dropped. A development
-build takes `ponzu-dev://` instead, so it never takes an installed app's links.
+A link only asks to show something; one that doesn't parse is dropped, and an optional
+part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`
+is read as the canvas link, for good. A development build takes `ponzu-dev://` instead,
+so it never takes an installed app's links. A ping carries ids only, as `PushData` v1
+(`@ponzu/core/push`), and a tap goes where `linkOfPush` says, through the same grammar.
 
 **Studio** keeps the canvas as it is. `Canvas` depends only on the `CanvasSource`
 interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
