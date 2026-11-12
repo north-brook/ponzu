@@ -633,7 +633,7 @@ test("each blocker is what keeps the canvas from running, in the composer or the
   // An owner the workspace no longer has can't be named here either.
   expect(
     steerGate({ access: "write", repo, head: limited, owner: null, me: teammate, now: 5_000 }),
-  ).toEqual({ kind: "claude_owner_left" });
+  ).toEqual(left);
 
   // The live head carries the blocker the API sets.
   w.agent.block("sandbox_busy");
