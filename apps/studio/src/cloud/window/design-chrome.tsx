@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
 import type { Contributor, DesignMember, PageTab, PullRequestSummary, Repo } from "../model.ts";
 import type { NextAction } from "../pull-request.ts";
 import type { RailSignal } from "../status.ts";
 import { cn } from "../ui/cn.ts";
 import { Popover, PopoverAnchor } from "../ui/popover.tsx";
+import { Arrival } from "./arrival.tsx";
 import { ChromeDivider } from "./chrome.tsx";
-import { NextActionButton } from "./next-action.tsx";
+import { ActionRoom, NextActionButton } from "./next-action.tsx";
 import { PageTabs } from "./page-tabs.tsx";
 import { Presence } from "./presence.tsx";
 import { PullRequestTab } from "./pull-request-mark.tsx";
@@ -39,6 +39,11 @@ export interface DesignChromeProps {
     onRun: (action: NextAction) => void;
   } | null;
   rail: { open: boolean; signal: RailSignal; onToggle: () => void };
+  /**
+   * The action the design is expected to offer while its own answer is on its way (from what
+   * the sidebar's row says of its pull request): its room is held, unseen, from the first frame.
+   */
+  actionExpected?: NextAction | null;
 }
 
 /**
@@ -58,54 +63,54 @@ export function DesignChrome({
   pullRequest,
   action,
   rail,
+  actionExpected = null,
 }: DesignChromeProps) {
-  // Each piece, and the space that follows it before the next (or before the divider).
-  const right: { key: string; node: ReactNode; after: number }[] = [];
-  if (team) {
-    right.push({
-      key: "presence",
-      node: <Presence contributors={team.contributors} meId={team.meId} />,
-      after: 2,
-    });
-  }
-  if (pullRequest) {
-    right.push({
-      key: "pr",
-      node: (
-        <PullRequestTab
-          pr={pullRequest.pr}
-          active={pullRequest.tabOpen}
-          onToggle={pullRequest.onToggleTab}
-        />
-      ),
-      after: 2,
-    });
-  }
-  if (action) {
-    right.push({
-      key: "action",
-      node: (
-        <NextActionButton
-          action={action.kind}
-          busy={action.busy}
-          blocked={action.blocked}
-          onRun={action.onRun}
-        />
-      ),
-      after: 10,
-    });
-  }
-
-  // One rhythm across the cluster: 10 between its pieces (a spacer of n is n + 8 here), 12
-  // before the divider.
+  // The cluster's pieces, each with the 10 before it, so a piece that comes or goes takes its
+  // gap with it (the cluster starts 10 early to make up the first's); then 12 before the
+  // divider. The cluster's box ends where its last piece does, for Share to align to. Each may
+  // come after the first paint (its answer late), and then arrives as one movement (arrival.tsx): its room
+  // opens on the panes' clock, what is beside it glides aside, and it fades in where it rests.
+  // The action's room is held unseen while it is expected (`actionExpected`), so when it comes
+  // nothing moves unless its words differ from what was expected.
+  const gap = <span className="w-2.5 shrink-0" />;
   const cluster = (
-    <div className="flex shrink-0 items-center">
-      {right.map(({ key, node, after }, i) => (
-        <div key={key} className="flex items-center">
-          {node}
-          {i < right.length - 1 ? <span className="shrink-0" style={{ width: after + 8 }} /> : null}
-        </div>
-      ))}
+    <div className="-ml-2.5 flex shrink-0 items-center">
+      <Arrival show={team !== null} name="presence">
+        {gap}
+        {team ? <Presence contributors={team.contributors} meId={team.meId} /> : null}
+      </Arrival>
+      <Arrival show={pullRequest !== null} name="pull-request">
+        {gap}
+        {pullRequest ? (
+          <PullRequestTab
+            pr={pullRequest.pr}
+            active={pullRequest.tabOpen}
+            onToggle={pullRequest.onToggleTab}
+          />
+        ) : null}
+      </Arrival>
+      <Arrival
+        show={action !== null}
+        name="action"
+        placeholder={
+          actionExpected ? (
+            <>
+              {gap}
+              <ActionRoom action={actionExpected} />
+            </>
+          ) : null
+        }
+      >
+        {gap}
+        {action ? (
+          <NextActionButton
+            action={action.kind}
+            busy={action.busy}
+            blocked={action.blocked}
+            onRun={action.onRun}
+          />
+        ) : null}
+      </Arrival>
     </div>
   );
   return (
@@ -137,14 +142,20 @@ export function DesignChrome({
         >
           {/* No padding before it: the header's own gap and the toggle's inset already put the
               name as far from the toggle's icon as the icon is from the traffic lights (14). */}
-          <span className="max-w-[240px] shrink-0 truncate pr-3 font-medium text-13 text-ink">
-            {name}
-          </span>
+          <Arrival show={name !== ""} anchor="start" name="title">
+            <span className="max-w-[240px] shrink-0 truncate pr-3 font-medium text-13 text-ink">
+              {name}
+            </span>
+          </Arrival>
         </span>
         <ChromeDivider pane="sidebar" />
       </span>
       <span className="w-1 shrink-0" />
-      <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
+      {/* The pages come with the design's document: they fade in where they rest, and nothing
+          beside them moves (the space after them takes up the difference). */}
+      <Arrival show={pages.length > 0} room={false} anchor="start" name="pages">
+        <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
+      </Arrival>
       <span className="min-w-2 flex-1" />
       {/*
        * The right side, the left's mirror: `[people] [pull request] [action] | … [toggle]`. The
@@ -162,9 +173,11 @@ export function DesignChrome({
        * and holds there. The cluster rides with the divider; the page tabs give way to it.
        */}
       <div className="flex shrink-0 items-center">
-        {team ? (
-          <Popover>
-            <PopoverAnchor asChild>{cluster}</PopoverAnchor>
+        {/* Share's popover is anchored on the cluster, there or not, so nothing in the cluster
+            is made again when the people arrive. */}
+        <Popover>
+          <PopoverAnchor asChild>{cluster}</PopoverAnchor>
+          {team ? (
             <SharePopover
               designName={name}
               repo={team.repo}
@@ -172,11 +185,9 @@ export function DesignChrome({
               meId={team.meId}
               onOpenRepo={team.onOpenRepo}
             />
-          </Popover>
-        ) : right.length ? (
-          cluster
-        ) : null}
-        {right.length ? <span className="w-3 shrink-0" /> : null}
+          ) : null}
+        </Popover>
+        <span className="w-3 shrink-0" />
         <div
           data-chrome-rail
           className={cn(

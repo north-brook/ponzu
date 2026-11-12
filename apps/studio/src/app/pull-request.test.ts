@@ -317,8 +317,9 @@ async function world() {
   });
   const said: string[] = [];
   const told: string[] = [];
+  const ponzu = storePonzu(client.api);
   const store = new PullRequestStore({
-    ponzu: storePonzu(client.api),
+    ponzu,
     designId: design.id,
     say: (m) => said.push(m),
     tellAgent: (t) => told.push(t),
@@ -334,7 +335,7 @@ async function world() {
     await settle();
     return store.getSnapshot();
   };
-  return { backend, client, design, store, github, said, told, read, run };
+  return { backend, client, ponzu, design, store, github, said, told, read, run };
 }
 
 test("from changes on the branch to a merge: create, ready, merge, and the design settles", async () => {
@@ -369,6 +370,44 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
     notices.map((n) => n.kind === "notice" && n.payload.type === "pull_request" && n.payload.state),
   ).toEqual(["draft", "merged"]);
   expect(w.said).toEqual([]);
+});
+
+test("a design opened again starts from its last answer; a read asked ahead stands for the one on opening", async () => {
+  const w = await world();
+  w.backend.agent(w.design.id).push([{ path: "src/pricing.tsx", additions: 40 }]);
+  await w.read();
+  w.store.close();
+  // Opened again, on the same cache: the tab is there before anything is read.
+  const { ponzu } = w;
+  const again = new PullRequestStore({ ponzu, designId: w.design.id, say() {}, tellAgent() {} });
+  expect(again.getSnapshot()).toMatchObject({ status: "ready" });
+  expect(chromeAction(again.getSnapshot().tab!)).toBe("create_pr");
+  // Another design never shows this one's.
+  const other = await w.client.api.designs.create({
+    workspaceId: w.design.workspaceId,
+    repoId: w.design.repo!.id,
+    name: "Other",
+  });
+  const elsewhere = new PullRequestStore({ ponzu, designId: other.id, say() {}, tellAgent() {} });
+  expect(elsewhere.getSnapshot()).toMatchObject({ tab: null, status: "loading" });
+  // Just answered (as a read on the row's hover would be): the read on opening stands on it.
+  let reads = 0;
+  const get = w.client.api.designs.pullRequest.get;
+  w.client.api.designs.pullRequest.get = (id) => {
+    reads++;
+    return get(id);
+  };
+  again.refreshOnOpen();
+  expect(reads).toBe(0);
+  // Older than that, it reads again.
+  ponzu.queryClient.setQueryData(ponzu.queries.pullRequest(w.design.id).queryKey, (tab) => tab, {
+    updatedAt: Date.now() - 60_000,
+  });
+  again.refreshOnOpen();
+  await settle();
+  expect(reads).toBeGreaterThan(0);
+  again.close();
+  elsewhere.close();
 });
 
 test("commits only the sandbox holds: Create PR is offered, waits for the push, then opens", async () => {

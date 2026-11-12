@@ -107,6 +107,48 @@ block in the chrome (`[data-chrome-rail]`) read them, so one number moves pane a
 window is too narrow for all of it (the smallest window, five people and Update branch) the page
 tabs give way, scrolling under their fade; the cluster never wraps or clips.
 
+### What comes after the first paint
+
+Nothing on a page moves when data arrives, and the chrome holds to it. Opening a design, its
+parts come from different answers: the name, the repo (and so the people's cluster) and the pull
+request's number, state and checks are on the sidebar's row, there at once; the pages come with
+the design's document, the people here and the agent's state with presence and the head (live
+queries, each sealed by the API before Realtime answers), and the action button with a read of
+GitHub through the API (`pullRequest`). In that order of preference, each is:
+
+- **Not late.** The mark is drawn from the row until the head comes (the same columns, with what
+  the last read said of whether it can merge), so the head confirms it without a change. The
+  pull request's read is TanStack Query's, kept half an hour (`gcTime`), and the design's store
+  starts from it, so a design opened again shows its action from the first frame while the read
+  on opening confirms it; the read goes out as the design opens, not after its head. The pointer
+  resting on a row (80 ms) or the keyboard reaching it asks for that read ahead (`onIntent`,
+  `prefetchQuery`), and the read on opening stands on an answer under ten seconds old.
+- **Room held.** While the row says the pull request is open or a draft, the room its likely
+  action takes (`nextAction` on the row's summary) is held unseen (`ActionRoom`), so the mark
+  stands where it will; the action fades into it, and only if its words differ does the room
+  ease to their width. No skeleton bars in the chrome.
+- **Arriving on purpose** (`window/arrival.tsx`). What can't be known ahead arrives as one
+  movement on the panes' clock (`--dur-pane`, `--ease-out`): its room opens from its still edge
+  (the cluster's right, the name's left), what is beside it glides aside once, and it fades in,
+  rising 2 px, starting a fifth of the way in. Pieces that come in one answer move together;
+  pieces that come apart don't restart each other (a room changing mid-movement goes on from
+  where it is). Leaving is the same gesture back: it fades and sinks, its room closes. The pages
+  and the new-page + only fade, since nothing beside them moves. Someone joining the people opens
+  their own room; those who were there at the first paint are simply there. A design opened anew
+  is a new chrome: what it has at once shows at once, never as an entrance, so switching between
+  two designs replays nothing they both have. Under reduced motion nothing eases or travels, and
+  the end state is there at once. An entrance never holds back what is ready: the room starts
+  opening in the frame the answer lands.
+
+The pull request tab, opened while its read is on its way, shows its skeleton and then settles
+what GitHub said in over it (`settle`); opened with the last answer kept, it is simply there.
+The gallery's `design-opening` and `design-opening-launch` draw a design opening with its answers
+late, delivered on demand (`window.galleryArrive`, or `?later` on a schedule);
+`gallery/arrivals.test.ts` steps each arrival on its own clock (`stepArrival` in
+`scripts/visual-lib.ts`) and holds every piece that was on screen to a pixel, but the designed
+movement, whose start and end it checks. `app/opening.e2e.test.ts` opens designs in the app with
+every answer slowed and checks what the first frame shows.
+
 ⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
 toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
@@ -377,6 +419,15 @@ repaint something or say what isn't so. The usual swaps:
   and Claude Code's thinking isn't streamed to it), the shimmer utility for the working line (the
   design draws the turning slice, not a sweep of light), and Prompt Input (the composer, the
   product's own).
+- `window/arrival.tsx`, what comes after the first paint (above): a room whose width at rest is
+  `auto`, which a CSS transition can't ease from or to, so it is the Web Animations API, from the
+  width before to the width after, measured in the same layout. Its animations are named
+  (`arrival-room`, `arrival-content`) so a test can step them.
+- A comment's picture in the thread is a glance at where it was left, not the message: 144 by 96
+  (three fifths of the 240 by 160 it is drawn at, so a 2x screen has more pixels than it needs),
+  a tall one cut at 108 from its middle, corners 10 with the one meeting the bubble tucked to the
+  bubble's 5, a hairline (2) above its words, the same at every rail width (`commentPictureSize`
+  in `thread/lines.tsx`).
 - A finished turn's asides and the working line leaving: a CSS keyframe on the pane's clock
   (`leave` in cloud.css), each line kept for its last frame at exactly the room it held, while
   the rail's own scroll anchoring keeps the reader's place. Not a library's exit animation:

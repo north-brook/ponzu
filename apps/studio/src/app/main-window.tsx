@@ -34,6 +34,7 @@ import {
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
+import { ASKED_AHEAD_MS } from "./pull-request-store.ts";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
@@ -287,7 +288,7 @@ function WorkspaceWindow({
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
-  const { queries } = usePonzu();
+  const { queries, queryClient } = usePonzu();
   // Asked again with `me` after each sync with GitHub, as the window comes back to the front.
   const detail = useQuery(queries.workspace(id));
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
@@ -445,6 +446,20 @@ function WorkspaceWindow({
   }, [host, say]);
 
   const onOpen = useCallback((design: DesignSummary) => openDesign(design.id), [openDesign]);
+  // About to open a design on a repo (the pointer resting on its row, or the keyboard on it):
+  // its pull request is asked for ahead, into the cache its chrome reads from the first frame,
+  // so its action is there as it opens. Asked at most once in ASKED_AHEAD_MS, which the read on
+  // opening then stands on.
+  const onIntent = useCallback(
+    (design: DesignSummary) => {
+      if (design.project.kind !== "repo") return;
+      void queryClient.prefetchQuery({
+        ...queries.pullRequest(design.id),
+        staleTime: ASKED_AHEAD_MS,
+      });
+    },
+    [queryClient, queries],
+  );
   const onAction = useCallback(
     (design: DesignSummary, action: Exclude<RowAction, "rename">) => {
       const failed = () => say(`“${design.name}” couldn't be changed. Try again.`);
@@ -603,6 +618,7 @@ function WorkspaceWindow({
                     setQuery(null);
                   }}
                   onOpen={onOpen}
+                  onIntent={onIntent}
                   onAction={onAction}
                   onRename={onRename}
                   onNewDesign={() => {

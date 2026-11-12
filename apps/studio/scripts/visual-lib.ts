@@ -521,3 +521,103 @@ function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
     [selector, steps] as const,
   );
 }
+
+/** Where one piece of the chrome is in a frame of an arrival, and how opaque it is drawn. */
+export interface Piece {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Its own opacity times every ancestor's: what the eye gets. */
+  opacity: number;
+}
+
+/** A frame of an arrival: every piece of the chrome by its name (`button[Merge]`, `img[Sam]`…). */
+export interface ArrivalFrame {
+  t: number;
+  pieces: Record<string, Piece>;
+}
+
+/** An animation an arrival made, by name, with its timing. */
+export interface ArrivalClock {
+  id: string;
+  duration: number;
+  delay: number;
+  easing: string;
+}
+
+/**
+ * Delivers a late answer in the gallery (`window.galleryArrive(part)`, which renders in one
+ * commit) and walks the movement it starts on its own clock rather than the machine's, as
+ * `stepToggle` does for a pane: every animation the arrival made (arrival.tsx names them
+ * `arrival-…`) is held, then all are set together to `steps + 1` times evenly spaced from the
+ * start to the end of the longest, with a frame measured at each. `before` is the frame just
+ * before the answer; the last frame is at rest, once they have finished and what that does
+ * (a piece that left, gone) has landed. `animations` are those that ran: none under reduced
+ * motion, or where nothing needed to move.
+ */
+export function stepArrival(
+  page: Page,
+  part: string,
+  steps = 20,
+): Promise<{ before: ArrivalFrame; frames: ArrivalFrame[]; animations: ArrivalClock[] }> {
+  return page.evaluate(
+    ([part, steps]) => {
+      const header = document.querySelector("header")!;
+      const measure = (t: number): ArrivalFrame => {
+        const pieces: Record<string, Piece> = {};
+        const els = header.querySelectorAll<HTMLElement>(
+          'button, [role="img"], [role="tab"], [data-chrome-divider], [data-chrome-title] > * > *',
+        );
+        for (const el of els) {
+          // Not the room held for an action (unseen), and not the tooltips' own.
+          if (el.closest('[aria-hidden="true"]') && !el.matches("[data-chrome-divider]")) continue;
+          const label =
+            el.getAttribute("aria-label") ??
+            (el.textContent?.trim() || (el.hasAttribute("data-chrome-divider") ? "divider" : ""));
+          let key = `${el.getAttribute("role") ?? el.tagName.toLowerCase()}[${label}]`;
+          while (key in pieces) key += "'";
+          const box = el.getBoundingClientRect();
+          let opacity = 1;
+          for (let at: Element | null = el; at; at = at.parentElement) {
+            opacity *= Number(getComputedStyle(at).opacity);
+          }
+          pieces[key] = { x: box.x, y: box.y, width: box.width, height: box.height, opacity };
+        }
+        return { t, pieces };
+      };
+      const before = measure(-1);
+      const known = new Set(document.getAnimations());
+      (window as { galleryArrive?: (part: string) => void }).galleryArrive!(part);
+      const made = document
+        .getAnimations()
+        .filter((a) => !known.has(a) && a.id.startsWith("arrival"));
+      for (const a of made) a.pause();
+      const timings = made.map((a) => a.effect!.getComputedTiming());
+      const end = Math.max(0, ...timings.map((t) => Number(t.endTime)));
+      const frames: ArrivalFrame[] = [];
+      for (let i = 0; made.length && i <= steps; i++) {
+        const t = (end * i) / steps;
+        // Each held inside its own run, its last step a hair before its end.
+        made.forEach((a, j) => {
+          a.currentTime = Math.min(t, Number(timings[j]!.endTime) - 0.01);
+        });
+        frames.push(measure(t));
+      }
+      const animations = made.map((a, j) => ({
+        id: a.id,
+        duration: Number(timings[j]!.duration),
+        delay: Number(timings[j]!.delay ?? 0),
+        easing: String(timings[j]!.easing),
+      }));
+      for (const a of made) a.finish();
+      return Promise.all(made.map((a) => a.finished.catch(() => {})))
+        .then(() => new Promise((rest) => setTimeout(rest)))
+        .then(() => {
+          frames.push(measure(end));
+          return { before, frames, animations };
+        });
+    },
+    [part, steps] as const,
+  );
+}

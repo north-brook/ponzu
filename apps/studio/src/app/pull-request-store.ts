@@ -39,6 +39,8 @@ export interface PullRequestState {
 /** How often Create PR reads the tab while the sandbox pushes, and how long it waits in all. */
 const PUSH_READ_MS = 3_000;
 const PUSH_PATIENCE_MS = 3 * 60_000;
+/** How long a read asked ahead of opening (`askAhead`) stands for the read on opening. */
+export const ASKED_AHEAD_MS = 10_000;
 
 /** No pull request to show yet, and commits only the design's sandbox holds. */
 function waitingOnPush(tab: PullRequestTab): boolean {
@@ -85,6 +87,11 @@ export class PullRequestStore {
       enabled: false,
     });
     this.query = query;
+    // A design opened before has its last answer in the cache: shown at once, from the first
+    // frame (the chrome's mark and action, the tab), while the read on opening confirms it.
+    // Keyed by the design, so one design never shows another's.
+    const known = query.getCurrentResult().data;
+    if (known) this.state = { ...this.state, tab: known, status: "ready" };
     this.stopQuery = query.subscribe(({ data, isError, fetchStatus }) => {
       if (data && data !== this.state.tab) this.set({ tab: data, status: "ready" });
       else if (isError && fetchStatus === "idle") this.set({ status: "error" });
@@ -108,6 +115,19 @@ export class PullRequestStore {
   /** Reads the pull request again; a read still on its way gives way to it. */
   refresh(): void {
     void this.query.refetch();
+  }
+
+  /**
+   * Reads it as the design opens, at once rather than after its head: unless a read is already
+   * on its way, or one answered a moment ago (the sidebar's row, hovered before the click,
+   * asked ahead), which then answers for now.
+   */
+  refreshOnOpen(): void {
+    const { ponzu, designId } = this.opts;
+    const state = ponzu.queryClient.getQueryState(ponzu.queries.pullRequest(designId).queryKey);
+    if (state?.fetchStatus === "fetching") return;
+    if (state?.data && Date.now() - state.dataUpdatedAt < ASKED_AHEAD_MS) return;
+    this.refresh();
   }
 
   /** A file's diff at the commit the tab shows, for its card, with where it was if renamed. */
