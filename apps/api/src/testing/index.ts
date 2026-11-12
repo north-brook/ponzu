@@ -21,6 +21,7 @@ import { createVault } from "../vault/vault.ts";
 import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
+import { FakePush } from "./fake-push.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -38,6 +39,7 @@ export {
   type FakeRepoAccess,
   MERGEABLE_AFTER_MS,
 } from "./fake-pull-requests.ts";
+export { FakePush } from "./fake-push.ts";
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
@@ -128,6 +130,8 @@ export async function createTestApp(
     shared?: { sandboxes: FakeSandboxes; clock: FakeClock };
     /** What the runner is told to report its turns to PostHog with; none by default. */
     posthog?: PosthogConfig;
+    /** False to run with push off, as a deployment without EXPO_ACCESS_TOKEN does. On by default. */
+    push?: boolean;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -148,6 +152,7 @@ export async function createTestApp(
   const sealer = new FakeSealer(clock);
   const model = new FakeModel();
   const reviewer = new FakeModel(CLAUDE_SONNET);
+  const push = new FakePush({ enabled: options.push ?? true });
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -185,6 +190,7 @@ export async function createTestApp(
     reviewer,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
+    push,
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
@@ -320,6 +326,8 @@ export async function createTestApp(
     realtime: sealer,
     model,
     reviewer,
+    /** Every ping the app sent to a phone, and how Expo answers the next ones. */
+    push,
     /** Every event, profile and exception the app captured, as PostHog would be handed them. */
     analytics,
     logs,

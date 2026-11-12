@@ -36,6 +36,7 @@
     "@ponzu/sandbox": "workspace:*",
     "@posthog/ai": "^8.19.2",
     "ai": "^7.0.169",
+    "expo-server-sdk": "8.0.0",
     "hono": "^4.13.17",
     "jose": "^6.2.17",
     "posthog-node": "^5.68.2",
