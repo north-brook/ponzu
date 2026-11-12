@@ -913,7 +913,7 @@ export function Canvas({
     setPending(null);
     setOpenThread(null);
     if (!hit) {
-      // A finger on the open canvas pans, as it always has; a mouse draws a selection box.
+      // A finger on the ground pans, as it always has; a mouse draws a selection box.
       const box = e.pointerType !== "touch";
       const keep = box && e.shiftKey ? selection : [];
       setSelection(keep);
@@ -2686,7 +2686,7 @@ function pinPoint(
   // On a node, the pin goes with it as it moves or resizes.
   const box = ab && t.nodeId ? boxes[t.nodeId] : undefined;
   const { x, y } = box && box.artboardId === ab?.id ? pinOnNode(t, box) : t;
-  // On the open canvas, x and y are already page coordinates.
+  // On the ground, x and y are already page coordinates.
   return { x: (ab?.x ?? 0) + x, y: (ab?.y ?? 0) + y };
 }
 

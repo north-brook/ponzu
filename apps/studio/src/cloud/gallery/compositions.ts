@@ -42,9 +42,9 @@ export interface Composition {
 export const CHROME_HEIGHT = 44;
 
 /** The panes under our 38px chrome. */
-const CANVAS: Rect = { x: 300, y: 38, width: 780, height: 856 };
+const MAIN: Rect = { x: 300, y: 38, width: 780, height: 856 };
 const RAIL: Rect = { x: 1080, y: 38, width: 360, height: 862 };
-const DESIGN = [CANVAS, RAIL];
+const DESIGN = [MAIN, RAIL];
 const WINDOW = { width: 1440, height: 900 };
 /** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
 const MIN = { width: 1100, height: 640 };
@@ -133,7 +133,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {
@@ -141,7 +141,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "6 · Claude sets it up",
     board: "mac/6-claude-sets-it-up.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
   },
   { id: "create", title: "4 · Create", board: "mac/4-create.html", ...WINDOW, reference: true },
   {
@@ -276,7 +276,7 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/2-needs-you-a-question.html",
     ...WINDOW,
     open: '[role="radio"]:has-text("Shorten it")',
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {
@@ -295,7 +295,7 @@ export const COMPOSITIONS: Composition[] = [
     title: "Together on a design",
     board: "teams/together-on-a-design.html",
     ...WINDOW,
-    masks: [CANVAS],
+    masks: [MAIN],
     reference: true,
   },
   {

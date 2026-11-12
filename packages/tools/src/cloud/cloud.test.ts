@@ -1007,7 +1007,7 @@ test("screenshot renders in the theme and from the assets the host names", async
   const { renderer, calls } = fakeRenderer();
   const { call, host } = setup({ renderer });
   await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
-  host.canvasTheme = "dark";
+  host.viewerTheme = "dark";
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(shot.images).toHaveLength(1);
   expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");

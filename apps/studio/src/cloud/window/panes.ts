@@ -26,7 +26,7 @@ export const PANES: Record<Pane, PaneLimits> = {
   rail: { default: 360, min: 300, max: 520 },
 };
 
-export const CANVAS_MIN = 400;
+export const MAIN_MIN = 400;
 
 /** Arrow keys on a pane's edge move it this far; with Shift, `PANE_STEP_LARGE`. */
 export const PANE_STEP = 10;

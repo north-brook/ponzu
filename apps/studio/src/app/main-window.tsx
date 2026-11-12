@@ -57,7 +57,7 @@ import { useOnReturn } from "./use-answer.ts";
 
 /*
  * The main window, signed in: the person's workspaces from `me`, one of them open with its
- * designs live in the sidebar, and in the canvas pane either a design or the create page.
+ * designs live in the sidebar, and in the main pane either a design or the create page.
  * Routing is this state and links; what the window was showing is remembered per person.
  */
 

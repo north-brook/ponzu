@@ -315,7 +315,7 @@ export async function compare(
 /** Where things are in one frame, after layout and the canvas's own resize handling. */
 export interface Frame {
   t: number;
-  /** The canvas pane's edges. */
+  /** The main pane's edges. */
   left: number;
   right: number;
   /** The divider before the tabs, and the one at the rail's edge. */
@@ -354,7 +354,7 @@ export interface Toggle {
 /**
  * Presses `selector` and records every frame painted until the panes have rested (the window no
  * longer wears `data-pane-motion`, and two frames more). Measured in a ResizeObserver on the
- * canvas pane made after the page's own: where a frame is painted, after the canvas has answered
+ * main pane made after the page's own: where a frame is painted, after the canvas has answered
  * its pane's resize. How many frames that is depends on the machine: assert what holds in each
  * one, never how many there were. The clocks are every transition the press started on what
  * moves with a pane (the panels and `pane-motion`, cloud.css), caught as they are made.

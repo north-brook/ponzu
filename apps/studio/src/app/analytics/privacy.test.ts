@@ -67,7 +67,7 @@ test("an event says the view it happened in, never the page's address or a refer
 });
 
 test("each view has a stable synthetic URL, and a design's only its id", () => {
-  expect(viewUrl({ name: "design", designId: "dsn_1", tab: "canvas" })).toEqual({
+  expect(viewUrl({ name: "design", designId: "dsn_1", tab: "boards" })).toEqual({
     url: "ponzu://app/design",
     path: "/design",
     properties: { design_id: "dsn_1" },

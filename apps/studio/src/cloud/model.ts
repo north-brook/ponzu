@@ -294,7 +294,7 @@ export type ThreadItem = {
         text: string;
         artboardId: string | null;
         artboardName: string | null;
-        /** The page it was left on, by name, when it was left on the open canvas. */
+        /** The page it was left on, by name, when it was left on the ground. */
         pageName: string | null;
         from: Person;
         /** Its picture; null when there is none to show, and the comment says where it was left. */

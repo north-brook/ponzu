@@ -58,7 +58,7 @@ export interface CreatePageProps {
 }
 
 /**
- * Starting a design, in the canvas pane, on the canvas's own dotted ground, since this is where a
+ * Starting a design, in the main pane, on the canvas's own dotted ground, since this is where a
  * canvas starts. The hero (Ponzu's mark over one statement that ends in the project selector)
  * is centred in the pane, a little high (`HERO_RISE`); the composer is docked at the
  * pane's foot, where the thread's composer sits in its rail, and grows upward with what is typed

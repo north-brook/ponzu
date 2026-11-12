@@ -38,8 +38,8 @@ gallery/          dev-only: every board composed from fixtures, every component'
 ```
 
 `AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
-create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
-is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
+create page), the rail's content (null while closed) and the main pane's content. `ThreadRail`
+is the rail's content, needs you included; `PullRequestView` fills the main pane while the pull
 request tab is open. Settings plugs in the same way.
 
 ### Three zones
@@ -67,7 +67,7 @@ on the window; a drag never eases. Anything that lines up with a pane's edge (th
 reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
 move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
 `pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
-Dragging one edge holds the other pane still (its panel disabled) and stops where the canvas
+Dragging one edge holds the other pane still (its panel disabled) and stops where the main pane
 reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
 each open pane takes its remembered width, or in a window too small for both a share of the
 shortfall (`fitPanes`); what's remembered changes only when the person moves an edge.
@@ -90,7 +90,7 @@ The chrome reads, left to right (the founder's order), the right side the left's
   The name is the row's type (13, medium), cut with an ellipsis at 240, and not a control: a
   double-click there zooms the window, as on any Mac title bar, so renaming stays on the row.
 - sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +`, the divider on the
-  sidebar's edge, where the canvas pane starts (its pixel the canvas's first column). The name's
+  sidebar's edge, where the main pane starts (its pixel the canvas's first column). The name's
   room closes to nothing.
 - rail open: `[people] [PR mark] [action] | …  [thread toggle]`. The cluster (presence and
   Share's +, the pull request mark, the next action) sits over the canvas and ends 12 before the
@@ -167,11 +167,11 @@ reach the studio as commands. Neither toggles while a menu or a modal is open ov
 or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
-everything that moves with them: the pane's width, the canvas pane's margin, the left block's
+everything that moves with them: the pane's width, the main pane's margin, the left block's
 width, the name's room, and the rail's block in the chrome, so each divider stays on its pane's
 edge in every frame (the rail's until the edge passes where it rests with the rail closed). The
 rail, like the sidebar, keeps its content still at the window's edge while its room opens or
-closes, and holds it until it has closed. The canvas
+closes, and holds it until it has closed. The boards view
 keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
 moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
 the app's end-to-end test that the boards don't move.
@@ -485,9 +485,9 @@ repaint something or say what isn't so. The usual swaps:
   lower, the picker in a window at the app's smallest shows a little less than five and a half
   rows, and scrolls.
 - The create page's layout (the founder's direction), with its measures in `create/create.ts`:
-  the composer is docked at the foot of the canvas pane, centred at its 660, 10 above the pane's
+  the composer is docked at the foot of the main pane, centred at its 660, 10 above the pane's
   edge (`DOCK_INSET`, the distance the thread's composer keeps from the rail's foot, so a send
-  travels nearly level: the canvas pane ends 6 above the window's edge, so the two feet are 6
+  travels nearly level: the main pane ends 6 above the window's edge, so the two feet are 6
   apart), and grows upward with what is typed or attached. The hero (the mark over the
   statement) has its centre 5% of the pane's height above the pane's true centre (`HERO_RISE`:
   45 in a pane of 900, so it scales with the window; the founder found the room's centre too
@@ -510,9 +510,9 @@ repaint something or say what isn't so. The usual swaps:
 - A send from the create page (the founder's direction; `create/flight.ts`, `create/landing.ts`).
   The moment it goes, before the API answers: the hero fades where it stood (the page keeps its
   width as the pane narrows), the design's view comes (its chrome with the name it will have,
-  the canvas pane on the same dotted ground, and the thread's pane opening whatever it was left
+  the main pane on the same dotted ground, and the thread's pane opening whatever it was left
   as, with the sent words as its first line and the agent waking), and the composer travels from
-  the foot of the canvas pane to its home at the foot of the thread, changing size on the way.
+  the foot of the main pane to its home at the foot of the thread, changing size on the way.
   It is one card that moves: its surface, its + and its send button (which keep their corners
   and become the thread's +, and Stop in its place); what was written keeps the width it was
   written at and fades in the first third, the thread composer's words fade in over the last

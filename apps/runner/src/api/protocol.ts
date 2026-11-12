@@ -328,7 +328,7 @@ export interface CommentEvent {
   text: string;
   /** False for the first message of a thread. */
   reply: boolean;
-  /** The artboard the pin is on, with its name when the comment was made. Null on the open canvas. */
+  /** The artboard the pin is on, with its name when the comment was made. Null for a pin off any board. */
   artboardId: string | null;
   artboardName: string | null;
   /** The node the pin points at, if any. */

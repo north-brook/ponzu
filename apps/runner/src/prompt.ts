@@ -91,7 +91,7 @@ function textOf(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string 
       const c = event.payload;
       const where = c.artboardId
         ? `on ${quote(c.artboardName)} (artboard ${c.artboardId})`
-        : "on the open canvas";
+        : "on the page, off any board";
       const pinned = c.nodeId ? `, pinned to node ${c.nodeId}` : "";
       const head = c.reply
         ? `Reply from ${who} in comment thread ${c.threadId} ${where}:`

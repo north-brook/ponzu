@@ -74,7 +74,7 @@ export function pictureOf(
 }
 
 /**
- * The page a comment on the open canvas was left on, by name, for its compact line: the page
+ * The page a comment on the ground was left on, by name, for its compact line: the page
  * as it is now, or as the comment named it; none for one on a board, or a design of one page.
  */
 function pageNameOf(payload: CommentItem, doc: Doc | null): string | null {

@@ -9,7 +9,7 @@ import { prSummary, toPullRequestDetail } from "./pull-request-map.ts";
 import { useSnapshot } from "./use-snapshot.ts";
 
 /**
- * The pull request tab, in the canvas's pane: what GitHub has, read again as it opens, with
+ * The pull request tab, in the main pane: what GitHub has, read again as it opens, with
  * the summary from the design's head while the read is on its way or when it fails.
  */
 export function PullRequestPane({

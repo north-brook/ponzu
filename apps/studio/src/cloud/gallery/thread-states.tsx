@@ -120,7 +120,7 @@ const drawing: ThreadItem[] = [
   t.comment(f.bryce, "Too many words here.", { kind: "drawing", width: 240, height: 160 }),
 ];
 
-/** Comments with no picture to show: on a board, and on the open canvas of a page. */
+/** Comments with no picture to show: on a board, and on the ground of a page. */
 const placed: ThreadItem[] = [
   t.comment(f.bryce, "Too many words here. Calmer, and put a quieter take beside it.", null),
   t.comment(f.bryce, "Something to go between these two", null, {

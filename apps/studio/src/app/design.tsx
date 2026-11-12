@@ -198,7 +198,7 @@ export function DesignChromeSlot({
   page: string | null;
   onPage: (id: string) => void;
   rail: { open: boolean; onToggle: () => void };
-  /** The pull request tab, open in the canvas's pane in place of the page. */
+  /** The pull request tab, open in the main pane in place of the page. */
   prTab: { open: boolean; onToggle: () => void };
   /** How far the viewer has read the thread, for the rail toggle's dot. */
   seenThreadSeq: number | null;
@@ -374,7 +374,7 @@ function threadPeople(items: readonly RunnerItem[]): { id: string; at: string }[
   return [...last].map(([id, at]) => ({ id, at }));
 }
 
-/** The canvas pane for an open design, with what can go wrong said over it. */
+/** The main pane for an open design, with what can go wrong said over it. */
 export function DesignCanvas({
   host,
   open,

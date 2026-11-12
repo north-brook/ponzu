@@ -1,6 +1,6 @@
 /*
  * A comment's picture, in the studio as it ships, in a real Chromium, on Ponzu Cloud in memory
- * (fake-host.ts): a comment on a board's headline, one on the open canvas between two boards,
+ * (fake-host.ts): a comment on a board's headline, one on the ground between two boards,
  * and a reply each show in the thread with a picture of where they were left the moment they
  * appear there, and keep it with the comment; a teammate's comes from the design's files; one
  * with no picture says where it was left; and the picture goes to the comment, resolved or
@@ -309,7 +309,7 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     await shoot("1-comment-on-a-board");
   });
 
-  test("one on the open canvas between the boards shows both, and a reply shows too", async () => {
+  test("one on the ground between the boards shows both, and a reply shows too", async () => {
     // Both boards in view.
     await page.keyboard.press("Shift+1");
     await page.waitForTimeout(300);
@@ -430,7 +430,7 @@ describe.skipIf(!chromiumPath)("a comment's picture, in the thread", () => {
     expect(first && between).toBeTruthy();
     await rail().getByRole("button", { name: "Open the comment on Hero" }).first().click();
     await page.getByPlaceholder("Reply to reopen…").waitFor();
-    // The pin is in the middle of the canvas's pane.
+    // The pin is in the middle of the main pane.
     const pane = (await page.locator(".pz-root").first().boundingBox())!;
     const pin = (await page.locator("[data-comment-open] button").first().boundingBox())!;
     expect(Math.abs(pin.x + pin.width / 2 - (pane.x + pane.width / 2))).toBeLessThan(40);

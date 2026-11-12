@@ -156,7 +156,7 @@ export function searchAtOpening(groups: readonly PickerGroup[]): boolean {
 }
 
 /**
- * The create page's measures (create-page.tsx). The composer is docked at the foot of the canvas
+ * The create page's measures (create-page.tsx). The composer is docked at the foot of the main
  * pane, `DOCK_INSET` above its bottom edge: the distance the thread's composer keeps from the
  * rail's (AppWindow pads the rail 10 at its foot), the place it travels to on a send.
  */

@@ -37,7 +37,7 @@ test("a comment says where it is, with the ids the tools take, and quotes it", (
   );
   const loose = { ...comment, artboardId: null, artboardName: null };
   expect(eventText(event({ kind: "comment", payload: loose }))).toBe(
-    "Comment from Ada on the open canvas, thread th_1:\n> Calmer, please.",
+    "Comment from Ada on the page, off any board, thread th_1:\n> Calmer, please.",
   );
 });
 

@@ -76,7 +76,7 @@ export function DesignHarness({
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
-  // The pull request tab leaves the rail as it is: it only swaps what the canvas's pane shows.
+  // The pull request tab leaves the rail as it is: it only swaps what the main pane shows.
   const [railOpen, setRailOpen] = useState(initialRail);
   const [items, setItems] = useState(initialThread);
   const [older, setOlder] = useState(olderThread);

@@ -29,8 +29,8 @@ import {
   TrafficLights,
 } from "./chrome.tsx";
 import {
-  CANVAS_MIN,
   fitPanes,
+  MAIN_MIN,
   PANE_STEP,
   PANE_STEP_LARGE,
   PANES,
@@ -57,7 +57,7 @@ export interface PaneWidths {
 const BOTH: readonly Pane[] = ["sidebar", "rail"];
 /** The panels' ids in the group (and on their elements); the panes' own ids stay theirs. */
 const PANEL: Record<Pane, string> = { sidebar: "sidebar-pane", rail: "thread-pane" };
-const CANVAS_PANEL = "canvas-pane";
+const MAIN_PANEL = "main-pane";
 /** The custom property each pane's width is kept in on the window, for the chrome and its content. */
 const WIDTH_VAR: Record<Pane, `--pane-${string}`> = {
   sidebar: "--pane-sidebar",
@@ -98,7 +98,7 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
  * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
- * - `children` fill the canvas pane.
+ * - `children` fill the main pane.
  * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
  *   when there is one.
  * - `panes`: the widths to open the panes at, and where a new one goes when an edge is moved.
@@ -268,7 +268,7 @@ export function AppWindow({
       const size = axis();
       if (size <= 0) return null;
       const wanted: Partial<Record<Pane, number>> = {};
-      let room = size - CANVAS_MIN;
+      let room = size - MAIN_MIN;
       for (const pane of present()) {
         if (!opened[pane]) continue;
         wanted[pane] = now.current.remembered[pane];
@@ -283,7 +283,7 @@ export function AppWindow({
         layout[PANEL[pane]] = share;
         rest -= share;
       }
-      layout[CANVAS_PANEL] = rest;
+      layout[MAIN_PANEL] = rest;
       return layout;
     },
     [axis, present],
@@ -434,7 +434,7 @@ export function AppWindow({
     const otherPanel = present().includes(other)
       ? (panels[other].current?.getSize().inPixels ?? 0)
       : 0;
-    const room = axis() - CANVAS_MIN - otherPanel;
+    const room = axis() - MAIN_MIN - otherPanel;
     const size = Math.max(
       PANES[pane].min - GUTTER[pane],
       Math.min(paneWidth(pane, width) - GUTTER[pane], room),
@@ -631,8 +631,8 @@ export function AppWindow({
           ) : null}
           {sidebar ? edge("sidebar", "Resize sidebar", sidebarOpen, "w-2") : null}
           <ResizablePanel
-            id={CANVAS_PANEL}
-            minSize={CANVAS_MIN}
+            id={MAIN_PANEL}
+            minSize={MAIN_MIN}
             className="flex flex-col"
             style={{ overflow: "visible" }}
           >

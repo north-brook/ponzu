@@ -321,7 +321,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
 
 /**
  * Watches every frame from now for the open design showing nothing of itself: past the create
- * page, a canvas pane or a thread rail without the first message in it.
+ * page, a main pane or a thread rail without the first message in it.
  */
 async function watchForAnEmptyDesign(page: Page, message: string) {
   await page.evaluate((text) => {

@@ -255,7 +255,7 @@ function Attachments({
   );
 }
 
-/** Where a comment was left, in words: its board, or the open canvas (and its page). */
+/** Where a comment was left, in words: its board, or the ground (and its page). */
 function placeOf(comment: Extract<ThreadItem, { kind: "comment" }>["payload"]): string {
   if (comment.artboardName) return comment.artboardName;
   if (comment.artboardId) return "a board";

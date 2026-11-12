@@ -45,7 +45,7 @@ const STATE_ICON: Record<PrState, { icon: IconSvgElement; color: string }> = {
 };
 
 /**
- * The pull request tab, in the canvas's pane: what it is, whether it is green, what people said
+ * The pull request tab, in the main pane: what it is, whether it is green, what people said
  * and what changed. Details, checks, comments and approvals, then the files and their diffs:
  * stacked in a narrow column, side by side in a wide one (`Columns`). Read-only: replying is
  * GitHub's, or the agent's when asked in the thread, which stays open beside it. Sections with

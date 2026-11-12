@@ -480,7 +480,7 @@ describe("the event feed", () => {
     ).toEqual([false, true]);
   });
 
-  test("a comment on the open canvas says its page and where on it", async () => {
+  test("a comment on the ground says its page and where on it", async () => {
     const design = await sample();
     await post(as("maya"), design.id, [
       {

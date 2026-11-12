@@ -352,7 +352,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
     await page.getByRole("button", { name: /Onboarding flow/ }).waitFor();
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
-    // The create page fills the canvas pane until a design is opened, with the caret in its
+    // The create page fills the main pane until a design is opened, with the caret in its
     // composer: a workspace that opens on its create page is for typing into at once.
     await page.getByText("Make something").waitFor();
     await caretStaysInCreate();
@@ -650,7 +650,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await draft.fill("Half typed");
     const railBox = await rail().boundingBox();
 
-    // The pull request tab takes the canvas's pane, with the file's diff on demand, and leaves
+    // The pull request tab takes the main pane, with the file's diff on demand, and leaves
     // the thread as it was beside it.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: NAME }).waitFor();

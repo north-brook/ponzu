@@ -55,7 +55,7 @@ export type Op =
       offset?: { x: number; y: number } | null;
       x?: number;
       y?: number;
-      /** null moves the pin off its artboard, onto the open canvas of `pageId`. */
+      /** null moves the pin off its artboard, onto the ground of `pageId`. */
       artboardId?: string | null;
       pageId?: string | null;
       /**

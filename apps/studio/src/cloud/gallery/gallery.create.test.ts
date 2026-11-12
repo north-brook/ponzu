@@ -417,7 +417,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(clear).toEqual({ past: true, inside: true });
   });
   /**
-   * The create page, measured: the canvas pane, the mark (and how opaque it is), the statement,
+   * The create page, measured: the main pane, the mark (and how opaque it is), the statement,
    * the selector and its words, the composer's card, all in px.
    */
   const header = () =>

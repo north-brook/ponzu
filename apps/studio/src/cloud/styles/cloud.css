@@ -224,7 +224,7 @@
 }
 
 /* The panes' one clock: what moves with the sidebar and the rail as a toggle opens or closes
-   them (the canvas pane's edges, the chrome's divider, name and right block). Name what moves
+   them (the main pane's edges, the chrome's divider, name and right block). Name what moves
    with a `transition-*` utility beside it. It eases only while the window carries
    `data-pane-motion` (a toggle's easing): at any other time, a drag of an edge included, it
    follows at once, so the chrome never trails the pane under the pointer. `:where` keeps it

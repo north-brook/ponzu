@@ -39,7 +39,7 @@ export interface StepContext {
   secrets?: readonly string[];
 }
 
-const CANVAS = "mcp__ponzu__";
+const PONZU_TOOLS = "mcp__ponzu__";
 /** The longest a board's name, a quoted word or a path is said. */
 const NAME = 40;
 const PATH = 36;
@@ -61,8 +61,8 @@ const step = (
  * phrase for the tool then, which its full input makes specific once it is known.
  */
 export function describeStep(name: string, input: Record<string, unknown>, ctx: StepContext): Step {
-  const said = name.startsWith(CANVAS)
-    ? canvasStep(name.slice(CANVAS.length), input, ctx)
+  const said = name.startsWith(PONZU_TOOLS)
+    ? ponzuStep(name.slice(PONZU_TOOLS.length), input, ctx)
     : name.startsWith("mcp__")
       ? serverStep(name)
       : codeStep(name, input, ctx);
@@ -74,8 +74,8 @@ function guarded(said: Step, name: string, ctx: StepContext): Step {
   const secret = (text: string | null | undefined) =>
     !!text && (ctx.secrets ?? []).some((value) => value.length >= 6 && text.includes(value));
   if (![said.doing, said.done, said.board, said.file, said.intent].some(secret)) return said;
-  const plain = name.startsWith(CANVAS)
-    ? canvasStep(name.slice(CANVAS.length), {}, { doc: emptyish })
+  const plain = name.startsWith(PONZU_TOOLS)
+    ? ponzuStep(name.slice(PONZU_TOOLS.length), {}, { doc: emptyish })
     : name.startsWith("mcp__")
       ? serverStep(name)
       : codeStep(name, {}, {});
@@ -88,7 +88,7 @@ const emptyish = { pages: [] } as unknown as Doc;
 /* The canvas                                                          */
 /* ------------------------------------------------------------------ */
 
-function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepContext): Step {
+function ponzuStep(tool: string, input: Record<string, unknown>, ctx: StepContext): Step {
   const doc = ctx.doc;
   const on = () => boardIn(input, doc);
   const q = (name: string | null) => (name ? `"${name}"` : null);
@@ -265,7 +265,7 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
         : step("Starting a new design", "Started a new design", 2);
     }
     case "update_file":
-      return canvasStep("update_design", input, ctx);
+      return ponzuStep("update_design", input, ctx);
     case "set_status": {
       // The agent saying what it is about: not a step, but the state until it next speaks.
       const intent = shown(input.status, 60);

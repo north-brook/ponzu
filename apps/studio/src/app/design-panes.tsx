@@ -9,12 +9,12 @@ import type { Host } from "./host.ts";
 import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
 import { type CommentLink, DesignRail } from "./thread-rail.tsx";
 
-type CanvasLink = NonNullable<CanvasProps["link"]>;
+type BoardsJump = NonNullable<CanvasProps["link"]>;
 
 /*
  * What the window shows for an open design, in AppWindow's three slots: the chrome, the thread
- * rail, and the canvas's pane, which the pull request tab takes over while it is open. The tab
- * swaps what is in the canvas's pane and nothing else: the rail stays as it was, open or closed,
+ * rail, and the main pane, which the pull request tab takes over while it is open. The tab
+ * swaps what is in the main pane and nothing else: the rail stays as it was, open or closed,
  * and the canvas waits underneath where it was left. A board a line of the thread points at is
  * shown on the canvas.
  */
@@ -25,8 +25,8 @@ export interface DesignPanes {
   pane: ReactNode;
   /** What the rail toggle does (⌥⌘B, View › Toggle Thread): from the pull request tab too. */
   toggleRail: () => void;
-  /** What the canvas's pane shows: the canvas, or the pull request tab over it. */
-  tab: "canvas" | "pull-request";
+  /** What the main pane shows: the canvas, or the pull request tab over it. */
+  tab: "boards" | "pull-request";
 }
 
 export function useDesignPanes({
@@ -76,7 +76,7 @@ export function useDesignPanes({
   // the person left it, never on the last one's tab or board.
   const designId = open?.id ?? null;
   const [tabFor, setTabFor] = useState<string | null>(null);
-  const [showing, setShowing] = useState<{ designId: string; link: CanvasLink }>();
+  const [showing, setShowing] = useState<{ designId: string; link: BoardsJump }>();
   const prTab = designId !== null && tabFor === designId;
   const shown = showing?.designId === designId ? showing.link : null;
   const analytics = useAnalytics();
@@ -104,7 +104,7 @@ export function useDesignPanes({
   // Every jump the thread makes (a comment, a stretch of work, a link in a reply) is the canvas
   // following a link, as a ponzu:// one does: the same framing and the same mark.
   const show = useCallback(
-    (to: Omit<CanvasLink, "at">) => {
+    (to: Omit<BoardsJump, "at">) => {
       if (!designId) return;
       setTabFor(null);
       setShowing({ designId, link: { ...to, at: Date.now() } });
@@ -140,7 +140,7 @@ export function useDesignPanes({
 
   return {
     toggleRail: rail.onToggle,
-    tab: prTab ? "pull-request" : "canvas",
+    tab: prTab ? "pull-request" : "boards",
     chrome: (
       <DesignChromeSlot
         // Made anew for each design: what it has at once is simply there, never an entrance.

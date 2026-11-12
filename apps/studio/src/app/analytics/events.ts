@@ -83,7 +83,7 @@ export type View =
   | { name: "update" }
   | { name: "setup"; step: SetupStepName }
   | { name: "create" }
-  | { name: "design"; designId: string; tab: "canvas" | "pull-request" }
+  | { name: "design"; designId: string; tab: "boards" | "pull-request" }
   | { name: "settings"; section: string }
   | { name: "no-access" };
 

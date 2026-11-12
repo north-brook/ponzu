@@ -199,7 +199,7 @@ test("a teammate's message and comment carry them, as the members they are", asy
   store.close();
 });
 
-test("a comment on the open canvas names its page, where the design has more than one", async () => {
+test("a comment on the ground names its page, where the design has more than one", async () => {
   const w = await world();
   const store = w.thread();
   const sam = w.backend.connect(w.sam);

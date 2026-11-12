@@ -439,7 +439,7 @@ describe("docSearchEntries", () => {
     ]);
   });
 
-  test("a pin on the open canvas, a resolved thread and an author with an id", () => {
+  test("a pin on the ground, a resolved thread and an author with an id", () => {
     const doc = sampleDoc();
     applyOp(doc, SAMPLE_OPS["thread.create"]);
     doc.threads[1]!.status = "resolved";

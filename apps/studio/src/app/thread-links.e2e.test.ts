@@ -61,7 +61,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   const opened = () => page.evaluate(() => [...window.ponzuFake!.opened]);
   const activeTab = () =>
     page.getByRole("tablist", { name: "Pages" }).locator('[aria-selected="true"]').textContent();
-  /** The board's box on screen, and whether all of it is in the canvas's pane. */
+  /** The board's box on screen, and whether all of it is in the main pane. */
   const inView = async (name: string) => {
     const board = page.locator(`[data-board-name][title="${name}"]`);
     if (!(await board.count())) return false;

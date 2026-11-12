@@ -37,7 +37,7 @@ export interface MemoryHost extends CloudHost {
   assets: Map<string, NamedBytes>;
   published: NamedBytes[];
   /** What `theme()` answers. Unset until a test says. */
-  canvasTheme?: ColorScheme;
+  viewerTheme?: ColorScheme;
 }
 
 export function memoryHost(): MemoryHost {
@@ -59,7 +59,7 @@ export function memoryHost(): MemoryHost {
       return `https://exports.ponzu.test/${file.name}`;
     },
     link: () => "https://ponzu.test/designs/dsn_test",
-    theme: () => host.canvasTheme,
+    theme: () => host.viewerTheme,
   };
   return host;
 }

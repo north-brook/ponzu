@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 
 /** Where a new comment's unsent words sit: a Thread's place, before it is one. */
 export interface DraftPin {
-  /** Absent for a comment on the open canvas. */
+  /** Absent for a comment on the ground. */
   artboardId?: string;
   pageId: string;
   nodeId?: string;

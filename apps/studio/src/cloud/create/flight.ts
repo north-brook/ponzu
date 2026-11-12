@@ -1,5 +1,5 @@
 /*
- * A send from the create page: the composer travels from the foot of the canvas pane to its home
+ * A send from the create page: the composer travels from the foot of the main pane to its home
  * at the foot of the thread, as one object. First, last, invert, play with the browser's own
  * animations, as the sidebar's rows move (sidebar/row-motion.ts).
  *

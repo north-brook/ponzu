@@ -56,7 +56,7 @@ export function commentIn(doc: Doc, threadId: string, messageId: string) {
 
 /**
  * Whether a comment can have a picture, before anything is drawn: one on a board always can; one
- * on the open canvas only with a board in reach (`OPEN_LIMIT`), taking a board that doesn't say
+ * on the ground only with a board in reach (`OPEN_LIMIT`), taking a board that doesn't say
  * its height as reaching down without end, so this never says no where `pictureArea` would
  * find a board.
  */
@@ -83,7 +83,7 @@ export function hasPictureArea({
  * The area round a comment's pin, drawn at the picture's size. It lays the nearby boards out
  * unseen first, to know their heights and the node the pin is on, then frames the area
  * (`pictureArea`) and shows it; `onFramed` hears when it has, or `onEmpty` that there is nothing
- * round the pin to show (a pin on the open canvas far from every board), and it draws nothing.
+ * round the pin to show (a pin on the ground far from every board), and it draws nothing.
  */
 export function CommentScene({
   doc,
@@ -285,7 +285,7 @@ const DRAW_MS = 15_000;
  * The picture of where a comment was left, in both themes, as WebP at `COMMENT_PICTURE.scale`:
  * the scene drawn off screen, its fonts and images in, its animations at their ends, and then
  * turned into an image by modern-screenshot (the DOM, with its computed styles and the fonts and
- * images it uses, into an SVG and onto a canvas). Rejects when it can't be had.
+ * images it uses, into an SVG and onto a <canvas>). Rejects when it can't be had.
  */
 export async function drawCommentPicture(given: {
   doc: Doc;
@@ -385,7 +385,7 @@ async function settle(scene: HTMLElement, deadline: number): Promise<void> {
 
 /**
  * An image from another site, as a data URL: loaded the way the canvas loads it, asking for
- * CORS, and drawn onto a canvas, which only an image its host lets be read can be. False for
+ * CORS, and drawn onto a <canvas>, which only an image its host lets be read can be. False for
  * the design's own files and anything else, which modern-screenshot fetches itself.
  */
 async function crossOriginImage(url: string, assetBase?: string): Promise<string | false> {
@@ -397,11 +397,11 @@ async function crossOriginImage(url: string, assetBase?: string): Promise<string
     img.crossOrigin = "anonymous";
     img.src = url;
     await img.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    canvas.getContext("2d")?.drawImage(img, 0, 0);
-    return canvas.toDataURL("image/png");
+    const bitmap = document.createElement("canvas");
+    bitmap.width = img.naturalWidth;
+    bitmap.height = img.naturalHeight;
+    bitmap.getContext("2d")?.drawImage(img, 0, 0);
+    return bitmap.toDataURL("image/png");
   } catch {
     return false;
   }

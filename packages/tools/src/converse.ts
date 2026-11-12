@@ -34,7 +34,7 @@ export const converseTools = [
     group: "converse",
     readOnly: true,
     description:
-      "Comment threads in the design. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on the open canvas of a page, beside the artboards.",
+      "Comment threads in the design. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on a page, off any board, beside the artboards.",
     input: {
       status: z.enum(["open", "resolved", "all"]).optional(),
       artboard: z.string().optional(),
