@@ -24,7 +24,7 @@ export function IphoneStep({
     <StepLayout
       progress={3}
       title="Get Ponzu on your iPhone"
-      body="Comment on canvases and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
+      body="See your canvases live and comment on them from your iPhone."
       actions={
         <StepButton onClick={onStart} busy={starting}>
           Start building

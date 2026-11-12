@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import Home from "./app/page.tsx";
 import { scaleSizes } from "./components/hero-shot.tsx";
 import { PRICES } from "./components/pricing.ts";
+import { BILLING_LIVE } from "./components/site.ts";
 
 /*
  * The home page (site slice S3): it no longer runs on Ponzu 1's local runtime, its product shots
@@ -77,7 +78,13 @@ test("the pricing band reads rate card v1 through pricing.ts and says it exactly
   expect(text).toContain(
     "$0.10 a credit. An awake canvas uses 5 credits an hour; asleep, nothing. 100 credits a month on us, per person.",
   );
-  expect(text).toContain("Free to start: 100 credits a month.");
+  // Until billing starts, the hero promises no credits, only that Ponzu is free.
+  expect(BILLING_LIVE).toBe(false);
+  expect(text).toContain("Free while billing is being set up.");
+  expect(text).not.toContain("Free to start:");
+  // The iPhone tile says what the iPhone does today: no questions to answer, no pings.
+  expect(text).toContain("See your canvases live and comment on them from your iPhone.");
+  expect(text).not.toContain("answer Ponzu");
   expect(PRICES.credit).toBe("$0.10");
 });
 
