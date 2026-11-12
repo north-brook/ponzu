@@ -288,6 +288,7 @@
       "version": "0.1.0",
       "dependencies": {
         "parse5": "^8",
+        "zod": "^4",
       },
     },
     "packages/db": {

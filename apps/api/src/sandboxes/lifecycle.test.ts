@@ -97,7 +97,7 @@ async function cron() {
   });
   expect(ran.status).toBe(200);
   await t.backgroundDone();
-  return (await ran.json()) as { ran: number; sandboxes: Record<string, number> };
+  return (await ran.json()) as { steps: Record<string, Record<string, number>> };
 }
 
 /** On to a minute the sweep reconciles in (every tenth), and sweep. */

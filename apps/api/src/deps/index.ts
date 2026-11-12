@@ -6,6 +6,7 @@ import { type Analytics, noAnalytics } from "../analytics/analytics.ts";
 import { createPosthogAnalytics, type PosthogConfig } from "../analytics/posthog.ts";
 import { DocCache } from "../canvases/doc-cache.ts";
 import type { Env, SandboxConfig } from "../env.ts";
+import type { Features } from "../features.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
@@ -75,6 +76,8 @@ export interface Deps {
   analytics: Analytics;
   /** Pings to phones through Expo (deps/push.ts). Off, as `noPush`, without EXPO_ACCESS_TOKEN. */
   push: Push;
+  /** Which features are switched on (features.ts), read from the environment once, in env.ts. */
+  features: Features;
   config: Config;
 }
 
@@ -168,6 +171,7 @@ export function createDeps(env: Env): Deps {
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     push: env.push ? createExpoPush({ accessToken: env.push.accessToken, clock, log }) : noPush,
+    features: env.features,
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
