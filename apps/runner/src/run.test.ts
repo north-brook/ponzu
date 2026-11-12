@@ -462,10 +462,22 @@ async function onRepo(
     git(work, "commit", "-qm", `Screen ${n}`);
     return git(work, "rev-parse", "HEAD");
   };
+  // The runner's own git commands still running.
+  let running = 0;
   const s = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
     prepare: async () => work,
-    checkoutGit: (cwd) => gitIn(agentShell(undefined, GIT_ENV), "git", cwd),
+    checkoutGit: (cwd) => {
+      const run = gitIn(agentShell(undefined, GIT_ENV), "git", cwd);
+      return async (args, opts) => {
+        running++;
+        try {
+          return await run(args, opts);
+        } finally {
+          running--;
+        }
+      };
+    },
     timing: { pushWaitsMs: [5, 5], ...timing },
     ...more,
   });
@@ -476,7 +488,7 @@ async function onRepo(
       return null;
     }
   };
-  return { ...s, work, origin, commit, onGithub };
+  return { ...s, work, origin, commit, onGithub, gitQuiet: () => running === 0 };
 }
 
 test("a turn that ends with commits GitHub lacks gets them pushed, whatever the agent did", async () => {
@@ -575,9 +587,10 @@ test("Create PR during a turn waits for the turn to end, so the agent's git is l
   s.run.ready();
   await turn(s);
   const head = s.commit();
-  s.api.askToPush();
+  const asked = s.api.askToPush();
   s.runner.poke();
-  await Bun.sleep(100);
+  // Taken, and the runner's git quiet (the start's push too, which looked before the turn).
+  await until(() => s.api.delivered.includes(asked.id) && s.gitQuiet(), 5_000);
   // Mid-turn: nothing pushed for the agent to race.
   expect(s.onGithub()).toBeNull();
   s.run.end();

@@ -58,6 +58,15 @@ const createArtboardInput = {
   y: z.number().optional(),
 };
 
+/** Every element's id in the design, for the ids new HTML is given to keep clear of. */
+function idsIn(doc: Doc): Set<string> {
+  const ids = new Set<string>();
+  for (const page of doc.pages)
+    for (const artboard of page.artboards)
+      for (const { node } of walk(artboard.root)) ids.add(node.id);
+  return ids;
+}
+
 /** create_artboard. `kept` adds where the host keeps the new artboard. */
 export async function createArtboard(
   args: z.infer<z.ZodObject<typeof createArtboardInput>>,
@@ -85,7 +94,9 @@ export async function createArtboard(
   );
   const width = style.width ?? "auto";
   const height = style.height ?? "auto";
-  const { nodes, dropped } = args.html ? parseHtml(args.html) : { nodes: [], dropped: [] };
+  const { nodes, dropped } = args.html
+    ? parseHtml(args.html, { taken: idsIn(design.doc) })
+    : { nodes: [], dropped: [] };
   const around = pageNow()?.artboards ?? [];
   const pos =
     args.x !== undefined && args.y !== undefined
@@ -172,7 +183,10 @@ export const writeTools = [
       // written into an <svg> or <g> close themselves like they do in a browser.
       const sibling = mode === "before" || mode === "after" || mode === "replace";
       const parent = sibling ? t.parent : t.node;
-      const { nodes, dropped } = parseHtml(args.html, parent ? { parent } : {});
+      const { nodes, dropped } = parseHtml(args.html, {
+        ...(parent ? { parent } : {}),
+        taken: idsIn(doc),
+      });
       if (!nodes.some((n) => n.kind === "el" || n.value.trim()))
         throw new ToolError("The HTML is empty after cleanup." + droppedNote(dropped));
       let op: Op;
