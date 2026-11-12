@@ -78,7 +78,8 @@ export function toRepo(id: string, fullName: string): Repo {
 export function pushableRepos(repos: RepoView[]): Repo[] {
   return repos
     .filter((repo) => repo.canPush)
-    .toSorted((a, b) => String(b.pushedAt ?? "").localeCompare(String(a.pushedAt ?? "")))
+    .slice()
+    .sort((a, b) => String(b.pushedAt ?? "").localeCompare(String(a.pushedAt ?? "")))
     .map((repo) => toRepo(repo.id, repo.fullName));
 }
 
@@ -237,7 +238,8 @@ export function canvasMembers(
       const access: CanvasAccess = member.userId === ownerId ? "owner" : "edit";
       return { person: toPerson(member.userId, member), access, joined: true };
     })
-    .toSorted((a, b) => Number(b.access === "owner") - Number(a.access === "owner"));
+    .slice()
+    .sort((a, b) => Number(b.access === "owner") - Number(a.access === "owner"));
 }
 
 /** The id the UI keys someone by before they have a Ponzu user: their GitHub id. */
