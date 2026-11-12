@@ -61,7 +61,7 @@ export const GATE_EXAMPLES: GateExample[] = [
   },
   {
     id: "contact-details-as-designs",
-    note: "A number, a domain and a handle written into a design brief fail safe; naming the kind of contact passes.",
+    note: "A number, a domain and a handle written into a brief fail safe; naming the kind of contact passes.",
     hard: true,
     input: {
       product: FERNWOOD,
@@ -76,7 +76,7 @@ export const GATE_EXAMPLES: GateExample[] = [
   },
   {
     id: "abuse-and-plumbing",
-    note: "Defaming the founders fails safe; caching fails design; generic and invented ideas pass the gate.",
+    note: "Defaming the founders fails safe; caching fails visible; generic and invented ideas pass the gate.",
     input: {
       product: product("I6b"),
       ideas: [
@@ -105,7 +105,7 @@ export const GATE_EXAMPLES: GateExample[] = [
   },
   {
     id: "designs-of-risky-things",
-    note: "Designing a contact page or how a command is shown is design, not an ask of the reader.",
+    note: "A contact page, or how a command is shown, is visible work, not an ask of the reader.",
     hard: true,
     input: {
       product: product("I8"),

@@ -211,7 +211,7 @@ describe("canvases and the thread", () => {
     expect(JSON.stringify(t.analytics.events)).not.toContain("checkout one page");
   });
 
-  test("Scratch is its own source, and a create sent again is no second design", async () => {
+  test("Scratch is its own source, and a create sent again is no second canvas", async () => {
     const body = { workspaceId: ws.id, createKey: "scratch-key-1" };
     await call(t, maya(), "POST", "/v1/canvases", body);
     await call(t, maya(), "POST", "/v1/canvases", body);

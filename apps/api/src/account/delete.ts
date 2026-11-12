@@ -30,7 +30,7 @@ import { finishRetire, holdForRetire } from "../sandboxes/retire.ts";
  *     another admin's deletion has meanwhile left them the only one
  *   their WorkOS user deleted, in the background: their next sign-in is someone new
  *
- * Designs they own in a workspace others are in stay with it, owned by nobody: their canvas,
+ * Canvases they own in a workspace others are in stay with it, owned by nobody: their boards,
  * thread and pull request are work others share, in a repo others reach.
  */
 

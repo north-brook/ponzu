@@ -8,7 +8,7 @@ import { z } from "zod";
  *
  * A kind names one thing worth a ping. Each is under one of the person's toggles in Settings ›
  * Notifications, except the billing kinds, which are always on and go to a workspace's admins.
- * Mentions and the notifications design's `cap_80` and `cap_reached` are not built: the billing
+ * Mentions and the notifications spec's `cap_80` and `cap_reached` are not built: the billing
  * kinds take the cap's place, with billing's words (copy.ts).
  *
  * A trigger carries ids, numbers and fixed words only, never anything a person or the agent

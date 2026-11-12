@@ -115,7 +115,7 @@ export async function putToSleep(
   return true;
 }
 
-/** The pending rule: an asleep design whose feed holds work no runner took is woken for it. */
+/** The pending rule: an asleep canvas whose feed holds work no runner took is woken for it. */
 export async function wakeIfPending(deps: JobDeps, canvasId: string): Promise<void> {
   if (await hasPendingEvents(deps.db, canvasId)) await startWake(deps, canvasId, "pending");
 }

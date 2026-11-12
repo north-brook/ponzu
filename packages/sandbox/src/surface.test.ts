@@ -1,5 +1,5 @@
 /*
- * Holds the SDK to the shape the design needs:
+ * Holds the SDK to the shape the spec needs:
  *
  * 1. Nothing outside packages/sandbox/src imports @vercel/sandbox.
  * 2. vercel.ts touches a Sandbox only through calls that never resume: the static get, create,

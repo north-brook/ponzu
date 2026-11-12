@@ -25,7 +25,7 @@ const Onboarding = z.object({
 });
 
 const OnboardingBody = z.object({
-  /** Continue on "Where do you design?", or Start designing on the iPhone step. */
+  /** Continue on "Where do you build?", or Start building on the iPhone step. */
   step: z.enum(["where", "iphone"]),
 });
 

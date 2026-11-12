@@ -66,7 +66,7 @@ const Usage = z.object({
   /** Use put down to nobody (a deleted account). Admins only. */
   unattributedCredits: z.number().int().nullable(),
   /**
-   * Use by design, highest first, then canvases since deleted (`deleted`) and canvases the admin
+   * Use by canvas, highest first, then canvases since deleted (`deleted`) and canvases the admin
    * may not see by name (`hidden`), each as one line with no canvas. Shared out of the rounded
    * total, so it adds up to `usedCredits` exactly, as `byPerson` with `unattributedCredits` does.
    */

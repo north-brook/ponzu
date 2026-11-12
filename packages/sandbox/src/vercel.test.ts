@@ -5,7 +5,7 @@
  * a recorded body with one field changed, said where it is. Only the 429, 5xx, 422 and stream
  * error bodies are made up, in the recorded error shape, because a live run cannot provoke them.
  *
- * What the live run recorded (the design's open questions):
+ * What the live run recorded (the spec's open questions):
  * - A create on a name in use: 400 {code:"bad_request", message:"A sandbox with the name '…'
  *   already exists for this project. Use GET /sandboxes/:name to resume it or delete it first."}.
  *   Not a 409, and no specific code: up() matches it by status, code and message, as busy.
@@ -202,7 +202,7 @@ async function failure(work: Promise<unknown>): Promise<SandboxError> {
 }
 
 describe("up", () => {
-  test("a missing name: get without resume, then one create with the design's params and no env", async () => {
+  test("a missing name: get without resume, then one create with the spec's params and no env", async () => {
     const api = server(["GET", SANDBOX, reply(MISSING)], ["POST", CREATE, reply(CREATED)]);
     const up = await make(api.fetch).up(NAME, SPEC);
     expect(api.lines()).toEqual([`GET /v2/sandboxes/${NAME}?resume=false`, "POST /v3/sandboxes"]);

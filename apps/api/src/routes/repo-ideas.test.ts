@@ -203,7 +203,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     const named = [
       "Open Ponzu Test on a first screen with one clear thing to start",
       "Pitch Ponzu Test on one page that says who it is for",
-      "Design the main screen people come back to every day",
+      "Build the main screen people come back to every day",
       "Find a mark and palette for Ponzu Test, as directions to compare",
     ];
     t.model.reply({ output: { ideas: named } });
@@ -216,7 +216,7 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(t.model.requests).toHaveLength(1);
   });
 
-  test("ideas the gate finds are not designs are dropped after a second ask, and the rest kept", async () => {
+  test("ideas the gate finds are not visible are dropped after a second ask, and the rest kept", async () => {
     const notVisible = verdict({ notVisible: [2] });
     t.reviewer.reply({ output: notVisible }, { output: notVisible });
     await ideasOf("maya");
@@ -615,7 +615,7 @@ describe("GET /v1/repos/:id/ideas", () => {
       suspendedAt: now,
       reconciledAt: now,
     });
-    // As for a design in it: GitHub's answer is `none` for everyone, so a 404.
+    // As for a canvas in it: GitHub's answer is `none` for everyone, so a 404.
     t.clock.advance(2 * 60_000);
     expect((await ideasOf("maya")).status).toBe(404);
     await t.backgroundDone();

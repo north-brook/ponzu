@@ -28,7 +28,7 @@ import {
   type VercelCredentials,
 } from "./sandboxes.ts";
 
-/** Every design and check runs in Washington, next to the API's functions. */
+/** Every canvas and check runs in Washington, next to the API's functions. */
 const REGION = "iad1";
 const DEFAULT_VCPUS = 2;
 const KEEP_LAST_SNAPSHOTS = { count: 1, deleteEvicted: true } as const;
@@ -448,7 +448,7 @@ const PINNED: ReadonlySet<Op> = new Set<Op>([
   "stop",
 ]);
 
-/** The error table of the design, section 2. */
+/** The error table of the spec, section 2. */
 export function toSandboxError(op: Op, error: unknown): SandboxError {
   if (error instanceof SandboxError) return error;
   if (error instanceof APIError) {

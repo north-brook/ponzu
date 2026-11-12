@@ -83,7 +83,7 @@ export interface Config {
   /** What `/v1/health` reports about this build. */
   build: { version: string; commit: string | null };
   minimumClientVersions: MinimumVersions;
-  /** Where design files are served from; a canvas's are under `<assetsUrl>/<asset key>/`. */
+  /** Where canvases' files are served from; a canvas's are under `<assetsUrl>/<asset key>/`. */
   assetsUrl: string;
   /** What a canvas's runner reports its turns to PostHog with, or null when analytics is off. */
   posthog: PosthogConfig | null;

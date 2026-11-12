@@ -15,7 +15,7 @@ import type { BillingPeriod } from "./period.ts";
 /*
  * Plan and usage, worked out (docs/cloud.md, "Billing"): a workspace's usage this period with
  * the free credits, what would be billed and the cap, for everyone in it; and for its admins,
- * who used what, by person and by design. Nothing here is billed yet: there is no card, no
+ * who used what, by person and by canvas. Nothing here is billed yet: there is no card, no
  * ledger write and no cap enforcement until billing is built.
  */
 
@@ -51,7 +51,7 @@ export interface WorkspaceUsage {
   /** Use put down to nobody: deleted accounts, and canvases nobody's action woke. Admins only. */
   unattributedCredits: number | null;
   /**
-   * Use by design, highest first: admins only. After the named ones, canvases since deleted in
+   * Use by canvas, highest first: admins only. After the named ones, canvases since deleted in
    * one entry (`deleted`), then canvases the viewer may not know of (in a repo GitHub hides from
    * them) in another (`hidden`). It adds up to `usedCredits` exactly, as `byPerson` with
    * `unattributedCredits` does.
@@ -159,12 +159,12 @@ export function ungranted(read: Pick<WorkspaceUsageRead, "people" | "granted">):
     .map((person) => person.id);
 }
 
-/** The two unnamed lines' keys, beside canvases' own ids (which are `des_…`). */
+/** The two unnamed lines' keys, beside canvases' own ids (`cnv_…`, or `des_…` for one made before the rename). */
 const DELETED = "deleted";
 const HIDDEN = "hidden";
 
 /**
- * Use by design: each canvas the viewer may read, by name; then what was used in canvases since
+ * Use by canvas: each canvas the viewer may read, by name; then what was used in canvases since
  * deleted (their usage keeps no canvas); then in canvases they may not know of. Every line is
  * shared out of the rounded total, so the lines add up to it.
  */

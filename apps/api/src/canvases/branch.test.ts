@@ -6,6 +6,7 @@ test("a topic is the first words of a message that say something", () => {
     "pricing-page-calmer",
   );
   expect(branchTopic("Can you redo the onboarding?")).toBe("onboarding");
+  expect(branchTopic("A new canvas for the checkout")).toBe("checkout");
   expect(branchTopic("Café menu — größer!")).toBe("cafe-menu-grosser");
   expect(branchTopic("🎨✨")).toBe("canvas");
   expect(branchTopic("")).toBe("canvas");

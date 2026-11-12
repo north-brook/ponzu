@@ -2,7 +2,7 @@
  * Sandbox names. A name is unique per Vercel project and is the only identifier we keep: the
  * API's database scope keeps environments sharing one project apart.
  *
- *   pz-<scope>-<canvasId>             a design
+ *   pz-<scope>-<canvasId>             a canvas
  *   pz-<scope>-signin-<authStateId>   a Claude sign-in
  *   pz-test-<tag>-<8 random>          live suites and image checks; no sweep matches it
  *
@@ -32,7 +32,7 @@ export function scopePrefix(scope: string): string {
 
 /** `pz-${scope}-${canvasId}`. */
 export function canvasSandboxName(scope: string, canvasId: string): string {
-  if (canvasId.startsWith("signin-")) throw new Error(`a design id cannot start with signin-`);
+  if (canvasId.startsWith("signin-")) throw new Error(`a canvas id cannot start with signin-`);
   return checked(`${scopePrefix(scope)}${canvasId}`);
 }
 
@@ -56,7 +56,7 @@ export interface ParsedSandboxName {
   id: string;
 }
 
-/** The parts of a design or sign-in name; null for anything else, test names included. */
+/** The parts of a canvas or sign-in name; null for anything else, test names included. */
 export function parseSandboxName(name: string): ParsedSandboxName | null {
   const match = /^pz-([0-9a-f]{12})-(.+)$/.exec(name);
   if (!match || !PART.test(name)) return null;

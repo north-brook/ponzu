@@ -254,7 +254,7 @@ export function composeBody(
         `</picture></a>${PICTURE_END}`,
     );
   }
-  parts.push(`Designed in Ponzu: [${name}](${link})`);
+  parts.push(`Made in Ponzu: [${name}](${link})`);
   return parts.join("\n\n");
 }
 
