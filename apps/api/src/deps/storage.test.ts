@@ -204,11 +204,16 @@ function answering(answer: (request: Request, body: string) => Response) {
 test("a list asks ListObjectsV2 for one prefix after a key, and reads R2's answer", async () => {
   const { r2, seen } = answering(() => new Response(fixture("r2-list.xml"), { status: 200 }));
 
+  const logo = `${KEY}/assets/logo.svg`;
+  const salt = `${KEY}/assets/salt & pepper <v2>.png`;
+  const dark = `${KEY}/previews/41-dark.png`;
   expect(await r2.list(`${KEY}/`, { after: `${KEY}/assets/a.png` })).toEqual({
-    keys: [
-      `${KEY}/assets/logo.svg`,
-      `${KEY}/assets/salt & pepper <v2>.png`,
-      `${KEY}/previews/41-dark.png`,
+    keys: [logo, salt, dark],
+    // When each was last written, which the orphan archive sweep goes by.
+    objects: [
+      { key: logo, modifiedAt: new Date("2026-11-10T18:02:11.204Z") },
+      { key: salt, modifiedAt: new Date("2026-11-10T18:02:12.881Z") },
+      { key: dark, modifiedAt: new Date("2026-11-11T09:40:03.017Z") },
     ],
     truncated: true,
   });
@@ -236,7 +241,7 @@ test("a list with nothing under the prefix is empty and whole", () => {
   const empty =
     '<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><Name>canvases</Name>' +
     "<IsTruncated>false</IsTruncated><MaxKeys>1000</MaxKeys><KeyCount>0</KeyCount></ListBucketResult>";
-  expect(parseList(empty)).toEqual({ keys: [], truncated: false });
+  expect(parseList(empty)).toEqual({ keys: [], objects: [], truncated: false });
 });
 
 test("a list storage refuses throws with its status", async () => {

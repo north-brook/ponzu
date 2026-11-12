@@ -410,8 +410,13 @@ checkpoint after every 64 ops or 256 KB of op payload.
 
 A page of ops holds at most 500 ops and 3 MB of them (always at least one), so the
 answer fits in what a Vercel function may send; when the last op is below `seq`, ask
-again from there. `GET /doc` has no such bound yet: before canvases grow past a few
-MB it must stream, or hand out a checkpoint served from R2.
+again from there. `GET /doc` streams instead: it writes the JSON text of `{ doc, seq }`
+in 256 KB slices, and Vercel's 4.5 MB limit does not apply to a streamed answer, so a
+canvas larger than that is still read in one request. A client reads it with `response.json()`
+like any other answer. A refusal (no access, no such canvas) is decided before the first
+byte and is the usual error body. The function still builds the whole document in memory
+first, so its memory, not the answer's size, is what bounds a canvas; handing out a
+checkpoint served from R2 is the way past that if canvases ever grow that large.
 
 ### The replica
 
@@ -548,10 +553,20 @@ Every kind of job is named in one registry (`apps/api/src/jobs/registry.ts`), on
 area. Other work that must outlive its request and start at once records its job held and runs
 it with `waitUntil` the same way (`runNow`). The minute's cron runs in steps
 (`apps/api/src/cron/steps.ts`): the due jobs first, then the installation sweep, the sandbox
-sweep and any other step, at once. A step that throws is logged as `cron_step_failed` and the
+sweep and any other step (the pull request sweep, and once a day the orphan archive sweep), at
+once. A step that throws is logged as `cron_step_failed` and the
 others still run. A step runs every minute, once in every few minutes, or once an hour at a
 given minute. One on a slot runs once in it however many runs overlap, and catches up within
-five minutes when the run it was due in never came.
+five minutes when the run it was due in never came. A step that runs once a day takes an hourly
+slot and does its work only in its hour.
+
+On the hour, the retention step (`cron/steps/retention.ts`) deletes the rows that only keep
+the service running: `auth_states` a day after they expire, finished `jobs` (completed or
+failed for good) and `webhook_deliveries` 30 days after they finished or arrived, at most 5,000
+of each a run, logging counts only. The periods are constants in
+`packages/db/src/queries/retention.ts`, and the privacy policy states them. A step's slot
+mark (`recordOnce`) is a finished job too, so it goes after 30 days: a `recordOnce` key must
+name a window that is over well before then.
 
 - **The database decides.** A canvas has at most one `sandboxes` row, keyed by the canvas, in
   one of four states:
@@ -585,15 +600,16 @@ five minutes when the run it was due in never came.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance` and `billing` let everything through until their
-  features fill them; `claudeLimit` is "Claude plan limits". The runner's claim hands out only
-  the kinds `claimableKinds` allows (every kind, except that only a stop, an edit and a push go
-  out while the plan the canvas runs on is at its limit; billing will narrow it too); the rest
-  stay in the feed,
+  nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
+  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
+  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
+  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
+  will narrow it too); the rest stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
-  be allowed and before anything is written; each lets everything through until its feature
-  fills it.
+  be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
+  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -1123,10 +1139,25 @@ account of the person whose canvas it is alone), recorded or not. They go to the
 `deps.archives`: **set `R2_PRIVATE_BUCKET` before production**, a bucket on the same account
 with no public domain, and they go there; unset (as on dev), they go in the assets bucket, where
 the random key is all that stands between a transcript and the world, since the assets domain
-serves any key it is asked for. Either bucket wants a lifecycle rule that deletes objects under
-`private/` a day old that no checkpoint recorded (an upload whose checkpoint call never came);
-recorded ones are deleted by the API. A settled canvas keeps its last checkpoint, so that
-reopening it resumes the conversation.
+serves any key it is asked for. A settled canvas keeps its last checkpoint, so that reopening it
+resumes the conversation.
+
+**Archives nobody records.** No bucket lifecycle rule may touch `private/`: a rule goes by age
+alone, cannot tell a recorded checkpoint from an unrecorded one, and would delete the last
+checkpoint of every canvas settled for a day. Only `staging/` and incomplete multipart uploads
+take a bucket rule. The API deletes the rest itself: the archives a later checkpoint replaces,
+those of a deleted canvas, and, once a day, the ones nobody records. That last is the cron step
+`archives` (`apps/api/src/cron/steps/archives.ts`), at 09:41 UTC. It lists `private/` in
+`deps.archives` (ListObjectsV2, which gives each object's time) and deletes the objects over a
+day old that no `canvas_runners` row names as its transcript or work in progress, asking the
+database after the listing: an upload whose checkpoint call never came, and one whose delete
+failed. It deletes at most 2,000 a run and reads at most 50 pages of a thousand keys, starting at
+a random key and going round, so a bucket larger than one run reads is still swept whole over
+the days. It keeps an object storage gives no time for, deletes nothing when the database does
+not answer, and logs `archives_swept` with counts only (listed, recorded, young, undated,
+deleted), never a key. So that it can never race a checkpoint, `POST /v1/runner/checkpoint`
+refuses an archive whose upload address ran out more than twelve hours before (404), and the
+runner saves anew.
 
 ### Events
 
@@ -2825,8 +2856,9 @@ In this order, each step safe to repeat, so a request that fails partway can be 
 8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
    them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
    their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done,
-   and one that a new account signed in with before a retry came is kept),
-   and then asks PostHog to delete their person with its events and recordings:
+   and one that a new account signed in with before the job was recorded is kept). While the
+   job waits, sign-in refuses that WorkOS user as `account_being_deleted` (409), so no account
+   is made on it between the job's check and its delete. It then asks PostHog to delete their person with its events and recordings:
    `POST {PONZU_POSTHOG_API_HOST}/api/projects/{PONZU_POSTHOG_PROJECT_ID}/persons/bulk_delete/`
    with the personal key as the bearer and `{ distinct_ids: [userId], delete_events: true,
    delete_recordings: true }`. PostHog takes it at once and deletes in batches later, usually
@@ -3004,6 +3036,33 @@ ids the code names, both ways, and with their numbers. It fails open: a check th
 500 ms, fails, or finds no rule lets the request through, logged as `rate_limit_unavailable`. The
 count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
 steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
+
+**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or on
+cutover day (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
+environment, so it holds from the next deploy.
+
+- `off`, the default: nothing is held back.
+- `wakes_paused`: no sandbox wakes. The wake gate `maintenance` sets the canvas's
+  `agent_blocker` to `paused` and tries the wake again every two minutes, so a message is kept
+  in the feed and goes in once the switch is off. A turn already running finishes, and a
+  sandbox already awake is not held: it takes up what is sent until it goes to sleep, so the
+  switch stops new spend only as awake sandboxes sleep. Every minute
+  the cron's `maintenance` step, once the switch is off, lifts `paused` everywhere and wakes the
+  canvases that owe a turn (`resumeBlocked`), which takes up a wake that ran out of tries during
+  a long pause. Everything else works.
+- `read_only`: wakes are paused as above, and every write by a person or a runner answers 503
+  `maintenance`, "Ponzu is updating. Try again in a few minutes.", before anything of its route
+  runs. Reads pass, and so do health, the cron, signing in and out, `POST /v1/live`, a
+  person's presence, GitHub's webhook, and a runner's start, heartbeat, checkpoints and their
+  uploads, restore and git credentials, so that an awake sandbox is neither taken for dead nor
+  loses its work. A runner sends the rest again for as long as it lives, as it does any 5xx.
+  The refusal is logged as a refusal, not sent to error tracking. Pause wakes first and let
+  running turns finish before going read-only.
+
+The Mac shows the notice "Ponzu is updating. Your canvases are safe; you can look around, and
+changes come back in a few minutes." when a write is refused this way, at most once a minute,
+and the thread's foot of a paused canvas says "The agent is paused while Ponzu updates. Your
+message is kept and goes through when it's back."
 
 ## Analytics
 
