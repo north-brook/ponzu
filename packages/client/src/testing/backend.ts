@@ -1342,6 +1342,7 @@ export class FakeBackend {
           pr_auto_merge: head.prAutoMerge,
           last_activity_at: head.lastActivityAt,
           agent_blocker: head.agentBlocker,
+          agent_blocked_until: null,
           sandbox_state: null,
         };
         return [row];

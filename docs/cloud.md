@@ -571,7 +571,27 @@ five minutes when the run it was due in never came.
   with. The canvas's head shows `waking` at once, and `agent_blocker` says why a canvas waits:
   `claude_not_connected`, `claude_expired`, `claude_owner_left` (whose Claude it runs on is no
   longer in the workspace), `sandbox_busy` (Vercel limiting the pace, or past the limits below)
-  or `sandbox_failed`.
+  or `sandbox_failed`; and, from the wake gates below, `paused` (wakes paused while Ponzu
+  updates), `credits_used_up`, `cap_reached`, `payment_failed` (the workspace at a billing
+  limit) and `claude_limited` (the owner's plan at its limit). `agent_blocked_until` says until
+  when, when a gate knows; the `canvas.head` live query sends both.
+- **The wake gates** (`sandboxes/gates.ts`) are asked in order before the claim: `owner`,
+  `claude`, `maintenance`, `billing`, `claudeLimit`. The first that refuses sets `agent_blocker`
+  (and `agent_blocked_until` to the time it gave, if any), the rest are not asked, and the wake
+  is over, or, when the gate gave a time, the same wake job is tried again then. A turn already
+  running when `maintenance`, `billing` or `claudeLimit` refuses is left to finish, and the head
+  still says the agent works. A wake that
+  passes every gate lifts a gate's blocker the head still shows. When what a gate waited on
+  changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
+  everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
+  event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
+  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
+  until their features fill them. The runner's claim hands out only the kinds
+  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  neither claimed nor delivered. A person's message, answer or create asks the request gates
+  (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
+  be allowed and before anything is written; each lets everything through until its feature
+  fills it.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
