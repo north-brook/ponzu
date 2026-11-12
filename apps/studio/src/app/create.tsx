@@ -181,11 +181,17 @@ export function CreateView({
   }, [taken, onHandoffTaken]);
   /** Set once the page's images have been handed to the next workspace's page, to keep them. */
   const handedOver = useRef(false);
-  // The last choice holds while the account still offers it.
+  // The last choice holds while the account still offers it (a model that takes no effort
+  // carries one all the same, which the API lets by).
+  const takes =
+    model && defaults.data
+      ? effortsOf(defaults.data.models, defaults.data.efforts, model.model)
+      : null;
   const remembered =
     model &&
+    takes &&
     defaults.data?.models.some((m) => m.id === model.model) &&
-    effortsOf(defaults.data.models, defaults.data.efforts, model.model).includes(model.effort)
+    (takes.length === 0 || takes.includes(model.effort))
       ? model
       : null;
   const choice =

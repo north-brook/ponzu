@@ -84,6 +84,23 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       };
     }, NAME);
 
+  /** Whether the caret is in the create page's composer. */
+  const caretInCreate = () =>
+    page.evaluate(
+      () =>
+        document.activeElement?.tagName === "TEXTAREA" &&
+        document.activeElement.closest("[data-create-composer]") !== null,
+    );
+  /**
+   * The caret comes to the create page's composer and stays there: past the menu or popover the
+   * choice was made in handing focus back as it goes (its exit runs 90ms), it is still there.
+   */
+  const caretStaysInCreate = async () => {
+    await waitUntil(caretInCreate);
+    await page.waitForTimeout(400);
+    expect(await caretInCreate()).toBe(true);
+  };
+
   const shoot = async (name: string) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
@@ -335,8 +352,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
     await page.getByRole("button", { name: /Onboarding flow/ }).waitFor();
     expect(await page.locator("#sidebar").textContent()).toContain("Northbrook");
-    // The create page fills the canvas pane until a design is opened.
+    // The create page fills the canvas pane until a design is opened, with the caret in its
+    // composer: a workspace that opens on its create page is for typing into at once.
     await page.getByText("Make something").waitFor();
+    await caretStaysInCreate();
   });
 
   test("the create page's picker groups both workspaces; the other's repo or Scratch switches the window there in one step", async () => {
@@ -391,9 +410,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.getByRole("button", { name: "Workspace: Personal" }).waitFor();
     await page.getByRole("button", { name: "Project: maya/kettle" }).waitFor();
     expect(await field.inputValue()).toBe("A kettle that whistles");
-    // The create page, not the design last open there.
+    // The create page, not the design last open there, with the caret in its composer.
     await page.getByText("Make something").waitFor();
     expect((await selectorSaid())?.slice(1)).toEqual(["Project: maya/kettle"]);
+    await caretStaysInCreate();
 
     // Back to the team, and from there Personal's Scratch: the window switches with Scratch
     // chosen, never showing a repo or Northbrook's choice on the way.
@@ -688,6 +708,33 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The canvas is back as it was left: the same zoom, and the chosen board still there.
     expect(await zoomShown()).toBe(zoom);
     expect(await page.locator('[data-board-name][title="Yearly toggle"]').count()).toBe(1);
+  });
+
+  test("a workspace switched to from the sidebar takes the caret to its create page, and not where it opens on a design", async () => {
+    // From Northbrook, with the design open, to Personal, which opens on its create page.
+    await page
+      .locator("[data-artboard-host]")
+      .first()
+      .waitFor({ state: "attached", timeout: 5000 });
+    await page.getByRole("button", { name: "Workspace: Northbrook" }).click();
+    await page.getByRole("menuitemradio", { name: "Personal" }).click();
+    await page.getByText("Make something").waitFor();
+    await caretStaysInCreate();
+    // Back to Northbrook, which opens on the design: no create page, and the caret stays out of
+    // anything until the person puts it somewhere.
+    await page.getByRole("button", { name: "Workspace: Personal" }).click();
+    await page.getByRole("menuitemradio", { name: "Northbrook" }).click();
+    await page
+      .locator("[data-artboard-host]")
+      .first()
+      .waitFor({ state: "attached", timeout: 5000 });
+    // Past the frames the hand-off waits for before it looks.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+    expect(await page.locator("[data-create-composer]").count()).toBe(0);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("TEXTAREA");
   });
 
   test("a design deleted while it's open says so calmly, and leads back", async () => {
