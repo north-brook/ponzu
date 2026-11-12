@@ -11,6 +11,7 @@
         "@ponzu/evals": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.3",
+        "zod": "^4",
       },
     },
     "apps/api": {

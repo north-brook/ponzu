@@ -1,0 +1,9 @@
+{
+  "project": {
+    "session_recording_opt_in": true,
+    "autocapture_exceptions_opt_in": true,
+    "capture_console_log_opt_in": true,
+    "heatmaps_opt_in": true
+  },
+  "groupTypes": ["workspace"]
+}

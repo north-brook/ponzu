@@ -22,7 +22,8 @@
     "@commitlint/config-conventional": "^21.2.4",
     "@ponzu/evals": "workspace:*",
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^4"
   },
   "patchedDependencies": {
     "@react-native-menu/menu@2.0.0": "patches/@react-native-menu%2Fmenu@2.0.0.patch",
