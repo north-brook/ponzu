@@ -7,7 +7,7 @@ import {
   MinusSignIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import type {
   CheckRun,
   GithubAuthor,
@@ -65,6 +65,10 @@ export function PullRequestView({
   /** Fetches a file's diff when its card first opens. */
   onLoadDiff?: (path: string) => Promise<LoadedDiff>;
 }) {
+  // Whether this tab waited on GitHub: what it says then settles in. A tab that had it at once
+  // (opened before, its last answer kept) just shows it.
+  const waited = useRef(false);
+  if (state.kind !== "ready") waited.current = true;
   // GitHub's addresses (a check's page, a link in a comment) leave the app only to the web.
   const onOpenLink = (url: string) => {
     const href = safeHref(url);
@@ -105,7 +109,7 @@ export function PullRequestView({
 
   const { pr } = state;
   return (
-    <Columns>
+    <Columns settle={waited.current}>
       <div className={cn(COLUMN, "gap-[26px]")}>
         <div className="flex flex-col gap-3.5">
           <h1 className="m-0 font-display font-semibold text-26 leading-[1.1] tracking-[-0.02em] [overflow-wrap:anywhere]">
@@ -195,13 +199,18 @@ export function PullRequestView({
 const COLUMN =
   "flex min-w-0 flex-col @min-[1080px]:min-h-0 @min-[1080px]:overflow-y-auto @min-[1080px]:py-11 @min-[1080px]:[scrollbar-width:thin]";
 
-function Columns({ children }: { children: ReactNode }) {
+function Columns({ children, settle = false }: { children: ReactNode; settle?: boolean }) {
   return (
     <div className="@container absolute inset-0">
       <div className="h-full overflow-y-auto [scrollbar-width:thin] @min-[1080px]:overflow-visible">
         <div
           data-pr-columns
-          className="mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-8 pb-11 @min-[520px]:px-10 @min-[520px]:pt-11 @min-[1080px]:grid @min-[1080px]:h-full @min-[1080px]:max-w-[1480px] @min-[1080px]:grid-cols-[380px_minmax(0,1fr)] @min-[1080px]:gap-12 @min-[1080px]:py-0 @min-[1080px]:pr-12 @min-[1080px]:pl-14"
+          className={cn(
+            // What GitHub said, come in place of the moment before it: it settles in, on the
+            // panes' clock, over where the skeleton stood.
+            settle && "settle",
+            "mx-auto flex max-w-[760px] flex-col gap-9 px-6 pt-8 pb-11 @min-[520px]:px-10 @min-[520px]:pt-11 @min-[1080px]:grid @min-[1080px]:h-full @min-[1080px]:max-w-[1480px] @min-[1080px]:grid-cols-[380px_minmax(0,1fr)] @min-[1080px]:gap-12 @min-[1080px]:py-0 @min-[1080px]:pr-12 @min-[1080px]:pl-14",
+          )}
         >
           {children}
         </div>

@@ -19,6 +19,7 @@ export function DesignList({
   onOpen,
   onAction,
   onRename,
+  onIntent,
 }: RowHandlers & {
   designs: DesignSummary[];
   openId: string | null;
@@ -70,6 +71,7 @@ export function DesignList({
               onOpen={onOpen}
               onAction={onAction}
               onRename={onRename}
+              onIntent={onIntent}
             />
           </li>
         );

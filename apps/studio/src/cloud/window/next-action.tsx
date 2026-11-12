@@ -26,6 +26,21 @@ const ACTIONS: Record<NextAction, { label: string; icon: IconSvgElement }> = {
 };
 
 /**
+ * The room an action takes, drawn as the button is but never seen or reached: held in the chrome
+ * while the action is expected and its answer is on its way (Arrival's placeholder). No key is
+ * listened for and nothing can press it.
+ */
+export function ActionRoom({ action }: { action: NextAction }) {
+  const { label, icon } = ACTIONS[action];
+  return (
+    <Button variant="action" tabIndex={-1} aria-hidden className="pointer-events-none">
+      <Icon icon={icon} step="small" onFill />
+      {label}
+    </Button>
+  );
+}
+
+/**
  * The chrome's one dark button: the next best thing to do with the design's pull request. While
  * `busy` (a merge GitHub hasn't answered) it holds still and disabled. Auto-merge, once on, and
  * an action `blocked` (actionBlock: no write access, or the agent's Claude can't run) fade and

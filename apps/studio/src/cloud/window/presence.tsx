@@ -7,6 +7,7 @@ import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { PopoverTrigger } from "../ui/popover.tsx";
 import { Tip } from "../ui/tooltip.tsx";
+import { Arrival } from "./arrival.tsx";
 
 /** How many avatars the chrome shows; the rest are in Share's list. */
 export const PRESENCE_LIMIT = 5;
@@ -34,7 +35,10 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
     if (!step || next < 0 || next >= shown.length) return;
     e.preventDefault();
     setFocused(next);
-    e.currentTarget.querySelectorAll<HTMLElement>('[role="img"]')[next]?.focus();
+    // Not someone on their way out (inert while they leave).
+    [...e.currentTarget.querySelectorAll<HTMLElement>('[role="img"]')]
+      .filter((el) => !el.closest("[inert]"))
+      [next]?.focus();
   };
 
   return (
@@ -48,21 +52,26 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
           const label =
             away && c.lastHereAt ? `${name} · last here ${ago(c.lastHereAt, now, "long")}` : name;
           return (
-            <Tip key={c.person.id} label={label}>
-              <span
-                role="img"
-                aria-label={label}
-                tabIndex={i === stop ? 0 : -1}
-                onFocus={() => setFocused(i)}
-                className={cn(
-                  "app-no-drag flex rounded-pill outline-none focus-ring",
-                  i > 0 && "-ml-1.5",
-                  away && "opacity-40",
-                )}
-              >
-                <Avatar person={c.person} size={22} ring="chrome" />
-              </span>
-            </Tip>
+            // Someone who joins after the first paint (presence and the thread come a moment
+            // after the design) arrives: their room opens, those before them glide aside, and
+            // they fade in. Drawn whole as their room opens, since each overlaps the one before.
+            <Arrival key={c.person.id} show clip={false} name="person">
+              <Tip label={label}>
+                <span
+                  role="img"
+                  aria-label={label}
+                  tabIndex={i === stop ? 0 : -1}
+                  onFocus={() => setFocused(i)}
+                  className={cn(
+                    "app-no-drag flex rounded-pill outline-none focus-ring",
+                    i > 0 && "-ml-1.5",
+                    away && "opacity-40",
+                  )}
+                >
+                  <Avatar person={c.person} size={22} ring="chrome" />
+                </span>
+              </Tip>
+            </Arrival>
           );
         })}
       </div>
