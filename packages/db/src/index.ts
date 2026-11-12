@@ -194,6 +194,7 @@ export {
   resolveClosedQuestions,
   resolveNeedsYou,
   setPingPrefs,
+  setTimeZone,
   settleLostSends,
   touchDeviceActive,
   updateDevice,

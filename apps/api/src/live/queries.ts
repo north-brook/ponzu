@@ -76,6 +76,25 @@ export const LIVE_QUERIES = {
   }),
 
   /**
+   * The person's inbox: what Ponzu told them that they have not read, and every needs-you whose
+   * question is still open, read or not (the badge counts those). The Mac shows its banners and
+   * its dock badge from it. A row leaves once it is read and, for a needs-you, resolved; the
+   * sweep reads unread rows three days old, so the result stays small. The filter is the
+   * predicate of `notifications_inbox_idx`, word for word, so Postgres reads it from that index.
+   * Ids, a canvas's name and Ponzu's own sentences only: never anything a person or the agent
+   * wrote.
+   */
+  "me.notifications": define({
+    args: z.object({}),
+    authorize: async (c) => [person(c).user.id],
+    sql: `select n.id, n.kind, n.workspace_id, n.canvas_id, n.title, n.subtitle, n.body, n.link,
+                 n.count, n.muted, n.read_at, n.resolved_at, n.created_at, n.updated_at
+            from notifications n
+           where n.user_id = $1
+             and (n.read_at is null or (n.kind = 'needs_you' and n.resolved_at is null))`,
+  }),
+
+  /**
    * The sidebar: a workspace's canvases and how far the person has looked at each. Joined
    * through membership, so a member who is dropped sees the rows go at once, and through
    * `repo_access`, so a canvas shows only to people GitHub lets read its repo, and goes as soon

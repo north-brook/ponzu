@@ -176,14 +176,23 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
        * they have opened Ponzu (`joined`), its owner first.
        */
       people: async (id: string) => (await v1.canvases[":id"].people.$get(canvas(id))).json(),
-      /** "I have it open", on opening and every 30 seconds: who else does. */
-      presence: async (id: string, pageId?: string | null) =>
-        (await v1.canvases[":id"].presence.$put({ ...canvas(id), json: { pageId } })).json(),
+      /**
+       * "I have it open", on opening and every 30 seconds: who else does. `focused` says whether
+       * the window is focused and showing it (nobody is pinged about what they are looking at);
+       * left out, it stays as it was.
+       */
+      presence: async (id: string, pageId?: string | null, focused?: boolean) =>
+        (
+          await v1.canvases[":id"].presence.$put({ ...canvas(id), json: { pageId, focused } })
+        ).json(),
       /** "I closed it": gone at once rather than after 75 seconds. */
       leave: async (id: string): Promise<void> => {
         await v1.canvases[":id"].presence.$delete(canvas(id));
       },
-      /** How far the person has looked, at the canvas and at its thread. */
+      /**
+       * How far the person has looked, at the canvas and at its thread. What Ponzu told them
+       * about the canvas until now is read too.
+       */
       seen: async (id: string, body: { seq?: number; threadSeq?: number } = {}): Promise<void> => {
         await v1.canvases[":id"].seen.$post({ ...canvas(id), json: body });
       },
@@ -329,16 +338,31 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
      */
 
     notifications: {
-      /** The person's ping toggles and their devices. */
+      /**
+       * The person's ping toggles and their devices, the badge (open needs-you questions across
+       * every workspace), the email digest's address and whether it can be sent, and their time
+       * zone as kept.
+       */
       get: async () => (await v1.me.notifications.$get()).json(),
-      /** Change some toggles; the rest stay. */
+      /**
+       * Change some toggles; the rest stay. `timeZone` is the app's IANA zone, sent when it
+       * differs from the one kept: the daily email comes at 9:00 in it.
+       */
       set: async (prefs: {
         needsYou?: boolean;
         replies?: boolean;
         prReady?: boolean;
         teammateComments?: boolean;
         emailDigest?: boolean;
+        timeZone?: string;
       }) => (await v1.me.notifications.$patch({ json: prefs })).json(),
+      /**
+       * One of the person's notifications, read on the app that showed it: a Mac's banner
+       * clicked, a phone's ping tapped. Reading again, or an id not theirs, changes nothing.
+       */
+      read: async (id: string, via: "mac" | "ios"): Promise<void> => {
+        await v1.me.notifications[":id"].read.$post({ param: { id }, json: { via } });
+      },
     },
 
     devices: {
@@ -376,6 +400,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       /** On signing out of the device. */
       remove: async (id: string): Promise<void> => {
         await v1.me.devices[":id"].$delete({ param: { id } });
+      },
+      /**
+       * The person is at this device: every 60 seconds while a Mac's window is focused with
+       * recent input, or a phone is in the foreground. 404 `not_found` once it was forgotten.
+       */
+      active: async (id: string): Promise<void> => {
+        await v1.me.devices[":id"].active.$put({ param: { id } });
       },
     },
 

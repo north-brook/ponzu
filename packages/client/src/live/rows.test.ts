@@ -74,6 +74,41 @@ test("a row as Realtime sends it becomes one the apps read", () => {
   });
 });
 
+test("an inbox row as Realtime sends it", () => {
+  const row = DECODE["me.notifications"]({
+    id: "ntf_1",
+    kind: "teammate_comment",
+    workspace_id: "ws_1",
+    canvas_id: "cnv_1",
+    title: "Kettle",
+    subtitle: null,
+    body: "Maya left 2 comments.",
+    link: { open: "comment", pageId: "pg_1", artboardId: "ab_1", commentThreadId: "ct_1" },
+    count: "2",
+    muted: false,
+    read_at: null,
+    resolved_at: null,
+    created_at: "2026-11-10 12:00:00+00",
+    updated_at: new Date("2026-11-10T12:05:00Z"),
+  });
+  expect(row).toEqual({
+    id: "ntf_1",
+    kind: "teammate_comment",
+    workspaceId: "ws_1",
+    canvasId: "cnv_1",
+    title: "Kettle",
+    subtitle: null,
+    body: "Maya left 2 comments.",
+    link: { open: "comment", pageId: "pg_1", artboardId: "ab_1", commentThreadId: "ct_1" },
+    count: 2,
+    muted: false,
+    readAt: null,
+    resolvedAt: null,
+    createdAt: "2026-11-10T12:00:00.000Z",
+    updatedAt: "2026-11-10T12:05:00.000Z",
+  });
+});
+
 test("lists are put in order on the client", () => {
   const canvas = (id: string, lastActivityAt: string) =>
     ({ id, lastActivityAt }) as Parameters<typeof byRecentActivity>[0][number];

@@ -479,13 +479,17 @@ it. Each op is stored with its inverse.
 
 - Clients never send SQL. They ask `POST /v1/live` for named queries with arguments
   (`workspace.canvases`, `canvas.head`, `canvas.thread`, `canvas.questions`,
-  `canvas.presence`, `me`).
+  `canvas.presence`, `me`, `me.notifications`).
   The API authorizes each one and returns it sealed, with a 60-second lifetime.
 - The endpoint takes a list, and clients renew all their subscriptions in one call.
 - Live queries are plain filters and joins over small rows. Sorting happens on the
   client. Every watched table has a primary key.
 - Presence is a row per person per open canvas, refreshed every 30 seconds and
-  treated as gone after 75.
+  treated as gone after 75. It also says whether the person's window is focused on the
+  canvas, which the API reads to hold back pings; `canvas.presence` does not carry that.
+- `me.notifications` is the person's inbox ("Notifications"). Its filter is the predicate
+  of the partial index `notifications_inbox_idx`, word for word, so Postgres reads it from
+  that index, and a row leaves once it is read and, for a needs-you, resolved.
 
 ## The sandbox
 
@@ -2502,16 +2506,52 @@ state.
 
 ## Notifications
 
-Settings › Notifications chooses what pings a person and where. Nothing sends pushes yet; the
-API keeps what sending will need.
+Settings › Notifications chooses what pings a person and where. What Ponzu tells a person is
+a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
+delivery of that row. Nothing writes those rows or sends pushes yet; the routes and the inbox
+below are what sending will use.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
-| PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
+| GET | `/v1/me/notifications` | none | `{ prefs, devices, badge, email: { address, available }, timeZone }` |
+| PATCH | `/v1/me/notifications` | some of `prefs`, and `timeZone?` | as GET |
+| POST | `/v1/me/notifications/:id/read` | `{ via: "mac" \| "ios" }` | 204 |
 | POST | `/v1/me/devices` | `{ platform, pushToken?, pushEnvironment?, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
 | PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
+| PUT | `/v1/me/devices/:id/active` | none | 204, 404 for a device not theirs |
 | DELETE | `/v1/me/devices/:id` | none | 204 |
+
+`badge` is the number on the Mac's dock and the phone's icon: the person's needs-you
+notifications whose question is still open, across every workspace, read or not and whether
+or not pings are on. `email.address` is where the daily email would go and `email.available`
+says whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and
+Settings hides the Email row while it is). `timeZone` is the IANA zone the app last reported,
+null until one has; the app sends `timeZone` in a PATCH when its own differs, and a name the
+API's time zone data does not know is a 400. The daily email's 9:00 is in that zone.
+
+`PUT /v1/me/devices/:id/active` is a heartbeat: the person is at this install now (a Mac with a
+window focused and input in the last two minutes, a phone in the foreground). Apps send it every
+60 seconds while that holds. It moves `active_at` and `lastSeenAt`, and skips the write when the
+last one is under 30 seconds old. A phone's ping waits two minutes for a person at their Mac,
+which shows it at once. `POST /v1/me/notifications/:id/read` is the app that showed a
+notification saying it was read: a Mac's banner clicked or a phone's ping tapped. Reading again
+keeps the first reading, and an id that is not the person's changes nothing; the answer is 204
+either way, so it says nothing about whose an id is. Opening a canvas reads the rest:
+`POST /v1/canvases/:id/seen` also marks every notification the person had about the canvas,
+made up to that moment, read (`via: seen`). A needs-you stays on the badge until its question
+closes, read or not.
+
+The inbox is the live query `me.notifications` ("Realtime"): the person's unread notifications
+and every needs-you whose question is still open. A row carries ids, a kind, a title (the
+canvas's name, or the workspace's), Ponzu's own sentence as the body, a `link` (`open` is
+`thread`, `pull-request`, `comment` or `usage`, with page, artboard, comment thread and question
+ids), a `count` for a teammate's comments folded into one row, and `muted` when the person's
+toggle for the kind was off. Never anything a person or the agent wrote.
+
+Presence (`PUT /v1/canvases/:id/presence`) also takes `focused`: true while the person's window
+is focused and showing the canvas, false when it stops, left out to keep what it was. A
+presence row focused in the last 75 seconds means the person is looking, and nobody is pinged
+about what they are looking at. The client sends a change at once, not at the next beat.
 
 `prefs` is `{ needsYou, replies, prReady, teammateComments, emailDigest }`, on the person's row:
 the first three start on, the last two off, as the board draws them. A toggle saves as it is

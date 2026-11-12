@@ -15,7 +15,7 @@ import { queryKeys } from "./keys.ts";
 type Me = Awaited<ReturnType<Api["me"]>>;
 type ClaudeAnswer = Awaited<ReturnType<Api["claude"]["get"]>>;
 type Notifications = Awaited<ReturnType<Api["notifications"]["get"]>>;
-type PingPrefs = Parameters<Api["notifications"]["set"]>[0];
+type PingPrefs = Omit<Parameters<Api["notifications"]["set"]>[0], "timeZone">;
 type Environments = Awaited<ReturnType<Api["environments"]["list"]>>;
 type EnvironmentAnswer = Awaited<ReturnType<Api["environments"]["get"]>>;
 
@@ -234,6 +234,22 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
               ? { ...now, devices: now.devices.map((d) => (d.id === device.id ? device : d)) }
               : now,
           ),
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications() }),
+      }),
+    /** The app's time zone, when it differs from the one kept: the daily email's 9:00 is in it. */
+    setTimeZone: () =>
+      mutationOptions({
+        mutationFn: (timeZone: string) => api.notifications.set({ timeZone }),
+        onSuccess: (answer) => queryClient.setQueryData(queryKeys.notifications(), answer),
+      }),
+    /**
+     * A notification read on the app that showed it. The inbox (`me.notifications`) drops it by
+     * itself; the badge in Settings is asked for again.
+     */
+    readNotification: () =>
+      mutationOptions({
+        mutationFn: ({ id, via }: { id: string; via: "mac" | "ios" }) =>
+          api.notifications.read(id, via),
         onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications() }),
       }),
     /** Anyone who can push: the repo's base is built again at the next start. */

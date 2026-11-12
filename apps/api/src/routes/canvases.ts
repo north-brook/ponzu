@@ -24,6 +24,7 @@ import {
   listRepoPeople,
   listWorkspacePeople,
   markCanvasSeen,
+  markNotificationsRead,
   PR_CHECKS,
   PR_STATES,
   readOps,
@@ -197,6 +198,11 @@ const ReversalView = z.object({ committed: z.custom<CommittedOp>(), seq: z.numbe
 const PresenceBody = z.object({
   /** The page they are on. Left out: only "still here". */
   pageId: Id.nullable().optional(),
+  /**
+   * Whether their window is focused and showing this canvas now. Nobody is pinged about a canvas
+   * they are looking at. Left out, it stays as it was.
+   */
+  focused: z.boolean().optional(),
 });
 const PresenceView = z.object({
   /** Who has the canvas open now, longest here first: the first paint of `canvas.presence`. */
@@ -484,8 +490,14 @@ export const canvases = new Hono<AppEnv>()
       const { deps, actor } = c.var;
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
       const now = new Date(deps.clock.now());
-      const { pageId } = c.req.valid("json");
-      await touchPresence(deps.db, { canvasId: canvas.id, userId: actor.user.id, pageId, now });
+      const { pageId, focused } = c.req.valid("json");
+      await touchPresence(deps.db, {
+        canvasId: canvas.id,
+        userId: actor.user.id,
+        pageId,
+        focused,
+        now,
+      });
       const present = await listPresence(deps.db, { canvasId: canvas.id, now });
       return c.json(PresenceView.parse({ present }));
     },
@@ -505,6 +517,8 @@ export const canvases = new Hono<AppEnv>()
   /**
    * Records how far the person has looked: the canvas's seq and the thread's, as they saw
    * them. Left out, the canvas's seq is now's. It never moves back, nor past what there is.
+   * Whatever Ponzu told the person about the canvas until now is read too (`via: seen`): they
+   * have looked, so no ping about it is still to come, and no banner stays.
    */
   .post(
     "/:id/seen",
@@ -515,7 +529,16 @@ export const canvases = new Hono<AppEnv>()
       const { deps, actor } = c.var;
       const { canvas } = await requireCanvas(c, c.req.valid("param").id, "read");
       const { seq = canvas.seq, threadSeq } = c.req.valid("json");
-      await markCanvasSeen(deps.db, { userId: actor.user.id, canvasId: canvas.id, seq, threadSeq });
+      const userId = actor.user.id;
+      await Promise.all([
+        markCanvasSeen(deps.db, { userId, canvasId: canvas.id, seq, threadSeq }),
+        markNotificationsRead(deps.db, {
+          userId,
+          canvasId: canvas.id,
+          now: new Date(deps.clock.now()),
+          via: "seen",
+        }),
+      ]);
       return c.body(null, 204);
     },
   );

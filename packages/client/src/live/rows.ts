@@ -1,3 +1,4 @@
+import type { CanvasOpen } from "@ponzu/core/links";
 import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
 import type { Api } from "../api.ts";
 
@@ -43,6 +44,22 @@ export const LIVE_COLUMNS = {
     "claude_connected_at",
     "claude_expires_at",
     "claude_limited_until",
+  ],
+  "me.notifications": [
+    "id",
+    "kind",
+    "workspace_id",
+    "canvas_id",
+    "title",
+    "subtitle",
+    "body",
+    "link",
+    "count",
+    "muted",
+    "read_at",
+    "resolved_at",
+    "created_at",
+    "updated_at",
   ],
   "workspace.canvases": [
     "id",
@@ -126,6 +143,7 @@ export type RawRow<Name extends LiveQueryName> = Record<
 /** What each query is asked with. */
 export interface LiveArgs {
   me: Record<string, never>;
+  "me.notifications": Record<string, never>;
   "workspace.canvases": { workspaceId: string };
   "canvas.head": { canvasId: string };
   "canvas.thread": { canvasId: string };
@@ -162,6 +180,45 @@ export interface MeRow {
     expiresAt: string | null;
     limitedUntil: string | null;
   } | null;
+}
+
+/** What a notification opens, as ids: the thread, the pull request, a comment's pin, or usage. */
+export interface NotificationLink {
+  open: CanvasOpen;
+  pageId?: string;
+  artboardId?: string;
+  commentThreadId?: string;
+  questionId?: string;
+}
+
+/**
+ * Something Ponzu told the person, in their inbox: unread, or a needs-you whose question is still
+ * open. A canvas's name and Ponzu's own sentences, never anything a person or the agent wrote.
+ */
+export interface NotificationRow {
+  id: string;
+  /**
+   * `needs_you`, `reply`, `teammate_comment` and the rest (apps/api/src/notifications/kinds.ts).
+   * A string, so a kind a newer API adds still shows.
+   */
+  kind: string;
+  workspaceId: string | null;
+  /** Null for a ping about a workspace (billing). */
+  canvasId: string | null;
+  /** The canvas's name, or the workspace's. */
+  title: string;
+  subtitle: string | null;
+  body: string;
+  link: NotificationLink;
+  /** How many things it stands for: a teammate's comments fold into one row. */
+  count: number;
+  /** The person's toggle for its kind was off: no banner and no ping, but a needs-you still counts on the badge. */
+  muted: boolean;
+  readAt: string | null;
+  /** When its question closed, for a needs-you. */
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** A row of the sidebar: a canvas and how far the person has looked at it. */
@@ -241,6 +298,7 @@ export interface PresenceRow {
 
 export interface LiveRows {
   me: MeRow;
+  "me.notifications": NotificationRow;
   "workspace.canvases": CanvasListRow;
   "canvas.head": CanvasHeadRow;
   "canvas.thread": ThreadItem;
@@ -286,6 +344,22 @@ export const DECODE: { [Name in LiveQueryName]: (row: RawRow<Name>) => LiveRows[
             expiresAt: maybeTime(r.claude_expires_at),
             limitedUntil: maybeTime(r.claude_limited_until),
           },
+  }),
+  "me.notifications": (r) => ({
+    id: text(r.id),
+    kind: text(r.kind),
+    workspaceId: maybeText(r.workspace_id),
+    canvasId: maybeText(r.canvas_id),
+    title: text(r.title),
+    subtitle: maybeText(r.subtitle),
+    body: text(r.body),
+    link: r.link as NotificationLink,
+    count: number(r.count),
+    muted: Boolean(r.muted),
+    readAt: maybeTime(r.read_at),
+    resolvedAt: maybeTime(r.resolved_at),
+    createdAt: time(r.created_at),
+    updatedAt: time(r.updated_at),
   }),
   "workspace.canvases": (r) => ({
     id: text(r.id),

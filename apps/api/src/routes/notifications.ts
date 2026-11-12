@@ -1,14 +1,19 @@
 import {
+  badgeCount,
   DEVICE_PLATFORMS,
   type Device,
   deleteDevice,
   EXPO_PUSH_TOKEN,
   listDevices,
+  markNotificationsRead,
   PUSH_ENVIRONMENTS,
   pingPrefsOf,
   QueryError,
   registerDevice,
   setPingPrefs,
+  setTimeZone,
+  touchDeviceActive,
+  type User,
   updateDevice,
 } from "@ponzu/db";
 import { Hono } from "hono";
@@ -22,7 +27,10 @@ import { validate } from "../http/validate.ts";
  * Settings › Notifications (docs/cloud.md, "Notifications"): which events ping the person, and
  * the devices pings go to. The iPhone registers itself once the person turns notifications on,
  * with its Expo push token. The Mac registers its install, with no token: it shows its own
- * notifications while the app runs.
+ * notifications while the app runs, from the `me.notifications` live query.
+ *
+ * Also here: the heartbeat that says the person is at one of their devices (a phone's ping waits
+ * for someone at their Mac), and reading a notification on the device that showed it.
  */
 
 const PingPrefs = z.object({
@@ -59,7 +67,43 @@ const toView = (device: Device): z.input<typeof DeviceView> => ({
   blocked: device.pingsBlocked,
 });
 
-const Notifications = z.object({ prefs: PingPrefs, devices: z.array(DeviceView) });
+const Notifications = z.object({
+  prefs: PingPrefs,
+  devices: z.array(DeviceView),
+  /**
+   * The number on the dock and the phone's icon: the person's open needs-you questions, across
+   * every workspace, whether or not pings are on.
+   */
+  badge: z.number().int().min(0),
+  /** Where the daily email goes, and whether this deployment can send it at all. */
+  email: z.object({ address: z.string().nullable(), available: z.boolean() }),
+  /** The IANA time zone the person's app last reported; null until one has. */
+  timeZone: z.string().nullable(),
+});
+
+/**
+ * An IANA time zone, as `Intl.DateTimeFormat().resolvedOptions().timeZone` names one: a name the
+ * runtime's own time zone data knows. (Not `Intl.supportedValuesOf`, which lists canonical names
+ * only and, depending on the engine, can leave out `UTC` or an older name such as `Asia/Calcutta`
+ * that a browser still reports.)
+ */
+const TimeZone = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_+\-/]+$/, "A time zone is an IANA name, such as Europe/Lisbon.")
+  .refine(knownTimeZone, "A time zone is an IANA name, such as Europe/Lisbon.");
+
+function knownTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const NotificationChanges = PingPrefs.partial().extend({ timeZone: TimeZone.optional() });
 const DeviceAnswer = z.object({ device: DeviceView });
 
 /** An Expo push token, `ExponentPushToken[…]`, kept exactly as the phone gave it. */
@@ -118,26 +162,71 @@ const DeviceChanges = z
   })
   .partial();
 const DeviceParam = z.object({ id: z.string().min(1).max(64) });
+const NotificationParam = z.object({ id: z.string().min(1).max(64) });
+/** Which app read it: the Mac, from its banner or by looking; the iPhone, from a tap. */
+const ReadBody = z.object({ via: z.enum(["mac", "ios"]) });
+
+/** Everything Settings › Notifications shows besides the toggles, as of now. */
+async function rest(deps: AppEnv["Variables"]["deps"], user: User, timeZone = user.timeZone) {
+  const [devices, badge] = await Promise.all([
+    listDevices(deps.db, user.id),
+    badgeCount(deps.db, user.id),
+  ]);
+  return {
+    devices: devices.map(toView),
+    badge,
+    email: { address: user.email, available: deps.features.email },
+    timeZone,
+  };
+}
 
 export const notifications = new Hono<AppEnv>()
   /** The person's toggles and their devices, the one seen last first. */
   .get("/notifications", access.user, async (c) => {
     const { deps, actor } = c.var;
-    const devices = await listDevices(deps.db, actor.user.id);
     return c.json(
-      Notifications.parse({ prefs: pingPrefsOf(actor.user), devices: devices.map(toView) }),
+      Notifications.parse({ prefs: pingPrefsOf(actor.user), ...(await rest(deps, actor.user)) }),
     );
   })
 
-  /** Change some toggles; the rest stay. Each saves as it is flipped, on any device. */
-  .patch("/notifications", access.user, validate("json", PingPrefs.partial()), async (c) => {
+  /**
+   * Change some toggles; the rest stay. Each saves as it is flipped, on any device. The app also
+   * reports its time zone here, when it differs from the one kept.
+   */
+  .patch("/notifications", access.user, validate("json", NotificationChanges), async (c) => {
     const { deps, actor } = c.var;
-    const [prefs, devices] = await Promise.all([
-      setPingPrefs(deps.db, { userId: actor.user.id, prefs: c.req.valid("json") }),
-      listDevices(deps.db, actor.user.id),
-    ]);
-    return c.json(Notifications.parse({ prefs, devices: devices.map(toView) }));
+    const { timeZone, ...prefs } = c.req.valid("json");
+    const userId = actor.user.id;
+    const kept =
+      timeZone === undefined
+        ? actor.user.timeZone
+        : await setTimeZone(deps.db, { userId, timeZone });
+    const changed = await setPingPrefs(deps.db, { userId, prefs });
+    return c.json(Notifications.parse({ prefs: changed, ...(await rest(deps, actor.user, kept)) }));
   })
+
+  /**
+   * Something Ponzu said, read on the device that showed it: a Mac's banner clicked or its canvas
+   * looked at, a phone's ping tapped. Only the person's own notifications are read. Any other id,
+   * or one read already, changes nothing, and the answer is the same 204 either way, so it says
+   * nothing about whose an id is.
+   */
+  .post(
+    "/notifications/:id/read",
+    access.user,
+    validate("param", NotificationParam),
+    validate("json", ReadBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      await markNotificationsRead(deps.db, {
+        userId: actor.user.id,
+        ids: [c.req.valid("param").id],
+        now: new Date(deps.clock.now()),
+        via: c.req.valid("json").via,
+      });
+      return c.body(null, 204);
+    },
+  )
 
   /**
    * Register this device for pings, or say again that it is here: 201 when it is new to the
@@ -211,6 +300,22 @@ export const notifications = new Hono<AppEnv>()
       return c.json(DeviceAnswer.parse({ device: toView(device) }));
     },
   )
+
+  /**
+   * The person is at this device now: a Mac with a window focused and input in the last two
+   * minutes, a phone in the foreground. Sent every 60 seconds while that holds, and it also says
+   * the device was seen. A phone's ping waits two minutes for someone at their Mac.
+   */
+  .put("/devices/:id/active", access.user, validate("param", DeviceParam), async (c) => {
+    const { deps, actor } = c.var;
+    const touched = await touchDeviceActive(deps.db, {
+      userId: actor.user.id,
+      id: c.req.valid("param").id,
+      now: new Date(deps.clock.now()),
+    });
+    if (touched === "missing") throw new ApiError(404, "not_found", "There is no such device.");
+    return c.body(null, 204);
+  })
 
   /** Forget a device: the app signed out on it. Nothing more is sent to it. */
   .delete("/devices/:id", access.user, validate("param", DeviceParam), async (c) => {

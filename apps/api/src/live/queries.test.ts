@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
+  insertNotifications,
+  markNotificationsRead,
+  type NewNotification,
+  resolveNeedsYou,
+} from "@ponzu/db";
+import {
   call,
   canvasIn,
   runnerHeaders,
@@ -29,6 +35,7 @@ const live = (headers: Record<string, string>, queries: { name: string; args?: u
 /** The arguments each query takes, for a workspace and a canvas in it. */
 const ARGS: Record<LiveQueryName, (ids: { workspaceId: string; canvasId: string }) => object> = {
   me: () => ({}),
+  "me.notifications": () => ({}),
   "workspace.canvases": ({ workspaceId }) => ({ workspaceId }),
   "canvas.head": ({ canvasId }) => ({ canvasId }),
   "canvas.thread": ({ canvasId }) => ({ canvasId }),
@@ -59,6 +66,7 @@ test("seals every query for someone who may watch it, in one call, with where to
   }
   const ines = ws.people.ines!.userId;
   expect(body.results.map((result: any) => unsealed(result).params)).toEqual([
+    [ines],
     [ines],
     [ines, ws.id],
     [canvasId],
@@ -108,11 +116,13 @@ describe("refusals", () => {
       { name: "canvas.thread", args: { canvasId: other.id } },
       { name: "me" },
       { name: "workspace.canvases", args: { workspaceId: ws.id } },
+      { name: "me.notifications" },
     ]);
 
     expect(body.results.map((result: any) => result.error?.code ?? "sealed")).toEqual([
       "sealed",
       "not_found",
+      "forbidden",
       "forbidden",
       "forbidden",
     ]);
@@ -192,6 +202,103 @@ describe("workspace.canvases", () => {
     await watch("ines");
     expect(await rows(subscribed)).toEqual([]);
     team.grant("ines", "read");
+  });
+});
+
+describe("me.notifications", () => {
+  const ping = (
+    userId: string,
+    n: string,
+    extra: Partial<NewNotification> = {},
+  ): NewNotification => ({
+    id: `ntf_live_${n}`,
+    userId,
+    workspaceId: ws.id,
+    canvasId,
+    kind: "reply",
+    dedupeKey: `reply:${canvasId}:${n}`,
+    title: "Live",
+    body: "Ponzu replied to your comment.",
+    link: { open: "thread" },
+    muted: false,
+    ...extra,
+  });
+  const watch = async (login: string) =>
+    (await live(as(login), [{ name: "me.notifications" }])).body.results[0];
+
+  test("holds the person's own unread rows, and their open needs-you read or not", async () => {
+    const [maya, ines] = [ws.people.maya!.userId, ws.people.ines!.userId];
+    const now = new Date(t.clock.now());
+    await insertNotifications(t.db, {
+      now,
+      rows: [
+        ping(maya, "unread"),
+        ping(maya, "read"),
+        ping(maya, "question", {
+          kind: "needs_you",
+          dedupeKey: `needs_you:${canvasId}:q_1`,
+          body: "Ponzu has a question for you.",
+          link: { open: "thread", questionId: "q_1" },
+          sourceId: "q_1",
+        }),
+        ping(maya, "answered", {
+          kind: "needs_you",
+          dedupeKey: `needs_you:${canvasId}:q_2`,
+          body: "Ponzu has a question for you.",
+          link: { open: "thread", questionId: "q_2" },
+          sourceId: "q_2",
+        }),
+        ping(ines, "theirs"),
+      ],
+    });
+    const id = (n: string) => `ntf_live_${n}`;
+    await markNotificationsRead(t.db, {
+      userId: maya,
+      ids: [id("read"), id("question"), id("answered")],
+      now,
+      via: "mac",
+    });
+    await resolveNeedsYou(t.db, { canvasId, questionIds: ["q_2"], now });
+
+    const mine = await rows(await watch("maya"));
+
+    expect(mine.map((row) => row.id).sort()).toEqual([id("unread"), id("question")].sort());
+    expect(Object.keys(mine[0]!).sort()).toEqual(
+      [
+        "id",
+        "kind",
+        "workspace_id",
+        "canvas_id",
+        "title",
+        "subtitle",
+        "body",
+        "link",
+        "count",
+        "muted",
+        "read_at",
+        "resolved_at",
+        "created_at",
+        "updated_at",
+      ].sort(),
+    );
+    // Nobody's inbox but their own: the person is the one bound value.
+    expect((await rows(await watch("ines"))).map((row) => row.id)).toEqual([id("theirs")]);
+    expect(unsealed(await watch("ines")).params).toEqual([ines]);
+  });
+
+  test("is read from the inbox index: its filter is the index's predicate", async () => {
+    const { sql, params } = unsealed(await watch("maya"));
+    const client = (t.db as unknown as { $client: { query(sql: string, params?: string[]): any } })
+      .$client;
+    await client.query("set enable_seqscan = off");
+    try {
+      const plan = (await client.query(`explain ${sql}`, params)).rows
+        .map((row: Record<string, string>) => Object.values(row).join(" "))
+        .join("\n");
+      expect(plan).toContain("notifications_inbox_idx");
+    } finally {
+      await client.query("reset enable_seqscan");
+    }
   });
 });
 

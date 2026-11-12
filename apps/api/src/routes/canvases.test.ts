@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { appendThreadItem, getCanvasAssetKey, readDocSource } from "@ponzu/db";
+import {
+  appendThreadItem,
+  focusedPresence,
+  getCanvasAssetKey,
+  insertNotifications,
+  type NewNotification,
+  notifications,
+  readDocSource,
+} from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
 import {
   call,
@@ -418,6 +426,10 @@ describe("presence", () => {
     expect(
       (await call(t, as("omar"), "PUT", `/v1/canvases/${canvas.id}/presence`, {})).status,
     ).toBe(404);
+    expect(
+      (await call(t, as("ines"), "PUT", `/v1/canvases/${canvas.id}/presence`, { focused: "yes" }))
+        .status,
+    ).toBe(400);
     // Leaving one that is gone (just deleted, say) is quiet.
     expect((await call(t, as("maya"), "DELETE", "/v1/canvases/cnv_gone/presence")).status).toBe(
       204,
@@ -425,7 +437,89 @@ describe("presence", () => {
   });
 });
 
+describe("presence focus", () => {
+  test("says whether the person is looking at the canvas, kept until they say otherwise", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Watched"));
+    const maya = ws.people.maya!.userId;
+    const here = (body: unknown) =>
+      call(t, as("maya"), "PUT", `/v1/canvases/${canvas.id}/presence`, body);
+    const looking = async () =>
+      (
+        await focusedPresence(t.db, {
+          canvasId: canvas.id,
+          userIds: [maya],
+          now: new Date(t.clock.now()),
+        })
+      ).get(maya) ?? null;
+
+    // Opened, with nothing said of focus: not looking.
+    await here({ pageId: "pg_1" });
+    expect(await looking()).toBeNull();
+
+    t.clock.advance(1_000);
+    const focusedAt = new Date(t.clock.now());
+    expect((await here({ focused: true })).status).toBe(200);
+    expect(await looking()).toEqual(focusedAt);
+
+    // A beat that says nothing of focus keeps it as it was, and the page stays.
+    t.clock.advance(30_000);
+    const still = await here({});
+    expect(still.body.present.map((p: any) => p.pageId)).toEqual(["pg_1"]);
+    expect(await looking()).toEqual(focusedAt);
+
+    // The window lost focus.
+    t.clock.advance(1_000);
+    await here({ focused: false });
+    expect(await looking()).toBeNull();
+    // Focused again, then gone quiet for 75 seconds: no longer here, so not looking.
+    await here({ focused: true });
+    t.clock.advance(76_000);
+    expect(await looking()).toBeNull();
+  });
+});
+
 describe("seen", () => {
+  test("reads what Ponzu told the person about the canvas until now, and nothing else", async () => {
+    const canvas = await canvasIn(t, ws, "maya", emptyDoc("Told"));
+    const other = await canvasIn(t, ws, "maya", emptyDoc("Elsewhere"));
+    const [ines, maya] = [ws.people.ines!.userId, ws.people.maya!.userId];
+    const told = (userId: string, canvasId: string, n: string): NewNotification => ({
+      id: `ntf_seen_${n}`,
+      userId,
+      workspaceId: ws.id,
+      canvasId,
+      kind: "reply",
+      dedupeKey: `reply:${canvasId}:${n}`,
+      title: "Told",
+      body: "Ponzu replied to your comment.",
+      link: { open: "thread" },
+      muted: false,
+    });
+    await insertNotifications(t.db, {
+      now: new Date(t.clock.now()),
+      rows: [
+        told(ines, canvas.id, "here"),
+        told(ines, other.id, "there"),
+        told(maya, canvas.id, "hers"),
+      ],
+    });
+    const readVia = async (id: string) =>
+      (await t.db.select().from(notifications)).find((row) => row.id === id)!.readVia;
+
+    t.clock.advance(1_000);
+    expect((await call(t, as("ines"), "POST", `/v1/canvases/${canvas.id}/seen`, {})).status).toBe(
+      204,
+    );
+
+    expect(await readVia("ntf_seen_here")).toBe("seen");
+    expect(await readVia("ntf_seen_there")).toBeNull();
+    expect(await readVia("ntf_seen_hers")).toBeNull();
+    // Someone who cannot open the canvas reads nothing through it.
+    expect((await call(t, as("omar"), "POST", `/v1/canvases/${canvas.id}/seen`, {})).status).toBe(
+      404,
+    );
+  });
+
   test("records how far a person has looked, never past the canvas and never backwards", async () => {
     const canvas = await canvasIn(t, ws, "maya", emptyDoc("Dot"));
     const runner = await runnerHeaders(t, canvas.id);

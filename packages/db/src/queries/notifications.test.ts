@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { seedCanvas, seedUser } from "../fixtures.ts";
-import { devices, notificationDeliveries, notifications } from "../schema/index.ts";
+import { devices, notificationDeliveries, notifications, users } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { deleteUser } from "./account-deletion.ts";
 import {
@@ -25,6 +25,7 @@ import {
   registerDevice,
   resolveClosedQuestions,
   resolveNeedsYou,
+  setTimeZone,
   settleLostSends,
   touchDeviceActive,
   updateDevice,
@@ -907,5 +908,26 @@ describe("focused presence", () => {
     expect(
       await focusedPresence(db, { canvasId: canvas.id, userIds, now: after(116 * SECOND) }),
     ).toEqual(new Map());
+  });
+});
+
+describe("time zone", () => {
+  test("keeps the zone a person's app reports, and only theirs", async () => {
+    const [maya, sam] = [await seedUser(db, "zoned"), await seedUser(db, "unzoned")];
+    const zoneOf = async (id: string) =>
+      (await run(db.select({ zone: users.timeZone }).from(users).where(eq(users.id, id))))[0]!.zone;
+
+    expect(await zoneOf(maya.id)).toBeNull();
+    expect(await setTimeZone(db, { userId: maya.id, timeZone: "Europe/Lisbon" })).toBe(
+      "Europe/Lisbon",
+    );
+    expect(await setTimeZone(db, { userId: maya.id, timeZone: "America/Chicago" })).toBe(
+      "America/Chicago",
+    );
+    expect(await zoneOf(maya.id)).toBe("America/Chicago");
+    expect(await zoneOf(sam.id)).toBeNull();
+    await expect(setTimeZone(db, { userId: "usr_gone", timeZone: "UTC" })).rejects.toThrow(
+      "There is no user usr_gone.",
+    );
   });
 });

@@ -7,6 +7,7 @@ import {
   type NotificationLink,
   notificationDeliveries,
   notifications,
+  users,
 } from "../schema/index.ts";
 import type { User } from "./accounts.ts";
 import { queryJson, timeParam } from "./json.ts";
@@ -71,6 +72,25 @@ export async function setPingPrefs(
   );
   if (!result) throw new Error(`There is no user ${userId}.`);
   return result;
+}
+
+/**
+ * Keep the time zone a person's app reports (an IANA name, checked by the caller), which the
+ * daily email's 9:00 is in. Answers it as kept.
+ */
+export async function setTimeZone(
+  db: Db,
+  { userId, timeZone }: { userId: string; timeZone: string },
+): Promise<string> {
+  const [row] = await run(
+    db
+      .update(users)
+      .set({ timeZone, updatedAt: sql`now()` })
+      .where(eq(users.id, userId))
+      .returning({ timeZone: users.timeZone }),
+  );
+  if (!row) throw new Error(`There is no user ${userId}.`);
+  return row.timeZone!;
 }
 
 // Devices --------------------------------------------------------------------------------------

@@ -51,7 +51,10 @@ export function ponzuQueries(api: Api) {
     claudeDefaults: () =>
       queryOptions({ queryKey: queryKeys.claudeDefaults(), queryFn: () => api.claude.defaults() }),
 
-    /** Which events ping the person, and the devices pings go to (an iPhone, once signed in). */
+    /**
+     * Which events ping the person, the devices pings go to, the badge, and whether the daily
+     * email can be sent.
+     */
     notifications: () =>
       queryOptions({
         queryKey: queryKeys.notifications(),
