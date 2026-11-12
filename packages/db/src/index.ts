@@ -161,6 +161,7 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export { countAppliedMigrations, EXPECTED_MIGRATIONS } from "./queries/migrations.ts";
 export {
   type Device,
   type DeviceChanges,
@@ -230,6 +231,7 @@ export {
   getQuestion,
   listOpenQuestions,
   type Question,
+  takeSecretAnswer,
 } from "./queries/questions.ts";
 export {
   getRepoAccess,
