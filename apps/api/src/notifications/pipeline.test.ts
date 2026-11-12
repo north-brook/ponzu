@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
   appendEvent,
+  cancelQuestions,
+  claudeAccounts,
   createQuestion,
   devices,
   jobs,
@@ -337,6 +339,26 @@ describe("the quiet rules", () => {
     expect(pushesTo(phone.token).filter((message) => message.body)).toHaveLength(0);
   });
 
+  test("a question that closed without its route saying so is not pinged, and is resolved", async () => {
+    const { ws, canvas, runner, owner, phone } = await scene();
+    const mac = await registerMac(t, ws, owner);
+    await call(t, ws.people[owner]!.headers, "PUT", `/v1/me/devices/${mac}/active`);
+    const id = await raise(runner);
+    // Closed straight in the database, as a sandbox lost or a request that died would leave it:
+    // nothing resolved the row, and the cron's sweep has not run yet.
+    await cancelQuestions(t.db, { canvasId: canvas.id, ids: [id] });
+    await later(MAC_DEFER_MS);
+    const [row] = await rowsOf(canvas.id);
+    expect(row!.resolvedAt).not.toBeNull();
+    expect((await deliveriesOf(row!.id))[0]).toMatchObject({
+      state: "cancelled",
+      outcome: "resolved",
+    });
+    expect(pushesTo(phone.token).filter((message) => message.body)).toHaveLength(0);
+    await later(BADGE_FOLD_MS);
+    expect(pushesTo(phone.token).at(-1)).toMatchObject({ badge: 0 });
+  });
+
   test("a toggle that is off keeps the row, muted, and pushes nothing", async () => {
     const { ws, canvas, runner, owner, phone } = await scene();
     await call(t, ws.people[owner]!.headers, "PATCH", "/v1/me/notifications", {
@@ -397,6 +419,22 @@ describe("Expo's answers", () => {
     await later(RATE_LIMITED_WAIT_MS);
     expect(pushesTo(phone.token)).toHaveLength(1);
     expect((await deliveriesOf(row!.id))[0]).toMatchObject({ state: "sent", attempts: 2 });
+  });
+
+  test("a 429 on every attempt fails the push in the end rather than leaving it waiting", async () => {
+    const { canvas, runner, phone } = await scene();
+    t.push.failNext("rate_limited", "rate_limited", "rate_limited", "rate_limited", "rate_limited");
+    await raise(runner);
+    const [row] = await rowsOf(canvas.id);
+    for (let attempt = 2; attempt <= 5; attempt++) await later(RATE_LIMITED_WAIT_MS);
+    expect(pushesTo(phone.token)).toHaveLength(0);
+    expect((await deliveriesOf(row!.id))[0]).toMatchObject({
+      state: "failed",
+      outcome: "rate_limited",
+      attempts: 5,
+    });
+    const deliver = (await t.db.select().from(jobs)).find((job) => job.key === row!.id)!;
+    expect(deliver.completedAt).not.toBeNull();
   });
 
   test("a 5xx may have been taken, so it is never sent again, and is unknown in the end", async () => {
@@ -538,6 +576,40 @@ describe("turns", () => {
       "Ponzu can't reach your Claude account. Connect it again to go on.",
     ]);
     expect(JSON.stringify(t.push.sent)).not.toContain("Nightjar");
+  });
+
+  test("a Claude plan limit goes to whoever's account the canvas runs on, once a day", async () => {
+    const { ws, canvas, runner, owner, mate } = await scene();
+    const matePhone = await registerPhone(t, ws, mate);
+    const accountId = newId("cla");
+    await t.db.insert(claudeAccounts).values({
+      id: accountId,
+      userId: ws.people[mate]!.userId,
+      kind: "subscription",
+      // A sealed credential is not what this is about.
+      encryptedCredential: "sealed",
+    });
+    await t.db.execute(
+      `update canvases set claude_account_id = '${accountId}' where id = '${canvas.id}'`,
+    );
+    const event = () =>
+      appendEvent(t.db, {
+        canvasId: canvas.id,
+        kind: "message",
+        priority: "now",
+        payload: { text: "go" },
+        userId: ws.people[owner]!.userId,
+      });
+    const limit = { outcome: "failed", errorCode: "claude_limit", ms: 1000 };
+    await report(runner, { eventId: (await event()).id, ...limit });
+    await report(runner, { eventId: (await event()).id, ...limit });
+    expect(pushesTo(matePhone.token).map((message) => message.body)).toEqual([
+      "Your Claude plan hit a limit. Canvases wait until it resets.",
+    ]);
+    const [row] = (await rowsOf(canvas.id)).filter((r) => r.kind === "claude_limit");
+    expect(row!.dedupeKey).toBe(
+      `limit:${accountId}:${new Date(t.clock.now()).toISOString().slice(0, 10)}`,
+    );
   });
 
   test("the same report twice is one ping", async () => {

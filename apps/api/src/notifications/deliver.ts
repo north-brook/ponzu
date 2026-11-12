@@ -5,15 +5,18 @@ import {
   dueDeliveries,
   forgetDeadTokens,
   getNotification,
+  getQuestion,
   listNotifyRecipients,
   markDeliveries,
   notifyCanvasFacts,
+  resolveNeedsYou,
 } from "@ponzu/db";
 import { z } from "zod";
 import { stableUuid } from "../analytics/analytics.ts";
 import { type PushMessage, pushErrorOf } from "../deps/push.ts";
 import { RetryLater } from "../jobs/retry.ts";
 import type { JobDeps, RunningJob } from "../jobs/run.ts";
+import { scheduleBadges } from "./badge.ts";
 import { canvasFactsOf, deviceFactsOf, pushNotificationOf, toggleOn } from "./facts.ts";
 import { pushMessage } from "./payload.ts";
 import { type CancelReason, cancelReason } from "./plan.ts";
@@ -62,7 +65,9 @@ export async function runDeliverJob(
   const notification = await getNotification(db, notificationId);
   if (!notification) return;
   const { due, nextSendAt } = await dueDeliveries(db, { notificationId, now });
-  if (due.length > 0) await deliver(deps, notification, due, now);
+  if (due.length > 0) {
+    await deliver(deps, notification, due, now, job.attempts >= job.maxAttempts);
+  }
   // Pushes still waiting for their time (a 429's, or a phone added on a later attempt).
   if (nextSendAt) {
     throw new RetryLater(
@@ -72,11 +77,39 @@ export async function runDeliverJob(
   }
 }
 
+/**
+ * For a needs-you whose row is not resolved: `now` when its question is no longer open (and the
+ * row is resolved here, so its badge goes down), else null.
+ */
+async function closedAt(
+  deps: JobDeps,
+  notification: NonNullable<Awaited<ReturnType<typeof getNotification>>>,
+  now: Date,
+): Promise<Date | null> {
+  if (notification.kind !== "needs_you" || !notification.canvasId || !notification.sourceId) {
+    return null;
+  }
+  const question = await getQuestion(deps.db, {
+    canvasId: notification.canvasId,
+    id: notification.sourceId,
+  });
+  if (question?.status === "open") return null;
+  const lowered = await resolveNeedsYou(deps.db, {
+    canvasId: notification.canvasId,
+    questionIds: [notification.sourceId],
+    now,
+  });
+  await scheduleBadges(deps, lowered);
+  return now;
+}
+
 async function deliver(
   deps: JobDeps,
   notification: NonNullable<Awaited<ReturnType<typeof getNotification>>>,
   due: DueDelivery[],
   now: Date,
+  /** This is the job's last attempt: a 429 can not be tried again. */
+  lastAttempt: boolean,
 ): Promise<void> {
   const { db, log } = deps;
   const [recipient] = await listNotifyRecipients(db, [notification.userId]);
@@ -89,6 +122,9 @@ async function deliver(
   const readable = notification.canvasId
     ? canvas !== null && canRead(canvasFactsOf(canvas), notification.userId, now)
     : true;
+  // A question can close between the notify job's look at it and its row being written, and
+  // then nothing resolved the row (the cron's sweep would, a minute on). Ask the question itself.
+  const resolvedAt = notification.resolvedAt ?? (await closedAt(deps, notification, now));
 
   const cancels: { id: string; outcome: CancelReason }[] = [];
   const sends: (DueDelivery & { device: NonNullable<DueDelivery["device"]>; token: string })[] = [];
@@ -99,7 +135,7 @@ async function deliver(
         kind: notification.kind,
         createdAt: notification.createdAt,
         readAt: notification.readAt,
-        resolvedAt: notification.resolvedAt,
+        resolvedAt,
         toggleOn: recipient ? toggleOn(notification.kind, recipient.prefs) : false,
         device: delivery.device && recipient ? deviceFactsOf(delivery.device) : null,
         canRead: readable,
@@ -144,6 +180,15 @@ async function deliver(
   } catch (error) {
     const failure = pushErrorOf(error);
     if (failure.code === "rate_limited") {
+      if (lastAttempt) {
+        // No attempt is left to send them later: they would wait for ever.
+        await markDeliveries(
+          db,
+          going.map((send) => ({ id: send.id, state: "failed", outcome: "rate_limited" })),
+        );
+        log.warn("push_rate_limited", { notificationId: notification.id, count: going.length });
+        return;
+      }
       const later = new Date(now.getTime() + RATE_LIMITED_WAIT_MS);
       await markDeliveries(
         db,

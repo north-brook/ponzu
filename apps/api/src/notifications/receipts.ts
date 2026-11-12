@@ -5,6 +5,7 @@ import {
   receiptsDue,
   settleLostSends,
 } from "@ponzu/db";
+import { stableUuid } from "../analytics/analytics.ts";
 import { PUSH_RECEIPTS_LIMIT, pushErrorOf } from "../deps/push.ts";
 import type { JobDeps } from "../jobs/run.ts";
 
@@ -90,7 +91,8 @@ export async function checkPushReceipts(
     deps.analytics.capture(
       "push failed",
       { kind: delivery.kind, error: receipt.error },
-      { distinctId: null },
+      // The same id the ticket's failure would have had: one delivery fails once.
+      { distinctId: null, uuid: stableUuid(`${delivery.id}/failed`) },
     );
     if (receipt.error === "DeviceNotRegistered" && delivery.deviceId) {
       dead.push({ id: delivery.deviceId, sentAt: delivery.sentAt });
