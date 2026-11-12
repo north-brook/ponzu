@@ -167,14 +167,12 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
       .first()
       .waitFor();
     await shoot("settings-plan", { dark: true });
-    await page.getByRole("button", { name: "Change cap" }).click();
-    const cap = page.getByLabel("Monthly cap in dollars");
-    await cap.fill("250");
-    await cap.press("Enter");
-    await waitUntil(() =>
-      fake(() => window.ponzuFake!.backend.settings.caps.get(window.ponzuFake!.personalId) === 250),
-    );
-    await page.getByText("$250").first().waitFor();
+    // Billing is off in this world, as it is at launch: the board says so, and offers no cap to
+    // change and no dollar amount.
+    await page
+      .getByText("Ponzu is free while billing is set up. Nothing here is charged.")
+      .waitFor();
+    expect(await page.getByRole("button", { name: "Change cap" }).count()).toBe(0);
 
     await nav().getByRole("button", { name: "GitHub", exact: true }).click();
     await page.getByText("Repositories Ponzu can open").waitFor();
