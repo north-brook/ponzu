@@ -140,7 +140,8 @@ export const NOTIFICATION_READ_VIA = ["mac", "ios", "seen", "looking", "expired"
  *   waiting     planned, to go at `send_at` (now, or later while the person is at a Mac)
  *   sending     handed to Expo, whose answer has not come back. A send whose answer was lost
  *               (a timeout, a 5xx) may have been accepted, so it is not sent again; the
- *               receipts sweep settles it as `unknown`
+ *               receipts sweep settles it as `unknown`. One Expo plainly did not take (a 429)
+ *               goes back to waiting, to try again
  *   sent        Expo took it and gave a ticket; its receipt is still to read
  *   delivered   Expo's receipt says Apple took it
  *   cancelled   not sent, and `outcome` says why

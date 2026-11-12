@@ -115,7 +115,7 @@ export type DeviceRegistered =
   /**
    * Another person holds the token from another install of the app, or from one that never
    * said which it was: nothing changed. `holderId` is who holds it. (Also answered, with the
-   * person's own id, for a Mac whose install id is already one of their iPhones'.)
+   * person's own id, for a Mac whose install id is already one of their iPhones', or the reverse.)
    */
   | { status: "taken"; holderId: string };
 
@@ -177,13 +177,19 @@ async function registerPhone(
       mine as (
         select id from devices
          where user_id = ${device.userId} and install_id = ${device.installId}
-           and push_token is distinct from ${device.pushToken}
+           and platform = 'ios' and push_token is distinct from ${device.pushToken}
          for update
       ),
       allowed as (
         select not exists (
           select 1 from prior
            where user_id <> ${device.userId} and install_id is distinct from ${device.installId}
+        )
+        -- An install id the person's Mac already has is not this phone's to take.
+        and not exists (
+          select 1 from devices
+           where user_id = ${device.userId} and install_id = ${device.installId}
+             and platform = 'macos'
         ) as ok
       ),
       dropped as (
@@ -224,6 +230,7 @@ async function registerPhone(
                ${device.installId}, ${device.name}, ${device.appVersion}, ${device.pingsBlocked},
                now()
          where not exists (select 1 from prior) and not exists (select 1 from mine)
+           and (select ok from allowed)
         -- Another registration of the same token got there first: as if it had been here.
         on conflict (push_token) do update set
           user_id = excluded.user_id,
@@ -261,7 +268,7 @@ async function registerPhone(
     `,
   );
   const prior = result?.priorUserId ?? null;
-  if (!result?.device) return { status: "taken", holderId: prior! };
+  if (!result?.device) return { status: "taken", holderId: prior ?? device.userId };
   return {
     status: "registered",
     device: toDevice(result.device),
@@ -882,7 +889,10 @@ export interface DueDelivery {
   id: string;
   sendAt: Date;
   attempts: number;
-  /** The iPhone, or null when it was forgotten. */
+  /**
+   * The iPhone, or null when it was forgotten or now belongs to someone else (the phone signed
+   * in as another person since the push was planned). Either way it is not sent.
+   */
   device: {
     id: string;
     userId: string;
@@ -927,7 +937,10 @@ export async function dueDeliveries(
                    ) end
                  ) order by d.send_at, d.id)
             from notification_deliveries d
-            left join devices v on v.id = d.device_id
+            join notifications n on n.id = d.notification_id
+            -- A phone that moved to another person (signed in as them) since this was planned
+            -- is not this person's any more: it counts as gone.
+            left join devices v on v.id = d.device_id and v.user_id = n.user_id
            where d.notification_id = ${notificationId} and d.state = 'waiting'
              and d.send_at <= ${at(now)}
         ), '[]'::json),
@@ -962,6 +975,12 @@ export async function dueDeliveries(
 export type DeliveryUpdate =
   /** About to be handed to Expo, at `sentAt`. Only from waiting; it counts an attempt. */
   | { id: string; state: "sending"; sentAt: Date }
+  /**
+   * Back to wait for `sendAt`, only from sending: Expo said plainly that it took nothing (a 429,
+   * or the request never left), so it may go again. Never for a timeout or a 5xx, whose send may
+   * have been taken; those stay sending until `settleLostSends`. Its attempt still counts.
+   */
+  | { id: string; state: "waiting"; sendAt: Date }
   /** Expo took it and gave `ticketId`. From waiting or sending. */
   | { id: string; state: "sent"; sentAt: Date; ticketId: string }
   /** Not sent, and why. Only from waiting. */
@@ -974,7 +993,8 @@ export type DeliveryUpdate =
   | { id: string; state: "unknown"; outcome?: string; receiptCheckedAt: Date };
 
 /** The states each new state may be reached from. A settled delivery never moves again. */
-const MOVES_FROM: Record<Exclude<DeliveryState, "waiting">, readonly DeliveryState[]> = {
+const MOVES_FROM: Record<DeliveryState, readonly DeliveryState[]> = {
+  waiting: ["sending"],
   sending: ["waiting"],
   sent: ["waiting", "sending"],
   cancelled: ["waiting"],
@@ -998,6 +1018,7 @@ export async function markDeliveries(
     state: update.state,
     from: MOVES_FROM[update.state],
     sent_at: "sentAt" in update ? update.sentAt.toISOString() : null,
+    send_at: "sendAt" in update ? update.sendAt.toISOString() : null,
     ticket_id: "ticketId" in update ? update.ticketId : null,
     outcome: "outcome" in update ? (update.outcome ?? null) : null,
     receipt_checked_at:
@@ -1011,13 +1032,15 @@ export async function markDeliveries(
       with moved as (
         update notification_deliveries d set
           state = u.state,
-          sent_at = coalesce(u.sent_at, d.sent_at),
+          -- One back to waiting was not sent: it leaves the hourly count until it goes.
+          sent_at = case when u.state = 'waiting' then null else coalesce(u.sent_at, d.sent_at) end,
+          send_at = coalesce(u.send_at, d.send_at),
           ticket_id = coalesce(u.ticket_id, d.ticket_id),
           outcome = coalesce(u.outcome, d.outcome),
           receipt_checked_at = coalesce(u.receipt_checked_at, d.receipt_checked_at),
           attempts = d.attempts + case when u.state = 'sending' then 1 else 0 end
           from json_to_recordset(${JSON.stringify(rows)}::json) as u(
-            id text, state text, "from" text[], sent_at timestamptz, ticket_id text,
+            id text, state text, "from" text[], sent_at timestamptz, send_at timestamptz, ticket_id text,
             outcome text, receipt_checked_at timestamptz
           )
          where d.id = u.id and d.state = any(u."from")

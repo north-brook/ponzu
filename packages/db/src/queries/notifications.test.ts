@@ -236,6 +236,35 @@ describe("devices", () => {
     expect((await listDevices(db, user.id)).map((d) => d.platform)).toEqual(["ios"]);
   });
 
+  test("an iPhone whose install is the person's Mac's changes nothing", async () => {
+    const user = await seedUser(db, "phone-clash");
+    const mac = await registered({
+      userId: user.id,
+      platform: "macos",
+      installId: install(),
+      name: "Studio",
+      appVersion: null,
+    });
+    // A new token, and a token the person already has on another install: neither takes the Mac.
+    const other = await registered(phone(user.id));
+    for (const pushToken of [token(), other.device.pushToken!]) {
+      expect(
+        await registerDevice(db, {
+          ...phone(user.id),
+          installId: mac.device.installId!,
+          pushToken,
+        }),
+      ).toEqual({ status: "taken", holderId: user.id });
+    }
+    const left = await listDevices(db, user.id);
+    expect(left.map((d) => [d.id, d.platform, d.installId]).sort()).toEqual(
+      [
+        [mac.device.id, "macos", mac.device.installId],
+        [other.device.id, "ios", other.device.installId],
+      ].sort(),
+    );
+  });
+
   test("a person keeps at most twenty, Macs and iPhones alike", async () => {
     const user = await seedUser(db, "many");
     for (let n = 0; n < MAX_DEVICES_PER_USER + 1; n++) {
@@ -754,6 +783,46 @@ describe("deliveries", () => {
       db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, b)),
     );
     expect(lost).toMatchObject({ state: "unknown", outcome: "no_answer" });
+  });
+
+  test("a phone that moved to another person since is not sent to", async () => {
+    const { notification, phones } = await planned([start]);
+    const ines = await seedUser(db, `ines-took-${serial++}`);
+    // The phone signed in as Ines: the same install registers the same token for her.
+    const { device } = phones[0]!;
+    const moved = await registered({
+      ...phone(ines.id),
+      pushToken: device.pushToken!,
+      installId: device.installId!,
+    });
+    expect(moved).toMatchObject({ device: { id: device.id, userId: ines.id } });
+    const { due } = await dueDeliveries(db, { notificationId: notification.id, now: start });
+    expect(due.map((d) => d.device)).toEqual([null]);
+  });
+
+  test("one Expo plainly did not take waits again, out of the hourly count", async () => {
+    const { notification, rows, user } = await planned([start]);
+    const id = rows[0]!.id;
+    expect(await markDeliveries(db, [{ id, state: "sending", sentAt: start }])).toEqual([id]);
+    expect(await recentPushes(db, { userIds: [user.id], since: after(-1) })).toHaveLength(1);
+    // A 429: back to wait for 30 seconds.
+    expect(
+      await markDeliveries(db, [{ id, state: "waiting", sendAt: after(30 * SECOND) }]),
+    ).toEqual([id]);
+    expect(await recentPushes(db, { userIds: [user.id], since: after(-1) })).toEqual([]);
+    expect(await dueDeliveries(db, { notificationId: notification.id, now: start })).toEqual({
+      due: [],
+      nextSendAt: after(30 * SECOND),
+    });
+    const later = await dueDeliveries(db, {
+      notificationId: notification.id,
+      now: after(30 * SECOND),
+    });
+    expect(later.due).toEqual([expect.objectContaining({ id, attempts: 1 })]);
+    // Only from sending: one waiting, sent or settled does not move back.
+    expect(await markDeliveries(db, [{ id, state: "waiting", sendAt: start }])).toEqual([]);
+    await markDeliveries(db, [{ id, state: "sent", sentAt: after(30 * SECOND), ticketId: "t-1" }]);
+    expect(await markDeliveries(db, [{ id, state: "waiting", sendAt: start }])).toEqual([]);
   });
 
   test("receipts are read from 15 minutes on, oldest first, and settle once", async () => {
