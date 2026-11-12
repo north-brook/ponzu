@@ -1,5 +1,6 @@
 import { app, Menu, shell } from "electron";
 import type { MenuCommand } from "./bridge.ts";
+import { HELP_LINKS, type SupportFacts, supportMailto } from "./support.ts";
 
 /*
  * The app's menus. What the studio carries out (a new canvas, Settings) goes to it as a
@@ -14,12 +15,23 @@ export interface MenuActions {
   signOut(): void;
   /** Whether View has Toggle Developer Tools: development and test builds only. */
   devTools: boolean;
+  /** What About says after the version: the commit and the environment (config.ts). */
+  about: string;
+  /** What Help › Contact Support's email says about this build, as it is clicked (support.ts). */
+  supportFacts(): SupportFacts;
 }
 
 const SIGN_OUT = "sign-out";
 
 export function buildMenu(actions: MenuActions): void {
   const mac = process.platform === "darwin";
+  // "Version 2.0.0 (abc1234 · production)": which build this is, and where it talks to. A Mac's
+  // panel puts `version` in the brackets itself; elsewhere there is only the one line.
+  app.setAboutPanelOptions(
+    mac
+      ? { applicationName: app.name, applicationVersion: app.getVersion(), version: actions.about }
+      : { applicationName: app.name, applicationVersion: `${app.getVersion()} (${actions.about})` },
+  );
   const account: Electron.MenuItemConstructorOptions[] = [
     {
       label: "Settings…",
@@ -98,9 +110,21 @@ export function buildMenu(actions: MenuActions): void {
     {
       role: "help",
       submenu: [
+        // A person's own email app, addressed to support, with this build's facts and no token.
+        {
+          label: "Contact Support",
+          click: () => void shell.openExternal(supportMailto(actions.supportFacts())),
+        },
+        { label: "Ponzu Status", click: () => void shell.openExternal(HELP_LINKS.status) },
+        { type: "separator" },
+        { label: "Privacy Policy", click: () => void shell.openExternal(HELP_LINKS.privacy) },
+        { label: "Terms of Service", click: () => void shell.openExternal(HELP_LINKS.terms) },
+        { type: "separator" },
         { label: "ponzu.design", click: () => void shell.openExternal("https://ponzu.design") },
         // Off the Mac there's no app menu to hold these.
-        ...(mac ? [] : [{ type: "separator" as const }, ...update, ...account]),
+        ...(mac
+          ? []
+          : [{ type: "separator" as const }, ...update, ...account, { role: "about" as const }]),
       ],
     },
   ];

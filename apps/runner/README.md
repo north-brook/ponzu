@@ -172,6 +172,12 @@ docs/cloud.md ("The sandbox", "Saving the sandbox") is the specification.
   it (none for a turn an edit or Ponzu's own note began); the API decides from it who
   that person is and whether the turn may merge. The tools that change the branch on GitHub push
   first, and merge and update send the commit the checkout is at.
+- **A secret the agent asks for** (`src/secret-tool.ts`). Beside them, `request_secret` raises a
+  `secret` question by the secret's name and waits. Once a person gives it, the runner fetches
+  the value once (`POST /v1/runner/secret`), writes it as the agent to
+  `~/.ponzu/secrets/<NAME>` (emptied at each start) and scrubs it from everything it says, as
+  it does the start's secrets. An MCP server's sign-in link becomes a `handoff` question; a form
+  it asks for is declined, and the thread says so (docs/cloud.md, "Needs you").
 
 ## Running it here
 
