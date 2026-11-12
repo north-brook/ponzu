@@ -81,7 +81,7 @@ export interface DividerGrip {
 export const DividerGrips = createContext<((pane?: Pane) => DividerGrip | null) | null>(null);
 
 /**
- * Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌘J does the rail, except
+ * Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌥⌘B does the rail, except
  * while a menu or a modal is over it or its row's name is being edited (paneHeld).
  */
 export function SidebarToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {

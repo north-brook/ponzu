@@ -73,7 +73,7 @@ const NAME: Record<Pane, string> = { sidebar: "Sidebar", rail: "Thread" };
 const GUTTER: Record<Pane, number> = { sidebar: 8, rail: 10 };
 
 /**
- * A panel's size limits, for a pane's (panes.ts). Collapsing is the toggles' (and ⌘B, ⌘J): an
+ * A panel's size limits, for a pane's (panes.ts). Collapsing is the toggles' (and ⌘B, ⌥⌘B): an
  * open pane's panel can't collapse, so a drag, even one that leaves the window, stops it at its
  * minimum (the library collapses any collapsible panel dragged to nothing). The window says
  * when it may.
@@ -121,7 +121,7 @@ function panelLimits(pane: Pane, collapsible: boolean) {
 /**
  * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
  * at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
- * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌘J, the
+ * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌥⌘B, the
  * View menu, or anything else that opens it while the design shows. Not when it came with a
  * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
  * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the

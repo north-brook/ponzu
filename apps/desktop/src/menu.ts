@@ -84,7 +84,7 @@ export function buildMenu(actions: MenuActions): void {
         },
         {
           label: "Toggle Thread",
-          accelerator: "CmdOrCtrl+J",
+          accelerator: "CmdOrCtrl+Alt+B",
           click: () => actions.command("toggle-thread"),
         },
         { type: "separator" },
