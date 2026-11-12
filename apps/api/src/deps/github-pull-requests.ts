@@ -84,6 +84,8 @@ export interface GithubRemark {
   /** For a line comment, the file and line it is on. */
   path: string | null;
   line: number | null;
+  /** For a line comment, whether its thread was marked resolved on GitHub; null for any other. */
+  resolved: boolean | null;
 }
 
 export interface GithubChangedFile {
@@ -291,6 +293,7 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
       comments(last: 100) { nodes { id url body createdAt author { ${WHO} } } }
       reviews(last: 100) { nodes { id url state body submittedAt author { ${WHO} }
         comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} } } } } }
+      reviewThreads(last: 100) { nodes { isResolved comments(first: 30) { nodes { id } } } }
     }
   }
 }`;
@@ -531,15 +534,26 @@ function toRead(repository: any): GithubPullRequestRead {
 function toPullRequest(pr: any): GithubPullRequest {
   const rollup = pr.head.nodes[0]?.commit.statusCheckRollup ?? null;
   const reviews: any[] = pr.reviews.nodes;
+  // Whether each line comment's thread is resolved, by the comment's id: GitHub keeps that on
+  // the thread, not the comment.
+  const resolved = new Map<string, boolean>(
+    (pr.reviewThreads?.nodes ?? []).flatMap((thread: any) =>
+      (thread.comments?.nodes ?? []).map((comment: any) => [
+        comment.id,
+        thread.isResolved === true,
+      ]),
+    ),
+  );
   const conversation: GithubRemark[] = [
     ...pr.comments.nodes.map((comment: any) => remark(comment, null, null)),
     ...reviews
       .filter((review) => review.body?.trim())
       .map((review) => remark({ ...review, createdAt: review.submittedAt }, null, null)),
     ...reviews.flatMap((review) =>
-      review.comments.nodes.map((comment: any) =>
-        remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
-      ),
+      review.comments.nodes.map((comment: any) => ({
+        ...remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
+        resolved: resolved.get(comment.id) ?? false,
+      })),
     ),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
   return {
@@ -665,6 +679,7 @@ function remark(node: any, path: string | null, line: number | null): GithubRema
     url: node.url,
     path,
     line,
+    resolved: null,
   };
 }
 

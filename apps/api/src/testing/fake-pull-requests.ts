@@ -61,7 +61,16 @@ export interface FakePull {
   shownHead: { sha: string; until: number } | null;
   conflicting: boolean;
   reviews: { id: string; login: string; state: string; body: string; at: number }[];
-  comments: { id: string; login: string; body: string; at: number; path?: string; line?: number }[];
+  comments: {
+    id: string;
+    login: string;
+    body: string;
+    at: number;
+    path?: string;
+    line?: number;
+    /** For a line comment: its thread was marked resolved. */
+    resolved?: boolean;
+  }[];
 }
 
 export interface FakeRules {
@@ -182,7 +191,16 @@ export class FakePullRequests {
   }
 
   comment(pull: FakePull, login: string, body: string, at?: { path: string; line: number }) {
-    pull.comments.push({ id: this.#id("IC"), login, body, at: this.#clock.now(), ...at });
+    const id = this.#id("IC");
+    pull.comments.push({ id, login, body, at: this.#clock.now(), ...at });
+    return id;
+  }
+
+  /** Marks a line comment's thread resolved, as someone does on GitHub. */
+  resolve(pull: FakePull, commentId: string): void {
+    const comment = pull.comments.find((c) => c.id === commentId);
+    if (!comment?.path) throw new Error(`The fake GitHub has no line comment ${commentId}.`);
+    comment.resolved = true;
   }
 
   /**
@@ -884,6 +902,15 @@ export class FakePullRequests {
               },
             })),
         ],
+      },
+      // One thread for each line comment, as a comment that starts one.
+      reviewThreads: {
+        nodes: pull.comments
+          .filter((comment) => comment.path)
+          .map((comment) => ({
+            isResolved: comment.resolved === true,
+            comments: { nodes: [{ id: comment.id }] },
+          })),
       },
     };
   }

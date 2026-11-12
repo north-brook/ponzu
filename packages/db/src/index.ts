@@ -310,6 +310,13 @@ export {
   type WrittenItem,
   writeThreadItems,
 } from "./queries/thread.ts";
+export {
+  countAgentPullRequestActions,
+  GITHUB_KINDS,
+  getTurnOrigin,
+  PERSON_KINDS,
+  type TurnOrigin,
+} from "./queries/turn-origin.ts";
 export { commitReversal, nextRedo, nextUndo } from "./queries/undo.ts";
 export {
   type Asset,

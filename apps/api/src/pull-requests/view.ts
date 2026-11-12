@@ -112,6 +112,8 @@ export const PullRequestView = z.object({
       url: z.string(),
       path: z.string().nullable(),
       line: z.number().nullable(),
+      /** For a line comment, whether its thread is resolved on GitHub; null or absent otherwise. */
+      resolved: z.boolean().nullable().optional(),
     }),
   ),
   files: z.object({
