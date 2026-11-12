@@ -320,8 +320,8 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     working: string | null;
     /** Live asides, by text, and whether each is set in italics. */
     asides: { text: string; italic: boolean }[];
-    /** Lines on their way out: their height and opacity. */
-    leaving: { height: number; opacity: number }[];
+    /** Lines on their way out: their height and opacity, and the clock each leaves on. */
+    leaving: { height: number; opacity: number; clock: string[] }[];
     messages: number;
     work: boolean;
     answerBottom: number | null;
@@ -364,6 +364,13 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
             (el) => ({
               height: el.getBoundingClientRect().height,
               opacity: Number(getComputedStyle(el).opacity),
+              // A CSS animation's curve is its keyframes' (the effect's own is linear).
+              clock: el.getAnimations().map((a) => {
+                const effect = a.effect as KeyframeEffect;
+                const name = (a as Animation & { animationName?: string }).animationName;
+                const curve = effect.getKeyframes()[0]?.easing;
+                return `${name} ${effect.getComputedTiming().duration}ms ${curve}`;
+              }),
             }),
           ),
           messages: log?.querySelectorAll("p[dir=auto]").length ?? 0,
@@ -396,9 +403,9 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(sent).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(sent);
-    // Every frame from the send to the end: one working line, never blank, no work lines.
+    // Every frame from the send to the end (however many the machine painted): one working
+    // line, never blank, no work lines.
     const during = frames.slice(sent, end);
-    expect(during.length).toBeGreaterThan(30);
     for (const frame of during) {
       expect(frame.lines).toBe(1);
       expect(frame.working?.trim()).toBeTruthy();
@@ -440,9 +447,34 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     // room than they did (no flash of an aside at its full height after it had gone).
     expect(Math.abs(frames[end]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
     expect(Math.abs(frames[end]!.askTop! - before.askTop!)).toBeLessThan(1);
-    // Then they close and fade a little each frame, on the pane's clock, and are gone.
+    // Then they close and fade, on the pane's clock (each one's own animation, exactly), a little
+    // more in each frame painted, and are gone.
+    const pane = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--dur-pane").trim(),
+    );
+    // The panes' curve, as the browser writes it.
+    const ease = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.animationTimingFunction = "var(--ease-out)";
+      document.body.append(probe);
+      const curve = getComputedStyle(probe).animationTimingFunction;
+      probe.remove();
+      return curve;
+    });
+    const ms = Number.parseFloat(pane) * (/\ds$/.test(pane) ? 1000 : 1);
+    expect(ms).toBeGreaterThan(0);
     const leaving = after.filter((f) => f.leaving.length);
-    expect(leaving.length).toBeGreaterThan(5);
+    expect(leaving[0]!.leaving.map((l) => l.clock)).toEqual([
+      [`leave ${ms}ms ${ease}`],
+      [`leave ${ms}ms ${ease}`],
+    ]);
+    for (const f of leaving) {
+      for (const l of f.leaving) {
+        // Its animation over (it goes in the frames after), it has closed all the way.
+        if (l.clock.length === 0) expect(l.height).toBeLessThan(1);
+        else expect(l.clock).toEqual([`leave ${ms}ms ${ease}`]);
+      }
+    }
     const total = (f: Frame) => f.leaving.reduce((n, l) => n + l.height, 0);
     for (let i = 1; i < leaving.length; i++) {
       expect(total(leaving[i]!)).toBeLessThanOrEqual(total(leaving[i - 1]!) + 0.5);
