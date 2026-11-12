@@ -377,6 +377,114 @@ export function stepToggle(page: Page, selector: string, steps = 20): Promise<To
   return toggle(page, selector, steps);
 }
 
+/**
+ * Sends from the create page with `press` and holds everything the send set moving (the
+ * composer's travel, the thread's pane opening, the hero leaving) where it starts, before a frame
+ * is drawn, as `stepToggle` does: then `seekSend` puts them all at a share of the travel, and
+ * `releaseSend` lets them finish. Says how long the travel is, in ms (0 if nothing travelled).
+ */
+export async function holdSend(page: Page, press: () => Promise<void>): Promise<number> {
+  await page.evaluate(() => {
+    const w = window as unknown as { heldSend: Animation[]; holdingSend: MutationObserver };
+    w.heldSend = [];
+    const catchAll = () => {
+      for (const a of document.getAnimations()) {
+        if (w.heldSend.includes(a) || a.playState === "finished") continue;
+        // What turns for as long as it is shown (the working slice) is no part of the send.
+        if (!Number.isFinite(Number(a.effect?.getComputedTiming().endTime))) continue;
+        a.playbackRate = 0;
+        w.heldSend.push(a);
+      }
+    };
+    w.holdingSend = new MutationObserver(catchAll);
+    w.holdingSend.observe(document.documentElement, {
+      subtree: true,
+      attributes: true,
+      childList: true,
+    });
+  });
+  await press();
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve) =>
+        setTimeout(() => {
+          const w = window as unknown as { heldSend: Animation[]; holdingSend: MutationObserver };
+          for (const a of document.getAnimations()) {
+            if (w.heldSend.includes(a) || a.playState === "finished") continue;
+            // What turns for as long as it is shown (the working slice) is no part of the send.
+            if (!Number.isFinite(Number(a.effect?.getComputedTiming().endTime))) continue;
+            a.playbackRate = 0;
+            w.heldSend.push(a);
+          }
+          w.holdingSend.disconnect();
+          const flight = w.heldSend.find((a) => a.id === "composer-flight");
+          resolve(flight ? Number(flight.effect!.getComputedTiming().duration) : 0);
+        }),
+      ),
+  );
+}
+
+/** Puts everything `holdSend` holds at `share` (0 to 1) of the travel's length. */
+export function seekSend(page: Page, share: number): Promise<void> {
+  return page.evaluate((share) => {
+    const held = (window as unknown as { heldSend: Animation[] }).heldSend;
+    const travel = held.find((a) => a.id === "composer-flight");
+    const length = travel ? Number(travel.effect!.getComputedTiming().duration) : 0;
+    for (const a of held) {
+      if (a.playState === "idle") continue;
+      const own = Number(a.effect!.getComputedTiming().endTime);
+      a.currentTime = Math.min(length * share, own);
+    }
+  }, share);
+}
+
+/** Lets what `holdSend` holds run to its end. */
+export function releaseSend(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    for (const a of (window as unknown as { heldSend: Animation[] }).heldSend) {
+      if (a.playState === "idle") continue;
+      a.playbackRate = 1;
+      if (a.playState !== "finished") a.finish();
+    }
+  });
+}
+
+/** A box on screen, in px. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where the travelling composer and its home are, in one frame. */
+export interface SendFrame {
+  surface: Box | null;
+  attach: Box | null;
+  send: Box | null;
+  /** The thread's composer card, where it rests. */
+  home: Box | null;
+  /** How many travelling cards there are: one, while it travels. */
+  surfaces: number;
+}
+
+export function sendFrame(page: Page): Promise<SendFrame> {
+  return page.evaluate(() => {
+    const r = (el: Element | null) => {
+      if (!el) return null;
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return {
+      surface: r(document.querySelector('[data-flight="surface"]')),
+      attach: r(document.querySelector('[data-flight="attach"]')),
+      send: r(document.querySelector('[data-flight="send"]')),
+      home: r(document.querySelector("#thread [data-composer-card]")),
+      surfaces: document.querySelectorAll('[data-flight="surface"]').length,
+    };
+  });
+}
+
 function toggle(page: Page, selector: string, steps: number): Promise<Toggle> {
   return page.evaluate(
     ([selector, steps]) =>

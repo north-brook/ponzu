@@ -4,7 +4,13 @@ import { CloudSource, type Unsaved } from "@ponzu/client/canvas";
 import { useLiveQuery } from "@ponzu/client/react";
 import { type Actor, newId } from "@ponzu/core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
+import type {
+  Attachment,
+  DesignMember,
+  DesignSummary,
+  Person,
+  WorkspaceKind,
+} from "../cloud/model.ts";
 import { actionBlock, nextAction } from "../cloud/pull-request.ts";
 import { railSignal } from "../cloud/status.ts";
 import { useNow } from "../cloud/time.ts";
@@ -55,6 +61,8 @@ export interface FreshDesign {
   name: string;
   /** Its first message, which the API already has; none when it is still to be sent. */
   message: string | null;
+  /** The images it went with, as the create page showed them, until the thread has its own. */
+  attachments?: Attachment[];
   access: "read" | "write";
   head: Pick<DesignHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
 }
@@ -109,7 +117,7 @@ export function useOpenDesign(
     });
     const thread = new ThreadStore({ ponzu, live, designId, meId: actor.id }).start();
     const known = made.current?.id === designId ? made.current : null;
-    if (known?.message) thread.seed(known.message);
+    if (known?.message) thread.seed(known.message, known.attachments);
     const asks = new AskStore({ ponzu, live, designId, onError: (m) => saying.current(m) });
     asks.start();
     const uploads = new Uploads({ ponzu, designId });
@@ -431,6 +439,9 @@ export function DesignCanvas({
         body="This design opens as soon as you're back online."
         busy
       />
+    ) : open.fresh ? (
+      // Just made on the create page: its dotted ground stays until the canvas draws its own.
+      <div className="canvas-dots absolute inset-0" />
     ) : null;
   }
   return (

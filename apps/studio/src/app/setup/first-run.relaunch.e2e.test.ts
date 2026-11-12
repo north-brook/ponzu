@@ -8,5 +8,5 @@ slowAnswers(({ relaunch }) => {
   relaunch("where", "Where do you design?", "where");
   relaunch("claude", "Connect Claude", "claude");
   relaunch("iphone", "Get Ponzu on your iPhone", "iphone");
-  relaunch("returning", "What do you want to design?", "create");
+  relaunch("returning", "Make something", "create");
 });

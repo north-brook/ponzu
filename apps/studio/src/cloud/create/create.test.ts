@@ -2,12 +2,20 @@ import { expect, test } from "bun:test";
 import type { Repo } from "../model.ts";
 import {
   BETWEEN,
+  COMPOSER_REST,
   canSend,
+  DOCK_INSET,
   fullName,
   HEADING,
+  HERO_GAP,
+  HERO_LIFT,
+  HERO_TOP,
   heldWhileOpen,
+  heroPlace,
   LIST_ROOM,
   listHeight,
+  MARK,
+  MARK_GAP,
   type PickerGroup,
   pickerGroups,
   projectLabel,
@@ -173,4 +181,24 @@ test("the list is as tall as its rows and headings, and has a search whenever it
   expect(listHeight(pickerGroups(heldWhileOpen(opened, opened), ""))).toBe(
     3 * HEADING + 2 * BETWEEN + 3 * ROW,
   );
+});
+
+test("the hero is centred above the resting composer, holds as it grows, then gives way", () => {
+  const statement = 40;
+  const resting = COMPOSER_REST + DOCK_INSET;
+  const above = MARK + MARK_GAP;
+  // Centred in the room over the composer at rest, HERO_LIFT high, the mark and its gap counted.
+  const at = heroPlace({ pane: 856, dock: resting, statement });
+  expect(at.mark).toBe(true);
+  expect(
+    Math.abs(at.top - above + (above + statement) / 2 - ((856 - resting) / 2 - HERO_LIFT)),
+  ).toBeLessThanOrEqual(0.5);
+  // A grown composer that still clears it moves nothing.
+  expect(heroPlace({ pane: 856, dock: resting + 200, statement })).toEqual(at);
+  // One that would come within HERO_GAP pushes the statement up ahead of it.
+  const pushed = heroPlace({ pane: 596, dock: 400, statement });
+  expect(pushed.top).toBe(596 - 400 - HERO_GAP - statement);
+  expect(pushed.mark).toBe(pushed.top - above >= HERO_TOP);
+  // Too short for the mark: it goes, and the statement stops at HERO_TOP.
+  expect(heroPlace({ pane: 300, dock: 260, statement })).toEqual({ top: HERO_TOP, mark: false });
 });

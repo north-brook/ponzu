@@ -70,13 +70,13 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
 
   test("walks the whole product", async () => {
     // Fresh start, in their own account, with the ideas made for its repo.
-    await page.getByText("What do you want to design?").waitFor();
+    await page.getByText("Make something").waitFor();
     await page.getByRole("button", { name: "Workspace: Northbrook" }).click();
     await page.getByRole("menuitemradio", { name: "Personal" }).click();
     // They take turns as the composer's placeholder; Tab takes the one showing.
     await page.locator("[data-suggestion]").waitFor();
     await shoot("fresh-start", { dark: true });
-    const field = page.getByPlaceholder(/Describe a screen/);
+    const field = page.getByPlaceholder(/Describe what you want to make/);
     await field.press("Tab");
     const IDEA = await field.inputValue();
     expect(KETTLE_IDEAS).toContain(IDEA);
@@ -100,6 +100,11 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
       window.ponzuFake!.backend.latencyMs = 0;
     });
     await shoot("design-waking");
+    // Left alone, the thread's pane closes after its beat, having shown where the thread lives.
+    await page.locator('button[aria-controls="thread"][aria-expanded="false"]').waitFor();
+    // Maya opens it again, and that is remembered for the designs she opens next.
+    await page.click('button[aria-controls="thread"]');
+    await page.locator('button[aria-controls="thread"][aria-expanded="true"]').waitFor();
 
     // Settings: every section, in the personal workspace and then the team's.
     await fake(() => {
@@ -324,7 +329,7 @@ async function watchForAnEmptyDesign(page: Page, message: string) {
     (window as unknown as { emptyDesign: string[] }).emptyDesign = seen;
     const started = performance.now();
     const look = () => {
-      const creating = document.body.textContent?.includes("What do you want to design?");
+      const creating = document.body.textContent?.includes("Make something");
       const thread = document.querySelector("#thread");
       if (!creating) {
         const said = thread?.textContent?.includes(text);

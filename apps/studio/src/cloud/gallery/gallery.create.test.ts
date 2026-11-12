@@ -9,8 +9,13 @@ import {
   buildGallery,
   chromiumPath,
   fontsLoaded,
+  holdSend,
   launch,
   type Page,
+  releaseSend,
+  type SendFrame,
+  seekSend,
+  sendFrame,
   serve,
 } from "../../../scripts/visual-lib.ts";
 
@@ -355,7 +360,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await page.waitForSelector(list, { state: "detached" });
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
+    // The statement's last words: "Make something from scratch".
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
   });
   test("the repo picker on pick-a-project-many-repos: the search field keeps the keys; the arrows, Home and End move the highlight; Escape changes nothing", async () => {
     const field = 'input[aria-label="Search repositories"]';
@@ -406,80 +412,405 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(clear).toEqual({ past: true, inside: true });
   });
   /**
-   * The create page's header, measured: the logo's mark, the hairline, the selector and its
-   * words (their box, and the centre of their x-height, the line the logo's word sits on), the
-   * composer's card, all in px.
+   * The create page, measured: the canvas pane, the mark (and how opaque it is), the statement,
+   * the selector and its words, the composer's card, all in px.
    */
   const header = () =>
     page.evaluate(() => {
       const box = (el: Element) => {
         const r = el.getBoundingClientRect();
-        return {
-          left: r.left,
-          right: r.right,
-          top: r.top,
-          bottom: r.bottom,
-          mid: r.top + r.height / 2,
-        };
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
       };
       const label = document.querySelector("[data-project-label]")!;
       const name = (label.lastElementChild ?? label) as HTMLElement;
-      const style = getComputedStyle(name);
-      const ctx = document.createElement("canvas").getContext("2d")!;
-      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-      const m = ctx.measureText("nwoo");
-      const n = name.getBoundingClientRect();
-      // Where the line box puts the baseline: half the leading over the font's own box.
-      const baseline =
-        n.top +
-        (n.height - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 +
-        m.fontBoundingBoxAscent;
+      const mark = document.querySelector("[data-create-mark]")!;
       return {
-        mark: box(document.querySelector("h1 svg")!),
-        divider: box(document.querySelector("[data-create-divider]")!),
+        pane: box(document.querySelector("main")!),
+        mark: box(mark),
+        markShown: Number(getComputedStyle(mark).opacity),
+        statement: box(document.querySelector("[data-create-statement]")!),
         selector: box(document.querySelector("[data-project-selector]")!),
         label: box(label),
         // A line is the face's line box, a little over its size: two would be over twice it.
-        labelLines: Math.floor(n.height / Number.parseFloat(style.fontSize)),
+        labelLines: Math.floor(
+          name.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(name).fontSize),
+        ),
         nameShown: name.clientWidth,
-        xHeight: baseline - m.actualBoundingBoxAscent / 2,
-        composer: box(document.querySelector("textarea")!.closest(".cursor-text")!),
+        composer: box(document.querySelector("[data-create-composer] [data-composer-card]")!),
       };
     });
 
-  test("the header is one line on the mark: the hairline, and the selector's words, centred on it", async () => {
-    await open("create");
-    const h = await header();
-    // The mark is the lockup's height; its centre is the row's line.
-    expect(Math.abs(h.divider.mid - h.mark.mid)).toBeLessThanOrEqual(1);
-    expect(Math.abs(h.label.mid - h.mark.mid)).toBeLessThanOrEqual(1);
-    expect(Math.abs(h.selector.mid - h.mark.mid)).toBeLessThanOrEqual(1);
-    // The words sit on it by their x-height, as the logo's word does.
-    expect(Math.abs(h.xHeight - h.mark.mid)).toBeLessThanOrEqual(1);
-    // The hairline stands on the composer's centre line; the logo ends 16 before it.
-    const centre = (h.composer.left + h.composer.right) / 2;
-    expect(Math.abs((h.divider.left + h.divider.right) / 2 - centre)).toBeLessThanOrEqual(0.5);
-    expect(Math.round(h.divider.left - h.mark.right)).toBe(16);
-    // Nothing is under the composer: the selector came up into the header.
-    expect(h.selector.bottom).toBeLessThan(h.composer.top);
+  /** How far the thread's composer rests from the foot of its pane, on a design. */
+  const threadInset = async () => {
+    await open("thread-in-the-right-rail");
+    return page.evaluate(() => {
+      const pane = document.getElementById("thread-pane")!.getBoundingClientRect();
+      const card = document.querySelector("#thread [data-composer-card]")!.getBoundingClientRect();
+      return Math.round(pane.bottom - card.bottom);
+    });
+  };
+
+  test("the hero is centred in the room above the composer, which sits on the pane's foot at the thread composer's inset", async () => {
+    const inset = await threadInset();
+    for (const height of [700, 900, 1200]) {
+      await open("fresh-start", { width: 1440, height });
+      const h = await header();
+      // The composer: centred in the pane, at its foot, as far from it as the thread's is from its own.
+      expect(Math.round(h.pane.bottom - h.composer.bottom)).toBe(inset);
+      const middle = (h.pane.left + h.pane.right) / 2;
+      expect(Math.abs((h.composer.left + h.composer.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
+      // The hero, the mark over the statement: on the pane's centre line, and centred in the room
+      // above the composer at rest, 28 high of true centre (create.ts, HERO_LIFT).
+      expect(Math.abs((h.mark.left + h.mark.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs((h.statement.left + h.statement.right) / 2 - middle)).toBeLessThanOrEqual(1);
+      expect(Math.round(h.statement.top - h.mark.bottom)).toBe(24);
+      const room = { top: h.pane.top, bottom: h.composer.top };
+      const centre = (room.top + room.bottom) / 2 - 28;
+      expect(Math.abs((h.mark.top + h.statement.bottom) / 2 - centre)).toBeLessThanOrEqual(1);
+      expect(h.markShown).toBe(1);
+    }
   });
 
-  test("a long owner and name stay on the header's line, inside the composer's width, the logo where it was", async () => {
+  test("the hero holds still as the composer grows, and gives way only once it must: the statement rises, the mark goes", async () => {
+    await open("fresh-start", { width: 1440, height: 900 });
+    const resting = await header();
+    // A few lines grow the composer upward and move nothing else.
+    await page.fill("textarea", "One\nTwo\nThree\nFour");
+    const grown = await header();
+    expect(grown.composer.top).toBeLessThan(resting.composer.top);
+    expect(grown.composer.bottom).toBe(resting.composer.bottom);
+    expect(grown.statement).toEqual(resting.statement);
+    expect(grown.mark).toEqual(resting.mark);
+
+    // The smallest window and the tallest the field grows: the whole hero still has its room.
+    await open("fresh-start", { width: 1440, height: 640 });
+    const long = Array.from({ length: 14 }, (_, i) => `Line ${i + 1}`).join("\n");
+    await page.fill("textarea", long);
+    const smallest = await header();
+    expect(smallest.markShown).toBe(1);
+    expect(smallest.composer.top - smallest.statement.bottom).toBeGreaterThanOrEqual(40 - 0.5);
+    // A pane shorter than any window gives it (the rule holds all the same): the statement rises
+    // ahead of the composer and the mark goes.
+    await page.$eval("main", (el) => {
+      (el as HTMLElement).style.marginTop = "200px";
+    });
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("[data-create-mark]")!).opacity === "0",
+    );
+    const tight = await header();
+    // Nothing overlaps: the statement keeps 40 over the composer, and 24 under the pane's top.
+    expect(tight.composer.top - tight.statement.bottom).toBeGreaterThanOrEqual(40 - 0.5);
+    expect(tight.statement.top - tight.pane.top).toBeGreaterThanOrEqual(24 - 0.5);
+    // Taken back, the hero is where it was.
+    await page.fill("textarea", "");
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("[data-create-mark]")!).opacity === "1",
+    );
+    const back = await header();
+    expect(back.statement.top).toBeGreaterThan(tight.statement.top);
+    expect(back.mark.bottom).toBeLessThanOrEqual(back.statement.top - 24 + 0.5);
+  });
+
+  test("the statement ends in the selector, on one baseline; a long owner and name stay on its line and in the pane", async () => {
     await open("create");
     const short = await header();
+    // The selector's words are the statement's last: one line, after "Make something in".
+    expect(short.selector.top).toBeGreaterThanOrEqual(short.statement.top - 0.5);
+    expect(short.selector.bottom).toBeLessThanOrEqual(short.statement.bottom + 0.5);
+    expect(short.selector.bottom).toBeLessThan(short.composer.top);
     await open("fresh-start-long-name");
     const long = await header();
-    expect(long.selector.right).toBeLessThanOrEqual(long.composer.right);
     expect(long.labelLines).toBe(1);
-    expect(long.selector.mid).toBe(short.selector.mid);
-    // The logo and the hairline didn't move or shrink for it.
-    expect(long.mark).toEqual(short.mark);
-    expect(long.divider).toEqual(short.divider);
+    expect(long.statement.right).toBeLessThanOrEqual(long.pane.right);
+    expect(long.statement.left).toBeGreaterThanOrEqual(long.pane.left);
+    // The mark where it was (to the pixel: centring a statement of another width rounds apart).
+    expect(Math.round(long.mark.left)).toBe(Math.round(short.mark.left));
+    expect(long.mark.top).toBe(short.mark.top);
     // The owner gave way first: most of what shows is the name.
-    expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.75);
+    expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.6);
     expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
       "Project: the-extraordinarily-long-organization-name/customer-onboarding-experiments-and-landing-page-variants",
     );
+  });
+
+  /** The send composition, with motion: `query` adds the harness's options (`fail`, `beat`). */
+  const openSend = async (
+    query = "",
+    reducedMotion: "reduce" | "no-preference" = "no-preference",
+  ) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion });
+    await page.goto(`${server.url}/gallery.html?board=create-send&theme=light${query}`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    // Every travelling card ever made, counted as it arrives.
+    await page.evaluate(() => {
+      const w = window as { flights?: number };
+      w.flights = 0;
+      new MutationObserver((records) => {
+        for (const r of records) {
+          for (const n of r.addedNodes) {
+            if (n instanceof Element && n.querySelector('[data-flight="surface"]')) w.flights!++;
+          }
+        }
+      }).observe(document.body, { childList: true });
+    });
+    await page.focus("[data-create-composer] textarea");
+  };
+  const gallery = <T>(key: string) =>
+    page.evaluate((key) => (window as unknown as Record<string, T>)[key], key);
+  const near = (
+    a: SendFrame["surface"],
+    b: { x: number; y: number; width: number; height: number },
+  ) =>
+    !!a &&
+    Math.abs(a.x - b.x) <= 1 &&
+    Math.abs(a.y - b.y) <= 1 &&
+    Math.abs(a.width - b.width) <= 1 &&
+    Math.abs(a.height - b.height) <= 1;
+  const sendCard = () =>
+    page.$eval("[data-create-composer] [data-composer-card]", (el) => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return { x, y, width, height };
+    });
+
+  test("a send: the composer travels as one from its box to the thread composer's, which has the words as its first line", async () => {
+    await openSend("&beat=600000");
+    const from = await sendCard();
+    const heroBox = () =>
+      page.$eval("[data-create-hero]", (el) => {
+        const { x, width } = el.getBoundingClientRect();
+        return { x, width };
+      });
+    const hero = await heroBox();
+    const length = await holdSend(page, () => page.keyboard.press("Enter"));
+    // On a relative of the panes' clock: longer, so it lands once the pane has opened.
+    expect(length).toBeGreaterThan(220);
+    await seekSend(page, 0);
+    const start = await sendFrame(page);
+    expect(start.surfaces).toBe(1);
+    expect(near(start.surface, from)).toBe(true);
+    // The hero fades where it stood: the thread's pane opening beside it doesn't move it.
+    await seekSend(page, 0.5);
+    const mid = await heroBox();
+    expect(Math.abs(mid.x - hero.x)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(mid.width - hero.width)).toBeLessThanOrEqual(0.5);
+    // Where it rests, it rests: the thread's composer once the pane has opened.
+    let last = start;
+    for (let i = 1; i <= 20; i++) {
+      await seekSend(page, i / 20);
+      const frame = await sendFrame(page);
+      // One card all the way, never smaller than where it lands, moving only toward it.
+      expect(frame.surfaces).toBe(1);
+      expect(frame.surface!.x).toBeGreaterThanOrEqual(last.surface!.x - 0.5);
+      expect(frame.surface!.width).toBeLessThanOrEqual(last.surface!.width + 0.5);
+      last = frame;
+    }
+    // The + and the send button keep to their corners of the card.
+    expect(last.attach!.x - last.surface!.x).toBeLessThan(12);
+    expect(last.surface!.x + last.surface!.width - (last.send!.x + last.send!.width)).toBeLessThan(
+      12,
+    );
+    // At its last step it is on the thread's composer, measured in the same frame: no jump.
+    expect(near(last.surface, last.home!)).toBe(true);
+    await releaseSend(page);
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    // And that is where the thread's composer rests once the pane's easing is over. (Held
+    // stepping can outlast the window's watch on that easing, which is on the wall clock, and
+    // the pane then lays itself out once more: wait for that rather than read it mid-way.)
+    await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
+    const home = await page.$eval("#thread [data-composer-card]", (el) => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return { x, y, width, height, seen: `${style.visibility} ${style.opacity}` };
+    });
+    expect(near(last.surface, home)).toBe(true);
+    expect(home.seen).toBe("visible 1");
+    // The words are the thread's first line; the composer is empty and has the caret.
+    const first = await page.$eval("#thread [data-thread-line], #thread li, #thread p", (el) =>
+      el.textContent?.trim(),
+    );
+    expect(first).toContain("I'd like to iterate on the onboarding flow");
+    expect(await page.inputValue("#thread textarea")).toBe("");
+    await focusOn("Message");
+    expect(await gallery<number>("flights")).toBe(1);
+  });
+
+  test("after the beat the thread's pane closes, and our own caret in it doesn't keep it open", async () => {
+    await openSend("&beat=200");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "closed",
+    );
+    await page.waitForSelector('button[aria-controls="thread"][aria-expanded="false"]');
+  });
+
+  for (const [kind, touch] of [
+    [
+      "the pointer moved into it",
+      async () => {
+        await page.mouse.move(1300, 600);
+        await page.mouse.move(1310, 620);
+      },
+    ],
+    ["a press in it", () => page.mouse.click(1300, 400)],
+    [
+      "a scroll in it",
+      async () => {
+        await page.mouse.move(1300, 400);
+        await page.mouse.wheel(0, -120);
+      },
+    ],
+    ["typing in it", () => page.keyboard.type("and")],
+    [
+      "something in it focused",
+      async () => {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.focus("#thread textarea");
+      },
+    ],
+  ] as const) {
+    test(`the thread's pane stays open after ${kind}`, async () => {
+      await page.mouse.move(700, 300);
+      await openSend("&beat=600000");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+      await focusOn("Message");
+      await touch();
+      await page.waitForFunction(
+        () => (window as { gallerySettled?: string }).gallerySettled === "open",
+      );
+      expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe(
+        "true",
+      );
+    });
+  }
+
+  test("the first move of the pointer after a send, into the pane, keeps it open", async () => {
+    await openSend("&beat=600000");
+    await page.mouse.move(700, 300);
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.mouse.move(1300, 600, { steps: 1 });
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
+  test("the thread's toggle used during the beat: the pane is as the person left it, and the beat is over", async () => {
+    await page.mouse.move(700, 300);
+    await openSend("&beat=600000");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.click('button[aria-controls="thread"]');
+    await page.waitForFunction(
+      () => (window as { gallerySending?: boolean }).gallerySending === false,
+    );
+    expect(await page.getAttribute('button[aria-controls="thread"]', "aria-expanded")).toBe(
+      "false",
+    );
+    expect(await gallery<string | undefined>("gallerySettled")).toBeUndefined();
+  });
+
+  test("a send that fails comes back to the page as it was, the error said, with no second travel", async () => {
+    await openSend("&fail=150&beat=600000");
+    const before = await sendCard();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="status"]:text("couldn\'t be made")');
+    await page.waitForSelector("[data-create-composer]:not([data-launched])");
+    expect(await page.inputValue("[data-create-composer] textarea")).toBe(
+      "I'd like to iterate on the onboarding flow",
+    );
+    expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
+      "Project: north-brook/fernwood",
+    );
+    expect(await page.$("[data-flight]")).toBeNull();
+    expect(await gallery<number>("flights")).toBe(1);
+    // Once the thread's pane has closed again, the composer is where it was.
+    await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
+    expect(await sendCard()).toEqual(before);
+    await focusOn("Describe the design");
+  });
+
+  test("send pressed twice makes one send and one travel", async () => {
+    await openSend("&beat=600000");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    await page
+      .click('[data-create-composer] button[aria-label="Send"]', { force: true })
+      .catch(() => {});
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    expect(await gallery<number>("gallerySends")).toBe(1);
+    expect(await gallery<number>("flights")).toBe(1);
+  });
+
+  test("keys pressed while the composer travels land in the thread's composer, and keep the pane open", async () => {
+    await page.mouse.move(700, 300);
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.3);
+    await focusOn("Message");
+    await page.keyboard.type("and the");
+    // Going to the pane ends the beat, not the travel: the card is still on its way.
+    expect((await sendFrame(page)).surfaces).toBe(1);
+    expect(await gallery<string | undefined>("gallerySettled")).toBeUndefined();
+    await releaseSend(page);
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    expect(await page.inputValue("#thread textarea")).toBe("and the");
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "open",
+    );
+  });
+
+  test("with reduced motion nothing travels, and it ends the same: the words in the thread, the caret there, the pane closing after the beat", async () => {
+    await openSend("&beat=300", "reduce");
+    await page.keyboard.press("Enter");
+    await focusOn("Message");
+    expect(await gallery<number>("flights")).toBe(0);
+    expect(await page.textContent("#thread")).toContain(
+      "I'd like to iterate on the onboarding flow",
+    );
+    await page.waitForFunction(
+      () => (window as { gallerySettled?: string }).gallerySettled === "closed",
+    );
+  });
+
+  test("a window resized mid-way lands the composer at once, where the thread's now rests", async () => {
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.5);
+    expect((await sendFrame(page)).surfaces).toBe(1);
+    await page.setViewportSize({ width: 1300, height: 820 });
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await releaseSend(page);
+    // The pane lays itself out for the new window once its opening is over.
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#thread [data-composer-card]");
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return (
+        Math.round(r.right) === 1300 - 10 &&
+        Math.round(r.bottom) === 820 - 10 &&
+        getComputedStyle(el).visibility === "visible" &&
+        getComputedStyle(el).opacity === "1"
+      );
+    });
+  });
+
+  test("a pane's edge taken hold of mid-way lands the composer at once", async () => {
+    await openSend("&beat=600000");
+    await holdSend(page, () => page.keyboard.press("Enter"));
+    await seekSend(page, 0.4);
+    await page.evaluate(() =>
+      document.querySelector("header")!.parentElement!.setAttribute("data-pane-drag", ""),
+    );
+    await page.waitForFunction(() => !document.querySelector("[data-flight]"));
+    await page.evaluate(() =>
+      document.querySelector("header")!.parentElement!.removeAttribute("data-pane-drag"),
+    );
+    await releaseSend(page);
+    expect(
+      await page.$eval("#thread [data-composer-card]", (el) => getComputedStyle(el).opacity),
+    ).toBe("1");
   });
 
   /** The open list as read top to bottom: `# <heading>` for a group's heading, else a row's words. */
@@ -657,8 +988,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click('[data-choice="scratch:ws_lennylearning"]');
     await page.waitForSelector('[role="listbox"]', { state: "detached" });
     await page.waitForSelector('button[aria-label="Workspace: Lenny Learning"]');
-    // The selector says Scratch; to assistive tech, whose.
-    expect(await page.textContent('button[aria-label^="Project"]')).toBe("Scratch");
+    // The statement says "from scratch"; to assistive tech, whose.
+    expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
     expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
       "Project: Scratch in Lenny Learning",
     );

@@ -72,6 +72,7 @@ export function NewDesignComposer({
     // The whole card is the field's: a press on it, past its controls, writes.
     <div
       onMouseDown={pressToFocus}
+      data-composer-card
       className="flex min-h-[118px] cursor-text flex-col gap-[18px] rounded-20 bg-surface pt-4 pr-2.5 pb-2.5 pl-[18px] shadow-bar"
     >
       {attachments.length ? (
@@ -95,7 +96,7 @@ export function NewDesignComposer({
           {...FIELD}
           aria-label="Describe the design"
           aria-describedby={suggested ? described : undefined}
-          placeholder="Describe a screen, a flow or a brand"
+          placeholder="Describe what you want to make"
           rows={1}
           value={prompt}
           onChange={(e) => onPromptChange(e.currentTarget.value)}
@@ -122,6 +123,7 @@ export function NewDesignComposer({
         <IconButton
           label="Attach"
           tipSide="top"
+          data-composer-attach
           onClick={onAttach}
           className="size-[30px] rounded-pill"
         >
@@ -129,7 +131,13 @@ export function NewDesignComposer({
         </IconButton>
         <span className="flex-1" />
         {model ? <ModelPicker {...model} /> : null}
-        <SendButton size={32} disabled={!ready} aria-busy={sending || undefined} onClick={onSend} />
+        <SendButton
+          size={32}
+          disabled={!ready}
+          aria-busy={sending || undefined}
+          onClick={onSend}
+          data-composer-send
+        />
       </div>
     </div>
   );
