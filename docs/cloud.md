@@ -4,9 +4,9 @@ This is the architecture of the cloud rewrite. It is the contract the code on th
 `cloud` branch is built against; where code and this file disagree, fix one of them
 in the same pull request.
 
-Ponzu stops being a local app. You sign in with GitHub, pick a repo, and describe a
-design. A sandbox in the cloud checks the repo out and runs Claude Code on your own
-Claude plan; Claude draws on the canvas, changes the code, and opens a pull request.
+Ponzu stops being a local app. You sign in with GitHub, pick a repo, and describe what
+you want to make. A sandbox in the cloud checks the repo out and runs Claude Code on
+your own Claude plan; Claude draws on the canvas, changes the code, and opens a pull request.
 Everyone with access to the repo sees the same canvas and thread, live, on the Mac
 and the iPhone.
 
@@ -15,9 +15,9 @@ backwards compatibility with the 1.x app.
 
 ## Principles
 
-1. **The database is the design.** Postgres holds every canvas, comment, thread and
+1. **The database is the canvas.** Postgres holds every board, comment, thread and
    event. Nothing lives only in a sandbox or on a device.
-2. **A sandbox is a cache.** It holds one design's checkout and one Claude session.
+2. **A sandbox is a cache.** It holds one canvas's checkout and one Claude session.
    Either can be rebuilt from GitHub and the database, so losing a sandbox loses
    nothing.
 3. **Clients hold nothing durable.** No git, no agent, no secrets. A client can be
@@ -133,7 +133,7 @@ invitations.
 
 **Who is in a workspace** is everyone GitHub gives access to at least one repo of
 its installation, whether or not they have opened Ponzu: that is the count on "Where
-do you design?", Settings › Members and Share. The API reads it as the App, once for
+do you build?", Settings › Members and Share. The API reads it as the App, once for
 the whole installation and never per person (`github/people.ts`): each installed
 repo's people (`collaborators`, affiliation all, with their permission and name,
 over GraphQL a hundred at a time), an organization's members for their roles (which
@@ -634,7 +634,7 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   meanwhile finds its row `stopping` and its wake waits or tries again, so a late delete can
   never hit its new sandbox. A settle's retire, and the sweep's, take the row only while the
   canvas is still settled, so one that comes late (a sweep that listed the canvas before it was
-  reopened) leaves the reopened design alone, and never from another retire inside its lease, so
+  reopened) leaves the reopened canvas alone, and never from another retire inside its lease, so
   two never overlap; a retire that finds the row no longer its own deletes nothing at Vercel. A
   retire that dies leaves the row held, and the sweep runs it again once the lease is over.
 - **The sweep**, every minute, never resumes anything: every call it makes reads or is pinned to
@@ -671,7 +671,7 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 
 `apps/runner` is one long-lived process per sandbox. It:
 
-- runs Claude Code through the Agent SDK, one session per design, with the repo's
+- runs Claude Code through the Agent SDK, one session per canvas, with the repo's
   own `CLAUDE.md`, skills, hooks and MCP servers;
 - hosts the canvas tools in-process as an SDK MCP server. The tools work on a
   `Replica`, so they read the document synchronously and their ops stream to the
@@ -741,7 +741,7 @@ publishing an export, the canvas's link and the theme to render in.
   any notice no tool result carried.
 - **Other people's ops** reach the same in-process event and presence hubs the
   agent's own do, so a board a person deletes stops showing as worked on.
-- **Files go by sandbox path.** There are no design files. HTML too long for one
+- **Files go by sandbox path.** A canvas is not a folder of files. HTML too long for one
   call is written to a file by the agent, and `write_html` or `create_artboard`
   takes its path; the limits of an op (10,000 nodes, 1 MB) hold either way.
   `add_asset` takes a file's path, checks that the file is the kind its name
@@ -790,10 +790,10 @@ measurement and lint, inside the runner's process.
   Inter stands in for San Francisco, close at text sizes and up to 12% wide in
   headings; emoji, which on a Mac are narrower from 24px up and make their line a
   few pixels taller; and Chinese, Japanese or Korean text in a stack that names no
-  font for it, which fallback draws at Noto's line height where the design sets
+  font for it, which fallback draws at Noto's line height where the board's CSS sets
   none. Fallback goes by what is installed, so the image holds the fonts in that
   list and no others for those scripts.
-- **The dev server.** With `loopback: true` a design can load images, video, fonts
+- **The dev server.** With `loopback: true` a canvas can load images, video, fonts
   and stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at
   a public origin, so the renderer grants its pages Chrome's permission for this
   machine, and only this machine: the rest of the local network stays refused.
@@ -1064,7 +1064,7 @@ SHA-256 the runner checks, and whose bundle must carry that commit and be built 
 checkout has), never from whatever a ref holds. It goes back only where it loses nothing: the
 branch is moved to the saved HEAD when the saved HEAD contains it (`merge --ff-only`), or when the
 branch is one this disk only just made (never pushed, nothing of its own beyond the default
-branch, which may have moved on since: the common case of a young design on a busy repository);
+branch, which may have moved on since: the common case of a young canvas on a busy repository);
 when the branch was pushed and has moved on past it, the work is put on a local branch,
 `ponzu-wip/turn-<n>`, and the thread says so, for the agent to bring over what the person wants.
 Changes the disk has of its own are put in `git stash` first, never thrown away. The index is
@@ -1094,8 +1094,8 @@ reopening it resumes the conversation.
 
 ### Events
 
-A design has one ordered feed of things that happened: a message, an answer, a
-comment, a canvas edit by a person, a failed check, a review.
+A canvas has one ordered feed of things that happened: a message, an answer, a
+comment, an edit by a person, a failed check, a review.
 
 | Priority | What | Effect |
 |---|---|---|
@@ -1188,7 +1188,7 @@ secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
 ### Credentials
 
 - **Git.** The sandbox has a credential helper that asks the API for a one-hour
-  token for the design's repository. No GitHub secret is stored in the sandbox.
+  token for the canvas's repository. No GitHub secret is stored in the sandbox.
 - **Commits** are authored by the person (their GitHub noreply address) and
   committed by the app.
 - **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
@@ -1196,14 +1196,14 @@ secret's name. A Scratch canvas has no repo, so it has nowhere to keep one.
   button, or, when the agent drives it, the person its turn is for ("The agent's pull
   request"). The agent has no GitHub API token; it hands the API its summary of the change with
   the runner's own tool, `describe_pull_request`, and opens, readies, updates and merges with the
-  runner's other pull request tools (beside the canvas tools, for a design with a repo), which
+  runner's other pull request tools (beside Ponzu's tools, for a canvas with a repo), which
   post `/v1/runner/pull-request…`. Once a merge has gone through, the API deletes the
   branch as the person, while it is still at the commit that merged.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed in the env of the runner's start command at every start of the
   sandbox. It is never written to disk, never in the sandbox's own env, and never in a
   snapshot. Moving it behind
-  an egress proxy is hardening work, tracked below. A design runs on its owner's account from
+  an egress proxy is hardening work, tracked below. A canvas runs on its owner's account from
   start to finish (`canvases.claude_account_id`). `/v1/claude` connects one: an API key once
   Anthropic takes it (a free `GET /v1/models`), or a subscription by `claude setup-token`, run
   in a utility sandbox made from the canvas image with no credential at all
@@ -1334,7 +1334,7 @@ behind these routes, and is the reference for what each answers.
   (`invalid_request`, `payload_too_large`, `rate_limited`, `database_unavailable`,
   `upstream_unavailable`), a route lists those that mean something to the runner.
 - **Ids the runner chooses** (`ti_…`, `q_…`, `clm_…`) are a prefix and 16 characters of the API's
-  alphabet (`packages/db/src/ids.ts`), and the API keys them by design: a thread item or a
+  alphabet (`packages/db/src/ids.ts`), and the API keys them by canvas: a thread item or a
   question is found by `(canvas_id, id)`, so the same id in another canvas is another row,
   and nothing a runner sends can reach or reveal another canvas's.
 - JSON is camelCase; times are ISO 8601.
@@ -1432,7 +1432,7 @@ event begins is traced under it (docs/analytics.md).
 | `check` | next | `{ name, conclusion, url, summary }` | a user message, priority `next` |
 | `review` | next | `{ state, reviewer: { login }, body, url, comments: [{ path, line, body }] }` | a user message, priority `next` |
 | `stop` | now | `{}` | interrupts the running turn and what was put in behind it; nothing goes in |
-| `push` | now | `{}` | nothing goes in: the runner pushes the design's branch now, without the agent (Create PR with commits only the sandbox holds, "Pull requests") |
+| `push` | now | `{}` | nothing goes in: the runner pushes the canvas's branch now, without the agent (Create PR with commits only the sandbox holds, "Pull requests") |
 
 A comment event is one new comment or one reply; an edited, resolved or reopened comment is a
 canvas edit (`edit`), and so is one an undo or a redo puts back, which was heard when it was
@@ -1671,12 +1671,12 @@ extension; type, size and SHA-256), and answers with a signed address per file t
 exactly those bytes for ten minutes. The runner PUTs them there with the headers given and
 no bearer, then `POST /v1/runner/uploads/complete` with the ids. An asset's `ref` is
 `assets/<name>`, as markup uses it; an export's `url` is its link. Previews are `light.png`
-and `dark.png`, of the first page laid out as the canvas shows it, with `seq` the design's
+and `dark.png`, of the first page laid out as the boards view shows it, with `seq` the canvas's
 seq they show (`canvases.preview_seq`); the runner draws them a few seconds after the canvas
 stops changing and its edits reach the API. Completing an id again is safe; 404 `not_found`
 for an id whose bytes never arrived. The purposes `session` and `workspace` are a checkpoint's
 archives (`session.tar.gz`, `workspace.tar.gz`, `application/gzip`, 64 MB each), stored apart
-from every design's files ("Saving the sandbox") and recorded by the checkpoint, never completed
+from every canvas's files ("Saving the sandbox") and recorded by the checkpoint, never completed
 (400).
 
 ### Checkpoints
@@ -1769,7 +1769,7 @@ agent's global git config, clones the repository into `~/work/<name>` of the age
 (`/home/agent/work` in the image), as that user (or fetches, when the disk kept
 it), and checks out the canvas's branch: the local one, else the one on GitHub, else a new one
 from `origin/<default branch>`. Work on disk is never reset. A clone that fails is a
-`clone_failed` notice and the design's status, and the run goes on in an empty folder, so the
+`clone_failed` notice and the canvas's status, and the run goes on in an empty folder, so the
 canvas still works; the agent is told the repository could not be checked out, and the next
 start of the sandbox tries again.
 
@@ -1871,7 +1871,7 @@ opens), `rewritten` (one is open but someone rewrote its description without Pon
 `unreadable` (GitHub could not be read). Safe to repeat: the last one wins.
 
 The agent says them through a tool the runner hosts beside the canvas tools,
-`describe_pull_request({ summary })`, on a repo design whose repository is checked out; the
+`describe_pull_request({ summary })`, on a repo canvas whose repository is checked out; the
 thread calls the step "Writing the pull request description". The tool's answer says what it
 did in words the agent can repeat: "Updated the description of pull request #N on GitHub", or
 "Saved as the description the pull request will open with. No pull request is open yet: open it
@@ -1885,7 +1885,7 @@ work is committed and worth a reviewer's look (ready for review in the turn its 
 waiting for checks, which run after; a draft only when it stops partway), keeps the description current, watches checks and reviews,
 fixes what fails and pushes, and keeps the branch up to date. It merges, or turns on auto-merge,
 only when the person asked for that outcome (merge it, ship it, merge when green), never because
-the work is finished: someone who asked for a design change has not asked for it to land in their
+the work is finished: someone who asked for a change has not asked for it to land in their
 main branch. A check, a review or a comment on GitHub never asks it to merge. They also say that a
 failed push is Ponzu's to retry rather than something to work around, never to say it opened,
 readied, updated or merged a pull request unless a tool's answer said it did, and to end a turn
@@ -1990,12 +1990,16 @@ credential for any of it.
 - A canvas's link, `https://ponzu.design/canvases/<id>` (a pull request's description, the
   agent's messages), is a page of apps/web that hands the canvas to the Mac app as
   `ponzu://canvas/<id>`, or offers the app. `?page=<page id>` or `?artboard=<artboard id>` on it
-  names one page or board, and rides along to the app. The sandbox's tools give the agent each
-  page's and board's link beside its id (`Workspace.linkTo`), and it links the ones it points the
-  person at in its messages; the thread (`PlaceLink` in apps/studio) follows such a link in place,
-  moving the canvas there, and opens another design's in the app.
+  names one page or board, and rides along to the app. A link from before the rename still
+  opens: the site sends `https://ponzu.design/designs/<id>` on to `/canvases/<id>` for good,
+  query and all, and the app reads `ponzu://design/<id>` as `ponzu://canvas/<id>`. Nothing
+  writes the old forms. Canvases made before the rename keep their `des_…` ids; new ones get
+  `cnv_…`. The sandbox's tools give the agent each page's and board's link beside its id
+  (`Workspace.linkTo`), and it links the ones it points the person at in its messages; the
+  thread (`PlaceLink` in apps/studio) follows such a link in place, moving the view there, and
+  opens another canvas's in the app.
 
-**Opening** is a draft from the branch into the default branch, titled with the design's name,
+**Opening** is a draft from the branch into the default branch, titled with the canvas's name,
 whose description is the agent's summary, the canvas's first page as its preview showed it
 (light and dark, through `<picture>`), and a link back to the canvas. The picture is a copy of
 the previews made for that pull request, under a random key of its own
@@ -2148,7 +2152,7 @@ in later in the turn never take it over, and the next turn names its own. A turn
 Claude Code stopped (A turn that never came) names the event that began it, which the turn marker
 keeps beside the last one taken in, never those last words: they may have come in during a turn an
 edit, a check or a review began, or from someone else. The API
-looks it up in the design's feed (`getTurnOrigin`, packages/db): it must be one of this design's
+looks it up in the canvas's feed (`getTurnOrigin`, packages/db): it must be one of this canvas's
 events that **this runner** (its lease, `X-Ponzu-Runner`) was handed, or it is none. So a turn
 picked up after the runner process restarted, or an old event a runner token in other hands names,
 is not a person's turn.
@@ -2304,13 +2308,13 @@ the order summary on the right"). They are generated, never written by hand
      period dropped, the first letter raised.
   2. **The gate** (`gate.ts`): Claude Sonnet 5.5 at low effort reads the four ideas, with only
      the product's name and description (fenced as data, never the README), and says of each,
-     with its reason, whether it is **safe** (asks the reader for nothing but a design: no
+     with its reason, whether it is **safe** (asks the reader for nothing but work on the canvas: no
      address, contact, command, install, sign-in, credential, setting, third-party code,
      destructive step or payment, relays no message from the repo, nothing hateful or abusive)
-     and whether it is a **design** (something people see or do). It judges nothing else.
+     and whether it is **visible** (something people see or do). It judges nothing else.
   - An answer that fails either is asked for again once, with Ponzu's own fixed sentence for
     what failed (`RETRY_REASONS`), never the answer's words or the gate's, which may quote the
-    repo. Then: every idea passes, and all four are kept; some fail only as designs, and those
+    repo. Then: every idea passes, and all four are kept; some fail only as not visible, and those
     that pass are kept (one to four; the grid shows fewer tiles fine); one is unsafe in the last
     answer the gate read, and none of this generation's are kept (`ideas_withheld`: the repo is
     steering the ideas); nothing passes, and none are kept (`ideas_rejected`). Those last two
@@ -2358,8 +2362,8 @@ the order summary on the right"). They are generated, never written by hand
   most 8).
 - **A product not built yet still gets ideas.** A repo with no screens, no components, no theme
   and fewer than 8 files (`isUnbuilt`) is asked with its own instructions
-  (`FRESH_SYSTEM_PROMPT`): where a designer would begin this product, one of each of four kinds,
-  each a short menu (where people start: a first screen, a welcome, an empty state; how it
+  (`FRESH_SYSTEM_PROMPT`): where someone building this product would begin, one of each of
+  four kinds, each a short menu (where people start: a first screen, a welcome, an empty state; how it
   introduces itself: a landing page, a pitch, a sign-up page; what people come to do: the
   screen at its heart or its core flow; its look), as specific as its name, owner, description,
   topics, README and files allow, building on a first draft when one is there, and honest that
@@ -2436,7 +2440,7 @@ integer:
 - Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
   sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
   legend in whole dollars rounded down.
-- A breakdown (by person, by design) is the rounded total shared out, not each part rounded on
+- A breakdown (by person, by canvas) is the rounded total shared out, not each part rounded on
   its own, so its lines always add up to the headline: every line gets its exact use rounded
   down, and the credits the fractions add up to go one each to the lines with the largest
   fractions (largest remainder, ties by id; `apportion` in `credits.ts`). It is gross, before
@@ -2605,14 +2609,14 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
 7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
 
-**Designs they own in a workspace others are in stay with it**, owned by nobody: a team's, or
-their own account's when collaborators on their repos are in it. Their canvas, thread and pull
+**Canvases they own in a workspace others are in stay with it**, owned by nobody: a team's, or
+their own account's when collaborators on their repos are in it. Their boards, thread and pull
 request are work shared with people in a repo they reach, who have commented on it and may be
 about to merge it; deleting them would take that from people who did not ask, and
 GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
 Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
 one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
-says so: "Your designs, threads and settings are deleted. Designs in a team stay with the team.
+says so: "Your canvases, threads and settings are deleted. Canvases in a team stay with the team.
 Your repos and pull requests on GitHub are not touched."
 
 What is not rewritten: the name a canvas's document carries for a comment's author (inside the
@@ -2625,7 +2629,7 @@ Not built. Searching the sidebar for canvas names alone is cheap (the `canvases`
 name and the access joins `workspace.canvases` uses), but the board shows boards and comments
 too, and those live only inside a canvas's document, as `json` in checkpoints and ops. Reading
 every readable canvas's document per keystroke is not an answer, so search needs a small table
-kept at commit time: `search_entries (canvas_id, kind: design | board | comment, ref, text,
+kept at commit time: `search_entries (canvas_id, kind: canvas | board | comment, ref, text,
 author_id, at)`, written by the statement that commits ops (the same one that copies the name
 and icon to `canvases`) from what each op changed, and rebuilt for a canvas from its checkpoint
 when its shape changes. `GET /v1/workspaces/:id/search?q=` then reads it with a trigram index
@@ -2685,9 +2689,9 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Boundary | Rule |
 |---|---|
 | Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or Vercel credential. |
-| Person and design | GitHub decides, checked by the API on every request. |
+| Person and canvas | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one canvas. The API validates and sanitizes everything it sends. |
-| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the canvas's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the canvas was opened. The preload bridge exposes the minimum. |
+| A canvas's HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the canvas's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the canvas was opened. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A canvas carries its workspace, and must agree with its repo's; the rows under a canvas (ops, thread, questions, presence and the rest) carry the canvas and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `canvases`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted
@@ -2803,7 +2807,10 @@ After a deploy that changes the sandbox lifecycle, the image or the runner, on t
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of
 statement once, on a Postgres 18 beside the job. Migrations are generated by
-drizzle-kit and applied in CI, over one connection and in one transaction.
+drizzle-kit and applied in CI, over one connection and in one transaction. They only add, so
+an older API runs on a newer schema, with one exception: `0025_canvases` renames the tables
+and columns to their canvas names, so no deploy from before it may be rolled back to across it
+([production.md](production.md), "Backups and restore").
 
 ## How this lands
 
