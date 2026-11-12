@@ -92,6 +92,44 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click('button:has-text("Clear filter")');
     expect(await rows()).toBe(6);
   });
+  test("a long workspace name is cut short; the header's buttons keep their place", async () => {
+    await open("team-sidebar");
+    const header = () =>
+      page.evaluate(() => {
+        const trigger = document.querySelector<HTMLElement>(
+          '#sidebar button[aria-label^="Workspace:"]',
+        )!;
+        const name = trigger.querySelector("span")!;
+        const sidebar = document.querySelector("#sidebar")!.getBoundingClientRect();
+        const buttons = ["Search", "Filter", "New design"].map((label) => {
+          const r = document
+            .querySelector(`#sidebar button[aria-label^="${label}"]`)!
+            .getBoundingClientRect();
+          return { left: Math.round(r.left), right: Math.round(r.right), width: r.width };
+        });
+        return {
+          cut: name.scrollWidth > name.clientWidth,
+          nameRight: Math.round(trigger.getBoundingClientRect().right),
+          sidebarRight: Math.round(sidebar.right),
+          buttons,
+        };
+      });
+    const before = await header();
+    expect(before.cut).toBe(false);
+    // The same header with a name far too long for it (the text alone: nothing else changes).
+    await page.evaluate(() => {
+      const name = document.querySelector('#sidebar button[aria-label^="Workspace:"] span')!;
+      name.textContent = "The Northbrook Institute for Uncommonly Long Workspace Names";
+    });
+    const after = await header();
+    expect(after.cut).toBe(true);
+    // Each button where it was and as wide as it was, inside the sidebar.
+    expect(after.buttons).toEqual(before.buttons);
+    expect(after.buttons.at(-1)!.right).toBeLessThanOrEqual(after.sidebarRight);
+    // And the name stops short of them.
+    expect(after.buttons[0]!.left - after.nameRight).toBeGreaterThanOrEqual(8);
+  });
+
   test("search: ⌘K opens it, an empty query keeps the list, arrows and Escape work", async () => {
     await open("team-sidebar");
     await page.keyboard.press("Meta+k");

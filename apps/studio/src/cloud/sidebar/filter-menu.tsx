@@ -53,7 +53,7 @@ export function FilterMenu({
       <MenuTrigger asChild>
         <IconButton
           label={isFiltering(filter) ? "Filter (on)" : "Filter"}
-          className="relative h-[26px] w-6"
+          className="relative h-[26px] w-6 shrink-0"
         >
           <Icon icon={FilterHorizontalIcon} step="control" />
           {isFiltering(filter) ? (
