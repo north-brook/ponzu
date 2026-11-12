@@ -18,9 +18,9 @@ import { IPHONE_URL_TARGET } from "./site";
 
 /*
  * The handoff: a phone can't run the desktop app, so its Download buttons open this sheet, which
- * sends the download to the person's computer (and an iPhone is offered Ponzu for iPhone too). Sharing (AirDrop, Messages, Notes, Android's "Send to your
- * devices") or copying puts the install steps' link there; opening it on the computer starts the
- * download. Designed in .context/windows-linux.design (Phones › 1–5 and M1–M4).
+ * sends the download to the person's computer (and an iPhone is offered Ponzu for iPhone too).
+ * Sharing (AirDrop, Messages, Notes, Android's "Send to your devices") or copying puts the install
+ * steps' link there; opening it on the computer starts the download. Designed in .context/windows-linux.design (Phones › 1–5 and M1–M4).
  *
  * The slice is the moment: it blooms when the sheet opens and again once the link is sent. The rest
  * is the house ease and short travel (`.handoff` in globals.css).

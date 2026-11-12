@@ -155,7 +155,7 @@ function SignIn({ bar }: { bar: ReactNode }) {
         <span className="relative inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-[7px] text-xs font-semibold text-ground">
           <GitHub />
           Continue with GitHub
-          <Pointer className="absolute top-4 left-[70%] text-ink" />
+          <Pointer className="absolute top-5 left-[88%] text-ink" />
         </span>
       </div>
     </Window>
