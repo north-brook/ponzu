@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 import type { SessionState } from "@ponzu/client";
-import { act, render, screen } from "@testing-library/react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { onlineManager } from "@tanstack/react-query";
+import { act, render, screen, waitFor } from "@testing-library/react-native";
 import { router } from "expo-router";
 import Launch from "../app/index";
 import { backend } from "../lib/cloud/backend.fake";
@@ -33,11 +35,13 @@ async function launch(ms: number) {
   await advance(ms);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
   jest.useFakeTimers();
   replace.mockClear();
 });
 afterEach(() => {
+  onlineManager.setOnline(true);
   jest.useRealTimers();
 });
 
@@ -81,4 +85,32 @@ describe("launch goes where the session says", () => {
     await advance(3_000);
     expect(replace.mock.calls).toEqual([["/canvases"]]);
   });
+
+  test("offline, once the Keychain is read: setup's step comes from the copy on disk", async () => {
+    // A launch online leaves Ava's `me` on disk, with Claude still to connect.
+    backend.seed("setup-claude");
+    await launch(3_000);
+    expect(replace.mock.calls).toEqual([["/setup/claude"]]);
+    await advance(3_000);
+    screen.unmount();
+    expect(await AsyncStorage.getItem("ponzu.queries")).toBeTruthy();
+    replace.mockClear();
+    // The next launch is offline, and the session is read from the Keychain after it mounts,
+    // as on the phone: the launch must read `me` on Ava's client, which holds the copy. (On the
+    // real clock: the copy is read back through promises the fake one does not move.)
+    jest.useRealTimers();
+    onlineManager.setOnline(false);
+    setState({ status: "loading" });
+    await render(
+      <CloudProvider>
+        <Launch />
+      </CloudProvider>,
+    );
+    await act(async () => {
+      backend.seed("setup-claude");
+    });
+    await waitFor(() => expect(replace.mock.calls).toEqual([["/setup/claude"]]), {
+      timeout: 5_000,
+    });
+  }, 20_000);
 });
