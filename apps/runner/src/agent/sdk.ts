@@ -439,12 +439,22 @@ export class Translator {
  * A `rate_limit_event` as the runner reports it. The SDK gives `resetsAt` in seconds since the
  * epoch, as Anthropic's rate-limit headers do; a value too large to be seconds is taken as
  * milliseconds, so a change of unit at an SDK bump cannot put the reset in the year 50,000.
- * Anything the SDK leaves out, or sends in another shape, is null.
+ * Anything the SDK leaves out, or sends in another shape, is null, and so is a share past what
+ * the API takes (100). A window that is spent while the plan's extra usage still lets requests
+ * through (`overageStatus` allowed) is a warning, not a limit: the plan's canvases can still run,
+ * and holding them to the window's reset (as long as a week) would stop them for nothing.
  */
 export function limitReport(m: SDKRateLimitEvent): ClaudeLimitReport {
   const info = m.rate_limit_info;
+  const overage = info.overageStatus === "allowed" || info.overageStatus === "allowed_warning";
   const status =
-    info.status === "rejected" || info.status === "allowed_warning" ? info.status : "allowed";
+    info.status === "rejected"
+      ? overage
+        ? "allowed_warning"
+        : "rejected"
+      : info.status === "allowed_warning"
+        ? "allowed_warning"
+        : "allowed";
   const at =
     typeof info.resetsAt === "number" && Number.isFinite(info.resetsAt) ? info.resetsAt : null;
   const resetsAt = at === null || at <= 0 ? null : new Date(at < 1e12 ? at * 1000 : at);
@@ -453,7 +463,8 @@ export function limitReport(m: SDKRateLimitEvent): ClaudeLimitReport {
     status,
     window: typeof info.rateLimitType === "string" ? info.rateLimitType : null,
     resetsAt: resetsAt && !Number.isNaN(resetsAt.getTime()) ? resetsAt.toISOString() : null,
-    utilization: typeof used === "number" && Number.isFinite(used) && used >= 0 ? used : null,
+    utilization:
+      typeof used === "number" && Number.isFinite(used) && used >= 0 && used <= 100 ? used : null,
   };
 }
 

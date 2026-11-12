@@ -1352,14 +1352,18 @@ waits for everyone, not only its owner, until it resets.
   (seconds since the epoch) and `utilization` (a fraction, which can run a little past 1). The
   runner passes each on with its state as `claudeLimit` ("State"), once each, the latest for
   each window; on an API key it passes on nothing (`planLimits` in the runner's options, set
-  from `CLAUDE_CODE_OAUTH_TOKEN`). A turn that fails at the limit still says so in the thread
+  from `CLAUDE_CODE_OAUTH_TOKEN`). A `rejected` window that the plan's extra usage still
+  carries (`overageStatus` allowed or allowed_warning) is passed on as `allowed_warning`, since
+  requests still go through. A turn that fails at the limit still says so in the thread
   (`claude_limit`, with Claude Code's own words). Not observed live: the fields come from the
   SDK's types and its binary's own description of them, and a test feeds a scripted event.
 - **What the API keeps.** `claude_accounts.limits` holds each window as last reported (`window`
   in the SDK's name, `utilization`, `resetsAt`, `at`), and `limited_until` is set to the reset
   of a `rejected` window and cleared by any other status, which says requests go through. Both
   are written only when the reporting sandbox runs on the account's current credential (the
-  rule models follow) and only for a subscription; connecting again clears them. A report that
+  rule models follow) and only for a subscription; connecting again clears them. A reset more
+  than eight days off (`MAX_RESET_AHEAD_MS`) is taken as no reset, so a mistaken or forged
+  report cannot hold the account's canvases for longer than any window lasts. A report that
   requests go through again lifts `claude_limited` from the canvases on the account at once
   (`resumeBlocked`), rather than leaving them to the reset they were told.
 - **The wake gate** (`claudeLimit`). A canvas whose account has `limited_until` in the future

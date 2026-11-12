@@ -322,6 +322,19 @@ test("a rate_limit_event is the plan's limit, read as the runner reports it", ()
       limit: { status: "allowed", window: null, resetsAt: null, utilization: null },
     },
   ]);
+  // A share the API would refuse is not said, so the state it goes with is never refused.
+  expect(limit({ status: "allowed", utilization: 101 })[0]).toMatchObject({
+    limit: { utilization: null },
+  });
+  // A spent window that extra usage still carries is a warning: the plan's canvases still run.
+  for (const overageStatus of ["allowed", "allowed_warning"]) {
+    expect(limit({ status: "rejected", resetsAt: 1_794_520_800, overageStatus })[0]).toMatchObject({
+      limit: { status: "allowed_warning" },
+    });
+  }
+  expect(
+    limit({ status: "rejected", resetsAt: 1_794_520_800, overageStatus: "rejected" })[0],
+  ).toMatchObject({ limit: { status: "rejected" } });
   // A subagent's request learns of the same plan.
   expect(limit({ status: "allowed" }, { parent_tool_use_id: "toolu_1" })).toHaveLength(1);
 });

@@ -7,6 +7,7 @@ import { AT_A_CLAUDE_LIMIT, LIMIT_GRACE_MS } from "../sandboxes/gates.ts";
 import { WAKE_JOB } from "../sandboxes/orchestrate.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, TEST_CRON_SECRET, TEST_SCOPE, type TestApp } from "../testing/index.ts";
+import { MAX_RESET_AHEAD_MS } from "./limits.ts";
 
 /*
  * Claude plan limits end to end on the API (docs/cloud.md, "Claude plan limits"): a runner on a
@@ -204,6 +205,23 @@ describe("a limit a runner reports", () => {
     } finally {
       await subscription(true);
     }
+  });
+
+  test("with a reset further off than any window holds no canvas", async () => {
+    await clearLimits();
+    const { runner } = await awake();
+    const later = new Date(t.clock.now() + MAX_RESET_AHEAD_MS + MINUTE);
+    expect((await runner.state(rejected(later))).status).toBe(200);
+    expect(await account()).toMatchObject({ limited_until: null });
+    const got = await call(t, await as("maya"), "GET", "/v1/claude");
+    expect(got.body.account.limits).toEqual([
+      { window: "five_hour", utilization: 1, resetsAt: null },
+    ]);
+    // A week off is believed.
+    const week = new Date(t.clock.now() + 7 * 24 * HOUR);
+    await runner.state(rejected(week, "seven_day"));
+    expect(new Date((await account()).limited_until!).getTime()).toBe(week.getTime());
+    await clearLimits();
   });
 
   test("is refused when it is not the protocol's shape", async () => {

@@ -9,6 +9,9 @@ import { resumeBlocked, type WakeDeps } from "../sandboxes/wake.ts";
  * and Settings › Agents read: a plan at its limit waits for everyone until it resets.
  */
 
+/** The furthest off a reported reset is believed: a week's window, and a day of slack. */
+export const MAX_RESET_AHEAD_MS = 8 * 24 * 60 * 60_000;
+
 /**
  * Keep the report, when the runner that made it runs on the credential the account holds now,
  * the rule models follow: a runner started before its owner connected another subscription, or
@@ -33,6 +36,7 @@ export async function recordReportedLimit(
     account.kind === "subscription" &&
     sandbox?.claudeCredential === credentialMark(account);
   const now = new Date(deps.clock.now());
+  const resetsAt = report.resetsAt ? new Date(report.resetsAt) : null;
   const recorded = current
     ? await recordClaudeLimit(deps.db, {
         claudeAccountId: account.id,
@@ -40,7 +44,11 @@ export async function recordReportedLimit(
         seen: {
           status: report.status,
           window: report.window,
-          resetsAt: report.resetsAt ? new Date(report.resetsAt) : null,
+          // No window of a plan resets further off than a week: a later reset is a mistake (or
+          // a sandbox's forgery) that would hold every canvas on the account until someone
+          // connected again, so it is taken as no reset at all.
+          resetsAt:
+            resetsAt && resetsAt.getTime() - now.getTime() <= MAX_RESET_AHEAD_MS ? resetsAt : null,
           utilization: report.utilization,
         },
         now,
