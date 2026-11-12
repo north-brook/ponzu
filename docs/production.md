@@ -49,6 +49,7 @@ Public values only. Secrets never go in the repository.
 | `cloudflare/assets-headers.json` | The response header rule on the asset hosts |
 | `github/ruleset-main.json`, `github/ruleset-cloud.json` | The branch rulesets, in the shape GitHub's API takes |
 | `github/repo.json` | Merge settings, the environments, and the names of every variable and secret the workflows read |
+| `github-app/ponzu-dev.json` | The GitHub App manifest: name, homepage, webhook and setup URLs, permissions and events. Both Apps must ask for exactly its permissions and events |
 | `posthog.json` | Project settings both PostHog projects must have |
 
 The rules of `environments.json`:
@@ -241,7 +242,8 @@ and `GITHUB_APP_SLUG` take it too.
 
 The check cannot read WorkOS's configuration, so it proves it instead: it builds an authorize
 URL for each redirect URI and requires a redirect to GitHub carrying the production App's client
-id. WorkOS answers a redirect URI it does not allow with an error page, not a redirect.
+id. WorkOS answers a redirect URI it does not allow with a redirect to its own AuthKit
+`/redirect-uri-invalid` page, never to GitHub, so that fails too.
 
 ### PostHog "Ponzu"
 
@@ -365,9 +367,12 @@ a vendor to decrypt a value.
 - It reads credentials from the environment of whoever runs it: `VERCEL_TOKEN` (and
   `VERCEL_TEAM_ID`, optional for the read-only lines; without it the team is named by its public
   slug), `NEON_API_KEY` with `NEON_PROJECT_ID`, `CLOUDFLARE_API_TOKEN` (read only) with
-  `CLOUDFLARE_ACCOUNT_ID` (R2's account id), `POSTHOG_PERSONAL_API_KEY` (read only), `GH_TOKEN`
-  or `gh` auth, and `CRON_SECRET` for the selfcheck. A missing credential makes its section
-  `skipped`, never a pass.
+  `CLOUDFLARE_ACCOUNT_ID` (R2's account id), `POSTHOG_PERSONAL_API_KEY` (read only, with
+  `project:read`), `GH_TOKEN` or `GITHUB_TOKEN` (`GH_TOKEN=$(gh auth token)` as a repository
+  admin: it must read the repository's administration, environments, secrets and variables),
+  `RELEASE_TOKEN` (only so its expiry can be read from GitHub's answer to it), and `CRON_SECRET`
+  for the selfcheck. A missing credential makes its section, or its line, `skipped`, never a
+  pass. The GitHub App's lines and WorkOS's need no credential: what they read is public.
 - The read-only Cloudflare token needs, on the account, Workers R2 Storage Read and Account API
   Tokens Read, and on the zone `ponzu.cloud`, Zone Read and Transform Rules Read. Without the
   token listing, the R2 token line fails and names the permission.
@@ -380,14 +385,16 @@ a vendor to decrypt a value.
   needs `VERCEL_TEAM_ID` as well. On production it is the founder's to run.
 - Agents never run `apply` or `check --deep` against production.
 
-What each section checks today (GitHub, WorkOS and PostHog come with the next pieces of this
-work):
+What each section checks:
 
 | Section | Lines |
 |---|---|
 | `vercel` | The project exists (on production, `pending` until D2); root `apps/api`, the API's Node version, region `iad1`, no Git connection; OIDC with the team issuer; Standard Deployment Protection; the Production target holds every name `REQUIRED_ENV` lists and only names the API reads; no `FORBIDDEN_ENV` name on any target; on production, the Preview and Development targets are empty and every secret is stored as sensitive; the environment's API domains are verified on the project (on production, `pending` while dev still lists the domain, before D11); the live firewall equals `infra/vercel-firewall.json` (enabled, OWASP categories, managed rules, and each rule's conditions, action and limits); the latest production deployment is ready and carries `vercel.json`'s cron. |
 | `neon` | The environment's branch exists (dev's is not the default branch); Realtime is on at `environments.json`'s `realtimeUrl` (on production, `pending`, whether on or off, until D3 sends it). Where `infra/neon.json` asks (production): the read-write compute never sleeps (`-1`) and scales 0.5 to 2 CU; point-in-time history keeps at least 7 days; the backup schedule is daily at 07:00 UTC kept 35 days, and the latest scheduled snapshot is under 26 hours old (a deploy's own snapshot does not count; no schedule is `pending`, never a pass); the branch is protected. |
 | `cloudflare` | The assets bucket exists (production's in ENAM), is served at the environment's assets host with an active certificate and at no other custom domain, has r2.dev off, has `infra/r2/cors.json`'s CORS exactly, and has `infra/r2/lifecycle.json`'s rules (none of them live is `pending`). A live lifecycle rule that would delete under `private/` fails, whatever the file says. Production's private bucket exists in ENAM with no domain, r2.dev off and no delete rule. An account API token reaches exactly the environment's buckets and no other (on dev, a token the account listing cannot show is `manual`). The transform rule on the assets host sets the headers `infra/cloudflare/assets-headers.json` names (dev may go without). |
+| `github` | The environment's App, from GitHub's public answer: it exists and is `north-brook`'s (on production, `pending` until D6), and its permissions, events and homepage are `infra/github-app/ponzu-dev.json`'s exactly, so a permission the manifest does not grant fails. With a token: the merge settings are `github/repo.json`'s; each ruleset matches its file (enforcement, branches, no bypass, the same rules with at least the file's settings; `cloud`'s is `pending` until D12); each environment deploys only from its branches, has a required reviewer where the file says so, and holds its secrets (`production` is `pending` until D12); every variable and secret the workflows read is set (`pending` while any is not). With `RELEASE_TOKEN`: it expires more than 30 days from now. |
+| `workos` | The client's JWKS has a signing key. For the Mac's loopback and the phone's `ponzu://` redirect URI, an authorize request built with `@workos-inc/node` redirects to GitHub with the environment's App's client id (any other client id, an error page or AuthKit's invalid-redirect page fails). Production is `pending` until D7 puts its client id in `environments.json`. The sign-in methods and default emails are `manual`. |
+| `posthog` | The project `environments.json` names exists (production `pending` until D8), has `infra/posthog.json`'s settings, and has the group type `workspace` once it has had an event (before one, `pending`). |
 | `api` | `/v1/health` answers as this environment, `ok`, with its database; applied migrations equal the build's; the image is current.json's; on production the commit is `main`'s head. Then each `/v1/cron/selfcheck` id is `ok`. The cron secret is sent only after health has said it is this environment, so dev's secret never reaches production. While `api.ponzu.design` is in both environments' `apiDomains` (before D11), production's line is `pending`. |
 | `dns` | Each of the environment's API domains, the assets host and `ponzu.design`: resolves over DNS-over-HTTPS, presents a valid certificate with at least 14 days left, and answers as it should (the API and the site from Vercel; the assets host with the header rule, which dev may go without). A production name not set up yet is `pending` with its founder step. |
 | `spend` | The five spend alerts, each `manual`. |

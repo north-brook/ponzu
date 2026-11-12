@@ -34,7 +34,7 @@ function run(...argv: string[]) {
 
 describe("infra/", () => {
   test("every file parses with its schema, and every file has one", () => {
-    expect(listJson(INFRA_DIR)).toEqual(Object.keys(INFRA_FILES).sort());
+    expect(listJson(INFRA_DIR).sort()).toEqual(Object.keys(INFRA_FILES).sort());
     expect(() => loadInfra()).not.toThrow();
   });
 

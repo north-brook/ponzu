@@ -226,6 +226,9 @@ describe("pieces", () => {
       "vercel",
       "neon",
       "cloudflare",
+      "github",
+      "workos",
+      "posthog",
       "api",
       "dns",
       "spend",
@@ -240,6 +243,9 @@ describe("pieces", () => {
       "CLOUDFLARE_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
     ]);
+    expect(SECTIONS.find((s) => s.area === "github")?.needs).toEqual([]);
+    expect(SECTIONS.find((s) => s.area === "workos")?.needs).toEqual([]);
+    expect(SECTIONS.find((s) => s.area === "posthog")?.needs).toEqual(["POSTHOG_PERSONAL_API_KEY"]);
     expect(SECTIONS.find((s) => s.area === "deep")?.deepOnly).toBe(true);
   });
 });

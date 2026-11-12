@@ -17,13 +17,14 @@
  * Credentials come from the environment of whoever runs it (checks/finding.ts names them):
  * VERCEL_TOKEN and optionally VERCEL_TEAM_ID for Vercel, NEON_API_KEY and NEON_PROJECT_ID for
  * Neon, CLOUDFLARE_API_TOKEN (read-only) and CLOUDFLARE_ACCOUNT_ID for R2 and the zone,
- * CRON_SECRET for the API's selfcheck, GH_TOKEN or GITHUB_TOKEN for GitHub. Every line printed
+ * CRON_SECRET for the API's selfcheck, GH_TOKEN or GITHUB_TOKEN for the repository's settings,
+ * RELEASE_TOKEN for its expiry, POSTHOG_PERSONAL_API_KEY (read-only) for PostHog. The GitHub
+ * App's public lines and WorkOS's sign-in proof need none. Every line printed
  * goes through `@ponzu/core/redact` with every credential present as a known secret, so even a
  * vendor's error message that quoted one would not print it.
  *
  * Each vendor is one section in checks/: `fetchObserved` reads it, `evaluate` (pure) judges what
- * was read, and tests run `evaluate` on answers recorded from dev (fixtures/<vendor>/). Later
- * slices add GitHub, WorkOS and PostHog to SECTIONS.
+ * was read, and tests run `evaluate` on answers recorded from dev (fixtures/<vendor>/).
  */
 import { redactText } from "../../packages/core/src/redact.ts";
 import { apiSection } from "./checks/api.ts";
@@ -41,9 +42,12 @@ import {
   STATUSES,
   type Status,
 } from "./checks/finding.ts";
+import { githubSection } from "./checks/github.ts";
 import { neonSection } from "./checks/neon.ts";
+import { posthogSection } from "./checks/posthog.ts";
 import { spendSection } from "./checks/spend.ts";
 import { vercelSection } from "./checks/vercel.ts";
+import { workosSection } from "./checks/workos.ts";
 import { EnvironmentName, loadInfra } from "./desired.ts";
 
 /** Every section, in the order its lines print. */
@@ -51,6 +55,9 @@ export const SECTIONS: readonly AnySection[] = [
   vercelSection,
   neonSection,
   cloudflareSection,
+  githubSection,
+  workosSection,
+  posthogSection,
   apiSection,
   dnsSection,
   spendSection,

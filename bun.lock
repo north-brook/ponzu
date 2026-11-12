@@ -9,9 +9,11 @@
         "@commitlint/cli": "^21.2.4",
         "@commitlint/config-conventional": "^21.2.4",
         "@neondatabase/api-client": "2.7.3",
+        "@octokit/core": "7.0.8",
         "@ponzu/evals": "workspace:*",
         "@types/bun": "latest",
         "@vercel/sdk": "1.28.53",
+        "@workos-inc/node": "12.0.0",
         "cloudflare": "7.3.0",
         "typescript": "^5.9.3",
         "zod": "^4",
@@ -1585,6 +1587,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.1.2", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.1" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "oxc-transform-react": "^0.152.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler", "oxc-transform-react"] }, "sha512-fhJNGUdscQa4HkI0xFxwonWyhnVReCPDbXI7FH7jmzpnVCrFQI7PRrhWecO263610vOrs9tr2Y4xcf8uAdFxbw=="],
 
     "@workflow/serde": ["@workflow/serde@4.1.0-beta.2", "", {}, "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="],
+
+    "@workos-inc/node": ["@workos-inc/node@12.0.0", "", {}, "sha512-ujB+xdaOHUrfHe5oMnNOrHV/g+AzZ+5VPCGayDLC4mHWTBHCZg6U5e9X8EDCmKSir8pSXAmJaJylTJNRZ+BSew=="],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.15", "", {}, "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA=="],
 

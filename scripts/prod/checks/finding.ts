@@ -49,6 +49,11 @@ export const CREDENTIAL_NAMES = [
   /** The Cloudflare account that owns the buckets and the zone (R2's account id). */
   "CLOUDFLARE_ACCOUNT_ID",
   "POSTHOG_PERSONAL_API_KEY",
+  /**
+   * The repository secret Release Please runs with, given only so the check can read its expiry
+   * from GitHub's answer to it (checks/github.ts). Optional: without it that one line is skipped.
+   */
+  "RELEASE_TOKEN",
 ] as const;
 export type CredentialName = (typeof CREDENTIAL_NAMES)[number];
 export type Credentials = Partial<Record<CredentialName, string>>;
