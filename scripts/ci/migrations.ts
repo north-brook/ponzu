@@ -10,11 +10,12 @@
  *   ALTER TABLE "x" DROP COLUMN "y";--> statement-breakpoint
  *
  * What counts as taking something away: DROP TABLE, DROP COLUMN, any RENAME, a column's type
- * changed (ALTER COLUMN … TYPE), SET NOT NULL, ADD COLUMN … NOT NULL with no DEFAULT (an
- * older API's inserts leave it out), TRUNCATE, and DROP SCHEMA or VIEW. In an ALTER TABLE the
- * word COLUMN is optional, as it is to Postgres. Words inside string literals count too, so
- * dynamic SQL in a DO block (`EXECUTE format('… RENAME …')`) is caught; comments do not, and
- * comments are found the way Postgres finds them (E'…' escapes, `$tag1$` dollar quotes).
+ * changed (ALTER COLUMN … TYPE), SET NOT NULL, ADD COLUMN … NOT NULL with no DEFAULT or
+ * GENERATED clause of its own (an older API's inserts leave it out), TRUNCATE, and DROP SCHEMA
+ * or VIEW. In an ALTER TABLE the word COLUMN is optional, as it is to Postgres. Words inside
+ * string literals count too, so dynamic SQL in a DO block (`EXECUTE format('… RENAME …')`) is
+ * caught; comments do not, and comments are found the way Postgres finds them (E'…' escapes,
+ * `$tag1$` dollar quotes, nested block comments).
  *
  * Narrowing a check constraint (DROP CONSTRAINT then ADD) is not caught: telling a widening from
  * a narrowing needs the reviewer.
@@ -72,6 +73,63 @@ function actions(code: string, verb: "ADD" | "DROP"): string[] {
     .map((part) => part.split(/,\s*(?:ADD|ALTER|DROP)\b/)[0] ?? "");
 }
 
+/**
+ * The top-level words of an ADD action, as Postgres reads its column definition: a string
+ * literal becomes `'`, a quoted name `"`, and whatever sits in parentheses (a type's
+ * precision, a CHECK, a GENERATED expression) is left out. An unclosed quote ends the action:
+ * it is the end of a dynamic statement inside a string (`EXECUTE '… ADD c int NOT NULL'`).
+ */
+function topLevelWords(action: string): string[] {
+  const words: string[] = [];
+  let depth = 0;
+  let word = "";
+  const end = () => {
+    if (word && !depth) words.push(word);
+    word = "";
+  };
+  for (let i = 0; i < action.length; i++) {
+    const ch = action[i] as string;
+    if (ch === "'" || ch === '"') {
+      end();
+      let j = i + 1;
+      while (j < action.length) {
+        if (action[j] === ch && action[j + 1] === ch) j += 2;
+        else if (action[j] === ch) break;
+        else j++;
+      }
+      if (j >= action.length) break;
+      if (!depth) words.push(ch);
+      i = j;
+    } else if (ch === "(") {
+      end();
+      depth++;
+    } else if (ch === ")") {
+      end();
+      depth = Math.max(0, depth - 1);
+    } else if (/[A-Z0-9_$]/.test(ch)) word += ch;
+    else end();
+  }
+  end();
+  return words;
+}
+
+/**
+ * Whether an ADD action defines a NOT NULL column with no DEFAULT or GENERATED clause of its
+ * own. Only the column's own top-level clauses count: the word in its name, in a string, or
+ * in a CHECK or GENERATED expression does not.
+ */
+function addsRequiredColumn(action: string): boolean {
+  const words = topLevelWords(action);
+  if (words[0] === "COLUMN") words.shift();
+  if (words[0] === "IF" && words[1] === "NOT" && words[2] === "EXISTS") words.splice(0, 3);
+  const clauses = words.slice(1); // after the column's name
+  const has = (a: string, b: RegExp) =>
+    clauses.some((w, i) => w === a && b.test(clauses[i + 1] ?? ""));
+  const notNull = has("NOT", /^NULL$/);
+  const filled = clauses.includes("DEFAULT") || has("GENERATED", /^(?:ALWAYS|BY)$/);
+  return notNull && !filled;
+}
+
 const RULES: { rule: string; test: (code: string) => boolean }[] = [
   { rule: "DROP TABLE", test: (c) => /\bDROP\s+TABLE\b/.test(c) },
   {
@@ -91,7 +149,7 @@ const RULES: { rule: string; test: (code: string) => boolean }[] = [
     test: (c) =>
       actions(c, "ADD")
         .filter((action) => !NOT_A_COLUMN_ADD.test(action))
-        .some((clause) => /\bNOT\s+NULL\b/.test(clause) && !/\b(DEFAULT|GENERATED)\b/.test(clause)),
+        .some(addsRequiredColumn),
   },
   { rule: "TRUNCATE", test: (c) => /\bTRUNCATE\b/.test(c) },
   {
@@ -142,8 +200,20 @@ export function statements(sql: string): Statement[] {
       continue;
     }
     if (rest.startsWith("/*")) {
-      const end = rest.indexOf("*/");
-      const comment = end < 0 ? rest : rest.slice(0, end + 2);
+      // Block comments nest in Postgres: `/* a /* b */ c */` is one comment.
+      let depth = 0;
+      let j = 0;
+      while (j < rest.length) {
+        if (rest.startsWith("/*", j)) {
+          depth++;
+          j += 2;
+        } else if (rest.startsWith("*/", j)) {
+          depth--;
+          j += 2;
+          if (!depth) break;
+        } else j++;
+      }
+      const comment = rest.slice(0, j);
       line += comment.split("\n").length - 1;
       code += " ";
       i += comment.length;

@@ -30,6 +30,8 @@ import { $ } from "bun";
 import { apiUrlOf } from "./health";
 
 export const LABEL = "production-down";
+/** Conclusions that say nothing about production: the run never judged it. */
+const NO_VERDICT = new Set(["cancelled", "skipped", "neutral", "stale", "action_required"]);
 const MARKER = /<!-- uptime (\{[^\n]*?\}) -->/;
 
 export interface Probe {
@@ -180,12 +182,20 @@ export function ghGitHub(gh: Gh, repository: string, runId: string): GitHub {
       const runs = JSON.parse(
         await gh([
           "api",
-          `repos/${repository}/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=5`,
+          `repos/${repository}/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=20`,
           "--jq",
-          "[.workflow_runs[] | {id, conclusion, run_started_at}]",
+          "[.workflow_runs[] | {id, status, conclusion, run_started_at}]",
         ]),
-      ) as { id: number; conclusion: string | null; run_started_at: string }[];
-      const previous = runs.find((run) => String(run.id) !== runId);
+      ) as { id: number; status: string; conclusion: string | null; run_started_at: string }[];
+      // A cancelled, skipped or still-running run said nothing about production, so the
+      // previous result is the newest other run that finished with a verdict.
+      const previous = runs.find(
+        (run) =>
+          String(run.id) !== runId &&
+          run.status === "completed" &&
+          run.conclusion !== null &&
+          !NO_VERDICT.has(run.conclusion),
+      );
       // A run that hit its timeout waited on production too long, so it counts as failing.
       return previous?.conclusion === "failure" || previous?.conclusion === "timed_out"
         ? previous.run_started_at

@@ -18,9 +18,14 @@ const BRANCHES = {
 function fakeNeon(answers: Record<string, unknown | ((call: number) => unknown)>) {
   const requests: { method: string; path: string }[] = [];
   const counts = new Map<string, number>();
-  const fetch = (async (url: string, init?: RequestInit) => {
+  // A plain fetch call passes a URL and its init; Neon's client (axios's fetch adapter) passes
+  // a Request, whose headers must carry the key.
+  const fetch = (async (input: string | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.url;
     const path = url.replace("https://console.neon.tech/api/v2/projects/prj", "");
-    const method = init?.method ?? "GET";
+    const method = typeof input === "string" ? (init?.method ?? "GET") : input.method;
+    const headers = new Headers(typeof input === "string" ? init?.headers : input.headers);
+    if (headers.get("authorization") !== "Bearer k") return new Response("{}", { status: 401 });
     requests.push({ method, path });
     const key = `${method} ${path.split("?")[0]}`;
     const call = counts.get(key) ?? 0;

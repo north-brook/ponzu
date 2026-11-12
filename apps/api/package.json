@@ -46,6 +46,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@neondatabase/api-client": "2.7.3",
     "@ponzu/evals": "workspace:*",
     "@types/node": "^26.6.5",
     "fast-check": "4.3.0"

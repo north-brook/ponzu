@@ -15,6 +15,8 @@
 //
 // Needs NEON_API_KEY and NEON_PROJECT_ID. It prints a credential: pipe it, don't paste it.
 
+import { createApiClient } from "@neondatabase/api-client";
+
 const API = "https://console.neon.tech/api/v2";
 
 /** The only value of PONZU_ALLOW_DEFAULT_BRANCH that lets `--default` through. */
@@ -128,7 +130,8 @@ const SETTLED = new Set(["finished", "skipped", "failed", "error", "cancelled"])
 /**
  * Snapshots the default branch (behind its guard) as `name`, expiring after SNAPSHOT_DAYS, and
  * waits for Neon's operations to finish, polling every `pollMs` until `timeoutMs`. Answers the
- * snapshot's id. Neon's "Create snapshot": POST /projects/{id}/branches/{branch}/snapshot.
+ * snapshot's id. Neon's "Create snapshot" (POST /projects/{id}/branches/{branch}/snapshot) and
+ * its operations are asked through Neon's official client, @neondatabase/api-client.
  */
 export async function snapshotDefaultBranch(
   name: string,
@@ -150,18 +153,25 @@ export async function snapshotDefaultBranch(
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) throw new Error(`Not a snapshot name: "${name}".`);
   const get = neon(project);
   const branch = await findBranch(get, { default: true, guard });
+  // Neon's official client; its fetch adapter takes the same fetch the tests inject.
+  const client = createApiClient({
+    apiKey: project.apiKey,
+    adapter: "fetch",
+    env: { fetch: project.fetch ?? fetch },
+  });
   const started = now().getTime();
   const expires = new Date(started + SNAPSHOT_DAYS * 86_400_000).toISOString();
-  const query = new URLSearchParams({ name, expires_at: expires });
-  const created = (await get(`/branches/${branch.id}/snapshot?${query}`, "POST")) as {
-    snapshot: { id: string };
-    operations?: { id: string }[];
-  };
+  const { data: created } = await client.createSnapshot({
+    projectId: project.projectId,
+    branchId: branch.id,
+    name,
+    expires_at: expires,
+  });
   for (const operation of created.operations ?? []) {
     for (;;) {
-      const { operation: state } = (await get(`/operations/${operation.id}`)) as {
-        operation: { status: string };
-      };
+      const {
+        data: { operation: state },
+      } = await client.getProjectOperation(project.projectId, operation.id);
       if (state.status === "finished" || state.status === "skipped") break;
       if (SETTLED.has(state.status))
         throw new Error(`Neon's snapshot ${name} ended ${state.status}.`);

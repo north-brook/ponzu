@@ -198,27 +198,54 @@ describe("the gh calls", () => {
   test("the previous run is the latest completed one that is not this run", async () => {
     const runs = (list: unknown) =>
       fakeGh({
-        "api repos/o/r/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=5":
+        "api repos/o/r/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=20":
           JSON.stringify(list),
       });
     const failed = runs([
-      { id: 9, conclusion: "failure", run_started_at: "t9" },
-      { id: 8, conclusion: "failure", run_started_at: "t8" },
+      { id: 9, status: "completed", conclusion: "failure", run_started_at: "t9" },
+      { id: 8, status: "completed", conclusion: "failure", run_started_at: "t8" },
     ]);
     expect(await ghGitHub(failed.gh, "o/r", "9").previousFailure()).toBe("t8");
     expect(failed.calls[0]?.args).toEqual([
       "api",
-      "repos/o/r/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=5",
+      "repos/o/r/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=20",
       "--jq",
-      "[.workflow_runs[] | {id, conclusion, run_started_at}]",
+      "[.workflow_runs[] | {id, status, conclusion, run_started_at}]",
     ]);
-    const passed = runs([{ id: 8, conclusion: "success", run_started_at: "t8" }]);
+    const passed = runs([
+      { id: 8, status: "completed", conclusion: "success", run_started_at: "t8" },
+    ]);
     expect(await ghGitHub(passed.gh, "o/r", "9").previousFailure()).toBeNull();
-    const timedOut = runs([{ id: 8, conclusion: "timed_out", run_started_at: "t8" }]);
+    const timedOut = runs([
+      { id: 8, status: "completed", conclusion: "timed_out", run_started_at: "t8" },
+    ]);
     expect(await ghGitHub(timedOut.gh, "o/r", "9").previousFailure()).toBe("t8");
-    const cancelled = runs([{ id: 8, conclusion: "cancelled", run_started_at: "t8" }]);
+    const cancelled = runs([
+      { id: 8, status: "completed", conclusion: "cancelled", run_started_at: "t8" },
+    ]);
     expect(await ghGitHub(cancelled.gh, "o/r", "9").previousFailure()).toBeNull();
     expect(await ghGitHub(runs([]).gh, "o/r", "9").previousFailure()).toBeNull();
+  });
+
+  test("a cancelled, skipped or still-running run is passed over for the one before it", async () => {
+    const runs = (list: unknown) =>
+      fakeGh({
+        "api repos/o/r/actions/workflows/uptime.yml/runs?branch=main&status=completed&per_page=20":
+          JSON.stringify(list),
+      });
+    const behindCancelled = runs([
+      { id: 8, status: "completed", conclusion: "cancelled", run_started_at: "t8" },
+      { id: 7, status: "in_progress", conclusion: null, run_started_at: "t7" },
+      { id: 6, status: "completed", conclusion: "skipped", run_started_at: "t6" },
+      { id: 5, status: "completed", conclusion: "failure", run_started_at: "t5" },
+    ]);
+    expect(await ghGitHub(behindCancelled.gh, "o/r", "9").previousFailure()).toBe("t5");
+    const healthyBefore = runs([
+      { id: 8, status: "completed", conclusion: "cancelled", run_started_at: "t8" },
+      { id: 7, status: "completed", conclusion: "success", run_started_at: "t7" },
+      { id: 6, status: "completed", conclusion: "failure", run_started_at: "t6" },
+    ]);
+    expect(await ghGitHub(healthyBefore.gh, "o/r", "9").previousFailure()).toBeNull();
   });
 
   test("open, create, edit and close", async () => {
