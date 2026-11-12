@@ -191,7 +191,7 @@ export async function getUser(db: Db, userId: string): Promise<User | null> {
   return user ?? null;
 }
 
-/** A guided setup step that leaves no other trace: "Where do you design?" and the iPhone step. */
+/** A guided setup step that leaves no other trace: "Where do you build?" and the iPhone step. */
 export type OnboardingStep = "where" | "iphone";
 
 /**
