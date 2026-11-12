@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 import type { Artboard } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react-native";
 import { router } from "expo-router";
 import * as ReactNative from "react-native";
 import Settings from "../app/settings";
@@ -45,6 +45,29 @@ const rowNames = () =>
   screen
     .getAllByTestId(/^canvas-[a-z]+_[0-9a-z]+$/)
     .map((row) => row.props.accessibilityLabel.split(", ")[0]);
+
+/**
+ * Hold the row named `name` and pick `choice` from the system's action sheet it opens, as a
+ * person does. The sheet must offer exactly that choice and Cancel, under the canvas's name.
+ */
+async function holdAndPick(name: string, choice: "Settle" | "Reopen") {
+  const sheet = jest
+    .spyOn(ReactNative.ActionSheetIOS, "showActionSheetWithOptions")
+    .mockImplementation(() => {});
+  try {
+    await fireEvent(screen.getByLabelText(new RegExp(`^${name}, `)), "longPress");
+    expect(sheet).toHaveBeenCalledTimes(1);
+    const [options, pick] = sheet.mock.calls[0] as [
+      { title?: string; options: string[] },
+      (index: number) => void,
+    ];
+    expect(options.title).toBe(name);
+    expect(options.options).toEqual([choice, "Cancel"]);
+    await act(async () => pick(0));
+  } finally {
+    sheet.mockRestore();
+  }
+}
 
 beforeEach(async () => {
   push.mockClear();
@@ -177,6 +200,9 @@ describe("the canvases list", () => {
     );
     await fireEvent.press(await screen.findByLabelText(/^Onboarding, /));
     expect(push).toHaveBeenCalledWith(`/canvas/${canvasNamed("Onboarding").id}`);
+    // Not inside @react-native-menu's held menu: on iOS its context menu interaction kept the
+    // row's taps, and the canvas never opened on the simulator.
+    expect(screen.queryByTestId("menu Onboarding")).toBeNull();
   });
 
   test("holding a row settles it into the tray, and the tray's Reopen brings it back", async () => {
@@ -187,13 +213,12 @@ describe("the canvases list", () => {
       </CloudProvider>,
     );
     await screen.findByText("Onboarding");
-    const row = () => screen.getByTestId("menu Onboarding");
-    await fireEvent.press(within(row()).getByRole("menuitem", { name: "Settle" }));
+    await holdAndPick("Onboarding", "Settle");
     const tray = await screen.findByRole("button", { name: "Settled, 1" });
     expect(screen.queryByText("Onboarding")).toBeNull();
     await fireEvent.press(tray);
     expect(await screen.findByText("Onboarding")).toBeTruthy();
-    await fireEvent.press(within(row()).getByRole("menuitem", { name: "Reopen" }));
+    await holdAndPick("Onboarding", "Reopen");
     await waitFor(() => expect(screen.queryByRole("button", { name: /^Settled/ })).toBeNull());
     expect(rowNames()).toContain("Onboarding");
   });
@@ -211,9 +236,7 @@ describe("the canvases list", () => {
         </CloudProvider>,
       );
       await screen.findByText("Onboarding");
-      await fireEvent.press(
-        within(screen.getByTestId("menu Onboarding")).getByRole("menuitem", { name: "Settle" }),
-      );
+      await holdAndPick("Onboarding", "Settle");
       await waitFor(() =>
         expect(alert).toHaveBeenCalledWith("“Onboarding” couldn't be changed. Try again."),
       );
