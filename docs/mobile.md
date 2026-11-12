@@ -147,8 +147,10 @@ The Canvases tab is the Mac sidebar at phone size (`components/canvas-list.tsx`,
   comes from `GET /v1/canvases/:id`, asked once for each canvas that has a
   preview and kept on disk with the list.
 - **A press** opens `/canvas/<id>` (`lib/canvas/open.ts`). **Holding** a row
-  opens the system's menu with Settle, or Reopen in the tray; the live row
-  then moves it. A failure says "“name” couldn't be changed. Try again.", as
+  opens the system's action sheet with Settle, or Reopen in the tray, and
+  Cancel; the live row then moves it. (Not `@react-native-menu`'s held menu
+  around the row: on iOS its context menu interaction kept the row's taps, so
+  a press never opened the canvas.) A failure says "“name” couldn't be changed. Try again.", as
   the Mac does.
 - **Settled** canvases fold into a tray at the foot, closed until tapped,
   most recently settled first, with no indicators.

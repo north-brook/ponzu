@@ -372,9 +372,16 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         canvases: signedIn,
       };
       // The rows change under the list as the live query would deliver them.
+      // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
+      // read before it would list one, and nothing tells the app to read it again.
       if (scenario === "canvases" && !stocked.has(world)) {
         stocked.add(world);
-        void stockCanvases(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockCanvases(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
       }
       session.set(states[scenario]);
       return true;

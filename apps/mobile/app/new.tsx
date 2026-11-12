@@ -9,7 +9,7 @@ import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BarButton } from "../components/chrome";
 import { ConnectClaudeSheet } from "../components/connect-claude-sheet";
@@ -257,99 +257,107 @@ export default function NewCanvas() {
           <Back color={color.ink} />
         </BarButton>
       </View>
-      <ScrollView
+      {/* The statement and the composer share what the keyboard leaves: the composer rides 8pt
+          above it, and the statement, with its project control, stays in sight and in reach
+          above the composer instead of under it. */}
+      <KeyboardAvoidingView
+        testID="new-canvas-keyboard"
+        behavior="padding"
+        keyboardVerticalOffset={8 - Math.max(insets.bottom, 12)}
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          paddingTop: insets.top + 64,
-          paddingBottom: 24,
-          paddingHorizontal: 20,
-          gap: 18,
-        }}
-        keyboardShouldPersistTaps="handled"
       >
-        <SliceMark size={44} color={color.ink} />
-        <View style={{ alignItems: "center", gap: 4, maxWidth: "100%" }}>
-          <Text
-            accessibilityRole="header"
-            accessibilityLabel={`${said.lead}${said.place ? ` ${said.place}` : ""}`}
-            style={{
-              fontFamily: "Funnel Display",
-              fontWeight: "700",
-              fontSize: 26,
-              lineHeight: 32,
-              letterSpacing: -0.03 * 26,
-              color: color.ink,
-              textAlign: "center",
-            }}
-          >
-            {said.lead}
-          </Text>
-          <Pressable
-            testID="new-canvas-project"
-            accessibilityRole="button"
-            accessibilityLabel={projectName(project, workspace?.name ?? null)}
-            accessibilityHint={CREATE.chooseRepo}
-            accessibilityState={{ busy: project === null, disabled: sending }}
-            // A send on its way is for this project: another waits until it has gone.
-            disabled={sending}
-            onPress={() => {
-              if (going.current) return;
-              select();
-              router.push("/pick-project");
-            }}
-            style={({ pressed }) => ({
-              minHeight: 44,
-              maxWidth: "100%",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              paddingHorizontal: 10,
-              borderRadius: 12,
-              backgroundColor: pressed ? color.chip : "transparent",
-            })}
-          >
-            {project === null ? (
-              <View
-                style={{ width: 150, height: 18, borderRadius: 4, backgroundColor: color.chip }}
-              />
-            ) : (
-              <>
-                {project.kind === "repo" ? (
-                  <Repo color={color.muted} size={18} />
-                ) : (
-                  <Folder color={color.muted} size={18} />
-                )}
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    flexShrink: 1,
-                    fontFamily: "Funnel Display",
-                    fontWeight: "700",
-                    fontSize: 26,
-                    lineHeight: 32,
-                    letterSpacing: -0.03 * 26,
-                    color: color.ink,
-                  }}
-                >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            paddingTop: insets.top + 64,
+            paddingBottom: 24,
+            paddingHorizontal: 20,
+            gap: 18,
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <SliceMark size={44} color={color.ink} />
+          <View style={{ alignItems: "center", gap: 4, maxWidth: "100%" }}>
+            <Text
+              accessibilityRole="header"
+              accessibilityLabel={`${said.lead}${said.place ? ` ${said.place}` : ""}`}
+              style={{
+                fontFamily: "Funnel Display",
+                fontWeight: "700",
+                fontSize: 26,
+                lineHeight: 32,
+                letterSpacing: -0.03 * 26,
+                color: color.ink,
+                textAlign: "center",
+              }}
+            >
+              {said.lead}
+            </Text>
+            <Pressable
+              testID="new-canvas-project"
+              accessibilityRole="button"
+              accessibilityLabel={projectName(project, workspace?.name ?? null)}
+              accessibilityHint={CREATE.chooseRepo}
+              accessibilityState={{ busy: project === null, disabled: sending }}
+              // A send on its way is for this project: another waits until it has gone.
+              disabled={sending}
+              onPress={() => {
+                if (going.current) return;
+                select();
+                router.push("/pick-project");
+              }}
+              style={({ pressed }) => ({
+                minHeight: 44,
+                maxWidth: "100%",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 10,
+                borderRadius: 12,
+                backgroundColor: pressed ? color.chip : "transparent",
+              })}
+            >
+              {project === null ? (
+                <View
+                  style={{ width: 150, height: 18, borderRadius: 4, backgroundColor: color.chip }}
+                />
+              ) : (
+                <>
                   {project.kind === "repo" ? (
-                    <>
-                      <Text style={{ color: color.faint }}>{`${project.repo.owner}/`}</Text>
-                      {project.repo.name}
-                    </>
+                    <Repo color={color.muted} size={18} />
                   ) : (
-                    said.place
+                    <Folder color={color.muted} size={18} />
                   )}
-                </Text>
-              </>
-            )}
-            <Chevron color={color.faint} size={16} />
-          </Pressable>
-        </View>
-      </ScrollView>
-      <KeyboardStickyView offset={{ closed: 0, opened: insets.bottom - 8 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flexShrink: 1,
+                      fontFamily: "Funnel Display",
+                      fontWeight: "700",
+                      fontSize: 26,
+                      lineHeight: 32,
+                      letterSpacing: -0.03 * 26,
+                      color: color.ink,
+                    }}
+                  >
+                    {project.kind === "repo" ? (
+                      <>
+                        <Text style={{ color: color.faint }}>{`${project.repo.owner}/`}</Text>
+                        {project.repo.name}
+                      </>
+                    ) : (
+                      said.place
+                    )}
+                  </Text>
+                </>
+              )}
+              <Chevron color={color.faint} size={16} />
+            </Pressable>
+          </View>
+        </ScrollView>
         <View style={{ paddingHorizontal: 12, paddingBottom: Math.max(insets.bottom, 12) }}>
           {error ? (
             <Text
@@ -498,7 +506,7 @@ export default function NewCanvas() {
             </View>
           </View>
         </View>
-      </KeyboardStickyView>
+      </KeyboardAvoidingView>
       <ConnectClaudeSheet
         visible={needsClaude}
         connected={blocked?.kind === "claude" ? blocked.connected : true}

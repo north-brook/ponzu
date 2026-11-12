@@ -8,9 +8,9 @@ import { setBackgroundColorAsync } from "expo-system-ui";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { Gate } from "../components/gate";
 import { HandoffLayer } from "../components/handoff";
 import { CloudProvider } from "../lib/cloud/query";
-import { useGate } from "../lib/cloud/use-gate";
 import { holdSplash } from "../lib/splash";
 import { track } from "../lib/telemetry";
 import { navigationTheme, useTheme } from "../lib/theme";
@@ -117,10 +117,4 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </CloudProvider>
   );
-}
-
-/** Moves the app when the session changes under it: signed out, too old, signed in. */
-function Gate() {
-  useGate();
-  return null;
 }

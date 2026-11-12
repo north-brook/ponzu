@@ -13,7 +13,7 @@ name: new-canvas
     visible:
       id: new-canvas
     timeout: 30000
-- assertVisible: "Make something from"
+- assertVisible: "Make something from.*"
 - assertVisible: "Project: Scratch in Personal"
 - assertVisible:
     id: new-canvas-send
