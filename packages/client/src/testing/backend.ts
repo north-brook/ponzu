@@ -608,7 +608,8 @@ export class FakeBackend {
             workspace.members.has(person.id) &&
             (workspace.installed || workspace.kind === "personal"),
         )
-        .toSorted((a, b) => Number(b.kind === "personal") - Number(a.kind === "personal"))
+        .slice()
+        .sort((a, b) => Number(b.kind === "personal") - Number(a.kind === "personal"))
         .map((workspace) => ({
           githubAccountId: workspace.githubAccountId,
           login: workspace.githubLogin,
@@ -672,10 +673,9 @@ export class FakeBackend {
     const peopleOf = (workspace: FakeWorkspace) => [
       ...[...workspace.members.keys()]
         .map((userId) => joinedRow(workspace, userId))
-        .toSorted(
-          (a, b) => Number(b.role === "admin") - Number(a.role === "admin") || byName(a, b),
-        ),
-      ...workspace.githubOnly.map(githubOnlyRow).toSorted(byName),
+        .slice()
+        .sort((a, b) => Number(b.role === "admin") - Number(a.role === "admin") || byName(a, b)),
+      ...workspace.githubOnly.map(githubOnlyRow).slice().sort(byName),
     ];
 
     return {
@@ -996,9 +996,9 @@ export class FakeBackend {
                 })
               : [];
             return {
-              people: [...joined.toSorted(byName), ...others.toSorted(byName)].toSorted(
-                (a, b) => Number(b.access === "owner") - Number(a.access === "owner"),
-              ),
+              people: [...joined.slice().sort(byName), ...others.slice().sort(byName)]
+                .slice()
+                .sort((a, b) => Number(b.access === "owner") - Number(a.access === "owner")),
             };
           }),
         presence: (id, pageId, focused) =>
@@ -1180,7 +1180,8 @@ export class FakeBackend {
             const older = readable(id)
               .thread.map((entry) => entry.item)
               .filter((item) => page.before === undefined || item.seq < page.before)
-              .toSorted((a, b) => a.seq - b.seq);
+              .slice()
+              .sort((a, b) => a.seq - b.seq);
             return { items: older.slice(-Math.min(page.limit ?? 50, 50)) };
           }),
         upload: (id, file) =>

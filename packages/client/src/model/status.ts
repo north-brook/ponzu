@@ -42,7 +42,7 @@ export function orderCanvases(
   canvases: CanvasSummary[],
   workspace: WorkspaceKind,
 ): CanvasSummary[] {
-  return canvases.toSorted((a, b) => {
+  return canvases.slice().sort((a, b) => {
     if (workspace === "org") {
       const waiting = Number(b.needsYou > 0) - Number(a.needsYou > 0);
       if (waiting) return waiting;
@@ -53,7 +53,7 @@ export function orderCanvases(
 
 /** Settled canvases, most recently settled first. */
 export function orderSettled(canvases: CanvasSummary[]): CanvasSummary[] {
-  return canvases.toSorted((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""));
+  return canvases.slice().sort((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""));
 }
 
 /**
