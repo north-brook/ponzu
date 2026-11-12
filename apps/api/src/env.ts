@@ -4,6 +4,7 @@ import current from "@ponzu/runner/image/current.json" with { type: "json" };
 import type { VercelCredentials } from "@ponzu/sandbox";
 import { z } from "zod";
 import type { PosthogConfig } from "./analytics/posthog.ts";
+import type { PosthogAdminConfig } from "./analytics/posthog-admin.ts";
 import type { R2Config } from "./deps/storage.ts";
 import {
   BILLING_MODES,
@@ -89,6 +90,17 @@ const schema = z.object({
   PONZU_POSTHOG_HOST: z.url().default("https://us.i.posthog.com"),
   /** "1": model calls and agent turns are traced with their prompts and answers. Off otherwise. */
   PONZU_POSTHOG_AI_CONTENT: z.enum(["0", "1"]).default("0"),
+
+  // Account deletion: forgetting a deleted person at PostHog (analytics/posthog-admin.ts).
+  /**
+   * A PostHog personal API key with `person:write`, scoped to the project: a secret. Set with
+   * PONZU_POSTHOG_PROJECT_ID or not at all. Unset, deleting an account leaves PostHog alone.
+   */
+  PONZU_POSTHOG_PERSONAL_API_KEY: z.string().min(16).optional(),
+  /** The numeric id of the PostHog project the key may delete people in. */
+  PONZU_POSTHOG_PROJECT_ID: z.string().regex(/^\d+$/).optional(),
+  /** PostHog's app host, where its private API is: not the ingestion host. */
+  PONZU_POSTHOG_API_HOST: z.url().default("https://us.posthog.com"),
 
   // Notifications: pings to phones (deps/push.ts).
   /**
@@ -183,6 +195,11 @@ export interface Env {
   commit: string | null;
   /** PostHog, or null when PONZU_POSTHOG_KEY is unset and analytics is off. */
   posthog: PosthogConfig | null;
+  /**
+   * PostHog's private API, for forgetting a deleted person, or null when its personal key and
+   * project id are unset.
+   */
+  posthogAdmin: PosthogAdminConfig | null;
   /** Pings to phones through Expo, or null when EXPO_ACCESS_TOKEN is unset and push is off. */
   push: { accessToken: string } | null;
   /** Which features are switched on (features.ts): all off unless their variables say so. */
@@ -261,9 +278,27 @@ export function readEnv(source: Record<string, string | undefined>): Env {
           aiContent: env.PONZU_POSTHOG_AI_CONTENT === "1",
         }
       : null,
+    posthogAdmin: posthogAdmin(env),
     push: env.EXPO_ACCESS_TOKEN ? { accessToken: env.EXPO_ACCESS_TOKEN } : null,
     features: featuresFrom(env),
     onVercel: env.VERCEL === "1",
+  };
+}
+
+/** PostHog's private API: its personal key and project id together, or neither. */
+function posthogAdmin(env: z.infer<typeof schema>): PosthogAdminConfig | null {
+  const key = env.PONZU_POSTHOG_PERSONAL_API_KEY;
+  const projectId = env.PONZU_POSTHOG_PROJECT_ID;
+  if (key === undefined && projectId === undefined) return null;
+  if (key === undefined || projectId === undefined) {
+    throw new EnvError([
+      "PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID are both set or neither.",
+    ]);
+  }
+  return {
+    personalApiKey: key,
+    projectId,
+    host: env.PONZU_POSTHOG_API_HOST.replace(/\/+$/, ""),
   };
 }
 

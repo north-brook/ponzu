@@ -2768,12 +2768,30 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
 5. This period's free allowance is granted to them in every workspace they are in, so their
    leaving does not take it back ("Billing").
-6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+6. Their grant of the GitHub App is revoked at GitHub, so Ponzu leaves their GitHub
+   authorizations and every token of theirs ends: `DELETE /applications/{client_id}/grant` with
+   the App's client id and secret as Basic auth and their token (refreshed first if it has run
+   out) in the body, while the token is still stored. It is best effort and inline: a person
+   with no token has nothing to revoke, a grant GitHub no longer has (404) is done, and any
+   other answer, no answer, or more than 10 seconds is logged as `github_grant_revoke_failed`
+   (their id and GitHub's status, never the token) and the deletion goes on. The
+   `github_app_authorization` webhook that follows finds nobody and does nothing.
+7. Their row is deleted, and with it everything that hangs off it: their sessions (so every
    token of theirs stops working at once), GitHub token, memberships, repo access answers,
    Claude account, devices and open sign-ins. What other people's work points at forgets them:
    a canvas's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
-7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+8. A job, `account.forget` (keyed by their user id, ten attempts over about six hours), forgets
+   them outside Ponzu, recorded and run at once (`apps/api/src/account/forget.ts`). It deletes
+   their WorkOS user, so their next sign-in is someone new (a user WorkOS no longer has is done),
+   and then asks PostHog to delete their person with its events and recordings:
+   `POST {PONZU_POSTHOG_API_HOST}/api/projects/{PONZU_POSTHOG_PROJECT_ID}/persons/bulk_delete/`
+   with the personal key as the bearer and `{ distinct_ids: [userId], delete_events: true,
+   delete_recordings: true }`. PostHog takes it at once and deletes in batches later, usually
+   within about a week. A failure at either is tried again; the WorkOS delete is safe to repeat.
+   Without `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` the PostHog step is
+   skipped, logged as `analytics_forget_skipped`, and the job completes. The `account deleted`
+   event is captured about no one, so it does not make their PostHog person again.
 
 **Canvases they own in a workspace others are in stay with it**, owned by nobody: a team's, or
 their own account's when collaborators on their repos are in it. Their boards, thread and pull

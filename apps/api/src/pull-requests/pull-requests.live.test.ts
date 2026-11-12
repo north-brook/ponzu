@@ -82,7 +82,8 @@ describe.skipIf(!configured)("a canvas's pull request on GitHub, for real", () =
       get: () => () => Promise.reject(new Error("The live test uses no storage.")),
     }),
     // No sandbox here holds commits GitHub lacks, so Create PR never asks one to push.
-    ...({} as Pick<JobDeps, "sandboxes" | "runnerBundle" | "poke">),
+    ...({} as Pick<JobDeps, "sandboxes" | "runnerBundle" | "poke" | "workos">),
+    posthogAdmin: null,
   });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;

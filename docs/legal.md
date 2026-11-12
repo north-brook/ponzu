@@ -53,9 +53,10 @@ address and state are not in the code.
 | Sign-in attempts, jobs, webhook records pruned | nothing prunes them | not true yet; site slice S11. The draft says so in an open note |
 | Deleting a canvas removes document, thread, comments, events, questions, checkpoints, sandbox | `apps/api/src/routes/canvases.ts` (`delete`), `forgetCheckpoints` | true |
 | Deleting a canvas removes its files | `canvas.files_delete` exists (`apps/api/src/canvases/files.ts`) but nothing records the job | not true yet; site slice S9. Open note on the page |
-| Account deletion steps, what stays, the sole-admin refusal | `apps/api/src/account/delete.ts`; docs/cloud.md "Deleting an account" | true; the WorkOS delete runs once in the background, without retry |
+| Account deletion steps, what stays, the sole-admin refusal | `apps/api/src/account/delete.ts`; docs/cloud.md "Deleting an account" | true; the WorkOS delete is the `account.forget` job's, tried again for about six hours (`apps/api/src/account/forget.ts`) |
 | On deletion, thread items and the actor of their ops become "Deleted user"; a comment author's name inside the document and checkpoints, and words in workspaces already left, are not rewritten | `anonymiseUser` in `packages/db/src/queries/account-deletion.ts`; docs/cloud.md "Deleting an account" (last paragraph) | true |
-| GitHub grant revoked and PostHog data deleted on account deletion | not built | not true yet; site slice S9. The draft says only what is done today (test-enforced) |
+| GitHub grant revoked on account deletion | `revokeGithubGrant` in `apps/api/src/account/delete.ts`, `Github.deleteAuthorization` in `apps/api/src/deps/github.ts`; `routes/account.test.ts` | true in code, best effort: a failure is logged and the deletion goes on. Uses the App's existing client id and secret |
+| PostHog person, events and recordings deleted on account deletion | `apps/api/src/account/forget.ts`, `apps/api/src/analytics/posthog-admin.ts`; `account/forget.test.ts` | true in code; off until the founder sets `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` on production (until then each deletion logs `analytics_forget_skipped`). PostHog deletes in batches, usually within about a week (its documentation). Not yet run against a real PostHog project |
 | No full export | no export code beyond board PNG/PDF exports | true |
 | No age gate | none in code; GitHub requires 13+ | true |
 
@@ -118,8 +119,10 @@ Google Fonts and https images load from the addresses a canvas names (`apps/desk
 3. **Retention per category?** "How long we keep it" on the policy. Nothing expires canvases.
    Operational rows are not pruned until S11. Production Neon backups: `infra/neon.json` wants 7
    days of history and daily backups kept 35 days, once applied.
-4. **Is account deletion complete?** `apps/api/src/account/delete.ts`. Not yet: canvas files in
-   R2, the GitHub grant, PostHog data and a retried WorkOS delete are site slice S9.
+4. **Is account deletion complete?** `apps/api/src/account/delete.ts` and
+   `apps/api/src/account/forget.ts`. The GitHub grant is revoked (best effort), and WorkOS and
+   PostHog are asked to forget the person by a job that retries; the PostHog step needs the
+   founder's personal key in production. Canvas files in R2 are the files purge's (W9 D1).
 5. **Is customer content sent to AI providers?** Turns go to Anthropic under the person's own
    account. Only repository metadata and short excerpts go under Ponzu's key (docs/cloud.md
    "Ideas").

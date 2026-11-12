@@ -147,7 +147,8 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
   - The name a canvas's document carries for the author of a comment you left is not rewritten, in the canvas or in its checkpoints; nor are your words in workspaces you had already left.
   - Your branches, commits and pull requests on GitHub, and the pictures a pull request shows, are not touched.
 - You cannot delete your account while you are the only admin of a workspace that others are in. Make someone else an admin first.
-- <Open who="founder">Not done on deletion today, and built by site slice S9: revoking Ponzu's authorization on your GitHub account (you can revoke it yourself in GitHub's settings, under Applications), and deleting your analytics from PostHog (write to us and we will). Replace this with "We also revoke Ponzu's authorization on your GitHub account, and ask PostHog to delete your profile, events and recordings, which it does in batches, usually within about a week" once S9 ships.</Open>
+- We also revoke Ponzu's authorization on your GitHub account. If GitHub does not answer, your account is deleted all the same, and you can revoke it yourself in GitHub's settings, under Applications.
+- We ask PostHog to delete your profile, events and recordings, which it does in batches, usually within about a week. If PostHog is down, we keep asking for several hours. <Open who="founder">True once PONZU_POSTHOG_PERSONAL_API_KEY and PONZU_POSTHOG_PROJECT_ID are set on production (founder step B5); until then the API skips this step and logs that it did. Set them before this page is in effect, or put back "write to us and we will".</Open>
 
 ## Your choices and rights
 

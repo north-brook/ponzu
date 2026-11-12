@@ -28,7 +28,16 @@ takes.
 | `PONZU_POSTHOG_HOST` | Where PostHog takes events. `https://us.i.posthog.com` when unset. |
 | `PONZU_POSTHOG_AI_CONTENT` | `1`: AI observability events carry the model's inputs and outputs (prompts, replies, tool arguments and results). Anything else, or unset: only metadata goes (model, tokens, cost, latency, tool names, outcome). Dev runs with `1`; production's setting is the founder's call, and the default in code is off. |
 
-On the server, set them on the API's Vercel project for the environment. The API hands all
+Forgetting a deleted person is a separate door, PostHog's private API, with three more values
+on the API alone, none handed to a runner (docs/cloud.md, "Deleting an account"):
+
+| Variable | Meaning |
+|---|---|
+| `PONZU_POSTHOG_PERSONAL_API_KEY` | A personal API key with `person:write`, scoped to the project. A secret. Set with the project id or not at all; unset, account deletion leaves PostHog alone and logs `analytics_forget_skipped`. |
+| `PONZU_POSTHOG_PROJECT_ID` | The project's numeric id. |
+| `PONZU_POSTHOG_API_HOST` | PostHog's app host, `https://us.posthog.com` when unset. Not the ingestion host. |
+
+On the server, set them on the API's Vercel project for the environment. The API hands the first
 three to each canvas's runner in its session (`POST /v1/runner/session`, `analytics`), so a
 sandbox needs no variables of its own, and a change reaches a runner the next time one starts.
 The runner's code that uses them is in the runner bundle the API serves, so it ships with the
@@ -80,7 +89,7 @@ Every event about a workspace also carries `workspace_id`.
 | `user signed up` | | The first sign-in of a GitHub account: its `users` row was made. |
 | `user signed in` | `new_user` | Every sign-in exchange that let someone in. |
 | `user signed out` | | |
-| `account deleted` | `deleted_canvases`, `kept_canvases` | |
+| `account deleted` | `deleted_canvases`, `kept_canvases` | About no one: the `account.forget` job asks PostHog to delete the person, and PostHog deletes only what it had before it was asked, so an event under their id would make them again. |
 | `workspace connected` | `workspace_id`, `kind`, `repos` | The App was installed on an account, or installed again, or unsuspended. Once, even when its webhook and the setup read it at the same moment: the database tells exactly one of them it made the change. About whoever installed it when Ponzu knows them, else the person whose sign-in found it. |
 | `workspace disconnected` | `workspace_id`, `reason` (`uninstalled`, `suspended`) | About no one. An uninstall is said by the reader that took it off the workspace; a suspension under one id per suspension, at GitHub's time for it. |
 | `repo access changed` | `workspace_id`, `repos` | GitHub said the repos the App reaches changed. About no one. |
