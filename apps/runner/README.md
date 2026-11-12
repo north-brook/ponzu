@@ -146,6 +146,14 @@ docs/cloud.md ("Saving the sandbox", "Getting ready to sleep") is the specificat
 - **The pull request summary.** On a checked-out repo design the runner hosts
   `describe_pull_request` beside the canvas tools: the agent's own words on what its branch
   changes, which the API writes into the pull request's description.
+- **The agent's pull request** (`src/pull-request-tools.ts`). Beside it, `open_pull_request`,
+  `read_pull_request`, `mark_pull_request_ready`, `update_pull_request_branch`,
+  `enable_auto_merge` and `merge_pull_request`: each asks the API, which acts on GitHub as the
+  person the turn is for (docs/cloud.md, "The agent's pull request"). Each names the turn's event,
+  the one whose message began the turn other than an edit, set as the turn begins and kept for
+  it (none for a turn an edit or Ponzu's own note began); the API decides from it who
+  that person is and whether the turn may merge. The tools that change the branch on GitHub push
+  first, and merge and update send the commit the checkout is at.
 
 ## Running it here
 

@@ -277,7 +277,7 @@ describe("opening", () => {
     const summary = await call(t, runner.headers, "POST", "/v1/runner/pull-request-summary", {
       summary: "Drops the paragraph from the hero.",
     });
-    // No pull request yet: kept for the one the person opens, and the agent is told so.
+    // No pull request yet: kept for the one that opens next, and the agent is told so.
     expect(summary).toEqual({
       status: 200,
       body: { pullRequest: null, open: null, kept: "none_open" },

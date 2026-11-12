@@ -238,6 +238,20 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
       return step("Sending Ponzu feedback", "Sent Ponzu feedback", 1);
     case "describe_pull_request":
       return step("Writing the pull request description", "Wrote the pull request description", 1);
+    // What the agent asked of its pull request, never what came of it: GitHub may have refused,
+    // or found it done already. The API's own line in the thread says what it did.
+    case "open_pull_request":
+      return step("Opening the pull request", "Asked to open the pull request");
+    case "read_pull_request":
+      return step("Reading the pull request", "Read the pull request");
+    case "mark_pull_request_ready":
+      return step("Marking the pull request ready", "Asked to mark the pull request ready");
+    case "update_pull_request_branch":
+      return step("Updating the branch", "Asked to update the branch");
+    case "enable_auto_merge":
+      return step("Turning on auto-merge", "Asked to turn on auto-merge");
+    case "merge_pull_request":
+      return step("Merging the pull request", "Asked to merge the pull request");
     case "wait_for_activity":
       return step("Waiting for comments", "Waited for comments");
     // The local server's tools for a folder of designs: the cloud has one design a sandbox,

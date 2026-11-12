@@ -5,7 +5,8 @@ import { answer, bearer, type GithubAnswer, graphql, repoParams, send } from "./
 
 /*
  * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
- * writes its description, with a token for the one repository; the person opens it, merges it,
+ * writes its description, with a token for the one repository; the person (or the agent, as the
+ * person its turn is for) opens it, merges it,
  * marks it ready, sets auto-merge, closes it and updates its branch with their own user token,
  * so GitHub holds them to the repo's rules as they apply to them and names them as who did it.
  *
@@ -84,6 +85,16 @@ export interface GithubRemark {
   /** For a line comment, the file and line it is on. */
   path: string | null;
   line: number | null;
+  /**
+   * For a line comment, whether its thread was marked resolved on GitHub; null for any other, and
+   * for one whose thread GitHub didn't answer for (it isn't known, so it is not called unresolved).
+   */
+  resolved: boolean | null;
+  /**
+   * For a line comment, its author's GitHub id when the author is a person: what the agent's read
+   * of it asks GitHub whether they can push by, as for a review that reaches it as an event.
+   */
+  authorId?: number | null;
 }
 
 export interface GithubChangedFile {
@@ -290,7 +301,8 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
       } } } } } }
       comments(last: 100) { nodes { id url body createdAt author { ${WHO} } } }
       reviews(last: 100) { nodes { id url state body submittedAt author { ${WHO} }
-        comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} } } } } }
+        comments(first: 30) { nodes { id url body path line originalLine createdAt author { ${WHO} ... on User { databaseId } } } } } }
+      reviewThreads(last: 100) { nodes { isResolved comments(first: 30) { nodes { id } } } }
     }
   }
 }`;
@@ -531,15 +543,28 @@ function toRead(repository: any): GithubPullRequestRead {
 function toPullRequest(pr: any): GithubPullRequest {
   const rollup = pr.head.nodes[0]?.commit.statusCheckRollup ?? null;
   const reviews: any[] = pr.reviews.nodes;
+  // Whether each line comment's thread is resolved, by the comment's id: GitHub keeps that on
+  // the thread, not the comment.
+  const resolved = new Map<string, boolean>(
+    (pr.reviewThreads?.nodes ?? []).flatMap((thread: any) =>
+      (thread.comments?.nodes ?? []).map((comment: any) => [
+        comment.id,
+        thread.isResolved === true,
+      ]),
+    ),
+  );
   const conversation: GithubRemark[] = [
     ...pr.comments.nodes.map((comment: any) => remark(comment, null, null)),
     ...reviews
       .filter((review) => review.body?.trim())
       .map((review) => remark({ ...review, createdAt: review.submittedAt }, null, null)),
     ...reviews.flatMap((review) =>
-      review.comments.nodes.map((comment: any) =>
-        remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
-      ),
+      review.comments.nodes.map((comment: any) => ({
+        ...remark(comment, comment.path, comment.line ?? comment.originalLine ?? null),
+        // Unknown (null) for one whose thread the query's last 100 left out: never unresolved.
+        resolved: resolved.get(comment.id) ?? null,
+        authorId: typeof comment.author?.databaseId === "number" ? comment.author.databaseId : null,
+      })),
     ),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
   return {
@@ -665,6 +690,7 @@ function remark(node: any, path: string | null, line: number | null): GithubRema
     url: node.url,
     path,
     line,
+    resolved: null,
   };
 }
 

@@ -132,6 +132,13 @@ export type ErrorCode =
   | "already_mergeable"
   /** GitHub refused, for a reason Ponzu cannot name. */
   | "github_refused"
+  /**
+   * The agent asked to merge, mark ready or turn on auto-merge in a turn no person in Ponzu began,
+   * or after words from GitHub (a check, a review) went into its session: only a person's turn may.
+   */
+  | "turn_not_from_person"
+  /** The agent did this to its pull request as often as an hour allows. A person can still. */
+  | "agent_limit"
   /** A push token another device of the person's already has. */
   | "push_token_taken"
   /**
