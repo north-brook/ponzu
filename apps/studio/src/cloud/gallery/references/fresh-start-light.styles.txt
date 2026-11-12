@@ -70,8 +70,13 @@ text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
-icon svg 198.95×54.28 rgb(17, 17, 16) stroke 3.4px
+icon svg 173×47.2 rgb(17, 17, 16) stroke 3.4px
 text "What do you want to design?" rgb(17, 17, 16) 400 13px Inter
+ground div rgb(232, 230, 224)
+text "north-brook" rgb(169, 165, 155) 600 22px Funnel Display
+text "/" rgb(169, 165, 155) 600 22px Funnel Display
+text "fernwood" rgb(17, 17, 16) 600 22px Funnel Display
+icon svg[Project: north-brook/fernwood] 16×16 rgb(128, 124, 115) stroke 1.7px
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "Make checkout one page, with the order …" rgb(169, 165, 155) 400 16px Inter
 text "tab" rgb(169, 165, 155) 400 11px Inter
@@ -84,6 +89,3 @@ text "High" rgb(169, 165, 155) 400 12px Inter
 icon svg[Model: Opus 5.5, effort High] 11×11 rgb(86, 83, 77) stroke 2.2px
 ground button[Send] rgb(232, 230, 224)
 icon svg[Send] 16×16 rgb(169, 165, 155) stroke 2.1px
-text "fernwood" rgb(86, 83, 77) 500 12px Inter
-icon svg[Project: fernwood] 12×12 rgb(86, 83, 77) stroke 2px
-icon svg[Project: fernwood] 11×11 rgb(86, 83, 77) stroke 2.2px

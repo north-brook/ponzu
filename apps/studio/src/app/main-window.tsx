@@ -1,8 +1,9 @@
 import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RepoShelf } from "../cloud/create/create.ts";
 import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
@@ -15,7 +16,7 @@ import { AppWindow } from "../cloud/window/app-window.tsx";
 import type { NoticeName, OpenedVia } from "./analytics/events.ts";
 import { useAnalytics, useView } from "./analytics/provider.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
-import { CreateView } from "./create.tsx";
+import { type CreateHandoff, CreateView } from "./create.tsx";
 import { type FreshDesign, useOpenDesign } from "./design.tsx";
 import { useDesignPanes } from "./design-panes.tsx";
 import type { Host } from "./host.ts";
@@ -171,6 +172,21 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     [host, sync, update, tell, openDesign],
   );
 
+  // A repo chosen on the create page in another workspace: the window switches there, its
+  // create page open (not the design it last showed), and the page there takes this over.
+  const [handoff, setHandoff] = useState<CreateHandoff | null>(null);
+  const switchWithCreate = useCallback(
+    (next: CreateHandoff) => {
+      setHandoff(next);
+      update((now) => {
+        const { [next.workspaceId]: _shown, ...designs } = now.designs;
+        return { ...now, workspaceId: next.workspaceId, designs };
+      });
+    },
+    [update],
+  );
+  const handoffTaken = useCallback(() => setHandoff(null), []);
+
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
   // The same choice guided setup reads ahead before it hands the window over (setup/first-run).
@@ -216,6 +232,9 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       openedVia={openedVia}
       notice={notice}
       say={say}
+      handoff={handoff}
+      onHandoffTaken={handoffTaken}
+      onSwitchWithCreate={switchWithCreate}
       onLostAccess={() => {
         update((now) => ({ ...now, workspaceId: null }));
         void sync();
@@ -240,6 +259,9 @@ function WorkspaceWindow({
   openedVia,
   notice,
   say,
+  handoff,
+  onHandoffTaken,
+  onSwitchWithCreate,
   onLostAccess,
 }: {
   host: Host;
@@ -259,6 +281,9 @@ function WorkspaceWindow({
   openedVia: { current: OpenedVia };
   notice: string | null;
   say: (notice: string) => void;
+  handoff: CreateHandoff | null;
+  onHandoffTaken: () => void;
+  onSwitchWithCreate: (handoff: CreateHandoff) => void;
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
@@ -270,6 +295,24 @@ function WorkspaceWindow({
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
     [detail.data],
   );
+  // The create page's picker lists every workspace's repos: the others' from the same query,
+  // each as it arrives (one that fails is left out), in the switcher's order. Their answers
+  // stay in the cache, so switching to one of them shows its repos at once.
+  const others = useMemo(() => workspaces.filter((w) => w.id !== id), [workspaces, id]);
+  const elsewhere = useQueries({
+    queries: others.map((w) => queries.workspace(w.id)),
+    combine: useCallback(
+      (
+        results: { data?: { repos: Parameters<typeof pushableRepos>[0] }; isPending: boolean }[],
+      ): RepoShelf[] =>
+        results.flatMap((result, i): RepoShelf[] => {
+          const workspaceId = others[i]!.id;
+          if (result.data) return [{ workspaceId, repos: pushableRepos(result.data.repos) }];
+          return result.isPending ? [{ workspaceId, repos: null }] : [];
+        }),
+      [others],
+    ),
+  });
   const live = useLiveQuery("workspace.designs", { workspaceId: id });
   const openId = ui.designs[id] ?? null;
   // The design the create page just made, as its answer said, for it to open on.
@@ -603,6 +646,10 @@ function WorkspaceWindow({
           host={host}
           workspaceId={id}
           repos={repos}
+          elsewhere={elsewhere}
+          handoff={handoff}
+          onHandoffTaken={onHandoffTaken}
+          onSwitchWorkspace={onSwitchWithCreate}
           showIdeas={
             summaries !== null &&
             summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL

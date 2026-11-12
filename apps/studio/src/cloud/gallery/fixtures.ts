@@ -130,6 +130,33 @@ export const manyRepos = [
   repo("infra"),
 ];
 
+/** A second organization the person is in, for the picker across workspaces. */
+export const lennyLearning: Workspace = {
+  id: "ws_lennylearning",
+  kind: "org",
+  name: "Lenny Learning",
+  login: "lennylearning",
+  avatarUrl: null,
+};
+const lennyRepo = (name: string): Repo => ({
+  id: `repo_lennylearning_${name}`,
+  owner: "lennylearning",
+  name,
+});
+/** Lenny Learning's repos, pushed-to lately first. */
+export const lennyRepos = [lennyRepo("app"), lennyRepo("site"), lennyRepo("curriculum")];
+/** Each workspace's repos, for a person in Northbrook and Lenny Learning. */
+export const shelves: Record<string, Repo[]> = {
+  [northbrook.id]: repos,
+  [lennyLearning.id]: lennyRepos,
+};
+/** A repo whose owner and name are both too long for the header. */
+export const longNamedRepo: Repo = {
+  id: "repo_long",
+  owner: "the-extraordinarily-long-organization-name",
+  name: "customer-onboarding-experiments-and-landing-page-variants",
+};
+
 const preview = (src: string) => ({ light: src, dark: src });
 
 export const pr412: PullRequestSummary = {

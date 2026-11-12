@@ -276,8 +276,9 @@ defined by being quiet.
 | `meta` | 11 mono, faint | repo, branch, pull request, counts, ages |
 | `label` | 11 semibold, faint | a section's label in a menu, Settings, search, the pull request tab |
 
-Display (Funnel Display 600) is a heading's alone: 34 the create page, 28 a setup step, 26 the
-pull request, 18 a Settings section, 40 a price.
+Display (Funnel Display 600) is a heading's alone: 28 a setup step, 26 the pull request, 18 a
+Settings section, 40 a price, and 22 the create page's project selector, which stands in its
+header beside the logo.
 
 The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
 cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
@@ -388,13 +389,38 @@ repaint something or say what isn't so. The usual swaps:
   page sits on the canvas's dotted ground (`canvas-dots`, the same dots the canvas draws under
   its boards with `--pz-dot`), since this is where a canvas starts. Nothing on the page moves
   when ideas arrive or don't.
+- The project selector is in the create page's header, not a chip under the composer (the
+  founder's direction): `[logo] | [owner/name ⌄]`, and nothing under the composer. The logo is
+  40 (under the 46 it had alone, so the row balances), the hairline 28 tall, the selector the
+  display face at 22 semibold in ink with the owner and slash faint so the name leads, then a
+  `control` chevron in `icon-soft`. The hairline stands on the column's centre line with the
+  logo 16 before it and the selector's words 16 after, so nothing moves when the label changes
+  (a repo chosen, the repos arriving, a long name): the row is centred on the hairline, not on
+  its own width. Everything is centred on the mark (the lockup is drawn round it), and the
+  selector's words sit on it by their x-height's centre, as the logo's word does, which in
+  Funnel Display at 22 is 2.4 above their line box's middle (`ON_THE_MARK` in
+  `create/repo-picker.tsx`). A long label stays on one line within the column's right half, the
+  owner giving way first. The trigger draws no folder: beside the logo's mark a third glyph
+  competed with it, and at the ladder's largest step it read small against 22px words; the
+  picker's rows keep theirs. While the window's repos load the selector holds its place with a
+  skeleton, never saying Scratch before it knows.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
-  metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
-  no line under Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's
-  dashed-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
-  Its composition masks the picker and says so in `compare`. The picker never moves the page:
-  its list shows five and a half rows and scrolls (a list that long has its search), and in a
-  window too short even for that the list gives up height and the picker stays under its chip.
+  metrics, each titled `owner/name` with the owner quieter (no owner heading, no line under
+  Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's dashed-folder icon
+  from `ui/project-icons.ts`, the one place both projects' icons are set. It lists every repo
+  the person can push to in every usable workspace: the window's first (pushed-to lately
+  first), then each other workspace's in the switcher's order, as their answers arrive (the
+  same workspace query, one per workspace, through `useQueries` in `app/main-window.tsx`; one
+  that fails is left out). They join at the list's foot, so the rows under the pointer stay;
+  whether the picker has a search is settled as it opens, and it has one while repos are still
+  to come. Search matches anywhere in `owner/name`. Choosing another workspace's repo switches
+  the window to that workspace with its create page open and the repo chosen, handing the
+  words, images and picked idea over (`CreateHandoff` in `app/create.tsx`) in the same render.
+  Allow more on GitHub acts for the window's workspace. Its composition masks the picker and
+  says so in `compare`. The picker never moves the page: its list shows five and a half rows and
+  scrolls, and in a window too short even for that the list gives up height and the picker
+  stays under its selector. A name cut short shows whole in a tip past the picker's right edge,
+  or its left where the window has no room on the right.
 
 ### When you need
 

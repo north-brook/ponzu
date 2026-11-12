@@ -2,8 +2,16 @@
  * Stand-ins for the app around the components: local state where the data layer will be, so
  * every composition can be clicked through.
  */
-import { type ReactNode, useCallback, useState } from "react";
-import type { ProjectChoice } from "../create/create.ts";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import type { ProjectChoice, RepoShelf } from "../create/create.ts";
 import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
 import { type DesignFilter, NO_FILTER } from "../filter.ts";
 import type {
@@ -12,6 +20,7 @@ import type {
   DesignSummary,
   Effort,
   Match,
+  Repo,
   SearchResults,
   Workspace,
 } from "../model.ts";
@@ -53,8 +62,17 @@ function searchFixtures(query: string, designs: DesignSummary[]): SearchResults 
   };
 }
 
+/** The workspace the window shows, and those its switcher lists, for what is inside it. */
+const WindowWorkspace = createContext<{
+  workspace: Workspace;
+  workspaces: Workspace[];
+  onSwitch: (workspace: Workspace) => void;
+}>({ workspace: f.northbrook, workspaces: f.workspaces, onSwitch: ignore });
+
 export interface HarnessProps {
   workspace?: Workspace;
+  /** Those the workspace switcher lists. */
+  workspaces?: Workspace[];
   designs: DesignSummary[] | null;
   openId: string | null;
   initialQuery?: string | null;
@@ -72,7 +90,8 @@ export interface HarnessProps {
 
 /** The window with a working sidebar around `children`. */
 export function Harness({
-  workspace = f.northbrook,
+  workspace: initialWorkspace = f.northbrook,
+  workspaces = f.workspaces,
   designs,
   openId: initialOpen,
   initialQuery = null,
@@ -92,55 +111,62 @@ export function Harness({
   const [settledOpen, setSettledOpen] = useState(initialSettledOpen);
   const results = query?.trim() ? searchFixtures(query, designs ?? []) : null;
   const openDesign = useCallback((d: DesignSummary) => setOpenId(d.id), []);
+  const [workspace, setWorkspace] = useState(initialWorkspace);
+  const shown = useMemo(
+    () => ({ workspace, workspaces, onSwitch: setWorkspace }),
+    [workspace, workspaces],
+  );
 
   return (
-    <AppWindow
-      lights="drawn"
-      sidebar={
-        sidebar === "none"
-          ? null
-          : {
-              open,
-              onToggle: () => setOpen((o) => !o),
-              content: (
-                <Sidebar
-                  me={f.bryce}
-                  workspace={workspace}
-                  workspaces={f.workspaces}
-                  teammates={f.teammates}
-                  designs={designs}
-                  settled={{ count: settledCount, designs: f.settled, expanded: settledOpen }}
-                  onSettledExpandedChange={setSettledOpen}
-                  openDesignId={openId}
-                  collapsed={!open}
-                  onExpand={() => setOpen(true)}
-                  filter={filter}
-                  onFilterChange={setFilter}
-                  query={query}
-                  onQueryChange={setQuery}
-                  results={results}
-                  onOpenResult={(key) => {
-                    if (key.startsWith("design:")) setOpenId(key.slice("design:".length));
-                    setQuery(null);
-                  }}
-                  onOpen={openDesign}
-                  onAction={ignore}
-                  onRename={ignore}
-                  onNewDesign={() => setOpenId(null)}
-                  onSwitchWorkspace={ignore}
-                  onAddWorkspace={ignore}
-                  onSettings={ignore}
-                  onPlan={ignore}
-                  onSignOut={ignore}
-                />
-              ),
-            }
-      }
-      chrome={chrome?.(open)}
-      rail={rail ? (railContent ?? <div />) : null}
-    >
-      {children}
-    </AppWindow>
+    <WindowWorkspace.Provider value={shown}>
+      <AppWindow
+        lights="drawn"
+        sidebar={
+          sidebar === "none"
+            ? null
+            : {
+                open,
+                onToggle: () => setOpen((o) => !o),
+                content: (
+                  <Sidebar
+                    me={f.bryce}
+                    workspace={workspace}
+                    workspaces={workspaces}
+                    teammates={f.teammates}
+                    designs={designs}
+                    settled={{ count: settledCount, designs: f.settled, expanded: settledOpen }}
+                    onSettledExpandedChange={setSettledOpen}
+                    openDesignId={openId}
+                    collapsed={!open}
+                    onExpand={() => setOpen(true)}
+                    filter={filter}
+                    onFilterChange={setFilter}
+                    query={query}
+                    onQueryChange={setQuery}
+                    results={results}
+                    onOpenResult={(key) => {
+                      if (key.startsWith("design:")) setOpenId(key.slice("design:".length));
+                      setQuery(null);
+                    }}
+                    onOpen={openDesign}
+                    onAction={ignore}
+                    onRename={ignore}
+                    onNewDesign={() => setOpenId(null)}
+                    onSwitchWorkspace={setWorkspace}
+                    onAddWorkspace={ignore}
+                    onSettings={ignore}
+                    onPlan={ignore}
+                    onSignOut={ignore}
+                  />
+                ),
+              }
+        }
+        chrome={chrome?.(open)}
+        rail={rail ? (railContent ?? <div />) : null}
+      >
+        {children}
+      </AppWindow>
+    </WindowWorkspace.Provider>
   );
 }
 
@@ -212,22 +238,43 @@ export function DesignChromeHarness({
   );
 }
 
-/** The create page with its own prompt, model and project. */
+/**
+ * The create page with its own prompt, model and project. With `shelves` (each workspace's
+ * repos), the person is in several workspaces: the picker lists the window's first and then the
+ * others', and choosing one of another workspace's switches the window's workspace (the
+ * sidebar's) as the app does, keeping the words. `?later` holds the others' back until the page
+ * calls `window.galleryArrive()`, as a slow answer would.
+ */
 export function CreateHarness({
   initialPrompt = "",
   initialProject = { kind: "repo", repo: f.fernwood },
-  repos = f.repos,
+  repos: ownRepos = f.repos,
+  shelves,
   ideas = null,
 }: {
   initialPrompt?: string;
-  initialProject?: ProjectChoice;
+  /** Null: not known yet (the window's repos are loading). */
+  initialProject?: ProjectChoice | null;
   repos?: CreatePageProps["repos"];
+  shelves?: Record<string, Repo[]>;
   ideas?: CreatePageProps["ideas"];
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
   const [project, setProject] = useState(initialProject);
   const [model, setModel] = useState({ model: f.models[0]!.id, effort: "high" as Effort });
-  const dwell = Number(new URLSearchParams(location.search).get("dwell")) || 0;
+  const params = new URLSearchParams(location.search);
+  const dwell = Number(params.get("dwell")) || 0;
+  const window_ = useContext(WindowWorkspace);
+  const [arrived, setArrived] = useState(!params.has("later"));
+  useEffect(() => {
+    (window as { galleryArrive?: () => void }).galleryArrive = () => setArrived(true);
+  }, []);
+  const repos = shelves ? (shelves[window_.workspace.id] ?? []) : ownRepos;
+  const elsewhere: RepoShelf[] = shelves
+    ? window_.workspaces
+        .filter((w) => w.id !== window_.workspace.id && shelves[w.id])
+        .map((w) => ({ workspaceId: w.id, repos: arrived ? shelves[w.id]! : null }))
+    : [];
   return (
     <CreatePage
       prompt={prompt}
@@ -243,7 +290,12 @@ export function CreateHarness({
       }}
       project={project}
       repos={repos}
-      onProjectChange={setProject}
+      elsewhere={elsewhere}
+      onProjectChange={(choice, workspaceId) => {
+        const next = workspaceId && window_.workspaces.find((w) => w.id === workspaceId);
+        if (next) window_.onSwitch(next);
+        setProject(choice);
+      }}
       onAllowMore={ignore}
       ideas={ideas}
       // `?dwell=<ms>`: how long each suggestion shows, so a test needn't wait out the real one.
