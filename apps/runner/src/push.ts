@@ -116,9 +116,10 @@ export class BranchPush {
    * again (`waitsMs`) until `deadline`. Never forces: a branch GitHub moved on past is reported,
    * not overwritten. A branch GitHub already has at this commit is left alone, so one deleted on
    * GitHub after it was merged is not put back; new commits on it are pushed, as the agent's own
-   * push would.
+   * push would. Nothing is pushed while `held()` says so (a turn began while this looked): what
+   * would have gone is left to the next push.
    */
-  async push(opts: { deadline?: number } = {}): Promise<PushOutcome> {
+  async push(opts: { deadline?: number; held?: () => boolean } = {}): Promise<PushOutcome> {
     const { branch, defaultBranch } = this.opts;
     const local = `refs/heads/${branch}`;
     const nothing: PushOutcome = { unpushed: 0, pushed: 0, failure: null };
@@ -136,6 +137,7 @@ export class BranchPush {
     const before = await this.unpushed();
     let failure: PushFailure | null = null;
     for (let attempt = 0; ; attempt++) {
+      if (opts.held?.()) return { unpushed: before, pushed: 0, failure: null };
       const started = this.now();
       try {
         await this.opts.git(["push", "--porcelain", "-u", "origin", `${local}:${local}`]);

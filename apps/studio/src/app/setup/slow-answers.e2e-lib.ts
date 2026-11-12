@@ -72,8 +72,15 @@ function record() {
   requestAnimationFrame(look);
 }
 
+/**
+ * The screens seen so far, read on the next frame: what a wait just found in the page is drawn
+ * then, and the recorder, asked for that frame first, has seen it.
+ */
 const screens = (page: Page) =>
-  page.evaluate(() => (window as unknown as { screens: Screen[] }).screens.slice());
+  page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return (window as unknown as { screens: Screen[] }).screens.slice();
+  });
 
 /** Clears what was seen so far, keeping the screen on now as the first. */
 const mark = (page: Page) =>
