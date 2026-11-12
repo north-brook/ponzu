@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { knownSecrets, redactText } from "@ponzu/core/redact";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
@@ -30,7 +31,18 @@ import { runnerClient } from "./version.ts";
  */
 const EXIT_CONFIG = 78;
 
-const log = (message: string) => console.error(`[runner] ${message}`);
+/**
+ * Every line the runner writes (Claude Code's stderr among them) goes to its log file on the
+ * persistent disk, so into every snapshot: the known secret values are taken out first.
+ */
+const logSecrets = (() => {
+  try {
+    return knownSecrets(secretValues(process.env));
+  } catch {
+    return [];
+  }
+})();
+const log = (message: string) => console.error(`[runner] ${redactText(message, logSecrets)}`);
 
 /** Claude Code's config folder, where its transcripts are: the image sets it for both users. */
 function claudeConfigDir(env: NodeJS.ProcessEnv): string {
