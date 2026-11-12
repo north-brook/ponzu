@@ -510,7 +510,9 @@ function watchRequestIds() {
     { urls: ["https://*/*", "http://*/*"] },
     (details) => {
       if (!URL.canParse(details.url) || new URL(details.url).origin !== api) return;
-      lastRequestId = requestIdOf(details.responseHeaders) ?? lastRequestId;
+      // The latest answer's id, or none: an answer without one (a gateway's error) must not
+      // leave an older request's id to be reported as the one that went wrong.
+      lastRequestId = requestIdOf(details.responseHeaders);
     },
   );
 }
