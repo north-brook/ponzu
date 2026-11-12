@@ -26,7 +26,7 @@ type Size = { w: number; h: number };
 const PX = /^-?\d+(?:\.\d+)?px$/;
 
 /**
- * Measured sizes by design key and artboard id, with the source they were
+ * Measured sizes by canvas key and artboard id, with the source they were
  * measured from: an unchanged artboard isn't rendered again.
  */
 const measured = new Map<string, Size & { source: string }>();
@@ -153,7 +153,9 @@ function fixed(ab: Artboard): boolean {
 async function measure(ws: Workspace, key: string, doc: Doc, ab: Artboard): Promise<Size | null> {
   if (!ws.renderer?.measure) return null;
   const assetBase = ws.assetBase?.(key);
-  const source = `${assetBase ?? ""}\n${doc.tokens}\n${serializeArtboardElement(ab)}`;
+  // Whether its assets could load, not where from: the URL can carry a key
+  // that gets rotated, and the same files are behind the new one.
+  const source = `${assetBase ? "assets" : ""}\n${doc.tokens}\n${serializeArtboardElement(ab)}`;
   const id = `${key}\n${ab.id}`;
   const hit = measured.get(id);
   if (hit?.source === source) return { w: hit.w, h: hit.h };

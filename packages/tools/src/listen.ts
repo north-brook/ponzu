@@ -1,207 +1,16 @@
-import {
-  type Doc,
-  describeNode,
-  findArtboard,
-  INTENT_MAX,
-  type PonzuEvent,
-  type Thread,
-} from "@ponzu/core";
-import type { Design } from "@ponzu/store";
+import { findArtboard, INTENT_MAX } from "@ponzu/core";
 import { z } from "zod";
-import type { KeyedEvent } from "./context.ts";
-import { threadLine } from "./converse.ts";
-import { fileArg, ToolError, tool } from "./define.ts";
-import { GUIDES, type GuideTopic } from "./guides.ts";
-import { apply, label, resolveFile } from "./util.ts";
-
-const EVENT_TYPES = [
-  "change",
-  "comment.created",
-  "comment.replied",
-  "comment.edited",
-  "comment.resolved",
-  "comment.reopened",
-  "file.changed",
-  "presence",
-] as const;
-
-export function describeEvent(doc: Doc | undefined, e: PonzuEvent): string {
-  const ab = (id: string) => (doc ? (findArtboard(doc, id)?.artboard.name ?? id) : id);
-  switch (e.type) {
-    case "change":
-      return `change by ${e.origin.name}: ${e.summary}${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
-    case "comment.created":
-      return `new comment ${e.thread} on ${e.artboard ? `"${ab(e.artboard)}"` : "the canvas"} from ${e.author}: "${e.text}"`;
-    case "comment.replied":
-      return `reply in ${e.thread} from ${e.author}: "${e.text}"`;
-    case "comment.edited":
-      return `${e.author} edited a message in ${e.thread}, now: "${e.text}"`;
-    case "comment.resolved":
-      return `${e.author} resolved ${e.thread}`;
-    case "comment.reopened":
-      return `${e.author} reopened ${e.thread}`;
-    case "file.changed":
-      return `${e.path} changed on disk${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
-    case "presence":
-      return `presence: ${e.presence.map((p) => p.name).join(", ")}`;
-  }
-}
-
-const GAP_NOTE = {
-  restart: "Ponzu restarted since your last wait, so what happened before then isn't here.",
-  dropped: "More happened since your last wait than Ponzu keeps, so some of it isn't here.",
-} as const;
-
-/** How many waiting threads a wait spells out; list_comments has the rest. */
-const WAITING_SHOWN = 10;
-
-/** Open threads where the person spoke last: each still needs the agent. */
-function waitingOn(threads: Thread[]): Thread[] {
-  return threads.filter(
-    (t) => t.status === "open" && t.messages[t.messages.length - 1]?.author.kind === "user",
-  );
-}
-
-type Open = { key: string; design: Design };
-
-/** The waiting threads in each design, naming the design for any but the one the call is on. */
-function waitingText(files: Open[], all: Open[]): { text: string; ids: string[] } {
-  const lines: string[] = [];
-  const ids: string[] = [];
-  for (const [i, f] of files.entries()) {
-    for (const t of waitingOn(f.design.doc.threads)) {
-      ids.push(t.id);
-      // threadLine ends "last from Sam" on a thread with replies: say what they said last.
-      const latest = t.messages.length > 1 ? `: "${t.messages.at(-1)!.text}"` : "";
-      lines.push(`${threadLine(f.design.doc, t)}${latest}${i ? ` (in ${label(f, all)})` : ""}`);
-    }
-  }
-  if (!lines.length) return { text: "No open threads are waiting on you.", ids };
-  const shown = lines.slice(0, WAITING_SHOWN);
-  if (lines.length > WAITING_SHOWN)
-    shown.push(`… and ${lines.length - WAITING_SHOWN} more (list_comments)`);
-  return { text: `Open threads waiting on you; handle these first:\n${shown.join("\n")}`, ids };
-}
-
-const COMMENT_EVENTS = new Set(["comment.created", "comment.replied"]);
-
-/**
- * Comments the person left after `cursor` in designs the wait didn't hear
- * from: what a wider watch would have caught. Counted, never shown.
- */
-function missedElsewhere(events: KeyedEvent[], scope: string[], all: Open[]): number {
-  return events.filter((e) => {
-    if (scope.includes(e.key) || !COMMENT_EVENTS.has(e.event.type) || !("thread" in e.event))
-      return false;
-    const { thread, author } = e.event as { thread: string; author: string };
-    const doc = all.find((d) => d.key === e.key)?.design.doc;
-    const t = doc?.threads.find((x) => x.id === thread);
-    return !!t?.messages.some((m) => m.author.kind === "user" && m.author.name === author);
-  }).length;
-}
+import { ToolError, tool } from "./define.ts";
+import { apply, canvasOf } from "./util.ts";
 
 export const listenTools = [
-  tool({
-    name: "wait_for_activity",
-    title: "Wait for activity",
-    group: "listen",
-    readOnly: true,
-    description:
-      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes, in this file and the others you've worked in this session, saying which file each is in. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarts during the wait, the wait carries on once it's back. If it restarted or lost track before you waited, it returns at once with the open threads waiting on you: handle those, then keep watching with the cursor it gives. The person's chat messages still reach you between waits.",
-    input: {
-      file: fileArg,
-      since: z
-        .number()
-        .int()
-        .min(0)
-        .optional()
-        .describe("Cursor from the last call. Omit to start from now."),
-      types: z
-        .array(z.enum(EVENT_TYPES))
-        .optional()
-        .describe("Default: comments and file changes."),
-      timeout: z.number().min(0).max(300).optional().describe("Seconds to wait. Default 60."),
-      include_own: z.boolean().optional().describe("Include events caused by you. Default false."),
-    },
-    async handler(args, ctx) {
-      const { ws, caller, signal } = ctx;
-      const { key } = await resolveFile(ctx, args.file);
-      const gap = args.since === undefined ? undefined : ws.events.gap(args.since);
-      const types = args.types ?? [
-        "comment.created",
-        "comment.replied",
-        "comment.edited",
-        "comment.reopened",
-        "file.changed",
-      ];
-      // Going back to listening ends a pass: what it was working on is done.
-      ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
-      // Every design this agent has worked in, so moving to a new one doesn't deafen it to the last.
-      const all = ws.designs();
-      const scope = [key, ...(ctx.session?.files ?? []).filter((k) => k !== key)];
-      const files = scope.flatMap((k) => all.filter((d) => d.key === k));
-      // What happened after the cursor can't all be told: say so, with what still needs the agent.
-      const recover = (gap: "restart" | "dropped") => {
-        const next = ws.events.cursor;
-        ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
-        const waiting = waitingText(files, all);
-        return {
-          text: `${GAP_NOTE[gap]} ${waiting.text}\nKeep watching: wait again with cursor=${next}.`,
-          data: { cursor: next, events: [], gap, waiting: waiting.ids },
-          metrics: { cursor: gap, events: 0, scope_files: files.length },
-        };
-      };
-      if (gap) return recover(gap);
-      const cursor = args.since ?? ws.events.cursor;
-      const excludeAuthor = args.include_own ? undefined : caller.author.name;
-      const events = await ws.events.wait(
-        cursor,
-        (args.timeout ?? 60) * 1000,
-        { keys: scope, types: [...types], excludeAuthor },
-        signal,
-      );
-      // The ring can let go of what came in while the wait settled, too.
-      const lost = ws.events.gap(cursor);
-      if (lost) return recover(lost);
-      const next = events.length
-        ? events[events.length - 1]!.event.seq
-        : Math.max(cursor, ws.events.cursor);
-      ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
-      // Designs can open while the wait runs: look again, so their comments are counted and named.
-      const open = ws.designs();
-      const metrics = {
-        cursor: args.since === undefined ? "none" : "ok",
-        events: events.length,
-        scope_files: files.length,
-        missed_elsewhere: missedElsewhere(ws.events.since(cursor, { excludeAuthor }), scope, open),
-      };
-      if (!events.length)
-        return {
-          text: `Nothing new. Wait again with cursor=${next}. The person's chat messages reach you between waits, so keep watching.`,
-          data: { cursor: next, events: [] },
-          metrics,
-        };
-      const line = (e: KeyedEvent) => {
-        const f = open.find((d) => d.key === e.key);
-        const where = f && e.key !== key ? ` (in ${label(f, open)})` : "";
-        return describeEvent(f?.design.doc, e.event) + where;
-      };
-      return {
-        text: `${events.map(line).join("\n")}\ncursor=${next}`,
-        data: { cursor: next, events: events.map((e) => ({ ...e.event, file: e.key })) },
-        metrics,
-      };
-    },
-  }),
-
   tool({
     name: "set_status",
     title: "Set status",
     group: "listen",
     description:
-      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it on hover over the yuzu rain in the header of each artboard you're working on. Artboards you change already show as worked on (a yuzu ring breathes round them, their page and file tabs shimmer) until you go two minutes without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
+      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person sees it while you work. Artboards you change already show as worked on, until you go a couple of minutes without a tool call. Pass artboards to claim them before your first edit.",
     input: {
-      file: fileArg,
       status: z.string().min(1).describe("A few words, lowercase, e.g. 'adding the autumn drop'."),
       intent: z
         .string()
@@ -209,7 +18,7 @@ export const listenTools = [
         .max(INTENT_MAX)
         .optional()
         .describe(
-          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the design's history. Not your plan, and only once per request.",
+          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the canvas's history. Not your plan, and only once per request.",
         ),
       artboards: z
         .array(z.string())
@@ -220,11 +29,10 @@ export const listenTools = [
     },
     async handler(args, ctx) {
       const { ws, caller } = ctx;
-      const { key, design } = await resolveFile(ctx, args.file, args.artboards);
+      const { key, canvas } = await canvasOf(ctx, args.artboards);
       for (const id of args.artboards ?? [])
-        if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
-      if (args.artboards)
-        ws.presence.touch(caller, { file: key, working: args.artboards, status: args.status });
+        if (!findArtboard(canvas.doc, id)) throw new ToolError(`No artboard ${id}.`);
+      if (args.artboards) ws.presence.claimed(caller, key, args.artboards, args.status);
       else ws.presence.worked(caller, key, { status: args.status });
       if (args.intent) ws.intent?.(key, args.intent.trim(), caller.author);
       return { text: `Status: ${args.status}.` };
@@ -236,9 +44,8 @@ export const listenTools = [
     title: "Write note",
     group: "listen",
     description:
-      "Save a markdown note inside the .design (notes/<name>.md): decisions, the brief, open questions, what you learned about the person's taste. Notes outlive the chat, so the next agent session can pick up where you left off. Overwrites; read first to append.",
+      "Save a markdown note with the canvas: decisions, the brief, open questions, what you learned about the person's taste. Notes outlive the conversation, so a later session can pick up where you left off. Overwrites; read first to append.",
     input: {
-      file: fileArg,
       name: z
         .string()
         .regex(/^[\w-]+$/, "letters, numbers, dash, underscore")
@@ -246,12 +53,9 @@ export const listenTools = [
       content: z.string().nullable().describe("Markdown. null deletes the note."),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file);
-      apply(design, { op: "note", name: args.name, content: args.content }, ctx);
-      return {
-        text:
-          args.content === null ? `Deleted notes/${args.name}.md` : `Saved notes/${args.name}.md`,
-      };
+      const { canvas } = await canvasOf(ctx);
+      apply(canvas, { op: "note", name: args.name, content: args.content }, ctx);
+      return { text: `${args.content === null ? "Deleted" : "Saved"} note ${args.name}.` };
     },
   }),
 
@@ -261,11 +65,11 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Read the file's notes. Omit name to read them all. Do this at the start of a session.",
-    input: { file: fileArg, name: z.string().optional() },
+      "Read the canvas's notes. Omit name to read them all. Do this at the start of a session.",
+    input: { name: z.string().optional() },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file);
-      const notes = design.doc.notes;
+      const { canvas } = await canvasOf(ctx);
+      const notes = canvas.doc.notes;
       if (args.name) {
         const n = notes[args.name];
         if (n === undefined)
@@ -276,22 +80,23 @@ export const listenTools = [
       }
       const names = Object.keys(notes);
       if (!names.length) return { text: "No notes yet." };
-      return { text: names.map((n) => `# notes/${n}.md\n${notes[n]}`).join("\n\n") };
-    },
-  }),
-
-  tool({
-    name: "get_guide",
-    title: "Get guide",
-    group: "listen",
-    readOnly: true,
-    description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, watch (the comment loop), variations, implement, format (writing the files directly), motion, product (product shots: faux UI heroes, feature cards, bento grids, demos), act (scene scripts: a cursor that clicks and types, things that appear, totals that roll), kit (windows, phones and rows at real geometry), mobile.",
-    input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
-    handler({ topic }) {
-      return { text: GUIDES[topic] };
+      return { text: names.map((n) => `# ${n}\n${notes[n]}`).join("\n\n") };
     },
   }),
 ];
 
-export { describeNode };
+/** `get_guide` over a host's guides. `about` says what each topic holds, for the description. */
+export function guideTool(guides: Record<string, string>, about: string) {
+  const topics = Object.keys(guides) as [string, ...string[]];
+  return tool({
+    name: "get_guide",
+    title: "Get guide",
+    group: "listen",
+    readOnly: true,
+    description: `House rules and workflows for work in Ponzu. Read 'basics' once per session before writing. Topics: ${about}.`,
+    input: { topic: z.enum(topics) },
+    handler({ topic }) {
+      return { text: guides[topic]! };
+    },
+  });
+}

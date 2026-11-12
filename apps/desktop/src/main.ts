@@ -1,761 +1,784 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { type Catalog, parseDesignLink } from "@ponzu/core";
-import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
-import { replacedByUpdate, settleUpdate } from "@ponzu/server/updating";
+import type { SessionState } from "@ponzu/client";
 import {
   app,
-  BrowserWindow,
-  clipboard,
+  type BrowserWindow,
   dialog,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
   ipcMain,
-  Menu,
-  nativeImage,
-  nativeTheme,
+  Notification,
+  protocol,
+  safeStorage,
+  session as sessions,
   shell,
-  Tray,
 } from "electron";
-import { followAppearance } from "./appearance";
-import { associateDesigns, designPath, launchArgs } from "./designs";
-import { renderToken, startRenderHost } from "./render-host";
-import { smoke, watchSmoke } from "./smoke";
-import { checkForUpdatesNow, installUpdater, relaunchedInBackground } from "./updater";
-
-const isDev = !app.isPackaged;
-/** The built main/preload live in <app>/dist, in development and inside the bundle. */
-const here = join(app.getAppPath(), "dist");
-
-/** The bundled CLI: `bun build --compile` names it ponzu.exe on Windows. */
-const SERVER_BIN = process.platform === "win32" ? "server/ponzu.exe" : "server/ponzu";
-
-/** Paths inside the app bundle, or the monorepo during development. */
-const paths = {
-  server: join(isDev ? here : process.resourcesPath, SERVER_BIN),
-  studio: isDev ? join(here, "../../studio/dist") : join(process.resourcesPath, "studio"),
-  preload: join(here, "preload.cjs"),
-  /** Windows and Linux: the tray icon, tray.png and tray@2x.png. */
-  tray: isDev ? join(here, "../build") : join(process.resourcesPath, "tray"),
-};
-
-let server: ChildProcess | null = null;
-let serverUrl: string | null = null;
-let mainWindow: BrowserWindow | null = null;
-const pendingOpens: string[] = [];
-/** ponzu:// links that arrived before the server was up. */
-const pendingLinks: string[] = [];
-/**
- * Started by an agent (`ponzu mcp`), not the person, or restarted into an
- * update while it had no window: serve without a window or dock icon until
- * they open Ponzu themselves.
- */
-let background = process.argv.includes("--background");
-let updateReady = false;
-/** Whether the update this launch follows installed, for the server's telemetry. */
-let update: ReturnType<typeof settleUpdate>;
+import { followAppearance } from "./appearance.ts";
+import {
+  type AnalyticsSetup,
+  type BridgeError,
+  CHANNELS,
+  type DeepLink,
+  type MenuCommand,
+  STUDIO_ORIGIN,
+} from "./bridge.ts";
+import {
+  adoptCheckoutFolder,
+  awaitingSignIn,
+  bringOverWindowState,
+  carryOver,
+  checkoutRunOpen,
+  lockHeld,
+  signedInOnce,
+  skipWindowState,
+} from "./carry-over.ts";
+import {
+  APP_NAMES,
+  aboutVersion,
+  bundleMismatch,
+  claimsScheme,
+  configFor,
+  testBuild,
+} from "./config.ts";
+import { contentSecurityPolicy } from "./csp.ts";
+import { dataFolder, removeOnceExited } from "./data-folder.ts";
+import { linksIn, parseDeepLink } from "./deep-links.ts";
+import { launchOnce, recordLaunch } from "./launches.ts";
+import { removeLegacyFor, runProgram, takeWelcome1x } from "./legacy.ts";
+import { registerAppImage } from "./linux.ts";
+import { startMainTelemetry } from "./main-telemetry.ts";
+import { buildMenu, setSignedIn } from "./menu.ts";
+import { externalLink, isStudio } from "./navigation.ts";
+import {
+  createNotifier,
+  deviceNameOf,
+  installIdIn,
+  type NotificationClass,
+  type Notifier,
+} from "./notifications.ts";
+import { clientPlatform, type MainSession, mainSession } from "./session.ts";
+import { sessionFileStorage } from "./session-file.ts";
+import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
+import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
+import { requestIdOf, type SupportFacts } from "./support.ts";
+import { telemetryOffBecause, writeUsageSharing } from "./telemetry-consent.ts";
+import { memoryStorage, tokenStorage } from "./token-store.ts";
+import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
+import { createMainWindow } from "./window.ts";
 
 /*
- * GPU memory. Chromium sizes the tile budget from the whole screen, not the
- * window: about 1.2 GB per 2056×1329@2x screen, up to a quarter of RAM, so a
- * big display hands one canvas several GB of tiles it never needs (a tall
- * page can hold over 2 GB). 4 GB keeps that in check while leaving room for a
- * page of heavy boards (blurs, loops) mid-zoom: at Chromium's 512 MB floor,
- * tiles that didn't fit could draw as nothing for a frame. The discardable limit
- * caps Skia's glyph, path and image caches in the GPU process (256 MB by
- * default, and Graphite keeps a copy per backend).
- * Skia Graphite stays on: on macOS, turning it off doesn't fall back to GPU
- * raster but to software compositing, which halves frame rates on filters.
+ * Ponzu's main process: a window onto the studio, the session, links and updates. There is no
+ * local server: the studio talks to Ponzu Cloud itself, with an access token it borrows from here.
+ */
+
+/*
+ * Where this build talks to was baked in by scripts/build.ts. A test build given an override it
+ * can't use (PONZU_ENVIRONMENT_OVERRIDE) stops here rather than talk to the baked one instead.
+ */
+const config = (() => {
+  try {
+    return configFor(app.isPackaged, process.env);
+  } catch (error) {
+    const why = error instanceof Error ? error.message : String(error);
+    console.error(why);
+    if (!smoke) dialog.showErrorBox("Ponzu can't start", why);
+    process.exit(1);
+  }
+})();
+
+/*
+ * Ponzu Dev and Ponzu Local (a run from a checkout) are apps of their own: their own data folder,
+ * keychain item ("Ponzu Dev Safe Storage", "Ponzu Local Safe Storage") and single-instance lock,
+ * so none reads, refreshes or replaces another's session, nor quits because another is running.
+ * The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
+ * All of it before anything reads the name or the folder, and only once the bundle and the main
+ * process agree on which app this is (`bundleMismatch`).
+ */
+const mismatch = bundleMismatch(app.isPackaged, app.name, config);
+if (mismatch) {
+  console.error(mismatch);
+  // The smoke check's caller reads the exit code; a person needs to be told.
+  if (!smoke) dialog.showErrorBox("Ponzu can't start", mismatch);
+  process.exit(1);
+}
+if (app.name !== config.appName) app.setName(config.appName);
+const userData = dataFolder(app.getPath("appData"), config.appName, { smoke });
+app.setPath("userData", userData);
+app.setPath("sessionData", userData);
+// Removed by a shell once this process is gone, however the check ends: a verdict, a crash or
+// the caller's timeout (data-folder.ts).
+if (smoke) removeOnceExited(userData);
+
+/*
+ * The first launch after the rename (carry-over.ts): Ponzu Dev takes what it safely can from
+ * Ponzu Preview, and each of it and Ponzu Local sees that a checkout run's old "Ponzu Dev" folder
+ * ends up as Ponzu Local's. Before the instance lock, which lives in the folder; never in the
+ * smoke check, which touches nobody's folders. A failure is logged and the app starts as new.
+ */
+const carryOverHost = { appData: app.getPath("appData"), running: lockHeld, now: () => new Date() };
+const asPonzuDev = !smoke && app.isPackaged && config.appName === APP_NAMES.dev;
+if (asPonzuDev && checkoutRunOpen(carryOverHost)) {
+  // It would share Ponzu Dev's lock, folder and session; quitting it is the person's call.
+  dialog.showErrorBox(
+    "Quit the older Ponzu Dev first",
+    "A Ponzu run from a checkout made before the rename is open, and it is also called Ponzu Dev. Quit it, update that checkout, and open Ponzu Dev again.",
+  );
+  process.exit(1);
+}
+/** Ponzu Preview was open at the first launch: its window state waits on the person (below). */
+let previewOpen = false;
+if (!smoke) {
+  try {
+    if (!app.isPackaged) {
+      const adopted = adoptCheckoutFolder(carryOverHost);
+      if (adopted) console.log(`Moved the checkout run's "Ponzu Dev" folder to ${adopted}.`);
+    } else if (asPonzuDev) {
+      const done = carryOver(carryOverHost);
+      if (done) console.log(`First launch as Ponzu Dev: ${JSON.stringify(done)}`);
+      previewOpen = done?.windowState === "running";
+    }
+  } catch (error) {
+    console.error(`Couldn't carry over the earlier app's data: ${error}`);
+  }
+}
+/** Window state carried over from Ponzu Preview, kept while signed out until the first sign-in. */
+let keepCarriedOver = !smoke && awaitingSignIn(userData);
+
+/**
+ * Ponzu Preview is open, so its window state can't be copied mid-write: the person quits it and
+ * tries again, or goes on without it. Before anything opens the studio's storage. Quitting Ponzu
+ * Dev here instead asks again next time.
+ */
+async function waitForPonzuPreview(): Promise<void> {
+  while (previewOpen) {
+    const { response } = await dialog.showMessageBox({
+      type: "info",
+      message: "Ponzu Preview is open",
+      detail:
+        "Quit Ponzu Preview, then choose Try Again, and Ponzu Dev opens the way you left it: the same workspace and canvas, sidebar and filters.",
+      buttons: ["Try Again", "Continue Without"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 1) {
+      skipWindowState(userData);
+      previewOpen = false;
+      break;
+    }
+    try {
+      previewOpen = bringOverWindowState(carryOverHost).windowState === "running";
+    } catch (error) {
+      console.error(`Couldn't carry over Ponzu Preview's window state: ${error}`);
+      previewOpen = false;
+    }
+  }
+  keepCarriedOver = awaitingSignIn(userData);
+}
+
+/*
+ * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
+ * program on the computer. A release refuses to start with one; the fuses (package.json) close
+ * Node's own inspector and ELECTRON_RUN_AS_NODE the same way.
+ */
+if (
+  !config.remoteDebugging &&
+  (app.commandLine.hasSwitch("remote-debugging-port") ||
+    app.commandLine.hasSwitch("remote-debugging-pipe"))
+) {
+  console.error("Ponzu doesn't open a remote debugging port.");
+  process.exit(1);
+}
+
+/** The built main and preload live in <app>/dist, in development and inside the bundle. */
+const here = join(app.getAppPath(), "dist");
+const studioRoot = app.isPackaged
+  ? join(process.resourcesPath, "studio")
+  : join(app.getAppPath(), "../studio/dist");
+const studioOrigins = [STUDIO_ORIGIN, ...(config.studioDevUrl ? [config.studioDevUrl] : [])];
+
+/*
+ * Usage analytics and error tracking (docs/analytics.md): only when this build has a PostHog
+ * project, the smoke check isn't running, and the person hasn't said no the ways 1.x heard.
+ * Otherwise nothing of PostHog loads here or in the studio, and the policy reaches none of it.
+ */
+const offBecause = telemetryOffBecause(process.env, homedir());
+const posthog = config.posthog && !smoke && !offBecause ? config.posthog : null;
+if (config.posthog && offBecause && !smoke) console.log(`Usage analytics off: ${offBecause}.`);
+const csp = contentSecurityPolicy({ ...config, posthog });
+/** This launch's facts, handed to the first window only (`launchOnce`). */
+const takeLaunch = launchOnce(
+  posthog
+    ? recordLaunch(join(userData, "launches.json"), app.getVersion())
+    : { first: false, updatedFrom: null },
+);
+/** What every event from this build carries, the main process's and the studio's. */
+const buildProperties = {
+  app_version: app.getVersion(),
+  channel: config.appName,
+  platform: process.platform,
+  os_version: process.getSystemVersion(),
+  environment: config.environment,
+  app_commit: config.commit,
+};
+/** What a new window is told about analytics; the launch's facts go to the first one only. */
+const analyticsFor = (): AnalyticsSetup | null =>
+  posthog
+    ? {
+        key: posthog.key,
+        host: posthog.host,
+        replay: posthog.replay,
+        channel: config.appName,
+        osVersion: buildProperties.os_version,
+        environment: config.environment,
+        commit: config.commit,
+        launch: takeLaunch(),
+      }
+    : null;
+/** Who the main process's errors are put down to: set once the session is read. */
+let signedInUser: () => string | null = () => null;
+const telemetry = posthog
+  ? startMainTelemetry({
+      posthog,
+      properties: buildProperties,
+      userId: () => signedInUser(),
+      home: homedir(),
+    })
+  : null;
+/** The person turned Share usage data off while Ponzu ran: the main process reports no more. */
+let telemetryStopped = false;
+
+/**
+ * What this install is to the API, for the Mac's own notifications (notifications.ts): an id made
+ * once in the app's data folder, and the computer's name. Read when the first window opens.
+ */
+let device: { installId: string; name: string | null } | null = null;
+function deviceFacts() {
+  device ??= {
+    installId: installIdIn(join(userData, "install-id")),
+    name: deviceNameOf(computerName()),
+  };
+  return device;
+}
+
+/**
+ * The name the person gave this computer ("Maya's MacBook Pro", System Settings › General ›
+ * About), which `os.hostname()` gives only as a host name ("Mayas-MacBook-Pro.local"). Read
+ * once; the host name stands in when it can't be.
+ */
+function computerName(): string {
+  if (process.platform === "darwin") {
+    try {
+      const name = execFileSync("/usr/sbin/scutil", ["--get", "ComputerName"], {
+        encoding: "utf8",
+        timeout: 1000,
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (name) return name;
+    } catch {
+      // No name kept, or scutil missing: the host name.
+    }
+  }
+  return hostname();
+}
+
+let mainWindow: BrowserWindow | null = null;
+/** Links that arrived before the studio listened for them. */
+const pendingLinks: DeepLink[] = [];
+/** The studio's listeners for links: none while signed out, when links wait here. */
+let linkListeners = 0;
+
+// A standard, secure scheme of our own: one origin for the studio's storage and the API's CORS.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: STUDIO_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true },
+  },
+]);
+
+/*
+ * GPU memory. Chromium sizes the tile budget from the whole screen, not the window: about 1.2 GB
+ * per 2056×1329@2x screen, up to a quarter of RAM, so a big display hands one canvas several GB
+ * of tiles it never needs. 4 GB keeps that in check while leaving room for a page of heavy
+ * boards mid-zoom. The discardable limit caps Skia's glyph, path and image caches in the GPU
+ * process. Skia Graphite stays on: on macOS, turning it off falls back to software compositing.
  */
 app.commandLine.appendSwitch("force-gpu-mem-available-mb", "4096");
 app.commandLine.appendSwitch("force-gpu-mem-discardable-limit-mb", "64");
 
 /* ------------------------------------------------------------------ */
-/* The local Ponzu server                                             */
+/* The studio                                                          */
 /* ------------------------------------------------------------------ */
 
-/**
- * Where the server starts. Never a folder macOS guards (Documents, Desktop):
- * reading one asks "Ponzu would like to access files in your Documents
- * folder" before anyone has asked Ponzu for anything. The home screen finds
- * designs through Spotlight, wherever they are.
- */
-function serverCwd(): string {
-  return app.getPath("userData");
-}
-
-function startServer(
-  renderEndpoint: string,
-  port: number,
-  updater: { endpoint: string; token: string } | null,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const bin = paths.server;
-    const [cmd, args] = existsSync(bin)
-      ? [bin, []]
-      : ["bun", [join(here, "../../cli/src/index.ts")]];
-    const child = spawn(
-      cmd,
-      [...args, "serve", "--no-open", "--port", String(port), "--studio", paths.studio],
-      {
-        cwd: serverCwd(),
-        env: {
-          ...process.env,
-          PONZU_DESKTOP: "1",
-          PONZU_LAUNCHED_BY: background ? "agent" : "person",
-          ...(update ? { PONZU_UPDATE: update } : {}),
-          // Development and the smoke check aren't anyone using Ponzu.
-          ...(isDev || smoke ? { PONZU_TELEMETRY: "0" } : {}),
-          // The smoke check proves the bundled server can open its catalog database.
-          ...(smoke ? { PONZU_DB_STRICT: "1" } : {}),
-          PONZU_RENDER_ENDPOINT: renderEndpoint,
-          PONZU_RENDER_TOKEN: renderToken,
-          ...(updater
-            ? { PONZU_APP_ENDPOINT: updater.endpoint, PONZU_APP_TOKEN: updater.token }
-            : {}),
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    server = child;
-    let settled = false;
-    child.stdout?.on("data", (d: Buffer) => {
-      const m = /PONZU_READY (.+)/.exec(d.toString());
-      if (m && !settled) {
-        settled = true;
-        resolve((JSON.parse(m[1]!) as { url: string }).url);
-      }
-    });
-    let stderr = "";
-    child.stderr?.on("data", (d: Buffer) => {
-      stderr += d.toString();
-    });
-    child.once("exit", (code: number | null) => {
-      if (!settled) {
-        settled = true;
-        reject(new Error(stderr || `server exited with ${code}`));
-      }
-    });
+async function serveStudio(request: Request): Promise<Response> {
+  const file = studioFile(studioRoot, request.url);
+  if (!file) return new Response("Not found", { status: 404 });
+  return new Response(await readFile(file.path), {
+    headers: {
+      "content-type": file.type,
+      "content-security-policy": csp,
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-cache",
+    },
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* Agents                                                              */
-/* ------------------------------------------------------------------ */
-
-/**
- * Register Ponzu with the agents on this Mac (`ponzu install --auto`): new
- * ones get it, and old fixed-URL setups move to the command that runs inside
- * this app. The command reaches the app through a shim, so it updates with it.
- */
-function setupAgents() {
-  if (isDev && !process.env.PONZU_SETUP_AGENTS) return;
-  if (!existsSync(paths.server)) return;
-  const child = spawn(paths.server, ["install", "--auto"], { stdio: "ignore" });
-  child.on("error", () => {});
-}
-
-/**
- * The wake helper (`ponzu wake install`): a LaunchAgent, or on Linux a systemd user socket,
- * that starts Ponzu in the background when the iPhone app knocks on port 7778. Installed builds
- * only, on every launch, so it follows the app when it moves; unchanged, it's left alone.
- */
-function setupWake() {
-  if ((process.platform !== "darwin" && process.platform !== "linux") || isDev) return;
-  if (!existsSync(paths.server)) return;
-  const child = spawn(paths.server, ["wake", "install"], { stdio: "ignore" });
-  child.on("error", () => {});
-}
-
-/**
- * Ponzu › Install Terminal Command…: `ponzu` in /usr/local/bin, which macOS asks
- * an admin's password to write. The launch check links it without asking where
- * the person's shell searches a folder of their own (apps/cli/src/command.ts);
- * this is for a Mac where none does. It links the shim that check writes, so
- * the command updates with the app.
- */
-async function installCommand() {
-  const shim = join(process.env.PONZU_HOME ?? join(homedir(), ".ponzu"), "bin/ponzu");
-  const link = "/usr/local/bin/ponzu";
-  const ours = (p: string) => {
-    try {
-      return realpathSync(p) === realpathSync(shim);
-    } catch {
-      return false;
-    }
-  };
-  if (!existsSync(shim)) {
-    dialog.showErrorBox(
-      "Ponzu can't install its command yet",
-      "Move Ponzu to your Applications folder and open it from there, then try again.",
-    );
-    return;
-  }
-  const installed = [join(homedir(), ".local/bin/ponzu"), join(homedir(), "bin/ponzu"), link].find(
-    ours,
-  );
-  if (installed) {
-    await dialog.showMessageBox({
-      message: "The ponzu command is installed",
-      detail: `It's at ${installed}. Open a new terminal window and run ponzu.`,
-    });
-    return;
-  }
-  if (lstatSync(link, { throwIfNoEntry: false })) {
-    const { response } = await dialog.showMessageBox({
-      type: "warning",
-      message: `Replace ${link}?`,
-      detail: "Another ponzu command is installed there.",
-      buttons: ["Replace", "Cancel"],
-      defaultId: 1,
-      cancelId: 1,
-    });
-    if (response !== 0) return;
-  }
-  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-  const command = `mkdir -p /usr/local/bin && ln -sf ${quote(shim)} ${link}`;
-  const script = `do shell script "${command.replace(/[\\"]/g, "\\$&")}" with administrator privileges`;
-  execFile("osascript", ["-e", script], async (err, _out, stderr) => {
-    // -128: the person cancelled the password prompt.
-    if (err && !stderr.includes("(-128)"))
-      dialog.showErrorBox("Ponzu couldn't install its command", stderr || String(err));
-    else if (!err)
-      await dialog.showMessageBox({
-        message: "The ponzu command is installed",
-        detail: "Open a new terminal window and run ponzu.",
-      });
-  });
-}
-
-/** With no window open, quit once agents have been quiet a while. Updates install on quit. */
-const IDLE_QUIT = 15 * 60_000;
-const IDLE_QUIT_UPDATE = 60_000;
-function watchIdle() {
-  setInterval(async () => {
-    if (mainWindow || !serverUrl) return;
-    try {
-      const res = await fetch(`${serverUrl}/api/info`);
-      const { idle } = (await res.json()) as { idle?: number };
-      if (idle !== undefined && idle * 1000 >= (updateReady ? IDLE_QUIT_UPDATE : IDLE_QUIT))
-        app.quit();
-    } catch {}
-  }, 30_000);
-}
-
-/* ------------------------------------------------------------------ */
-/* Windows                                                             */
-/* ------------------------------------------------------------------ */
-
-/**
- * What the window shows while the server starts: the slice, its segments
- * fading in turn, faded in only if the start takes long enough to notice.
- * Self-contained, so it paints before anything else is up. The segments are
- * `SLICE` from @ponzu/react.
- */
-function splashUrl() {
-  const segments = [
-    "M36 25.07L36 4.99A27.3 27.3 0 0 1 53.39 15.03Z",
-    "M40 32L57.39 21.96A27.3 27.3 0 0 1 57.39 42.04Z",
-    "M36 38.93L53.39 48.97A27.3 27.3 0 0 1 36 59.01Z",
-    "M28 38.93L28 59.01A27.3 27.3 0 0 1 10.61 48.97Z",
-    "M24 32L6.61 42.04A27.3 27.3 0 0 1 6.61 21.96Z",
-    "M28 25.07L10.61 15.03A27.3 27.3 0 0 1 28 4.99Z",
-  ]
-    .map((d, i) => `<path d="${d}" style="animation-delay:${i * 0.2 - 1.2}s"/>`)
-    .join("");
-  const html = `<!doctype html><meta charset="utf-8"><style>
-:root{color-scheme:light dark;background:#e8e6e0}
-@media (prefers-color-scheme:dark){:root{background:#0e0e0d}}
-body{margin:0;height:100vh;display:grid;place-items:center;-webkit-app-region:drag}
-svg{opacity:0;animation:in .3s ease-out .3s forwards}
-path{animation:juice 1.2s linear infinite both}
-@keyframes in{to{opacity:1}}
-@keyframes juice{0%,100%{opacity:1}70%{opacity:.16}}
-@media (prefers-reduced-motion:reduce){svg{opacity:1;animation:none}path{animation:none}}
-</style><svg width="44" height="44" viewBox="0 0 64 64"><g fill="#FFC81E" stroke="#FFC81E" stroke-width="3.4" stroke-linejoin="round">${segments}</g></svg>`;
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-}
-
-/** A window on the splash, until the server is up. */
-let splashing = false;
-
-/**
- * Windows draws its caption buttons over the studio's title bar, in its colours: the studio's
- * `--background` and `--foreground`, and its header's 40px.
- */
-const titleBarOverlay = (): Electron.TitleBarOverlayOptions => ({
-  color: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
-  symbolColor: nativeTheme.shouldUseDarkColors ? "#f4f3ef" : "#111110",
-  height: 40,
-});
-
-/**
- * The window's frame. The Mac's traffic lights and Windows' caption buttons sit in the
- * studio's title bar, which leaves room for them; Linux keeps its own title bar and menus.
- */
-function chrome(): Electron.BrowserWindowConstructorOptions {
-  if (process.platform === "darwin")
-    return { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 13 } };
-  if (process.platform === "win32")
-    return { titleBarStyle: "hidden", titleBarOverlay: titleBarOverlay() };
-  return {};
-}
-
-function createWindow(url: string) {
-  const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 720,
-    minHeight: 480,
-    ...chrome(),
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
-    show: false,
-    webPreferences: { preload: paths.preload, contextIsolation: true, sandbox: true },
-  });
-  // The smoke check only needs the window painted, never on screen.
-  win.once("ready-to-show", () => !smoke && win.show());
-  win.on("closed", () => {
-    if (mainWindow === win) mainWindow = null;
-  });
-  watchSmoke(win, () => server?.kill("SIGTERM"));
-  // A file dropped where nothing takes it would load in place of the studio.
-  if (process.platform !== "darwin")
-    win.webContents.on("will-navigate", (e, target) => {
-      if (target.startsWith("file:")) e.preventDefault();
-    });
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    void shell.openExternal(target);
-    return { action: "deny" };
-  });
-  void win.loadURL(url);
-  return win;
-}
-
-/** Bring up the canvas, and the dock icon if an agent started us in the background. */
 function showWindow() {
-  if (!serverUrl) return;
-  if (process.platform === "darwin") void app.dock?.show();
-  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow(serverUrl);
-  else if (splashing) void mainWindow.loadURL(serverUrl);
-  else mainWindow.show();
-  splashing = false;
-  mainWindow.focus();
-}
-
-/**
- * Ponzu › Pair iPhone… before the studio could hear it: a window just created, or still
- * on the splash. The studio claims it as it starts listening.
- */
-let pairPending = false;
-
-/** Ponzu › Pair iPhone…: the studio shows a code the phone app scans. */
-function pairIphone() {
-  showWindow();
-  const win = mainWindow;
-  if (serverUrl && win && !splashing && !win.webContents.isLoading())
-    win.webContents.send("ponzu:pair-iphone");
-  else pairPending = true;
-}
-
-async function openDesign(path: string, at: LinkAt = {}) {
-  if (!serverUrl) {
-    pendingOpens.push(path);
-    return;
-  }
-  showWindow();
-  if (!mainWindow) return;
-  await fetch(`${serverUrl}/api/files`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, by: "person" }),
-  });
-  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}${linkQuery(at)}`);
-  app.addRecentDocument(path);
-  mainWindow.focus();
-}
-
-/** Where in a design a link opens: a page, an artboard, or both (@ponzu/core's linkTarget). */
-type LinkAt = { page?: string; artboard?: string };
-
-/** The studio's query for a link's page and artboard, after its file. */
-function linkQuery({ page, artboard }: LinkAt): string {
-  return (
-    (page ? `&page=${encodeURIComponent(page)}` : "") +
-    (artboard ? `&artboard=${encodeURIComponent(artboard)}` : "")
-  );
-}
-
-/**
- * A design on another of the person's Macs, in a tab through this Mac's relay to it: the studio
- * names those tabs `/peers/<name>` and the path, a line apart.
- */
-async function openPeerDesign(mac: string, path: string, at: LinkAt = {}) {
-  showWindow();
-  if (!mainWindow) return;
-  const tab = `/peers/${encodeURIComponent(mac)}\n${path}`;
-  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(tab)}${linkQuery(at)}`);
-  mainWindow.focus();
-}
-
-/**
- * Which Mac a link's design is on: "local" for this one, another's tailnet name, or null when
- * none Ponzu can reach has it. A link names its Mac; one from before links did is looked for here
- * first, then on the person's other Macs. `reached` says whether the named Mac answered: this
- * one, or one listed in the catalog.
- */
-async function locate(
-  mac: string | undefined,
-  path: string,
-): Promise<{ at: string | null; reached: boolean }> {
-  const here = existsSync(join(path, "design.json"));
-  const get = <T>(route: string) =>
-    fetch(`${serverUrl}${route}`)
-      .then((r) => r.json() as Promise<T>)
-      .catch(() => null);
-  const [catalog, info] = await Promise.all([
-    get<Catalog>("/api/catalog"),
-    get<{ machine?: { name?: string | null } }>("/api/info"),
-  ]);
-  const reached =
-    !mac || mac === info?.machine?.name || Boolean(catalog?.machines.some((m) => m.id === mac));
-  const on = new Set(catalog?.files.filter((f) => f.key === path).map((f) => f.machine));
-  if (mac && on.has(mac)) return { at: mac, reached };
-  if (here) return { at: "local", reached };
-  // Its Mac is off or not on this tailnet: another of the person's Macs may have the same folder.
-  return { at: [...on].find((m) => m !== "local") ?? null, reached };
-}
-
-/**
- * A ponzu:// link. `ponzu://open?mac=<name>&file=<path>.design&page=<id>&artboard=<id>`, from an
- * agent handing over its work: open that design, on that page or artboard, from the Mac it's on:
- * this one, or another of the person's over Tailscale. Only one that's already there: a link never makes a
- * folder.
- *
- * `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=<path>.design`, from ponzu.design's Open in
- * Ponzu button: clone the repo into ~/Ponzu (or fetch the clone there), check out the ref, and
- * open the design. The link is checked in @ponzu/server/clone before git sees any of it.
- */
-async function openLink(url: string) {
-  const local = parseDesignLink(url);
-  if (local) {
-    if (!serverUrl) {
-      pendingLinks.push(url);
-      return;
-    }
-    const { at, reached } = await locate(local.mac, local.path);
-    if (at === "local") await openDesign(local.path, local);
-    else if (at) await openPeerDesign(at, local.path, local);
-    // Only a Mac that didn't answer is unreachable; one that did just doesn't have it.
-    else if (local.mac && !reached)
-      dialog.showErrorBox(
-        `Ponzu can't reach ${local.mac}`,
-        `${local.path} is on ${local.mac}. Open it once that Mac is on and running Tailscale.`,
-      );
-    else
-      dialog.showErrorBox(
-        "Ponzu can't find that design",
-        local.mac ? `${local.path} isn't on ${local.mac}.` : local.path,
-      );
-    return;
-  }
-  const target = parseOpenUrl(url);
-  if (!target) {
-    dialog.showErrorBox("Ponzu can't open that link", url);
-    return;
-  }
-  showWindow();
-  try {
-    const { path } = await cloneTarget(target, spawnGit("ignore"));
-    await openDesign(path);
-  } catch (err) {
-    dialog.showErrorBox(
-      `Ponzu couldn't open ${target.owner}/${target.repo}`,
-      err instanceof Error ? err.message : String(err),
-    );
-  }
-}
-
-async function pickDesign(): Promise<string | null> {
-  // Windows and Linux pick a file or a folder, not either: a design is a folder.
-  if (process.platform !== "darwin") {
-    const res = await dialog.showOpenDialog(mainWindow!, {
-      title: "Open a .design folder",
-      properties: ["openDirectory"],
-    });
-    const p = res.filePaths[0];
-    return p ? designPath(p) : null;
-  }
-  const res = await dialog.showOpenDialog(mainWindow!, {
-    title: "Open a .design",
-    properties: ["openFile", "openDirectory"],
-    filters: [{ name: "Ponzu Design", extensions: ["design"] }],
-  });
-  const p = res.filePaths[0];
-  return p && p.endsWith(".design") ? p : null;
-}
-
-async function newDesign(): Promise<string | null> {
-  const res = await dialog.showSaveDialog(mainWindow!, {
-    title: "New design",
-    defaultPath: join(app.getPath("documents"), "Untitled.design"),
-    buttonLabel: "Create",
-  });
-  if (res.canceled || !res.filePath) return null;
-  return res.filePath.endsWith(".design") ? res.filePath : `${res.filePath}.design`;
-}
-
-ipcMain.handle("ponzu:open-folder", () => pickDesign());
-ipcMain.handle("ponzu:new-file", () => newDesign());
-ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
-/** Windows and Linux: which of the paths dropped on the window are designs (preload.ts). */
-ipcMain.on("ponzu:designs", (e, paths: string[]) => {
-  e.returnValue = paths.map(designPath).filter((p): p is string => Boolean(p));
-});
-/** Then open them, one after another: each loads in the same window. */
-ipcMain.on("ponzu:open-designs", (_e, designs: string[]) => void openAll(designs));
-
-async function openAll(designs: readonly string[]) {
-  for (const design of designs) await openDesign(design);
-}
-ipcMain.handle("ponzu:pair-iphone-pending", () => {
-  const pending = pairPending;
-  pairPending = false;
-  return pending;
-});
-ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
-
-/** Check for Updates… and Pair iPhone…: the Mac's app menu, and Help and the tray elsewhere. */
-function appItems(): Electron.MenuItemConstructorOptions[] {
-  return [
-    {
-      label: "Check for Updates…",
-      click: () => {
-        showWindow();
-        if (mainWindow) void checkForUpdatesNow(mainWindow);
+  if (!app.isReady()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    const analytics = analyticsFor();
+    mainWindow = createMainWindow({
+      url: config.studioDevUrl ?? `${STUDIO_ORIGIN}/`,
+      preload: join(here, "preload.cjs"),
+      studio: studioOrigins,
+      hidden: smoke,
+      devTools: config.remoteDebugging,
+      args: {
+        version: app.getVersion(),
+        api: config.apiUrl,
+        client: clientPlatform(),
+        dev: app.isPackaged ? "0" : "1",
+        scheme: config.linkScheme ?? "",
+        ...(analytics ? { analytics: encodeURIComponent(JSON.stringify(analytics)) } : {}),
+        // The Mac's own notifications: whether the system shows any, and this install.
+        notify: !smoke && Notification.isSupported() ? "1" : "0",
+        install: deviceFacts().installId,
+        device: encodeURIComponent(deviceFacts().name ?? ""),
       },
-    },
-    { label: "Pair iPhone…", click: () => pairIphone() },
-  ];
+    });
+    const win = mainWindow;
+    win.on("closed", () => {
+      if (mainWindow === win) mainWindow = null;
+    });
+    // A reload or a crash starts the studio again; it asks for queued links when it listens.
+    win.webContents.on("did-start-navigation", ({ isMainFrame, isSameDocument }) => {
+      if (isMainFrame && !isSameDocument) linkListeners = 0;
+    });
+    win.webContents.on("render-process-gone", (_event, details) => {
+      if (!smoke && details.reason !== "clean-exit") win.reload();
+    });
+    if (smoke) watchSmoke(win);
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 /**
- * Windows and Linux: Ponzu in the tray. Closing its last window leaves it serving agents, the
- * iPhone and the person's other computers, as the Mac's dock does, until they quit it here or
- * agents go quiet (watchIdle).
+ * Ponzu in front of whatever the person was in (the browser, as a sign-in or an install comes
+ * back). A Mac only lets an app take the focus from another when it asks to steal it.
  */
-let tray: Tray | null = null;
-function createTray() {
-  if (process.platform === "darwin" || tray) return;
-  // Linux's trays scale the icon to the panel themselves; Windows' takes 16px, and @2x beside it.
-  const icon = nativeImage.createFromPath(
-    join(paths.tray, process.platform === "win32" ? "tray.png" : "tray@2x.png"),
-  );
-  tray = new Tray(icon);
-  tray.setToolTip("Ponzu");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Open Ponzu", click: () => showWindow() },
-      { type: "separator" },
-      ...appItems(),
-      { type: "separator" },
-      { label: "Quit Ponzu", click: () => app.quit() },
-    ]),
-  );
-  // Windows: a click opens the window, as the right-click menu's first item does.
-  tray.on("click", () => showWindow());
+function comeForward() {
+  if (process.platform === "darwin") app.focus({ steal: true });
+  showWindow();
 }
 
-function buildMenu() {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin"
-      ? [
-          {
-            label: app.name,
-            submenu: [
-              { role: "about" as const },
-              ...appItems(),
-              { label: "Install Terminal Command…", click: () => void installCommand() },
-              { type: "separator" as const },
-              { role: "services" as const },
-              { type: "separator" as const },
-              { role: "hide" as const },
-              { role: "hideOthers" as const },
-              { role: "unhide" as const },
-              { type: "separator" as const },
-              { role: "quit" as const },
-            ],
-          },
-        ]
-      : []),
-    {
-      label: "File",
-      submenu: [
-        {
-          label: "New Design…",
-          accelerator: "CmdOrCtrl+N",
-          click: async () => {
-            const p = await newDesign();
-            if (p) await openDesign(p);
-          },
-        },
-        {
-          label: "Open…",
-          accelerator: "CmdOrCtrl+O",
-          click: async () => {
-            const p = await pickDesign();
-            if (p) await openDesign(p);
-          },
-        },
-        {
-          role: "recentDocuments",
-          submenu: [{ role: "clearRecentDocuments" }],
-        } as Electron.MenuItemConstructorOptions,
-        { type: "separator" },
-        {
-          label: "Copy MCP URL",
-          click: () => serverUrl && clipboard.writeText(`${serverUrl}/mcp`),
-        },
-        { type: "separator" },
-        {
-          label: "Close Tab",
-          accelerator: "CmdOrCtrl+W",
-          click: (_item, win) => {
-            if (win instanceof BrowserWindow) win.webContents.send("ponzu:close-tab");
-          },
-        },
-        { role: "close", accelerator: "CmdOrCtrl+Shift+W" },
-      ],
+function send(channel: string, ...args: unknown[]) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
+}
+
+/** A link in this app's scheme: the studio acts on it once it's listening. Anything else is dropped. */
+function openLink(url: string) {
+  const link = config.linkScheme ? parseDeepLink(url, config.linkScheme) : null;
+  if (link) followLink(link);
+}
+
+/** A link the studio acts on once it's listening: from a `ponzu://` link, or a banner clicked. */
+function followLink(link: DeepLink) {
+  // Its kind only: what a link names stays out of the log.
+  console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
+  showWindow();
+  if (linkListeners > 0) send(CHANNELS.link, link);
+  else pendingLinks.push(link);
+}
+
+/**
+ * The Mac's own banners and the dock's badge (notifications.ts), shown as the studio asks. A
+ * click brings Ponzu forward and hands the banner's link to the studio like any other link.
+ * The smoke check shows none.
+ */
+let notifier: Notifier | null = null;
+function notifications(): Notifier {
+  notifier ??= createNotifier({
+    Notification: Notification satisfies NotificationClass,
+    setBadge: (count) => {
+      if (!smoke) app.setBadgeCount(count);
     },
-    { role: "editMenu" },
-    {
-      label: "View",
-      submenu: [
-        { role: "reload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-      ],
+    open: (link) => {
+      comeForward();
+      followLink(link);
     },
-    { role: "windowMenu" },
-    {
-      role: "help",
-      submenu: [
-        { label: "ponzu.design", click: () => shell.openExternal("https://ponzu.design") },
-        // Off the Mac, there's no app menu to hold these.
-        ...(process.platform === "darwin" ? [] : [{ type: "separator" as const }, ...appItems()]),
-      ],
+    failed: (id) => send(CHANNELS.notifyFailed, id),
+  });
+  return notifier;
+}
+
+/* ------------------------------------------------------------------ */
+/* IPC: only the studio, in the main window's top frame                */
+/* ------------------------------------------------------------------ */
+
+function fromStudio(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  const top = event.sender.mainFrame;
+  return (
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender.id === mainWindow.webContents.id &&
+    frame !== null &&
+    frame.processId === top.processId &&
+    frame.routingId === top.routingId &&
+    isStudio(frame.url, studioOrigins)
+  );
+}
+
+function handle(channel: string, answer: (...args: unknown[]) => unknown) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!fromStudio(event)) {
+      throw new Error(
+        `Only the studio may ask that, not ${event.senderFrame?.url ?? "a closed frame"}.`,
+      );
+    }
+    return answer(...args);
+  });
+}
+
+function listen(channel: string, act: (...args: unknown[]) => void) {
+  ipcMain.on(channel, (event, ...args) => {
+    if (fromStudio(event)) act(...args);
+  });
+}
+
+function registerIpc(session: MainSession, updater: Updates) {
+  handle(CHANNELS.sessionState, () => session.session.getState());
+  handle(CHANNELS.sessionPersistence, () => session.persistence());
+  handle(CHANNELS.accessToken, (rejected) =>
+    session.accessToken(typeof rejected === "string" ? rejected : undefined),
+  );
+  listen(CHANNELS.report, (error) => {
+    if (isBridgeError(error)) session.report(error);
+  });
+  handle(CHANNELS.signIn, () => session.signIn());
+  handle(CHANNELS.signOut, () => session.session.signOut());
+  handle(CHANNELS.links, () => {
+    linkListeners++;
+    return pendingLinks.splice(0);
+  });
+  listen(CHANNELS.linksStop, () => {
+    linkListeners = Math.max(0, linkListeners - 1);
+  });
+  handle(CHANNELS.updateState, () => updater.state());
+  listen(CHANNELS.updateCheck, () => updater.check());
+  listen(CHANNELS.updateInstall, () => updater.install());
+  listen(CHANNELS.openExternal, (url) => {
+    const link = typeof url === "string" ? externalLink(url) : null;
+    if (link) void shell.openExternal(link);
+  });
+  listen(CHANNELS.comeForward, () => comeForward());
+  listen(CHANNELS.notifyShow, (notice) => {
+    if (!smoke) notifications().show(notice);
+  });
+  listen(CHANNELS.notifyRemove, (ids) => notifications().remove(ids));
+  listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
+  handle(CHANNELS.welcome1x, () => welcome1x());
+  handle(CHANNELS.usageSharing, (enabled) => setUsageSharing(enabled === true));
+}
+
+/**
+ * Settings › Account › Share usage data, on this computer (docs/analytics.md, "Turning it
+ * off"): the file the next launch reads, and, when it is turned off, the main process's error
+ * reporting stopped now. The studio stops its own PostHog itself.
+ */
+async function setUsageSharing(enabled: boolean): Promise<boolean> {
+  // Off stops reporting first, so a file that can't be written never leaves it running.
+  let shutdown: Promise<void> | null = null;
+  if (!enabled && telemetry && !telemetryStopped) {
+    telemetryStopped = true;
+    // No error after this is reported; what was queued before the person said no is sent.
+    telemetry.stop();
+    shutdown = telemetry.shutdown();
+  }
+  // The file is written before anything is awaited, so changes land in the order they were
+  // made: a later "on" is never overwritten by an earlier "off" still shutting down.
+  try {
+    writeUsageSharing(homedir(), enabled);
+  } finally {
+    await shutdown;
+  }
+  // Whether the next launch reports: this build has a project, and nothing else says no.
+  return (
+    enabled && Boolean(config.posthog) && !smoke && !telemetryOffBecause(process.env, homedir())
+  );
+}
+
+function isBridgeError(value: unknown): value is BridgeError {
+  const error = value as Partial<BridgeError> | null;
+  return (
+    typeof error?.status === "number" &&
+    typeof error.code === "string" &&
+    typeof error.message === "string"
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* The session                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Where the tokens live: nowhere for the smoke check (it must never touch the keychain), a
+ * developer's saved session when a development or test build is given one, and otherwise the
+ * keychain.
+ */
+function sessionStorage() {
+  if (smoke) return { storage: memoryStorage(), persistence: () => "memory" as const };
+  const file = config.sessionFile;
+  if (file) {
+    console.warn(`Using the developer session saved in ${file}, unencrypted.`);
+    return { storage: sessionFileStorage(file), persistence: () => "file" as const };
+  }
+  return tokenStorage(join(app.getPath("userData"), "session.bin"), {
+    available: () =>
+      safeStorage.isEncryptionAvailable() &&
+      // Linux without a keyring "encrypts" with a key in the clear: as good as plain text.
+      !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
+    encrypt: (text) => safeStorage.encryptString(text),
+    decrypt: (data) => safeStorage.decryptString(data),
+  });
+}
+
+/** Signed out, or let go until GitHub lets the person in again: nobody's canvases belong here. */
+function endsSession(state: SessionState): boolean {
+  return state.status === "signed_out" || state.status === "github_reauth";
+}
+
+/**
+ * Everything the studio kept: the canvases last opened (whole documents, and the asset keys that
+ * open their files) and the person's window state. The studio stops writing them as it signs
+ * out (desktop-host.ts).
+ */
+async function forgetStudioData(): Promise<void> {
+  for (const origin of studioOrigins) {
+    await sessions.defaultSession
+      .clearStorageData({
+        origin,
+        storages: ["localstorage", "indexdb", "cachestorage", "serviceworkers"],
+      })
+      .catch((error: unknown) => console.error(`Couldn't clear the studio's data: ${error}`));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Ponzu 1.x                                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What the local app left on this computer, removed once, a moment after the release's first
+ * launch. Ponzu Dev and Ponzu Local leave it all alone (`removeLegacyFor`).
+ */
+function removeLegacySoon() {
+  if (!config.cleansUpLegacy || smoke) return;
+  setTimeout(async () => {
+    const steps = await removeLegacyFor(
+      config,
+      {
+        platform: process.platform,
+        home: homedir(),
+        env: process.env,
+        uid: process.getuid?.() ?? 0,
+        exists: existsSync,
+        run: runProgram,
+      },
+      join(app.getPath("userData"), "legacy-cleanup.json"),
+      app.getVersion(),
+    ).catch((error: unknown) => {
+      console.error(`Ponzu 1.x cleanup failed: ${error}`);
+      return null;
+    });
+    for (const step of steps ?? []) {
+      console.log(
+        `Ponzu 1.x cleanup: ${step.what}: ${step.outcome}${step.why ? ` (${step.why})` : ""}`,
+      );
+    }
+  }, 3000);
+}
+
+/**
+ * Whether the studio shows the welcome from 1.x: once, on a computer 1.x was on, in a release
+ * someone is using (never the smoke check or a test build), recorded in welcome-1x.json.
+ */
+function welcome1x(): boolean {
+  try {
+    return takeWelcome1x({
+      build: config,
+      driven: smoke || testBuild,
+      host: { home: homedir(), env: process.env, exists: existsSync },
+      legacyRecord: join(app.getPath("userData"), "legacy-cleanup.json"),
+      welcomeRecord: join(app.getPath("userData"), "welcome-1x.json"),
+      version: app.getVersion(),
+    });
+  } catch (error) {
+    console.error(`Couldn't tell whether Ponzu 1.x was here: ${error}`);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Support                                                             */
+/* ------------------------------------------------------------------ */
+
+/** The id of the API's last answer to the studio, for Help › Contact Support. Only the id. */
+let lastRequestId: string | null = null;
+
+/** Hear each answer the API gives the window, for its request id; nothing else of it is kept. */
+function watchRequestIds() {
+  // Every http(s) answer, then only the API's: a pattern with a port in it (Ponzu Local's
+  // localhost API) isn't one webRequest takes.
+  const api = new URL(config.apiUrl).origin;
+  sessions.defaultSession.webRequest.onCompleted(
+    { urls: ["https://*/*", "http://*/*"] },
+    (details) => {
+      if (!URL.canParse(details.url) || new URL(details.url).origin !== api) return;
+      // The latest answer's id, or none: an answer without one (a gateway's error) must not
+      // leave an older request's id to be reported as the one that went wrong.
+      lastRequestId = requestIdOf(details.responseHeaders);
     },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  );
+}
+
+function supportFacts(): SupportFacts {
+  return {
+    version: app.getVersion(),
+    // The same facts About and analytics carry: what scripts/build.ts baked, as config.ts read it.
+    commit: config.commit,
+    environment: config.environment,
+    lastRequestId,
+  };
 }
 
 /* ------------------------------------------------------------------ */
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-// An agent's older `ponzu mcp` starts Ponzu again the moment an update quits it, which would stop
-// the installer (updating.ts): the updated Ponzu is on its way, and the agent finds that one.
-if (background && !smoke && replacedByUpdate(app.getVersion())) {
-  app.exit(0);
-} else if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", (_e, argv, cwd) => {
-    // Another agent asking for the app: it's already serving.
-    if (argv.includes("--background")) return;
-    // Linux and Windows hand a second launch its ponzu:// link, or the design it opens, in argv.
-    const { links, designs } = launchArgs(argv, cwd);
-    if (links[0]) void openLink(links[0]);
-    else if (designs.length) void openAll(designs);
-    else showWindow();
+  // Windows and Linux hand a second launch its link in argv; the first launch's is read below.
+  app.on("second-instance", (_event, argv) => {
+    const links = config.linkScheme ? linksIn(argv, config.linkScheme) : [];
+    for (const link of links) openLink(link);
+    if (!links.length) showWindow();
   });
 
-  // macOS: double-clicking a .design or dropping it on the dock icon.
-  app.on("open-file", (e, path) => {
-    e.preventDefault();
-    void openDesign(path);
+  // macOS: a link, which can arrive before ready when it is what launched Ponzu.
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    openLink(url);
   });
-
-  // macOS: a ponzu:// link. It can arrive before ready, when it's what launched us: hold it
-  // until the server is up.
-  app.setAsDefaultProtocolClient("ponzu");
-  app.on("open-url", (e, url) => {
-    e.preventDefault();
-    if (serverUrl) void openLink(url);
-    else pendingLinks.push(url);
-  });
+  /*
+   * Ponzu takes `ponzu:` links and Ponzu Dev `ponzu-dev:`, each declared in its bundle's
+   * Info.plist (package.json's `protocols`, packaging.ts), which is what reaches a Mac's running
+   * app, or starts it. Ponzu Local takes none: use Ponzu Dev for links. The smoke check claims
+   * nothing (`claimsScheme`).
+   */
+  if (config.linkScheme && claimsScheme(config, smoke)) {
+    app.setAsDefaultProtocolClient(config.linkScheme);
+  }
 
   app.whenReady().then(async () => {
-    if (!smoke && relaunchedInBackground()) background = true;
-    if (!smoke) update = settleUpdate(app.getVersion());
-    buildMenu();
-    // Opened by the person: a window now, on the splash, rather than a bouncing dock icon.
-    // The smoke check must see the studio itself paint, and agents start us without one.
-    if (!smoke && !background) {
-      mainWindow = createWindow(splashUrl());
-      splashing = true;
-    }
-    const render = await startRenderHost();
-    // The server lists what the updater has and asks it to install, so it starts first.
-    const updater = smoke
-      ? null
-      : await installUpdater({
-          window: () => mainWindow,
-          onReady: () => (updateReady = true),
-          agentWorking: async () => {
-            if (!serverUrl) return false;
-            const res = await fetch(`${serverUrl}/api/info`, { signal: AbortSignal.timeout(2000) });
-            return Boolean(((await res.json()) as { working?: string }).working);
-          },
-        });
-    try {
-      // Agents find the server through ~/.ponzu/host.json on any port. 7777 is
-      // for anything pointed at a fixed URL.
-      serverUrl = await startServer(render, 7777, updater).catch(() =>
-        startServer(render, 0, updater),
-      );
-    } catch (err) {
-      if (smoke) {
-        console.error(`smoke: server failed to start (${err})`);
-        app.exit(1);
-        return;
+    await waitForPonzuPreview();
+    if (smoke) blockNetwork();
+    else watchRequestIds();
+    protocol.handle(STUDIO_SCHEME, serveStudio);
+
+    const { storage, persistence } = sessionStorage();
+    const account = mainSession({
+      config,
+      version: app.getVersion(),
+      storage,
+      persistence,
+      openBrowser: (url) => shell.openExternal(url),
+      focus: comeForward,
+    });
+    const session = account.session;
+    signedInUser = () => {
+      const state = session.getState();
+      return state.status === "signed_in" ? state.user.id : null;
+    };
+    let was = session.getState().status;
+    session.subscribe(() => {
+      const state = session.getState();
+      if (state.status === "signed_in" && keepCarriedOver) {
+        keepCarriedOver = false;
+        signedInOnce(userData);
       }
-      dialog.showErrorBox("Ponzu couldn't start", String(err));
-      app.quit();
-      return;
+      // A launch signed out forgets what the studio kept, except window state carried over from
+      // Ponzu Preview, which waits here for the person's first sign-in (carry-over.ts).
+      const launching = was === "loading" && keepCarriedOver;
+      if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
+      // Nobody's questions wait on the dock, nor their banners in Notification Center, once they
+      // have signed out: whoever signs in next sees none of them. The smoke check touches neither.
+      if (state.status !== was && endsSession(state) && !smoke) notifications().clear();
+      was = state.status;
+      send(CHANNELS.sessionChanged, state);
+      setSignedIn(state.status === "signed_in");
+    });
+    // The smoke check never looks for updates: it touches no network. Ponzu Dev has no feed.
+    const updates = installUpdater(
+      (state) => send(CHANNELS.updateChanged, state),
+      config.updates && !smoke,
+    );
+    registerIpc(account, updates);
+    // A sign-in still waiting in the browser goes with the app, and only then.
+    app.on("will-quit", () => account.closeSignIns());
+
+    buildMenu({
+      command: (command: MenuCommand) => {
+        showWindow();
+        send(CHANNELS.command, command);
+      },
+      // Ponzu Dev doesn't update itself, so its menus don't offer to.
+      checkForUpdates: config.updates
+        ? () => {
+            showWindow();
+            if (mainWindow) void checkForUpdatesNow(mainWindow);
+          }
+        : null,
+      signOut: () => void session.signOut(),
+      // Developer tools are a developer's: a release has no way to open them on someone's session.
+      devTools: config.remoteDebugging,
+      about: aboutVersion(config),
+      supportFacts,
+    });
+    setSignedIn(session.getState().status === "signed_in");
+
+    if (config.linkScheme) {
+      for (const link of linksIn(process.argv, config.linkScheme)) openLink(link);
     }
-    // Windows and Linux launch Ponzu with the design or link to open on its command line.
-    const { links, designs } = launchArgs(process.argv, process.cwd());
-    pendingOpens.push(...designs);
-    pendingLinks.push(...links);
-    if (!background || pendingOpens.length || pendingLinks.length || smoke) showWindow();
-    else app.dock?.hide();
-    createTray();
+    showWindow();
     if (!smoke) {
-      setupAgents();
-      setupWake();
-      if (!isDev) void associateDesigns(process.execPath).catch(() => {});
-      watchIdle();
       followAppearance();
+      // The AppImage's desktop entry claims `ponzu:` links: the release's alone.
+      if (config.linkScheme === "ponzu") void registerAppImage().catch(() => {});
+      removeLegacySoon();
     }
-    for (const p of pendingOpens.splice(0)) await openDesign(p);
-    for (const url of pendingLinks.splice(0)) await openLink(url);
   });
 
   app.on("activate", () => showWindow());
 
-  // Ponzu keeps serving with no window: in the dock on a Mac, in the tray elsewhere.
+  // What the main process has queued goes before it quits, for two seconds at most.
+  let flushed = false;
+  app.on("will-quit", (event) => {
+    if (!telemetry || flushed || telemetryStopped) return;
+    event.preventDefault();
+    flushed = true;
+    void telemetry.shutdown().finally(() => app.quit());
+  });
+
+  // The Mac keeps an app with no window in the dock; elsewhere closing the window quits.
   app.on("window-all-closed", () => {
-    mainWindow = null;
-  });
-
-  // Windows' caption buttons follow the light or dark mode, as the studio does.
-  nativeTheme.on("updated", () => {
-    if (process.platform !== "win32") return;
-    for (const win of BrowserWindow.getAllWindows()) win.setTitleBarOverlay(titleBarOverlay());
-  });
-
-  app.on("before-quit", () => {
-    server?.kill("SIGTERM");
+    if (process.platform !== "darwin") app.quit();
   });
 }

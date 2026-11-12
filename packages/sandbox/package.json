@@ -1,0 +1,12 @@
+{
+  "name": "@ponzu/sandbox",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@vercel/sandbox": "3.9.1"
+  }
+}

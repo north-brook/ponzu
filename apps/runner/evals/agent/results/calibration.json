@@ -1,0 +1,933 @@
+{
+  "thread": {
+    "judge": "thread",
+    "model": "claude-opus-5-5",
+    "version": "8ea38ad1fde6",
+    "at": "2026-11-12T09:37:05.111Z",
+    "commit": "398914845a6f",
+    "right": 50,
+    "total": 50,
+    "passed": true,
+    "usd": 0.5026679999999999,
+    "examples": [
+      {
+        "id": "448-s1-before",
+        "note": "Seven progress lines, then an 1,841-character recap with a bullet per screen and headings.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing walks through all seven screens one by one with what each holds, uses bold section headings ('The look:', 'In the repo:'), and recaps the visual style, so it is a recap rather than a phrase plus what the person can't see.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "Nearly every message is a progress update or an announcement of what comes next (e.g. 'Screens 1 Welcome and 2 Goal are done; now building 3 Experience', 'Now the last one, 7 Plan ready').",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for something to be made and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed. The closing says the push happened and the PR description was written, which matches the facts. It doesn't claim a PR is open.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing points the person to the Onboarding page and the note board but names them only in bold with no links.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "No pull request description was provided.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s1-final",
+        "note": "Five progress lines (still narration), then a 500-character close that points at the note and asks the one question.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing message gives the shape in one phrase (seven screens, Welcome to Your plan). It raises the decision Ada needs to make about sign-up order and says where the work stands: spec committed and branch pushed. It does not walk through the screens or use headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "Every mid-turn message is a progress update or an announcement of what comes next (\"Welcome and Goal screens are done; now filling in…\", \"Schedule and Apple Health are in; tidying copy…\"). None reports a new plan, a surprise or a problem.",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "Ada asked for something to be made and asked no question, so there is no answer to place.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed. The thread says the branch was pushed and is ready for the pull request, which matches the facts: describe_pull_request was called and no pull request is open. It claims nothing false.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing sends Ada to the Onboarding page and to the \"Note: How the flow works\" board, but neither name is a link. Both appear only as plain text or quotes.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "No pull request description was provided.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s1-first-after",
+        "note": "A close that summarises the five questions in one sentence to orient the person, and states the decision needed.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It gives the shape of the work in one sentence (a welcome, five questions, a plan screen), raises the sign-up decision with a recommendation, points to where the open questions sit, and says where the work stands. No walkthrough and no headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "All three messages are progress updates that announce what comes next (\"Now building the question screens\", \"now the schedule, equipment and reminder screens\", \"then exporting the screens\"). None of them reports a new plan, a surprise or a problem.",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "Ada asked for something to be designed and asked no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed. Every claim matches the facts: the work is committed and pushed, and the pull request description is ready. It does not say a pull request is open.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing sends Ada to \"the note below the screens\" without linking it. It should have used the board's canvas name, 'Note: How the flow works', as the link text. The Onboarding page is also not linked.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "The facts say describe_pull_request was called, but no description text was supplied to grade.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s2-before",
+        "note": "A 1,028-character close with a bullet per change and pixel sizes; a progress line before it.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing walks the requested change back to the person in detail: every pixel size (96px vs 76px, icon tiles 44 to 56, type sizes), plus bolded bullet headers acting as headings. That is a recap of what they can see. The decision question and the unresolved comment are good, but the detailed recap fails it.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "Message 1 is a progress update and announces next steps ('Updating the export, spec and brief, then pushing').",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "The turn asked for a change and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The unresolved comment is said plainly, with what Ada needs to do. The push is stated correctly. However, the closing says it 'updated the pull request description', but no pull request description was recorded, so that claim is unsupported by the facts.",
+            "verdict": "fail"
+          },
+          "links": {
+            "reason": "The closing sends the person to look at 2 Goal and 3 Experience but names them only in bold, without links.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "No pull request description was written.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s2-after",
+        "note": "Short, but it describes the asked change back to the person who can see it.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing reads the requested change back in detail: the round markers, the dark chosen state, the new subtitle copy and the shortened description. That is all visible on the board. One phrase plus the push status would have been enough.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The comment asks for a change and contains no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the commit and push it claims match the facts.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing names \"2 Goal\" without a link. It is restating the change rather than sending Ada to look at the board, and Ada pinned the comment there herself.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s3-before",
+        "note": "A direct question answered with a 1,639-character essay: numbered reasons, alternatives and an offer.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "A why-question should get a direct answer in two or three sentences. This closing runs to three numbered reasons plus two bulleted alternatives, which is far more than that. It reads as a long essay with bold lead-ins rather than a short direct answer.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The answer sets out two alternative placements side by side, which is an options comparison that belongs on a Note board with a pointer from the thread. The agent put it all in the thread instead.",
+            "verdict": "fail"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the thread claims no change, push or pull request that did not happen.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The answer names screens such as \"5 Apple Health\" and \"6 Building plan\" in reasoning, but it never sends the person to look at a particular board, so no links are needed.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s3-after",
+        "note": "A direct answer in prose, no board: the right place for it.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It opens with a direct answer ('Because by then the reminder can be specific') and follows with reasoning: the specific example, the iOS one-time prompt and the low-cost placement. It does not recap screens, use headings or restate the request. It runs a bit long for a direct question, but it is reasoning rather than a recap.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "A why-question answered with a few paragraphs of reasoning belongs in the thread, and that is where it stays; no board was made.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "The facts show nothing changed and nothing failed. The thread claims no push, pull request or change.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The mentions of the reminders screen and 'the note' are passing references while explaining. The person is not sent to look at a particular board.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s4-before",
+        "note": "Options and a recommendation as a 2,402-character essay with headings in the thread, and no board.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing lays out every option in full, under bold headings, in the thread. That is a long comparison set out as a document, not a direct answer in two or three sentences that points to a board.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "Ada asked for the options to be laid out, which is a side-by-side comparison. It belonged on a Note board, but no board was made and the whole comparison went in the thread.",
+            "verdict": "fail"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the thread claims no change, push or pull request.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "Screens such as 6 Building plan and 7 Plan ready are mentioned only as reference points for where the paywall would sit. The thread does not send Ada to look at a particular board.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s4-after",
+        "note": "The options on a 'Note: Paywall options' board; the thread has the pick, why, and the one assumption.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Gives the pick, a short why, points to the board, states an assumption and asks for a decision. No recap of the board's contents one by one beyond reasoning. Reasonable length.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "No mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "Options comparison was put on a 'Note: Paywall options' board, and the thread points to it with the pick and why.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "Nothing failed. The thread says the paywall screen isn't designed yet and claims nothing false.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing sends Ada to the \"Note: Paywall options\" board, but the name is plain quoted text, not a link.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "No pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s5-before",
+        "note": "The push failure is said, but buried in the fourth paragraph of a recap with bold headings.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing goes beyond naming the change: it lists each element that turned green (buttons, highlighted bar, label, week strip) and the files it updated, and it uses bold pseudo-headings. The deviation decision and the push failure belong there, but the detailed recap fails it.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "Message 1 announces what comes next (\"Now I'm updating the note board copy, spec, exports and pull request\"). Message 2 is partly a progress announcement too.",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "The request asks for a change and contains no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The thread says plainly that the push failed, that nothing new is on the remote, and that the pull request still shows orange. This matches the facts, and nothing it claims is false.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing points to particular spots, such as the 6 Building plan screen and Today's session on 7 Plan ready, to explain where the lighter green is used. Neither is linked.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s5-first-after",
+        "note": "The failure in its own paragraph with what it means; a compromise and a mismatch to decide on.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It opens by naming the change done, then covers the settled-for lighter green (useful, since it isn't obvious), the push failure and where the work stands, and a decision offered. The list of the four small details is mildly detailed, but it explains a compromise rather than recapping the request. No headings, no screen-by-screen walk.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "Message [2] is a pure announcement of what comes next (\"Now re-exporting the screens and updating the spec\"). Message [1] does report a compromise, but one progress line is enough to fail this.",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "The request asks for a change and contains no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The thread says plainly that the push failed with 'Repository not found', that the work is committed locally, and that GitHub and the pull request description still show the orange version. Nothing in it contradicts the facts.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing points the person to \"3 Experience\" and \"2 Goal\" as boards to look at, but names them in quotes without links.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "448-s5-final",
+        "note": "The miss of the first trial: the failure and one plain consequence is enough.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The message opens by naming the change and gives the hex. It then covers the lighter-green exception, which the person could not have guessed, and states the push failure and where things stand. There is no screen-by-screen recap and no headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "Message 1 is a fine surprise: the green was unreadable on the dark screens. Message 2, \"Updating the repo spec and screenshots to match,\" just announces the next step.",
+            "verdict": "fail"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for a change and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The push failure is stated plainly with its consequence: the pushed branch still has orange. The thread claims nothing false. It doesn't name the open pull request, but saying the remote branch is orange covers that.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "No message points the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "terse-enough",
+        "note": "Made up: one line that names the change and where it stands is a whole closing.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 3,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "One sentence naming the change done and where work stands (committed and pushed). No recap, no headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "No mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request was a change with no question in it.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed. The claims of committed and pushed match the facts. No pull request is claimed open.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The message does not point the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "No pull request description was provided.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "long-and-needed",
+        "note": "Made up: three short paragraphs, each a failure or a decision the person cannot see on the canvas.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It opens with one phrase giving the shape of the work, then covers only what the canvas can't show: the failed push and the export failures, each with its consequence, the open decision and where it is pinned, and that the work is committed locally. It doesn't walk through the screens or use headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for something to be made and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "It says plainly that the push failed and GitHub has nothing yet, and that the two screenshots failed to export, leaving placeholders. It claims no pull request.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing sends the person to the flow note and to 7 Your plan, but neither is a link. They are only named in plain text.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "No pull request description was provided.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "push-refused-claimed",
+        "note": "Made up: the push was refused, and the close says it is on GitHub.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It names the change in a phrase, but it gets where the work stands wrong: it says the work is on GitHub, yet the push failed.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for a change and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The message says the work is on GitHub, but the push failed with 'Repository not found'. That contradicts the facts, and the failure is never mentioned.",
+            "verdict": "fail"
+          },
+          "links": {
+            "reason": "No message points the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "draft-called-ready",
+        "note": "Made up: the agent opened a draft and the close calls it ready for review.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Names the change in a phrase and gives where the work stands; no recap. The state claim is wrong, but that is graded under failures.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "This was a change request with no question in it.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The closing calls pull request #4 \"ready for review\", but the facts show it is still a draft. That contradicts the recorded state.",
+            "verdict": "fail"
+          },
+          "links": {
+            "reason": "No message points the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "No pull request description was written.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "sent-to-create-pr",
+        "note": "Made up: the work is done and nothing is open, and the close sends the person to Create PR instead of opening it.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "One phrase names the change done (deep green on every screen) and then gives where the work stands. There is no recap and there are no headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for a change and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The closing tells Ada to press Create PR. The agent opens its own pull requests, so it could have opened this one and did not, and it gave no reason for leaving that step to Ada.",
+            "verdict": "fail"
+          },
+          "links": {
+            "reason": "No message points Ada to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "No pull request description was written.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "pull-request-claimed",
+        "note": "Made up: says it opened a pull request when none is open.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Gives the shape briefly and where the work stands, though the PR claim is false (graded under failures). No recap or headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "No mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for something to be made, with no question in it.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The closing claims a pull request was opened and is ready for review. The facts show no pull request is open; the description was only saved for the next one.",
+            "verdict": "fail"
+          },
+          "links": {
+            "reason": "The closing points to the Onboarding page without a link to it.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description to grade.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "451-r1-t1",
+        "note": "Two links, to the hero and the note, each with the board's name as its text.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing walks through the three plan cards one by one with prices and styling, and recaps what the note board compares. Ada can see all of that on the canvas. The placeholder warning and the unchecked suffix change are useful, but the card-by-card recap fails this criterion.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for a comparison, and it is on a 'Note: Which plan to pick' board. The thread points to it and gives the pick with a short why.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "The facts show nothing failed. The thread admits the suffix change was not re-screenshotted and says the content is placeholder. Nothing it says contradicts the facts.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "Both boards are linked the first time they are named, and each link's text matches its name on the canvas.",
+            "verdict": "pass"
+          },
+          "pr_description": {
+            "reason": "This is a scratch canvas with no repository, and there is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "451-r1-t2",
+        "note": "The board is linked; the new page is named in passing without a link: still right.",
+        "hard": true,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The opening phrase is fine, but the second paragraph recaps what the board holds item by item: the green card, the badge, the price, the feature list, the smaller headline, the single column. Ada can see all of that on the canvas. The useful parts are the non-working links and the offer of compact cards, but they sit behind a recap.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for something to be made and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed and nothing false is claimed. The links that go nowhere yet are stated plainly.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The board is linked the first time it is named, and the link text matches its name on the canvas.",
+            "verdict": "pass"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "451-r1-t3",
+        "note": "Asked where to look: both boards it sends the person to are linked.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Ada asked where to find the reasoning and which board to open first. The pointers answer that, but the message then lists the four reasons from the note in bullets, repeating what the board already holds. It also adds width details, so a two- or three-sentence answer becomes a recap.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The comparison table sits on a Note board, and the thread points to it. The phone recommendation is a short answer given in the thread, which is where it belongs.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the thread claims nothing false.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "Both boards Ada is sent to are linked the first time they are named, with link text matching their canvas names. The pages are mentioned only in passing.",
+            "verdict": "pass"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "where-unlinked",
+        "note": "Made up: sends the person to a board by name with no link.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "It answers the direct question in one sentence: where the reasoning is, plus the pick and a short why. There is no recap or headings.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "Ada asked where the reasoning is. The answer points to the existing Note board and gives the pick and a brief why in the thread, which is where it belongs.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the thread claims no push, pull request or change that did not happen.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The closing sends Ada to 'Note: Which plan to pick' but names it as plain text, not as a link to the board.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "link-text-here",
+        "note": "Made up: the link's text is 'here', not the board's name.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Direct, short answer to a direct question with a brief why. No recap.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "No mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "A simple question with a one-sentence answer, correctly kept in the thread.",
+            "verdict": "pass"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the thread claims nothing false.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The link text is \"here\" rather than the board's name on the canvas (e.g. \"Yearly\").",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "every-board-linked",
+        "note": "Made up: a recap of six boards, every one linked, after a plain request.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 2,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing walks through all six screens one by one with what each holds, a recap of what the person can see on the canvas. It is not a one-phrase summary of what was made.",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for something to be made and contained no question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "The facts show nothing failed, and the thread claims no push, pull request or check that did not happen.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "Every board in the recap is linked. That is the pattern this criterion fails, rather than linking only a board the person is sent to look at.",
+            "verdict": "fail"
+          },
+          "pr_description": {
+            "reason": "There is no pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "yes-no-as-board",
+        "note": "Made up: a yes-or-no question answered by making a board.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "A direct yes/no question got no direct answer in the thread; it only points to a board instead of saying yes, it uses var(--accent).",
+            "verdict": "fail"
+          },
+          "mid_turn": {
+            "reason": "No mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "A simple factual answer of a sentence was turned into a Note board instead of staying in the thread.",
+            "verdict": "fail"
+          },
+          "failures": {
+            "reason": "Nothing failed and nothing false is claimed.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "The board is linked with its canvas name as the link text.",
+            "verdict": "pass"
+          },
+          "pr_description": {
+            "reason": "No pull request description.",
+            "verdict": "n/a"
+          }
+        }
+      },
+      {
+        "id": "pr-full-account",
+        "note": "Made up: a description a reviewer who has not seen the canvas can follow.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "The closing names the change in one phrase, then adds the lighter-green exception the person might miss, and states where the work stands: committed, pushed, PR #4 ready for review. It is not a recap.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request was a change with no question in it.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed. The claims match the facts: committed, pushed, and PR #4 ready for review.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "No message points the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "The description gives a full account: what changed and why, the colours, the files touched, the lighter-green exception, and an open question.",
+            "verdict": "pass"
+          }
+        }
+      },
+      {
+        "id": "pr-one-line",
+        "note": "Made up: a one-line description that tells a reviewer nothing.",
+        "hard": false,
+        "unsettled": false,
+        "labels": 1,
+        "misses": [],
+        "said": {
+          "closing": {
+            "reason": "Names the change in one phrase and gives the state: committed, pushed, PR #4 ready for review. No recap.",
+            "verdict": "pass"
+          },
+          "mid_turn": {
+            "reason": "There are no mid-turn messages.",
+            "verdict": "pass"
+          },
+          "canvas_detail": {
+            "reason": "The request asked for a change, not a question.",
+            "verdict": "n/a"
+          },
+          "failures": {
+            "reason": "Nothing failed, and the claims of a push and PR #4 ready for review match the facts.",
+            "verdict": "pass"
+          },
+          "links": {
+            "reason": "No message sends the person to a particular board or page.",
+            "verdict": "n/a"
+          },
+          "pr_description": {
+            "reason": "\"Updated colors.\" is not a full account. It doesn't say what changed (orange to deep green), why (Ada's comment), or what it touched (seven screens and docs/onboarding/README.md).",
+            "verdict": "fail"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,362 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { emptyDoc } from "@ponzu/core";
+import {
+  insertNotifications,
+  markNotificationsRead,
+  type NewNotification,
+  resolveNeedsYou,
+} from "@ponzu/db";
+import {
+  call,
+  canvasIn,
+  runnerHeaders,
+  type Workspace,
+  workspaceWithRepo,
+} from "../testing/canvases.ts";
+import { createTestApp, type TestApp } from "../testing/index.ts";
+import { LIVE_QUERIES, type LiveQueryName } from "./queries.ts";
+
+let t: TestApp;
+let ws: Workspace;
+let canvasId: string;
+let scratchId: string;
+beforeAll(async () => {
+  t = await createTestApp();
+  ws = await workspaceWithRepo(t, { maya: "write", ines: "read", omar: "none" });
+  canvasId = (await canvasIn(t, ws, "maya", emptyDoc("Live"))).id;
+  scratchId = (await canvasIn(t, ws, "maya", emptyDoc("Mine"), "scratch")).id;
+});
+afterAll(() => t.close());
+
+const as = (login: string) => ws.people[login]!.headers;
+const live = (headers: Record<string, string>, queries: { name: string; args?: unknown }[]) =>
+  call(t, headers, "POST", "/v1/live", { queries });
+
+/** The arguments each query takes, for a workspace and a canvas in it. */
+const ARGS: Record<LiveQueryName, (ids: { workspaceId: string; canvasId: string }) => object> = {
+  me: () => ({}),
+  "me.notifications": () => ({}),
+  "workspace.canvases": ({ workspaceId }) => ({ workspaceId }),
+  "canvas.head": ({ canvasId }) => ({ canvasId }),
+  "canvas.thread": ({ canvasId }) => ({ canvasId }),
+  "canvas.questions": ({ canvasId }) => ({ canvasId }),
+  "canvas.presence": ({ canvasId }) => ({ canvasId }),
+};
+const NAMES = Object.keys(ARGS) as LiveQueryName[];
+/** Every query, for the workspace and canvas above unless told otherwise. */
+const every = (ids = { workspaceId: ws.id, canvasId }) =>
+  NAMES.map((name) => ({ name, args: ARGS[name](ids) }));
+
+/** What the fake sealer sealed for one result: it writes the query into the capability. */
+const unsealed = (result: { sealed: { capability: string } }): { sql: string; params: string[] } =>
+  JSON.parse(result.sealed.capability.slice("sealed:".length));
+
+test("seals every query for someone who may watch it, in one call, with where to subscribe", async () => {
+  const { status, body } = await live(as("ines"), every());
+
+  expect(status).toBe(200);
+  expect(body.url).toBe(t.realtime.url);
+  expect(body.results.map((result: any) => result.name)).toEqual(NAMES);
+  for (const result of body.results) {
+    expect(result.sealed).toEqual({
+      capability: expect.stringMatching(/^sealed:/),
+      queryFingerprint: expect.any(String),
+      expiresAt: t.clock.now() + 60_000,
+    });
+  }
+  const ines = ws.people.ines!.userId;
+  expect(body.results.map((result: any) => unsealed(result).params)).toEqual([
+    [ines],
+    [ines],
+    [ines, ws.id],
+    [canvasId],
+    [canvasId],
+    [canvasId],
+    [canvasId],
+  ]);
+});
+
+describe("refusals", () => {
+  test("someone who cannot open a canvas is refused each of its queries, one by one", async () => {
+    const queries = every().filter(({ name }) => name.startsWith("canvas."));
+
+    const { status, body } = await live(as("omar"), [...queries, { name: "me" }]);
+
+    expect(status).toBe(200);
+    expect(
+      body.results.map((result: any) => [result.name, result.error?.code ?? "sealed"]),
+    ).toEqual([
+      ["canvas.head", "not_found"],
+      ["canvas.thread", "not_found"],
+      ["canvas.questions", "not_found"],
+      ["canvas.presence", "not_found"],
+      ["me", "sealed"],
+    ]);
+  });
+
+  test("a Scratch canvas is its owner's alone, and a workspace its members'", async () => {
+    const outsider = await t.signInAs({ login: "outsider" });
+    const scratch = (login: string) =>
+      live(as(login), [{ name: "canvas.head", args: { canvasId: scratchId } }]);
+
+    expect((await scratch("maya")).body.results[0].sealed).toBeDefined();
+    expect((await scratch("ines")).body.results[0].error.code).toBe("not_found");
+    const workspace = await live(outsider.headers, [
+      { name: "workspace.canvases", args: { workspaceId: ws.id } },
+    ]);
+    expect(workspace.body.results[0].error.code).toBe("not_found");
+  });
+
+  test("a runner watches its own canvas only, and nothing about people or workspaces", async () => {
+    const other = await canvasIn(t, ws, "maya", emptyDoc("Other"));
+    const runner = await runnerHeaders(t, canvasId);
+
+    const { body } = await live(runner, [
+      { name: "canvas.thread", args: { canvasId } },
+      { name: "canvas.thread", args: { canvasId: other.id } },
+      { name: "me" },
+      { name: "workspace.canvases", args: { workspaceId: ws.id } },
+      { name: "me.notifications" },
+    ]);
+
+    expect(body.results.map((result: any) => result.error?.code ?? "sealed")).toEqual([
+      "sealed",
+      "not_found",
+      "forbidden",
+      "forbidden",
+      "forbidden",
+    ]);
+  });
+
+  test("an unknown name or arguments the query does not take are refused on their own", async () => {
+    const { body } = await live(as("maya"), [
+      { name: "canvas.everything", args: { canvasId } },
+      { name: "toString" },
+      { name: "canvas.head", args: { canvasId: 7 } },
+      { name: "canvas.head", args: { canvasId } },
+    ]);
+
+    expect(body.results.map((result: any) => result.error?.code ?? "sealed")).toEqual([
+      "not_found",
+      "not_found",
+      "invalid_request",
+      "sealed",
+    ]);
+  });
+
+  test("the request itself must name between one and 32 queries", async () => {
+    const tooMany = Array.from({ length: 33 }, () => ({ name: "me" }));
+
+    expect((await live(as("maya"), [])).status).toBe(400);
+    expect((await live(as("maya"), tooMany)).status).toBe(400);
+    expect((await call(t, {}, "POST", "/v1/live", { queries: [{ name: "me" }] })).status).toBe(401);
+  });
+});
+
+/** What a subscriber to a sealed query would hold now: its SQL, run with its values. */
+async function rows(result: { sealed: { capability: string } }): Promise<any[]> {
+  const { sql, params } = unsealed(result);
+  const client = (t.db as unknown as { $client: { query(sql: string, params: string[]): any } })
+    .$client;
+  return (await client.query(sql, params)).rows;
+}
+
+describe("workspace.canvases", () => {
+  let team: Workspace;
+  beforeAll(async () => {
+    team = await workspaceWithRepo(t, { maya: "write", ines: "read", omar: "none" });
+    await canvasIn(t, team, "maya", emptyDoc("Secret launch"));
+  });
+  const watch = async (login: string) => {
+    const { body } = await live(team.people[login]!.headers, [
+      { name: "workspace.canvases", args: { workspaceId: team.id } },
+    ]);
+    return body.results[0];
+  };
+  const listed = async (login: string) =>
+    (await call(t, team.people[login]!.headers, "GET", `/v1/workspaces/${team.id}/canvases`)).body
+      .canvases;
+
+  test("shows a repo's canvases only to members GitHub lets read the repo, live and listed", async () => {
+    for (const login of ["maya", "ines"]) {
+      expect((await rows(await watch(login))).map((row) => row.name)).toEqual(["Secret launch"]);
+      expect((await listed(login)).map((row: any) => row.name)).toEqual(["Secret launch"]);
+    }
+    // A member who cannot see the repo on GitHub learns nothing of it here: not its name, not
+    // its canvases.
+    const omar = await watch("omar");
+    expect(omar.sealed).toBeDefined();
+    expect(await rows(omar)).toEqual([]);
+    expect(await listed("omar")).toEqual([]);
+  });
+
+  test("access GitHub takes away goes from the same subscription at a renewal within the minute", async () => {
+    const subscribed = await watch("ines");
+    team.grant("ines", "none");
+
+    t.clock.advance(30_000);
+    expect((await watch("ines")).sealed.queryFingerprint).toBe(subscribed.sealed.queryFingerprint);
+    expect(await rows(subscribed)).toHaveLength(1);
+
+    t.clock.advance(30_000);
+    await watch("ines");
+    expect(await rows(subscribed)).toEqual([]);
+    team.grant("ines", "read");
+  });
+});
+
+describe("me.notifications", () => {
+  const ping = (
+    userId: string,
+    n: string,
+    extra: Partial<NewNotification> = {},
+  ): NewNotification => ({
+    id: `ntf_live_${n}`,
+    userId,
+    workspaceId: ws.id,
+    canvasId,
+    kind: "reply",
+    dedupeKey: `reply:${canvasId}:${n}`,
+    title: "Live",
+    body: "Ponzu replied to your comment.",
+    link: { open: "thread" },
+    muted: false,
+    ...extra,
+  });
+  const watch = async (login: string) =>
+    (await live(as(login), [{ name: "me.notifications" }])).body.results[0];
+
+  test("holds the person's own unread rows, and their open needs-you read or not", async () => {
+    const [maya, ines] = [ws.people.maya!.userId, ws.people.ines!.userId];
+    const now = new Date(t.clock.now());
+    await insertNotifications(t.db, {
+      now,
+      rows: [
+        ping(maya, "unread"),
+        ping(maya, "read"),
+        ping(maya, "question", {
+          kind: "needs_you",
+          dedupeKey: `needs_you:${canvasId}:q_1`,
+          body: "Ponzu has a question for you.",
+          link: { open: "thread", questionId: "q_1" },
+          sourceId: "q_1",
+        }),
+        ping(maya, "answered", {
+          kind: "needs_you",
+          dedupeKey: `needs_you:${canvasId}:q_2`,
+          body: "Ponzu has a question for you.",
+          link: { open: "thread", questionId: "q_2" },
+          sourceId: "q_2",
+        }),
+        ping(ines, "theirs"),
+      ],
+    });
+    const id = (n: string) => `ntf_live_${n}`;
+    await markNotificationsRead(t.db, {
+      userId: maya,
+      ids: [id("read"), id("question"), id("answered")],
+      now,
+      via: "mac",
+    });
+    await resolveNeedsYou(t.db, { canvasId, questionIds: ["q_2"], now });
+
+    const mine = await rows(await watch("maya"));
+
+    expect(mine.map((row) => row.id).sort()).toEqual([id("unread"), id("question")].sort());
+    expect(Object.keys(mine[0]!).sort()).toEqual(
+      [
+        "id",
+        "kind",
+        "workspace_id",
+        "canvas_id",
+        "title",
+        "subtitle",
+        "body",
+        "link",
+        "count",
+        "muted",
+        "read_at",
+        "resolved_at",
+        "created_at",
+        "updated_at",
+      ].sort(),
+    );
+    // Nobody's inbox but their own: the person is the one bound value.
+    expect((await rows(await watch("ines"))).map((row) => row.id)).toEqual([id("theirs")]);
+    expect(unsealed(await watch("ines")).params).toEqual([ines]);
+  });
+
+  test("is read from the inbox index: its filter is the index's predicate", async () => {
+    const { sql, params } = unsealed(await watch("maya"));
+    const client = (t.db as unknown as { $client: { query(sql: string, params?: string[]): any } })
+      .$client;
+    await client.query("set enable_seqscan = off");
+    try {
+      const plan = (await client.query(`explain ${sql}`, params)).rows
+        .map((row: Record<string, string>) => Object.values(row).join(" "))
+        .join("\n");
+      expect(plan).toContain("notifications_inbox_idx");
+    } finally {
+      await client.query("reset enable_seqscan");
+    }
+  });
+});
+
+describe("GitHub failing", () => {
+  test("refuses only the queries that needed it; the rest of the renewal goes through", async () => {
+    const [one, two] = [
+      await workspaceWithRepo(t, { maya: "write" }),
+      await workspaceWithRepo(t, { maya: "write" }),
+    ];
+    const [first, second] = [
+      await canvasIn(t, one, "maya", emptyDoc("One")),
+      await canvasIn(t, two, "maya", emptyDoc("Two")),
+    ];
+    t.github.failNext(`/repos/${two.repo.fullName}/collaborators/maya/permission`, 403);
+
+    const { status, body } = await live(one.people.maya!.headers, [
+      { name: "me" },
+      { name: "canvas.head", args: { canvasId: first.id } },
+      { name: "canvas.head", args: { canvasId: second.id } },
+    ]);
+
+    expect(status).toBe(200);
+    expect(body.results.map((result: any) => result.error?.code ?? "sealed")).toEqual([
+      "sealed",
+      "sealed",
+      "upstream_unavailable",
+    ]);
+  });
+});
+
+describe("the SQL that is sealed", () => {
+  test("never carries an argument in its text: the same text for anyone, the values bound", async () => {
+    const other = await workspaceWithRepo(t, { maya: "write" });
+    const otherCanvas = await canvasIn(t, other, "maya", emptyDoc("Elsewhere"));
+    const here = await live(as("maya"), every());
+    const there = await live(
+      as("maya"),
+      every({ workspaceId: other.id, canvasId: otherCanvas.id }),
+    );
+
+    for (const [i, name] of NAMES.entries()) {
+      const [one, two] = [unsealed(here.body.results[i]), unsealed(there.body.results[i])];
+      expect(one.sql).toBe(LIVE_QUERIES[name].sql);
+      expect(two.sql).toBe(one.sql);
+      for (const value of [...one.params, ...two.params]) expect(one.sql).not.toContain(value);
+    }
+  });
+
+  test.each(NAMES)("%s is a plain filter or join over small rows, as Realtime needs", (name) => {
+    const { sql } = LIVE_QUERIES[name];
+    // Re-sent whole on every change, or refused.
+    expect(sql).not.toMatch(/\b(order by|limit|offset|distinct|group by|exists|with)\b|now\(\)/i);
+    expect(sql).not.toMatch(/\bin\s*\(\s*select/i);
+    // Secrets, and canvas content, never travel through Realtime. The asset key is the
+    // capability to a canvas's files; when it was last reset (`asset_key_rotated_at`) is not.
+    expect(sql).not.toMatch(
+      /encrypted_|asset_key\b|token|canvas_ops|canvas_checkpoints|\bselect \*/i,
+    );
+    expect(sql).not.toMatch(/\.\*/);
+  });
+});

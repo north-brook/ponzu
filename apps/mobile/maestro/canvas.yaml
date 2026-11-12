@@ -1,49 +1,40 @@
-appId: design.ponzu.app
+appId: design.ponzu.app.dev
 name: canvas
-tags: [dev-host]
 ---
-# Kettle opens on its canvas: the bar, then the boards drawn in the web view.
+# A canvas from its row: the fake's Pricing page, drawn live in the web view
+# from the replica on the React Native side, read only. Its name in the title,
+# Comment and Chat in the floating stack (unavailable until their slices), no
+# pull request yet; then Back to the list.
 - runFlow: shared/start.yaml
-- scrollUntilVisible:
-    element:
-      id: card-Kettle
-    timeout: 60000
-- tapOn:
-    id: card-Kettle
+- openLink: ponzu-dev://dev?seed=signed-in
+- extendedWaitUntil:
+    visible: "Pricing page, acme/site"
+    timeout: 30000
+- tapOn: "Pricing page, acme/site"
 - extendedWaitUntil:
     visible:
       id: canvas
     timeout: 15000
 - extendedWaitUntil:
     visible:
-      id: title
+      id: canvas-web
     timeout: 15000
-- assertVisible: "Kettle"
-# The boards, drawn in the web view: Brand's first board's label, and text from inside it.
+# The page has drawn its first page once the placeholder has given way.
 - extendedWaitUntil:
-    visible: "Logo"
-    timeout: 20000
-- extendedWaitUntil:
-    visible: ".*kettle.*"
-    timeout: 20000
-# The page button holds the pages' native menu; picking one turns the canvas to it.
-- tapOn:
-    id: page-menu
-- extendedWaitUntil:
-    visible: "Website"
-    timeout: 5000
-- tapOn: "Website"
-- extendedWaitUntil:
-    visible: "Page: Website"
-    timeout: 5000
-# No tab bar over the canvas: it's pushed over the tabs.
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- assertVisible: "Pricing page"
+- assertVisible:
+    id: stack-comment
+- assertVisible:
+    id: stack-chat
 - assertNotVisible:
-    id: tab-designs
-- tapOn: "Back"
+    id: stack-pr
+- tapOn:
+    id: back
 - extendedWaitUntil:
     visible:
-      id: designs
+      id: canvases
     timeout: 10000
-- assertVisible:
-    id: tab-designs
 - assertNotVisible: ".*Cannot update a component.*"

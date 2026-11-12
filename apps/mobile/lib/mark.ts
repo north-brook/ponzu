@@ -1,7 +1,7 @@
 /**
- * The slice, as `packages/react/src/slice.ts` draws it: six 60° segments on
+ * The slice, as `packages/canvas/src/slice.ts` draws it: six 60° segments on
  * a 64-unit grid, clockwise from the top right, each stroked 3.4 in its own
- * color. React Native code can't import `@ponzu/react`, so the paths are
+ * color. React Native code can't import `@ponzu/canvas`, so the paths are
  * copied here; `mark.test.ts` keeps the two equal.
  */
 export const SLICE = [

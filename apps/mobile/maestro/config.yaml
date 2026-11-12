@@ -1,14 +1,15 @@
-# Flows run in name order: a fresh launch first, then against the dev host.
+# Flows run in this order: a fresh launch first, then signing in, then setup,
+# then the canvases list, then a new canvas, then a canvas and its comments.
 flows:
   - "*.yaml"
 executionOrder:
   continueOnFailure: false
   flowsOrder:
     - launch
-    - designs
+    - sign-in
+    - setup
+    - canvases
+    - new-canvas
     - canvas
-    - open-link
-    - search
     - comment
     - comment-modes
-    - draft

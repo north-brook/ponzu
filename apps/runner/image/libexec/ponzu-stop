@@ -1,0 +1,8 @@
+#!/bin/sh
+# What the API runs, root and waited (30 s), before every stop of a design's sandbox: SIGTERM the
+# supervisor, which passes it to the runner (it finishes the turn's notice, flushes, reports,
+# checkpoints and closes Claude Code; 20 s at most), wait for its lock, and flush the disk the
+# snapshot is taken of. Idempotent: with no supervisor running it only syncs.
+pkill -TERM -f '^/opt/ponzu/bin/bun /opt/ponzu/runners/[^ ]*/supervise.js' || true
+/usr/bin/flock -w 25 /run/ponzu-supervisor.lock true || true
+sync

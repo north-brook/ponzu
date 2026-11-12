@@ -1,0 +1,223 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794332273431,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794332273660,
+      "tag": "0001_rate_card_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794337899279,
+      "tag": "0002_github_token_refresh_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794339837309,
+      "tag": "0003_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794346366842,
+      "tag": "0004_design_pr_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794351512179,
+      "tag": "0005_github_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794354494647,
+      "tag": "0006_repo_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794358914687,
+      "tag": "0007_runner_protocol",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794365810848,
+      "tag": "0008_claim_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794368674970,
+      "tag": "0009_repo_ideas",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794375112666,
+      "tag": "0010_pull_request_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794371093690,
+      "tag": "0011_sandbox_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794376099850,
+      "tag": "0012_sandbox_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794383306901,
+      "tag": "0013_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794387193599,
+      "tag": "0014_sandbox_durability",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794413174686,
+      "tag": "0015_ideas_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794417552349,
+      "tag": "0016_posthog_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794420370805,
+      "tag": "0017_workspace_people",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794420954424,
+      "tag": "0018_comment_pictures",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794421636295,
+      "tag": "0019_push_and_branch",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794429314785,
+      "tag": "0020_sandbox_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794435416991,
+      "tag": "0021_ideas_on_default_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794435835920,
+      "tag": "0022_turn_owed",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794438544518,
+      "tag": "0023_vercel_sandboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794449137081,
+      "tag": "0024_claude_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794472324144,
+      "tag": "0025_canvases",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794481297762,
+      "tag": "0026_agent_blockers",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794486398505,
+      "tag": "0027_secret_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794495855646,
+      "tag": "0028_asset_key_rotation",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794497351025,
+      "tag": "0029_share_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794499110804,
+      "tag": "0030_notifications",
+      "breakpoints": true
+    }
+  ]
+}

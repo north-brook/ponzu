@@ -1,0 +1,27 @@
+{
+  "name": "@ponzu/db",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rate-card": "./src/rate-card.ts",
+    "./testing": "./src/testing.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun src/migrate.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
+    "@ponzu/core": "workspace:*",
+    "drizzle-orm": "^0.45.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "pg": "^8.23.1"
+  }
+}

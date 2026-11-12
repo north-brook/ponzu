@@ -1,0 +1,90 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { eq, sql } from "drizzle-orm";
+import { seedCanvas } from "../fixtures.ts";
+import { runnerTokens } from "../schema/index.ts";
+import { createTestDb } from "../testing.ts";
+import { createRunnerToken, revokeRunnerTokens, verifyRunnerToken } from "./runner-tokens.ts";
+import { takeRunnerLease } from "./runners.ts";
+
+let db: Awaited<ReturnType<typeof createTestDb>>;
+beforeAll(async () => {
+  db = await createTestDb();
+});
+afterAll(() => db.$client.close());
+
+test("a token verifies as its canvas, and only as its canvas", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+
+  const issued = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 3600 });
+  const theirs = await createRunnerToken(db, { canvasId: other.canvas.id, ttlSeconds: 3600 });
+
+  expect(issued.token).toMatch(/^pzr_[0-9a-z]{52}$/);
+  expect(issued.token).not.toBe(theirs.token);
+  const lifetime = issued.expiresAt.getTime() - Date.now();
+  expect(lifetime).toBeGreaterThan(3500_000);
+  expect(lifetime).toBeLessThan(3700_000);
+  expect(await verifyRunnerToken(db, issued.token)).toEqual({
+    id: issued.id,
+    canvasId: one.canvas.id,
+    leaseRunnerId: null,
+  });
+  expect(await verifyRunnerToken(db, theirs.token)).toMatchObject({ canvasId: other.canvas.id });
+});
+
+test("a token comes back with the runner that holds its canvas's lease now", async () => {
+  const { canvas } = await seedCanvas(db);
+  const issued = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 3600 });
+
+  await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
+  const { runnerId } = await takeRunnerLease(db, { canvasId: canvas.id, now: new Date() });
+
+  expect(await verifyRunnerToken(db, issued.token)).toMatchObject({ leaseRunnerId: runnerId });
+});
+
+test("the table holds a hash, never the token", async () => {
+  const { canvas } = await seedCanvas(db);
+  const { id, token } = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 60 });
+
+  const [row] = await db.select().from(runnerTokens).where(eq(runnerTokens.id, id));
+
+  expect(row!.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+  expect(JSON.stringify(row)).not.toContain(token.slice(4));
+  // Presenting the hash itself gets nowhere.
+  expect(await verifyRunnerToken(db, row!.tokenHash)).toBeNull();
+});
+
+test("an unknown token is nobody", async () => {
+  expect(await verifyRunnerToken(db, "pzr_made_up")).toBeNull();
+  expect(await verifyRunnerToken(db, "")).toBeNull();
+});
+
+test("an expired token stops working", async () => {
+  const { canvas } = await seedCanvas(db);
+  const { id, token } = await createRunnerToken(db, { canvasId: canvas.id, ttlSeconds: 60 });
+
+  await db
+    .update(runnerTokens)
+    .set({ expiresAt: sql`now() - interval '1 second'` })
+    .where(eq(runnerTokens.id, id));
+
+  expect(await verifyRunnerToken(db, token)).toBeNull();
+});
+
+test("revoking ends every token a canvas has, and no other canvas's", async () => {
+  const one = await seedCanvas(db);
+  const other = await seedCanvas(db);
+  const first = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
+  const second = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
+  const theirs = await createRunnerToken(db, { canvasId: other.canvas.id, ttlSeconds: 60 });
+
+  expect(await revokeRunnerTokens(db, one.canvas.id)).toBe(2);
+
+  expect(await verifyRunnerToken(db, first.token)).toBeNull();
+  expect(await verifyRunnerToken(db, second.token)).toBeNull();
+  expect(await verifyRunnerToken(db, theirs.token)).not.toBeNull();
+  expect(await revokeRunnerTokens(db, one.canvas.id)).toBe(0);
+  // A token made after the revocation works.
+  const fresh = await createRunnerToken(db, { canvasId: one.canvas.id, ttlSeconds: 60 });
+  expect(await verifyRunnerToken(db, fresh.token)).not.toBeNull();
+});

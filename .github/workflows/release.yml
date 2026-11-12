@@ -1,19 +1,20 @@
 name: Release
 
 # Release Please keeps one open release PR per app on main: the desktop app
-# and CLI ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
+# ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
 # ("chore(main): release mobile X.Y.Z", tags mobile-vX.Y.Z). Every push to
-# main enables auto-merge on both, so once CI passes they land, and the next
+# main enables auto-merge on both unless scripts/release-hold.ts holds one (a
+# major version, or an app the repository variable RELEASES_HELD names), so
+# once CI passes they land, and the next
 # run of this workflow tags the version and opens a draft GitHub release with
 # its notes. For vX.Y.Z, the mac, windows and linux jobs build Ponzu into that
 # draft and launch what they built; the mac job signs and notarizes first.
 # Only once all three have succeeded does the publish job check the draft has
 # every file each platform's feed names and every download the site links,
 # and publish it. A platform that fails leaves the draft a draft, so every
-# release ships on all three or on none. The npm job publishes the same
-# version of the CLI to npm. electron-updater and the site's download links
-# only see the latest published release, so a failed build never reaches
-# anyone. A mobile-vX.Y.Z tag starts EAS's production workflow
+# release ships on all three or on none. electron-updater and the site's
+# download links only see the latest published release, so a failed build
+# never reaches anyone. A mobile-vX.Y.Z tag starts EAS's production workflow
 # (apps/mobile/.eas/workflows), and its release is published here without
 # becoming the latest, which stays the desktop app's. A fix or feature merged
 # to main reaches installed apps without anyone touching a release PR.
@@ -70,32 +71,95 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
   # Auto-merge is idempotent: an updated release PR keeps it and merges once
-  # its new head is green. Each app's release PR has its own branch.
+  # its new head is green. Each app's release PR has its own branch. Each run
+  # first asks scripts/release-hold.ts whether the PR, as Release Please has
+  # just titled it, is held: a major version over .release-please-manifest.json,
+  # an app named in RELEASES_HELD, or a title it cannot read. A held PR gets no
+  # auto-merge, and loses any it had (a 1.81.0 PR that a `feat!:` turns into
+  # 2.0.0 keeps auto-merge otherwise), and the run says why. A person merges it.
+  # It fails closed: it runs even when Release Please failed part way (it may
+  # have retitled one PR before failing on the other), neither app's run
+  # cancels the other's, and when the hold cannot be decided the last step
+  # turns off auto-merge the PR already had.
   auto-merge:
     name: Auto-merge the ${{ matrix.app }} release PR
     needs: release-please
+    if: ${{ !cancelled() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
+      fail-fast: false
       matrix:
         # The branch's component: the root package's name, or the phone's.
         app: [ponzu, mobile]
     steps:
-      - name: Enable squash auto-merge on the open release PR
+      # main's head: its manifest holds the versions released now.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - name: Enable squash auto-merge on the open release PR, unless it is held
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
             --head "release-please--branches--main--components--$APP" \
             --label "autorelease: pending" \
-            --json number,autoMergeRequest --jq '.[0]')
+            --json number,title,headRefOid,autoMergeRequest --jq '.[0]')
           if [ -z "$pr" ] || [ "$pr" = "null" ]; then
             echo "no open $APP release PR"; exit 0
           fi
           number=$(jq -r .number <<<"$pr")
-          if [ "$(jq -r .autoMergeRequest <<<"$pr")" != "null" ]; then
+          title=$(jq -r .title <<<"$pr")
+          enabled=$(jq -r '.autoMergeRequest != null' <<<"$pr")
+          # The versions the PR itself would release, so a title that says
+          # otherwise holds it.
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/.release-please-manifest.json?ref=$(jq -r .headRefOid <<<"$pr")" \
+            >"$RUNNER_TEMP/proposed.json"
+          # Exits non-zero (and so does this step) when it cannot answer.
+          answer=$(bun scripts/release-hold.ts --app "$APP" --title "$title" \
+            --proposed "$RUNNER_TEMP/proposed.json")
+          case "$answer" in
+            merge) ;;
+            "hold: "*)
+              if [ "$enabled" = true ]; then
+                gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
+              fi
+              why=${answer#hold: }
+              why=${why//'%'/'%25'}
+              why=${why//$'\r'/'%0D'}
+              why=${why//$'\n'/'%0A'}
+              echo "::notice title=Release PR #$number is held for a person to merge::$why"
+              echo "Release PR #$number is held for a person to merge: $why" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            *) echo "release-hold.ts answered neither merge nor hold"; exit 1 ;;
+          esac
+          if [ "$enabled" = true ]; then
             echo "auto-merge already enabled on #$number"; exit 0
           fi
           gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash --auto
           echo "auto-merge enabled on #$number"
+        env:
+          APP: ${{ matrix.app }}
+          RELEASES_HELD: ${{ vars.RELEASES_HELD }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      # A step above failed, so whether the PR is held is unknown: a PR that
+      # had auto-merge from an earlier run (and may now be 2.0.0) loses it,
+      # and a person merges it or the next push to main decides again.
+      - name: Turn off auto-merge when the hold could not be decided
+        if: failure()
+        run: |
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
+            --label "autorelease: pending" \
+            --json number,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null) | .number')
+          for number in $numbers; do
+            gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
+            echo "::warning title=Auto-merge turned off on release PR #$number::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+          done
         env:
           APP: ${{ matrix.app }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -117,63 +181,14 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=false --jq '"published \(.tag_name) \(.html_url)"'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.mobile_tag }}
-
-  # The CLI on npm, which `bunx ponzu` runs: the desktop app's version, from its
-  # tag. Built and installed as CI's desktop job does (scripts/npm-package.ts,
-  # scripts/npm-smoke.ts), then published unless npm already has that version,
-  # so a rebuild by hand is safe. npm trusts this workflow as the package's
-  # publisher, or takes the NPM_TOKEN secret (CONTRIBUTING.md#releases).
-  npm:
-    name: CLI on npm
-    needs: release-please
-    if: >-
-      ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
-      || (github.event_name == 'workflow_dispatch' && inputs.publish && startsWith(inputs.tag, 'v'))) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      # Trusted publishing and the provenance statement.
-      id-token: write
-    env:
-      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ env.TAG }}
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Build the package
-        run: |
-          bun run --filter @ponzu/studio build
-          bun scripts/npm-package.ts
-        env:
-          # As in the Mac app's server: release builds report anonymous usage.
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
-      - name: It installs, creates a design and serves the studio
-        run: bun scripts/npm-smoke.ts
-      - name: Publish
-        run: |
-          version=$(jq -r .version apps/cli/npm/package.json)
-          if [ "$(npm view "ponzu@$version" version 2>/dev/null)" = "$version" ]; then
-            echo "ponzu@$version is already on npm"; exit 0
-          fi
-          # Trusted publishing needs npm 11.5.1 or later.
-          npm install -g npm@11
-          npm publish apps/cli/npm --access public --provenance
-
 
   # The desktop app, one job per platform, for the root package's release
   # (vX.Y.Z) only: `released` is never set by a phone release, and a mobile-v
@@ -233,14 +248,19 @@ jobs:
         env:
           # electron-builder imports the base64 p12 into a temporary keychain itself.
           CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           CSC_NAME: Northbrook PBC (R9352YFQL4)
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           GH_TOKEN: ${{ github.token }}
-          # Inlined into the bundled server, so release builds report anonymous
-          # usage and builds from source don't (apps/cli/src/telemetry.ts).
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
       - name: Signed, notarized and stapled
         # The app inside the DMG carries the notarization ticket; the DMG
         # itself is only a container and is not notarized.
@@ -251,18 +271,17 @@ jobs:
         # notarized; codesign shows the ticket is in the bundle.
         run: |
           codesign --verify --deep --strict --verbose=2 out/mac-arm64/Ponzu.app
-          codesign --verify --strict --verbose=2 out/mac-arm64/Ponzu.app/Contents/Resources/server/ponzu
           spctl --assess --type execute --verbose=2 out/mac-arm64/Ponzu.app
           set -o pipefail
           codesign --display --verbose=4 out/mac-arm64/Ponzu.app 2>&1 | grep -x 'Notarization Ticket=stapled'
         working-directory: apps/desktop
-      - name: The signed app starts its server and paints the studio
+      - name: The signed app draws its sign-in screen
         # The exact bundle in the draft, before the draft goes public. A broken
         # main process hangs on Electron's error dialog and trips the alarm;
-        # a server or renderer failure exits 1. See src/smoke.ts. macOS ships
-        # no `timeout`; perl's alarm survives exec.
-        # ELECTRON_RUN_AS_NODE, if a host sets it, would make the app plain Node.
-        run: env -u ELECTRON_RUN_AS_NODE PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
+        # a studio that fails, or has no bridge, exits 1. See src/smoke.ts.
+        # macOS ships no `timeout`; perl's alarm survives exec. The app's
+        # fuses ignore ELECTRON_RUN_AS_NODE, so a host that sets it is moot.
+        run: PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
         working-directory: apps/desktop
       - name: Upload anything electron-builder didn't
         if: env.PUBLISH == 'true'
@@ -327,7 +346,14 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
       - name: The update feed names no publisher to check updates against
         # electron-updater checks a Windows update's signature only against the
         # publisher app-update.yml names, which an unsigned build has none of.
@@ -335,7 +361,7 @@ jobs:
           cat out/win-unpacked/resources/app-update.yml
           ! grep -q publisherName out/win-unpacked/resources/app-update.yml
         working-directory: apps/desktop
-      - name: The installer installs Ponzu, which starts its server and paints the studio
+      - name: The installer installs Ponzu, which draws its sign-in screen
         # As CI's "Desktop package (Windows)", on what the installer put in
         # place: one click, for this person only, under %LOCALAPPDATA%\Programs.
         shell: pwsh
@@ -355,7 +381,7 @@ jobs:
           exit $app.ExitCode
         working-directory: apps/desktop
       - name: Uninstalling removes Ponzu and what it wrote for the person
-        # What the app writes at launch (src/designs.ts, apps/cli/src/command.ts),
+        # What Ponzu 1.x wrote at launch (its src/designs.ts and its CLI's command.ts),
         # which the uninstaller removes through build/uninstall.ps1.
         shell: pwsh
         run: |
@@ -447,10 +473,17 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
-          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
-      - name: The AppImage starts its server and paints the studio
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
+      - name: The AppImage draws its sign-in screen
         # As CI's "Desktop package", through the AppImage's own runtime. Its
-        # icons are where the app's desktop entry finds them (src/designs.ts).
+        # icons are where the app's desktop entry finds them (src/linux.ts).
         run: |
           cat out/latest-linux.yml
           chmod +x out/Ponzu-x64.AppImage
@@ -460,24 +493,17 @@ jobs:
           test -f "$RUNNER_TEMP/squashfs-root/usr/share/icons/hicolor/512x512/apps/ponzu.png"
           test -f "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
         working-directory: apps/desktop
-      - name: The .deb installs, starts, and removes itself and the wake helper
-        # Installed with its dependencies, launched from where it links
-        # `ponzu`. The wake helper's units are written as the app writes them
-        # at launch; the runner has no systemd user session, so only the files
-        # are there to remove (build/deb-after-remove.sh).
+      - name: The .deb installs, starts, and removes itself
+        # Installed with its dependencies, launched from where it links `ponzu`.
         run: |
           sudo apt-get install -y ./out/Ponzu-x64.deb
           test "$(readlink -f /usr/bin/ponzu)" = /opt/Ponzu/ponzu
           test -f /usr/share/icons/hicolor/512x512/apps/ponzu.png
           grep '^Icon=ponzu$' /usr/share/applications/ponzu.desktop
           PONZU_SMOKE=1 timeout 120 xvfb-run -a ponzu --no-sandbox
-          /opt/Ponzu/resources/server/ponzu wake install || true
-          test -f ~/.config/systemd/user/ponzu-wake@.service
           sudo apt-get remove -y "$(dpkg-deb -f out/Ponzu-x64.deb Package)"
           test ! -e /opt/Ponzu/ponzu
           test ! -e /usr/bin/ponzu
-          test ! -e ~/.config/systemd/user/ponzu-wake@.service
-          test ! -e ~/.config/systemd/user/ponzu-wake.socket
         working-directory: apps/desktop
       - name: Upload anything electron-builder didn't
         if: env.PUBLISH == 'true'
@@ -533,8 +559,33 @@ jobs:
           path: release-tools
           sparse-checkout: scripts
           persist-credentials: false
+      # No release ships pointing at dev: the tag's infra/environments.json must
+      # name production as the release's environment, with every field set
+      # (scripts/prod/desired.ts, docs/production.md). Read from the tag, which
+      # is what the builds baked. A dry run publishes nothing, so it isn't held.
+      - name: The release talks to production
+        if: env.PUBLISH == 'true'
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/prod/desired.ts assert-release production
       - name: The release's notes
         run: bun scripts/release-notes.ts "$RUNNER_TEMP/release-notes.json"
+      # Both apps' dated notes, which the site's /changelog reads from the
+      # latest release (scripts/release-notes.ts --changelog). Run from this
+      # workflow's tooling, since a tag rebuilt by hand can predate the mode.
+      # Uploaded before the draft is downloaded, or put beside a dry run's
+      # builds, so the check below reads it too.
+      - name: The site's changelog
+        run: |
+          bun release-tools/scripts/release-notes.ts --changelog "$RUNNER_TEMP/changelog.json"
+          if [ "$PUBLISH" = true ]; then
+            bash release-tools/scripts/release-upload.sh "$TAG" "$RUNNER_TEMP/changelog.json"
+          else
+            mkdir -p "$RUNNER_TEMP/release"
+            cp "$RUNNER_TEMP/changelog.json" "$RUNNER_TEMP/release/"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Upload the notes and download the draft
         if: env.PUBLISH == 'true'
         run: |
@@ -560,7 +611,9 @@ jobs:
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "no release for $TAG"; exit 1
+          fi
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
             -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
         env:

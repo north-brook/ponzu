@@ -5,12 +5,12 @@
       "**",
       "!**/dist",
       "!**/out",
-      "!apps/cli/npm",
       "!**/node_modules",
       "!examples",
-      "!apps/web/public/demo/seekle.design",
-      "!apps/web/components/demo/before",
       "!.context",
+      "!apps/studio/src/cloud/gallery/assets",
+      "!packages/db/migrations",
+      "!apps/*/evals/*/results",
       "!**/.next",
       "!**/next-env.d.ts",
       "!.release-please-manifest.json",
@@ -53,6 +53,9 @@
       "a11y": {
         "noStaticElementInteractions": "off",
         "noAutofocus": "off"
+      },
+      "nursery": {
+        "noFloatingPromises": "error"
       }
     }
   },
@@ -63,11 +66,17 @@
   },
   "overrides": [
     {
-      "includes": [
-        "apps/mobile/app.json",
-        "plugin/.claude-plugin/plugin.json",
-        "plugin/.codex-plugin/plugin.json"
-      ],
+      "includes": ["**", "!apps/api/**"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noFloatingPromises": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/mobile/app.json"],
       "formatter": {
         "enabled": false
       }

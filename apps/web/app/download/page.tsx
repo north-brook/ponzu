@@ -3,14 +3,14 @@ import type { ReactNode } from "react";
 import { Footer, Nav } from "@/components/chrome";
 import { DownloadButton, OsIcon } from "@/components/download-button";
 import { DownloadArrow, GitHub, PhoneIcon } from "@/components/icons";
-import { REPO, TESTFLIGHT } from "@/components/links";
-import { asset, OSES, type Os, PLATFORMS } from "@/components/platforms";
+import { REPO } from "@/components/links";
+import { asset, IPHONE_PATH, OSES, type Os, PLATFORMS } from "@/components/platforms";
 import { share } from "@/components/share";
-import { CopyCommand } from "./copy-command";
+import { IPHONE_URL_TARGET } from "@/components/site";
 
 const TITLE = "Download Ponzu";
 const DESCRIPTION =
-  "Ponzu for Mac, Windows and Linux: free and open source. It updates itself and sets up your agents on first launch.";
+  "Ponzu for Mac, Windows, Linux and iPhone. Sign in with GitHub and connect your Claude plan: Ponzu runs in the cloud, so there's nothing else to set up.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -21,8 +21,9 @@ export const metadata: Metadata = {
 /**
  * Every way to get Ponzu. The visitor's desktop is outlined, holds the dark button and comes first
  * (`[data-card]` in globals.css, picked before paint). Each card goes to its install steps, which
- * start the download; on a phone the buttons hand the link to a computer instead. Designed in
- * .context/windows-linux.design (Download pages › /download).
+ * start the download; on a phone the buttons hand the link to a computer instead. Under them, the
+ * iPhone beta (through /iphone) and every release. Designed in .context/windows-linux.design
+ * (Download pages › /download); the words are the site design's §3.3.
  */
 export default function Page() {
   return (
@@ -31,11 +32,11 @@ export default function Page() {
 
       <header className="flex flex-col items-center gap-5 pt-[88px] pb-14 text-center max-[720px]:pt-14 max-[720px]:pb-10">
         <h1 className="m-0 text-[clamp(44px,6vw,72px)] leading-[1.06] font-semibold tracking-[-0.035em] text-balance text-ink">
-          Download Ponzu.
+          Get Ponzu
         </h1>
         <p className="m-0 max-w-[560px] text-[19px]/[31px] text-balance text-muted">
-          Free and open source on Mac, Windows and Linux. It updates itself and sets up your agents
-          on first launch.
+          Sign in with GitHub and connect your Claude plan. Ponzu runs in the cloud, so there's
+          nothing else to set up.
         </p>
       </header>
 
@@ -46,21 +47,23 @@ export default function Page() {
           ))}
         </div>
 
-        <div className="grid grid-cols-3 gap-5 max-[1000px]:grid-cols-1">
-          {TESTFLIGHT ? (
+        <div className="grid grid-cols-2 gap-5 max-[1000px]:grid-cols-1">
+          {IPHONE_URL_TARGET ? (
             <Also
-              href={TESTFLIGHT}
+              href={IPHONE_PATH}
               icon={<PhoneIcon />}
               title={
                 <>
                   iPhone <Beta />
                 </>
               }
-              body="Review and steer on the go"
-              action="TestFlight →"
+              body="See your canvases live and comment on them from your iPhone."
+              action={
+                IPHONE_URL_TARGET.includes("testflight.apple.com") ? "TestFlight →" : "App Store →"
+              }
             />
           ) : null}
-          <CopyCommand />
+          {/* The changelog (/changelog) takes this card's link once it exists. */}
           <Also
             href={`${REPO}/releases`}
             icon={<GitHub />}

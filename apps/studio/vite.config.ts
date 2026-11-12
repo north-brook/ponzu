@@ -2,27 +2,26 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { checkoutPort, sourceCheckout } from "../cli/src/source.ts";
 
-// The server `bun run dev` starts from this checkout listens on the checkout's own port.
-const checkout = sourceCheckout(fileURLToPath(import.meta.url));
-const target =
-  process.env.PONZU_SERVER ?? `http://127.0.0.1:${checkout ? checkoutPort(checkout) : 7777}`;
-
-export default defineConfig({
+/*
+ * `bun run dev` serves the studio on Ponzu Cloud in memory (src/app/fake-host.ts); inside the
+ * desktop app, `PONZU_STUDIO_URL=http://localhost:5173 bun run start` loads it from here on the
+ * real API.
+ */
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  server: {
-    port: 5173,
-    proxy: {
-      // The catalog's stream is a WebSocket under /api.
-      "/api": { target, ws: true },
-      "/mcp": target,
-      "/files": target,
-      // Designs on the person's other Macs, relayed by the server.
-      "/peers": { target, ws: true },
-      "/ws": { target: target.replace(/^http/, "ws"), ws: true },
-    },
+  server: { port: 5173 },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    // Written only for PostHog's CLI to upload, which the desktop package does before packing
+    // and then deletes them (apps/desktop/scripts/sourcemaps.ts): the app never ships a map.
+    sourcemap: Boolean(process.env.POSTHOG_CLI_API_KEY && process.env.POSTHOG_CLI_PROJECT_ID),
+    // The cloud gallery (gallery.html) is dev-only; `--mode gallery` builds it alone for the
+    // visual scripts (scripts/visual.ts), never into the app.
+    rollupOptions:
+      mode === "gallery"
+        ? { input: fileURLToPath(new URL("./gallery.html", import.meta.url)) }
+        : undefined,
   },
-  build: { outDir: "dist", emptyOutDir: true, sourcemap: false },
-});
+}));

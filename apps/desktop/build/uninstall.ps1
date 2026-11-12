@@ -1,12 +1,12 @@
-# Run by Ponzu's uninstaller (installer.nsh), as the person, before it removes the app: what
-# Ponzu wrote for them at launch. Their designs and ~\.ponzu stay.
+# Run by Ponzu's uninstaller (installer.nsh), as the person, before it removes the app: what 1.x
+# wrote for them at launch, which the cloud app never writes. Their designs and ~\.ponzu stay.
 
 # design.json under Open with, and the Ponzu Design type it opens as (apps/desktop/src/designs.ts).
 $classes = 'HKCU:\Software\Classes'
 Remove-Item -LiteralPath "$classes\Ponzu.Design" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-ItemProperty -LiteralPath "$classes\.json\OpenWithProgids" -Name 'Ponzu.Design' -ErrorAction SilentlyContinue
 
-# The ponzu command's folder on their PATH (apps/cli/src/command.ts), read and written as the
+# The ponzu command's folder on their PATH (1.x's CLI, its command.ts), read and written as the
 # registry holds it, so entries like %USERPROFILE%\bin stay unexpanded.
 $ponzuHome = if ($env:PONZU_HOME) { $env:PONZU_HOME } else { Join-Path $env:USERPROFILE '.ponzu' }
 $bin = Join-Path $ponzuHome 'bin'

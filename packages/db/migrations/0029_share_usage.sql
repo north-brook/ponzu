@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "share_usage" boolean DEFAULT true NOT NULL;

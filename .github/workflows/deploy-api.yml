@@ -1,0 +1,179 @@
+name: Deploy API
+
+# The only thing that deploys apps/api, to two Vercel projects (docs/production.md):
+#
+# - `dev`: a push to `cloud` (or a dispatch on `cloud`) applies the pending migrations to the
+#   Neon `dev` branch, deploys to the ponzu-api project's Production target and checks its
+#   health. Off until the repository variable API_DEPLOY is "true"; until then whoever merges
+#   into `cloud` runs these steps by hand.
+# - `production`: a push to `main`, and nothing else, under the GitHub Environment `production`,
+#   which only `main` may use and whose reviewer (the founder) approves each run. It snapshots
+#   the Neon default branch, copies the sandbox image dev checked into production's registry by
+#   digest, migrates the default branch, deploys ponzu-api-prod and checks its health. Off until
+#   the repository variable API_DEPLOY_PRODUCTION is "true".
+#
+# Nobody deploys a branch with `--prod`, so the API the apps are built against never becomes
+# whichever branch deployed last, and a migration reaches a shared database only once it has
+# merged. Migrations are expand-only (scripts/ci/migrations.ts), so the new schema runs under
+# the old code between the migration and the deploy. See apps/api/README.md, "Deploying".
+#
+# The repository is deliberately not connected to either Vercel project; this deploys with the
+# CLI and a token. scripts/ci/workflows.test.ts holds the shape of this file: which event runs
+# which job, and that only the production job can reach the default branch.
+on:
+  push:
+    branches: [cloud, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dev:
+    name: Migrate and deploy dev
+    if: >-
+      ${{ vars.API_DEPLOY == 'true' && github.ref == 'refs/heads/cloud'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    concurrency:
+      # One at a time and in order: a deploy is never cancelled halfway through its migration.
+      group: deploy-api-dev
+      cancel-in-progress: false
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Apply pending migrations to the Neon `dev` branch
+        # Before the code that needs them. `db:migrate` applies everything pending in one
+        # transaction and fails if a migration in the journal was passed over.
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          url="$(bun apps/api/scripts/neon.ts dev --direct)"
+          echo "::add-mask::$url"
+          cd packages/db && DATABASE_URL="$url" bun run db:migrate
+      - name: Deploy ponzu-api
+        # The project's Root Directory is apps/api, so this runs at the repository root. The
+        # CLI is pinned: it runs with a token that can deploy.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bunx vercel@65.14.0 deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
+      - name: Dev answers with this commit, its image and every migration
+        run: bun scripts/ci/health.ts --env dev --commit "$GITHUB_SHA"
+
+  production:
+    name: Migrate and deploy production
+    # A push to main only: never cloud, never a dispatch, never a pull request. The environment
+    # adds the founder's approval and refuses any branch but main on its own.
+    if: >-
+      ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push'
+      && github.ref == 'refs/heads/main' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-api-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # The registry's OIDC login (vercel/vcr-action), for the image copy.
+      id-token: write
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROD_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The image dev checked, and where production keeps it
+        id: image
+        # current.json names the image by digest in dev's registry (ponzu-api). Production's
+        # project (infra/environments.json) gets the same digest under the same tag.
+        run: |
+          current=apps/runner/image/current.json
+          repository="$(jq -r .repository "$current")"
+          digest="$(jq -r .digest "$current")"
+          tag="$(jq -r .tag "$current")"
+          project="$(jq -r .environments.production.vercelProject infra/environments.json)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::current.json has no digest."; exit 1; }
+          [[ "$repository" =~ ^[a-z0-9-]+/[a-z0-9-]+/ponzu-runner$ ]] || { echo "::error::current.json's repository is $repository."; exit 1; }
+          team="${repository%%/*}"
+          {
+            echo "digest=$digest"
+            echo "source=vcr.vercel.com/$repository@$digest"
+            echo "target=vcr.vercel.com/$team/$project/ponzu-runner:$tag"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to VCR
+        # One team, so one login reaches both projects' registries. The team's OIDC policy must
+        # let this repository's `production` environment write to ponzu-api-prod.
+        uses: vercel/vcr-action/login@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
+        with:
+          team: ${{ vars.VERCEL_TEAM_ID }}
+      - name: Copy the image into production's registry by digest
+        # Before anything touches the database: a copy that fails leaves production as it was.
+        # imagetools copies the manifest as it is, so the digest is the one dev checked.
+        env:
+          SOURCE: ${{ steps.image.outputs.source }}
+          TARGET: ${{ steps.image.outputs.target }}
+        run: docker buildx imagetools create --tag "$TARGET" "$SOURCE"
+      - name: Production's registry has it ready
+        id: ready
+        uses: vercel/vcr-action/wait-for-optimized-image@6888f841cb0d2255ef9dab40f068cba07234ef47 # v1.1.0
+        timeout-minutes: 11
+        with:
+          image: ${{ steps.image.outputs.target }}
+          timeout-seconds: 600
+      - name: The ready image is the digest dev checked
+        env:
+          WANT: ${{ steps.image.outputs.digest }}
+          GOT: ${{ steps.ready.outputs.digest }}
+        run: |
+          [ "$GOT" = "$WANT" ] || { echo "::error::Production's registry holds $GOT, not $WANT."; exit 1; }
+      - name: Snapshot the Neon default branch
+        # pre-<first 12 of the commit>, kept 14 days: the restore point if this migration goes
+        # wrong (docs/production.md, "Backups and restore").
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          PONZU_ALLOW_DEFAULT_BRANCH: production
+        run: bun apps/api/scripts/neon.ts --default --snapshot "pre-${GITHUB_SHA:0:12}"
+      - name: Apply pending migrations to the Neon default branch
+        # neon.ts refuses the default branch unless PONZU_ALLOW_DEFAULT_BRANCH is "production",
+        # which only this job sets.
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          PONZU_ALLOW_DEFAULT_BRANCH: production
+        run: |
+          url="$(bun apps/api/scripts/neon.ts --default --direct)"
+          echo "::add-mask::$url"
+          cd packages/db && DATABASE_URL="$url" bun run db:migrate
+      - name: Deploy ponzu-api-prod
+        # The environment's VERCEL_TOKEN, one that can deploy only ponzu-api-prod.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bunx vercel@65.14.0 deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
+      - name: Production answers with this commit, its image and every migration
+        run: bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA"

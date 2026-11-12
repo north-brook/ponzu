@@ -1,0 +1,35 @@
+ground div rgb(244, 243, 240)
+ground span rgb(255, 95, 87)
+ground span rgb(254, 188, 46)
+ground span rgb(40, 200, 64)
+ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+ground span[Setup] rgb(17, 17, 16)
+ground span[Setup] rgb(211, 208, 200)
+ground span[Setup] rgb(211, 208, 200)
+text "Where do you build?" rgb(17, 17, 16) 600 28px Funnel Display
+text "Build on your real product, with your t…" rgb(86, 83, 77) 400 15px Inter
+ground div rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px
+image img ada.svg
+ground img shadow rgb(232, 230, 224) 0px 0px 0px 1px
+text "Personal" rgb(17, 17, 16) 500 14px Inter
+text "adapark" rgb(169, 165, 155) 400 12px Inter
+text "Set up" rgb(17, 17, 16) 500 12px Inter
+ground button rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px, rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+icon svg 12×12 rgb(86, 83, 77) stroke 2px
+text "Q" rgb(255, 255, 255) 600 14px Funnel Display
+ground span rgb(90, 74, 61)
+text "Quillmoor" rgb(17, 17, 16) 500 14px Inter
+text "quillmoor · 12 people" rgb(169, 165, 155) 400 12px Inter
+text "Ready" rgb(86, 83, 77) 500 12px Inter
+icon svg 14×14 rgb(17, 17, 16) stroke 1.9px
+image img image/svg+xml c4cbda20
+ground img shadow rgb(232, 230, 224) 0px 0px 0px 1px
+text "Thistlewick" rgb(17, 17, 16) 500 14px Inter
+text "thistlewick · 5 people" rgb(169, 165, 155) 400 12px Inter
+text "Ready" rgb(86, 83, 77) 500 12px Inter
+icon svg 14×14 rgb(17, 17, 16) stroke 1.9px
+text "Don't see an organization? Grant access…" rgb(86, 83, 77) 500 12px Inter
+icon svg 11×11 rgb(128, 124, 115) stroke 2.2px
+text "Continue" rgb(255, 255, 255) 500 13px Inter
+ground button rgb(17, 17, 16)
+icon svg 14×14 rgb(255, 255, 255) stroke 2.3px

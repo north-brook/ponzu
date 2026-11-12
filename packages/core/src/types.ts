@@ -67,6 +67,17 @@ export interface Message {
 export interface Author {
   kind: "user" | "agent";
   name: string;
+  /** Who this is across renames. Absent on what the local app wrote, which knew only a name. */
+  id?: string;
+  avatarUrl?: string;
+}
+
+/** Who made a change, as the API knows them from the caller's token. */
+export interface Actor {
+  kind: "user" | "agent";
+  id: string;
+  name: string;
+  avatarUrl?: string;
 }
 
 export interface Thread {

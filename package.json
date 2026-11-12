@@ -8,19 +8,27 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun run --filter @ponzu/studio dev & PONZU_TELEMETRY=0 bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design examples/weft.design examples/product-shots.design --dev",
+    "dev": "bun run --filter @ponzu/studio dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "evals": "bun scripts/evals.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@neondatabase/api-client": "2.7.3",
+    "@octokit/core": "7.0.8",
+    "@ponzu/evals": "workspace:*",
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "@vercel/sdk": "1.28.53",
+    "@workos-inc/node": "12.0.0",
+    "cloudflare": "7.3.0",
+    "typescript": "^5.9.3",
+    "zod": "^4"
   },
   "patchedDependencies": {
     "@react-native-menu/menu@2.0.0": "patches/@react-native-menu%2Fmenu@2.0.0.patch",

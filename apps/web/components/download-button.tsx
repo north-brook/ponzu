@@ -3,8 +3,9 @@
 import { type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { btn } from "./button";
 import { phone } from "./device";
-import { Apple, Check, Chevron, DownloadArrow, Linux, PhoneIcon, Terminal, Windows } from "./icons";
-import { guide, OSES, type Os, PLATFORMS } from "./platforms";
+import { Apple, Chevron, DownloadArrow, Linux, PhoneIcon, Windows } from "./icons";
+import { guide, IPHONE_PATH, OSES, type Os, PLATFORMS } from "./platforms";
+import { IPHONE_URL_TARGET } from "./site";
 
 /** Opens the handoff sheet (components/handoff.tsx), with this desktop picked. */
 export function openHandoff(os?: Os) {
@@ -98,9 +99,13 @@ export function NavDownload({ className = "" }: { className?: string }) {
  * off and there's no chevron (the sheet has its own picker). Designed in
  * .context/windows-linux.design (Download button › A).
  */
-export function DownloadSplit({ testflight }: { testflight: string | null }) {
+export function DownloadSplit({
+  testflight = IPHONE_URL_TARGET,
+}: {
+  /** Whether the iPhone app is offered: null hides it. Its link is always /iphone. */
+  testflight?: string | null;
+}) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const menu = useId();
 
@@ -119,12 +124,6 @@ export function DownloadSplit({ testflight }: { testflight: string | null }) {
       document.removeEventListener("keydown", key);
     };
   }, [open]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1600);
-    return () => clearTimeout(t);
-  }, [copied]);
 
   const half = "inline-flex items-center gap-[9px] py-[15px] pr-[18px] pl-5";
   return (
@@ -184,45 +183,19 @@ export function DownloadSplit({ testflight }: { testflight: string | null }) {
           })}
           <span aria-hidden="true" className="mx-3 my-1.5 h-px bg-rule" />
           {testflight ? (
-            <a role="menuitem" className="download-row" href={testflight}>
-              <span className="download-row-icon">
-                <PhoneIcon />
-              </span>
-              <span className="flex flex-col">
-                <span className="text-[15px] font-semibold text-ink">iPhone</span>
-                <span className="text-[13px] text-faint">
-                  Beta · pairs with Ponzu on your computer
+            <>
+              <a role="menuitem" className="download-row" href={IPHONE_PATH}>
+                <span className="download-row-icon">
+                  <PhoneIcon />
                 </span>
-              </span>
-            </a>
+                <span className="flex flex-col">
+                  <span className="text-[15px] font-semibold text-ink">iPhone</span>
+                  <span className="text-[13px] text-faint">Beta · comment and steer on the go</span>
+                </span>
+              </a>
+              <span aria-hidden="true" className="mx-3 my-1.5 h-px bg-rule" />
+            </>
           ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="download-row text-left"
-            onClick={() => {
-              void navigator.clipboard?.writeText("bunx ponzu serve").then(() => setCopied(true));
-            }}
-          >
-            <span className="download-row-icon">
-              <Terminal />
-            </span>
-            <span className="flex flex-col">
-              <span className="text-[15px] font-semibold text-ink">Terminal</span>
-              {/* Tapping the row copies the command; the line under it says so. */}
-              <span className="flex items-center gap-1.5 text-[13px] text-faint" aria-live="polite">
-                {copied ? (
-                  <>
-                    <Check className="size-3 shrink-0 fill-none stroke-current text-ok" />
-                    Copied
-                  </>
-                ) : (
-                  <span className="font-mono text-[12.5px]">bunx ponzu serve</span>
-                )}
-              </span>
-            </span>
-          </button>
-          <span aria-hidden="true" className="mx-3 my-1.5 h-px bg-rule" />
           <a role="menuitem" className="download-all" href="/download">
             All downloads
             <span aria-hidden="true">→</span>
@@ -237,7 +210,12 @@ export function DownloadSplit({ testflight }: { testflight: string | null }) {
  * Under the Download button on a phone, which hands the download to a computer: the other desktops
  * (each opens the sheet with it picked) and the iPhone beta, which isn't offered on Android.
  */
-export function PhonePlatforms({ testflight }: { testflight: string | null }) {
+export function PhonePlatforms({
+  testflight = IPHONE_URL_TARGET,
+}: {
+  /** Whether the iPhone app is offered: null hides it. Its link is always /iphone. */
+  testflight?: string | null;
+}) {
   const link = "inline-flex h-11 items-center gap-1.5 px-1";
   const label = "underline decoration-outline underline-offset-4";
   return (
@@ -260,7 +238,7 @@ export function PhonePlatforms({ testflight }: { testflight: string | null }) {
           <span aria-hidden="true" className="text-outline">
             ·
           </span>
-          <a className={link} href={testflight}>
+          <a className={link} href={IPHONE_PATH}>
             <PhoneIcon />
             <span className={label}>iPhone beta</span>
             <span aria-hidden="true" className="text-xs text-faint">

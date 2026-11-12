@@ -33,10 +33,12 @@ block: some fixes are invisible.
 
 Ponzu ships two apps that release apart: the desktop app (`vX.Y.Z`, built
 for the Mac, Windows and Linux from the same tag, which all show the same
-notes) and the iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). A pull request that
-changes only `apps/mobile` is the iPhone's: its notes never reach the Mac's
-release notes, and Release Please leaves it out of the Mac's release. A pull
-request that changes both says which app each note is about:
+notes) and the iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). Release Please
+leaves `apps/mobile`, `apps/api`, `apps/runner`, `packages/db`, `packages/sandbox`,
+`packages/evals`, `infra` and `docs` out of the Mac's release (`exclude-paths` in
+release-please-config.json), and a pull request that changes only those paths has no
+notes in the Mac's release notes either. One of them that changes `apps/mobile` is the
+iPhone's. A pull request that changes both apps says which app each note is about:
 
 ```md
 ## Release note
@@ -70,6 +72,16 @@ label, and those unlabelled ones.
 
 A checkout without tags or history (a shallow clone) writes no notes and
 warns, marking the file incomplete.
+
+The site's [changelog](https://ponzu.design/changelog) shows the same notes.
+The release's publish job also runs `scripts/release-notes.ts --changelog`,
+which writes both apps' releases, each with the date of its tag's commit, and
+publishes them beside the build as `changelog.json`. The site reads that file
+from the latest release every hour and shows the releases of Ponzu Cloud, from
+the first versions named in `apps/web/components/site.ts`, newest first. It
+is published only with the desktop app, so an iPhone release shows there once
+the next desktop release is out. If the file can't be read, the page says so
+and links to GitHub's releases.
 
 The iPhone's notes travel the same way to TestFlight. When a `mobile-vX.Y.Z`
 release builds a new binary, `apps/mobile/.eas/workflows/production.yml`

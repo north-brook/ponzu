@@ -1,11 +1,10 @@
-import type { ReactNode } from "react";
 import { Slice } from "@/components/icons";
-import { Key, Pointer, Step, Window } from "./steps";
+import { AfterInstall, Key, Pointer, Step, Steps, Window } from "./steps";
 
 /*
  * The Windows and Linux install steps, drawn like the Mac's (steps.tsx) on the same stage: the
- * download, the install, and an agent asked for a design. Neither OS has icons we can ship, so the
- * app is the slice on its ink tile and the rest is drawn.
+ * install, then the sign-in and the first ask, which every desktop shares. Neither OS has icons we
+ * can ship, so the app is the slice on its ink tile and the rest is drawn.
  */
 
 /** The app's icon: the yuzu slice on an ink tile. */
@@ -20,12 +19,10 @@ function AppTile({ size }: { size: number }) {
   );
 }
 
-/** A Windows window's title bar: the name, then minimise and close. */
-function WinTitle({ name, dark }: { name: string; dark?: boolean }) {
+/** A Windows or Linux window's title bar: the name, then minimise and close. */
+function WinTitle({ name }: { name: string }) {
   return (
-    <div
-      className={`flex h-10 items-center justify-between border-b px-3.5 text-[13px] ${dark ? "border-white/10 text-white/60" : "border-well-rule text-muted"}`}
-    >
+    <div className="flex h-10 items-center justify-between border-b border-well-rule px-3.5 text-[13px] text-muted">
       {name}
       <span aria-hidden="true" className="flex gap-4 opacity-70">
         <span>–</span>
@@ -35,62 +32,7 @@ function WinTitle({ name, dark }: { name: string; dark?: boolean }) {
   );
 }
 
-/** A file in a list, the first one selected. */
-function FileRow({
-  icon,
-  name,
-  action,
-  selected,
-  children,
-}: {
-  icon: ReactNode;
-  name: string;
-  action?: string;
-  selected?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <div
-      className={`relative flex h-12 items-center gap-2.5 px-3.5 ${selected ? "bg-m2 text-[#111110]" : "text-muted"}`}
-    >
-      {icon}
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm/5 font-medium">{name}</span>
-        {action ? <span className="text-xs/4 underline opacity-70">{action}</span> : null}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function Doc() {
-  return <span className="size-6 shrink-0 rounded-[5px] bg-chip" />;
-}
-
-/** The agent asked for a design, in a terminal of the OS's own. */
-function Terminal({ title, prompt }: { title: string; prompt: string }) {
-  return (
-    <Window dark>
-      <WinTitle name={title} dark />
-      <pre className="m-0 h-[132px] px-4 py-3.5 font-mono text-xs/5 whitespace-pre-wrap text-code-ink">
-        <span className="text-white/45">{prompt}</span>claude
-        {"\n\n"}
-        <span className="text-white/45">&gt; </span>Design a landing page for my app in Ponzu.
-        <i className="ml-1 inline-block h-3.5 w-[7px] translate-y-0.5 bg-m1" />
-      </pre>
-    </Window>
-  );
-}
-
-function Steps({ children }: { children: ReactNode }) {
-  return (
-    <ol className="m-0 grid w-full max-w-[1200px] list-none grid-cols-3 gap-6 p-0 max-[1000px]:grid-cols-1 max-[1000px]:gap-10">
-      {children}
-    </ol>
-  );
-}
-
-/** Windows: the browser's downloads, the installer, PowerShell. */
+/** Windows: run the installer (past SmartScreen), then sign in and describe it. */
 export function WindowsSteps({ installer }: { installer: string }) {
   return (
     <Steps>
@@ -98,24 +40,8 @@ export function WindowsSteps({ installer }: { installer: string }) {
         index={1}
         caption={
           <>
-            Open <Key>{installer}</Key> from your downloads.
-          </>
-        }
-      >
-        <Window>
-          <WinTitle name="Downloads" />
-          <FileRow icon={<AppTile size={26} />} name={installer} action="Open file" selected>
-            <Pointer className="absolute top-7 left-[52%] text-ink" />
-          </FileRow>
-          <FileRow icon={<Doc />} name="fernwood brief.pdf" />
-        </Window>
-      </Step>
-      <Step
-        index={2}
-        caption={
-          <>
-            If Windows says it protected your PC, choose <Key>More info</Key>, then{" "}
-            <Key>Run anyway</Key>. <Key>Ponzu</Key> installs just for you and opens.
+            Open <Key>{installer}</Key> from your downloads. If Windows says it protected your PC,
+            choose <Key>More info</Key>, then <Key>Run anyway</Key>.
           </>
         }
       >
@@ -130,14 +56,12 @@ export function WindowsSteps({ installer }: { installer: string }) {
           </div>
         </Window>
       </Step>
-      <Step index={3} caption="Ask your agent for a design.">
-        <Terminal title="PowerShell" prompt="PS C:\code> " />
-      </Step>
+      <AfterInstall bar={<WinTitle name="Ponzu" />} />
     </Steps>
   );
 }
 
-/** Linux: let the AppImage run, open it, ask an agent. */
+/** Linux: let the AppImage run and open it, then sign in and describe it. */
 export function LinuxSteps({ installer }: { installer: string }) {
   return (
     <Steps>
@@ -145,7 +69,7 @@ export function LinuxSteps({ installer }: { installer: string }) {
         index={1}
         caption={
           <>
-            In <Key>{installer}</Key>'s properties, allow it to run as a program.
+            In <Key>{installer}</Key>'s properties, allow it to run as a program, then open it.
           </>
         }
       >
@@ -166,29 +90,7 @@ export function LinuxSteps({ installer }: { installer: string }) {
           </div>
         </Window>
       </Step>
-      <Step
-        index={2}
-        caption={
-          <>
-            Open it. <Key>Ponzu</Key> adds itself to your apps and updates itself.
-          </>
-        }
-      >
-        <Window>
-          <WinTitle name="Apps" />
-          <div className="grid h-[132px] grid-cols-3 place-items-center px-4">
-            <span className="flex flex-col items-center gap-1.5 text-xs text-ink">
-              <AppTile size={44} />
-              Ponzu
-            </span>
-            <span className="size-11 rounded-[10px] bg-chip" />
-            <span className="size-11 rounded-[10px] bg-chip" />
-          </div>
-        </Window>
-      </Step>
-      <Step index={3} caption="Ask your agent for a design.">
-        <Terminal title="Terminal" prompt="~/code$ " />
-      </Step>
+      <AfterInstall bar={<WinTitle name="Ponzu" />} />
     </Steps>
   );
 }

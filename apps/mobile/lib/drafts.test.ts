@@ -1,13 +1,11 @@
 import { expect, test } from "bun:test";
-import { draftFile, draftKey, getDraft, moveDraft, setDraft, subscribeDrafts } from "./drafts";
+import { draftKey, getDraft, moveDraft, setDraft, subscribeDrafts } from "./drafts";
 
-test("copies of a design, which share thread ids, keep their own drafts", () => {
-  const original = draftFile("studio", "/work/kettle.design");
-  const copy = draftFile("studio", "/worktree/kettle.design");
-  const otherMac = draftFile("laptop", "/work/kettle.design");
+test("canvases keep their own drafts, whatever their thread ids", () => {
+  const original = "cnv_kettle";
+  const copy = "cnv_kettle_copy";
   const pin = { artboardId: "ab_1", x: 4, y: 8 };
   expect(draftKey.reply(original, "th_1")).not.toBe(draftKey.reply(copy, "th_1"));
-  expect(draftKey.reply(original, "th_1")).not.toBe(draftKey.reply(otherMac, "th_1"));
   expect(draftKey.comment(original, pin)).not.toBe(draftKey.comment(copy, pin));
   const key = draftKey.reply(original, "th_1");
   setDraft(key, { file: original, thread: "th_1", text: "and the lid" });
@@ -17,7 +15,7 @@ test("copies of a design, which share thread ids, keep their own drafts", () => 
 });
 
 test("an unsent comment moved to another spot takes its words with it", () => {
-  const file = draftFile("studio", "/work/kettle.design");
+  const file = "cnv_kettle";
   const from = { pageId: "pg_1", artboardId: "ab_1", x: 4, y: 8 };
   const to = { pageId: "pg_1", artboardId: "ab_2", nodeId: "n_lid", x: 30, y: 12 };
   const fromKey = draftKey.comment(file, from);
@@ -37,7 +35,7 @@ test("an unsent comment moved to another spot takes its words with it", () => {
 });
 
 test("listeners hear a draft arrive, go or move, never its words change", () => {
-  const file = draftFile("studio", "/work/kettle.design");
+  const file = "cnv_kettle";
   const pin = { pageId: "pg_1", artboardId: "ab_1", x: 4, y: 8 };
   const key = draftKey.comment(file, pin);
   let heard = 0;

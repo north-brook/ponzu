@@ -70,20 +70,30 @@ export function artboardSummary(ab: Artboard): string {
 
 /**
  * One-screen overview of a whole file: pages, artboards, open threads.
- * `folderOf` adds where each page's files live.
+ * `folderOf` adds where each page's files live; `linkOf`, each page's and artboard's link.
  */
 export function docSummary(
   doc: Doc,
-  opts: { folderOf?: (pageId: string) => string | undefined } = {},
+  opts: {
+    folderOf?: (pageId: string) => string | undefined;
+    linkOf?: (at: { page: string } | { artboard: string }) => string | undefined;
+  } = {},
 ): string {
-  const lines = [`File: ${doc.name}`];
+  const lines = [`Canvas: ${doc.name}`];
+  const link = (at: { page: string } | { artboard: string }) => {
+    const to = opts.linkOf?.(at);
+    return to ? ` · link: ${to}` : "";
+  };
   for (const page of doc.pages) {
     const folder = opts.folderOf?.(page.id);
     lines.push(
-      `Page ${page.id} "${page.name}"${folder ? ` · ${folder}` : ""}${page.artboards.length ? "" : " (empty)"}`,
+      `Page ${page.id} "${page.name}"${folder ? ` · ${folder}` : ""}${page.artboards.length ? "" : " (empty)"}${link({ page: page.id })}`,
     );
-    for (const ab of page.artboards) lines.push(`  ${artboardSummary(ab)}`);
+    for (const ab of page.artboards)
+      lines.push(`  ${artboardSummary(ab)}${link({ artboard: ab.id })}`);
   }
+  if (!doc.pages.length)
+    lines.push("No pages yet. create_artboard makes the first one, or add one with create_page.");
   const open = doc.threads.filter((t) => t.status === "open");
   if (open.length) lines.push(`Open comment threads: ${open.length} (list_comments)`);
   const notes = Object.keys(doc.notes);

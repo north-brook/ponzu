@@ -1,0 +1,350 @@
+# Keeps Claude Code and the Agent SDK current, together, by one pull request a person reviews.
+#
+# It looks for an Agent SDK newer than apps/runner/package.json pins, takes the Claude Code that
+# SDK names (they share a patch number; apps/runner/image/bump.ts refuses a pair that does not),
+# and, unless the open pull request already proposes that pair:
+#   1. moves the SDK pin and bun.lock, and pins.json's version, URL and sha256 (computed from the
+#      real download and checked against the release's signed manifest), then typechecks and runs
+#      the runner's agent tests;
+#   2. builds, pushes and checks the image through image.yml, which records current.json;
+#   3. runs a real turn on it (e2e.ts scratch: Haiku at low effort on the development key);
+#   4. opens or updates ONE pull request, branch claude-code/bump, saying what passed, what
+#      failed and the release notes, as a draft when anything did not pass, and dispatches CI on
+#      it. Nothing merges it but a person.
+#
+# GitHub runs a schedule only from the default branch, so until cutover makes `cloud` that branch
+# this also runs on every push to `cloud`: a push with nothing new costs one short job. A dispatch
+# can force a rerun (after the setup is added) or pretend an older SDK is pinned, which runs every
+# step and writes the body to the run's summary without opening a pull request.
+#
+# What it needs from a person is in docs/cloud.md, "Setting up the image workflows". Without it
+# the pull request still opens, as a draft, saying which steps could not run and why.
+name: Claude Code
+
+on:
+  schedule:
+    - cron: "17 14 * * *"
+  push:
+    branches: [cloud]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run again even when the open pull request already proposes the newest pair.
+        type: boolean
+        default: false
+      pretend:
+        description: Act as if this Agent SDK version were pinned (a rehearsal; no pull request).
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-code
+  cancel-in-progress: false
+
+env:
+  BRANCH: claude-code/bump
+
+jobs:
+  bump:
+    name: Find and apply a newer pair
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.proposed.outputs.go }}
+      head: ${{ steps.proposed.outputs.head }}
+      sdk: ${{ steps.discover.outputs.sdk }}
+      claude: ${{ steps.discover.outputs.claude }}
+      typecheck: ${{ steps.typecheck.outcome }}
+      tests: ${{ steps.tests.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # What CI's pushes save; this job runs on every push to cloud, so it only reads it.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Is there a newer pair?
+        id: discover
+        env:
+          PRETEND: ${{ inputs.pretend }}
+        run: bun apps/runner/image/bump.ts discover ${PRETEND:+--pretend "$PRETEND"}
+      - name: Is it already proposed, or has a person taken the branch?
+        id: proposed
+        if: steps.discover.outputs.bump == 'true'
+        shell: bash
+        env:
+          FORCE: ${{ inputs.force }}
+          PRETEND: ${{ inputs.pretend }}
+          CLAUDE: ${{ steps.discover.outputs.claude }}
+          GH_TOKEN: ${{ github.token }}
+          # The committer the pull request step below names; anyone else's commit is a person's.
+          BOT: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          go=true
+          head=""
+          if [ -z "$PRETEND" ]; then
+            # 0: the branch exists; 2: it does not. Anything else is an error, which stops here
+            # rather than building an image and running a turn on every push.
+            found=0; git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null || found=$?
+            if [ "$found" = 0 ]; then
+              git fetch --quiet origin "$BRANCH"
+              head=$(git rev-parse FETCH_HEAD)
+              open=$(gh pr list --head "$BRANCH" --state open --json number --jq length)
+              if [ "$open" != 0 ] && [ "$(git log -1 --format=%ce FETCH_HEAD)" != "$BOT" ]; then
+                echo "::notice::The open pull request on $BRANCH has a commit this workflow did not make, so it is left as it is. Merge or close it, and the next run proposes the newest pair."
+                go=false
+              elif [ "$FORCE" != true ] &&
+                [ "$(git show FETCH_HEAD:apps/runner/image/pins.json | jq -r .claudeVersion)" = "$CLAUDE" ]; then
+                # Not rebuilt on every push and every day. With no open pull request (it was
+                # closed, or GitHub refused to open it), a forced dispatch opens it again.
+                if [ "$open" != 0 ]; then
+                  echo "::notice::$BRANCH already proposes Claude Code $CLAUDE. Dispatch this workflow with force to run it again."
+                else
+                  echo "::warning title=No open pull request::$BRANCH has Claude Code $CLAUDE, but no open pull request proposes it (it was closed, or could not be opened). Dispatch this workflow with force to build it again and open one: gh workflow run claude-code.yml --ref ${GITHUB_REF_NAME} -f force=true"
+                fi
+                go=false
+              fi
+            elif [ "$found" != 2 ]; then
+              echo "::error::Could not read whether $BRANCH exists (git ls-remote exited $found)."
+              exit 1
+            fi
+          fi
+          { echo "go=$go"; echo "head=$head"; } >> "$GITHUB_OUTPUT"
+      - name: Move the pins (download, sha256, signature)
+        if: steps.proposed.outputs.go == 'true'
+        env:
+          PRETEND: ${{ inputs.pretend }}
+        run: bun apps/runner/image/bump.ts apply ${PRETEND:+--pretend "$PRETEND"}
+      - name: Typecheck with the new SDK
+        id: typecheck
+        if: steps.proposed.outputs.go == 'true'
+        continue-on-error: true
+        shell: bash
+        run: bun run typecheck 2>&1 | tee .context/bump/typecheck.log
+      - name: The runner's agent tests
+        id: tests
+        if: steps.proposed.outputs.go == 'true'
+        continue-on-error: true
+        shell: bash
+        run: bun test apps/runner/src/agent apps/runner/image/bump.test.ts 2>&1 | tee .context/bump/tests.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.proposed.outputs.go == 'true'
+        with:
+          name: claude-code-pins
+          path: |
+            bun.lock
+            apps/runner/package.json
+            apps/runner/image/pins.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && steps.proposed.outputs.go == 'true'
+        with:
+          name: claude-code-results
+          path: .context/bump
+          include-hidden-files: true
+
+  image:
+    name: Image
+    needs: bump
+    if: needs.bump.outputs.go == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      actions: write
+    uses: ./.github/workflows/image.yml
+    with:
+      overlay: claude-code-pins
+    secrets:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  turn:
+    name: A real turn on the image
+    needs: [bump, image]
+    if: always() && needs.image.outputs.result == 'built'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      outcome: ${{ steps.e2e.outcome }}
+      reason: ${{ steps.setup.outputs.reason }}
+    steps:
+      # The turn runs the new SDK and Claude Code; no token of this run is left on the disk.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claude-code-pins
+          path: .
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sandbox-image
+          path: ${{ runner.temp }}/image
+      - run: cp "$RUNNER_TEMP/image/current.json" apps/runner/image/current.json
+      - name: The person's setup
+        id: setup
+        env:
+          HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_ANTHROPIC_KEY" != true ]; then
+            echo "::warning title=No real turn::The repository secret ANTHROPIC_API_KEY (the development key) is not set, so no real turn ran. See docs/cloud.md, \"Setting up the image workflows\"."
+            { echo "ready=false"; echo "reason=the repository secret ANTHROPIC_API_KEY is not set"; } >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.setup.outputs.ready == 'true'
+        with:
+          bun-version-file: package.json
+      - if: steps.setup.outputs.ready == 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: e2e.ts scratch
+        id: e2e
+        if: steps.setup.outputs.ready == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/turn"
+          bun apps/runner/image/e2e.ts scratch 2>&1 | bun apps/runner/image/bump.ts scrub | tee "$RUNNER_TEMP/turn/turn.log"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && steps.e2e.outcome != 'skipped'
+        with:
+          name: turn
+          path: ${{ runner.temp }}/turn
+          if-no-files-found: ignore
+
+  pull-request:
+    name: Open or update the pull request
+    needs: [bump, image, turn]
+    # A bump job that failed (the registry or download host down, a signature or hash that does
+    # not hold, a Claude Code not yet published) left no pins to propose; its red run says why.
+    if: always() && needs.bump.result == 'success' && needs.bump.outputs.go == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claude-code-pins
+          path: .
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claude-code-results
+          path: .context/bump
+      # Each is there only when its step ran.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: sandbox-image
+          path: ${{ runner.temp }}/sandbox-image
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: turn
+          path: ${{ runner.temp }}/turn
+      - name: The image and the turn, where they ran
+        run: |
+          if [ -f "$RUNNER_TEMP/sandbox-image/current.json" ]; then
+            cp "$RUNNER_TEMP/sandbox-image/current.json" apps/runner/image/current.json
+            cp "$RUNNER_TEMP/sandbox-image/current.json" .context/bump/current.json
+          fi
+          cp "$RUNNER_TEMP/sandbox-image/image.log" .context/bump/ 2>/dev/null || true
+          cp "$RUNNER_TEMP/turn/turn.log" .context/bump/ 2>/dev/null || true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The body
+        id: body
+        env:
+          TYPECHECK: ${{ needs.bump.outputs.typecheck }}
+          TESTS: ${{ needs.bump.outputs.tests }}
+          IMAGE_RESULT: ${{ needs.image.outputs.result || (needs.image.result == 'failure' && 'failed') || '' }}
+          IMAGE_REASON: ${{ needs.image.outputs.reason }}
+          TURN: ${{ needs.turn.outputs.outcome }}
+          TURN_REASON: ${{ needs.turn.outputs.reason }}
+        run: |
+          bun apps/runner/image/bump.ts body .context/bump > /dev/null
+          cat .context/bump/body.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Is the branch where the bump job found it?
+        id: unchanged
+        if: ${{ !inputs.pretend }}
+        shell: bash
+        env:
+          SEEN: ${{ needs.bump.outputs.head }}
+        # The build and the turn take a while; a person may have pushed to the branch meanwhile.
+        # create-pull-request then resets it, so it runs only when the head is the one the bump
+        # job checked. A push in the seconds between this and that step is not caught.
+        run: |
+          now=$(git ls-remote --heads origin "$BRANCH" | cut -f1)
+          if [ "$now" = "$SEEN" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Branch moved::$BRANCH moved while this run built and checked (from ${SEEN:-nothing} to ${now:-nothing}), so it is left as it is; the run's summary has the body it would have written."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open or update the pull request
+        id: pr
+        if: ${{ !inputs.pretend && steps.unchanged.outputs.ok == 'true' }}
+        continue-on-error: true
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
+        with:
+          branch: ${{ env.BRANCH }}
+          base: ${{ github.ref_name }}
+          add-paths: |
+            bun.lock
+            apps/runner/package.json
+            apps/runner/image/pins.json
+            apps/runner/image/current.json
+          commit-message: "chore(runner): claude code ${{ needs.bump.outputs.claude }} with the agent sdk ${{ needs.bump.outputs.sdk }}"
+          title: "chore(runner): claude code ${{ needs.bump.outputs.claude }} with the agent sdk ${{ needs.bump.outputs.sdk }}"
+          body-path: .context/bump/body.md
+          # Not the person whose push or schedule started the run; the check above relies on it.
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          draft: ${{ steps.body.outputs.draft == 'true' && 'always-true' || 'false' }}
+      - name: Ready for review when everything passed
+        if: steps.body.outputs.draft == 'false' && steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.pull-request-number }}
+        run: |
+          if [ "$(gh pr view "$NUMBER" --json isDraft --jq .isDraft)" = true ]; then
+            gh pr ready "$NUMBER" || true
+          fi
+      - name: Run CI on the pull request
+        # A pull request opened with GITHUB_TOKEN starts no workflows; a dispatch does, and its
+        # checks report on the branch's head commit, which is the pull request's.
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --ref "$BRANCH"
+      - name: No pull request
+        if: steps.pr.outcome == 'failure'
+        run: echo "::warning title=No pull request::The pull request could not be opened or updated; the run's summary has its body. The usual cause is that GitHub Actions may not create pull requests in this repository; see docs/cloud.md, \"Setting up the image workflows\"."
+      - name: Red when something failed
+        # Missing setup leaves a draft and a green run; a real failure leaves a draft and this.
+        if: steps.body.outputs.failed == 'true'
+        run: |
+          echo "::error::A step of the bump failed; the pull request (or the run's summary) says which."
+          exit 1

@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { $ } from "bun";
 import {
+  type Changelog,
+  changelog,
   compareVersions,
   extractNotes,
+  inMacRelease,
+  MAC_EXCLUDED,
   phoneOnly,
   releases,
   WHAT_TO_TEST_LIMIT,
@@ -129,6 +133,40 @@ test("a commit that changed only the phone app is not the Mac's", () => {
   expect(phoneOnly(["apps/mobile/app/index.tsx", "apps/mobile/app.json"])).toBe(true);
   expect(phoneOnly(["apps/mobile/app/index.tsx", "packages/core/src/doc.ts"])).toBe(false);
   expect(phoneOnly([])).toBe(false);
+  // The phone plus a path neither app's release holds is still the phone's.
+  expect(phoneOnly(["apps/mobile/app/index.tsx", "apps/api/src/routes/push.ts"])).toBe(true);
+  expect(phoneOnly(["apps/api/src/routes/push.ts"])).toBe(false);
+  expect(phoneOnly(["apps/mobile-web/x.ts"])).toBe(false);
+});
+
+test("the Mac's release leaves out what Release Please leaves out of it", () => {
+  expect(MAC_EXCLUDED).toEqual([
+    "apps/mobile",
+    "apps/api",
+    "apps/runner",
+    "packages/db",
+    "packages/sandbox",
+    "packages/evals",
+    "infra",
+    "docs",
+  ]);
+  for (const file of [
+    "apps/mobile/app/index.tsx",
+    "apps/api/src/app.ts",
+    "apps/runner/src/main.ts",
+    "packages/db/migrations/0030_x.sql",
+    "packages/sandbox/src/index.ts",
+    "packages/evals/src/run.ts",
+    "infra/environments.json",
+    "docs/cloud.md",
+  ])
+    expect(inMacRelease([file])).toBe(false);
+  expect(inMacRelease(["apps/api/src/app.ts", "docs/cloud.md", "infra/neon.json"])).toBe(false);
+  expect(inMacRelease(["apps/api/src/app.ts", "apps/desktop/src/main.ts"])).toBe(true);
+  expect(inMacRelease(["packages/client/src/api.ts"])).toBe(true);
+  // A name that only starts like an excluded path is not under it.
+  expect(inMacRelease(["docs.md", "infrastructure/x"])).toBe(true);
+  expect(inMacRelease([])).toBe(true);
 });
 
 test("versions order by number, not text", () => {
@@ -164,6 +202,8 @@ test("each release carries the Mac's notes merged since the tag before it", asyn
     await commit("fix: comments stay put", "Comments stay where you left them.");
     await commit("feat: page icons", "Pages show their icons.", "apps/studio/icons.ts");
     await commit("feat: scan the code", "Scan the code to pair.", "apps/mobile/app/scan.tsx");
+    await commit("feat(api): faster wakes", "Canvases wake faster.", "apps/api/src/wake.ts");
+    await commit("docs: the runbook", "A runbook.", "docs/production.md");
     await commit("chore(main): release 0.2.0", "Not a note.");
     await git("tag", "v0.2.0");
     await commit("feat: not shipped yet", "Unreleased.");
@@ -207,15 +247,123 @@ test("each phone release carries its notes merged since the phone's tag before i
       "packages/core/doc.ts",
       "apps/mobile/app/pins.tsx",
     );
+    await commit(
+      "feat(mobile): pings",
+      "- Pings reach the phone.",
+      "apps/mobile/lib/push.ts",
+      "apps/api/src/routes/devices.ts",
+    );
     await commit("chore(main): release mobile 0.2.0", "- Not a note.", "apps/mobile/app.json");
     await git("tag", "mobile-v0.2.0");
     await commit("fix(mobile): not shipped yet", "- Unreleased.", "apps/mobile/app/later.tsx");
     expect(await releases(dir, "iphone")).toEqual([
-      { version: "0.2.0", notes: ["Send takes one tap.", "Pins stay put."] },
+      {
+        version: "0.2.0",
+        notes: ["Send takes one tap.", "Pins stay put.", "Pings reach the phone."],
+      },
       { version: "0.1.0", notes: ["Open a design."] },
     ]);
     // The phone's tags never become the desktop's releases.
     expect(await releases(dir)).toEqual([{ version: "1.0.0", notes: ["Pages show their icons."] }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const SCRIPT = join(import.meta.dir, "release-notes.ts");
+
+/** A repository whose commits carry fixed dates, so each tag's date is known. */
+async function datedRepo(dir: string) {
+  let date = "";
+  const git = (...args: string[]) =>
+    $`git -c user.name=t -c user.email=t@example.com -c tag.gpgsign=false -c commit.gpgsign=false ${args}`
+      .cwd(dir)
+      .env({ ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date })
+      .quiet();
+  const commit = async (when: string, subject: string, note: string, file: string) => {
+    date = when;
+    await mkdir(dirname(join(dir, file)), { recursive: true });
+    await writeFile(join(dir, file), subject);
+    await git("add", file);
+    await git("commit", "-q", "-m", `${subject}\n\n## Release note\n\n${note}`);
+  };
+  await git("init", "-q", "-b", "main");
+  await commit(
+    "2026-11-02T09:00:00-08:00",
+    "feat: a canvas",
+    "- Open a canvas.",
+    "apps/studio/a.ts",
+  );
+  await git("tag", "v2.0.0");
+  await commit(
+    "2026-11-03T10:30:00+00:00",
+    "feat(mobile): comments",
+    "- Comment from your phone.",
+    "apps/mobile/app/comments.tsx",
+  );
+  await git("tag", "mobile-v1.0.0");
+  await commit(
+    "2026-11-20T18:15:00-05:00",
+    "fix: pins stay put",
+    "- Mac: Pins stay put.\n- iPhone: Pins stay put on the phone too.",
+    "packages/core/doc.ts",
+  );
+  await git("tag", "v2.1.0");
+  await commit(
+    "2026-11-21T08:00:00+00:00",
+    "feat: not shipped",
+    "- Unreleased.",
+    "apps/studio/b.ts",
+  );
+}
+
+test("the changelog dates each app's releases by its tag's commit, newest first", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    await datedRepo(dir);
+    expect(await changelog(dir)).toEqual({
+      mac: [
+        { version: "2.1.0", date: "2026-11-20T18:15:00-05:00", notes: ["Pins stay put."] },
+        { version: "2.0.0", date: "2026-11-02T09:00:00-08:00", notes: ["Open a canvas."] },
+      ],
+      iphone: [
+        {
+          version: "1.0.0",
+          // Git writes a UTC date with Z, as GitHub's release commits have it.
+          date: "2026-11-03T10:30:00Z",
+          notes: ["Comment from your phone."],
+        },
+      ],
+    } satisfies Changelog);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("--changelog writes the file a release publishes, and marks a shallow clone's incomplete", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    const repo = join(dir, "repo");
+    await mkdir(repo);
+    await datedRepo(repo);
+    const out = join(dir, "out", "changelog.json");
+    await $`bun ${SCRIPT} --changelog ${out}`.cwd(repo).quiet();
+    const text = await Bun.file(out).text();
+    expect(JSON.parse(text)).toEqual(await changelog(repo));
+    expect(text.endsWith("}\n")).toBe(true);
+
+    // CI's checkout without history: empty lists, said to be incomplete, and no failure.
+    const shallow = join(dir, "shallow");
+    await $`git clone -q --depth 1 ${`file://${repo}`} ${shallow}`.quiet();
+    await $`bun ${SCRIPT} --changelog ${out}`.cwd(shallow).quiet();
+    expect(JSON.parse(await Bun.file(out).text())).toEqual({
+      mac: [],
+      iphone: [],
+      incomplete: true,
+    });
+
+    const usage = await $`bun ${SCRIPT} --changelog`.cwd(repo).nothrow().quiet();
+    expect(usage.exitCode).toBe(1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

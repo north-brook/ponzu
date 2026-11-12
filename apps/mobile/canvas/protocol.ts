@@ -1,8 +1,9 @@
 /*
  * The canvas web view and the app talk in these messages, as JSON strings. The app owns the
- * network: it holds the design's socket and the doc, and tells the web view what to draw. The web
- * view draws and reports gestures; it never talks to the Mac except to load a design's images and
- * fonts. Types only, so the app can import this without pulling in the web view's code.
+ * network: it holds the canvas's replica (CloudSource, on the React Native side) and tells the
+ * web view what to draw. The web view draws and reports gestures. It holds no token and calls no
+ * API; it loads only the canvas's own files (images, fonts) from the asset origin, which is the
+ * page's own. Types and constants only, so the app can import this without the page's code.
  */
 import type { Doc, Op, Origin, Presence } from "@ponzu/core";
 
@@ -56,16 +57,28 @@ export type GesturePerf = {
 /** App → web view. */
 export type ToCanvas =
   /**
-   * The whole design, on open and after a reconnect. `assetBase` is the design's
-   * `http://<mac>:7777/files/<key>`; `file` is its key, so presence from other designs is ignored.
+   * The whole canvas: on open, after a remount, and whenever the replica's document changed in a
+   * way an op can't say (a refused op rolled back, a resync, the cached copy). `assetBase` is the
+   * canvas's `assetsUrl` (`https://assets.ponzu.cloud/<key>/`); `file` is its id, so presence
+   * from other canvases is ignored.
    */
   | { t: "doc"; doc: Doc; assetBase: string; theme: Theme; page?: string; file?: string }
   /** One change from the socket, applied on echo. With an agent's or a disk save's `origin`, it develops in. */
   | { t: "op"; op: Op; origin?: Origin }
-  /** Who's here: agents' `working` artboards get the yuzu ring and rain in their label. */
+  /** Who's here. Until a `working` message comes, agents' `working` artboards are ringed. */
   | { t: "presence"; presence: Presence[] }
+  /**
+   * The boards the agent is working on now, from the canvas's head: each gets the yuzu ring and
+   * nothing else (no rain). Once it has come, it, not presence, says which boards are ringed.
+   */
+  | { t: "working"; artboards: string[] }
   /** The pin of a comment being written, or none. Its board comes into view. */
   | { t: "pending"; pin: PendingPin | null }
+  /**
+   * The Comment button was pressed: while on, a tap on the canvas that isn't on a pin drops a
+   * comment's pin there, answered as `longpress` is. Off, a tap is a tap again.
+   */
+  | { t: "commenting"; on: boolean }
   /**
    * New comments left unsent, by their draft's key: each keeps a pin, to tap and go on. `threads`
    * have a reply left unsent: their pins show a pencil for their count.
@@ -112,8 +125,8 @@ export type FromCanvas =
   /** Listening: send the doc. */
   | { t: "ready" }
   /**
-   * A finger held still on the canvas for half a second: start a comment there. Coordinates are a
-   * Thread's: artboard px with `artboardId`, page px without.
+   * A finger held still on the canvas for half a second, or a tap while `commenting`: start a
+   * comment there. Coordinates are a Thread's: artboard px with `artboardId`, page px without.
    */
   | {
       t: "longpress";
@@ -160,6 +173,13 @@ export type FromCanvas =
   /** A gesture measured, when the app asked for it (`probe`). */
   | { t: "perf"; gesture: GesturePerf }
   | { t: "error"; message: string };
+
+/**
+ * Where the page's content security policy names the canvas's asset origin. The built page
+ * carries it, and the app puts the origin in its place before it loads the page
+ * (lib/canvas/page.ts). It is never in the page's script, whose hash the policy pins.
+ */
+export const ASSETS_PLACEHOLDER = "__ASSETS__";
 
 /** The web view's entry point on `window`, for `injectJavaScript`. */
 export const CANVAS_BRIDGE = "__ponzuCanvas";

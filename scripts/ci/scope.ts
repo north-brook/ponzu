@@ -14,7 +14,7 @@
  * neither does a manifest whose only change is its version: that is what a
  * release pull request is, told by its diff, never its branch name. Any
  * other file outside the packages (the lockfile, root configuration, this
- * script, CI) runs everything. The workflow runs everything on a push to main.
+ * script, CI) runs everything. The workflow runs everything on a push.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -24,12 +24,23 @@ export type Suite = "desktop" | "mobile";
 
 /** The workspace packages (by directory name) each suite builds or tests. */
 const SUITES: Record<Suite, string[]> = {
-  // The packaged Electron app, which bundles the CLI's server and the studio.
-  desktop: ["desktop", "cli", "studio"],
-  // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/react,
-  // but its canvas and icons import that package's source by path (apps/mobile/canvas).
-  mobile: ["mobile", "react"],
+  // The packaged Electron app, which bundles the studio.
+  desktop: ["desktop", "studio"],
+  // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/canvas,
+  // but its canvas and icons import that package's source by path (apps/mobile/canvas). It runs
+  // @ponzu/client and @ponzu/core as they are, named here as well as through its dependencies.
+  mobile: ["mobile", "canvas", "client", "core"],
 };
+
+/**
+ * Packages the others import for types alone: the cloud API, whose routes the typed client
+ * takes as `AppType` from `@ponzu/api/types`, and the runner, whose thread items it takes from
+ * `@ponzu/runner/protocol`. A change to one cannot alter what a dependant
+ * builds or bundles, only whether it typechecks, and "Lint, typecheck, build" typechecks the
+ * desktop app, the phone and everything else on every pull request. So a change to one (or to
+ * a package only it uses, like the database) does not pass on to the packages that depend on it.
+ */
+const TYPES_ONLY = ["api", "runner"];
 
 /** Changes that run every suite: what decides how they all run. */
 const EVERYTHING = [/^\.github\/workflows\/ci\.yml$/, /^scripts\/ci\/scope\.ts$/];
@@ -42,9 +53,7 @@ const IGNORED = [
   /^\.release-please-manifest\.json$/,
   /^release-please-config\.json$/,
   /^commitlint\.config\.mjs$/,
-  /^(design|examples|plugin)\//,
-  /^\.claude-plugin\//,
-  /^\.agents\/plugins\//,
+  /^(design|examples)\//,
   /(^|\/)CHANGELOG\.md$/,
 ];
 
@@ -120,7 +129,8 @@ export function scope(
   for (let grew = true; grew; ) {
     grew = false;
     for (const { dependencies, name } of packages) {
-      if (!affected.has(name) && dependencies.some((d) => affected.has(d))) {
+      const carried = dependencies.filter((d) => !TYPES_ONLY.includes(d));
+      if (!affected.has(name) && carried.some((d) => affected.has(d))) {
         affected.add(name);
         grew = true;
       }

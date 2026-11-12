@@ -1,80 +1,63 @@
-appId: design.ponzu.app
+appId: design.ponzu.app.dev
 name: comment-modes
-tags: [dev-host]
 ---
-# The comment field switches between typing and voice, both ways, and
-# sends what was typed. The microphone is refused (shared/start.yaml), so
-# voice says it can't hear you. The comment is deleted after.
+# The comment field's two ways in, and words left unsent: a hold on the FAQ
+# board brings the field up in voice, which says it can't hear (the microphone
+# is refused in shared/start.yaml); Type instead and Speak instead switch;
+# typed words swiped away stay as an unsent pin, and a tap on it brings the
+# field back with them.
 - runFlow: shared/start.yaml
-- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
+- openLink: ponzu-dev://dev?seed=signed-in
+- extendedWaitUntil:
+    visible: "Pricing page, acme/site"
+    timeout: 30000
+- tapOn: "Pricing page, acme/site"
+- extendedWaitUntil:
+    visible: "FAQ"
+    timeout: 30000
+- longPressOn: "FAQ"
 - extendedWaitUntil:
     visible:
-      id: uncommented
-    timeout: 20000
-- tapOn: "Back"
-- openLink: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
-- extendedWaitUntil:
-    visible:
-      id: "(comment-input|to-type)"
-    timeout: 20000
-# Start from typing, whichever mode it opened in.
+      id: comment-sheet
+    timeout: 10000
 - runFlow:
     when:
       visible:
         id: to-type
     commands:
+      - assertVisible: "Ponzu can't hear you.*"
       - tapOn:
           id: to-type
 - extendedWaitUntil:
     visible:
-      id: to-voice
+      id: comment-input
     timeout: 5000
-# Typing → voice: the field gives way to "Listening…" and the waveform, the mute
-# comes in, and the button turns to the keyboard.
 - tapOn:
     id: to-voice
 - extendedWaitUntil:
     visible:
       id: to-type
     timeout: 5000
-- assertVisible:
-    id: mute
-- assertVisible:
-    id: transcript
-- assertNotVisible:
-    id: comment-input
-# Voice → typing: back to the field, with the keyboard.
 - tapOn:
     id: to-type
-- extendedWaitUntil:
-    visible:
-      id: comment-input
-    timeout: 5000
-- assertNotVisible:
-    id: mute
-- inputText: "Maestro: both ways"
-- extendedWaitUntil:
-    visible:
-      id: send
-    timeout: 5000
 - tapOn:
-    id: send
+    id: comment-input
+- inputText: "Half written"
+# Swiped away as a person does, keyboard and all: the field is multiline with no Done key, so
+# Maestro's hideKeyboard has no standard dismiss to press on iOS and fails.
+- swipe:
+    from:
+      id: comment-field
+    direction: DOWN
 - extendedWaitUntil:
     notVisible:
       id: comment-sheet
     timeout: 10000
-- extendedWaitUntil:
-    visible: "1"
-    timeout: 10000
-# Clean up. The board is still focused, its bar out of the way: home by link.
-- openLink: ponzu://designs
+# The unsent pin is where the hold was.
+- tapOn: "FAQ"
 - extendedWaitUntil:
     visible:
-      id: designs
+      id: comment-sheet
     timeout: 10000
-- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
-- extendedWaitUntil:
-    visible:
-      id: uncommented
-    timeout: 20000
+- assertVisible: "Half written"
 - assertNotVisible: ".*Cannot update a component.*"

@@ -1,86 +1,77 @@
-import { useIsRestoring } from "@tanstack/react-query";
+import { useSessionState } from "@ponzu/client/react";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Animated, { Easing, FadeInDown, useReducedMotion } from "react-native-reanimated";
+import Animated, { Easing, FadeIn, FadeInDown, useReducedMotion } from "react-native-reanimated";
 import { startHandoff } from "../components/handoff";
-import { boot } from "../lib/boot";
+import { backend } from "../lib/cloud/backend";
+import { gateRoute, gateStep } from "../lib/cloud/gate";
+import { useSetupStep } from "../lib/cloud/use-setup";
 import { LAUNCH } from "../lib/mark";
-import { reachAll, reaching, useMacs } from "../lib/reach";
 import { BLOOM_IN_MS, Slice } from "../lib/slice";
 import { useHideSplash } from "../lib/splash";
-import { tailnet } from "../lib/tailnet";
-import { EASE_OUT } from "../lib/tokens";
-import { interfaces } from "../modules/tailnet";
+import { brand, EASE_OUT } from "../lib/tokens";
+
+/** How long the launch waits before it says it can't reach Ponzu. */
+const SLOW_LAUNCH_MS = 8_000;
+const SLOW_LAUNCH_LINE = "Can't reach Ponzu. Trying again.";
 
 /**
- * Launch (the iPhone design's Connect › 1 Launch): on the native splash's
- * yuzu, the slice blooms in from nothing (`bloomin`), then keeps blooming
- * while Ponzu looks for your Macs, with the wordmark rising in under it.
- * Yuzu in light and dark alike.
- *
- * It asks every saved Mac where it stands, then goes on: no Macs → the code
- * on your Mac, or Tailscale first when this iPhone isn't on a tailnet; one
- * answers → Designs; none on the tailnet → Tailscale; all asleep → "Your
- * computers aren't answering". While a Mac's Ponzu starts, the slice simply keeps
- * blooming: loading is the slice moving where it already is, and nothing
- * joins or moves the column. A Mac that doesn't wake is the asleep screen.
+ * Launch (onboarding 4.7): on the native splash's yuzu, the slice blooms in, then keeps blooming
+ * while the app reads the session from the Keychain, with the wordmark rising in under it. Then
+ * it goes on by itself, to the screen the session calls for (lib/cloud/gate.ts): sign in, the
+ * update screen, setup's next step, or the canvases. It never leaves before the bloom-in has landed, so a fast
+ * answer doesn't flash it; under Reduce Motion the slice is whole from the start.
  */
 export default function Launch() {
   useHideSplash();
-  const { overall } = useMacs();
-  const [booted, setBooted] = useState(false);
-  // Designs opens onto the cached catalogs, so wait until they're back.
-  const restoring = useIsRestoring();
-  const ready = booted && !restoring;
-  const gone = useRef(false);
+  const state = useSessionState(backend.session);
+  const [prepared, setPrepared] = useState(false);
+  const [slow, setSlow] = useState(false);
   const still = useReducedMotion();
-  /** When the slice started blooming in: the handoff never leaves before it's whole. */
+  const gone = useRef(false);
+  /** When the slice started blooming in. */
   const mounted = useRef(Date.now());
+
   useEffect(() => {
     let on = true;
-    boot().then(() => {
-      if (!on) return;
-      setBooted(true);
-      // Coming back here (Try again, or a fresh start in development) asks again.
-      if (!reaching.get()) reachAll();
-    });
+    backend
+      .prepare()
+      .catch(() => {})
+      .then(() => on && setPrepared(true));
+    const t = setTimeout(() => on && setSlow(true), SLOW_LAUNCH_MS);
     return () => {
       on = false;
+      clearTimeout(t);
     };
   }, []);
 
+  // Signed in, launch waits for where setup stands. With no `me` at all (offline on a first
+  // launch since the cache went), the canvases say what there is.
+  const setup = useSetupStep();
+  const target = prepared ? gateRoute(state, gateStep(setup)) : null;
   useEffect(() => {
-    if (!ready || gone.current) return;
-    const go = (to: "/connect" | "/designs" | "/tailscale" | "/asleep") => {
-      gone.current = true;
-      // The yuzu and its slice carry on into the next screen's tile or lockup.
-      if (!still) startHandoff(to === "/designs" ? "designs" : "tile");
-      router.replace(to);
-    };
-    // Hold the bloom a beat, so a fast answer doesn't flash the launch screen,
-    // and never leave before the bloom-in has landed: the handoff carries the
-    // whole slice on. Under Reduce Motion the slice is whole from the start.
+    if (!target || gone.current) return;
     const landed = still ? 0 : mounted.current + BLOOM_IN_MS - Date.now();
-    const later = (to: Parameters<typeof go>[0]) => {
-      const t = setTimeout(() => go(to), Math.max(600, landed));
-      return () => clearTimeout(t);
-    };
-    switch (overall.state) {
-      case "none":
-        return later(tailnet(interfaces()) === "on" ? "/connect" : "/tailscale");
-      case "answer":
-        return later("/designs");
-      case "noTailnet":
-        return later("/tailscale");
-      case "asleep":
-        return later("/asleep");
-    }
-  }, [ready, overall.state]);
+    const t = setTimeout(
+      () => {
+        gone.current = true;
+        // The yuzu and its slice carry on into the canvases' lockup.
+        if (!still && target === "/canvases") startHandoff("designs");
+        router.replace(target);
+      },
+      Math.max(still ? 0 : 600, landed),
+    );
+    return () => clearTimeout(t);
+  }, [target, still]);
 
   return (
-    <View testID="launch" className="flex-1 bg-yuzu">
+    <View
+      testID="launch"
+      accessibilityLabel="Ponzu"
+      style={{ flex: 1, backgroundColor: brand.yuzu }}
+    >
       <StatusBar style="dark" />
       <View
         style={[
@@ -102,16 +93,33 @@ export default function Launch() {
             .easing(Easing.bezier(...EASE_OUT))}
         >
           <Text
-            className="font-display font-bold text-ink"
             style={{
+              fontFamily: "Funnel Display",
+              fontWeight: "700",
               fontSize: LAUNCH.word,
               lineHeight: LAUNCH.word,
               letterSpacing: -0.05 * LAUNCH.word,
+              color: brand.ink,
             }}
           >
             ponzu
           </Text>
         </Animated.View>
+        {slow && !target && (
+          <Animated.Text
+            entering={FadeIn.duration(300)}
+            testID="launch-slow"
+            style={{
+              fontFamily: "Inter",
+              fontSize: 15,
+              lineHeight: 20,
+              color: brand.ink,
+              opacity: 0.6,
+            }}
+          >
+            {SLOW_LAUNCH_LINE}
+          </Animated.Text>
+        )}
       </View>
     </View>
   );

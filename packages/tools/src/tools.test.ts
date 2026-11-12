@@ -6,6 +6,8 @@ import { type Capture, locate, parseHtml, threadPage } from "@ponzu/core";
 import { actCore, type Renderer, type RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import {
+  BOARD_HANDOFF,
+  BOARD_IDLE,
   EventHub,
   PresenceHub,
   type ToolContext,
@@ -35,17 +37,17 @@ async function setup(tokens = 3, renderer?: Renderer) {
 }
 
 async function withFiles(files: Record<string, string>, renderer?: Renderer) {
-  const design = await Design.open(new MemoryAdapter(files), { saveDelay: 0 });
+  const canvas = await Design.open(new MemoryAdapter(files), { saveDelay: 0 });
   const ws: Workspace = {
-    designs: () => [{ key: "fern", design }],
-    resolve: async () => ({ key: "fern", design }),
+    canvases: () => [{ key: "fern", canvas }],
+    resolve: async () => ({ key: "fern", canvas }),
     events: new EventHub(),
     presence: new PresenceHub(),
     renderer,
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
-  return { design, call, ws };
+  return { canvas, call, ws };
 }
 
 test("plural adds -es after sibilants", () => {
@@ -62,7 +64,7 @@ test("find_nodes counts matches", async () => {
   expect((await call("find_nodes", { within: "n_card" })).text).toMatch(/^\d+ matches/);
 });
 
-test("get_basic_info gives the link that opens the design in Ponzu, when there is one", async () => {
+test("get_basic_info gives the link that opens the canvas in Ponzu, when there is one", async () => {
   const { call, ws } = await setup();
   expect((await call("get_basic_info", {})).text).not.toContain("Link:");
   ws.link = (key) => `https://ponzu.design/local#file=/d/${key}.design`;
@@ -98,14 +100,14 @@ test("duplicate returns the new top-level ids, not every descendant", async () =
 });
 
 test("duplicated artboards land right of the row by default", async () => {
-  const { design, call } = await setup();
+  const { canvas, call } = await setup();
   const r = await call("duplicate", { ids: ["ab_hero"] });
   expect(r.text).toContain('"Hero copy" at (880, 0)');
-  expect(design.doc.pages[0]!.artboards).toHaveLength(2);
+  expect(canvas.doc.pages[0]!.artboards).toHaveLength(2);
 });
 
 test("duplicate places artboard copies at x/y, lined up left to right", async () => {
-  const { design, call } = await setup();
+  const { canvas, call } = await setup();
   const r = await call("duplicate", {
     ids: ["ab_hero", "ab_hero"],
     names: ["Hero / A", "Hero / B"],
@@ -114,7 +116,7 @@ test("duplicate places artboard copies at x/y, lined up left to right", async ()
   });
   expect(r.text).toContain('"Hero / A" at (0, 1000)');
   expect(r.text).toContain('"Hero / B" at (880, 1000)');
-  const [, a, b] = design.doc.pages[0]!.artboards;
+  const [, a, b] = canvas.doc.pages[0]!.artboards;
   expect([a!.x, a!.y, b!.x, b!.y]).toEqual([0, 1000, 880, 1000]);
 });
 
@@ -133,7 +135,7 @@ async function phone() {
     html: `<div data-id="n_screen"><div data-id="n_status" data-name="Status bar"></div><div data-id="n_content" data-name="Content"></div><div data-id="n_tabs" data-name="Tab bar"></div></div><div data-id="n_frame"><span data-id="n_old">old</span></div>`,
   });
   const names = (id: string) => {
-    const hit = locate(s.design.doc, id)!;
+    const hit = locate(s.canvas.doc, id)!;
     return hit.node.children.map((c) => (c.kind === "el" ? (c.name ?? c.id) : "#text"));
   };
   return { ...s, names };
@@ -176,18 +178,18 @@ test("duplicating siblings puts each copy right after its original", async () =>
 });
 
 test("duplicating several artboards keeps their order", async () => {
-  const { design, call } = await setup();
+  const { canvas, call } = await setup();
   await call("duplicate", { ids: ["ab_hero"], names: ["Second"] });
-  const second = design.doc.pages[0]!.artboards[1]!.id;
+  const second = canvas.doc.pages[0]!.artboards[1]!.id;
   const r = await call("duplicate", { ids: ["ab_hero", second], names: ["Hero 2", "Second 2"] });
-  const boards = design.doc.pages[0]!.artboards;
+  const boards = canvas.doc.pages[0]!.artboards;
   expect(boards.map((a) => a.name)).toEqual(["Hero", "Second", "Hero 2", "Second 2"]);
   expect(boards[3]!.x).toBeGreaterThan(boards[2]!.x);
   expect((r.data as { ids: string[] }).ids).toEqual([boards[2]!.id, boards[3]!.id]);
 
   // Listed out of order, the copies still follow the page.
   await call("duplicate", { ids: [second, "ab_hero"], names: ["Second 3", "Hero 3"] });
-  expect(design.doc.pages[0]!.artboards.map((a) => a.name).slice(4)).toEqual([
+  expect(canvas.doc.pages[0]!.artboards.map((a) => a.name).slice(4)).toEqual([
     "Hero 3",
     "Second 3",
   ]);
@@ -286,12 +288,12 @@ test("moving several nodes to one spot keeps the order they were given", async (
 });
 
 test("update_file renames the file and sets or clears its icon", async () => {
-  const { design, call } = await setup();
+  const { canvas, call } = await setup();
   await call("update_file", { name: "Fern app", icon: "phone" });
-  expect(design.doc).toMatchObject({ name: "Fern app", icon: "phone" });
+  expect(canvas.doc).toMatchObject({ name: "Fern app", icon: "phone" });
   await call("update_file", { icon: null });
-  expect(design.doc.icon).toBeUndefined();
-  expect(design.doc.name).toBe("Fern app");
+  expect(canvas.doc.icon).toBeUndefined();
+  expect(canvas.doc.name).toBe("Fern app");
   const wrong = await call("update_file", { icon: "sparkles" });
   expect(wrong.isError).toBe(true);
 });
@@ -363,10 +365,10 @@ test("a wait that hears nothing says to wait again", async () => {
 });
 
 /** The person leaves a comment on the hero: in the doc, and as the event a host would emit. */
-function personComments(design: Design, events: EventHub, id: string, text: string, key = "fern") {
+function personComments(canvas: Design, events: EventHub, id: string, text: string, key = "fern") {
   const now = Date.now();
   const person = { kind: "user" as const, name: "Sam" };
-  design.apply(
+  canvas.apply(
     {
       op: "thread.create",
       thread: {
@@ -415,8 +417,8 @@ test("a cursor from before Ponzu restarted returns the threads waiting on the ag
     });
   const old = before.cursor;
   // Then Ponzu restarted, and the person left six comments before the agent waited again.
-  const { call, design, ws, captured } = await onHub(new EventHub());
-  for (let i = 1; i <= 6; i++) personComments(design, ws.events, `th_${i}`, `fix ${i}`);
+  const { call, canvas, ws, captured } = await onHub(new EventHub());
+  for (let i = 1; i <= 6; i++) personComments(canvas, ws.events, `th_${i}`, `fix ${i}`);
   const started = Date.now();
   const r = await call("wait_for_activity", { since: old, timeout: 5 });
   expect(Date.now() - started).toBeLessThan(1000);
@@ -434,8 +436,8 @@ test("a cursor from before Ponzu restarted returns the threads waiting on the ag
 test("a cursor from a Ponzu that started later is caught too, without replaying anything", async () => {
   // The host, which the person comments in, and the bridge's own Ponzu, started while the host was down.
   const host = new EventHub(500, Date.now() - 60_000);
-  const { call, design } = await onHub(host);
-  personComments(design, host, "th_seen", "seen already");
+  const { call, canvas } = await onHub(host);
+  personComments(canvas, host, "th_seen", "seen already");
   const local = new EventHub();
   const r = await call("wait_for_activity", { since: local.cursor, timeout: 5 });
   expect(r.text).toStartWith("Ponzu restarted since your last wait");
@@ -445,9 +447,9 @@ test("a cursor from a Ponzu that started later is caught too, without replaying 
 });
 
 test("a wait says so when more happened than Ponzu keeps", async () => {
-  const { call, design, ws, captured } = await onHub(new EventHub(500));
+  const { call, canvas, ws, captured } = await onHub(new EventHub(500));
   const since = ws.events.cursor;
-  personComments(design, ws.events, "th_1", "bigger");
+  personComments(canvas, ws.events, "th_1", "bigger");
   // The agent's own edits push the comment out of the ring before it waits again.
   for (let i = 0; i < 500; i++)
     ws.events.emit("fern", {
@@ -497,12 +499,12 @@ test("Ponzus that start in the same millisecond still number their events apart"
 });
 
 test("a wait says so when the ring lets go of what came in while it settled", async () => {
-  const { call, design, ws, captured } = await onHub(new EventHub(500));
+  const { call, canvas, ws, captured } = await onHub(new EventHub(500));
   const since = ws.events.cursor;
   const waiting = call("wait_for_activity", { since, timeout: 5 });
   while (!ws.presence.list().some((p) => p.listening)) await Bun.sleep(1);
   // The comment wakes the wait, and a burst of edits pushes it out before the wait returns.
-  personComments(design, ws.events, "th_1", "bigger");
+  personComments(canvas, ws.events, "th_1", "bigger");
   for (let i = 0; i < 500; i++)
     ws.events.emit("fern", {
       type: "change",
@@ -517,11 +519,11 @@ test("a wait says so when the ring lets go of what came in while it settled", as
 });
 
 test("a waiting thread shows what the person said last", async () => {
-  const { call, design, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
-  personComments(design, ws.events, "th_1", "make it blue");
+  const { call, canvas, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
+  personComments(canvas, ws.events, "th_1", "make it blue");
   await call("reply", { thread: "th_1", text: "Which blue?" });
   const now = Date.now();
-  design.apply(
+  canvas.apply(
     {
       op: "thread.message",
       id: "th_1",
@@ -534,9 +536,9 @@ test("a waiting thread shows what the person said last", async () => {
 });
 
 test("only threads where the person spoke last count as waiting", async () => {
-  const { call, design, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
-  personComments(design, ws.events, "th_asked", "why this font?");
-  personComments(design, ws.events, "th_done", "make it blue");
+  const { call, canvas, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
+  personComments(canvas, ws.events, "th_asked", "why this font?");
+  personComments(canvas, ws.events, "th_done", "make it blue");
   await call("reply", { thread: "th_asked", text: "It matches the logo." });
   await call("set_comment_status", { thread: "th_done", status: "resolved" });
   const r = await call("wait_for_activity", { since: 1, timeout: 0 });
@@ -544,8 +546,8 @@ test("only threads where the person spoke last count as waiting", async () => {
 });
 
 test("a thread the person is writing a reply in can't be resolved by an agent", async () => {
-  const { call, design, ws } = await onHub(new EventHub());
-  personComments(design, ws.events, "th_1", "make it blue");
+  const { call, canvas, ws } = await onHub(new EventHub());
+  personComments(canvas, ws.events, "th_1", "make it blue");
   let writing = true;
   ws.writing = (key, thread) => writing && key === "fern" && thread === "th_1";
   const r = await call("set_comment_status", { thread: "th_1", status: "resolved" });
@@ -553,7 +555,7 @@ test("a thread the person is writing a reply in can't be resolved by an agent", 
   expect(r.text).toContain("writing a reply");
   const replied = await call("reply", { thread: "th_1", text: "Navy?", resolve: true });
   expect(replied.text).toContain("left it open");
-  const t = () => design.doc.threads.find((x) => x.id === "th_1")!;
+  const t = () => canvas.doc.threads.find((x) => x.id === "th_1")!;
   expect(t().status).toBe("open");
   expect(t().messages.at(-1)?.text).toBe("Navy?");
   // Once it's sent, or put down, the agent resolves it as ever.
@@ -565,9 +567,9 @@ test("a thread the person is writing a reply in can't be resolved by an agent", 
 });
 
 test("a wait with a cursor still in the ring hears what came after it", async () => {
-  const { call, design, ws, captured } = await onHub(new EventHub());
+  const { call, canvas, ws, captured } = await onHub(new EventHub());
   const since = ws.events.cursor;
-  personComments(design, ws.events, "th_1", "tighter");
+  personComments(canvas, ws.events, "th_1", "tighter");
   const r = await call("wait_for_activity", { since, timeout: 0 });
   expect(r.text).toStartWith('new comment th_1 on "Hero" from Sam: "tighter"');
   expect(captured.at(-1)).toMatchObject({ cursor: "ok", events: 1 });
@@ -575,17 +577,17 @@ test("a wait with a cursor still in the ring hears what came after it", async ()
   expect(captured.at(-1)).toMatchObject({ cursor: "none" });
 });
 
-/** Three open designs, and an agent whose session started in the first. */
+/** Three open canvases, and an agent whose session started in the first. */
 async function threeFiles() {
   const open = async (key: string, name: string) => {
-    const design = await Design.open(
+    const canvas = await Design.open(
       new MemoryAdapter({
         "design.json": JSON.stringify({ ponzu: 1, name, pages: [{ id: "pg_home", name: "Home" }] }),
         "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px"></section>\n`,
       }),
       { saveDelay: 0 },
     );
-    return { key, design };
+    return { key, canvas };
   };
   const files = [
     await open("fern", "Fern"),
@@ -594,7 +596,7 @@ async function threeFiles() {
   ];
   const captured: Record<string, unknown>[] = [];
   const ws: Workspace = {
-    designs: () => [...files],
+    canvases: () => [...files],
     resolve: async (file) => {
       const hit = files.find((f) => f.key === file);
       if (!hit) throw new Error(`no ${file}`);
@@ -610,14 +612,14 @@ async function threeFiles() {
     session: { file: "fern" },
   };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
-  const [fern, moss, reed] = files.map((f) => f.design);
+  const [fern, moss, reed] = files.map((f) => f.canvas);
   return { ws, ctx, call, captured, open, files, fern: fern!, moss: moss!, reed: reed! };
 }
 
 test("a wait hears comments on the file the agent worked in before it moved to a new one", async () => {
   const { ws, call, fern } = await threeFiles();
   await call("get_tree", { file: "fern" });
-  // The agent moves on to a new design, and the person keeps commenting on the first.
+  // The agent moves on to a new canvas, and the person keeps commenting on the first.
   await call("get_tree", { file: "moss" });
   const since = ws.events.cursor;
   personComments(fern, ws.events, "th_1", "bigger", "fern");
@@ -629,7 +631,7 @@ test("a wait hears comments on the file the agent worked in before it moved to a
   expect(named.text).toContain('(in "Fern")');
 });
 
-test("comments in a design the agent never touched are counted, not told", async () => {
+test("comments in a canvas the agent never touched are counted, not told", async () => {
   const { ws, call, captured, reed, moss } = await threeFiles();
   await call("get_tree", { file: "moss" });
   const since = ws.events.cursor;
@@ -641,14 +643,14 @@ test("comments in a design the agent never touched are counted, not told", async
   expect(captured.at(-1)).toMatchObject({ events: 1, scope_files: 1, missed_elsewhere: 1 });
 });
 
-test("comments in a design opened while the wait runs are counted too", async () => {
+test("comments in a canvas opened while the wait runs are counted too", async () => {
   const { ws, call, captured, open, files } = await threeFiles();
   const since = ws.events.cursor;
   const waiting = call("wait_for_activity", { since, timeout: 0.3 });
   while (!ws.presence.list().some((p) => p.listening)) await Bun.sleep(1);
   const sage = await open("sage", "Sage");
   files.push(sage);
-  personComments(sage.design, ws.events, "th_s", "over here", "sage");
+  personComments(sage.canvas, ws.events, "th_s", "over here", "sage");
   await waiting;
   expect(captured.at(-1)).toMatchObject({ events: 0, missed_elsewhere: 1 });
 });
@@ -665,7 +667,7 @@ test("after a restart, waiting threads from every file the agent worked in are l
   expect(r.text).toMatch(/th_f \[open\].*\(in "Fern"\)/);
 });
 
-test("a session remembers the designs it worked in, most recent first", async () => {
+test("a session remembers the canvases it worked in, most recent first", async () => {
   const { ctx, call } = await threeFiles();
   await call("get_tree", { file: "fern" });
   await call("get_tree", { file: "moss" });
@@ -683,9 +685,9 @@ test("screenshot checks hover, focus and press ids before rendering", async () =
   expect((await call("screenshot", { id: "ab_hero", press: "n_p" })).isError).toBeFalsy();
 });
 
-test("renders default to the person's theme and say so when the design has one", async () => {
+test("renders default to the person's theme and say so when the canvas has one", async () => {
   const { renderer, calls } = fakeRenderer({});
-  const { call, ws, design } = await setup(3, renderer);
+  const { call, ws, canvas } = await setup(3, renderer);
   const scheme = () => (calls.at(-1) as { colorScheme?: string }).colorScheme;
 
   // Tokens that don't change with the theme look the same on either canvas: light, and nothing to say.
@@ -701,16 +703,16 @@ test("renders default to the person's theme and say so when the design has one",
   await call("update_styles", {
     updates: [{ ids: ["n_h"], style: { color: "light-dark(#111, #eee)" } }],
   });
-  expect((await call("get_basic_info", {})).text).toContain("canvas is in dark mode, so they see");
+  expect((await call("get_basic_info", {})).text).toContain("sees Ponzu in dark mode, so they see");
   await call("update_styles", { updates: [{ ids: ["n_h"], style: { color: null } }] });
 
   await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(scheme()).toBe("dark");
-  expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");
+  expect(shot.text).toContain("Shown in dark, the theme the person sees Ponzu in.");
   expect(shot.text).toContain('pass colorScheme: "light" to see it');
   expect((await call("get_basic_info", {})).text).toContain(
-    "The person's canvas is in dark mode, so they see this design's light-dark() colors in dark.",
+    "The person sees Ponzu in dark mode, so they see this canvas's light-dark() colors in dark.",
   );
   await call("screenshot", { id: "ab_hero", colorScheme: "light" });
   expect(scheme()).toBe("light");
@@ -732,7 +734,7 @@ test("renders default to the person's theme and say so when the design has one",
     });
     expect(scheme()).toBe("dark");
     expect(out.text).toContain(", dark,");
-    (design.storage as { root?: string }).root = dir;
+    (canvas.storage as { root?: string }).root = dir;
     ws.theme = "dark";
     expect((await call("export", { id: "ab_hero" })).text).toContain(
       `${dir}/exports/hero-dark.png`,
@@ -775,17 +777,17 @@ test("the kit's parts survive the sanitizer as written", () => {
 
 test("the format guide's example files load as it describes", async () => {
   for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
-  const { design, call } = await withFiles(FORMAT_EXAMPLE);
-  const { doc } = design;
-  expect(design.problems).toEqual([]);
+  const { canvas, call } = await withFiles(FORMAT_EXAMPLE);
+  const { doc } = canvas;
+  expect(canvas.problems).toEqual([]);
   expect(doc.pages.map((p) => [p.id, p.name, p.icon])).toEqual([["pg_flow", "Flow", "flow"]]);
   const cart = doc.pages[0]!.artboards[0]!;
   expect([cart.id, cart.name, cart.x, cart.y]).toEqual(["ab_cart", "Cart", 0, 0]);
   expect(cart.root.style).toMatchObject({ width: "390px", height: "844px" });
-  const [pinned, canvas] = doc.threads;
+  const [pinned, offBoard] = doc.threads;
   expect(locate(doc, pinned!.nodeId!)?.artboard.id).toBe("ab_cart");
-  expect(canvas!.artboardId).toBeUndefined();
-  expect(threadPage(doc, canvas!)?.id).toBe("pg_flow");
+  expect(offBoard!.artboardId).toBeUndefined();
+  expect(threadPage(doc, offBoard!)?.id).toBe("pg_flow");
   const listed = (await call("list_comments", {})).text;
   expect(listed).toContain('th_title [open] on "Cart" › ');
   expect(listed).toContain('th_next [open] on the canvas of page "Flow" at 480, 120');
@@ -793,7 +795,7 @@ test("the format guide's example files load as it describes", async () => {
 });
 
 test("update_page renames a page's folder, and get_basic_info shows where it went", async () => {
-  const { design, call } = await withFiles({
+  const { canvas, call } = await withFiles({
     "design.json": JSON.stringify({
       ponzu: 1,
       name: "Fern",
@@ -807,9 +809,9 @@ test("update_page renames a page's folder, and get_basic_info shows where it wen
   });
   await call("update_page", { page: "pg_old", delete: true });
   await call("update_page", { page: "pg_new", name: "Home" });
-  await design.flush();
+  await canvas.flush();
   expect((await call("get_basic_info", {})).text).toContain('Page pg_new "Home" · pages/home/');
-  const files = (design.storage as MemoryAdapter).files;
+  const files = (canvas.storage as MemoryAdapter).files;
   expect(Object.keys(files).filter((p) => p.startsWith("pages/"))).toEqual([
     "pages/home/hero.html",
   ]);
@@ -820,7 +822,7 @@ test("update_page renames a page's folder, and get_basic_info shows where it wen
 });
 
 test("update_page moves a page to an index, renaming it in the same step", async () => {
-  const { design, call } = await withFiles({
+  const { canvas, call } = await withFiles({
     "design.json": JSON.stringify({
       ponzu: 1,
       name: "Fern",
@@ -833,13 +835,13 @@ test("update_page moves a page to an index, renaming it in the same step", async
     "tokens.css": ":root {\n}\n",
   });
   await call("update_page", { page: "Three", index: 0, name: "First" });
-  expect(design.doc.pages.map((p) => [p.id, p.name])).toEqual([
+  expect(canvas.doc.pages.map((p) => [p.id, p.name])).toEqual([
     ["pg_c", "First"],
     ["pg_a", "One"],
     ["pg_b", "Two"],
   ]);
   await call("update_page", { page: "pg_c", index: 99 });
-  expect(design.doc.pages.map((p) => p.id)).toEqual(["pg_a", "pg_b", "pg_c"]);
+  expect(canvas.doc.pages.map((p) => p.id)).toEqual(["pg_a", "pg_b", "pg_c"]);
 });
 
 test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
@@ -855,11 +857,11 @@ test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
 });
 
 test("get_basic_info shows an artboard file caught half-written as last read whole, and says so", async () => {
-  const { call, design, captured } = await onHub(new EventHub());
+  const { call, canvas, captured } = await onHub(new EventHub());
   const path = "pages/home/hero.html";
-  const whole = (design.storage as MemoryAdapter).files[path]!;
+  const whole = (canvas.storage as MemoryAdapter).files[path]!;
   // A script empties the file before writing it, and get_basic_info runs in between.
-  await (design.storage as MemoryAdapter).externalWrite(path, "");
+  await (canvas.storage as MemoryAdapter).externalWrite(path, "");
   await new Promise((r) => setTimeout(r, 20));
   const text = (await call("get_basic_info", {})).text;
   expect(text).toContain("ab_hero");
@@ -869,7 +871,7 @@ test("get_basic_info shows an artboard file caught half-written as last read who
   expect(text).toContain(`Still being written, shown as last read whole`);
   expect(text).toContain(`\n  ${path}`);
   expect(captured.at(-1)).toMatchObject({ tool: "get_basic_info", held_files: 1 });
-  await (design.storage as MemoryAdapter).externalWrite(path, whole);
+  await (canvas.storage as MemoryAdapter).externalWrite(path, whole);
   await new Promise((r) => setTimeout(r, 20));
   expect((await call("get_basic_info", {})).text).not.toContain("Still being written");
   expect(captured.at(-1)).toMatchObject({ held_files: 0 });
@@ -903,11 +905,11 @@ test("an artboard given display: flex with no direction says it stays a column",
   expect(plain.text).not.toContain("Note:");
 });
 
-test("an agent shows as working on what it changes until it goes quiet", async () => {
+test("an agent shows as working on the boards it is changing, and lets go of the ones it has left", async () => {
   const { call, ws } = await setup();
   const me = () => ws.presence.list().find((p) => p.id === "t")!;
   // The clock only moves when the test moves it, so a slow machine can't run
-  // out the quiet period between two calls the test makes back to back.
+  // out a board's time between two calls the test makes back to back.
   jest.useFakeTimers();
   try {
     await call("get_tree", {});
@@ -917,10 +919,18 @@ test("an agent shows as working on what it changes until it goes quiet", async (
     expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
     const created = await call("create_artboard", { name: "Card" });
     const card = /ab_\w+/.exec(created.text)![0];
+    // Straight on to another board: the one it left keeps its mark a moment.
     expect(me().working).toEqual(["ab_hero", card]);
 
     await call("set_status", { status: "tightening the hero" });
     expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
+    // The hero's moment is up; the card, its latest, stays.
+    jest.advanceTimersByTime(BOARD_HANDOFF + 5);
+    expect(me().working).toEqual([card]);
+
+    // Back on the hero after a while on the card: the card, long untouched, lets go at once.
+    await call("set_text", { updates: [{ id: "n_h", text: "Hey" }] });
+    expect(me().working).toEqual(["ab_hero"]);
     await call("set_status", { status: "just the card", artboards: [card] });
     expect(me().working).toEqual([card]);
 
@@ -929,14 +939,17 @@ test("an agent shows as working on what it changes until it goes quiet", async (
     expect(me().working).toEqual([]);
     expect(me().status).toBe("just the card");
 
-    // A read keeps it going; a full quiet period with no call clears it.
+    // Its latest board stays through the time a model takes to write its next change, a read
+    // or two included, and no longer; what it says it is doing lasts until it goes quiet.
     await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
-    jest.advanceTimersByTime(WORKING_IDLE / 2);
+    jest.advanceTimersByTime(BOARD_IDLE / 2);
     await call("get_tree", {});
-    jest.advanceTimersByTime(WORKING_IDLE - 1);
+    jest.advanceTimersByTime(BOARD_IDLE / 2 - 5);
     expect(me().working).toEqual(["ab_hero"]);
-    jest.advanceTimersByTime(1);
-    expect(me()).toMatchObject({ working: [] });
+    jest.advanceTimersByTime(10);
+    expect(me().working).toEqual([]);
+    expect(me().status).toBe("just the card");
+    jest.advanceTimersByTime(WORKING_IDLE);
     expect(me().status).toBeUndefined();
   } finally {
     jest.useRealTimers();
@@ -956,14 +969,14 @@ test("waiting for activity ends a pass", async () => {
 test("an agent that writes the files itself shows as working on them", async () => {
   const { call, ws } = await setup();
   const me = () => ws.presence.list().find((p) => p.id === "t")!;
-  // A read is enough to place it in the design.
+  // A read is enough to place it in the canvas.
   await call("get_tree", {});
   ws.presence.wroteOnDisk("fern", { artboards: ["ab_hero"], gone: [] });
   expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
   ws.presence.wroteOnDisk("fern", { artboards: [], gone: ["ab_hero"] });
   expect(me().working).toEqual([]);
 
-  // In another design, or waiting for the person's edits: not its doing.
+  // In another canvas, or waiting for the person's edits: not its doing.
   ws.presence.wroteOnDisk("other", { artboards: ["ab_x"], gone: [] });
   expect(me().working).toEqual([]);
   await call("wait_for_activity", { timeout: 0.05 });
@@ -1082,6 +1095,31 @@ test("a fit-content artboard is checked at its rendered height", async () => {
   // Unchanged since: not rendered again.
   await tall.call("get_basic_info", {});
   expect(measured).toEqual(["ab_b"]);
+});
+
+test("a measured artboard isn't measured again when its asset key is rotated", async () => {
+  const s = await twoBoards(0, -1400, "width:800px;height:fit-content");
+  // As the cloud serves a canvas's files: under a key in the path.
+  let assets = "https://assets.ponzu.test/k3y-one";
+  s.ws.assetBase = () => assets;
+  const bases: (string | undefined)[] = [];
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      bases.push(req.assetBase);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 1500 } },
+        contentHeight: 1500,
+      };
+    },
+    close: async () => {},
+  };
+  await s.call("get_basic_info", {});
+  assets = "https://assets.ponzu.test/k3y-two";
+  await s.call("get_basic_info", {});
+  expect(bases).toEqual(["https://assets.ponzu.test/k3y-one"]);
 });
 
 test("two unmeasured artboards that only meet at their rendered sizes are both measured", async () => {
@@ -1217,11 +1255,11 @@ test("record says when fonts or images ran out of time", async () => {
 });
 
 test("update_file marks a file as scratch and back", async () => {
-  const { design, call } = await setup();
+  const { canvas, call } = await setup();
   await call("update_file", { scratch: true });
-  expect(design.doc.scratch).toBe(true);
+  expect(canvas.doc.scratch).toBe(true);
   await call("update_file", { scratch: false });
-  expect(design.doc.scratch).toBeUndefined();
+  expect(canvas.doc.scratch).toBeUndefined();
 });
 
 test("list_files filters by name or path", async () => {

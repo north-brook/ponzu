@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { Icons } from "../../../packages/react/src/icon-names.ts";
+import { Icons } from "../../../packages/canvas/src/icon-names.ts";
 import { FALLBACK, pageIcon, pageIconImage, pageIconName } from "./page-icons";
 
 const catalog = new Set(

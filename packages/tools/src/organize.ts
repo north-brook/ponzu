@@ -1,163 +1,22 @@
-import {
-  emptyDoc,
-  findPage,
-  newId,
-  type Op,
-  PAGE_ICONS,
-  parseTokens,
-  setTokens,
-} from "@ponzu/core";
+import { findPage, newId, type Op, PAGE_ICONS, parseTokens, setTokens } from "@ponzu/core";
 import { z } from "zod";
-import { fileArg, ToolError, tool } from "./define.ts";
-import { apply, plural, resolveFile } from "./util.ts";
+import { ToolError, tool } from "./define.ts";
+import { apply, canvasOf, plural } from "./util.ts";
 
 /** What an icon is for, on every field that takes one. */
-const ICON_HINT =
-  'Name what\'s inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one file read best with different icons. star means a favourite, not "interesting".';
+export const ICON_HINT =
+  'Name what\'s inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one canvas read best with different icons. star means a favourite, not "interesting".';
 
-const icon = z.enum(PAGE_ICONS);
+export const icon = z.enum(PAGE_ICONS);
 
 export const organizeTools = [
-  tool({
-    name: "list_files",
-    title: "List files",
-    group: "organize",
-    readOnly: true,
-    description:
-      "The .design files open in this Ponzu session. The one marked (current) is what calls without file use.",
-    input: {
-      query: z
-        .string()
-        .optional()
-        .describe("Only files whose name or path contains this, case-insensitive."),
-    },
-    handler(args, { ws, session }) {
-      const all = ws.designs();
-      if (!all.length) return { text: "No files open. Use create_file." };
-      const q = args.query?.toLowerCase();
-      const files = q
-        ? all.filter(
-            ({ key, design }) =>
-              key.toLowerCase().includes(q) || design.doc.name.toLowerCase().includes(q),
-          )
-        : all;
-      if (!files.length)
-        return {
-          text: `No open file matches "${args.query}" (${plural(all.length, "file")} open).`,
-        };
-      return {
-        text: files
-          .map(({ key, design }) => {
-            const ab = design.doc.pages.reduce((n, p) => n + p.artboards.length, 0);
-            return `${design.doc.name} — ${key} (${plural(design.doc.pages.length, "page")}, ${plural(ab, "artboard")})${key === session?.file ? " (current)" : ""}`;
-          })
-          .join("\n"),
-      };
-    },
-  }),
-
-  tool({
-    name: "create_file",
-    title: "Create file",
-    group: "organize",
-    description:
-      "Create a new .design folder with its pages and tokens in one call, then open it; later calls without file use it. Put it next to the code it designs (e.g. ./design/app.design) unless the user says otherwise. To import or generate a whole design by writing its files instead, see get_guide('format').",
-    input: {
-      path: z
-        .string()
-        .describe(
-          "Folder path ending in .design. Relative paths resolve from your working directory.",
-        ),
-      name: z
-        .string()
-        .optional()
-        .describe(
-          'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
-        ),
-      icon: icon.optional().describe(`Shown on the file's tab. ${ICON_HINT}`),
-      scratch: z
-        .boolean()
-        .optional()
-        .describe(
-          "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu keeps it archived, out of their Recent designs.",
-        ),
-      pages: z
-        .array(z.object({ name: z.string(), icon: icon.optional().describe(ICON_HINT) }))
-        .optional()
-        .describe("Default: one page called Home."),
-      tokens: z
-        .string()
-        .optional()
-        .describe(
-          "CSS with custom properties, e.g. ':root { --color-ink: #111; --font-sans: \"Inter\", sans-serif; }'",
-        ),
-    },
-    async handler(args, { ws, session, caller }) {
-      if (!ws.create) throw new ToolError("This host doesn't create files.");
-      if (!/\.design\/?$/.test(args.path)) throw new ToolError("The path should end in .design");
-      const name =
-        args.name ??
-        args.path
-          .replace(/\/$/, "")
-          .split("/")
-          .pop()!
-          .replace(/\.design$/, "");
-      const doc = emptyDoc(name);
-      if (args.icon) doc.icon = args.icon;
-      if (args.scratch) doc.scratch = true;
-      for (const p of args.pages?.length ? args.pages : [{ name: "Home" }]) {
-        doc.pages.push({
-          id: newId("pg"),
-          name: p.name,
-          ...(p.icon ? { icon: p.icon } : {}),
-          artboards: [],
-        });
-      }
-      if (args.tokens) doc.tokens = args.tokens.endsWith("\n") ? args.tokens : `${args.tokens}\n`;
-      const { key, design } = await ws.create(args.path, doc);
-      if (session) session.file = key;
-      const link = ws.link?.(key, { origin: caller.reachedAt });
-      return {
-        text: `Created ${key}${link ? `\nLink: ${link}` : ""}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
-      };
-    },
-  }),
-
-  tool({
-    name: "update_file",
-    title: "Update file",
-    group: "organize",
-    description:
-      "Rename a file (its tab title), change the icon on its tab, or mark it as scratch.",
-    input: {
-      file: fileArg,
-      name: z.string().min(1).optional(),
-      icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
-      scratch: z
-        .boolean()
-        .optional()
-        .describe("true archives it, out of the person's Recent designs; false brings it back."),
-    },
-    async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file);
-      const ops: Op[] = [];
-      if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
-      if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });
-      if (args.scratch !== undefined) ops.push({ op: "file.scratch", scratch: args.scratch });
-      if (!ops.length) return { text: "Nothing to change." };
-      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
-      return { text: `Updated ${key}.` };
-    },
-  }),
-
   tool({
     name: "create_page",
     title: "Create page",
     group: "organize",
     description:
-      "Add a page (a folder of artboards). Pages are for big groupings: flows, platforms, explorations, an archive.",
+      "Add a page: a canvas of its own, holding artboards. Pages are for big groupings: flows, platforms, explorations, an archive.",
     input: {
-      file: fileArg,
       name: z.string(),
       icon: icon.optional().describe(ICON_HINT),
       index: z
@@ -168,18 +27,19 @@ export const organizeTools = [
         .describe("Position in the page list. Default last."),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file);
+      const { key, canvas } = await canvasOf(ctx);
       const id = newId("pg");
       apply(
-        design,
+        canvas,
         {
           op: "page.create",
-          index: args.index ?? design.doc.pages.length,
+          index: args.index ?? canvas.doc.pages.length,
           page: { id, name: args.name, ...(args.icon ? { icon: args.icon } : {}) },
         },
         ctx,
       );
-      return { text: `Created page ${id} "${args.name}".` };
+      const link = ctx.ws.linkTo?.(key, { page: id });
+      return { text: `Created page ${id} "${args.name}".${link ? `\nLink: ${link}` : ""}` };
     },
   }),
 
@@ -188,9 +48,8 @@ export const organizeTools = [
     title: "Update page",
     group: "organize",
     description:
-      "Rename a page, change its icon, move it in the page list, or delete it (with its artboards). Renaming moves the page's folder of files to match its new name.",
+      "Rename a page, change its icon, move it in the page list, or delete it (with its artboards).",
     input: {
-      file: fileArg,
       page: z.string().describe("Page id or name."),
       name: z.string().optional(),
       icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
@@ -198,13 +57,13 @@ export const organizeTools = [
       delete: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.page]);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, [args.page]);
+      const doc = canvas.doc;
       const page = findPage(doc, args.page);
       if (!page) throw new ToolError(`No page ${args.page}.`);
       if (args.delete) {
-        if (doc.pages.length === 1) throw new ToolError("A file needs at least one page.");
-        apply(design, { op: "page.delete", id: page.id }, ctx);
+        if (doc.pages.length === 1) throw new ToolError("A canvas needs at least one page.");
+        apply(canvas, { op: "page.delete", id: page.id }, ctx);
         return {
           text: `Deleted page "${page.name}" and ${plural(page.artboards.length, "artboard")}.`,
         };
@@ -214,7 +73,7 @@ export const organizeTools = [
         ops.push({ op: "page.update", id: page.id, name: args.name, icon: args.icon });
       if (args.index !== undefined) ops.push({ op: "page.move", id: page.id, index: args.index });
       if (!ops.length) return { text: "Nothing to change." };
-      apply(design, { op: "batch", ops }, ctx);
+      apply(canvas, { op: "batch", ops }, ctx);
       return { text: `Updated page ${page.id}.` };
     },
   }),
@@ -225,10 +84,10 @@ export const organizeTools = [
     group: "organize",
     description:
       "Move superseded artboards to an Archive page (created if needed, kept last) and pack them into a grid. Keeps the working pages clean without losing history.",
-    input: { file: fileArg, ids: z.array(z.string()).min(1) },
+    input: { ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, args.ids);
-      const doc = design.doc;
+      const { canvas } = await canvasOf(ctx, args.ids);
+      const doc = canvas.doc;
       const ops: Op[] = [];
       const archive = doc.pages.find((p) => p.name.toLowerCase() === "archive");
       const archiveId = archive?.id ?? newId("pg");
@@ -262,7 +121,7 @@ export const organizeTools = [
         x += w + 80;
         rowH = Math.max(rowH, h);
       }
-      apply(design, { op: "batch", ops }, ctx);
+      apply(canvas, { op: "batch", ops }, ctx);
       return { text: `Archived ${plural(args.ids.length, "artboard")} to page ${archiveId}.` };
     },
   }),
@@ -272,11 +131,11 @@ export const organizeTools = [
     title: "Get tokens",
     group: "organize",
     readOnly: true,
-    description: "The design tokens as plain CSS (tokens.css). Use them in styles as var(--name).",
-    input: { file: fileArg },
-    async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file);
-      return { text: design.doc.tokens.trim() || ":root {}" };
+    description: "The design tokens as plain CSS. Use them in styles as var(--name).",
+    input: {},
+    async handler(_args, ctx) {
+      const { canvas } = await canvasOf(ctx);
+      return { text: canvas.doc.tokens.trim() || ":root {}" };
     },
   }),
 
@@ -285,18 +144,17 @@ export const organizeTools = [
     title: "Set tokens",
     group: "organize",
     description:
-      'Set or remove custom properties in tokens.css; null removes. Values are any CSS, including light-dark(#fff, #111) for themes. Or pass `css` to replace the whole stylesheet (it may hold @font-face and @import too). Example: {"--color-ink": "#0E0E0E", "--radius-md": "10px"}',
+      'Set or remove custom properties in the canvas\'s tokens; null removes. Values are any CSS, including light-dark(#fff, #111) for themes. Or pass `css` to replace the whole stylesheet (it may hold @font-face and @import too). Example: {"--color-ink": "#0E0E0E", "--radius-md": "10px"}',
     input: {
-      file: fileArg,
       tokens: z.record(z.string(), z.union([z.string(), z.null()])).optional(),
       css: z.string().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file);
-      let css = args.css ?? design.doc.tokens;
+      const { canvas } = await canvasOf(ctx);
+      let css = args.css ?? canvas.doc.tokens;
       if (args.tokens) css = setTokens(css, args.tokens);
       if (!args.css && !args.tokens) throw new ToolError("Pass tokens or css.");
-      apply(design, { op: "tokens", css }, ctx);
+      apply(canvas, { op: "tokens", css }, ctx);
       return { text: `Tokens: ${parseTokens(css).length} defined.` };
     },
   }),

@@ -1,0 +1,64 @@
+appId: design.ponzu.app.dev
+name: new-canvas
+---
+# New canvas on the fake (lib/cloud/backend.fake.ts). Sam's workspace has no
+# canvases, so New canvas comes over the list by itself, in Scratch (Sam has no
+# repos): the Mac's words, Send waiting for a prompt, then a send that makes
+# the canvas and opens it. Then Maya: New canvas from the list's header, the
+# project picker grouped by workspace, and a repo in Northbrook moving the
+# statement (and the app) to it.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=empty
+- extendedWaitUntil:
+    visible:
+      id: new-canvas
+    timeout: 30000
+- assertVisible: "Make something from"
+- assertVisible: "Project: Scratch in Personal"
+- assertVisible:
+    id: new-canvas-send
+    enabled: false
+- tapOn:
+    id: new-canvas-prompt
+- inputText: "Design a pricing card for the site"
+- tapOn:
+    id: new-canvas-send
+# The canvas opens in New canvas's place, its name in the title.
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 30000
+- assertVisible:
+    id: title
+    text: ".*Pricing card for the site.*"
+- assertNotVisible:
+    id: new-canvas
+# Maya: from the header, the picker, and a repo in another workspace.
+- openLink: ponzu-dev://dev?seed=canvases
+- extendedWaitUntil:
+    visible:
+      id: canvases
+    timeout: 30000
+- tapOn: "New canvas"
+- extendedWaitUntil:
+    visible:
+      id: new-canvas
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Project: acme/site"
+    timeout: 15000
+- tapOn:
+    id: new-canvas-project
+- extendedWaitUntil:
+    visible:
+      id: pick-project
+    timeout: 15000
+- assertVisible: "Acme"
+- extendedWaitUntil:
+    visible: "Northbrook"
+    timeout: 15000
+- tapOn: "north/brand"
+- extendedWaitUntil:
+    visible: "Project: north/brand"
+    timeout: 15000
+- assertNotVisible: ".*Cannot update a component.*"

@@ -107,7 +107,7 @@ test("pinning a scheme decides every prefers-color-scheme condition", () => {
   );
 });
 
-test("tokens' relative url()s resolve against the design's assets", () => {
+test("tokens' relative url()s resolve against the canvas's assets", () => {
   const base = "https://raw.githubusercontent.com/o/r/abc123/brand.design";
   const tokens = `@font-face { font-family: "Brand"; src: url("assets/brand.woff2") format("woff2"); }
 :root { --texture: url(./assets/grain.png); --remote: url(https://x.test/a.png); --data: url(data:image/png;base64,AA); }`;

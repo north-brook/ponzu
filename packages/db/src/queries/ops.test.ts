@@ -1,0 +1,562 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import { actorFor, agent, rename, seedCanvas } from "../fixtures.ts";
+import { canvasOps } from "../schema/index.ts";
+import { createTestDb, feedOf } from "../testing.ts";
+import { getCanvas } from "./canvases.ts";
+import { commit, commitOps, findOps, type OpEvent, readOps } from "./ops.ts";
+import { QueryError } from "./run.ts";
+import { listThreadItems } from "./thread.ts";
+
+let db: Awaited<ReturnType<typeof createTestDb>>;
+beforeAll(async () => {
+  db = await createTestDb();
+});
+afterAll(() => db.$client.close());
+
+const logOf = (canvasId: string) =>
+  db.select().from(canvasOps).where(eq(canvasOps.canvasId, canvasId)).orderBy(canvasOps.seq);
+
+describe("commitOps", () => {
+  test("appends a batch in order and moves the canvas's seq past it", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = { ...actorFor(user), avatarUrl: "https://example.com/bryce.png" };
+
+    const result = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two", "One"), rename("c", "Three", "Two")],
+    });
+
+    if (result.kind !== "committed") throw new Error("expected a commit");
+    expect(result.seq).toBe(3);
+    expect(result.replayed).toEqual([]);
+    expect(result.ops.map((op) => [op.seq, op.id])).toEqual([
+      [1, "a"],
+      [2, "b"],
+      [3, "c"],
+    ]);
+    expect(result.ops[1]).toMatchObject({
+      op: { op: "file.rename", name: "Two" },
+      inverse: { op: "file.rename", name: "One" },
+      kind: "do",
+      reverses: null,
+      reversedBy: null,
+      actor,
+    });
+    expect(result.ops[0]!.at).toBeInstanceOf(Date);
+    expect(Math.abs(result.ops[0]!.at.getTime() - Date.now())).toBeLessThan(60_000);
+
+    const after = await getCanvas(db, canvas.id);
+    expect(after!.seq).toBe(3);
+    expect(after!.lastActivityAt.getTime()).toBeGreaterThanOrEqual(canvas.lastActivityAt.getTime());
+    expect((await logOf(canvas.id)).map((row) => row.seq)).toEqual([1, 2, 3]);
+  });
+
+  test("a stale expectedSeq is a conflict and writes nothing", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    await commitOps(db, { canvasId: canvas.id, expectedSeq: 0, actor, ops: [rename("a", "One")] });
+
+    const stale = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("b", "Two")],
+    });
+
+    expect(stale).toEqual({ kind: "conflict" });
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(1);
+    expect((await logOf(canvas.id)).map((row) => row.clientOpId)).toEqual(["a"]);
+  });
+
+  test("a seq ahead of the canvas is a conflict too", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const ahead = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 5,
+      actor: actorFor(user),
+      ops: [rename("a", "One")],
+    });
+    expect(ahead).toEqual({ kind: "conflict" });
+    expect(await logOf(canvas.id)).toEqual([]);
+  });
+
+  test("a canvas that does not exist is a conflict", async () => {
+    const missing = await commitOps(db, {
+      canvasId: "cnv_missing",
+      expectedSeq: 0,
+      actor: agent,
+      ops: [rename("a", "One")],
+    });
+    expect(missing).toEqual({ kind: "conflict" });
+  });
+
+  test("of committers racing on one seq exactly one wins, round after round", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    let seq = 0;
+
+    for (let round = 0; round < 5; round++) {
+      const racers = ["x", "y", "z", "w"].map((racer) =>
+        commitOps(db, {
+          canvasId: canvas.id,
+          expectedSeq: seq,
+          actor,
+          ops: [rename(`${round}-${racer}-1`, "A"), rename(`${round}-${racer}-2`, "B")],
+        }),
+      );
+      const results = await Promise.all(racers);
+
+      const winners = results.filter((result) => result.kind === "committed");
+      expect(winners).toHaveLength(1);
+      expect(results.filter((result) => result.kind === "conflict")).toHaveLength(3);
+      seq += 2;
+      expect(winners[0]).toMatchObject({ seq });
+      expect((await getCanvas(db, canvas.id))!.seq).toBe(seq);
+    }
+
+    // No gaps, no doubles, and only the winners' ops, two from each round.
+    const log = await logOf(canvas.id);
+    expect(log.map((row) => row.seq)).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+    for (let round = 0; round < 5; round++) {
+      const [first, second] = [log[round * 2]!, log[round * 2 + 1]!];
+      expect(first.clientOpId.endsWith("-1")).toBe(true);
+      expect(second.clientOpId).toBe(first.clientOpId.replace(/-1$/, "-2"));
+    }
+  });
+
+  test("the loser of a race commits once it has caught up", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    const attempt = (id: string, expectedSeq: number) =>
+      commitOps(db, { canvasId: canvas.id, expectedSeq, actor, ops: [rename(id, id)] });
+
+    const [first, second] = await Promise.all([attempt("a", 0), attempt("b", 0)]);
+    const loser = first.kind === "conflict" ? "a" : "b";
+    expect([first.kind, second.kind].sort()).toEqual(["committed", "conflict"]);
+
+    const caughtUp = await readOps(db, { canvasId: canvas.id, after: 0 });
+    if (caughtUp?.kind !== "ok") throw new Error("expected ops");
+    const retried = await attempt(loser, caughtUp.seq);
+
+    expect(retried).toMatchObject({ kind: "committed", seq: 2 });
+    expect((await logOf(canvas.id)).map((row) => row.seq)).toEqual([1, 2]);
+  });
+
+  test("posting an id again returns the original op and appends nothing", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    const first = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+    });
+    if (first.kind !== "committed") throw new Error("expected a commit");
+
+    // The retry carries a seq that is now stale, and even different content: neither matters.
+    const replay = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: agent,
+      ops: [rename("a", "Changed"), rename("b", "Changed too")],
+    });
+
+    expect(replay).toEqual({ kind: "committed", seq: 2, ops: first.ops, replayed: ["a", "b"] });
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(2);
+    expect(await logOf(canvas.id)).toHaveLength(2);
+  });
+
+  test("the same op posted twice at once is stored once", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const post = () =>
+      commitOps(db, {
+        canvasId: canvas.id,
+        expectedSeq: 0,
+        actor: actorFor(user),
+        ops: [rename("a", "One")],
+      });
+
+    const results = await Promise.all([post(), post(), post()]);
+
+    // One of them appends it. Each of the others either started after and was handed the stored
+    // op, or was waiting on the canvas's row and got a conflict; here they take turns, on a
+    // real Postgres they wait (see ops.live.test.ts). Neither appends, and a retry replays.
+    const committed = results.filter((result) => result.kind === "committed");
+    expect(committed.filter((result) => result.replayed.length === 0)).toHaveLength(1);
+    for (const result of committed) expect(result).toMatchObject({ seq: 1, ops: [{ seq: 1 }] });
+    for (const result of results) expect(["committed", "conflict"]).toContain(result.kind);
+    expect(await logOf(canvas.id)).toHaveLength(1);
+    expect(await post()).toMatchObject({ kind: "committed", seq: 1, replayed: ["a"] });
+  });
+
+  test("a batch of replayed and new ops appends only the new ones", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+    });
+
+    const mixed = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 2,
+      actor,
+      ops: [rename("c", "Three", "Two"), rename("a", "ignored"), rename("d", "Four", "Three")],
+    });
+
+    if (mixed.kind !== "committed") throw new Error("expected a commit");
+    expect(mixed.seq).toBe(4);
+    expect(mixed.replayed).toEqual(["a"]);
+    expect(mixed.ops.map((op) => [op.id, op.seq])).toEqual([
+      ["c", 3],
+      ["a", 1],
+      ["d", 4],
+    ]);
+    expect(mixed.ops[1]!.op).toEqual({ op: "file.rename", name: "One" });
+    expect((await logOf(canvas.id)).map((row) => row.clientOpId)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  test("a batch with anything new in it still needs the right seq", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    await commitOps(db, { canvasId: canvas.id, expectedSeq: 0, actor, ops: [rename("a", "One")] });
+
+    const mixed = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two")],
+    });
+
+    expect(mixed).toEqual({ kind: "conflict" });
+    expect(await logOf(canvas.id)).toHaveLength(1);
+  });
+
+  test("a batch is stored whole or not at all", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const target = { canvasId: canvas.id, expectedSeq: 0, actor: actorFor(user) };
+
+    // The third entry breaks a check constraint (an undo that names nothing to take back),
+    // after the canvas's row has been moved and two good ops have been inserted.
+    const broken = commit(db, target, [
+      { ...rename("a", "One"), kind: "do", reverses: null },
+      { ...rename("b", "Two"), kind: "do", reverses: null },
+      { ...rename("c", "Three"), kind: "undo", reverses: null },
+    ]);
+
+    const error = await broken.catch((thrown: Error) => thrown);
+    expect((error as Error).message).toContain("canvas_ops_reverses_seq_check");
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(0);
+    expect(await logOf(canvas.id)).toEqual([]);
+  });
+
+  test("an op with text Postgres cannot store is named, and nothing is written", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const target = { canvasId: canvas.id, expectedSeq: 0, actor: actorFor(user) };
+
+    const result = await commitOps(db, {
+      ...target,
+      ops: [
+        rename("fine", "Fine \ud83d\ude00"),
+        rename("nul", "a\u0000b"),
+        // What `text.slice(0, n)` leaves when it cuts an emoji in half.
+        rename("half", "Launch \ud83d"),
+        { id: "inverse", op: { op: "file.rename", name: "ok" }, inverse: rename("x", "\udc00").op },
+        {
+          id: "key",
+          op: { op: "attrs", id: "n_1", attrs: { "data-\u0000": "x" } },
+          inverse: rename("x", "y").op,
+        },
+      ],
+    });
+
+    expect(result).toEqual({ kind: "unstorable", ids: ["nul", "half", "inverse", "key"] });
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(0);
+    expect(await logOf(canvas.id)).toEqual([]);
+    // With those rejected by the caller, the rest goes in, emoji and all.
+    const retried = await commitOps(db, { ...target, ops: [rename("fine", "Fine \ud83d\ude00")] });
+    expect(retried).toMatchObject({
+      kind: "committed",
+      ops: [{ op: { name: "Fine \ud83d\ude00" } }],
+    });
+  });
+
+  test("a refused batch says what Postgres said and none of what was sent", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const target = { canvasId: canvas.id, expectedSeq: 0, actor: actorFor(user) };
+
+    const error = await commit(db, target, [
+      { ...rename("a", "the-content-of-the-canvas"), kind: "undo", reverses: null },
+    ]).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(QueryError);
+    expect((error as QueryError).message).toContain("canvas_ops_reverses_seq_check");
+    expect(`${(error as QueryError).message}\n${(error as QueryError).stack}`).not.toContain(
+      "the-content-of-the-canvas",
+    );
+  });
+
+  test("refuses an empty batch and a batch that repeats an id", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const target = { canvasId: canvas.id, expectedSeq: 0, actor: actorFor(user) };
+
+    await expect(commitOps(db, { ...target, ops: [] })).rejects.toThrow("at least one op");
+    await expect(
+      commitOps(db, { ...target, ops: [rename("a", "One"), rename("a", "Two")] }),
+    ).rejects.toThrow("distinct ids");
+    expect(await logOf(canvas.id)).toEqual([]);
+  });
+
+  test("keeps the keys of style and attrs in the order they were written", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    // jsonb would sort these by length, then alphabetically, and `margin-top` would lose to `margin`.
+    const style = { "margin-top": "4px", margin: "0", color: "red", background: "blue", a: "1" };
+    const attrs = { href: "#", class: "link", "aria-label": "Home", id: "x" };
+
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [
+        {
+          id: "a",
+          op: { op: "style", id: "n_1", style },
+          inverse: { op: "attrs", id: "n_1", attrs },
+        },
+      ],
+    });
+
+    const read = await readOps(db, { canvasId: canvas.id, after: 0 });
+    if (read?.kind !== "ok") throw new Error("expected ops");
+    const [stored] = read.ops;
+    if (stored?.op.op !== "style" || stored.inverse.op !== "attrs") throw new Error("wrong ops");
+    expect(Object.keys(stored.op.style)).toEqual(Object.keys(style));
+    expect(Object.keys(stored.inverse.attrs)).toEqual(Object.keys(attrs));
+  });
+});
+
+describe("commitOps with events and the canvas's head", () => {
+  const edit = (opId: string, userId: string, summary: string): OpEvent => ({
+    opId,
+    kind: "edit",
+    priority: "later",
+    payload: { summary },
+    userId,
+  });
+
+  test("appends each op's events with the op, with the seq the op was given", async () => {
+    const { canvas, user } = await seedCanvas(db);
+
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+      events: [edit("b", user.id, "second\u0000"), edit("a", user.id, "first")],
+    });
+
+    const claimed = await feedOf(db, canvas.id);
+    expect(claimed.map((event) => [event.payload, event.userId])).toEqual([
+      [{ summary: "second\ufffd", seq: 2 }, user.id],
+      [{ summary: "first", seq: 1 }, user.id],
+    ]);
+  });
+
+  test("a comment's thread item goes in with its event, and only when its op does", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const comment = (opId: string, text: string): OpEvent => ({
+      opId,
+      kind: "comment",
+      priority: "next",
+      payload: { text },
+      userId: user.id,
+      comment: { text, from: { id: user.id } },
+    });
+    const actor = actorFor(user);
+
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+      events: [comment("a", "Tighter"), edit("b", user.id, "renamed")],
+    });
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("c", "Three")],
+      events: [comment("c", "Missed")],
+    });
+
+    const thread = await listThreadItems(db, { canvasId: canvas.id });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]).toMatchObject({
+      kind: "comment",
+      userId: user.id,
+      streaming: false,
+      payload: { text: "Tighter", from: { id: user.id } },
+    });
+    expect(thread[0]!.id).toMatch(/^ti_/);
+    expect((await feedOf(db, canvas.id)).map((event) => event.kind)).toEqual(["comment", "edit"]);
+  });
+
+  test("appends no event when the commit misses, or for an op the log already has", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    const actor = actorFor(user);
+    await commitOps(db, { canvasId: canvas.id, expectedSeq: 0, actor, ops: [rename("a", "One")] });
+
+    const missed = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("b", "Two")],
+      events: [edit("b", user.id, "missed")],
+    });
+    const replayed = await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 1,
+      actor,
+      ops: [rename("a", "One"), rename("c", "Three", "One")],
+      events: [edit("a", user.id, "again"), edit("c", user.id, "new")],
+    });
+
+    expect(missed.kind).toBe("conflict");
+    expect(replayed).toMatchObject({ kind: "committed", seq: 2, replayed: ["a"] });
+    const claimed = await feedOf(db, canvas.id);
+    expect(claimed.map((event) => event.payload)).toEqual([{ summary: "new", seq: 2 }]);
+  });
+
+  test("an event that cannot be stored fails the whole commit, so the op is not in the log without it", async () => {
+    const { canvas, user } = await seedCanvas(db);
+
+    const failed = commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "One")],
+      events: [{ ...edit("a", user.id, "x"), userId: "usr_nobody" }],
+    });
+
+    await expect(failed).rejects.toThrow();
+    expect(await logOf(canvas.id)).toEqual([]);
+    expect((await getCanvas(db, canvas.id))!.seq).toBe(0);
+  });
+
+  test("moves the canvas's name and icon with the ops that changed them", async () => {
+    const { canvas, user } = await seedCanvas(db);
+
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "Porto")],
+      head: { name: "Porto", icon: "star" },
+    });
+    expect(await getCanvas(db, canvas.id)).toMatchObject({ name: "Porto", icon: "star" });
+
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 1,
+      actor: actorFor(user),
+      ops: [rename("b", "Faro", "Porto")],
+    });
+    expect(await getCanvas(db, canvas.id)).toMatchObject({ name: "Porto", icon: "star" });
+  });
+});
+
+describe("readOps", () => {
+  test("pages through the log from a seq", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: ["a", "b", "c", "d", "e"].map((id) => rename(id, id)),
+    });
+
+    const first = await readOps(db, { canvasId: canvas.id, after: 1, limit: 2 });
+    expect(first).toMatchObject({ kind: "ok", seq: 5, ops: [{ seq: 2 }, { seq: 3 }] });
+    const rest = await readOps(db, { canvasId: canvas.id, after: 3 });
+    expect(rest).toMatchObject({ kind: "ok", seq: 5, ops: [{ seq: 4 }, { seq: 5 }] });
+  });
+
+  test("stops before the op that would take a page past maxBytes, but always reads one", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    // Each op's text is a little over 1,000 bytes.
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: ["a", "b", "c", "d"].map((id) => rename(id, id.repeat(1000))),
+    });
+
+    const page = await readOps(db, { canvasId: canvas.id, after: 0, maxBytes: 2_500 });
+    expect(page).toMatchObject({ kind: "ok", seq: 4, ops: [{ seq: 1 }, { seq: 2 }] });
+    const tiny = await readOps(db, { canvasId: canvas.id, after: 2, maxBytes: 10 });
+    expect(tiny).toMatchObject({ kind: "ok", seq: 4, ops: [{ seq: 3 }] });
+    const all = await readOps(db, { canvasId: canvas.id, after: 0 });
+    expect(all).toMatchObject({ kind: "ok", ops: [{}, {}, {}, {}] });
+  });
+
+  test("is empty at the head, and past it", async () => {
+    const { canvas, user } = await seedCanvas(db);
+    await commitOps(db, {
+      canvasId: canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "One")],
+    });
+
+    expect(await readOps(db, { canvasId: canvas.id, after: 1 })).toEqual({
+      kind: "ok",
+      seq: 1,
+      ops: [],
+    });
+    expect(await readOps(db, { canvasId: canvas.id, after: 9 })).toEqual({
+      kind: "ok",
+      seq: 1,
+      ops: [],
+    });
+  });
+
+  test("is null for a canvas that does not exist", async () => {
+    expect(await readOps(db, { canvasId: "cnv_missing", after: 0 })).toBeNull();
+  });
+});
+
+describe("findOps", () => {
+  test("finds the ops with the given ids, in this canvas only", async () => {
+    const one = await seedCanvas(db);
+    const other = await seedCanvas(db);
+    await commitOps(db, {
+      canvasId: one.canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(one.user),
+      ops: [rename("a", "One"), rename("b", "Two"), rename("c", "Three")],
+    });
+    await commitOps(db, {
+      canvasId: other.canvas.id,
+      expectedSeq: 0,
+      actor: actorFor(other.user),
+      ops: [rename("z", "Elsewhere")],
+    });
+
+    const found = await findOps(db, { canvasId: one.canvas.id, ids: ["c", "a", "z", "nope"] });
+
+    expect(found.map((op) => [op.id, op.seq])).toEqual([
+      ["a", 1],
+      ["c", 3],
+    ]);
+    expect(await findOps(db, { canvasId: one.canvas.id, ids: [] })).toEqual([]);
+    // An id Postgres could not have stored is simply not there.
+    expect(await findOps(db, { canvasId: one.canvas.id, ids: ["a\u0000", "b"] })).toMatchObject([
+      { id: "b" },
+    ]);
+  });
+});

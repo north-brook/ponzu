@@ -1,0 +1,15 @@
+{
+  "_recorded": "Recorded read-only from dev on 2026-11-12 (GET /v9/projects/ponzu-api/domains), trimmed to the fields the check reads.",
+  "domains": [
+    {
+      "name": "api.ponzu.design",
+      "verified": true,
+      "redirect": null
+    },
+    {
+      "name": "ponzu-api.vercel.app",
+      "verified": true,
+      "redirect": null
+    }
+  ]
+}

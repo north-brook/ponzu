@@ -1,0 +1,137 @@
+{
+  "_recorded": "Recorded read-only on 2026-11-12 with gh (GET /apps/ponzu-dev, /repos/north-brook/ponzu, its rulesets, environments with their branch policies and secret names, actions variables and secrets). Names only: no variable or secret value is read. The App id and every node id are dropped; the client id is public (GitHub shows it to anyone).",
+  "app": {
+    "client_id": "Iv23liHZazTP8ngUY968",
+    "events": [
+      "check_run",
+      "check_suite",
+      "member",
+      "membership",
+      "organization",
+      "pull_request",
+      "pull_request_review",
+      "push",
+      "repository",
+      "team"
+    ],
+    "external_url": "https://ponzu.design",
+    "name": "Ponzu Dev",
+    "owner": {
+      "login": "north-brook"
+    },
+    "permissions": {
+      "checks": "read",
+      "contents": "write",
+      "emails": "read",
+      "members": "read",
+      "metadata": "read",
+      "pull_requests": "write",
+      "statuses": "read"
+    },
+    "slug": "ponzu-dev"
+  },
+  "repository": {
+    "allow_auto_merge": true,
+    "allow_merge_commit": false,
+    "allow_rebase_merge": false,
+    "allow_squash_merge": true,
+    "allow_update_branch": false,
+    "delete_branch_on_merge": true,
+    "squash_merge_commit_message": "PR_BODY",
+    "squash_merge_commit_title": "PR_TITLE"
+  },
+  "rulesets": [
+    {
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": ["refs/heads/main"]
+        }
+      },
+      "enforcement": "active",
+      "name": "Protect main",
+      "rules": [
+        {
+          "type": "deletion"
+        },
+        {
+          "type": "non_fast_forward"
+        },
+        {
+          "type": "required_linear_history"
+        },
+        {
+          "parameters": {
+            "allowed_merge_methods": ["squash"],
+            "dismiss_stale_reviews_on_push": false,
+            "dismissal_restriction": {
+              "allowed_actors": [],
+              "enabled": false
+            },
+            "require_code_owner_review": false,
+            "require_extra_approval_for_unattributed_changes": true,
+            "require_last_push_approval": false,
+            "required_approving_review_count": 0,
+            "required_review_thread_resolution": false,
+            "required_reviewers": []
+          },
+          "type": "pull_request"
+        },
+        {
+          "parameters": {
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Conventional commit messages",
+                "integration_id": 15368
+              },
+              {
+                "context": "Check, typecheck, test",
+                "integration_id": 15368
+              },
+              {
+                "context": "Desktop package",
+                "integration_id": 15368
+              }
+            ],
+            "strict_required_status_checks_policy": false
+          },
+          "type": "required_status_checks"
+        }
+      ],
+      "source_type": "Repository",
+      "target": "branch"
+    }
+  ],
+  "environments": [
+    {
+      "deployment_branch_policy": {
+        "custom_branch_policies": true,
+        "protected_branches": false
+      },
+      "name": "release-signing",
+      "protection_rules": [
+        {
+          "reviewers": [],
+          "type": "branch_policy"
+        }
+      ],
+      "branch_policies": [
+        {
+          "name": "main",
+          "type": "branch"
+        }
+      ],
+      "secrets": [
+        "APPLE_API_ISSUER",
+        "APPLE_API_KEY_BASE64",
+        "APPLE_API_KEY_ID",
+        "APPLE_CERTIFICATE",
+        "APPLE_CERTIFICATE_PASSWORD"
+      ]
+    }
+  ],
+  "variables": ["MOBILE_IOS", "PONZU_POSTHOG_KEY", "VERCEL_API_PROJECT_ID", "VERCEL_TEAM_ID"],
+  "secrets": ["ANTHROPIC_API_KEY", "RELEASE_TOKEN", "VERCEL_TOKEN"]
+}

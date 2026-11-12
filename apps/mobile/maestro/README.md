@@ -1,70 +1,79 @@
 # iPhone end-to-end tests
 
-[Maestro](https://maestro.dev) flows that drive a Debug development client
-on the iOS Simulator, against this checkout's JavaScript (from Metro) and a
-Ponzu serving the three examples. They run in this order (`config.yaml`):
+[Maestro](https://maestro.dev) flows that drive a Debug development client of
+Ponzu Dev (`design.ponzu.app.dev`) on the iOS Simulator, against this
+checkout's JavaScript from Metro, built with the in-app fake backend
+(`PONZU_BACKEND=fake`, see [docs/mobile.md](../../../docs/mobile.md)). Nothing
+reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 
 | Flow | What it checks |
 | --- | --- |
-| `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then the code on your computer (by way of Tailscale, when this Mac's is off). |
-| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Search); the header's filter menu picks Archived, then Recent again; holding Weft archives it, and holding it under Archived restores it. |
-| `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
-| `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
-| `search.yaml` | The search tab's system field: "weft" shows Files and Frames. |
-| `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
-| `comment-modes.yaml` | The comment field switches typing → voice → typing (the field, then what's heard with the listening disc and the keyboard glyph, then the field again) and sends. |
-| `draft.yaml` | A comment left unsent on Kettle's Logo keeps a pin: held, its sheet moves it (the design pans under it, then Done), it opens again with its words, and Discard draft takes it away. |
+| `launch.yaml` | A clean install: the slice and wordmark on yuzu, then Sign in, since nobody is. A link the build doesn't take opens nothing. |
+| `sign-in.yaml` | Continue with GitHub through the system's auth session onto the fake's authorize page (`authorize.ts`), back on `ponzu-dev://auth/callback`; the canvases (Pricing page, Onboarding, Launch poster); settings from the lockup; Sign out back to Sign in. |
+| `setup.yaml` | Lee, with nothing set up: Set up installs the GitHub App through the auth session onto the fake's install page (`authorize.ts /install`), back on `ponzu-dev://github/setup`, and the row turns Ready; Continue; Connect Claude with an API key; the canvases, with New canvas over them since Lee has none. |
+| `canvases.yaml` | Maya's list in every state: the row waiting on her first, with its question; the working row; Settled folding the settled canvas away; holding a row to settle it; settings from the lockup switching to Northbrook, and usage with nothing to pay. |
+| `new-canvas.yaml` | Sam, with no canvases: New canvas comes by itself, in Scratch, in the Mac's words; Send waits for a prompt, then makes the canvas and opens it. Maya: New canvas from the header, the picker grouped by workspace, and a repo in Northbrook moving the statement to it. |
+| `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
+| `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
+| `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
 
-`shared/start.yaml` opens the client onto Metro, closes the development
-menu if it shows, and waits for Designs. It refuses the microphone and
-speech recognition, so a comment sheet in voice offers typing with no system
-prompt in the way. Every flow checks no development warning
+With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
+opens the Pricing page and waits for its boards, `run.sh` ends that
+simulator's WebContent process (found with `simctl spawn <udid> launchctl
+list`, so no other simulator's is touched), and `remount/check.yaml` checks a
+new web view draws the boards again under the same title with no placeholder.
+`run.sh` fails if the process it ended is still there. It is opt-in because it
+has not yet run on spare; once it passes there, make it the default.
+
+`shared/start.yaml` opens the client onto Metro and closes the development
+menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
+(`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
+too-old, setup-where, setup-claude, canvases); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
-`designs`, `card-<name>`, `tab-designs`, `tab-search`, `search`,
-`search-files`, `search-frames`, `canvas`, `title`, `page-menu`, `chrome`, `chrome-hidden`, `hint`,
-`comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
-`resolve`, `draft-sheet`, `draft-open`, `draft-move`, `draft-discard`, `move-hint`, `move-done`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
+`sign-in`, `sign-in-github`, `sign-in-error`, `canvases`, `lockup`,
+`canvas-<id>`, `tab-canvases`, `tab-search`, `search`, `settings`,
+`settings-sign-out`, `update`, `setup-where`, `setup-account-<login>-set-up`,
+`setup-where-continue`, `setup-claude`, `setup-claude-add-key`,
+`setup-claude-key-field`, `setup-claude-connect`, `setup-code`, `settled`,
+`settings-workspaces`, `settings-usage`, `new-canvas`, `new-canvas-project`,
+`new-canvas-prompt`, `new-canvas-send`, `new-canvas-attach`, `new-canvas-model`,
+`new-canvas-error`, `pick-project`, `pick-project-search`,
+`pick-project-allow-more`, `connect-claude-sheet`, `canvas`, `canvas-web`,
+`canvas-placeholder`, `canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`,
+`stack-comment`, `stack-chat`, `canvas-hint`, `comment-sheet`, `comment-field`,
+`comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
+`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`. A
+canvas's row reads as its VoiceOver label ("Pricing page, 1 waiting for you,
+site, …"), so flows match it with a pattern. Give a new screen a `testID` named
+after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
-
-The comment flow leaves `examples/` as it was: it deletes its comment with
-the development link `ponzu://design/dev/<key>?uncomment=Maestro` (every
-thread of yours starting with that text), and Ponzu removes `comments.json`
-when its last thread goes. `run.sh` fails if `examples/` changed.
 
 ## Run them
 
-Java 17 or later and the Maestro CLI:
+On spare, through the network-work job runner, never on a workstation. From
+a checkout on a master, with its edits:
 
 ```sh
-brew install openjdk@17
-curl -fsSL "https://get.maestro.mobile.dev" | bash   # into ~/.maestro
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17 PATH="$JAVA_HOME/bin:$HOME/.maestro/bin:$PATH"
+network job start spare --repo ponzu --source . --include-dirty \
+  --agent command --resource ios -- scripts/ci/mobile-ios.sh
 ```
 
-Then, from the repository root, with a booted simulator's UDID:
+On a Mac with a booted simulator, Java 17 or later and the Maestro CLI
+(`brew install openjdk@17`, `curl -fsSL "https://get.maestro.mobile.dev" | bash`):
 
 ```sh
 apps/mobile/maestro/run.sh <udid>
 ```
 
-It starts a Ponzu on the examples and Metro on free ports, builds the
-development client (`expo prebuild`, `xcodebuild` Debug), installs it, and
-runs every flow. Already running both, with the client installed:
+It starts the authorize page and Metro (fake backend) on free ports, builds the
+development client (`APP_VARIANT=dev expo prebuild`, `xcodebuild` Debug),
+installs it, and runs every flow. Already running both, with the client
+installed:
 
 ```sh
-PONZU_PORT=7794 METRO_PORT=8095 SKIP_BUILD=1 apps/mobile/maestro/run.sh <udid>
-```
-
-Metro must have been started with `EXPO_PUBLIC_PONZU_DEV_HOST` pointing at
-that Ponzu (`apps/mobile/.env.local`, see [docs/mobile.md](../../../docs/mobile.md)),
-which development builds pair as "This Mac". One flow on its own:
-
-```sh
-maestro --device <udid> test -e KETTLE=<encoded kettle.design path> \
-  -e DEV_CLIENT='exp+ponzu://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8095' \
-  apps/mobile/maestro/search.yaml
+AUTH_PORT=8790 METRO_PORT=8095 SKIP_BUILD=1 apps/mobile/maestro/run.sh <udid>
 ```
 
 When a flow fails, `~/.maestro/tests/<run>/` holds each step's result and
@@ -72,11 +81,9 @@ the view hierarchy it saw (`commands.json`) and a screenshot of the failure.
 
 ## Continuous integration
 
-`Mobile iOS` in `.github/workflows/ci.yml` runs `run.sh` on the self-hosted
-Macs (`[self-hosted, macOS, ARM64, spare-ios]`) for pull requests from this
-repository that `scripts/ci/scope.ts` says can affect the phone, on the
-simulator the runner assigns (`IOS_SIMULATOR_UDID`). The runners carry Xcode,
-Java and Maestro. Forks never run on them. The job runs only when the
-repository variable `MOBILE_IOS` is `true`, set once those runners serve
-this repository. It uploads the JUnit report and Maestro's debug output. The
-`Mobile` check reports for every pull request either way.
+`Mobile iOS` in `.github/workflows/ci.yml` runs `run.sh` on spare's runners
+for pull requests from this repository that `scripts/ci/scope.ts` says can
+affect the phone, once the repository variable `MOBILE_IOS` is `true`. It
+does not run for pull requests into `cloud` yet: it comes back there once
+the cloud app's flows have passed twice on the job runner. The `Mobile` check
+reports for every pull request either way.

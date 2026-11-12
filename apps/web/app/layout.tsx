@@ -1,30 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Funnel_Display, IBM_Plex_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import { DEVICE_SCRIPT } from "@/components/device";
 import { Handoff } from "@/components/handoff";
 import { DESCRIPTION, TITLE } from "@/components/share";
+// The site's fonts, served from fonts/ (fonts.ts).
+import "@/fonts/fonts";
 import "./globals.css";
-
-// Variable, so every weight is available and text can use Inter's optical sizes.
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-
-// Ponzu's display face: headlines and the wordmark.
-const funnelDisplay = Funnel_Display({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-funnel-display",
-});
-
-// Ponzu's mono: commands, file names and code on the site.
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-plex-mono",
-});
 
 // Site-wide defaults. Each page sets its own share tags with `share()` (components/share.ts).
 export const metadata: Metadata = {
@@ -35,16 +16,7 @@ export const metadata: Metadata = {
   authors: [{ name: "Northbrook PBC", url: "https://github.com/north-brook" }],
   creator: "Northbrook PBC",
   publisher: "Northbrook PBC",
-  keywords: [
-    "design canvas",
-    "coding agent",
-    "Claude Code",
-    "Codex",
-    "Cursor",
-    "MCP",
-    "HTML and CSS",
-    "open source",
-  ],
+  keywords: ["canvas", "Claude Code", "pull requests", "AI agent", "cloud sandbox", "open source"],
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
@@ -64,11 +36,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // The device script marks phones on <html> before it paints (components/device.ts).
-    <html
-      lang="en"
-      className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed script of our own, run before paint */}
         <script dangerouslySetInnerHTML={{ __html: DEVICE_SCRIPT }} />

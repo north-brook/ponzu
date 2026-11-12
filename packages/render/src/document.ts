@@ -5,9 +5,9 @@ import { googleFontLinks, googleFonts } from "./fonts.ts";
  * Shared base styles for an artboard, in the canvas and in screenshots.
  * Artboards are flex columns by default and clip what overflows. Plain CSS
  * makes display: flex a row, so lint flags a root that sets it with no direction.
- * Black on white unless the design says otherwise, in either theme: text left
+ * Black on white unless the board says otherwise, in either theme: text left
  * to the page's default would turn white in dark mode, on the white artboard.
- * Text at the size the design gives it: iOS WebKit's text autosizing enlarges
+ * Text at the size the board gives it: iOS WebKit's text autosizing enlarges
  * small text in a block wider than the screen (an 11px code block on a 1320px
  * board drew at 19px on the phone), which desktop never does. The property
  * inherits, so the root pins it for the whole board.
@@ -26,15 +26,21 @@ export interface PageOptions {
   colorScheme?: "light" | "dark";
   /**
    * Device px per artboard px when the render is shown small, like a
-   * thumbnail. The design's raster assets then load as copies no wider than
+   * thumbnail. The canvas's raster assets then load as copies no wider than
    * the board drawn at that scale. Leave it out for screenshots and exports:
    * they need the originals.
    */
   imageScale?: number;
+  /**
+   * @font-face rules for the system fonts this machine draws in stand-ins
+   * (stand-ins.ts). They go first in the page, so a face the board declares
+   * under the same name wins, and lint can tell them from the board's own.
+   */
+  standInFaces?: string;
 }
 
 /**
- * CSS to put inside a <style> element. A design's tokens are any CSS, and a
+ * CSS to put inside a <style> element. A canvas's tokens are any CSS, and a
  * `</style` in them would end the element and go on as markup, script
  * handlers and all. CSS can't use the sequence, so escaping it changes nothing.
  */
@@ -59,7 +65,7 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const body = serializeArtboardElement(ab, {
     rewriteUrl: (u) => {
       const url = resolveAsset(u, base);
-      // Only the design's own assets: a thumbnail render doesn't proxy remote images.
+      // Only the canvas's assets: a thumbnail render doesn't proxy remote images.
       if (!step || !base || !url.startsWith(`${base.replace(/\/$/, "")}/assets/`)) return url;
       if (!isRasterUrl(url)) return url;
       return renditionUrl(url, step, base) ?? url;
@@ -67,7 +73,10 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   });
   const fonts = googleFontLinks(googleFonts(body, opts.tokens));
   const scheme = opts.colorScheme ? `:root{color-scheme:${opts.colorScheme}}` : "";
-  return `<!doctype html><html><head><meta charset="utf-8">
+  const standIns = opts.standInFaces
+    ? `<style data-stand-ins>${styleText(opts.standInFaces)}</style>`
+    : "";
+  return `<!doctype html><html><head><meta charset="utf-8">${standIns}
 ${fonts}
 <style>${styleText(resolveTokenAssets(opts.tokens, opts.assetBase))}</style>
 <style>html,body{margin:0;padding:0;background:transparent}${scheme}${ARTBOARD_BASE_CSS}</style>
@@ -110,7 +119,7 @@ export function isRasterUrl(url: string): boolean {
 
 /**
  * The URL of a copy of the image at `url` that's `w` px wide: `?w=` on one of
- * the design's assets (under `assetBase`), the server's /api/image for a
+ * the canvas's assets (under `assetBase`), the server's /api/image for a
  * remote one. Null for anything else (data:, blob:, another server's path).
  */
 export function renditionUrl(url: string, w: number, assetBase: string): string | null {
@@ -141,8 +150,8 @@ export function originalUrl(url: string, assetBase: string): string {
 }
 
 /**
- * Whether the canvas could show a smaller copy of the image at `url` (already
- * resolved against `assetBase`): a raster asset of the design, or a remote
+ * Whether Ponzu could show a smaller copy of the image at `url` (already
+ * resolved against `assetBase`): one of the canvas's raster assets, or a remote
  * image. `ctx` says where the URL sits; a remote URL without an image file
  * extension only counts where it can only be an image.
  */
@@ -169,7 +178,7 @@ function originOf(url: string): string {
 }
 
 /**
- * Tokens with their relative url()s resolved against the design's assets, so an
+ * Tokens with their relative url()s resolved against the canvas's assets, so an
  * `@font-face { src: url(assets/brand.woff2) }` in tokens.css loads wherever the
  * artboard renders, not only beside the files.
  */

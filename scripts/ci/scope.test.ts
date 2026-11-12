@@ -9,13 +9,8 @@ test("a change to the phone alone runs only the phone's suites", () => {
   expect(suites("apps/mobile/app/index.tsx")).toEqual({ desktop: false, mobile: true });
 });
 
-test("a change to the Mac app, its server or its studio runs only the desktop suite", () => {
-  for (const file of [
-    "apps/desktop/src/main.ts",
-    "apps/cli/src/index.ts",
-    "apps/studio/src/App.tsx",
-    "packages/server/src/serve.ts",
-  ]) {
+test("a change to the Mac app or its studio runs only the desktop suite", () => {
+  for (const file of ["apps/desktop/src/main.ts", "apps/studio/src/App.tsx"]) {
     expect(suites(file)).toEqual({ desktop: true, mobile: false });
   }
 });
@@ -29,13 +24,65 @@ test("what both apps bundle runs both", () => {
 });
 
 test("the studio's components the phone reads by path run the phone too", () => {
-  // The phone can't depend on @ponzu/react, but its canvas and icons import its source.
+  // The phone can't depend on @ponzu/canvas, but its canvas and icons import its source.
   for (const file of [
-    "packages/react/src/icon-names.ts",
-    "packages/react/src/Artboard.tsx",
-    "packages/react/src/arrive.ts",
+    "packages/canvas/src/icon-names.ts",
+    "packages/canvas/src/Artboard.tsx",
+    "packages/canvas/src/arrive.ts",
   ]) {
     expect(suites(file).mobile).toBe(true);
+  }
+});
+
+test("the cloud API and the packages only it uses run neither", () => {
+  // Every pull request covers them: in "Lint, typecheck, build" the root typecheck includes
+  // apps/api, its own tsconfig checks it against Node and scripts/ci/api-bundle.ts builds and
+  // loads it, and "Tests" runs its tests.
+  for (const file of [
+    "apps/api/src/routes/me.ts",
+    "apps/api/vercel.json",
+    "packages/db/src/queries/accounts.ts",
+    "packages/sandbox/src/vercel.ts",
+  ]) {
+    expect(suites(file)).toEqual({ desktop: false, mobile: false });
+  }
+});
+
+test("it still runs neither once the apps take its route types through the client", () => {
+  // The typed client imports `AppType` from the API and the thread's types from the runner,
+  // and both apps will depend on the client. A route change can break their typecheck, which
+  // every pull request runs, but cannot change the desktop package or the phone's bundle.
+  const withClient = packages.map((workspace) =>
+    ["desktop", "mobile"].includes(workspace.name)
+      ? { ...workspace, dependencies: [...workspace.dependencies, "client"] }
+      : workspace,
+  );
+
+  for (const file of [
+    "apps/api/src/routes/me.ts",
+    "packages/db/src/queries/accounts.ts",
+    "apps/runner/src/api/protocol.ts",
+  ]) {
+    expect(scope([file], withClient)).toEqual({ desktop: false, mobile: false });
+  }
+  // What the client runs still reaches them.
+  expect(scope(["packages/client/src/index.ts"], withClient)).toEqual({
+    desktop: true,
+    mobile: true,
+  });
+});
+
+test("the client and core the phone runs run the phone", () => {
+  for (const file of ["packages/client/src/session.ts", "packages/core/src/replica.ts"]) {
+    expect(suites(file).mobile).toBe(true);
+  }
+});
+
+test("the 1.x packages kept until cutover run neither", () => {
+  // Nothing either app bundles depends on them now that the CLI and its npm package are gone,
+  // and "Tests" runs their tests on every pull request.
+  for (const file of ["packages/store/src/index.ts", "packages/tools/src/local/tools.ts"]) {
+    expect(suites(file)).toEqual({ desktop: false, mobile: false });
   }
 });
 

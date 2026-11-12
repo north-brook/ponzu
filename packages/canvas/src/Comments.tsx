@@ -1,0 +1,454 @@
+import { type Author, newId, type Thread } from "@ponzu/core";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CanvasSource } from "./connection.ts";
+import { type Draft, draftKey, getDraft, setDraft, unsent, useDraft } from "./drafts.ts";
+import { AgentMark, Icon } from "./icons.tsx";
+import { Button, cn, Menu, Textarea } from "./ui.tsx";
+
+/** A card floating over the canvas: a thread, or the composer for a new one. */
+export const threadCard =
+  "pz:absolute pz:-top-3 pz:left-5 pz:w-[300px] pz:select-text pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
+const meta = "pz:text-[12px] pz:text-muted-foreground";
+const messageText =
+  "pz:whitespace-pre-wrap pz:text-[13px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
+
+export function timeAgo(ms: number): string {
+  const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return "now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+/**
+ * Whether two authors are the same: by id when either has one (two people can share a name),
+ * else by kind and name, which is all the local app's comments carry.
+ */
+export function sameAuthor(a: Author, b: Author): boolean {
+  if (a.id !== undefined || b.id !== undefined) return a.id === b.id;
+  return a.kind === b.kind && a.name === b.name;
+}
+
+/** The product behind an agent author, for its logo. Agents are named after their client. */
+function agentClient(author: Author): "claude" | "openai" | null {
+  if (author.kind !== "agent") return null;
+  const n = author.name.toLowerCase();
+  if (n.includes("claude")) return "claude";
+  if (n.includes("codex") || n.includes("openai") || n.includes("chatgpt")) return "openai";
+  return null;
+}
+
+export function Avatar({ author, size = 20 }: { author: Author; size?: number }) {
+  const client = agentClient(author);
+  if (client)
+    return (
+      <span
+        className="pz:inline-grid pz:shrink-0 pz:place-items-center pz:text-foreground"
+        style={{ width: size, height: size }}
+      >
+        <AgentMark client={client} size={size} />
+      </span>
+    );
+  return (
+    <span
+      className={cn(
+        "pz:inline-grid pz:shrink-0 pz:place-items-center pz:rounded-full pz:font-semibold",
+        author.kind === "agent"
+          ? "pz:bg-comment-soft pz:text-foreground"
+          : "pz:bg-muted pz:text-foreground",
+      )}
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+    >
+      {initials(author.name)}
+    </span>
+  );
+}
+
+/** Enter sends, Shift+Enter breaks the line, Esc puts it away. Keys stay out of the canvas. */
+function onFieldKey(
+  e: React.KeyboardEvent<HTMLTextAreaElement>,
+  submit: () => void,
+  close: () => void,
+) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submit();
+  }
+  if (e.key === "Escape") close();
+  e.stopPropagation();
+}
+
+/** Focus a field once it mounts, caret at the end. */
+function useAutofocus(ref: React.RefObject<HTMLTextAreaElement | null>) {
+  // Wait a frame: the click that opened it focuses the canvas after this
+  // mounts, which would take focus straight back.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      // A card that runs past the canvas's edge would otherwise scroll the
+      // canvas itself, shifting every pin and board.
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [ref]);
+}
+
+/** The comment composer that appears where you clicked in comment mode. */
+export function Composer({
+  onSubmit,
+  onCancel,
+  placeholder = "Leave a comment…",
+  draft,
+}: {
+  onSubmit: (text: string) => void;
+  /** Esc. What's typed stays in its draft, if it has one. */
+  onCancel: () => void;
+  placeholder?: string;
+  /** Where unsent words are kept (drafts.ts), so closing the composer never loses them. */
+  draft?: { key: string } & Omit<Draft, "text">;
+}) {
+  const [own, setOwn] = useState("");
+  const [kept, keep] = useDraft(draft?.key ?? "", draft ?? { file: "" });
+  const text = draft ? kept : own;
+  const setText = draft ? keep : setOwn;
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useAutofocus(ref);
+  const submit = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSubmit(t);
+    // A reply's composer stays open for the next message.
+    setText("");
+  };
+  return (
+    <div
+      className="pz:flex pz:items-end pz:gap-2 pz:border-t pz:py-2 pz:pr-2 pz:pl-3.5 pz:only:border-t-0"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <Textarea
+        className="pz:max-h-40 pz:flex-1 pz:text-[13px] pz:leading-[1.55]"
+        ref={ref}
+        value={text}
+        placeholder={placeholder}
+        rows={1}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => onFieldKey(e, submit, onCancel)}
+      />
+      <Button size="icon-lg" disabled={!text.trim()} onClick={submit} aria-label="Send">
+        <Icon name="send" step="inline" onFill />
+      </Button>
+    </div>
+  );
+}
+
+/** Edits one of your messages in place. Esc puts it away, edit kept; Cancel drops the edit. */
+function EditField({
+  initial,
+  draft,
+  onSave,
+  onClose,
+}: {
+  initial: string;
+  draft: { key: string } & Omit<Draft, "text">;
+  onSave: (text: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useDraft(draft.key, draft, initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useAutofocus(ref);
+  // Emptied while open is fine; put away empty, there's no edit to keep.
+  useEffect(
+    () => () => {
+      const d = getDraft(draft.key);
+      if (d && !unsent(d)) setDraft(draft.key, null);
+    },
+    [draft.key],
+  );
+  const cancel = () => {
+    setText(initial);
+    onClose();
+  };
+  const save = () => {
+    const t = text.trim();
+    if (!t || t === initial) return cancel();
+    onSave(t);
+    setText(initial);
+  };
+  return (
+    <div className="pz:flex pz:flex-col pz:gap-1.5">
+      <Textarea
+        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
+        ref={ref}
+        value={text}
+        aria-label="Edit message"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => onFieldKey(e, save, onClose)}
+      />
+      <div className="pz:flex pz:items-center pz:justify-end pz:gap-1">
+        <span className={cn(meta, "pz:mr-auto")}>Enter to save</span>
+        <Button variant="ghost" className="pz:h-6 pz:rounded-md pz:px-2" onClick={cancel}>
+          Cancel
+        </Button>
+        <Button className="pz:h-6 pz:rounded-md pz:px-2" disabled={!text.trim()} onClick={save}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function ThreadCard({
+  thread,
+  source,
+  me,
+  file = "",
+  readOnly = false,
+  onClose,
+}: {
+  thread: Thread;
+  source: CanvasSource;
+  me: Author;
+  /** The canvas it's in, by its key: what its unsent words are kept under. */
+  file?: string;
+  /** Only the messages: no reply, resolve, edit or delete. */
+  readOnly?: boolean;
+  onClose: () => void;
+}) {
+  // An edit left unsaved when the card closed opens again where it was.
+  const [editing, setEditing] = useState<string | null>(() => {
+    if (readOnly) return null;
+    const kept = (id: string) => {
+      const d = getDraft(draftKey.edit(file, id));
+      return Boolean(d && unsent(d));
+    };
+    return thread.messages.find((m) => kept(m.id))?.id ?? null;
+  });
+  const [scrolled, setScrolled] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+  // Whether the list was at its end before the latest render.
+  const atEnd = useRef(true);
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (el) atEnd.current = el.scrollHeight - el.clientHeight < 8;
+  }, []);
+  // Set while the list glides down to a new message, so the positions it
+  // passes through don't read as you scrolling back. Your wheel or pointer
+  // cancels it.
+  const following = useRef(false);
+  const count = useRef(thread.messages.length);
+  // A new message lands below a long thread's fold, so scroll down to it:
+  // always for your own, and for others' only if you weren't reading back.
+  useLayoutEffect(() => {
+    const el = list.current;
+    const added = thread.messages.length > count.current;
+    count.current = thread.messages.length;
+    const last = thread.messages.at(-1);
+    if (!el || !added || !last) return;
+    const own = sameAuthor(last.author, me);
+    if (!own && !atEnd.current) return;
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight >= 8;
+    atEnd.current = true;
+    el.scrollTop = el.scrollHeight;
+  }, [thread.messages, me]);
+  const stopFollowing = () => {
+    following.current = false;
+  };
+  const resolved = thread.status === "resolved";
+  const reply = (text: string) => {
+    const message = {
+      op: "thread.message" as const,
+      id: thread.id,
+      message: { id: newId("m"), author: me, text, createdAt: Date.now() },
+    };
+    // Resolved while it was open, a reply is something more to do: it opens again.
+    source.apply(
+      resolved
+        ? {
+            op: "batch",
+            ops: [
+              message,
+              {
+                op: "thread.update",
+                id: thread.id,
+                status: "open",
+                updatedAt: message.message.createdAt,
+              },
+            ],
+          }
+        : message,
+    );
+  };
+  const resolve = () => {
+    source.apply({
+      op: "thread.update",
+      id: thread.id,
+      status: "resolved",
+      updatedAt: Date.now(),
+    });
+    onClose();
+  };
+  const reopen = () =>
+    source.apply({ op: "thread.update", id: thread.id, status: "open", updatedAt: Date.now() });
+  const remove = () => {
+    for (const k of [
+      draftKey.reply(file, thread.id),
+      ...thread.messages.map((m) => draftKey.edit(file, m.id)),
+    ])
+      setDraft(k, null);
+    source.apply({ op: "thread.delete", id: thread.id });
+    onClose();
+  };
+  const edit = (messageId: string, text: string) => {
+    source.apply({ op: "thread.edit", id: thread.id, messageId, text, editedAt: Date.now() });
+    setEditing(null);
+  };
+  const removeMessage = (messageId: string) => {
+    setDraft(draftKey.edit(file, messageId), null);
+    source.apply({ op: "thread.unmessage", id: thread.id, messageId });
+  };
+  const mine = (a: Author) => !readOnly && sameAuthor(a, me);
+  // The first message is the comment itself. Its actions live in the card's
+  // menu, so nothing appears on hover beside the Resolve and More buttons.
+  const first = thread.messages[0];
+  const hoverActions = (m: Thread["messages"][number], i: number) =>
+    i > 0 && mine(m.author) && editing !== m.id;
+  return (
+    <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
+      {!readOnly && (
+        <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
+          {resolved ? (
+            <Button variant="ghost" size="icon" onClick={reopen} title="Resolved · Reopen">
+              <Icon name="undo" step="control" />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
+              <Icon name="check" step="control" />
+            </Button>
+          )}
+          <Menu
+            trigger={
+              <Button variant="ghost" size="icon" title="More">
+                <Icon name="more" step="control" />
+              </Button>
+            }
+            items={[
+              ...(first && mine(first.author)
+                ? [
+                    {
+                      label: "Edit",
+                      icon: <Icon name="edit" step="control" />,
+                      onSelect: () => setEditing(first.id),
+                    },
+                  ]
+                : []),
+              {
+                label: "Delete",
+                icon: <Icon name="trash" step="control" />,
+                danger: true,
+                onSelect: remove,
+              },
+            ]}
+          />
+        </div>
+      )}
+      {/*
+        data-scroll lets the wheel scroll this list instead of panning the canvas.
+        Scrolled, its top fades out so messages never run under the buttons.
+      */}
+      <div
+        ref={list}
+        data-scroll
+        className={cn(
+          "pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:scroll-smooth pz:px-1.5 pz:pt-1.5 pz:pb-2.5 pz:motion-reduce:scroll-auto",
+          scrolled && "pz:[mask-image:linear-gradient(transparent_24px,#000_44px)]",
+        )}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setScrolled(el.scrollTop > 0);
+          const end = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+          if (end) following.current = false;
+          if (!following.current) atEnd.current = end;
+        }}
+        onWheel={stopFollowing}
+        onPointerDown={stopFollowing}
+        onTouchStart={stopFollowing}
+      >
+        {thread.messages.map((m, i) => (
+          <div
+            key={m.id}
+            className={cn(
+              "pz:group pz:flex pz:flex-col pz:gap-1 pz:rounded-lg pz:px-2 pz:py-1.5",
+              hoverActions(m, i) && "pz:hover:bg-accent",
+            )}
+          >
+            {/* At the top, only the first row sits beside the card's buttons. */}
+            <div
+              className={cn(
+                "pz:flex pz:h-6 pz:items-center pz:gap-1.5",
+                i === 0 && !readOnly && "pz:pr-14",
+              )}
+            >
+              <Avatar author={m.author} size={18} />
+              <span className="pz:truncate pz:font-medium">{m.author.name}</span>
+              <span className={cn(meta, "pz:shrink-0")}>
+                {timeAgo(m.createdAt)}
+                {m.editedAt ? " · edited" : ""}
+              </span>
+              {hoverActions(m, i) && (
+                <div className="pz:ml-auto pz:flex pz:shrink-0 pz:opacity-0 pz:group-hover:opacity-100 pz:focus-within:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setEditing(m.id)}
+                    title="Edit"
+                  >
+                    <Icon name="edit" step="control" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removeMessage(m.id)}
+                    title="Delete"
+                  >
+                    <Icon name="trash" step="control" />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {!readOnly && editing === m.id ? (
+              <EditField
+                initial={m.text}
+                draft={{ key: draftKey.edit(file, m.id), file, thread: thread.id }}
+                onSave={(text) => edit(m.id, text)}
+                onClose={() => setEditing(null)}
+              />
+            ) : (
+              <div className={messageText}>{m.text}</div>
+            )}
+          </div>
+        ))}
+      </div>
+      {!readOnly && (
+        <Composer
+          onSubmit={reply}
+          onCancel={onClose}
+          placeholder={resolved ? "Reply to reopen…" : "Reply…"}
+          draft={{ key: draftKey.reply(file, thread.id), file, thread: thread.id }}
+        />
+      )}
+    </div>
+  );
+}

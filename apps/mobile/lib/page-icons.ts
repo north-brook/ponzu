@@ -1,4 +1,4 @@
-import { Icons } from "../../../packages/react/src/icon-names.ts";
+import { Icons } from "../../../packages/canvas/src/icon-names.ts";
 
 /**
  * A page's icon, by the names design.json uses: desktop's Icons, one map for

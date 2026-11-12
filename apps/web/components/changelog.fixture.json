@@ -1,0 +1,57 @@
+{
+  "mac": [
+    {
+      "version": "1.80.1",
+      "date": "2026-11-10T00:19:33-05:00",
+      "notes": [
+        "The comment field stays its usual size while listening, with the waveform, words and keyboard button centred.",
+        "Boards stay drawn while you zoom in and out."
+      ]
+    },
+    {
+      "version": "1.79.2",
+      "date": "2026-11-09T22:45:53Z",
+      "notes": [
+        "Notes, diagrams and docs your agent draws to explain its work now match your canvas in dark mode."
+      ]
+    },
+    {
+      "version": "1.79.1",
+      "date": "2026-11-09T15:00:18Z",
+      "notes": [
+        "Artboards keep their id, size and content while a script is still writing their file."
+      ]
+    },
+    {
+      "version": "1.79.0",
+      "date": "2026-11-06T17:34:54Z",
+      "notes": [
+        "Drag a page's tab along the bar to reorder your pages.",
+        "Moving a page to the front no longer switches the page you're looking at."
+      ]
+    }
+  ],
+  "iphone": [
+    {
+      "version": "0.12.0",
+      "date": "2026-11-10T00:21:18Z",
+      "notes": [
+        "Comments are written in one floating field, without a sheet: typed or spoken words go in the same place, and Send sits inside it."
+      ]
+    },
+    {
+      "version": "0.11.5",
+      "date": "2026-11-09T22:25:29Z",
+      "notes": ["The comment field grows again as you type past one line."]
+    },
+    {
+      "version": "0.11.4",
+      "date": "2026-11-06T16:35:45Z",
+      "notes": [
+        "The comment field grows smoothly as you type.",
+        "Send takes one tap.",
+        "On iPhone Duo held open upright, the page menu works when a Live Activity shortens the bar."
+      ]
+    }
+  ]
+}

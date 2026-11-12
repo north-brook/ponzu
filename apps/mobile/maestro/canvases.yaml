@@ -1,0 +1,50 @@
+appId: design.ponzu.app.dev
+name: canvases
+---
+# The canvases list on the fake: Maya in acme with a question for her, the
+# agent working, a preview and a settled canvas, and Northbrook to switch to
+# (lib/cloud/backend.fake.ts, stockCanvases). The question's row comes first
+# with its question on it; Settled folds the settled canvas away; holding a
+# row settles it; the lockup's settings switch workspaces and show usage with
+# nothing to pay.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=canvases
+- extendedWaitUntil:
+    visible:
+      id: canvases
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Pricing page.*1 waiting for you.*Button colour: Which blue for the buttons\\?"
+    timeout: 30000
+- assertVisible: "Onboarding.*working.*"
+- assertNotVisible: "Launch poster.*"
+# The tray opens on a tap and shows the settled canvas.
+- tapOn: "Settled, 1"
+- assertVisible: "Launch poster.*"
+- tapOn: "Settled, 1"
+# Holding Onboarding offers Settle; it moves to the tray.
+- longPressOn: "Onboarding.*"
+- tapOn: "Settle"
+- extendedWaitUntil:
+    visible: "Settled, 2"
+    timeout: 15000
+# Settings: two workspaces, the one in view ticked; usage with no way to pay.
+- tapOn:
+    id: lockup
+- extendedWaitUntil:
+    visible:
+      id: settings
+    timeout: 15000
+- assertVisible:
+    id: settings-workspaces
+- assertVisible:
+    id: settings-usage
+- assertNotVisible: ".*[Aa]dd a card.*"
+- tapOn: "Northbrook"
+- swipe:
+    direction: DOWN
+- extendedWaitUntil:
+    visible: "Brand refresh.*"
+    timeout: 15000
+- assertNotVisible: "Pricing page.*"
+- assertNotVisible: ".*Cannot update a component.*"

@@ -1,0 +1,283 @@
+import { PencilEdit02Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import { type ReactNode, useMemo, useRef } from "react";
+import {
+  applyFilter,
+  type CanvasFilter,
+  isFiltering,
+  NO_FILTER,
+  projectCounts,
+} from "../filter.ts";
+import type { CanvasSummary, Person, SearchResults, Workspace } from "../model.ts";
+import type { ResultKey } from "../search.ts";
+import { orderCanvases, settledShown } from "../status.ts";
+import { Button, IconButton } from "../ui/button.tsx";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
+import { Icon } from "../ui/icon.tsx";
+import { focusNow, giveFocusBack } from "../ui/quiet-focus.ts";
+import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
+import { CanvasList, CanvasListSkeleton } from "./canvas-list.tsx";
+import type { RowHandlers } from "./canvas-row.tsx";
+import { FilterMenu } from "./filter-menu.tsx";
+import { useRowMotion } from "./row-motion.ts";
+import { SearchField, SearchResultsView, useResultSelection } from "./search.tsx";
+import { SettledTray } from "./settled-tray.tsx";
+import { WorkspaceMenu } from "./workspace-menu.tsx";
+
+/** The row handlers are passed to every row: keep them the same functions between renders. */
+export interface SidebarProps extends RowHandlers {
+  me: Person;
+  workspace: Workspace;
+  workspaces: Workspace[];
+  /** Everyone else in the workspace, for the filter. */
+  teammates: Person[];
+  /** The workspace's active canvases; null while they load. */
+  canvases: CanvasSummary[] | null;
+  settled: { count: number; canvases: CanvasSummary[] | null; expanded: boolean };
+  onSettledExpandedChange: (expanded: boolean) => void;
+  openCanvasId: string | null;
+  /** The window's sidebar is collapsed; ⌘K expands it before it searches. */
+  collapsed: boolean;
+  onExpand: () => void;
+  filter: CanvasFilter;
+  onFilterChange: (filter: CanvasFilter) => void;
+  /** Null while search is closed; "" open and empty. */
+  query: string | null;
+  onQueryChange: (query: string | null) => void;
+  /** The answer for `query`, or null while it is on its way. */
+  results: SearchResults | null;
+  onOpenResult: (key: ResultKey) => void;
+  onNewCanvas: () => void;
+  onSwitchWorkspace: (workspace: Workspace) => void;
+  onAddWorkspace: () => void;
+  onSettings: () => void;
+  onPlan: () => void;
+  onSignOut: () => void;
+}
+
+/**
+ * The sidebar: the workspace switcher and Search, Filter and New canvas over the workspace's
+ * canvases by recency, the settled tray at the foot. Search takes the header row's place; with a
+ * query its results take the list's. It holds the shortcuts for what it offers: ⌘K, ⌘N, ⌘, and
+ * the numbers: ⌘1–9 open the canvases in the order the list shows them (filtered; 9 the last;
+ * settled ones aren't counted) and ⌘0 the create page. They work with the sidebar collapsed,
+ * with no numbers to show; while search's results take the list's place ⌘1–9 rest, so a number
+ * never opens a canvas you can't see.
+ */
+export function Sidebar(props: SidebarProps) {
+  const { me, workspace, canvases, filter, query, results } = props;
+  const searchField = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
+  const [selected, setSelected] = useResultSelection(results);
+
+  // Where focus was when search opened (⌘K from the composer, a click on Search that took no
+  // focus, Return on the Search button), to give it back to when search closes.
+  const openedFrom = useRef<ReturnType<typeof focusNow>>(null);
+  const openSearch = () => {
+    openedFrom.current = focusNow();
+    props.onQueryChange("");
+  };
+  useShortcut("k", () => {
+    if (props.collapsed) props.onExpand();
+    if (query === null) openSearch();
+    // Already open: back into the field, once the pane is no longer inert. A field just opened
+    // takes focus as it mounts.
+    else requestAnimationFrame(() => searchField.current?.focus({ preventScroll: true }));
+  });
+  useShortcut("n", props.onNewCanvas);
+  useShortcut(",", props.onSettings);
+
+  // Closing search gives focus back where search found it: the composer after ⌘K there, nowhere
+  // after a click on Search (which takes no focus), so no tip shows as if the person had gone to
+  // the button; and the button, drawn again with its ring and tip, only when the keyboard had
+  // reached it (Tab, then Return).
+  const closeSearch = () => {
+    props.onQueryChange(null);
+    const was = openedFrom.current;
+    openedFrom.current = null;
+    requestAnimationFrame(() => giveFocusBack(was, searchButton.current));
+  };
+
+  const searching = query !== null && query.trim() !== "";
+  const team = workspace.kind === "org";
+  const shown = useMemo(
+    () => (canvases ? orderCanvases(applyFilter(canvases, filter), workspace.kind) : null),
+    [canvases, filter, workspace.kind],
+  );
+  const projects = useMemo(() => projectCounts(canvases ?? []), [canvases]);
+  const hint = useJumpShortcuts("canvas", (n) => {
+    if (n === 0) {
+      props.onNewCanvas();
+      return true;
+    }
+    if (searching) return false;
+    const canvas = jumpTarget(shown ?? [], n);
+    if (canvas && canvas.id !== props.openCanvasId) props.onOpen(canvas);
+    return canvas !== undefined;
+  });
+  // Which rows show, and in what order: when this changes, what moved slides (row-motion.ts).
+  const lists = useRef<HTMLDivElement>(null);
+  const settledRows = settledShown(
+    props.settled.canvases ?? [],
+    props.settled.expanded,
+    props.openCanvasId,
+  );
+  useRowMotion(
+    lists,
+    [
+      ...(shown ?? []).map((canvas) => canvas.id),
+      "|",
+      ...settledRows.map((canvas) => canvas.id),
+    ].join(" "),
+  );
+  const handlers: RowHandlers = {
+    onOpen: props.onOpen,
+    onAction: props.onAction,
+    onRename: props.onRename,
+    ...(props.onIntent ? { onIntent: props.onIntent } : {}),
+  };
+
+  return (
+    <div ref={lists} className="flex min-h-0 flex-1 flex-col">
+      {query === null ? (
+        <div
+          // Search and New canvas take no focus from a click, as the window's chrome doesn't
+          // (installFocusRule): focus stays where it was, and search gives it back there.
+          data-toolbar
+          className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5"
+        >
+          <WorkspaceMenu
+            current={workspace}
+            workspaces={props.workspaces}
+            onSwitch={props.onSwitchWorkspace}
+            onAddWorkspace={props.onAddWorkspace}
+            onSettings={props.onSettings}
+            onPlan={props.onPlan}
+            onSignOut={props.onSignOut}
+          />
+          {/* The name's room ends 8 before the buttons, which keep theirs whatever its length. */}
+          <span className="min-w-2 flex-1" />
+          <IconButton
+            ref={searchButton}
+            label="Search"
+            keys={["⌘", "K"]}
+            onClick={openSearch}
+            className="h-[26px] w-6 shrink-0"
+          >
+            <Icon icon={Search01Icon} step="control" />
+          </IconButton>
+          <FilterMenu
+            filter={filter}
+            onChange={props.onFilterChange}
+            me={me}
+            teammates={team ? props.teammates : null}
+            projects={projects}
+          />
+          <IconButton
+            label="New canvas"
+            keys={["⌘", "N"]}
+            onClick={props.onNewCanvas}
+            className="h-[26px] w-6 shrink-0"
+          >
+            <Icon icon={PencilEdit02Icon} step="control" />
+          </IconButton>
+        </div>
+      ) : (
+        <SearchField
+          fieldRef={searchField}
+          query={query}
+          onQueryChange={props.onQueryChange}
+          results={searching ? results : null}
+          selected={selected}
+          onSelect={setSelected}
+          onOpenResult={props.onOpenResult}
+          onClose={closeSearch}
+        />
+      )}
+      <div className="h-2 shrink-0" />
+      {searching ? (
+        <SearchResultsView
+          query={query}
+          results={results}
+          selected={selected}
+          onSelect={setSelected}
+          onOpenResult={props.onOpenResult}
+        />
+      ) : (
+        <>
+          <FadeScroll className="flex-1">
+            {shown === null ? (
+              <CanvasListSkeleton />
+            ) : shown.length ? (
+              <CanvasList
+                canvases={shown}
+                openId={props.openCanvasId}
+                label="Canvases"
+                shortcuts
+                hint={hint && !props.collapsed}
+                {...handlers}
+              />
+            ) : isFiltering(filter) ? (
+              <EmptyNote>
+                No canvases match this filter.
+                <Button
+                  variant="quiet"
+                  className="-ml-2 px-2"
+                  onClick={() => props.onFilterChange(NO_FILTER)}
+                >
+                  Clear filter
+                </Button>
+              </EmptyNote>
+            ) : (
+              <EmptyTrace
+                label={props.settled.count ? "No canvases in progress" : "No canvases yet"}
+              />
+            )}
+          </FadeScroll>
+          {props.settled.count ? (
+            <SettledTray
+              count={props.settled.count}
+              canvases={props.settled.canvases}
+              expanded={props.settled.expanded}
+              onExpandedChange={props.onSettledExpandedChange}
+              openId={props.openCanvasId}
+              {...handlers}
+            />
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * An empty list: the faint trace of rows that aren't there yet, fading out, and no words to
+ * read. What it means is said once, for a screen reader.
+ */
+function EmptyTrace({ label }: { label: string }) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="flex flex-col gap-px opacity-70 [mask-image:linear-gradient(to_bottom,black,transparent)]"
+    >
+      {[58, 44, 66].map((name) => (
+        <div key={name} className="flex items-center gap-2.5 px-2 py-1.5">
+          <span className="h-12 w-16 shrink-0 rounded-4 border border-sep border-dashed" />
+          <span className="flex flex-1 flex-col gap-[9px]">
+            <span className="h-px w-1/4 bg-sep" />
+            <span className="h-px bg-sep" style={{ width: `${name}%` }} />
+            <span className="h-px w-2/5 bg-sep" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyNote({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-col items-start gap-1 px-2.5 pt-1.5 text-13 text-muted">
+      {children}
+    </div>
+  );
+}

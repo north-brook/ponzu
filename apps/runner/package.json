@@ -1,0 +1,32 @@
+{
+  "name": "@ponzu/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./protocol": "./src/api/protocol.ts",
+    "./turn": "./src/turn.ts",
+    "./bundle": "./src/bundle.ts",
+    "./models": "./src/agent/models.ts",
+    "./fixtures/supported-models.api-key.json": "./src/agent/fixtures/supported-models.api-key.json",
+    "./image/current.json": "./image/current.json"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.322",
+    "@ponzu/core": "workspace:*",
+    "@ponzu/render": "workspace:*",
+    "@ponzu/tools": "workspace:*",
+    "posthog-node": "^5.68.2",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@ponzu/evals": "workspace:*",
+    "@ponzu/sandbox": "workspace:*",
+    "mdast-util-from-markdown": "2.1.0"
+  }
+}

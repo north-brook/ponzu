@@ -23,19 +23,25 @@ export function clampScale(scale: number | undefined): number {
 
 /**
  * The scale to capture a `width`×`height` CSS px area at: the one asked for,
- * or less when the image would be longer than `limit` device pixels.
+ * or less when the image would be longer than `limit` device pixels or hold
+ * more than `maxPixels` of them.
  */
 export function captureScale(
   width: number,
   height: number,
   scale: number | undefined,
   limit = MAX_CAPTURE_PX,
+  maxPixels = Number.POSITIVE_INFINITY,
 ): number {
   const s = clampScale(scale);
   const long = Math.max(width, height);
-  if (!(long > 0) || Math.ceil(long * s) <= limit) return s;
-  // Rounded down, so rounding the image size can't push it past the limit.
-  return Math.floor((limit / long) * 1000) / 1000;
+  if (!(long > 0)) return s;
+  const fits = Math.min(
+    Math.ceil(long * s) <= limit ? s : limit / long,
+    width * height * s * s <= maxPixels ? s : Math.sqrt(maxPixels / (width * height)),
+  );
+  // Rounded down, so rounding the image size can't push it past a limit.
+  return fits === s ? s : Math.floor(fits * 1000) / 1000;
 }
 
 /**

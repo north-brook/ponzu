@@ -10,7 +10,7 @@ export type PreviewTheme = "light" | "dark";
 
 /** The long side of the preview in CSS px. */
 const SIZE = 512;
-/** The canvas in each theme (packages/react/src/styles.css), so the preview reads as it. */
+/** The canvas in each theme (packages/canvas/src/styles.css), so the preview reads as it. */
 const CANVAS = { light: "#f3f3f1", dark: "#121212" };
 /** The artboard edge on each canvas, at 1 preview px. */
 const EDGE = {

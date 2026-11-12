@@ -26,7 +26,7 @@ export interface ToolResult {
 
 /**
  * Why a call failed, coarsely, for telemetry. A fixed list, never words from
- * an error message, which can carry ids and names from the person's design.
+ * an error message, which can carry ids and names from the person's canvas.
  */
 export type ErrorClass =
   | "invalid_target"
@@ -102,6 +102,13 @@ export async function runTool(
   rawArgs: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  const result = await invoke(def, rawArgs, ctx);
+  // However the call went, the agent hears what the host has to say since its last one.
+  const notices = ctx.ws.notices?.() ?? [];
+  return notices.length ? { ...result, text: [result.text, ...notices].join("\n\n") } : result;
+}
+
+async function invoke(def: ToolDef<any>, rawArgs: unknown, ctx: ToolContext): Promise<ToolResult> {
   const started = Date.now();
   // Its own copy, so what this call resolved never leaks into another's.
   const call: ToolContext = { ...ctx, resolved: undefined };
@@ -152,6 +159,16 @@ export async function runTool(
       });
       return { text: message + note, isError: true };
     }
+    // An edit the API would refuse on sight (`validateOp`): too large, or a name it can't keep.
+    if ((err as Error)?.name === "InvalidOpError") {
+      track("mistake", { error_class: "invalid_target" });
+      // Only an edit that carries too much is helped by splitting it. One value that is too
+      // long (a data: URL, say) is as long in a smaller edit.
+      const split = (err as { tooMuch?: boolean }).tooMuch
+        ? " It is too much for one edit, and nothing of it was written: make it as several smaller edits."
+        : "";
+      return { text: `That edit can't be saved: ${message}.${split}`, isError: true };
+    }
     const render = renderFailure(err);
     const aborted = (err as Error)?.name === "AbortError";
     track("crash", render ?? { error_class: aborted ? "aborted" : "unknown" });
@@ -169,13 +186,6 @@ export function jsonSchema(def: ToolDef<any>): Record<string, unknown> {
 }
 
 /* Shared argument shapes */
-
-export const fileArg = z
-  .string()
-  .optional()
-  .describe(
-    "Which .design, by path or name. Omit to use the file that holds the ids you pass, else the one you last created, named or edited in this session.",
-  );
 
 export const styleValue = z.union([z.string(), z.number(), z.null()]);
 

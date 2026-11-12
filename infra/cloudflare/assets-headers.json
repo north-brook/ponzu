@@ -1,0 +1,12 @@
+{
+  "zone": "ponzu.cloud",
+  "phase": "http_response_headers_transform",
+  "hosts": {
+    "dev": { "host": "assets-dev.ponzu.cloud", "required": false },
+    "production": { "host": "assets.ponzu.cloud", "required": true }
+  },
+  "headers": {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "X-Content-Type-Options": "nosniff"
+  }
+}

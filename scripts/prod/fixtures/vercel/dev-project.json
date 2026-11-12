@@ -1,0 +1,289 @@
+{
+  "_recorded": "Recorded read-only from the dev project ponzu-api on 2026-11-12 (GET /v9/projects/ponzu-api), trimmed to the fields the check reads. Ids are replaced; sensitive values were empty and are dropped.",
+  "name": "ponzu-api",
+  "id": "prj_recorded",
+  "framework": null,
+  "nodeVersion": "26.x",
+  "rootDirectory": "apps/api",
+  "serverlessFunctionRegion": "iad1",
+  "oidcTokenConfig": {
+    "enabled": true,
+    "issuerMode": "team"
+  },
+  "ssoProtection": {
+    "deploymentType": "prod_deployment_urls_and_all_previews"
+  },
+  "passwordProtection": null,
+  "crons": {
+    "enabledAt": 1794339635061,
+    "disabledAt": null,
+    "definitions": [
+      {
+        "host": "recorded.vercel.app",
+        "path": "/v1/cron/minute",
+        "schedule": "* * * * *"
+      }
+    ]
+  },
+  "env": [
+    {
+      "key": "DATABASE_URL",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "WORKOS_API_KEY",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "WORKOS_CLIENT_ID",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_CLIENT_ID",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_CLIENT_SECRET",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_PRIVATE_KEY",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "BOAT_API_KEY",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_VAULT_KEY",
+      "target": ["production", "preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "NEON_REALTIME_URL",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "NEON_REALTIME_URL",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "NEON_REALTIME_SECRET",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "NEON_REALTIME_SECRET",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ASSETS_URL",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ASSETS_URL",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_SLUG",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_SLUG",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_WEBHOOK_SECRET",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_WEBHOOK_SECRET",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "CRON_SECRET",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "CRON_SECRET",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_ACCOUNT_ID",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_ACCOUNT_ID",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_ACCESS_KEY_ID",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_ACCESS_KEY_ID",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_SECRET_ACCESS_KEY",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_SECRET_ACCESS_KEY",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_BUCKET",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "R2_BUCKET",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_BOT_USER_ID",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "GITHUB_APP_BOT_USER_ID",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "ANTHROPIC_API_KEY",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "ANTHROPIC_API_KEY",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ANTHROPIC_API_KEY",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ANTHROPIC_API_KEY",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_KEY",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_KEY",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_HOST",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_HOST",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_AI_CONTENT",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_AI_CONTENT",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ENVIRONMENT",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_API_URL",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_ENVIRONMENT",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_API_URL",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "EXPO_ACCESS_TOKEN",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "EXPO_ACCESS_TOKEN",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_PERSONAL_API_KEY",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_PERSONAL_API_KEY",
+      "target": ["preview"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_PROJECT_ID",
+      "target": ["production"],
+      "type": "sensitive"
+    },
+    {
+      "key": "PONZU_POSTHOG_PROJECT_ID",
+      "target": ["preview"],
+      "type": "sensitive"
+    }
+  ],
+  "targets": {
+    "production": {
+      "readyState": "READY",
+      "target": "production",
+      "meta": {
+        "gitCommitSha": "86864bf2850394ff24ce561488a57abd4ed0831e"
+      }
+    }
+  }
+}

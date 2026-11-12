@@ -16,7 +16,8 @@ export const brand = {
 /** App surfaces in light mode (`--c-*`). */
 export const light = {
   bg: "#faf9f6",
-  canvas: "#f4f3ef",
+  /** The canvas's ground: pure white (D11). */
+  canvas: "#ffffff",
   card: "#ffffff",
   ink: "#111110",
   muted: "#5e5b54",
@@ -26,6 +27,8 @@ export const light = {
   bar: "rgba(250,250,249,0.8)",
   pinSoft: "#fff4d1",
   yuzuText: "#7a4f00",
+  /** An error line, as the studio's `--c-danger`. */
+  danger: "#d93a2b",
 } as const;
 
 export type Palette = { readonly [K in keyof typeof light]: string };
@@ -33,7 +36,8 @@ export type Palette = { readonly [K in keyof typeof light]: string };
 /** App surfaces in dark mode (`--c-*`). */
 export const dark: Palette = {
   bg: "#0e0e0d",
-  canvas: "#121211",
+  /** The canvas's ground: pure black (D11). */
+  canvas: "#000000",
   card: "#1b1b1a",
   ink: "#f4f3ef",
   muted: "#a9a59b",
@@ -43,6 +47,7 @@ export const dark: Palette = {
   bar: "rgba(28,28,28,0.8)",
   pinSoft: "#2e2a1c",
   yuzuText: "#ffc81e",
+  danger: "#ff6b5e",
 };
 
 /** `--c-pop` and `--c-board`, as React Native `boxShadow` strings. */

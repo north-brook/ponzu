@@ -10,26 +10,51 @@
  *       the desktop app's (`vX.Y.Z`): write `{ "releases": [{ version, notes }] }`,
  *       newest first, which the release publishes beside its build for the
  *       title bar's update popover. `iPhone:` notes are left out, and `Mac:`
- *       ones keep their words without the label.
+ *       ones keep their words without the label. So is every note of a commit
+ *       Release Please leaves out of the desktop's release (its `exclude-paths`:
+ *       the phone, the API, the runner, the database, infra and docs).
  *   bun scripts/release-notes.ts --phone <mobile-vX.Y.Z>
  *       the iPhone app's: print that release's notes, one `- ` line each, for
  *       TestFlight's What to Test (apps/mobile/.eas/workflows/production.yml).
  *       Its notes are the `iPhone:` ones and those without a label from
- *       commits that changed only `apps/mobile`; nothing if it has none.
+ *       commits that changed `apps/mobile` and nothing in the desktop's
+ *       release; nothing if it has none.
+ *   bun scripts/release-notes.ts --changelog <out.json>
+ *       both apps' releases with the date of each tag's commit, for the site's
+ *       /changelog: `{ "mac": [{ version, date, notes }], "iphone": [...] }`,
+ *       each newest first. The publish job puts it beside each desktop
+ *       release as `changelog.json`, so the iPhone's newest releases reach the
+ *       site with the desktop's next one.
  *
  * A checkout without history or tags (CI's shallow clone) finds no releases
  * and warns instead of failing, so whatever reads the notes still works with
- * nothing to show. The desktop's file is marked `"incomplete": true`, so an
- * app about to update doesn't take the empty list for every release's notes;
- * the phone's prints nothing, and its workflow falls back to its own line.
+ * nothing to show. The desktop's file and the changelog are marked
+ * `"incomplete": true`, so an app about to update (or the site) doesn't take
+ * the empty list for every release's notes; the phone's prints nothing, and
+ * its workflow falls back to its own line.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { $ } from "bun";
+import releasePleaseConfig from "../release-please-config.json" with { type: "json" };
 
 export interface Release {
   version: string;
   notes: string[];
+}
+
+/** A release with the date its tag's commit was made, as the site's changelog shows it. */
+export interface DatedRelease extends Release {
+  /** ISO 8601 with the committer's offset, from `git log -1 --format=%cI <tag>`. */
+  date: string;
+}
+
+/** What the site's /changelog reads: each app's releases, newest first. */
+export interface Changelog {
+  mac: DatedRelease[];
+  iphone: DatedRelease[];
+  /** Set when the history couldn't be read, so the lists are empty rather than complete. */
+  incomplete?: true;
 }
 
 /** The desktop app (Mac, Windows, Linux) or the iPhone app, which release apart. */
@@ -107,12 +132,36 @@ export function extractNotes(message: string, app: App = "mac", unlabelled = tru
 }
 
 /**
- * A commit that changed only the phone app, which ships on its own tags
- * (mobile-vX.Y.Z). Release Please leaves it out of the Mac's release too
- * (`exclude-paths` in release-please-config.json).
+ * The paths Release Please leaves out of the desktop app's release (the root
+ * component's `exclude-paths` in release-please-config.json): the phone, and
+ * what ships with an API deploy or not at all (the API, the runner, the
+ * database, infra, docs). Read from the config, so the two never disagree.
+ */
+export const MAC_EXCLUDED: readonly string[] = (
+  releasePleaseConfig as { packages: Record<string, { "exclude-paths"?: string[] }> }
+).packages["."]?.["exclude-paths"] ?? ["apps/mobile"];
+
+const under = (file: string, path: string) => file === path || file.startsWith(`${path}/`);
+
+/**
+ * Whether a commit is in the desktop app's release: it changed something
+ * outside the paths Release Please excludes from it. A commit with no files
+ * (an empty one) counts, as Release Please would see it.
+ */
+export function inMacRelease(files: string[]): boolean {
+  return (
+    files.length === 0 || files.some((file) => !MAC_EXCLUDED.some((path) => under(file, path)))
+  );
+}
+
+/**
+ * A commit that changed the phone app and nothing the desktop app's release
+ * holds, so it ships only on the phone's tags (mobile-vX.Y.Z), and its notes
+ * need no `iPhone:` label to be the phone's. It may also have changed the API
+ * or another path both apps leave out.
  */
 export function phoneOnly(files: string[]): boolean {
-  return files.length > 0 && files.every((file) => file.startsWith("apps/mobile/"));
+  return files.some((file) => under(file, "apps/mobile")) && !inMacRelease(files);
 }
 
 /** Orders `x.y.z` versions; anything unparsable sorts first. */
@@ -162,11 +211,29 @@ export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<R
         const files = list.split("\n").filter(Boolean);
         if (RELEASE_COMMIT.test(subject)) return [];
         if (app === "iphone") return extractNotes(message, app, phoneOnly(files));
-        return phoneOnly(files) ? [] : extractNotes(message);
+        return inMacRelease(files) ? extractNotes(message) : [];
       });
     if (notes.length) out.push({ version, notes });
   }
   return out.reverse();
+}
+
+/** The ISO date of the commit `tag` points at. */
+export async function tagDate(cwd: string, tag: string): Promise<string> {
+  return (await $`git log -1 --format=%cI ${tag}`.cwd(cwd).quiet().text()).trim();
+}
+
+/** Both apps' releases with their tags' dates: the desktop's `vX.Y.Z`, the phone's `mobile-vX.Y.Z`. */
+export async function changelog(cwd = process.cwd()): Promise<Changelog> {
+  const dated = async (app: App, prefix: string) =>
+    Promise.all(
+      (await releases(cwd, app)).map(async (r) => ({
+        version: r.version,
+        date: await tagDate(cwd, `${prefix}${r.version}`),
+        notes: r.notes,
+      })),
+    );
+  return { mac: await dated("mac", "v"), iphone: await dated("iphone", "mobile-v") };
 }
 
 /** A release's notes as TestFlight's What to Test, leaving out whole notes past Apple's limit. */
@@ -206,6 +273,25 @@ if (import.meta.main) {
     } catch (err) {
       console.warn(`release-notes: none for ${tag} (${describe(err)})`);
     }
+  } else if (args[0] === "--changelog") {
+    const path = args[1];
+    if (!path) {
+      console.error("usage: bun scripts/release-notes.ts --changelog <out.json>");
+      process.exit(1);
+    }
+    let out: Changelog;
+    try {
+      await assertHistory();
+      out = await changelog();
+    } catch (err) {
+      out = { mac: [], iphone: [], incomplete: true };
+      console.warn(`release-notes: changelog has none (${describe(err)})`);
+    }
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`);
+    console.log(
+      `release-notes: ${out.mac.length} desktop and ${out.iphone.length} iPhone releases → ${path}`,
+    );
   } else {
     const [path] = args;
     if (!path) {

@@ -4,31 +4,31 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "bun run --cwd ../../packages/react build",
     "dev": "next dev --port 4321",
-    "prebuild": "bun run --cwd ../../packages/react build",
     "build": "next build",
-    "start": "next start --port 4321",
-    "record-demo": "bun scripts/record-demo.ts"
+    "start": "next start --port 4321"
   },
   "dependencies": {
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
+    "@next/mdx": "16.4.2",
+    "@ponzu/canvas": "workspace:*",
     "@ponzu/core": "workspace:*",
-    "@ponzu/react": "workspace:*",
-    "@ponzu/store": "workspace:*",
+    "@ponzu/db": "workspace:*",
     "next": "^16.4.2",
     "posthog-js": "^1.438.13",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "shiki": "^4.5.0"
+    "remark-gfm": "^4.0.1",
+    "shiki": "^4.5.0",
+    "zod": "^4"
   },
   "devDependencies": {
-    "@ponzu/render": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/mdx": "^2.0.14",
     "@types/node": "^24",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vercel/blob": "^2.8.2",
-    "playwright-core": "^1.64.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
   }

@@ -27,16 +27,7 @@
           "UIInterfaceOrientationLandscapeLeft",
           "UIInterfaceOrientationLandscapeRight"
         ],
-        "NSPhotoLibraryUsageDescription": "Ponzu doesn't read your photo library. Apple asks for this because a library Ponzu uses can load images from Photos.",
-        "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true,
-          "NSExceptionDomains": {
-            "ts.net": {
-              "NSIncludesSubdomains": true,
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            }
-          }
-        }
+        "NSPhotoLibraryUsageDescription": "Ponzu opens your photos only when you pick one to attach to a message."
       }
     },
     "plugins": [
@@ -1010,20 +1001,28 @@
         }
       ],
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Ponzu uses the camera to scan the pairing code on your Mac.",
-          "recordAudioAndroid": false
-        }
-      ],
-      [
         "expo-speech-recognition",
         {
           "speechRecognitionPermission": "Ponzu turns what you say into comment text, on this iPhone.",
           "microphonePermission": "Ponzu listens while you dictate a comment, and turns it into text on this iPhone."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ponzu opens your photos only when you pick one to attach to a message.",
+          "cameraPermission": false,
+          "microphonePermission": "Ponzu listens while you dictate a comment, and turns it into text on this iPhone."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
+      "expo-web-browser"
     ],
     "runtimeVersion": {
       "policy": "fingerprint"

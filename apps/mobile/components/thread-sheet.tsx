@@ -1,9 +1,8 @@
-import type { Thread } from "@ponzu/core";
+import type { Author, Thread } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { clientOf, shortAgent } from "../lib/agents";
+import { shortAgo } from "../lib/ago";
 import { draftKey } from "../lib/drafts";
-import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
 import { Glass } from "./glass";
@@ -12,13 +11,27 @@ import { Sheet } from "./sheet";
 
 export interface ThreadProps {
   thread: Thread;
-  /** The person's initial, for their avatar. */
-  me: string;
-  /** The design it's in (lib/drafts.ts `draftFile`): what an unsent reply is kept under. */
+  /** The person, as their messages name them. */
+  me: Pick<Author, "id" | "name">;
+  /** The canvas it's in, by id: what an unsent reply is kept under (lib/drafts.ts). */
   file: string;
   onReply: (text: string, mode: Mode) => Promise<void>;
   onStatus: (status: Thread["status"]) => Promise<void>;
+  /**
+   * Why the person can't reply or resolve here (they may only look at the canvas, or it is the
+   * last copy, offline): said in the reply field's place. Null when they can.
+   */
+  readOnly?: string | null;
+  /** One line over the reply field: why a reply or a resolve didn't go, or that it waits. */
+  note?: string | null;
 }
+
+/** The first letter of a name, for an avatar. */
+export const initialOf = (name: string) => (name.trim()[0] ?? "?").toUpperCase();
+
+/** Whether a message is the person's own. */
+export const isMine = (author: Author, me: Pick<Author, "id" | "name">) =>
+  author.kind === "user" && (author.id ? author.id === me.id : author.name === me.name);
 
 /**
  * A thread (Flow › 11 Thread): a 450pt sheet over the canvas with the pin in
@@ -60,7 +73,14 @@ export function ThreadSheet({
  * panel or half on iPhone Duo (components/comments.tsx), under that
  * surface's own header.
  */
-export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps) {
+export function ThreadView({
+  thread,
+  file,
+  onReply,
+  onStatus,
+  readOnly = null,
+  note = null,
+}: ThreadProps) {
   const { color } = useTheme();
   // The reply field shows first, unfocused (the design's 11); the mic switches to voice.
   const [mode, setMode] = useState<Mode>("type");
@@ -71,10 +91,13 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
     setBusy(true);
     try {
       await onStatus(resolved ? "open" : "resolved");
+    } catch {
+      // The screen says why (`note`).
     } finally {
       setBusy(false);
     }
   };
+  const locked = Boolean(readOnly);
   return (
     <>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -91,7 +114,14 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
           {resolved ? " · Resolved" : ""}
         </Text>
         {/* Glass, as the other floating controls; held a step darker while pressed. */}
-        <Pressable onPress={toggle} disabled={busy} accessibilityRole="button" testID="resolve">
+        <Pressable
+          onPress={toggle}
+          disabled={busy || locked}
+          accessibilityRole="button"
+          accessibilityLabel={resolved ? "Reopen" : "Resolve"}
+          accessibilityState={{ disabled: busy || locked }}
+          testID="resolve"
+        >
           {({ pressed }) => (
             // Held while pressed or while it's being sent; never dimmed, as glass under a dimmed view isn't drawn.
             <Glass
@@ -106,9 +136,14 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
                 gap: 6,
               }}
             >
-              <Check size={17} color={color.ink} />
+              <Check size={17} color={locked ? color.faint : color.ink} />
               <Text
-                style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}
+                style={{
+                  fontFamily: "Inter",
+                  fontWeight: "600",
+                  fontSize: 14,
+                  color: locked ? color.faint : color.ink,
+                }}
               >
                 {resolved ? "Reopen" : "Resolve"}
               </Text>
@@ -128,12 +163,12 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
               {agent ? (
                 <AgentAvatar
                   name={m.author.name}
-                  client={clientOf(m.author.name)}
+                  client="claude"
                   color={color.ink}
                   soft={color.pinSoft}
                 />
               ) : (
-                <Initial letter={me} />
+                <Initial letter={initialOf(m.author.name)} />
               )}
               <View style={{ flex: 1, gap: 3 }}>
                 <View style={{ flexDirection: "row", gap: 6, alignItems: "baseline" }}>
@@ -146,7 +181,7 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
                       color: color.ink,
                     }}
                   >
-                    {agent ? shortAgent(m.author.name) : "You"}
+                    {m.author.name}
                   </Text>
                   <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.faint }}>
                     {shortAgo(m.createdAt)}
@@ -162,15 +197,39 @@ export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps)
           );
         })}
       </ScrollView>
-      <Composer
-        mode={mode}
-        onMode={setMode}
-        placeholder={resolved ? "Reply to reopen" : "Reply"}
-        onSend={onReply}
-        autoFocus={false}
-        draft={{ key: draftKey.reply(file, thread.id), file, thread: thread.id }}
-      />
+      {note && !locked && <Line testID="thread-note">{note}</Line>}
+      {locked ? (
+        <Line testID="thread-read-only">{readOnly}</Line>
+      ) : (
+        <Composer
+          mode={mode}
+          onMode={setMode}
+          placeholder={resolved ? "Reply to reopen" : "Reply"}
+          onSend={onReply}
+          autoFocus={false}
+          draft={{ key: draftKey.reply(file, thread.id), file, thread: thread.id }}
+        />
+      )}
     </>
+  );
+}
+
+/** One quiet line in the sheet. */
+function Line({ children, testID }: { children: ReactNode; testID: string }) {
+  const { color } = useTheme();
+  return (
+    <Text
+      testID={testID}
+      style={{
+        fontFamily: "Inter",
+        fontSize: 14,
+        lineHeight: 19.6,
+        color: color.muted,
+        textAlign: "center",
+      }}
+    >
+      {children}
+    </Text>
   );
 }
 

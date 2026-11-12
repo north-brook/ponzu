@@ -1,0 +1,55 @@
+{
+  "name": "@ponzu/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "26.x"
+  },
+  "exports": {
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch scripts/dev.ts",
+    "dev:signin": "bun scripts/dev-signin.ts",
+    "build": "bun scripts/build.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.102",
+    "@ai-sdk/otel": "1.0.169",
+    "@hono/zod-validator": "^0.9.1",
+    "@neon/realtime": "0.2.1",
+    "@octokit/auth-app": "8.3.1",
+    "@octokit/core": "7.0.8",
+    "@octokit/graphql": "9.0.5",
+    "@octokit/plugin-paginate-rest": "16.0.0",
+    "@octokit/request-error": "7.1.2",
+    "@octokit/types": "18.0.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.200.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
+    "@ponzu/core": "workspace:*",
+    "@ponzu/db": "workspace:*",
+    "@ponzu/runner": "workspace:*",
+    "@ponzu/sandbox": "workspace:*",
+    "@posthog/ai": "^8.19.2",
+    "@vercel/firewall": "1.2.6",
+    "ai": "^7.0.169",
+    "aws4fetch": "1.0.20",
+    "expo-server-sdk": "8.0.0",
+    "hono": "^4.13.17",
+    "jose": "^6.2.17",
+    "posthog-node": "^5.68.2",
+    "resend": "6.37.0",
+    "universal-github-app-jwt": "2.2.2",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@neondatabase/api-client": "2.7.3",
+    "@ponzu/evals": "workspace:*",
+    "@types/node": "^26.6.5",
+    "fast-check": "4.3.0"
+  }
+}
