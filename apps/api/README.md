@@ -313,9 +313,11 @@ To rotate the key: set `PONZU_VAULT_KEY` to a new one and move the old one into
 `bun scripts/reseal.ts` here with the deployment's `DATABASE_URL`, `PONZU_VAULT_KEY` and
 `PONZU_VAULT_OLD_KEYS` (`--dry-run` first writes nothing). It opens every value an old key
 sealed and seals it again under the new one, one row at a time and only if the row still holds
-what it read, so it can be stopped and run again. It prints counts per column and key id and
-the rows it could not seal again (ids and secret names, never a value), and exits 1 while any
-are left. When it reports nothing left, drop the old key and deploy. Running it before the
+what it read, so it can be stopped and run again. A GitHub token whose refresh is in flight is
+left for the next run, because the refresh stores its new pair only over the sealed text it
+read. It prints counts per column and key id, the rows it could not seal again (ids and secret
+names, never a value), and how many values are still under another key, and exits 1 while that
+is more than 0. When it reports nothing left, drop the old key and deploy. Running it before the
 deployment with the new key is live would seal values the API cannot open yet.
 
 For a person's GitHub token call `githubUserToken(deps, userId)` each time one is needed. It

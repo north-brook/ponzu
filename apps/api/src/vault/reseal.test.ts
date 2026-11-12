@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import {
+  claimGithubTokenRefresh,
   claudeAccounts,
   createCanvas,
   githubUserTokens,
   repoSecrets,
+  rotateGithubUserToken,
   sandboxes,
   saveGithubUserToken,
   upsertRepos,
@@ -21,6 +23,7 @@ afterAll(() => db.$client.close());
 const A = generateVaultKey();
 const B = generateVaultKey();
 const C = generateVaultKey();
+const D = generateVaultKey();
 const withA = createVault({ key: A });
 const rotated = createVault({ key: B, oldKeys: [A] });
 const onlyB = createVault({ key: B });
@@ -192,6 +195,7 @@ test("a dry run reports what it would seal again and writes nothing", async () =
   const report = await resealAll({ db, vault: rotated }, { dryRun: true });
   expect(report.dryRun).toBe(true);
   expect(report.counts.reduce((sum, { resealed }) => sum + resealed, 0)).toBe(stored.length);
+  expect(report.remaining).toBe(stored.length + 3);
   expect(await snapshot()).toEqual(before);
 });
 
@@ -253,6 +257,7 @@ test("after a rotation, a run seals every value again so the new key alone opens
   }
   // Only the three that could not be sealed again are still under another key.
   expect(await countSealedUnderOldKeys({ db, vault: rotated })).toBe(3);
+  expect(report.remaining).toBe(3);
 
   // The report carries no value, sealed or open.
   const text = JSON.stringify(report);
@@ -277,7 +282,6 @@ test("a second run changes nothing, and reports the same three it cannot seal", 
 
 test("a value the API rewrites between the read and the write is left as the API wrote it", async () => {
   const binding = { column: "github_user_tokens.access_token", row: userId };
-  const D = generateVaultKey();
   // Rotate again, to D, and have "the API" store a fresh token mid-run.
   const again = createVault({ key: D, oldKeys: [B] });
   let fresh = "";
@@ -304,4 +308,56 @@ test("a value the API rewrites between the read and the write is left as the API
   expect(access.resealed).toBe(1);
   expect(await sealedAt(binding)).toBe(fresh);
   expect(await createVault({ key: D }).open(fresh, binding)).toBe("ghu_maya_refreshed");
+});
+
+test("a GitHub token mid-refresh is left for a later run, so the refresh can still land", async () => {
+  const E = generateVaultKey();
+  const F = generateVaultKey();
+  const access = { column: "github_user_tokens.access_token", row: userId };
+  const refresh = { column: "github_user_tokens.refresh_token", row: userId };
+  const underE = createVault({ key: E });
+  const traded = await underE.seal("ghr_maya_traded", refresh);
+  await saveGithubUserToken(db, {
+    userId,
+    encryptedAccessToken: await underE.seal("ghu_maya_old", access),
+    accessTokenExpiresAt: new Date(Date.now() - 1_000),
+    encryptedRefreshToken: traded,
+    refreshTokenExpiresAt: null,
+  });
+  // Bring every other value onto E, so only the claimed row and the three failures are old.
+  await resealAll({ db, vault: createVault({ key: E, oldKeys: [D] }) });
+  // An instance of the API claims the refresh and is waiting on GitHub.
+  const now = Date.now();
+  const claimed = await claimGithubTokenRefresh(db, {
+    userId,
+    now: new Date(now),
+    staleAt: new Date(now + 5 * 60_000),
+    until: new Date(now + 30_000),
+  });
+  expect(claimed?.encryptedRefreshToken).toBe(traded);
+
+  const toF = createVault({ key: F, oldKeys: [E] });
+  const report = await resealAll({ db, vault: toF });
+  for (const binding of [access.column, refresh.column]) {
+    const count = report.counts.find((c) => c.binding === binding && c.changed > 0);
+    expect(count?.changed).toBe(1);
+  }
+  expect(await sealedAt(refresh)).toBe(traded);
+  // Still old: the run says so, and the old key cannot go yet.
+  expect(report.remaining).toBe(3 + 2);
+
+  // GitHub answers and the refresh stores the new pair over the token it traded.
+  const sealedF = createVault({ key: F });
+  expect(
+    await rotateGithubUserToken(db, {
+      userId,
+      replaces: traded,
+      encryptedAccessToken: await sealedF.seal("ghu_maya_new", access),
+      accessTokenExpiresAt: null,
+      encryptedRefreshToken: await sealedF.seal("ghr_maya_new", refresh),
+      refreshTokenExpiresAt: null,
+    }),
+  ).toBe(true);
+  expect(await sealedF.open(await sealedAt(refresh), refresh)).toBe("ghr_maya_new");
+  expect((await resealAll({ db, vault: toF })).remaining).toBe(3);
 });

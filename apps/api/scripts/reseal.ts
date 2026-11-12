@@ -17,7 +17,9 @@
 // nothing. DATABASE_URL is Neon's pooled URL, as the API takes it.
 //
 // It prints counts per column and key id, and the rows it could not seal again (their ids and
-// secret names), never a value or a key. It exits 1 if any value was left behind.
+// secret names), never a value or a key. It exits 1 while any stored value is still under
+// another key: one it could not open, a GitHub token that was mid-refresh, or one an older
+// deployment wrote meanwhile.
 import { createDb } from "@ponzu/db";
 import { type ResealReport, resealAll } from "../src/vault/reseal.ts";
 import { createVault } from "../src/vault/vault.ts";
@@ -42,9 +44,10 @@ const report = await resealAll(
   { dryRun: args.includes("--dry-run") },
 );
 console.log(args.includes("--json") ? JSON.stringify(report, null, 2) : describe(report));
-if (report.failures.length > 0) process.exitCode = 1;
+// A dry run fails only on what a real run could not mend; a real run, on anything still old.
+if (report.dryRun ? report.failures.length > 0 : report.remaining > 0) process.exitCode = 1;
 
-function describe({ currentKeyId, dryRun, counts, failures }: ResealReport): string {
+function describe({ currentKeyId, dryRun, counts, failures, remaining }: ResealReport): string {
   const lines = [
     `${dryRun ? "Dry run: nothing written. " : ""}The current key is ${currentKeyId}.`,
   ];
@@ -52,11 +55,18 @@ function describe({ currentKeyId, dryRun, counts, failures }: ResealReport): str
   for (const { binding, keyId, resealed, changed, failed } of counts) {
     lines.push(
       `${binding} from ${keyId}: ${resealed} ${dryRun ? "would be sealed again" : "sealed again"}, ` +
-        `${changed} rewritten meanwhile, ${failed} left behind`,
+        `${changed} rewritten or busy meanwhile, ${failed} could not be opened`,
     );
   }
   for (const { binding, row, keyId, reason } of failures) {
-    lines.push(`left behind: ${binding} ${row} (key ${keyId}): ${reason}`);
+    lines.push(`could not be opened: ${binding} ${row} (key ${keyId}): ${reason}`);
+  }
+  const values = `${remaining} ${remaining === 1 ? "value is" : "values are"}`;
+  if (dryRun) lines.push(`${values} under another key now.`);
+  else if (remaining === 0) lines.push("Nothing is left under another key: the old key can go.");
+  else {
+    const again = failures.length < remaining ? " and run this again" : "";
+    lines.push(`${values} still under another key. Keep the old key${again}.`);
   }
   return lines.join("\n");
 }

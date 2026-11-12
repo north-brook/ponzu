@@ -39,7 +39,10 @@ export interface ResealCount {
   keyId: string;
   /** Sealed again under the current key (with `dryRun`, the ones that would be). */
   resealed: number;
-  /** Rewritten by the API between the read and the write, so left as the API wrote it. */
+  /**
+   * Not written: the API rewrote the value between the read and the write, so it is left as the
+   * API wrote it, or the row was busy (a GitHub token mid-refresh), so it waits for a later run.
+   */
   changed: number;
   failed: number;
 }
@@ -48,8 +51,14 @@ export interface ResealReport {
   currentKeyId: string;
   dryRun: boolean;
   counts: ResealCount[];
-  /** Every value left behind, by where it is. */
+  /** Every value that could not be sealed again, by where it is. */
   failures: { binding: string; row: string; keyId: string; reason: ResealFailure }[];
+  /**
+   * After the run, how many stored values the current key still did not seal: the failures,
+   * rows that were busy, and anything an older deployment sealed meanwhile. The old key can go
+   * only at 0. With `dryRun`, what is there before anything would be written.
+   */
+  remaining: number;
 }
 
 export async function resealAll(
@@ -60,7 +69,13 @@ export async function resealAll(
   }: { dryRun?: boolean; columns?: readonly SealedColumn[] } = {},
 ): Promise<ResealReport> {
   const { current, old } = await vault.keyIds();
-  const report: ResealReport = { currentKeyId: current, dryRun, counts: [], failures: [] };
+  const report: ResealReport = {
+    currentKeyId: current,
+    dryRun,
+    counts: [],
+    failures: [],
+    remaining: 0,
+  };
 
   for (const spec of columns) {
     const counts = new Map<string, ResealCount>();
@@ -116,6 +131,7 @@ export async function resealAll(
     }
     report.counts.push(...[...counts.values()].sort((a, b) => a.keyId.localeCompare(b.keyId)));
   }
+  report.remaining = await countSealedUnderOldKeys({ db, vault }, columns);
   return report;
 }
 
@@ -123,8 +139,11 @@ export async function resealAll(
  * How many stored values the current key did not seal: what the selfcheck reports as
  * `vault_old_keys`, ok at 0. Reads key ids only, never a value.
  */
-export async function countSealedUnderOldKeys({ db, vault }: { db: Db; vault: Vault }) {
+export async function countSealedUnderOldKeys(
+  { db, vault }: { db: Db; vault: Vault },
+  columns: readonly SealedColumn[] = SEALED_COLUMNS,
+) {
   const { current } = await vault.keyIds();
-  const counts = await countSealedValues(db);
+  const counts = await countSealedValues(db, columns);
   return counts.filter(({ keyId }) => keyId !== current).reduce((sum, { count }) => sum + count, 0);
 }

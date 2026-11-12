@@ -19,6 +19,11 @@ export interface SealedColumn {
   column: string;
   /** The primary key's columns; their values joined with `/` are the binding's row. */
   keys: readonly string[];
+  /**
+   * A time column that, while it is in the future, means the API is rewriting the row and
+   * compares its sealed text to what it read. A reseal leaves such a row alone until it passes.
+   */
+  busyUntil?: string;
 }
 
 /**
@@ -32,12 +37,17 @@ export const SEALED_COLUMNS: readonly SealedColumn[] = [
     table: "github_user_tokens",
     column: "encrypted_access_token",
     keys: ["user_id"],
+    busyUntil: "refresh_claimed_until",
   },
   {
     binding: "github_user_tokens.refresh_token",
     table: "github_user_tokens",
     column: "encrypted_refresh_token",
     keys: ["user_id"],
+    // A refresh stores GitHub's new pair only if the row still holds the sealed refresh token
+    // it traded (rotateGithubUserToken). Sealing that token again mid-refresh would make the
+    // store miss, and the new pair, which exists nowhere else, would be lost.
+    busyUntil: "refresh_claimed_until",
   },
   {
     binding: "repo_secrets.encrypted_value",
@@ -134,8 +144,9 @@ export async function listSealedNotUnder(
 /**
  * Put `next` in place of `previous`, in one statement, only if the row still holds `previous`.
  * False when it does not (it was deleted, or the API wrote a new value meanwhile, which it seals
- * with the current key): nothing is overwritten. Only the sealed column changes; `updated_at`
- * is left alone, because what the value says did not change.
+ * with the current key), or while the row is busy (`SealedColumn.busyUntil`, by the database's
+ * clock): nothing is overwritten. Only the sealed column changes; `updated_at` is left alone,
+ * because what the value says did not change.
  */
 export async function replaceSealedValue(
   db: Db,
@@ -145,6 +156,10 @@ export async function replaceSealedValue(
   if (keys.length !== spec.keys.length) throw new Error("The keys do not fit the column.");
   const value = ident(spec.column);
   const match = spec.keys.map((key, index) => sql`${ident(key)} = ${keys[index]!}`);
+  if (spec.busyUntil) {
+    const busy = ident(spec.busyUntil);
+    match.push(sql`(${busy} is null or ${busy} <= now())`);
+  }
   const result = await queryJson<{ replaced: number }>(
     db,
     sql`with replaced as (
@@ -162,8 +177,12 @@ export async function replaceSealedValue(
  * column with none is left out. The selfcheck's `vault_old_keys` is the sum of every count
  * whose key id is not the current key's.
  */
-export async function countSealedValues(db: Db): Promise<SealedCount[]> {
-  const parts = SEALED_COLUMNS.map(
+export async function countSealedValues(
+  db: Db,
+  columns: readonly SealedColumn[] = SEALED_COLUMNS,
+): Promise<SealedCount[]> {
+  if (columns.length === 0) return [];
+  const parts = columns.map(
     (spec) =>
       sql`select ${spec.binding}::text as binding, split_part(${ident(spec.column)}, '.', 2) as key_id, count(*)::int as count
           from ${ident(spec.table)} where ${ident(spec.column)} is not null group by 2`,
