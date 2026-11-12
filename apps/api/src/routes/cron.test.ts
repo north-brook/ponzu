@@ -78,6 +78,7 @@ test("only the scheduler's secret runs it", async () => {
         repair: 0,
         reconciled: 0,
       },
+      pull_requests: { swept: 0 },
     },
   });
   // The same answer, logged.

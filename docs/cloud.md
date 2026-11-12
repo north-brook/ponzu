@@ -585,9 +585,11 @@ five minutes when the run it was due in never came.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
-  until their features fill them. The runner's claim hands out only the kinds
-  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  nothing that owes nothing. `maintenance` and `billing` let everything through until their
+  features fill them; `claudeLimit` is "Claude plan limits". The runner's claim hands out only
+  the kinds `claimableKinds` allows (every kind, except that only a stop, an edit and a push go
+  out while the plan the canvas runs on is at its limit; billing will narrow it too); the rest
+  stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
   be allowed and before anything is written; each lets everything through until its feature
@@ -1339,6 +1341,47 @@ by hand. Not proven: whether Claude Code ever learns of a model without a new bi
 example from its own server for a subscription); if it does, that model is offered as soon as a
 runner reports it.
 
+### Claude plan limits
+
+A Claude subscription's plan has limits (a five-hour session, the week, and on some plans a
+week on Opus or on Sonnet), and a canvas runs on its owner's plan alone, so a plan at its limit
+waits for everyone, not only its owner, until it resets.
+
+- **What Claude Code says.** On a subscription Claude Code emits the Agent SDK's
+  `rate_limit_event` whenever a window's status, reset or rounded share moves: `status`
+  (`allowed`, `allowed_warning` or `rejected`), `rateLimitType` (the window), `resetsAt`
+  (seconds since the epoch) and `utilization` (a fraction, which can run a little past 1). The
+  runner passes each on with its state as `claudeLimit` ("State"), once each, the latest for
+  each window; on an API key it passes on nothing (`planLimits` in the runner's options, set
+  from `CLAUDE_CODE_OAUTH_TOKEN`). A `rejected` window that the plan's extra usage still
+  carries (`overageStatus` allowed or allowed_warning) is passed on as `allowed_warning`, since
+  requests still go through. A turn that fails at the limit still says so in the thread
+  (`claude_limit`, with Claude Code's own words). Not observed live: the fields come from the
+  SDK's types and its binary's own description of them, and a test feeds a scripted event.
+- **What the API keeps.** `claude_accounts.limits` holds each window as last reported (`window`
+  in the SDK's name, `utilization`, `resetsAt`, `at`), and `limited_until` is set to the reset
+  of a `rejected` window and cleared by any other status, which says requests go through. Both
+  are written only when the reporting sandbox runs on the account's current credential (the
+  rule models follow) and only for a subscription; connecting again clears them. A reset more
+  than eight days off (`MAX_RESET_AHEAD_MS`) is taken as no reset, so a mistaken or forged
+  report cannot hold the account's canvases for longer than any window lasts. A report that
+  requests go through again lifts `claude_limited` from the canvases on the account at once
+  (`resumeBlocked`), rather than leaving them to the reset they were told.
+- **The wake gate** (`claudeLimit`). A canvas whose account has `limited_until` in the future
+  does not wake: its head says `claude_limited` until `limited_until` plus 30 seconds
+  (`LIMIT_GRACE_MS`), and the same wake job is tried again then. A turn already running is never
+  cut. A runner still awake on such a canvas is handed only a stop, a person's edit and a push
+  (`claimableKinds`), none of which begins a turn; a message, answer, comment, check or review
+  waits in the feed and goes in at the reset.
+- **The apps.** Every viewer of the canvas reads the head's `claude_limited` and
+  `agent_blocked_until` alike: "Maya's plan is at its limit until 4:00 PM. This canvas waits."
+  ("Your plan …" to the owner), and under it "Your message goes in when it resets." The composer
+  still sends. Before a wake has put it on the head, the owner also learns of their own plan's
+  limit from `limitedUntil` on their account. `GET /v1/claude` (and `me`) carries `limits`,
+  `[{ window, utilization, resetsAt }]`, empty before any canvas has run and null for an API
+  key; Settings › Agents shows the windows it knows ("Current session", "This week", "This
+  week, Opus", "This week, Sonnet"), in that order, and hides any other.
+
 ## The runner protocol
 
 What the runner and the API say to each other. The runner's whole view of the API is
@@ -1649,8 +1692,16 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
   artboards: string[],         // what the agent is on, from the canvas tools
   claudeSessionId: string | null,
   branch?: { unpushed: number,   // commits on the canvas's branch that GitHub lacks
-             error: string | null } | null }  // why the last push of them failed, for a person
+             error: string | null } | null,  // why the last push of them failed, for a person
+  claudeLimit?: { status: "allowed" | "allowed_warning" | "rejected",
+                  window: string | null,      // the SDK's rateLimitType, five_hour, seven_day, …
+                  resetsAt: string | null,    // ISO 8601
+                  utilization: number | null } | null }  // what Claude Code said of the plan
 ```
+
+`claudeLimit` is news, like `branch`: sent once for each `rate_limit_event` that changes a
+window, one window per report, and absent on heartbeats and from a runner on an API key. The
+API keeps it on the Claude account ("Claude plan limits"); an older API ignores it.
 
 **The working state** (`status` while `working`) is said from the tool call running now, never
 from a status the agent set long before: most specific first,
@@ -2154,18 +2205,58 @@ canvas settles whether or not the merge's webhook arrives.
 | `review_required`, `changes_requested` | the repo's rules want an approval; a reviewer asked for changes |
 | `checks_failing`, `checks_pending` | a check the rules require failed, or has not finished (other checks may fail) |
 | `branch_behind` | the rules want the branch up to date: update it |
-| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits, a merge queue…) |
+| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits…) |
 | `branch_up_to_date` | updating a branch that has everything its base has |
 | `auto_merge_not_allowed`, `already_mergeable` | the repo has auto-merge off; nothing is left to wait for |
 | `forbidden` | GitHub does not let this person do it (403) |
+| `workflow_permission` | it would change a file under `.github/workflows/`, which the App may not (422) |
+| `merge_queue` | Merge on a repo with a merge queue while Ponzu does not add to one (409) |
+| `merge_queue_unmergeable` | the merge queue turned the pull request down (409) |
 | `github_refused` | anything else GitHub refused (422) |
 | `turn_not_from_person` | the agent's merge, ready or auto-merge in a turn no person in Ponzu began (403) |
 | `agent_limit` | the agent did this as often as an hour allows (409) |
 
-Not handled yet: a repo that merges through a merge queue (GitHub refuses a direct merge there:
-`branch_protected`); the App has no `workflows` permission, so a branch update or a push that
-would change `.github/workflows/` is refused by GitHub; and there is no sweep that reads open
-pull requests whose webhooks were all lost (a merge from Ponzu is covered by its own job).
+**Merge queues.** The tab's query reads whether the pull request's base merges through a merge
+queue (`isMergeQueueEnabled`) and its entry while it is in one (`mergeQueueEntry`: its state and
+place), and the tab carries both as `pullRequest.mergeQueue`. On such a repo GitHub refuses a
+direct merge, so Merge never asks for one, and never past the queue whatever `bypass` says.
+While `PONZU_MERGE_QUEUE` is off (every deployment until enqueueing is proven against a real
+queue) Merge answers `merge_queue`: "This repository merges through a merge queue. Add it to the
+queue on GitHub." With it on, Merge adds the pull request to the queue as the person
+(`enqueuePullRequest` with `expectedHeadOid`, the commit they looked at), answers it queued, and
+GitHub merges it once the queue's checks pass; the merge then reaches Ponzu as any other does. A
+pull request in the queue offers no action (`nextAction` is `none`; taking it out of the queue is
+GitHub's), Merge pressed again changes nothing, and one the queue turned down is
+`merge_queue_unmergeable`. The agent hears the same: what holds its merge back
+(`merge_queue`, `merge_queued` with its place, or `merge_queue_unmergeable`), and, with the switch
+on, that it added the pull request to the queue, never that it merged it. GitHub may refuse the
+two queue fields alone to an App without its "Merge queues" permission, which Ponzu's tokens do
+not ask for; the tab then reads as if there were no queue rather than failing, and a Merge goes to
+GitHub, whose queue refuses it. Whether GitHub does refuse them to Ponzu's tokens is not proven.
+
+**Workflow files.** The App has no `workflows` permission, so GitHub refuses any push, branch
+update or merge from Ponzu that would change a file under `.github/workflows/`, in its own words
+("refusing to allow a GitHub App to create or update workflow … without `workflows`
+permission"). The runner tells that refusal apart from the others (`workflow_permission`, never
+tried again) and the thread says: "GitHub won't let Ponzu push changes to files under
+.github/workflows/ to {repo}: Ponzu's GitHub App isn't allowed to change workflows. {commits} on
+{branch} are safe in this canvas's sandbox. Ask Claude to leave workflow files out of this
+canvas's commits, or change them on GitHub yourself." The agent is told up front to leave
+workflow files out of its commits, and its pull request tools stop before asking GitHub when its
+push was refused this way. Update branch and Merge answer `workflow_permission` when GitHub's
+refusal names workflows. What status GitHub answers a branch update with in that case is not
+proven against GitHub: the code goes by its words, whatever the status. Granting the App
+`workflows: write` would lift all of it, and is the founder's choice.
+
+**Lost webhooks.** A sweep in the minute's cron (`cron/steps/pull-request-sweep.ts`,
+`pull-requests/sweep.ts`) reads again the open pull requests (and drafts) nobody has read from
+GitHub for fifteen minutes, oldest read first, at most 20 a minute, by recording the same
+`pull_request.refresh` job a webhook would (keyed `sweep:<canvas>:<window>`), which the next
+minute's jobs make. It leaves out a canvas with a read already waiting, one already swept in the
+current fifteen-minute window (a quiet pull request's read changes nothing, so it stays among the
+oldest), and one whose workspace has no working installation. That is at most 20 GraphQL points
+a minute across every installation; a merge on GitHub whose webhooks were all lost settles its
+canvas within about sixteen minutes. Each run that records reads logs `pr_swept` with the count.
 
 **Two at once.** A person pressing Merge while the agent merges (or two people, or auto-merge
 landing first) go to GitHub with the same commit, and GitHub merges once. The other's merge is

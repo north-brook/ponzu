@@ -527,6 +527,8 @@ export interface WakeContext {
     connectedAt: Date;
     expiresAt: Date | null;
     encryptedCredential: string | null;
+    /** Until when its plan is at a limit, as a runner on its credential last said; else null. */
+    limitedUntil: Date | null;
   } | null;
   sandbox: SandboxRow | null;
   /**
@@ -566,6 +568,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
       connected_at: string;
       expires_at: string | null;
       encrypted_credential: string | null;
+      limited_until: string | null;
     } | null;
     sandbox: Record<string, unknown> | null;
     owner_member: boolean;
@@ -603,6 +606,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
       connectedAt: new Date(claude.connected_at),
       expiresAt: claude.expires_at ? new Date(claude.expires_at) : null,
       encryptedCredential: claude.encrypted_credential,
+      limitedUntil: claude.limited_until ? new Date(claude.limited_until) : null,
     },
     sandbox: result.sandbox ? toSandbox(result.sandbox) : null,
     ownerMember: result.owner_member,

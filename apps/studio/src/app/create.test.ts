@@ -31,6 +31,7 @@ test("a send goes only on a connected Claude; none, or one signed out, asks firs
     expiresAt: null,
     expiresSoon: false,
     limitedUntil: null,
+    limits: [],
   };
   expect(claudeReady({ claudeAccount: { ...account, status: "expired" } })).toBe(false);
   expect(claudeReady({ claudeAccount: { ...account, status: "connected" } })).toBe(true);
