@@ -32,7 +32,7 @@ export const SYSTEM_ENV = ["VERCEL", "VERCEL_GIT_COMMIT_SHA"] as const;
 
 /**
  * Names that must never be set on a deployment. A token on Vercel is already refused at boot
- * (sandboxes use OIDC there); the others are leftovers of earlier designs, which the production
+ * (sandboxes use OIDC there); the others are leftovers of earlier plans, which the production
  * check (`scripts/prod/check.ts`) reports.
  */
 export const FORBIDDEN_ENV = ["VERCEL_TOKEN", "BOAT_API_KEY", "PONZU_SANDBOX_SNAPSHOT"] as const;
