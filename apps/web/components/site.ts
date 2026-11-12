@@ -29,3 +29,10 @@ export const BILLING_LIVE = false;
 export const IPHONE_URL_TARGET = TESTFLIGHT;
 /** The first desktop version of Ponzu Cloud; the changelog starts there. */
 export const FIRST_CLOUD_VERSION = "2.0.0";
+/**
+ * The first version of the cloud iPhone app (tags `mobile-vX.Y.Z`), where its changelog starts.
+ * Ponzu 1's phone app released 0.x. Release Please bumps a 0.x app's minor even for a breaking
+ * change, so without a `release-as` the cutover would make the phone 0.13.0, which this hides. The
+ * cutover either gives the phone 1.0.0 with `release-as`, or this changes to its first version.
+ */
+export const FIRST_CLOUD_IPHONE_VERSION = "1.0.0";

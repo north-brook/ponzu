@@ -71,6 +71,16 @@ label, and those unlabelled ones.
 A checkout without tags or history (a shallow clone) writes no notes and
 warns, marking the file incomplete.
 
+The site's [changelog](https://ponzu.design/changelog) shows the same notes.
+The release's publish job also runs `scripts/release-notes.ts --changelog`,
+which writes both apps' releases, each with the date of its tag's commit, and
+publishes them beside the build as `changelog.json`. The site reads that file
+from the latest release every hour and shows the releases of Ponzu Cloud, from
+the first versions named in `apps/web/components/site.ts`, newest first. It
+is published only with the desktop app, so an iPhone release shows there once
+the next desktop release is out. If the file can't be read, the page says so
+and links to GitHub's releases.
+
 The iPhone's notes travel the same way to TestFlight. When a `mobile-vX.Y.Z`
 release builds a new binary, `apps/mobile/.eas/workflows/production.yml`
 runs `bun scripts/release-notes.ts --phone mobile-vX.Y.Z`, which prints the
