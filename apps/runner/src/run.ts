@@ -194,6 +194,12 @@ export interface RunnerOptions {
    */
   secrets?: readonly string[];
   /**
+   * Claude Code runs on a Claude subscription (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan has
+   * limits: what it says of them goes to the API with the state. On an API key it is false, and
+   * the runner reports no limit whatever Claude Code says.
+   */
+  planLimits?: boolean;
+  /**
    * The checkout's git, as the agent, for a repo canvas checked out at `cwd`: what the runner
    * pushes the canvas's branch with (push.ts). Without it the runner never pushes.
    */
@@ -1262,6 +1268,9 @@ export class Runner {
         break;
       case "result":
         this.result(event.id, event.error, event.usage, event.turn ?? null);
+        break;
+      case "limit":
+        if (this.opts.planLimits) this.state.limit(event.limit);
         break;
       case "exit":
         this.exited(event.error);

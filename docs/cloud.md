@@ -585,9 +585,11 @@ five minutes when the run it was due in never came.
   changes, `resumeBlocked` lifts its blockers in a workspace, on a Claude account or
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
-  nothing that owes nothing. `maintenance`, `billing` and `claudeLimit` let everything through
-  until their features fill them. The runner's claim hands out only the kinds
-  `claimableKinds` allows (all of them until billing narrows it); the rest stay in the feed,
+  nothing that owes nothing. `maintenance` and `billing` let everything through until their
+  features fill them; `claudeLimit` is "Claude plan limits". The runner's claim hands out only
+  the kinds `claimableKinds` allows (every kind, except that only a stop, an edit and a push go
+  out while the plan the canvas runs on is at its limit; billing will narrow it too); the rest
+  stay in the feed,
   neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
   be allowed and before anything is written; each lets everything through until its feature
@@ -1339,6 +1341,47 @@ by hand. Not proven: whether Claude Code ever learns of a model without a new bi
 example from its own server for a subscription); if it does, that model is offered as soon as a
 runner reports it.
 
+### Claude plan limits
+
+A Claude subscription's plan has limits (a five-hour session, the week, and on some plans a
+week on Opus or on Sonnet), and a canvas runs on its owner's plan alone, so a plan at its limit
+waits for everyone, not only its owner, until it resets.
+
+- **What Claude Code says.** On a subscription Claude Code emits the Agent SDK's
+  `rate_limit_event` whenever a window's status, reset or rounded share moves: `status`
+  (`allowed`, `allowed_warning` or `rejected`), `rateLimitType` (the window), `resetsAt`
+  (seconds since the epoch) and `utilization` (a fraction, which can run a little past 1). The
+  runner passes each on with its state as `claudeLimit` ("State"), once each, the latest for
+  each window; on an API key it passes on nothing (`planLimits` in the runner's options, set
+  from `CLAUDE_CODE_OAUTH_TOKEN`). A `rejected` window that the plan's extra usage still
+  carries (`overageStatus` allowed or allowed_warning) is passed on as `allowed_warning`, since
+  requests still go through. A turn that fails at the limit still says so in the thread
+  (`claude_limit`, with Claude Code's own words). Not observed live: the fields come from the
+  SDK's types and its binary's own description of them, and a test feeds a scripted event.
+- **What the API keeps.** `claude_accounts.limits` holds each window as last reported (`window`
+  in the SDK's name, `utilization`, `resetsAt`, `at`), and `limited_until` is set to the reset
+  of a `rejected` window and cleared by any other status, which says requests go through. Both
+  are written only when the reporting sandbox runs on the account's current credential (the
+  rule models follow) and only for a subscription; connecting again clears them. A reset more
+  than eight days off (`MAX_RESET_AHEAD_MS`) is taken as no reset, so a mistaken or forged
+  report cannot hold the account's canvases for longer than any window lasts. A report that
+  requests go through again lifts `claude_limited` from the canvases on the account at once
+  (`resumeBlocked`), rather than leaving them to the reset they were told.
+- **The wake gate** (`claudeLimit`). A canvas whose account has `limited_until` in the future
+  does not wake: its head says `claude_limited` until `limited_until` plus 30 seconds
+  (`LIMIT_GRACE_MS`), and the same wake job is tried again then. A turn already running is never
+  cut. A runner still awake on such a canvas is handed only a stop, a person's edit and a push
+  (`claimableKinds`), none of which begins a turn; a message, answer, comment, check or review
+  waits in the feed and goes in at the reset.
+- **The apps.** Every viewer of the canvas reads the head's `claude_limited` and
+  `agent_blocked_until` alike: "Maya's plan is at its limit until 4:00 PM. This canvas waits."
+  ("Your plan …" to the owner), and under it "Your message goes in when it resets." The composer
+  still sends. Before a wake has put it on the head, the owner also learns of their own plan's
+  limit from `limitedUntil` on their account. `GET /v1/claude` (and `me`) carries `limits`,
+  `[{ window, utilization, resetsAt }]`, empty before any canvas has run and null for an API
+  key; Settings › Agents shows the windows it knows ("Current session", "This week", "This
+  week, Opus", "This week, Sonnet"), in that order, and hides any other.
+
 ## The runner protocol
 
 What the runner and the API say to each other. The runner's whole view of the API is
@@ -1649,8 +1692,16 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
   artboards: string[],         // what the agent is on, from the canvas tools
   claudeSessionId: string | null,
   branch?: { unpushed: number,   // commits on the canvas's branch that GitHub lacks
-             error: string | null } | null }  // why the last push of them failed, for a person
+             error: string | null } | null,  // why the last push of them failed, for a person
+  claudeLimit?: { status: "allowed" | "allowed_warning" | "rejected",
+                  window: string | null,      // the SDK's rateLimitType, five_hour, seven_day, …
+                  resetsAt: string | null,    // ISO 8601
+                  utilization: number | null } | null }  // what Claude Code said of the plan
 ```
+
+`claudeLimit` is news, like `branch`: sent once for each `rate_limit_event` that changes a
+window, one window per report, and absent on heartbeats and from a runner on an API key. The
+API keeps it on the Claude account ("Claude plan limits"); an older API ignores it.
 
 **The working state** (`status` while `working`) is said from the tool call running now, never
 from a status the agent set long before: most specific first,

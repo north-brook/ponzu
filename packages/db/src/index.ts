@@ -87,11 +87,14 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ClaudeLimitSeen,
   type ConnectedClaude,
   claudeAccountIdFor,
+  claudeLimitedUntil,
   connectClaudeAccount,
   disconnectClaudeAccount,
   getClaudeAccountById,
+  recordClaudeLimit,
   recordClaudeModels,
   setAgentDefaults,
   setClaudeBlocker,

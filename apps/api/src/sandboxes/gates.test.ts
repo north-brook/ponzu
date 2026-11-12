@@ -15,6 +15,8 @@ import {
   askWakeGates,
   claimableKinds,
   claudeGate,
+  claudeLimitGate,
+  LIMIT_GRACE_MS,
   type NamedWakeGate,
   ownerGate,
   WAKE_GATES,
@@ -162,7 +164,8 @@ describe("the gates", () => {
       "billing",
       "claudeLimit",
     ]);
-    // The three a feature fills let everything through until it does.
+    // The two a feature fills let everything through until it does, and a plan with no limit
+    // known passes Claude's.
     const connected = context({
       claude: {
         id: "cla_1",
@@ -172,6 +175,7 @@ describe("the gates", () => {
         connectedAt: now,
         expiresAt: null,
         encryptedCredential: "sealed",
+        limitedUntil: null,
       },
     });
     expect(askWakeGates(connected, now, ask())).toBeNull();
@@ -186,6 +190,33 @@ describe("the gates", () => {
       blocker: "claude_owner_left",
     });
     expect(claudeGate(context(), now, ask())).toEqual({ blocker: "claude_not_connected" });
+  });
+
+  test("a plan at its limit holds the wake until just after its reset, and only until then", () => {
+    const claude = (limitedUntil: Date | null) =>
+      context({
+        claude: {
+          id: "cla_1",
+          userId: "usr_1",
+          kind: "subscription",
+          status: "connected",
+          connectedAt: now,
+          expiresAt: null,
+          encryptedCredential: "sealed",
+          limitedUntil,
+        },
+      });
+    const resets = new Date(now.getTime() + 90 * MINUTE);
+    expect(claudeLimitGate(claude(resets), now, ask())).toEqual({
+      blocker: "claude_limited",
+      retryAt: new Date(resets.getTime() + LIMIT_GRACE_MS),
+    });
+    expect(LIMIT_GRACE_MS).toBe(30_000);
+    expect(askWakeGates(claude(resets), now, ask())).toMatchObject({ gate: "claudeLimit" });
+    // Reset, or never limited: through.
+    expect(claudeLimitGate(claude(now), now, ask())).toBeNull();
+    expect(claudeLimitGate(claude(null), now, ask())).toBeNull();
+    expect(claudeLimitGate(context(), now, ask())).toBeNull();
   });
 
   test("a claim may hand out every kind until a feature narrows it", async () => {

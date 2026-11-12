@@ -710,6 +710,29 @@ export interface StateRequest {
    * that failed.
    */
   branch?: BranchReport | null;
+  /**
+   * What Claude Code last said of the Claude plan's limits, once it changes: news, sent once,
+   * like `branch`, and absent on heartbeats. Absent too from a runner on an API key, which has
+   * no plan, and from an older runner. The API keeps it on the Claude account only while the
+   * sandbox runs on the account's current credential (docs/cloud.md, "Claude plan limits").
+   */
+  claudeLimit?: ClaudeLimitReport | null;
+}
+
+/**
+ * One of the Agent SDK's `rate_limit_event`s, as the runner passes it on: whether requests go
+ * through, which of the plan's windows it is about, when that window resets, and how much of it
+ * is used.
+ */
+export interface ClaudeLimitReport {
+  /** `rejected`: the plan is at its limit, and turns fail until `resetsAt`. */
+  status: "allowed" | "allowed_warning" | "rejected";
+  /** The SDK's `rateLimitType`: `five_hour`, `seven_day`, `seven_day_opus`, …; null if unsaid. */
+  window: string | null;
+  /** ISO 8601; null if unsaid. */
+  resetsAt: string | null;
+  /** The share of the window used, from 0 (it can run a little past 1); null if unsaid. */
+  utilization: number | null;
 }
 
 /** The canvas's branch in the sandbox against GitHub. */

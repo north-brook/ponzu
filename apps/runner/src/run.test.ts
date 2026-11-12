@@ -112,6 +112,7 @@ async function setup(
     flush?: () => void;
     checkoutGit?: (cwd: string) => Git;
     telemetry?: RunnerOptions["telemetry"];
+    planLimits?: boolean;
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -128,6 +129,7 @@ async function setup(
     flush: opts.flush,
     ...(opts.checkoutGit ? { checkoutGit: opts.checkoutGit } : {}),
     ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
+    ...(opts.planLimits ? { planLimits: true } : {}),
     stateDir,
     log: (m) => logs.push(m),
     onFatal: (reason) => fatal.push(reason),
@@ -2202,6 +2204,55 @@ test("telemetry that cannot start leaves the runner running, untraced", async ()
   });
   expect(s.run.opts.trace).toBeUndefined();
   expect(s.logs).toContain("analytics could not start: no PostHog here");
+});
+
+/* ------------------------------------------------------------------ */
+/* Claude plan limits                                                  */
+/* ------------------------------------------------------------------ */
+
+const SESSION_FULL = {
+  status: "rejected",
+  window: "five_hour",
+  resetsAt: "2026-11-12T21:00:00.000Z",
+  utilization: 1,
+} as const;
+const WEEK_WARNING = {
+  status: "allowed_warning",
+  window: "seven_day",
+  resetsAt: "2026-11-16T09:00:00.000Z",
+  utilization: 0.81,
+} as const;
+
+test("on a subscription, what Claude Code says of the plan's limits goes with the state, once each", async () => {
+  const s = await setup({ planLimits: true, timing: { heartbeatMs: 10 } });
+  s.run.ready();
+  // Two windows inside one gap: neither is lost.
+  s.run.emit({ type: "limit", limit: SESSION_FULL });
+  s.run.emit({ type: "limit", limit: WEEK_WARNING });
+  const said = () => s.api.states.flatMap((st) => (st.claudeLimit ? [st.claudeLimit] : []));
+  await until(() => said().length === 2);
+  expect(said()).toEqual([SESSION_FULL, WEEK_WARNING]);
+
+  // The same news again is not news; heartbeats carry none.
+  s.run.emit({ type: "limit", limit: { ...SESSION_FULL } });
+  const before = s.api.states.length;
+  await until(() => s.api.states.length >= before + 3);
+  expect(said()).toHaveLength(2);
+
+  // The window reset: that is news.
+  const reset = { ...SESSION_FULL, status: "allowed", utilization: 0.02 } as const;
+  s.run.emit({ type: "limit", limit: reset });
+  await until(() => said().length === 3);
+  expect(said()[2]).toEqual(reset);
+});
+
+test("on an API key, the runner reports no limit whatever Claude Code says", async () => {
+  const s = await setup({ timing: { heartbeatMs: 10 } });
+  s.run.ready();
+  s.run.emit({ type: "limit", limit: SESSION_FULL });
+  const before = s.api.states.length;
+  await until(() => s.api.states.length >= before + 3);
+  expect(s.api.states.every((st) => st.claudeLimit === undefined)).toBe(true);
 });
 
 /* ------------------------------------------------------------------ */
