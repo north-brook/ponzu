@@ -139,6 +139,8 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
     await open("design-opening");
     const { before, frames, animations } = await stepArrival(page, "action");
     expect(animations.map((a) => a.id)).toEqual(["arrival-content"]);
+    // Its room is already there: nothing to wait for, it starts in the frame it lands.
+    expect(animations[0]!.delay).toBe(0);
     expectStill(before, frames);
     expectFadesIn(frames, MERGE);
     // It rises a hair as it comes, and rests on the line it will keep.
@@ -173,6 +175,73 @@ describe.skipIf(!chromiumPath)("a design opening, its answers late", () => {
     expectGlide(frames, ME, was, rest.pieces[ME]!.x);
     expectStill(before, frames, [ME]);
     expectFadesIn(frames, "img[Sam]");
+  });
+
+  test("an action shown becoming another: the new one fades in as its room eases, never cut", async () => {
+    await open("design-opening");
+    await stepArrival(page, "action");
+    const { before, frames, animations } = await stepArrival(page, "action:update_branch");
+    expect(animations.map((a) => a.id).sort()).toEqual(["arrival-content", "arrival-room"]);
+    const markWas = before.pieces[MARK]!.x;
+    expectGlide(frames, MARK, markWas, frames.at(-1)!.pieces[MARK]!.x);
+    expectFadesIn(frames, "button[Update branch]");
+    // Drawn whole (below), not cut by its room, and clear of the mark once it can be made out:
+    // what is still to open is by then within the gap between them (a hair over the mark's
+    // padding while it is the faintest ghost).
+    for (const f of frames) {
+      const b = f.pieces["button[Update branch]"]!;
+      const mark = f.pieces[MARK]!;
+      const clear = b.x - (mark.x + mark.width);
+      if (b.opacity > 0.25) expect(clear).toBeGreaterThanOrEqual(-0.5);
+      else if (b.opacity > 0.01) expect(clear).toBeGreaterThan(-3);
+    }
+    expectStill(before, frames, [MARK, "img[", SHARE, MERGE, "button[Update"]);
+    // Back to Merge, looked at as it starts: its room eases, unclipped.
+    const overflow = await page.evaluate(() => {
+      window.galleryArrive!("action:merge");
+      const room = document.querySelector('[data-arrival="action"]')!;
+      const moving = room.getAnimations().some((a) => a.id === "arrival-room");
+      return moving ? getComputedStyle(room).overflow : null;
+    });
+    expect(overflow).toBe("visible");
+  });
+
+  test("another answer landing while people join neither restarts them nor clips them", async () => {
+    await open("design-opening");
+    // Halfway through their rooms opening (held there), the pages land: a render of the whole
+    // chrome while the people are still moving.
+    const { mid, after, rooms } = await page.evaluate(() => {
+      const look = () => {
+        const room = document.querySelector('[data-arrival="presence"]')!.getBoundingClientRect();
+        const first = document.querySelector('header [role="img"][aria-label]')!;
+        const me = document.querySelector('[aria-label="Bryce (you)"]')!;
+        return {
+          left: room.x,
+          width: room.width,
+          first: first.getBoundingClientRect().x,
+          me: me.getBoundingClientRect().x,
+        };
+      };
+      const known = new Set(document.getAnimations());
+      window.galleryArrive!("people");
+      for (const a of document.getAnimations().filter((a) => !known.has(a))) {
+        a.pause();
+        a.currentTime = 110;
+      }
+      const mid = look();
+      const seen = new Set(document.getAnimations());
+      window.galleryArrive!("pages");
+      const rooms = document
+        .getAnimations()
+        .filter((a) => !seen.has(a) && a.id.startsWith("arrival-room")).length;
+      return { mid, after: look(), rooms };
+    });
+    // The people's room follows theirs rather than easing again from where it was.
+    expect(rooms).toBe(0);
+    expect(Math.abs(after.width - mid.width)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(after.me - mid.me)).toBeLessThanOrEqual(0.5);
+    // Nothing of theirs outside their room, where it would be cut.
+    expect(after.first).toBeGreaterThanOrEqual(after.left - 0.5);
   });
 
   test("the action leaving is the arrival reversed: it fades, its room closes, the mark glides back", async () => {

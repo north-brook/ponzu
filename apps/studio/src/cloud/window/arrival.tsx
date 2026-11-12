@@ -16,7 +16,8 @@ import { cn } from "../ui/cn.ts";
  * --ease-out): its room opens, so its neighbours glide aside rather than jump, and it fades in,
  * rising a hair, in place at the room's still edge, a fifth of the way into the opening. Leaving
  * is the same gesture the other way: it fades and sinks, and its room closes. A change of width
- * while shown (Merge becoming Update branch) eases the room from the old width to the new.
+ * while shown eases the room from the old width to the new; where what it shows is another thing
+ * (`swap`: Merge becoming Update branch), the new one fades in as the room eases, as on arriving.
  * `placeholder` holds the room, quiet and unseen, for something expected but not yet known, so
  * that when it comes nothing moves unless its width differs, and the room closes if it doesn't.
  *
@@ -66,6 +67,7 @@ export function Arrival({
   clip = true,
   className,
   name,
+  swap,
 }: {
   /** Whether it is there. Once false, what it showed stays while it leaves. */
   show: boolean;
@@ -81,6 +83,12 @@ export function Arrival({
   className?: string;
   /** `data-arrival` on the room, for tests. */
   name?: string;
+  /**
+   * What it shows, by name (the action's kind). When this changes while it is shown (Ready
+   * becoming Create PR), the new one arrives in place of the old: it fades in, rising, as the
+   * room eases to its width, so no word is seen cut by a room still on its way.
+   */
+  swap?: string;
 }) {
   const scope = useContext(Scope);
   const [within] = useState(() => ({ painted: false }));
@@ -111,7 +119,7 @@ export function Arrival({
           ? placeholder
           : null;
 
-  const last = useRef<{ width: number; phase: Phase } | null>(null);
+  const last = useRef<{ width: number; phase: Phase; swap?: string | undefined } | null>(null);
   const roomMove = useRef<Animation | null>(null);
   const contentMove = useRef<Animation | null>(null);
 
@@ -119,20 +127,43 @@ export function Arrival({
     const room$ = outer.current;
     const content$ = inner.current;
     if (!room$ || !content$) return;
-    const natural = content == null ? 0 : content$.getBoundingClientRect().width;
+    // An arrival inside this one opening its own room (someone joining the people) is already
+    // the movement: this room follows it, so it is measured as it will rest, and doesn't ease
+    // itself as well (which, started from where it was, would clip what is opening inside it).
+    const nested = content$
+      .getAnimations({ subtree: true })
+      .filter(
+        (a) =>
+          a.id.startsWith("arrival-room") &&
+          (a.effect as KeyframeEffect | null)?.target !== room$ &&
+          a.playState !== "finished",
+      );
+    const natural =
+      content == null
+        ? 0
+        : content$.getBoundingClientRect().width +
+          nested.reduce((sum, a) => {
+            const target = (a.effect as KeyframeEffect).target as Element;
+            const end = Number.parseFloat(
+              String((a.effect as KeyframeEffect).getKeyframes().at(-1)?.width ?? "0"),
+            );
+            return sum + end - target.getBoundingClientRect().width;
+          }, 0);
     // What comes inside it with it is part of its arrival; what comes after it is shown arrives
     // on its own (its pieces' layout runs before this, so they read the scope as it was).
     within.painted = phase === "shown";
     // Made after the chrome's first paint (someone joining): it arrives from nothing.
     const was = last.current ?? (scope.painted ? { width: 0, phase: "none" as Phase } : null);
-    last.current = { width: natural, phase };
+    last.current = { width: natural, phase, swap };
     // The chrome's first paint: whatever is there is simply there.
     if (!was) return;
-    const entering = phase === "shown" && was.phase !== "shown";
+    const entering =
+      phase === "shown" && (was.phase !== "shown" || (swap !== undefined && swap !== was.swap));
     const startsLeaving = phase === "leaving" && was.phase !== "leaving";
     const resized =
       (phase === "shown" || phase === "held") &&
       was.phase === phase &&
+      nested.length === 0 &&
       Math.abs(natural - was.width) > 0.5;
     const unheld = phase === "none" && was.phase === "held";
     if (!entering && !startsLeaving && !resized && !unheld) return;
@@ -161,9 +192,15 @@ export function Arrival({
     const to = startsLeaving || unheld ? 0 : natural;
     const closing = startsLeaving || unheld;
 
-    if (room && Math.abs(from - to) > 0.5) {
+    const opens = room && Math.abs(from - to) > 0.5;
+    if (opens) {
       roomMove.current?.cancel();
-      if (clip) room$.style.overflow = "clip";
+      // Clipped while it opens from nothing or closes to it, so nothing spills over what is
+      // beside it. Not when something arrives into a room already partly there (another action
+      // than held, or in place of the one shown): hidden until a fifth in, by when the room is
+      // within its gap of whole, it would only be seen cut.
+      const into = entering && from > 0;
+      room$.style.overflow = clip && !into ? "clip" : "";
       const move = room$.animate([{ width: `${from}px` }, { width: `${to}px` }], {
         duration,
         easing,
@@ -198,7 +235,8 @@ export function Arrival({
         ],
         {
           duration,
-          delay: room ? duration * ARRIVAL_CONTENT_DELAY : 0,
+          // A fifth of the way into its room's opening; into room already held, at once.
+          delay: opens ? duration * ARRIVAL_CONTENT_DELAY : 0,
           easing,
           fill: "backwards",
           id: "arrival-content",
@@ -219,7 +257,7 @@ export function Arrival({
         },
       );
       contentMove.current = fade;
-      if (!room || Math.abs(from - to) <= 0.5) fade.finished.then(gone, () => {});
+      if (!opens) fade.finished.then(gone, () => {});
     }
   });
 

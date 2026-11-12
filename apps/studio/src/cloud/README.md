@@ -120,25 +120,33 @@ GitHub through the API (`pullRequest`). In that order of preference, each is:
   the last read said of whether it can merge), so the head confirms it without a change. The
   pull request's read is TanStack Query's, kept half an hour (`gcTime`), and the design's store
   starts from it, so a design opened again shows its action from the first frame while the read
-  on opening confirms it; the read goes out as the design opens, not after its head. The pointer
-  resting on a row (80 ms) or the keyboard reaching it asks for that read ahead (`onIntent`,
-  `prefetchQuery`), and the read on opening stands on an answer under ten seconds old.
+  on opening confirms it; the read goes out as the design opens, not after its head. Until that
+  read answers, the kept answer is offered only while it agrees with the row and the head (the
+  same number, state and checks: `offeredTab`), so a pull request merged or closed while the
+  design was away never offers Merge; otherwise its room is held as on a first opening. The
+  pointer resting on a row, or the keyboard stopping on it, for 80 ms asks for that read ahead
+  (`onIntent`, `prefetchQuery`), and the read on opening stands on an answer under ten seconds
+  old.
 - **Room held.** While the row says the pull request is open or a draft, the room its likely
   action takes (`nextAction` on the row's summary) is held unseen (`ActionRoom`), so the mark
   stands where it will; the action fades into it, and only if its words differ does the room
-  ease to their width. No skeleton bars in the chrome.
+  ease to their width while they fade in. No skeleton bars in the chrome.
 - **Arriving on purpose** (`window/arrival.tsx`). What can't be known ahead arrives as one
   movement on the panes' clock (`--dur-pane`, `--ease-out`): its room opens from its still edge
   (the cluster's right, the name's left), what is beside it glides aside once, and it fades in,
   rising 2 px, starting a fifth of the way in. Pieces that come in one answer move together;
   pieces that come apart don't restart each other (a room changing mid-movement goes on from
-  where it is). Leaving is the same gesture back: it fades and sinks, its room closes. The pages
-  and the new-page + only fade, since nothing beside them moves. Someone joining the people opens
+  where it is; a room inside another that is opening, a person joining, carries it rather than
+  both easing). An action that becomes another while shown (Ready becoming Create PR) arrives in
+  place of it, the new words fading in as the room eases (`swap`). Leaving is the same gesture
+  back: it fades and sinks, its room closes. The pages and the new-page + only fade, since
+  nothing beside them moves. Someone joining the people opens
   their own room; those who were there at the first paint are simply there. A design opened anew
   is a new chrome: what it has at once shows at once, never as an entrance, so switching between
   two designs replays nothing they both have. Under reduced motion nothing eases or travels, and
   the end state is there at once. An entrance never holds back what is ready: the room starts
-  opening in the frame the answer lands.
+  opening in the frame the answer lands, and into a room already held the action starts fading
+  in that frame too.
 
 The pull request tab, opened while its read is on its way, shows its skeleton and then settles
 what GitHub said in over it (`settle`); opened with the last answer kept, it is simply there.

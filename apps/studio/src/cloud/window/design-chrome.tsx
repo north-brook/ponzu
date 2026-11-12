@@ -91,6 +91,7 @@ export function DesignChrome({
       </Arrival>
       <Arrival
         show={action !== null}
+        swap={action?.kind}
         name="action"
         placeholder={
           actionExpected ? (
