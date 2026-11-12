@@ -172,6 +172,11 @@ describe("DELETE /v1/canvases/:id takes the canvas's files with it", () => {
     const [done] = await jobsFor(CANVAS_FILES_DELETE_JOB, key);
     expect(done).toMatchObject({ attempts: 2, failed_at: null });
     expect(done!.completed_at).not.toBeNull();
+    // The purge's attempts and one more, so the final pass always has one left.
+    const [attempts] = await rows(
+      `select max_attempts from jobs where kind = '${CANVAS_FILES_DELETE_JOB}' and key = '${key}'`,
+    );
+    expect(attempts!.max_attempts).toBe(CANVAS_FILES_DELETE_ATTEMPTS + 1);
   });
 
   test("deleted twice at once: one job, one event, and both requests are answered as done", async () => {

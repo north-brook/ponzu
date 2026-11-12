@@ -97,7 +97,11 @@ export async function runCanvasFilesDeleteJob(
   const { deleted, done } = await deleteUnder(deps.storage, `${assetKey}/`);
   // Ids only: the asset key is the capability to the files, so it is never logged.
   deps.log.info("canvas_files_deleted", { deleted, done });
+  // A job with `until` keeps its last attempt for that final pass (`deleteCanvasAndFiles` gives
+  // it one more), so the purge itself runs out of attempts one sooner and the pass still comes.
+  const reserved = until === undefined ? 0 : 1;
   const last = job !== undefined && job.attempts >= job.maxAttempts;
+  const lastPurge = job !== undefined && job.attempts >= job.maxAttempts - reserved;
   if (done) {
     const now = deps.clock.now();
     // Empty for now, but an address signed before the delete may still land bytes here.
@@ -106,7 +110,7 @@ export async function runCanvasFilesDeleteJob(
     }
     return;
   }
-  if (last) {
+  if (lastPurge) {
     throw new Error(`Deleted ${deleted} files on the last attempt; more remain.`);
   }
   throw new RetryLater(FILES_RETRY_MS, `Deleted ${deleted} files; more remain.`);
@@ -125,7 +129,8 @@ export async function deleteCanvasAndFiles(deps: RunNowDeps, canvasId: string): 
     canvasId,
     job: {
       kind: CANVAS_FILES_DELETE_JOB,
-      maxAttempts: CANVAS_FILES_DELETE_ATTEMPTS,
+      // One more than the purge gets: the final pass at `until` always has an attempt left.
+      maxAttempts: CANVAS_FILES_DELETE_ATTEMPTS + 1,
       runAt: new Date(deps.clock.now()),
       lockedBy: worker,
       until: new Date(deps.clock.now() + UPLOADS_SETTLED_MS),

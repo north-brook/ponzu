@@ -2509,7 +2509,8 @@ the row is never gone without the job that deletes its files. The request then r
 once, past its answer; a function that dies first leaves it to the minute's cron. An upload
 address signed before the delete can still land bytes under the key until it runs out, so once
 the key is empty the job comes back for one last pass, fifteen minutes after the delete (the
-upload address's ten minutes, with five over), and deletes whatever came late. A canvas
+upload address's ten minutes, with five over), and deletes whatever came late. That pass has an
+attempt of its own, an eleventh, so a purge that needs all ten still gets it. A canvas
 deleted twice finds no row the second time and records nothing. A pull request's pictures are
 not under the asset key and stay: its description on GitHub still shows them.
 

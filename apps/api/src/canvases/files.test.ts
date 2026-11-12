@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { enqueueJob, newAssetKey } from "@ponzu/db";
 import { FakeClock } from "@ponzu/sandbox";
+import { RetryLater } from "../jobs/retry.ts";
 import { runDueJobs } from "../jobs/run.ts";
 import { createTestApp, MemoryStorage } from "../testing/index.ts";
 import {
@@ -10,6 +11,7 @@ import {
   deleteUnder,
   FILES_PER_ATTEMPT,
   FILES_RETRY_MS,
+  runCanvasFilesDeleteJob,
 } from "./files.ts";
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -206,6 +208,39 @@ describe("the job", () => {
       kind: CANVAS_FILES_DELETE_JOB,
     });
     expect(JSON.stringify(t.logs)).not.toContain(key);
+  });
+
+  test("a purge that needs every attempt still keeps one for the final pass at until", async () => {
+    // What deleteCanvasAndFiles records: the purge's attempts and one more for the final pass.
+    const job = {
+      attempts: CANVAS_FILES_DELETE_ATTEMPTS,
+      maxAttempts: CANVAS_FILES_DELETE_ATTEMPTS + 1,
+    };
+    const until = t.clock.now() + 60_000;
+
+    // Emptied on the purge's last attempt, before until: it waits for the final pass.
+    const emptied = newAssetKey();
+    fill(t.storage, emptied, 1);
+    const wait = runCanvasFilesDeleteJob(t.deps, { assetKey: emptied, until }, job);
+    await expect(wait).rejects.toBeInstanceOf(RetryLater);
+
+    // Still not empty on the purge's last attempt: a failure, not a wait into the final pass.
+    const full = newAssetKey();
+    fill(t.storage, full, FILES_PER_ATTEMPT + 1);
+    const failed = runCanvasFilesDeleteJob(t.deps, { assetKey: full, until }, job);
+    await expect(failed).rejects.toThrow("more remain");
+    await expect(failed).rejects.not.toBeInstanceOf(RetryLater);
+
+    // The final pass itself, at until, completes.
+    t.clock.advance(60_000);
+    await runCanvasFilesDeleteJob(
+      t.deps,
+      { assetKey: emptied, until },
+      {
+        ...job,
+        attempts: job.maxAttempts,
+      },
+    );
   });
 
   test("one job waits per asset key, however often it is recorded", async () => {
