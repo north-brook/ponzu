@@ -38,8 +38,10 @@ export async function runAccountForgetJob(
   payload: unknown,
 ): Promise<void> {
   const { userId, workosUserId } = Payload.parse(payload);
-  // A retry can come hours later. Signing in again meanwhile made a new account on the same
-  // WorkOS user, which is now theirs to keep: deleting it would break the new account's sign-in.
+  // While this job waits, sign-in refuses this WorkOS user (auth/sign-in.ts), so no account is
+  // made on it between this check and the delete. The check is for one made before the job
+  // was recorded, by a sign-in that raced the deletion: it is theirs to keep, and deleting it
+  // would break the new account's sign-in.
   if (workosUserId && (await getUserByWorkosId(deps.db, workosUserId))) {
     deps.log.info("workos_forget_skipped", { userId, reason: "signed_in_again" });
   } else if (workosUserId) {
