@@ -16,7 +16,7 @@ import { askSteerGates, type SteerRequest } from "./gates.ts";
 import { MAINTENANCE_MESSAGE, passesReadOnly } from "./maintenance.ts";
 
 /*
- * The maintenance switch, PONZU_MAINTENANCE (production design §1.5): wakes paused, and read
+ * The maintenance switch, PONZU_MAINTENANCE (production spec §1.5): wakes paused, and read
  * only. One app on PGlite, the fake sandboxes and the test's clock; each test sets the switch
  * as a deployment's environment would, and it is read on every request and every wake.
  */

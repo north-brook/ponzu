@@ -4,14 +4,14 @@ import type { NoticeName } from "./analytics/events.ts";
 import type { Host } from "./host.ts";
 
 /*
- * Ponzu's maintenance switch, as the window says it (production design §1.5). While the API is
+ * Ponzu's maintenance switch, as the window says it (production spec §1.5). While the API is
  * read-only it answers every write with 503 `maintenance`; the window says why once, over the
  * work, and lets people go on looking. A canvas's edits wait and go in when it is back, and a
  * message that didn't go can be sent again. Wakes paused alone is said in the thread's foot
  * (`sandboxLine`), not here: nothing a person sends is refused then.
  */
 
-/** The notice `maintenance`, word for word from the design. */
+/** The notice `maintenance`, word for word from the spec. */
 export const MAINTENANCE_NOTICE =
   "Ponzu is updating. Your canvases are safe; you can look around, and changes come back in a few minutes.";
 

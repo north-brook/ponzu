@@ -14,7 +14,7 @@ import { Banner } from "./notices.tsx";
 
 /*
  * The maintenance switch in the window: the notice over the work while Ponzu is read-only, and
- * the thread's foot while wakes are paused, each in the production design's words.
+ * the thread's foot while wakes are paused, each in the production spec's words.
  */
 
 const maintenance = new ApiError(
@@ -23,7 +23,7 @@ const maintenance = new ApiError(
   "Ponzu is updating. Try again in a few minutes.",
 );
 
-test("the notice is the design's sentence, said over the work", () => {
+test("the notice is the spec's sentence, said over the work", () => {
   expect(MAINTENANCE_NOTICE).toBe(
     "Ponzu is updating. Your canvases are safe; you can look around, and changes come back in a few minutes.",
   );

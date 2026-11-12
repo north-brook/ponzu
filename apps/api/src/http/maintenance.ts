@@ -33,7 +33,7 @@ import { ApiError } from "./errors.ts";
  * while read only holds back its runner's writes cannot hand them over on its way out.
  */
 
-/** The 503 `maintenance` message, word for word from the production design (§1.5). */
+/** The 503 `maintenance` message, word for word from the production spec (§1.5). */
 export const MAINTENANCE_MESSAGE = "Ponzu is updating. Try again in a few minutes.";
 
 /** What a write answers while Ponzu is read-only. */
