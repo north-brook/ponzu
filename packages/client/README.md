@@ -12,7 +12,7 @@ a browser and Hermes.
 | `@ponzu/client/query` | TanStack Query for what is asked by request: `createQueryClient`, `ponzuQueries`, `ponzuMutations`, `invalidateFromLive` |
 | `@ponzu/client/canvas` | `CloudSource`, the canvas's source: in the studio, and on the phone's React Native side |
 | `@ponzu/client/testing` | `createFakeBackend`, `FakeClock`, `FakeRealtime`: all of the above in memory |
-| `@ponzu/client/model` | the product's rules, so the Mac and the phone show the same ones: the UI's model and the mapping of API rows onto it, row indicators and order, the filter, search highlighting, a pull request's next action, what keeps someone from steering, the thread's rows, answering a question, setup's gates, billing's words and numbers |
+| `@ponzu/client/model` | the product's rules, so the Mac and the phone show the same ones: the UI's model and the mapping of API rows onto it, row indicators and order, the filter, search highlighting, a pull request's next action, what keeps someone from steering and each wake gate's blocker words, the thread's rows, answering a question, setup's gates, billing's words and numbers |
 
 The model is pure: no React, no DOM, no Node, and it runs nothing from the rest of this package
 but `ApiError` (`bundle.test.ts` holds it to that). Each module is also its own entry,

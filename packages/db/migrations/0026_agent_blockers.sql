@@ -1,0 +1,3 @@
+ALTER TABLE "canvases" DROP CONSTRAINT "canvases_agent_blocker_check";--> statement-breakpoint
+ALTER TABLE "canvases" ADD COLUMN "agent_blocked_until" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "canvases" ADD CONSTRAINT "canvases_agent_blocker_check" CHECK ("canvases"."agent_blocker" in ('claude_not_connected', 'claude_expired', 'claude_owner_left', 'sandbox_busy', 'sandbox_failed', 'paused', 'credits_used_up', 'cap_reached', 'payment_failed', 'claude_limited'));

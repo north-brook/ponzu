@@ -16,7 +16,8 @@ filter.ts         shared: the sidebar filter
 search.ts         shared: match highlighting, keyboard selection over results
 pull-request.ts   shared: the next action and the pull request mark's state
 time.ts           the clock components read (useNow); ages, durations and a time of day are shared
-gate.ts           shared: what keeps someone from steering a canvas (read access, the owner's Claude), in words
+gate.ts           shared: what keeps someone from steering a canvas (read access, the owner's Claude), in words,
+                  and each wake gate's blocker line (paused, billing, a Claude plan's limit)
 claude.ts         shared: the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,

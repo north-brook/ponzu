@@ -12,6 +12,7 @@ export const DOWNLOAD = "/download";
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
+export const PRICING = "/pricing";
 /** Every release's notes since Ponzu Cloud's first, both apps (app/changelog). */
 export const CHANGELOG = "/changelog";
 /** Ponzu for iPhone: /iphone, which forwards to the beta or the App Store (next.config.ts). */
@@ -31,6 +32,7 @@ export interface SiteLink {
 
 /** The header's links, after the lockup and before the Download button. GitHub gets its mark. */
 export const NAV: readonly SiteLink[] = [
+  { label: "Pricing", href: PRICING },
   { label: "Changelog", href: CHANGELOG },
   { label: "GitHub", href: REPO },
 ];
@@ -42,6 +44,7 @@ export const FOOTER: readonly { title: string; links: readonly SiteLink[] }[] = 
     links: [
       { label: "Download", href: DOWNLOAD },
       { label: "Ponzu for iPhone", href: IPHONE },
+      { label: "Pricing", href: PRICING },
       { label: "Changelog", href: CHANGELOG },
     ],
   },
