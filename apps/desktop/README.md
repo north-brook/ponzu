@@ -86,6 +86,7 @@ src/
   token-store.ts    tokens in a file only safeStorage can read, or in memory without a keychain
   session-file.ts   a developer's saved session, opt in
   deep-links.ts     ponzu:// links (ponzu-dev://)
+  notifications.ts  the Mac's banners and dock badge, as the studio asks; this install's id
   data-folder.ts    each app's data folder, and the smoke check's throwaway one
   packaging.ts      Ponzu Dev's electron-builder configuration, from the release's
   carry-over.ts     Ponzu Dev's first launch after it was Ponzu Preview
@@ -149,15 +150,30 @@ ponzu://canvas/<canvas id>?page=<page id>&artboard=<artboard id>   open a canvas
 ponzu://github/setup?result=installed&workspace=<workspace id>     back from GitHub's install
 ponzu://github/setup?result=requested | pending | sign_in | failed
 ponzu://billing/card?setup=<setup id>&result=added | cancelled     back from adding a card
-ponzu://settings?section=usage | notifications | account
+ponzu://settings?section=usage | notifications | account&n=<notification id>
 ```
 
 The grammar is every client's, in `@ponzu/core/links` (docs/cloud.md, "Clients"), and
-`deep-links.ts` only reads it. A canvas link may also carry `open`, `question`, `comment`,
-`message` and `n`, which the studio does not act on yet, and `ponzu://design/<id>` opens the
-same canvas. The studio acts on canvas and GitHub links today; a card's and a settings link
-are heard but nothing answers them until billing and notifications add their listeners. A
-sign-in's way back (`auth/callback`) is the iPhone's, so the Mac drops it.
+`deep-links.ts` only reads it. A canvas link may also carry `open` (the studio opens the
+thread, the pull request tab, or with `comment` the comment on its pin), `question`, `message`
+and `n`, the notification it came from, which the studio reads; `ponzu://design/<id>` opens the
+same canvas. The studio acts on canvas, GitHub and settings links today; a card's is
+heard but nothing answers it until billing adds its listener. A sign-in's way back
+(`auth/callback`) is the iPhone's, so the Mac drops it.
+
+## Notifications
+
+`notifications.ts` shows the Mac's own banners and sets the dock's number, as the studio asks
+over the bridge (`ponzu:notify:show`, `:remove`, `:badge`; a banner macOS refused comes back
+on `:failed`). Nothing is pushed to a Mac: the studio watches the person's live inbox and says
+what to show (docs/cloud.md, "Notifications"). What it sends is checked as if anyone had sent
+it, and anything that isn't exactly a notice is dropped. Up to 50 shown notifications are kept
+hold of, since Electron's loses its click once collected; a click brings Ponzu forward and hands
+the banner's link to the studio like any other link. The install's id, which the API knows this
+Mac by, is a random UUID made once in the app's data folder (`install-id`): it opens nothing,
+so it is a plain file rather than a keychain item, which a launch with nobody signed in never
+asks for. An unsigned build's banners are refused by macOS, so banners are proven on a signed
+build. The smoke check shows none.
 
 They arrive on a cold start (`open-url` on the Mac, the command line elsewhere) and while
 running (`second-instance`), and wait until the studio listens, which it does while someone

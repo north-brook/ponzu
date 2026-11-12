@@ -46,7 +46,7 @@ export function parsePushData(raw: unknown): PushData | null {
 
 /** Where a tap on a ping with `data` goes. */
 export function linkOfPush(data: PushData): AppLink {
-  if (data.o === "usage") return { kind: "settings", section: "usage" };
+  if (data.o === "usage") return { kind: "settings", section: "usage", notificationId: data.n };
   const link: CanvasLink = {
     kind: "canvas",
     canvasId: data.c!,

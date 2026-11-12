@@ -148,8 +148,24 @@ export const pingPrefs: PingPrefs = {
 };
 export const iphone: PingDevice = {
   id: "dev_iphone",
+  kind: "iphone",
   name: "iPhone 16 Pro",
   pings: true,
+  blocked: false,
+};
+/** The Mac Settings is open on, and another of the person's. */
+export const thisMac: PingDevice = {
+  id: "dev_mac",
+  kind: "mac",
+  name: "This Mac",
+  pings: true,
+  blocked: false,
+};
+export const otherMac: PingDevice = {
+  id: "dev_mac_studio",
+  kind: "mac",
+  name: "Ada's Mac Studio",
+  pings: false,
   blocked: false,
 };
 

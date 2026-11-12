@@ -182,6 +182,8 @@ export interface SettingsData {
   /** Put down to nobody, beside `byPerson`. */
   unattributedCredits?: number;
   byCanvas?: CanvasUsage[];
+  /** Ponzu can send email: Notifications shows the daily digest's row. Shown unless false. */
+  emailAvailable?: boolean;
 }
 
 export const TEAM_SETTINGS: SettingsData = {
@@ -266,6 +268,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
           set({ devices: data.devices.map((d) => (d.id === device.id ? { ...d, pings } : d)) })
         }
         email={s.email}
+        emailAvailable={data.emailAvailable ?? true}
         team={data.workspaces.some((w) => w.kind === "org")}
         onGetIphone={ignore}
       />

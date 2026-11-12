@@ -6,6 +6,7 @@ import {
   type BridgeError,
   CHANNELS,
   type DeepLink,
+  type MacNotice,
   type MenuCommand,
   type PonzuDesktop,
   type SessionPersistence,
@@ -84,6 +85,24 @@ const desktop: PonzuDesktop = {
   },
   openExternal: (url) => ipcRenderer.send(CHANNELS.openExternal, url),
   comeForward: () => ipcRenderer.send(CHANNELS.comeForward),
+  notifications: {
+    supported: argument("notify") === "1",
+    installId: argument("install"),
+    deviceName: deviceName(),
+    show: (notice: MacNotice) => ipcRenderer.send(CHANNELS.notifyShow, notice),
+    remove: (ids) => ipcRenderer.send(CHANNELS.notifyRemove, ids),
+    setBadge: (count) => ipcRenderer.send(CHANNELS.notifyBadge, count),
+    onFailed: (listener) => on<string>(CHANNELS.notifyFailed, listener),
+  },
 };
+
+/** The computer's name the main process passed, URI-encoded; null when it passed none. */
+function deviceName(): string | null {
+  try {
+    return decodeURIComponent(argument("device")) || null;
+  } catch {
+    return null;
+  }
+}
 
 contextBridge.exposeInMainWorld("ponzuDesktop", desktop);

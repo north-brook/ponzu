@@ -102,10 +102,11 @@ describe("where a tap goes", () => {
     ).toEqual({
       kind: "settings",
       section: "usage",
+      notificationId: "ntf_4",
     });
     expect(
       linkOfPush({ v: 1, n: "ntf_5", k: "billing_free_used", c: "cnv_1", o: "usage" }),
-    ).toEqual({ kind: "settings", section: "usage" });
+    ).toEqual({ kind: "settings", section: "usage", notificationId: "ntf_5" });
   });
 
   test("a tap's link survives being written and read again exactly", () => {

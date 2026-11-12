@@ -450,7 +450,10 @@ export class FakeBackend {
       },
       withdraw: (questionId) => {
         const question = canvas.questions.find((q) => q.id === questionId);
-        if (question?.status === "open") question.status = "cancelled";
+        if (question?.status === "open") {
+          question.status = "cancelled";
+          this.settings.resolve(canvas.id, question.id);
+        }
         if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "idle";
         this.touch(canvas);
       },
@@ -1050,6 +1053,13 @@ export class FakeBackend {
             checkAnswer(question.body, body);
             question.status = "answered";
             question.answer = { userId: person.id, body };
+            // As the API: its needs-you rows resolve for everyone, and the one who answered
+            // has read theirs.
+            this.settings.resolve(canvas.id, question.id);
+            const own = this.settings
+              .inboxOf(person.id)
+              .filter((row) => row.kind === "needs_you" && row.link.questionId === question.id);
+            if (own.length) this.settings.read(person.id, { ids: own.map((row) => row.id) });
             // The runner takes the answer at once, and works again.
             if (!canvas.questions.some((q) => q.status === "open")) canvas.agent.state = "working";
             this.touch(canvas);

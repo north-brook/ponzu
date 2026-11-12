@@ -37,6 +37,7 @@ function hostIn(state: SessionState): Host {
     },
     openExternal() {},
     docStorage: null,
+    notifications: null,
   };
 }
 

@@ -70,6 +70,14 @@ export interface AppEvents {
   "hotkey used": { hotkey: string };
   "settings section viewed": { section: string };
   "notice shown": { notice: NoticeName };
+
+  /**
+   * A banner the Mac showed from the person's inbox (the phone shows its own, so only the Mac's
+   * are counted here), by the notification's kind: never its words.
+   */
+  "notification shown": { kind: string; surface: "mac" };
+  /** A banner clicked, and how long after the notification was made. */
+  "notification opened": { kind: string; surface: "mac"; age_ms?: number };
 }
 
 export type AppEventName = keyof AppEvents;

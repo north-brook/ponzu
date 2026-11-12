@@ -211,6 +211,8 @@ a canvas is its `canvas_id`.
 | `hotkey used` | `hotkey`: `mod+k`, `mod+n`, `mod+,`, `mod+j` | the window's ⌘ shortcuts |
 | `settings section viewed` | `section` | |
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
+| `notification shown` | `kind`, `surface`: `mac` | the Mac showed a banner from the person's inbox; never its title or body |
+| `notification opened` | `kind`, `surface`: `mac`, `age_ms` | a banner was clicked; `age_ms` is how long after the notification was made |
 | `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 

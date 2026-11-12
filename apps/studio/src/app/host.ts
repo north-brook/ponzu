@@ -53,4 +53,12 @@ export interface Host {
   openExternal(url: string): void;
   /** Where the last canvases opened are kept for showing offline, while someone is signed in. */
   docStorage: KeyValueStorage | null;
+  /**
+   * The Mac's own banners and dock badge, and this install as the API knows it
+   * (app/notifications.ts); null where there are none (a browser, an older shell).
+   */
+  notifications: HostNotifications | null;
 }
+
+/** The shell's notifications, with the app's version for registering this install. */
+export type HostNotifications = PonzuDesktop["notifications"] & { appVersion: string | null };

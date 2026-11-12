@@ -2511,11 +2511,11 @@ state.
 
 Settings › Notifications chooses what pings a person and where. What Ponzu tells a person is
 a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
-delivery of that row (`notification_deliveries`), sent through Expo's push service. Questions
-and finished turns write those rows and send their pushes today (see "Sending" below); the
-comment, pull request, lapse, wake and billing pings are not wired yet. Pushes stay off until
+delivery of that row (`notification_deliveries`), sent through Expo's push service. Every
+event in "What is worth a ping" below writes those rows and sends its pushes (see "Sending");
+billing's trigger is built and waits for billing to call it. Pushes stay off until
 `EXPO_ACCESS_TOKEN` is set: without it every planned push is cancelled as `push_off`, and the
-inbox, the Mac and the badge work regardless.
+inbox, the Mac's banners and the badge work regardless.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
@@ -2621,6 +2621,30 @@ badge-only push 30 seconds on (`notification.badge`, keyed by the person, so a b
 push); so does a person whose new needs-you pushed nothing. Every ten minutes the cron reads
 unread rows past three days as `expired`, deletes rows past 30 days, and forgets iPhones unseen
 90 days and Macs unseen 30.
+
+**On the Mac.** Nothing is pushed to a Mac. While Ponzu runs, the studio watches
+`me.notifications` and shows Electron's own notification for a row (`app/notifications.ts`,
+with its rules in `cloud/notify.ts`), and sets the dock's number to `badge`, counted from the
+same rows: needs-you rows whose question is still open, read or not, shown whether or not pings
+are on. A row shows a banner when it is unread, not `muted`, not a needs-you whose question has
+closed, not shown already this launch, made no more than 60 seconds before the app opened and
+no more than ten minutes ago (so opening the app to fifty old rows shows none), this Mac's
+`pings` is on, and the person is not looking at its canvas. A row about the canvas in front of
+the person (the window focused and visible, the canvas open) is read instead, `via: mac`. A
+teammate's comments folding into one row replace its banner rather than add one. A banner goes
+when its row is read, its question closes or the row leaves the inbox. Clicking one brings
+Ponzu forward and follows its link: the canvas with its thread open on the question, its pull
+request tab, or the comment on its pin; a billing ping opens Settings › Plan and usage. Then the
+row is read, `via: mac`, which also cancels the phone's push still waiting its two minutes. At
+each launch and sign-in the studio registers this install as a `macos` device (its install id,
+made once and kept in the app's data folder, and the computer's name without `.local`), sends
+the heartbeat every 60 seconds while the person is at it and at once when the window comes to
+the front, and sends its time zone once when it differs from the one kept. Signing out from the
+sidebar deletes this Mac's device first; signing out from the menu leaves it to be forgotten
+after 30 days unseen. Settings › Notifications › Where lists the person's Macs and iPhones,
+this one first as "This Mac", and the Email row only while `email.available`. macOS shows an
+app's notifications only when the app is signed: Ponzu Local's are refused, which the studio
+logs once and goes on.
 
 **What is worth a ping**, and who gets it. Each goes to the person's devices with `pings` on
 and not `blocked`, never to the person who caused it, and speaks as Ponzu. Someone who can read
@@ -2801,7 +2825,13 @@ host ([analytics.md](analytics.md)). A canvas's images may come from any https h
 do in the runner's previews. The packaged app's Electron fuses refuse to run it as
 Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
-session and everything the studio kept: the canvases last opened and their asset keys.
+session and everything the studio kept: the canvases last opened and their asset keys,
+and clears the dock's number. The bridge's notification channels (`ponzu:notify:show`,
+`:remove`, `:badge` and `:failed`) show a banner, take banners away, set the dock's number
+and report a banner macOS refused; the main process checks what the studio sends as it would
+anything (ids, words of at most 200 characters, a link that is exactly one of ours), keeps up
+to 50 shown notifications so their clicks still arrive, and hands a click's link to the
+studio as it would a `ponzu://` link ("Notifications", "On the Mac").
 
 Links into the apps, one grammar for every client (`packages/core/src/links.ts`,
 `@ponzu/core/links`):
@@ -2811,8 +2841,11 @@ ponzu://canvas/<canvas id>?page=&artboard=&open=thread|pull-request|comment|usag
 ponzu://github/setup?result=installed&workspace=<workspace id>
 ponzu://auth/callback?code=&state=                       the iPhone's sign-in only
 ponzu://billing/card?setup=<setup id>&result=added|cancelled
-ponzu://settings?section=usage|notifications|account
+ponzu://settings?section=usage|notifications|account&n=
 ```
+
+`n` names the notification a link came from (a Mac's banner, a phone's ping), so opening it
+reads it; a billing ping's link is the settings one, to Plan and usage.
 
 A link only asks to show something; one that doesn't parse is dropped, and an optional
 part that isn't an id is left out. Ids are `[A-Za-z0-9_-]{1,64}`. `ponzu://design/<id>`

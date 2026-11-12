@@ -81,6 +81,8 @@ export class FakeSettings {
   readonly timeZones = new Map<string, string>();
   /** When each device was last marked active. */
   readonly activeAt = new Map<string, string>();
+  /** Each device's install id, which registering again finds it by. */
+  private readonly installs = new Map<string, string>();
   private ids = 0;
 
   constructor(private readonly clock: Clock) {}
@@ -285,6 +287,21 @@ export class FakeSettings {
       devices: {
         register: (body) =>
           call(() => {
+            // The same install again (each launch) is the same device, as the API's upsert.
+            const again = mine().find((d) => this.installs.get(d.id) === body.installId);
+            if (again) {
+              const device: Device = {
+                ...again,
+                name: body.name ?? again.name,
+                appVersion: body.appVersion ?? again.appVersion,
+                lastSeenAt: now(),
+              };
+              this.devices.set(
+                userId,
+                mine().map((d) => (d.id === again.id ? device : d)),
+              );
+              return { device };
+            }
             const device: Device = {
               id: `dev_${++this.ids}`,
               platform: body.platform,
@@ -295,6 +312,7 @@ export class FakeSettings {
               lastSeenAt: now(),
               createdAt: now(),
             };
+            this.installs.set(device.id, body.installId);
             this.devices.set(userId, [device, ...mine()]);
             return { device };
           }),

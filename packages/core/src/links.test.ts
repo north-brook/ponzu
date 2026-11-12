@@ -63,6 +63,11 @@ const EXACT: [AppLink, string][] = [
   [{ kind: "settings", section: "usage" }, "ponzu://settings?section=usage"],
   [{ kind: "settings", section: "notifications" }, "ponzu://settings?section=notifications"],
   [{ kind: "settings", section: "account" }, "ponzu://settings?section=account"],
+  // A billing ping opens Plan and usage, and names itself so opening it reads it.
+  [
+    { kind: "settings", section: "usage", notificationId: "ntf_1" },
+    "ponzu://settings?section=usage&n=ntf_1",
+  ],
 ];
 
 describe("every kind, both ways", () => {

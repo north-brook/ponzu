@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import type { SessionState } from "@ponzu/client";
 import {
@@ -10,6 +10,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
+  Notification,
   protocol,
   safeStorage,
   session as sessions,
@@ -44,6 +45,13 @@ import { registerAppImage } from "./linux.ts";
 import { startMainTelemetry } from "./main-telemetry.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
 import { externalLink, isStudio } from "./navigation.ts";
+import {
+  createNotifier,
+  deviceNameOf,
+  installIdIn,
+  type NotificationClass,
+  type Notifier,
+} from "./notifications.ts";
 import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
@@ -215,6 +223,19 @@ const telemetry = posthog
     })
   : null;
 
+/**
+ * What this install is to the API, for the Mac's own notifications (notifications.ts): an id made
+ * once in the app's data folder, and the computer's name. Read when the first window opens.
+ */
+let device: { installId: string; name: string | null } | null = null;
+function deviceFacts() {
+  device ??= {
+    installId: installIdIn(join(userData, "install-id")),
+    name: deviceNameOf(hostname()),
+  };
+  return device;
+}
+
 let mainWindow: BrowserWindow | null = null;
 /** Links that arrived before the studio listened for them. */
 const pendingLinks: DeepLink[] = [];
@@ -273,6 +294,10 @@ function showWindow() {
         dev: app.isPackaged ? "0" : "1",
         scheme: config.linkScheme ?? "",
         ...(analytics ? { analytics: encodeURIComponent(JSON.stringify(analytics)) } : {}),
+        // The Mac's own notifications: whether the system shows any, and this install.
+        notify: !smoke && Notification.isSupported() ? "1" : "0",
+        install: deviceFacts().installId,
+        device: encodeURIComponent(deviceFacts().name ?? ""),
       },
     });
     const win = mainWindow;
@@ -310,12 +335,37 @@ function send(channel: string, ...args: unknown[]) {
 /** A link in this app's scheme: the studio acts on it once it's listening. Anything else is dropped. */
 function openLink(url: string) {
   const link = config.linkScheme ? parseDeepLink(url, config.linkScheme) : null;
-  if (!link) return;
+  if (link) followLink(link);
+}
+
+/** A link the studio acts on once it's listening: from a `ponzu://` link, or a banner clicked. */
+function followLink(link: DeepLink) {
   // Its kind only: what a link names stays out of the log.
   console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
   showWindow();
   if (linkListeners > 0) send(CHANNELS.link, link);
   else pendingLinks.push(link);
+}
+
+/**
+ * The Mac's own banners and the dock's badge (notifications.ts), shown as the studio asks. A
+ * click brings Ponzu forward and hands the banner's link to the studio like any other link.
+ * The smoke check shows none.
+ */
+let notifier: Notifier | null = null;
+function notifications(): Notifier {
+  notifier ??= createNotifier({
+    Notification: Notification as unknown as NotificationClass,
+    setBadge: (count) => {
+      if (!smoke) app.setBadgeCount(count);
+    },
+    open: (link) => {
+      comeForward();
+      followLink(link);
+    },
+    failed: (id) => send(CHANNELS.notifyFailed, id),
+  });
+  return notifier;
 }
 
 /* ------------------------------------------------------------------ */
@@ -379,6 +429,11 @@ function registerIpc(session: MainSession, updater: Updates) {
     if (link) void shell.openExternal(link);
   });
   listen(CHANNELS.comeForward, () => comeForward());
+  listen(CHANNELS.notifyShow, (notice) => {
+    if (!smoke) notifications().show(notice);
+  });
+  listen(CHANNELS.notifyRemove, (ids) => notifications().remove(ids));
+  listen(CHANNELS.notifyBadge, (count) => notifications().setBadge(count));
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -531,6 +586,8 @@ if (!app.requestSingleInstanceLock()) {
       // Ponzu Preview, which waits here for the person's first sign-in (carry-over.ts).
       const launching = was === "loading" && keepCarriedOver;
       if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
+      // Nobody's questions wait on the dock once they have signed out.
+      if (state.status !== was && endsSession(state)) notifier?.setBadge(0);
       was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
