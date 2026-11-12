@@ -53,7 +53,7 @@ interface Kept {
   saved: SavedPoint | null;
   /** The checkpoint's archives, in base64. */
   archives: { session: string | null; workspace: string | null };
-  /** How many times the state was written: the driver checks a cold start read the last. */
+  /** How many times the state was written: the driver checks a fresh start read the last. */
   writes: number;
 }
 const kept: Kept | null = existsSync(stateFile)

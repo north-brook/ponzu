@@ -105,9 +105,9 @@ export interface ServerEvents {
     duration_ms: number | null;
     tool_calls: number | null;
     models: string[];
-    /** What the runner said it is (`runner/0.1.0+<image>`), and the image it ran in, if it said. */
+    /** What the runner said it is (`runner/0.1.0+<bundle>`), and the bundle it ran, if it said. */
     runner: string | null;
-    image: string | null;
+    bundle: string | null;
   } & ModelTokens;
   /**
    * The API gave up waiting for a turn it was owed (docs/cloud.md, "A turn that never came"): what

@@ -46,19 +46,19 @@ test("the public address answers nothing without the port token", async () => {
     expect((await fetch(`${base}/poke`, { method: "POST", headers: wrong })).status).toBe(401);
     expect((await fetch(`${base}/poke`, { method: "POST" })).status).toBe(401);
     expect(pokes()).toBe(0);
-    // Unknown routes, and the old report route, say nothing either.
-    expect((await fetch(`${base}/report`, { method: "POST" })).status).toBe(401);
+    // Unknown routes say nothing either.
+    expect((await fetch(`${base}/elsewhere`, { method: "POST" })).status).toBe(401);
     expect((await fetch(`${base}/health`, { headers: BEARER })).status).toBe(200);
   } finally {
     server.stop();
   }
 });
 
-test("the report route is gone", async () => {
+test("with the bearer, a route it does not serve is 404", async () => {
   const { server, base } = served();
   try {
-    const report = await fetch(`${base}/report`, { method: "POST", headers: BEARER });
-    expect(report.status).toBe(404);
+    const other = await fetch(`${base}/elsewhere`, { method: "POST", headers: BEARER });
+    expect(other.status).toBe(404);
   } finally {
     server.stop();
   }

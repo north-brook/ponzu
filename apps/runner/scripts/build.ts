@@ -4,7 +4,7 @@
  *
  *   runner.js              the runner, bundled with everything but playwright-core, which the
  *                          image has at /opt/ponzu/node_modules
- *   supervise.js           what starts the runner, restarts it and stops it (no systemd)
+ *   supervise.js           what starts the runner, restarts it and stops it
  *   git-credential.js      git's credential helper for github.com
  *   manifest.json          what the bundle needs of the image: Claude Code and playwright-core
  *   runner.tgz             those four, packed the same way every time (tgz.ts)

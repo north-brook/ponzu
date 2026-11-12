@@ -489,8 +489,8 @@ export const designRunners = pgTable("design_runners", {
   startedAt: instant("started_at").notNull(),
   /**
    * What the runner holding the lease said it is as it took it (`X-Ponzu-Client`: its version,
-   * and the image it runs in, as in `runner/0.1.0+ponzu-runner-2de5aff8d903`). Null for a runner
-   * that did not say, or said only its version: one older than this.
+   * and the bundle it runs, as in `runner/0.1.0+2de5aff8d903`). Null for a runner that did not
+   * say.
    */
   client: text("client"),
   /** When the runner last took the lease or reported its state. */

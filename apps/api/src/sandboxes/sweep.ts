@@ -65,7 +65,7 @@ const SIGN_IN_MAX_MS = 3600_000;
  * thread says so and the event goes in again as a copy (once; a copy that lapses says to send
  * it again), when its runner says it is not working for two minutes, or says it is but has
  * written nothing for fifteen. Both are counted from the delivery or from when the runner that
- * holds it started, whichever is later, so a cold start or a long session's resume gets its own
+ * holds it started, whichever is later, so a fresh start or a long session's resume gets its own
  * time. Two minutes is many times what a runner takes to write a turn's first item after the
  * model's first token, which comes before it reports idle; fifteen is past the slowest first
  * output of a model on a long session, and past Claude Code's own ten-minute limit on a request.

@@ -1,39 +1,23 @@
-import { readFileSync } from "node:fs";
 import { version } from "../package.json";
 
 /** The runner's version, sent as `X-Ponzu-Client: runner/<version>`. */
 export const VERSION: string = version;
 
-/** Where the sandbox image keeps its record of what it was made from (image/provision.sh). */
-export const IMAGE_RECORD = "/opt/ponzu/image.json";
-
 /**
- * What the image's snapshots are named for: `image/recipe.ts`'s `SNAPSHOT_PREFIX` and the first
- * twelve hex of its inputs hash (`snapshotName`), which the image records as `inputs`. Kept here
- * rather than imported, since the recipe reads the checkout as it loads; a test holds them equal.
+ * The bundle this runner was started from, by the first twelve hex of its sha256: what the API
+ * put in `PONZU_RUNNER_BUNDLE` for this start (docs/cloud.md, "The runner bundle"). Null outside
+ * a sandbox, or when the variable is not a hash.
  */
-export const SNAPSHOT_PREFIX = "ponzu-runner-";
-
-/**
- * The image this runner runs in, by the name the API created its sandbox from: read from the
- * image's record, null outside an image or when the record says nothing usable.
- */
-export function imageName(read: (path: string) => string = (path) => readFileSync(path, "utf8")) {
-  try {
-    const inputs = JSON.parse(read(IMAGE_RECORD))?.inputs;
-    return typeof inputs === "string" && /^[0-9a-f]{12,}$/.test(inputs)
-      ? `${SNAPSHOT_PREFIX}${inputs.slice(0, 12)}`
-      : null;
-  } catch {
-    return null;
-  }
+export function bundleName(env: Record<string, string | undefined> = process.env): string | null {
+  const sha = env.PONZU_RUNNER_BUNDLE;
+  return sha && /^[0-9a-f]{64}$/.test(sha) ? sha.slice(0, 12) : null;
 }
 
 /**
- * What the runner says it is on every call (`X-Ponzu-Client`): its version, and the image it
- * runs in as build metadata (`runner/0.1.0+ponzu-runner-2de5aff8d903`), so the API, its logs
- * and analytics can say which image a turn ran on. The version alone outside an image.
+ * What the runner says it is on every call (`X-Ponzu-Client`): its version, and the bundle it
+ * runs as build metadata (`runner/0.1.0+2de5aff8d903`), so the API, its logs and analytics can
+ * say which build a turn ran on. The version alone outside a sandbox.
  */
-export function runnerClient(image: string | null = imageName()): string {
-  return image ? `runner/${VERSION}+${image}` : `runner/${VERSION}`;
+export function runnerClient(bundle: string | null = bundleName()): string {
+  return bundle ? `runner/${VERSION}+${bundle}` : `runner/${VERSION}`;
 }

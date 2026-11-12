@@ -1,5 +1,5 @@
 /*
- * The runner's supervisor: what systemd's unit was, for a sandbox that has no systemd. The API
+ * The runner's supervisor, for a sandbox that runs no init and no service manager. The API
  * starts it at every start of the sandbox, as root, with one detached command whose environment
  * is the runner's (the design, the runner and port tokens, the one Claude credential, the repo's
  * secrets). Nothing of that environment is written anywhere: it lives in this process and the
@@ -158,7 +158,7 @@ if (import.meta.main) {
   const image = JSON.parse(
     readFileSync(process.env.PONZU_IMAGE_CONFIG ?? "/opt/ponzu/runner.json", "utf8"),
   ) as ImageConfig;
-  // systemd's RuntimeDirectory: the git credential socket, which only the runner and the agent's
+  // The runtime folder: the git credential socket, which only the runner and the agent's
   // group may open. In memory, so it is never part of a snapshot.
   mkdirSync(image.runtimeDir, { recursive: true, mode: 0o750 });
   const ids = (what: string) =>

@@ -2,7 +2,7 @@ import { getDesign, getEventOrigins } from "@ponzu/db";
 import type { TurnUsage } from "@ponzu/runner/protocol";
 import { stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
-import { runnerImage } from "./client.ts";
+import { runnerBundle } from "./client.ts";
 
 /*
  * A design's turns in product analytics: "turn started" and "turn finished", from what the
@@ -61,7 +61,7 @@ export async function reportTurns(
         cache_write_tokens: sum((model) => model.cacheWriteTokens),
         cost_usd: sum((model) => model.costUsd),
         runner: client,
-        image: runnerImage(client),
+        bundle: runnerBundle(client),
       },
       { ...options, timestamp: new Date(at), uuid: stableUuid(`${id}/finished`) },
     );
