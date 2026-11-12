@@ -2,6 +2,7 @@ import type { ToolResult } from "@ponzu/tools";
 import type { z } from "zod";
 import type {
   AskedQuestion,
+  ClaudeLimitReport,
   Effort,
   ModelUsage,
   ReportedModel,
@@ -115,6 +116,11 @@ export type AgentEvent =
       usage: ModelUsage[];
       turn?: TurnSummary | null;
     }
+  /**
+   * Claude Code said where the Claude plan stands against one of its limits: on a subscription,
+   * whenever a window's status, reset or rounded share moves. Never on an API key.
+   */
+  | { type: "limit"; limit: ClaudeLimitReport }
   /** The session ended, on its own or by `close`. */
   | { type: "exit"; error: string | null }
   /**

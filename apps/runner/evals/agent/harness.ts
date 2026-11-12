@@ -166,6 +166,22 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
     },
   });
   api.pullRequest = setup.pullRequest ?? null;
+  // The stand-in GitHub is the bare repository: the fake API answers from what it holds, so a
+  // refused push is never answered as a pull request opened or merged (#511).
+  if (setup.repo) {
+    api.remoteHead = () => {
+      try {
+        return run(
+          "git",
+          ["--git-dir", bare, "rev-parse", `refs/heads/${BRANCH}`],
+          root,
+          env,
+        ).trim();
+      } catch {
+        return null;
+      }
+    };
+  }
   const pullRequestCalls: TurnOutcome["pullRequestCalls"] = [];
   const act = api.actOnPullRequest.bind(api);
   api.actOnPullRequest = async (runner, action, request) => {

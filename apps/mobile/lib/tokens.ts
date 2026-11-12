@@ -26,6 +26,8 @@ export const light = {
   bar: "rgba(250,250,249,0.8)",
   pinSoft: "#fff4d1",
   yuzuText: "#7a4f00",
+  /** An error line, as the studio's `--c-danger`. */
+  danger: "#d93a2b",
 } as const;
 
 export type Palette = { readonly [K in keyof typeof light]: string };
@@ -43,6 +45,7 @@ export const dark: Palette = {
   bar: "rgba(28,28,28,0.8)",
   pinSoft: "#2e2a1c",
   yuzuText: "#ffc81e",
+  danger: "#ff6b5e",
 };
 
 /** `--c-pop` and `--c-board`, as React Native `boxShadow` strings. */

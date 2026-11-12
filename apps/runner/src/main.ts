@@ -124,6 +124,9 @@ const runner = new Runner({
     scrubbed.push(value);
     logSecrets = knownSecrets(scrubbed);
   },
+  // A subscription's plan has limits worth reporting; an API key has none (readEnv holds that
+  // exactly one of the two is set).
+  planLimits: Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN),
   // Every filesystem, so the agent's files are flushed with the runner's own.
   flush: () =>
     new Promise<void>((resolve) => {

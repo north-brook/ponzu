@@ -529,6 +529,14 @@ export class FakeRunnerApi {
   /** Where the pull request stands beyond its number and state, as GitHub would say it. */
   prDetail: Partial<NonNullable<PullRequestStanding["pullRequest"]>> = {};
   /**
+   * The commit GitHub has the canvas's branch at, for a test with a remote to look at (a bare
+   * repository), or null while GitHub has no such branch. Set, the fake answers as the API does
+   * from GitHub: opening finds nothing to open from (`pushing`) while the branch isn't there, and
+   * a merge or a branch update named at another commit is `head_moved`. Unset, the branch is
+   * taken to be on GitHub at whatever commit is asked about.
+   */
+  remoteHead: (() => string | null | Promise<string | null>) | null = null;
+  /**
    * Whether the turn named is a person's, as the API decides it from the feed: a person's
    * message, answer or comment. A turn this fake's feed doesn't hold counts as one when named.
    */
@@ -561,6 +569,23 @@ export class FakeRunnerApi {
         "No person in Ponzu began this turn. Only a person's own message, answer or comment in Ponzu can have Claude do this.",
       );
     }
+    // What GitHub has of the branch, when the test gives the fake a remote to look at: never a
+    // claim that it did something to a branch GitHub doesn't have (#511).
+    const remote = this.remoteHead ? await this.remoteHead() : undefined;
+    if (action === "open" && remote === null) {
+      return { did: false, pushing: true, ...this.standing(request.turn, remote) };
+    }
+    if (
+      (action === "merge" || action === "update_branch") &&
+      remote !== undefined &&
+      request.headSha !== remote
+    ) {
+      throw new ApiError(
+        409,
+        "head_moved",
+        "The branch has new commits since you looked. Look again first.",
+      );
+    }
     const pr = this.pullRequest;
     const open = pr?.state === "open" || pr?.state === "draft";
     let did = true;
@@ -588,21 +613,22 @@ export class FakeRunnerApi {
       }
       this.prDetail = { ...this.prDetail, autoMerge: { enabledBy: "ada" } };
     }
-    return { did, pushing: false, ...this.standing(request.turn) };
+    return { did, pushing: false, ...this.standing(request.turn, remote) };
   }
 
-  private standing(turn: string | null): PullRequestStanding {
+  /** `remote` is the branch's commit on GitHub, as `remoteHead` says; undefined when unknown. */
+  private standing(turn: string | null, remote?: string | null): PullRequestStanding {
     const pr = this.pullRequest;
     const branch = this.sessionInfo.branch ?? "pz/branch";
     const personTurn = this.personTurn(turn);
     return {
-      branch: { name: branch, base: "main", exists: true, aheadBy: 1, behindBy: 0 },
+      branch: { name: branch, base: "main", exists: remote !== null, aheadBy: 1, behindBy: 0 },
       pullRequest: pr && {
         number: pr.number,
         url: `https://github.com/north/fern/pull/${pr.number}`,
         title: this.sessionInfo.canvas.name,
         state: pr.state,
-        headSha: "a".repeat(40),
+        headSha: remote ?? "a".repeat(40),
         author: "ada",
         mergedBy: pr.state === "merged" ? "ada" : null,
         mergeable: true,

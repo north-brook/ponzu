@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { toLimits } from "../../cloud/claude.ts";
 import { DisconnectClaudeDialog } from "../../cloud/dialogs/account-dialogs.tsx";
 import { AgentsSection } from "../../cloud/settings/agents.tsx";
 import type { Host } from "../host.ts";
@@ -9,8 +10,9 @@ import { toConnection } from "./map.ts";
 
 /*
  * Settings › Agents: the person's Claude (disconnect, after asking; switch to the other way, or
- * sign in again, through the setup's own card) and the model and effort new canvases start on.
- * The plan's limits are not in the API yet, so the section shows none (the spec's default).
+ * sign in again, through the setup's own card), the model and effort new canvases start on, and
+ * a subscription's limits as a runner on it last saw them (none for an API key, which has no
+ * plan).
  *
  * A claude.ai sign-in starts only when the person presses Switch or Reconnect, and is let go of
  * when they press Change or close Settings (the card goes with the section).
@@ -51,7 +53,7 @@ export function AgentsView({ host }: { host: Host }) {
     models: defaults.data.models,
     efforts: defaults.data.efforts,
     onDefaultsChange: setDefaults.mutate,
-    limits: null,
+    limits: toLimits(account.data?.limits),
   };
   return (
     <>
