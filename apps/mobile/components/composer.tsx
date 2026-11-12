@@ -34,7 +34,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
-import { type Draft, getDraft, setDraft } from "../lib/drafts";
+import { type Draft, drafts, getDraft, setDraft } from "../lib/drafts";
 import { FIELD_LINE, FIELD_LINES, FIELD_PAD, FIELD_SIZE, FIELD_SPACING } from "../lib/field";
 import { fail, select, success } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
@@ -119,17 +119,32 @@ export function Composer({
   const voice = mode === "voice";
   /** Sent from a field that leaves: the microphone stops with the tap, not when the Mac answers. */
   const [gone, setGone] = useState(false);
-  const [kept] = useState(() => (draft ? (getDraft(draft.key)?.text ?? "") : ""));
   /**
    * Words sent and not yet answered. Their draft keeps them until the send is (iPhone design
    * §8: an app killed in between still has them), whatever the field shows meanwhile; what's
-   * typed after them is kept with them.
+   * typed after them is kept with them. This field's own send, until the screen has marked it
+   * sending; after that, the drafts' (`sentWords`), which a field reopened meanwhile reads too.
    */
   const inFlight = useRef<string | null>(null);
+  const sentNow = () => (draft ? (drafts.sentWords(draft.key) ?? inFlight.current) : null);
+  // Opened while a send from this draft is out: the field shows what was written after it.
+  const [kept] = useState(() => {
+    const text = draft ? (getDraft(draft.key)?.text ?? "") : "";
+    const sent = sentNow();
+    return sent && text.startsWith(sent) ? text.slice(sent.length).trim() : text;
+  });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const keep = (t: string) => {
     if (!draft) return;
     const sending = getDraft(draft.key)?.sending;
-    const text = inFlight.current ? [inFlight.current, t.trim()].filter(Boolean).join(" ") : t;
+    const sent = sentNow();
+    const text = sent ? [sent, t.trim()].filter(Boolean).join(" ") : t;
     setDraft(draft.key, {
       file: draft.file,
       thread: draft.thread,
@@ -137,12 +152,6 @@ export function Composer({
       text,
       ...(sending ? { sending } : {}),
     });
-  };
-  /** Sent and answered: the draft goes, and only what's been written since stays. */
-  const landed = (since: string) => {
-    if (!draft) return;
-    setDraft(draft.key, { file: draft.file, thread: draft.thread, pin: draft.pin, text: "" });
-    if (since) keep(since);
   };
   // Opened in voice, it goes on from what was said or typed before.
   const dictation = useDictation(voice && !gone, voice ? kept : "");
@@ -210,16 +219,17 @@ export function Composer({
       await onSend(words, mode);
       success();
       inFlight.current = null;
-      if (leaves) {
+      // Sent and answered: the sent words leave the draft, and what's been written since stays,
+      // in this field or in one opened for the same draft since this one closed.
+      if (draft) drafts.landed(draft.key, words);
+      if (leaves && mounted.current) {
         setTyped("");
         dictation.setText("");
-        landed("");
-      } else {
-        const n = now.current;
-        landed((n.voice ? n.said : n.typed).trim());
       }
     } catch {
       inFlight.current = null;
+      // Closed by now: the draft has the words back (the screen un-marked it), for the next field.
+      if (!mounted.current) return;
       // A field that leaves comes back with its words, listening again as it did when it opened.
       if (leaves) setGone(false);
       else {

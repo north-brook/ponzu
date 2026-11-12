@@ -162,6 +162,43 @@ describe("comments on a canvas", () => {
     expect(pricing().sequencer.doc.threads.some((t) => t.artboardId === "ab_faq")).toBe(false);
   });
 
+  test("sent while the API can't be reached: on the canvas, its words kept as sending, and it waits", async () => {
+    await openPricing();
+    await waitFor(() => expect(commentEnabled()).toBe(true));
+    const commit = jest
+      .spyOn(backend.api.canvases, "commit")
+      .mockRejectedValue(new TypeError("Network request failed"));
+    const pageId = pricing().sequencer.doc.pages[0]!.id;
+    await say({ t: "longpress", pageId, artboardId: "ab_plans", x: 5, y: 6 });
+    await typeAndSend("When you can");
+
+    const op = sent("op").find((m) => m.t === "op" && m.op.op === "thread.create");
+    const id = op?.t === "op" && op.op.op === "thread.create" ? op.op.thread.id : null;
+    expect(id).toBeTruthy();
+    expect(
+      await screen.findByText("Saved here. Ponzu sends it when you're back online."),
+    ).toBeTruthy();
+    // A phone killed now still has the words, and knows which thread they were sent as.
+    expect(drafts.snapshot().map(([, d]) => [d.text, d.sending])).toEqual([["When you can", id]]);
+    const stored = JSON.parse((await AsyncStorage.getItem(`ponzu.drafts.${pricing().id}`)) ?? "{}");
+    expect(Object.values(stored)).toEqual([expect.objectContaining({ sending: id })]);
+    // Not shown twice: the sent comment is on the canvas, so no unsent pin stands for it too.
+    expect(sent("unsent").flatMap((m) => (m.t === "unsent" ? m.pins : []))).toEqual([]);
+
+    // A reply, still offline; its sheet closed and opened again: the field doesn't offer the
+    // sent words a second time, though their draft keeps them until the API has them.
+    await say({ t: "openThread", id });
+    await typeAndSend("And the footer");
+    await say({ t: "longpress", pageId, artboardId: "ab_faq", x: 1, y: 1 });
+    await say({ t: "openThread", id });
+    expect(screen.getByTestId("thread-sheet")).toBeTruthy();
+    expect(screen.getByTestId("comment-input").props.value).toBe("");
+    const reply = drafts.snapshot().find(([, d]) => d.thread === id)?.[1];
+    expect(reply?.text).toBe("And the footer");
+    expect(reply?.sending).toBeTruthy();
+    commit.mockRestore();
+  });
+
   test("on a canvas the person may only read, Comment is unavailable and says why", async () => {
     const repo = world.fake.workspaces.get(world.acme.id)!.repos[0]!;
     repo.access.set(world.maya.id, "read");

@@ -47,8 +47,11 @@ export class Drafts {
   private storage: DraftStorage | null;
   /** Canvases read from disk already (or being read). */
   private readonly loading = new Map<string, Promise<void>>();
-  /** Sent from this run of the app: never settled from a doc, which has them already. */
-  private readonly inFlight = new Set<string>();
+  /**
+   * Sent from this run of the app, with the words that were sent: never settled from a doc,
+   * which has them already. What's written after them is kept in the same draft, after them.
+   */
+  private readonly inFlight = new Map<string, string>();
   /** Per canvas: the write under way, and whether another is due after it. */
   private readonly writes = new Map<string, { running: Promise<void>; again: boolean }>();
 
@@ -81,6 +84,25 @@ export class Drafts {
     return this.inFlight.has(key);
   }
 
+  /** The words sent from this draft that the API hasn't answered for yet, if any. */
+  sentWords(key: string): string | undefined {
+    return this.inFlight.get(key);
+  }
+
+  /**
+   * The send landed: its words leave the draft, and whatever was written after them stays, as an
+   * unsent draft of its own. A field reopened while the send was out shows only those later words.
+   */
+  landed(key: string, words?: string): void {
+    const d = this.drafts.get(key);
+    const sent = this.inFlight.get(key) ?? words;
+    this.inFlight.delete(key);
+    if (!d) return;
+    const { sending: _, ...rest } = d;
+    const text = sent && d.text.startsWith(sent) ? d.text.slice(sent.length).trim() : "";
+    this.set(key, { ...rest, text });
+  }
+
   /**
    * Keep what a field holds; emptied, its draft goes. Listeners hear of a draft arriving, going
    * or moving (its pin or thread), and of its words coming to or going from something worth a
@@ -109,7 +131,7 @@ export class Drafts {
     if (!d) return;
     const { sending: _, ...rest } = d;
     this.drafts.set(key, id ? { ...rest, sending: id } : rest);
-    if (id) this.inFlight.add(key);
+    if (id) this.inFlight.set(key, d.text);
     else this.inFlight.delete(key);
     this.persist(d.file);
     this.changed();
@@ -158,6 +180,23 @@ export class Drafts {
     if (!gone) return;
     this.persist(file);
     this.changed();
+  }
+
+  /**
+   * The canvas was closed (its CloudSource with it) with sends still unanswered. Its replica
+   * dropped what it was waiting to send, and will never answer for what it had posted, so those
+   * drafts are no longer this run's: the next open settles them from the API's doc, as after a
+   * kill, and shows them as unsent pins until it does. Without this, a comment queued offline and
+   * left behind would stay hidden as "sending" until the app restarted.
+   */
+  release(file: string): void {
+    let any = false;
+    for (const key of [...this.inFlight.keys()]) {
+      if (this.drafts.get(key)?.file !== file) continue;
+      this.inFlight.delete(key);
+      any = true;
+    }
+    if (any) this.changed();
   }
 
   /** Every write to disk so far, done. */

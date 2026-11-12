@@ -254,6 +254,51 @@ describe("drafts", () => {
     expect(disk.map.has(draftsStorageKey(file))).toBe(false);
   });
 
+  test("left while it waited offline: released, it is unsent again and settles on the next open", async () => {
+    const h = await harness();
+    const drafts = new Drafts(new Disk());
+    const file = h.canvas.id;
+    const key = draftKey.comment(file, h.spot);
+    drafts.set(key, { file, pin: h.spot, text: "Later" });
+    const source = h.open(h.maya);
+    await h.settle();
+    h.backend.online = false;
+    const op = newThreadOp(h.spot, "Later", actorOf(h.maya));
+    drafts.markSending(key, op.thread.id);
+    void commit(source, op).catch(() => {});
+    await h.clock.advance(5_000);
+    // The person leaves the canvas: its replica drops what it was waiting to send.
+    source.close();
+    drafts.release(file);
+    expect(drafts.isSending(key)).toBe(false);
+    h.backend.online = true;
+    const reopened = h.open(h.maya);
+    await h.settle();
+    drafts.settle(file, reopened.getState().doc!);
+    // Never got there: the words stay, to send again, as an unsent pin.
+    expect(drafts.get(key)?.text).toBe("Later");
+    // Got there after all (another device, say): the next doc with it settles the draft.
+    drafts.settle(file, { ...h.server(), threads: [op.thread] });
+    expect(drafts.get(key)).toBeUndefined();
+  });
+
+  test("a reply written while one is out: landing takes only the sent words away", () => {
+    const drafts = new Drafts();
+    const key = draftKey.reply("cnv_1", "th_1");
+    drafts.set(key, { file: "cnv_1", thread: "th_1", text: "and the lid" });
+    drafts.markSending(key, "m_2");
+    expect(drafts.sentWords(key)).toBe("and the lid");
+    // A field opened again meanwhile keeps what's written after the sent words, with them.
+    drafts.set(key, { file: "cnv_1", thread: "th_1", sending: "m_2", text: "and the lid also" });
+    drafts.landed(key);
+    expect(drafts.get(key)).toEqual({ file: "cnv_1", thread: "th_1", text: "also" });
+    expect(drafts.isSending(key)).toBe(false);
+    // Nothing written since: the draft goes.
+    drafts.markSending(key, "m_3");
+    drafts.landed(key);
+    expect(drafts.get(key)).toBeUndefined();
+  });
+
   test("a reply sent: its draft goes once its message is in the thread", async () => {
     const disk = new Disk();
     const drafts = new Drafts(disk);

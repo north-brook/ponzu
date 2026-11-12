@@ -132,6 +132,9 @@ export default function CanvasScreen() {
     });
     return () => {
       live = false;
+      // Its CloudSource closes with the screen and drops what it was waiting to send: what was
+      // sent and not answered is settled from the API's doc on the next open, not left "sending".
+      drafts.release(canvasId);
     };
   }, [canvasId]);
   useEffect(() => {
@@ -351,7 +354,8 @@ export default function CanvasScreen() {
     setSheet(0);
   };
   const createComment = async (text: string, _mode: Mode) => {
-    if (!source || !pending || !me) return;
+    // Not open yet: the words stay in the field, as for any send that didn't go.
+    if (!source || !pending || !me) throw new Error("The canvas isn't open yet.");
     const pin = pending;
     const key = draftKey.comment(canvasId, pin);
     const op = newThreadOp(pin, text, me);
@@ -376,7 +380,7 @@ export default function CanvasScreen() {
     });
   };
   const reply = async (text: string, _mode: Mode) => {
-    if (!source || !thread || !me) return;
+    if (!source || !thread || !me) throw new Error("The canvas isn't open yet.");
     const key = draftKey.reply(canvasId, thread.id);
     const { op, messageId } = replyOp(thread, text, me);
     drafts.markSending(key, messageId);

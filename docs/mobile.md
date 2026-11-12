@@ -270,7 +270,12 @@ unsent pin offers Open, Move and Discard draft.
   reason shows under the title). **Offline**, a comment is still applied and
   waits; the title says "Saved here. Ponzu sends it when you're back online."
   until it lands. Leaving the canvas or the app being killed before then
-  loses the op but not the draft.
+  loses the op but not the draft: leaving releases the canvas's sends
+  (`drafts.release`), so the words show as an unsent pin on the next open
+  unless the API's canvas has them. A reply's field opened again while its
+  send is out shows only what was written after the sent words
+  (`sentWords`), and the send landing takes only those words away
+  (`landed`).
 - **Read only.** On a canvas the person may only look at (no push access, or
   the last copy shown offline before the canvas opened), Comment is
   unavailable and VoiceOver says why ("You can look at this canvas. Steering
