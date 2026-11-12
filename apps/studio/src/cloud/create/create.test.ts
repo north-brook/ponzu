@@ -8,7 +8,7 @@ import {
   fullName,
   HEADING,
   HERO_GAP,
-  HERO_LIFT,
+  HERO_RISE,
   HERO_TOP,
   heldWhileOpen,
   heroPlace,
@@ -22,6 +22,7 @@ import {
   projectName,
   ROW,
   type Shelf,
+  STATEMENT_ROOM,
   searchAtOpening,
 } from "./create.ts";
 
@@ -183,16 +184,20 @@ test("the list is as tall as its rows and headings, and has a search whenever it
   );
 });
 
-test("the hero is centred above the resting composer, holds as it grows, then gives way", () => {
-  const statement = 40;
+test("the hero is centred 5% of the pane high, holds as the composer grows, then gives way", () => {
+  const statement = STATEMENT_ROOM;
   const resting = COMPOSER_REST + DOCK_INSET;
   const above = MARK + MARK_GAP;
-  // Centred in the room over the composer at rest, HERO_LIFT high, the mark and its gap counted.
+  expect(HERO_RISE).toBe(0.05);
+  // Centred in the pane, HERO_RISE of its height high, the mark and its gap counted: in panes
+  // of the shortest window, a usual one and a tall one, so it scales with the window.
+  for (const pane of [596, 656, 856, 1156]) {
+    const at = heroPlace({ pane, dock: resting, statement });
+    expect(at.mark).toBe(true);
+    const centre = at.top - above + (above + statement) / 2;
+    expect(Math.abs(centre - (pane / 2 - pane * HERO_RISE))).toBeLessThanOrEqual(0.5);
+  }
   const at = heroPlace({ pane: 856, dock: resting, statement });
-  expect(at.mark).toBe(true);
-  expect(
-    Math.abs(at.top - above + (above + statement) / 2 - ((856 - resting) / 2 - HERO_LIFT)),
-  ).toBeLessThanOrEqual(0.5);
   // A grown composer that still clears it moves nothing.
   expect(heroPlace({ pane: 856, dock: resting + 200, statement })).toEqual(at);
   // One that would come within HERO_GAP pushes the statement up ahead of it.

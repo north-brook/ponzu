@@ -161,8 +161,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
   test("in a window too short for it, the picker's list gives up height and stays under the selector", async () => {
     await open("pick-a-project-many-repos");
-    // The picker hangs from the header, so it takes a window this short to run out of room.
-    await page.setViewportSize({ width: 1440, height: 440 });
+    // The picker hangs from the statement's second line, so it takes a window this short (under
+    // the smallest the app allows) to run out of room.
+    await page.setViewportSize({ width: 1440, height: 560 });
     try {
       // The column re-centres for the shorter pane in the frame after the resize (a
       // ResizeObserver): past two frames it is where it rests.
@@ -185,7 +186,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         ];
       });
       expect(top).toBeGreaterThanOrEqual(chipBottom!);
-      expect(bottom).toBeLessThanOrEqual(440);
+      expect(bottom).toBeLessThanOrEqual(560);
       expect(listHeight).toBeLessThan(176);
       expect(listHeight).toBeGreaterThan(0);
       expect(await questionTop()).toBe(resting);
@@ -268,7 +269,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click("textarea");
     await page.keyboard.type("A card");
     await page.click(chip);
-    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]');
+    // Closed without a choice, focus goes back to the chip, with no ring after a click.
+    await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
     await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
     expect(await ring()).toBe("none");
@@ -304,7 +307,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Enter");
     await page.waitForSelector('input[aria-label="Search repositories"]', { state: "detached" });
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("north-brook/lenny");
-    await focusOn("Project: north-brook/lenny");
+    // Chosen, the caret goes on to the composer, to say what to make there.
+    await focusOn("Describe the design");
   });
   /**
    * Checks the arrows, Home and End move the highlight while `focused` (the field, or the list)
@@ -362,6 +366,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector(list, { state: "detached" });
     // The statement's last words: "Make something from scratch".
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("scratch");
+    await focusOn("Describe the design");
   });
   test("the repo picker on pick-a-project-many-repos: the search field keeps the keys; the arrows, Home and End move the highlight; Escape changes nothing", async () => {
     const field = 'input[aria-label="Search repositories"]';
@@ -428,7 +433,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         pane: box(document.querySelector("main")!),
         mark: box(mark),
         markShown: Number(getComputedStyle(mark).opacity),
+        // How far the page has scrolled: in a pane too short for it all, it scrolls.
+        scrolled: document.querySelector("[data-create-composer]")!.scrollTop,
         statement: box(document.querySelector("[data-create-statement]")!),
+        firstLine: box(document.querySelector("[data-create-statement] h1")!),
         selector: box(document.querySelector("[data-project-selector]")!),
         label: box(label),
         // A line is the face's line box, a little over its size: two would be over twice it.
@@ -450,22 +458,22 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     });
   };
 
-  test("the hero is centred in the room above the composer, which sits on the pane's foot at the thread composer's inset", async () => {
+  test("the hero's centre is 5% of the pane's height over its true centre at every window height; the composer sits on the pane's foot at the thread composer's inset", async () => {
     const inset = await threadInset();
-    for (const height of [700, 900, 1200]) {
+    for (const height of [640, 700, 900, 1200]) {
       await open("fresh-start", { width: 1440, height });
       const h = await header();
       // The composer: centred in the pane, at its foot, as far from it as the thread's is from its own.
       expect(Math.round(h.pane.bottom - h.composer.bottom)).toBe(inset);
       const middle = (h.pane.left + h.pane.right) / 2;
       expect(Math.abs((h.composer.left + h.composer.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
-      // The hero, the mark over the statement: on the pane's centre line, and centred in the room
-      // above the composer at rest, 28 high of true centre (create.ts, HERO_LIFT).
+      // The hero, the mark over the statement's two lines: on the pane's centre line, its centre
+      // 5% of the pane's height over the pane's (create.ts, HERO_RISE), so it scales.
       expect(Math.abs((h.mark.left + h.mark.right) / 2 - middle)).toBeLessThanOrEqual(0.5);
       expect(Math.abs((h.statement.left + h.statement.right) / 2 - middle)).toBeLessThanOrEqual(1);
       expect(Math.round(h.statement.top - h.mark.bottom)).toBe(24);
-      const room = { top: h.pane.top, bottom: h.composer.top };
-      const centre = (room.top + room.bottom) / 2 - 28;
+      const tall = h.pane.bottom - h.pane.top;
+      const centre = h.pane.top + tall / 2 - tall * 0.05;
       expect(Math.abs((h.mark.top + h.statement.bottom) / 2 - centre)).toBeLessThanOrEqual(1);
       expect(h.markShown).toBe(1);
     }
@@ -500,7 +508,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     const tight = await header();
     // Nothing overlaps: the statement keeps 40 over the composer, and 24 under the pane's top.
     expect(tight.composer.top - tight.statement.bottom).toBeGreaterThanOrEqual(40 - 0.5);
-    expect(tight.statement.top - tight.pane.top).toBeGreaterThanOrEqual(24 - 0.5);
+    // (counted from the top of what scrolls: the field keeps its caret in view).
+    expect(tight.statement.top + tight.scrolled - tight.pane.top).toBeGreaterThanOrEqual(24 - 0.5);
     // Taken back, the hero is where it was.
     await page.fill("textarea", "");
     await page.waitForFunction(
@@ -511,26 +520,247 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(back.mark.bottom).toBeLessThanOrEqual(back.statement.top - 24 + 0.5);
   });
 
-  test("the statement ends in the selector, on one baseline; a long owner and name stay on its line and in the pane", async () => {
+  test("a repo takes the statement's second line, Scratch ends its first; the mark and the first line hold still either way; a long owner and name stay on one line and in the pane", async () => {
+    const centreOf = (b: { left: number; right: number }) => (b.left + b.right) / 2;
     await open("create");
     const short = await header();
-    // The selector's words are the statement's last: one line, after "Make something in".
-    expect(short.selector.top).toBeGreaterThanOrEqual(short.statement.top - 0.5);
+    // "Make something in" on the first line, the repo under it, each centred on the pane's line.
+    expect(short.selector.top).toBeGreaterThanOrEqual(short.firstLine.bottom - 0.5);
     expect(short.selector.bottom).toBeLessThanOrEqual(short.statement.bottom + 0.5);
+    expect(Math.abs(centreOf(short.selector) - centreOf(short.firstLine))).toBeLessThanOrEqual(1);
+    expect(short.firstLine.top).toBe(short.statement.top);
     expect(short.selector.bottom).toBeLessThan(short.composer.top);
+    // Scratch: one line, "Make something from scratch", the selector's words on the first line's.
+    await open("fresh-start-no-repos");
+    const scratch = await header();
+    expect(scratch.label.top).toBe(scratch.firstLine.top);
+    expect(scratch.label.bottom).toBe(scratch.firstLine.bottom);
+    expect(scratch.selector.left).toBeGreaterThanOrEqual(scratch.firstLine.right - 0.5);
+    // The two lines' room kept: the statement, the mark and the first line where the repo's are.
+    expect(scratch.statement.top).toBe(short.statement.top);
+    expect(scratch.statement.bottom).toBe(short.statement.bottom);
+    // (Across, to the pixel: centring a statement of another width rounds apart by a 64th.)
+    expect(scratch.mark.top).toBe(short.mark.top);
+    expect(scratch.mark.bottom).toBe(short.mark.bottom);
+    expect(Math.abs(scratch.mark.left - short.mark.left)).toBeLessThan(0.5);
+    expect(scratch.firstLine.top).toBe(short.firstLine.top);
+    expect(scratch.firstLine.bottom).toBe(short.firstLine.bottom);
     await open("fresh-start-long-name");
     const long = await header();
     expect(long.labelLines).toBe(1);
     expect(long.statement.right).toBeLessThanOrEqual(long.pane.right);
     expect(long.statement.left).toBeGreaterThanOrEqual(long.pane.left);
-    // The mark where it was (to the pixel: centring a statement of another width rounds apart).
+    // Its second line takes the statement's whole measure and no more, still centred.
+    expect(Math.round(long.selector.right - long.selector.left)).toBeLessThanOrEqual(660);
+    expect(Math.abs(centreOf(long.selector) - centreOf(long.firstLine))).toBeLessThanOrEqual(1);
+    // The mark and the first line where they were (to the pixel: centring a statement of another
+    // width rounds apart).
     expect(Math.round(long.mark.left)).toBe(Math.round(short.mark.left));
     expect(long.mark.top).toBe(short.mark.top);
+    expect(long.firstLine.top).toBe(short.firstLine.top);
+    expect(long.firstLine.bottom).toBe(short.firstLine.bottom);
+    expect(Math.round(long.firstLine.left)).toBe(Math.round(short.firstLine.left));
+    expect(Math.round(long.firstLine.right)).toBe(Math.round(short.firstLine.right));
+    expect(long.statement.bottom).toBe(short.statement.bottom);
     // The owner gave way first: most of what shows is the name.
     expect(long.nameShown).toBeGreaterThan((long.label.right - long.label.left) * 0.6);
     expect(await page.getAttribute('button[aria-label^="Project"]', "aria-label")).toBe(
       "Project: the-extraordinarily-long-organization-name/customer-onboarding-experiments-and-landing-page-variants",
     );
+  });
+
+  test("while the project is being found the selector's skeleton holds the second line; resolved to Scratch or a repo, nothing above it moves", async () => {
+    /**
+     * What must hold still: the mark (and its centre, to the pixel), the statement's room and its
+     * first line, top to bottom. The words themselves change ("in" to "from scratch"), so their
+     * width does.
+     */
+    const still = () =>
+      page.evaluate(() => {
+        const box = (selector: string) => {
+          const r = document.querySelector(selector)!.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom };
+        };
+        const mark = document.querySelector("[data-create-mark]")!.getBoundingClientRect();
+        return {
+          mark: { ...box("[data-create-mark]"), centre: Math.round((mark.left + mark.right) / 2) },
+          statement: box("[data-create-statement]"),
+          firstLine: box("[data-create-statement] h1"),
+        };
+      });
+    for (const resolve of ["scratch", "repo"]) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+      await page.goto(`${server.url}/gallery.html?board=create&theme=light&resolve=${resolve}`);
+      await page.waitForFunction(
+        () => (window as { galleryReady?: boolean }).galleryReady === true,
+      );
+      // Not known yet: the skeleton on the second line, never "scratch" before it knows.
+      expect(await page.getAttribute("[data-project-selector]", "aria-busy")).toBe("true");
+      const [first, skeleton] = await page.evaluate(() =>
+        ["[data-create-statement] h1", "[data-project-selector]"].map(
+          (s) => document.querySelector(s)!.getBoundingClientRect().top,
+        ),
+      );
+      expect(skeleton!).toBeGreaterThan(first!);
+      const before = await still();
+      await page.evaluate(() => (window as { galleryArrive?: () => void }).galleryArrive?.());
+      await page.waitForFunction(
+        () => !document.querySelector("[data-project-selector][aria-busy]"),
+      );
+      // Past the frame the hero is placed in again, were it to move.
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
+      expect(await still()).toEqual(before);
+    }
+  });
+
+  /** The model chip, the menu's two panes, and what has focus. */
+  const modelMenu = () =>
+    page.evaluate(() => {
+      const box = (el: Element | null) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      };
+      const focused = document.activeElement;
+      return {
+        chip: box(document.querySelector('button[aria-label^="Model"]')),
+        menu: box(document.querySelector('[role="menu"]')),
+        models: box(document.querySelector('[data-pane="model"]')),
+        efforts: box(document.querySelector('[data-pane="effort"]')),
+        // Each pane's group, named by its label for assistive tech.
+        groups: [...document.querySelectorAll('[role="menu"] [role="group"]')].map(
+          (g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent,
+        ),
+        focused:
+          focused?.getAttribute("role") === "menuitemradio"
+            ? `${focused.closest<HTMLElement>("[data-pane]")?.dataset.pane}:${focused.textContent}`
+            : (focused?.getAttribute("aria-label") ?? focused?.tagName),
+      };
+    });
+  const pressIn = async (key: string, expected: string) => {
+    await page.keyboard.press(key);
+    await page.waitForFunction(
+      (expected) => {
+        const el = document.activeElement;
+        const pane = el?.closest<HTMLElement>("[data-pane]")?.dataset.pane;
+        return `${pane}:${el?.textContent}` === expected;
+      },
+      expected,
+      { timeout: 2000 },
+    );
+  };
+
+  test("the model menu: two panes side by side, opening upward; the arrows keep to a pane, Left and Right cross; a model keeps it open, an effort closes it and the caret goes to the composer", async () => {
+    await open("create");
+    const chip = 'button[aria-label^="Model"]';
+    const words = await page.inputValue("textarea");
+    // Opened with Return: Radix starts on the first model.
+    await page.focus(chip);
+    await focusOn("Model: Opus 5.5, effort High");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]');
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("role") === "menuitemradio",
+    );
+    const m = await modelMenu();
+    // Models on the left, efforts on the right, a rule between; over the chip, its end on the chip's.
+    expect(m.groups).toEqual(["Model", "Effort"]);
+    expect(m.efforts!.left).toBeGreaterThan(m.models!.right);
+    expect(Math.abs(m.efforts!.top - m.models!.top)).toBeLessThanOrEqual(0.5);
+    expect(m.menu!.bottom).toBeLessThanOrEqual(m.chip!.top);
+    expect(Math.abs(m.menu!.right - m.chip!.right)).toBeLessThanOrEqual(1);
+    expect(m.focused).toBe("model:Opus 5.5");
+    // Up and Down stay in the pane: the last model doesn't lead on to the efforts.
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await pressIn("ArrowUp", "model:Opus 5.5");
+    await pressIn("ArrowUp", "model:Opus 5.5");
+    // Right goes to the chosen effort, Left back to the chosen model.
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("End", "effort:Max");
+    await pressIn("ArrowDown", "effort:Max");
+    await pressIn("Home", "effort:Low");
+    await pressIn("ArrowUp", "effort:Low");
+    await pressIn("ArrowLeft", "model:Opus 5.5");
+    // A model chosen: the menu stays open, the chip says it, the effort beside it next.
+    await pressIn("ArrowDown", "model:Sonnet 5");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(`${chip}[aria-label="Model: Sonnet 5, effort High"]`);
+    expect(await page.$('[role="menu"]')).not.toBeNull();
+    expect((await modelMenu()).focused).toBe("model:Sonnet 5");
+    // An effort chosen: the menu closes, and the caret is back in the composer.
+    await pressIn("ArrowRight", "effort:High");
+    await pressIn("ArrowDown", "effort:Extra high");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe the design");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Sonnet 5, effort Extra high");
+    // The same with the pointer: a model keeps it open, an effort closes it onto the composer.
+    await page.click(chip);
+    await page.click('[role="menuitemradio"]:has-text("Opus 5.5")');
+    expect(await page.$('[role="menu"]')).not.toBeNull();
+    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe the design");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Opus 5.5, effort Low");
+    expect(await page.inputValue("textarea")).toBe(words);
+  });
+
+  test("the model menu on what an account reported: a long name cut short in a pane that stays in the window; a model that takes no effort says so and closes the menu", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?board=create&theme=light&models=reported`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    const chip = 'button[aria-label^="Model"]';
+    await page.click(chip);
+    await page.waitForSelector('[role="menu"]');
+    const long = '[role="menuitemradio"]:has-text("Opus 6 with a million")';
+    const m = await modelMenu();
+    // The models' pane fits names up to its most, and cuts a longer one, whole in its title.
+    expect(m.models!.right - m.models!.left).toBeLessThanOrEqual(232 + 0.5);
+    expect(m.models!.right - m.models!.left).toBeGreaterThanOrEqual(152 - 0.5);
+    expect(
+      await page.$eval(
+        long,
+        (el) => el.querySelector("span")!.scrollWidth > el.querySelector("span")!.clientWidth,
+      ),
+    ).toBe(true);
+    expect(await page.getAttribute(long, "title")).toBe("Opus 6 with a million tokens of context");
+    expect(m.menu!.left).toBeGreaterThanOrEqual(0);
+    expect(m.menu!.top).toBeGreaterThanOrEqual(0);
+    // Its efforts are its own three.
+    await page.click(long);
+    expect(
+      await page.$$eval('[data-pane="effort"] [role="menuitemradio"]', (els) =>
+        els.map((e) => e.textContent),
+      ),
+    ).toEqual(["Low", "Medium", "High"]);
+    // One that takes no effort: chosen, there is nothing to come, so the menu closes onto the
+    // composer, and the chip says the model alone.
+    await page.click('[role="menuitemradio"]:has-text("Haiku 4.5")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Describe the design");
+    expect(await page.getAttribute(chip, "aria-label")).toBe("Model: Haiku 4.5");
+    // Opened again, the efforts' pane says it takes none, in a row's place, and Right goes nowhere.
+    await page.click(chip);
+    await page.waitForSelector("[data-no-effort]");
+    expect(await page.textContent("[data-no-effort]")).toBe("None for this model");
+    expect(await page.$$('[data-pane="effort"] [role="menuitemradio"]')).toHaveLength(0);
+    expect(
+      await page.$eval(
+        '[role="menu"]',
+        (menu) => document.getElementById(menu.getAttribute("aria-describedby")!)?.textContent,
+      ),
+    ).toBe("None for this model");
+    await page.focus('[role="menuitemradio"]:has-text("Haiku 4.5")');
+    await pressIn("ArrowRight", "model:Haiku 4.5");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn("Model: Haiku 4.5");
   });
 
   /** The send composition, with motion: `query` adds the harness's options (`fail`, `beat`). */
@@ -963,6 +1193,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       "Project: lennylearning/app",
     );
     expect(await page.inputValue("textarea")).toBe("Three takes on the lesson page");
+    await focusOn("Describe the design");
     // There, its own group comes first and Northbrook's after.
     await openPicker();
     expect(await listed()).toEqual([
@@ -1176,7 +1407,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(selected!.to - selected!.at).toBeGreaterThan(0);
     // The model picker opens its menu, not the field.
     await page.$eval(field, (el) => (el as HTMLElement).blur());
-    await page.click('button[aria-haspopup="menu"]');
+    await page.click('button[aria-label^="Model"]');
     await page.waitForSelector('[role="menu"]');
     expect(await focused()).toBeNull();
     await page.keyboard.press("Escape");

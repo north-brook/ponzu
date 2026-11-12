@@ -143,6 +143,8 @@ export function useDesignPanes({
     tab: prTab ? "pull-request" : "canvas",
     chrome: (
       <DesignChromeSlot
+        // Made anew for each design: what it has at once is simply there, never an entrance.
+        key={open.id}
         open={open}
         summary={summary}
         me={me}

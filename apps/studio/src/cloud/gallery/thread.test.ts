@@ -100,6 +100,60 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await page.$('button:has-text("new")')).toBeNull();
   });
 
+  test("a comment's picture is a glance: 144 by 96 over its words at every rail width, sharp at 2x", async () => {
+    for (const rail of [300, 360, 520]) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+      await page.goto(
+        `${server.url}/gallery.html?board=thread-in-the-right-rail&theme=light&rail=${rail}`,
+      );
+      await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady);
+      // The rail at the width asked for, as the panes write it for the chrome.
+      const width = await page.evaluate(() =>
+        Number.parseFloat(
+          getComputedStyle(document.querySelector("header")!.parentElement!).getPropertyValue(
+            "--pane-rail",
+          ),
+        ),
+      );
+      expect(Math.round(width)).toBe(rail);
+      const button = page.locator('button[aria-label^="Open the comment"]').first();
+      await button.scrollIntoViewIfNeeded();
+      const shape = await button.evaluate(async (el) => {
+        const img = el.querySelector("img")!;
+        await img.decode();
+        const box = el.getBoundingClientRect();
+        const words = el.nextElementSibling!.querySelector("p")!;
+        const css = getComputedStyle(el);
+        return {
+          width: box.width,
+          height: box.height,
+          corners: [
+            css.borderTopLeftRadius,
+            css.borderTopRightRadius,
+            css.borderBottomRightRadius,
+            css.borderBottomLeftRadius,
+          ],
+          // Over its words: a hairline between, their right edges one.
+          gap: words.getBoundingClientRect().top - box.bottom,
+          right: words.getBoundingClientRect().right - box.right,
+          wordsCorner: getComputedStyle(words).borderTopRightRadius,
+          pixels: [img.naturalWidth, img.naturalHeight],
+        };
+      });
+      expect(shape).toEqual({
+        width: 144,
+        height: 96,
+        corners: ["10px", "10px", "5px", "10px"],
+        gap: 2,
+        right: 0,
+        wordsCorner: "5px",
+        // At least twice its size: sharp on a 2x screen.
+        pixels: [480, 320],
+      });
+    }
+  });
+
   test("pictures loading above what the person reads don't move it", async () => {
     let release = () => {};
     const held = new Promise<void>((resolve) => {
