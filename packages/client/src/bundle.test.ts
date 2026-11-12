@@ -15,7 +15,7 @@ import { dirname, resolve } from "node:path";
  */
 
 const NODE = new RegExp(`^(node:|(${builtinModules.join("|")})(/|$))`);
-const ENTRIES = ["index.ts", "react.ts", "testing/index.ts", "canvas/index.ts"];
+const ENTRIES = ["index.ts", "react.ts", "testing/index.ts", "canvas/index.ts", "model/index.ts"];
 const PACKAGES = resolve(import.meta.dir, "../..");
 const ROOT = resolve(PACKAGES, "..");
 /** The packages the phone must never take in, by name and by where their source is. */
@@ -63,6 +63,43 @@ for (const entry of ENTRIES) {
     expect(barredImports(`${import.meta.dir}/${entry}`)).toEqual([]);
   });
 }
+
+test("the shared rules run on the phone as they are: no React, no DOM, and only pure modules", async () => {
+  // The other entries leave React to the app; the rules must not reach for it at all.
+  const loaded: string[] = [];
+  const built = await Bun.build({
+    entrypoints: [`${import.meta.dir}/model/index.ts`],
+    target: "browser",
+    conditions: ["react-native"],
+    plugins: [
+      {
+        name: "record",
+        setup(build) {
+          build.onLoad({ filter: /./ }, ({ path }) => {
+            loaded.push(path.slice(ROOT.length + 1));
+            return undefined;
+          });
+        },
+      },
+    ],
+  });
+  expect(built.success).toBe(true);
+  expect(loaded).toContain("packages/client/src/model/status.ts");
+  // Every module the rules run: their own, the client's error type, and the runner protocol's
+  // constants (a file that imports nothing).
+  const outside = loaded.filter(
+    (path) =>
+      !path.startsWith("packages/client/src/model/") &&
+      path !== "packages/client/src/errors.ts" &&
+      path !== "apps/runner/src/api/protocol.ts",
+  );
+  expect(outside).toEqual([]);
+  const code = await built.outputs[0]!.text();
+  expect(code).not.toMatch(/\breact\b/i);
+  expect(code).not.toMatch(
+    /\b(document|localStorage|sessionStorage|navigator|HTMLElement|requestAnimationFrame)\b|\bwindow\./,
+  );
+});
 
 test("the import scan sees a type-only import of the canvas", () => {
   // The bundle drops type imports, so this scan is what catches one: prove it does.
