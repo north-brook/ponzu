@@ -190,7 +190,7 @@ export async function graphql(
   token: string,
   query: string,
   variables: Record<string, unknown>,
-): Promise<{ data: any; errors: { type?: string; path?: unknown[] }[] }> {
+): Promise<{ data: any; errors: { type?: string; path?: unknown[]; message?: string }[] }> {
   try {
     const data = await octokit.graphql<any>(query, { ...variables, headers: bearer(token) });
     return { data: data ?? null, errors: [] };

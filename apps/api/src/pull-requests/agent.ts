@@ -231,7 +231,7 @@ export async function agentReadPullRequest(
   await recordCurrent(deps, target.canvasId, found);
   const acting = await actingFor(deps, canvasId, turn);
   const tab = toTab(target, found.read, deps.config.githubApp.slug);
-  return standing(tab, acting, await pushers(deps, context, tab));
+  return standing(tab, acting, await pushers(deps, context, tab), deps.features.mergeQueue);
 }
 
 /**
@@ -274,6 +274,7 @@ export async function agentActOnPullRequest(
   let tab: PullRequestTab;
   let did: boolean;
   let pushing = false;
+  let queued = false;
   if (action === "open") {
     const opened = await asTool(name, () => openPullRequest(deps, context, user));
     tab = opened.tab;
@@ -298,11 +299,13 @@ export async function agentActOnPullRequest(
     );
     tab = result.tab;
     did = result.did;
+    queued = result.queued;
   }
   const pr = tab.pullRequest;
   // A merge GitHub took but doesn't show yet is not said as merged: GitHub's own line says it
-  // once it does, and the agent is told to read again.
-  if (did && pr && (action !== "merge" || pr.state === "merged")) {
+  // once it does, and the agent is told to read again. Nor is one only added to a merge queue:
+  // GitHub's line says the merge when the queue makes it.
+  if (did && pr && (action !== "merge" || (pr.state === "merged" && !queued))) {
     await appendThreadItemOnce(deps.db, {
       // Not a runner's shape (`ti_` and sixteen letters and digits): no sandbox can write it.
       id: `ti_pra-${randomString(16)}`,
@@ -321,7 +324,12 @@ export async function agentActOnPullRequest(
     });
     deps.log.info("pull_request_agent", { canvasId, action, number: pr.number, as: user.id });
   }
-  return { did, pushing, ...standing(tab, acting, await pushers(deps, context, tab)) };
+  return {
+    did,
+    pushing,
+    ...(queued ? { queued } : {}),
+    ...standing(tab, acting, await pushers(deps, context, tab), deps.features.mergeQueue),
+  };
 }
 
 const ACTION_WORDS: Record<AgentPullRequestAction, string> = {
@@ -337,6 +345,7 @@ function standing(
   tab: PullRequestTab,
   acting: Acting,
   canPush: ReadonlySet<number>,
+  mergeQueueOn: boolean,
 ): PullRequestStanding {
   const p = tab.pullRequest;
   return {
@@ -387,7 +396,8 @@ function standing(
           line: said.line,
           body: said.body,
         })),
-      mergeHold: mergeHold(p),
+      mergeHold: mergeHold(p, { mergeQueue: mergeQueueOn }),
+      ...(p.mergeQueue ? { mergeQueue: p.mergeQueue } : {}),
     },
     mergeMethod: tab.mergeMethod,
     autoMergeAllowed: tab.autoMergeAllowed,

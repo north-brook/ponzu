@@ -87,11 +87,14 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ClaudeLimitSeen,
   type ConnectedClaude,
   claudeAccountIdFor,
+  claudeLimitedUntil,
   connectClaudeAccount,
   disconnectClaudeAccount,
   getClaudeAccountById,
+  recordClaudeLimit,
   recordClaudeModels,
   setAgentDefaults,
   setClaudeBlocker,
@@ -145,6 +148,7 @@ export {
   JOB_LOCK_SECONDS,
   type Job,
   type NewJob,
+  onceId,
   recordOnce,
 } from "./queries/jobs.ts";
 export {
@@ -211,9 +215,11 @@ export {
   findCanvasByBranch,
   getPullRequestContext,
   listPullRequestCanvases,
+  listStalePullRequests,
   type PullRequestContext,
   type PullRequestRead,
   recordPullRequestRead,
+  type StalePullRequest,
   setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {

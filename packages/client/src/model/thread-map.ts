@@ -248,7 +248,8 @@ export function toAsk(row: QuestionRow): Ask {
   }
 }
 
-type Head = Pick<CanvasHeadRow, "agentState" | "agentStatus" | "agentBlocker">;
+type Head = Pick<CanvasHeadRow, "agentState" | "agentStatus" | "agentBlocker"> &
+  Partial<Pick<CanvasHeadRow, "agentBlockedUntil">>;
 
 /** What the agent is doing, from the canvas's head; idle before the head arrives. */
 export function agentActivity(head: Head | undefined): AgentActivity {
@@ -265,8 +266,10 @@ export function agentActivity(head: Head | undefined): AgentActivity {
 /**
  * What keeps the viewer from steering the canvas, if anything: read access only, or the owner's
  * Claude, which the canvas runs on for everyone. The head's blocker says when the owner's Claude
- * isn't connected, ran out or left with them; a plan at its limit is known only for the viewer's
- * own account, from their `me` row.
+ * isn't connected, ran out or left with them, or when its plan is at a limit and until when:
+ * every viewer reads that alike, since the canvas waits for everyone (docs/cloud.md, "Claude plan
+ * limits"). Before a wake has said so on the head, the owner also learns of their own plan's
+ * limit from their `me` row.
  */
 export function steerGate({
   access,
@@ -292,6 +295,10 @@ export function steerGate({
   }
   if (owner && blocker === "claude_not_connected") return { kind: "claude_disconnected", owner };
   if (owner && blocker === "claude_expired") return { kind: "claude_expired", owner };
+  const blockedUntil = head?.agentBlockedUntil;
+  if (owner && blocker === "claude_limited" && blockedUntil && Date.parse(blockedUntil) > now) {
+    return { kind: "claude_limit", owner, until: blockedUntil };
+  }
   const until = me?.claudeAccount?.limitedUntil;
   if (owner && me && owner.id === me.id && until && Date.parse(until) > now) {
     return { kind: "claude_limit", owner, until };

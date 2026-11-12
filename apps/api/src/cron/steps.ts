@@ -2,6 +2,7 @@ import { recordOnce } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { installationsStep } from "./steps/installations.ts";
 import { jobsStep } from "./steps/jobs.ts";
+import { pullRequestSweepStep } from "./steps/pull-request-sweep.ts";
 import { sandboxesStep } from "./steps/sandboxes.ts";
 
 /*
@@ -34,7 +35,12 @@ export interface CronStep {
 }
 
 /** Every step, one line each. `jobs` is first and is run before the others. */
-export const CRON_STEPS: readonly CronStep[] = [jobsStep, installationsStep, sandboxesStep];
+export const CRON_STEPS: readonly CronStep[] = [
+  jobsStep,
+  installationsStep,
+  sandboxesStep,
+  pullRequestSweepStep,
+];
 
 /**
  * How late a run may be and still do a slotted step whose time it missed: a step due at :00

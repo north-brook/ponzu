@@ -15,12 +15,14 @@ import {
   type CanvasStatus,
   canvases,
   canvasRunners,
+  jobs,
   type PrChecks,
   type PrState,
   repos,
   workspaces,
 } from "../schema/index.ts";
 import type { Canvas } from "./canvases.ts";
+import { onceId } from "./jobs.ts";
 import { timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
@@ -98,6 +100,52 @@ export async function listPullRequestCanvases(
       .limit(PULL_REQUEST_CANVASES_LISTED),
   );
   return rows.map((row) => row.id);
+}
+
+/** A canvas whose open pull request the sweep reads again. */
+export interface StalePullRequest {
+  canvasId: string;
+  number: number;
+}
+
+/**
+ * The canvases whose pull request is open (or a draft) and was last read from GitHub before
+ * `readBefore`, oldest read first, at most `limit`: those whose webhooks may all have been lost
+ * (docs/cloud.md, "Pull requests"). Left out are canvases with a read of their pull request
+ * already waiting (a job of `refreshKind` about them), those this window's sweep already took (a
+ * `recordOnce` of `sweptKind` for `<canvas>@<window>`), and those whose workspace has no App
+ * installation that works, which could not be read anyway.
+ *
+ * A read that finds nothing new leaves `pr_read_at` alone (`recordPullRequestRead`), so a quiet
+ * pull request stays among the oldest: the window's mark is what moves the sweep on to the next.
+ */
+export async function listStalePullRequests(
+  db: Db,
+  opts: { readBefore: Date; refreshKind: string; sweptKind: string; window: string; limit: number },
+): Promise<StalePullRequest[]> {
+  const { readBefore, refreshKind, sweptKind, window, limit } = opts;
+  const rows = await run(
+    db
+      .select({ canvasId: canvases.id, number: canvases.prNumber })
+      .from(canvases)
+      .innerJoin(workspaces, eq(workspaces.id, canvases.workspaceId))
+      .where(
+        and(
+          inArray(canvases.prState, ["draft", "open"]),
+          isNotNull(canvases.prNumber),
+          isNotNull(canvases.repoId),
+          isNotNull(canvases.branch),
+          isNotNull(workspaces.installationId),
+          isNull(workspaces.suspendedAt),
+          or(isNull(canvases.prReadAt), lt(canvases.prReadAt, readBefore)),
+          sql`not exists (select 1 from ${jobs} where ${jobs.kind} = ${refreshKind} and ${jobs.completedAt} is null and ${jobs.failedAt} is null and ${jobs.payload}->>'canvasId' = ${canvases.id})`,
+          sql`not exists (select 1 from ${jobs} where ${jobs.id} = ${onceId(sweptKind, "")} || ${canvases.id} || ${`@${window}`})`,
+        ),
+      )
+      .orderBy(sql`${canvases.prReadAt} asc nulls first`, canvases.id)
+      .limit(limit),
+  );
+  return rows.flatMap(({ canvasId, number }) => (number === null ? [] : [{ canvasId, number }]));
 }
 
 /** What working on a canvas's pull request takes, in one read. */
