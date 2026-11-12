@@ -105,10 +105,11 @@ jobs:
           bun-version-file: package.json
       - if: steps.setup.outputs.ready == 'true'
         run: bun install --frozen-lockfile --ignore-scripts
-      # 57.0.0: build.ts uses `vercel vcr add`, which later CLIs (deploy-api.yml's 65.14.0) call
-      # `create`. No install scripts run.
+      # The CLI deploy-api.yml uses. An older one (57.0.0) cannot use a token scoped to the team
+      # or the project: it asks who the token's user is, and such a token has none. No install
+      # scripts run.
       - if: steps.setup.outputs.ready == 'true'
-        run: npm install --global --ignore-scripts vercel@57.0.0
+        run: npm install --global --ignore-scripts vercel@65.14.0
       - if: steps.setup.outputs.ready == 'true'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to VCR
