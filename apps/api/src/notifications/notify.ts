@@ -138,7 +138,14 @@ export function commentPosted(
  */
 export function reviewApproved(
   canvasId: string,
-  review: { number: number; reviewId: number; reviewerLogin: string; authorLogin: string | null },
+  review: {
+    number: number;
+    reviewId: number;
+    reviewerLogin: string;
+    /** The reviewer as a Ponzu person (by GitHub user id, which a rename does not change). */
+    reviewerId: string | null;
+    authorLogin: string | null;
+  },
 ): NotifyTrigger | null {
   const reviewerLogin = loginOrNull(review.reviewerLogin);
   if (!reviewerLogin) return null;
@@ -148,6 +155,7 @@ export function reviewApproved(
     number: review.number,
     reviewId: String(review.reviewId),
     reviewerLogin,
+    reviewerId: idOrNull(review.reviewerId),
     authorLogin: loginOrNull(review.authorLogin),
   };
 }
@@ -251,13 +259,16 @@ export async function runNotifyJob(
     case "review_approved": {
       canvas = await notifyCanvasFacts(deps.db, { canvasId: trigger.canvasId });
       if (!canvas) return;
-      const reviewer = personByLogin(canvas, trigger.reviewerLogin);
+      // By their Ponzu id first: a login kept from their last sign-in can be an old one.
+      const reviewer = trigger.reviewerId
+        ? (canvas.people.find((person) => person.userId === trigger.reviewerId) ?? null)
+        : personByLogin(canvas, trigger.reviewerLogin);
       const who = prRecipients(
         canvasFactsOf(canvas),
         {
           authorId: personByLogin(canvas, trigger.authorLogin)?.userId ?? null,
           // Never the person who approved it, when they are one of Ponzu's.
-          actorId: reviewer?.userId ?? null,
+          actorId: trigger.reviewerId ?? reviewer?.userId ?? null,
         },
         now,
       );
@@ -319,11 +330,15 @@ export async function runNotifyJob(
     case "billing": {
       const workspace = await notifyWorkspaceFacts(deps.db, trigger.workspaceId);
       if (!workspace) return;
-      const words = billingWords(trigger, workspace);
+      // The period the notice is about, by the workspace's anchor: "once a period" holds however
+      // the caller wrote its start ("…:00Z" or "…:00.000Z") or whichever instant in it they gave.
+      const period = billingPeriod(workspace.billingPeriodAnchor, new Date(trigger.periodStart));
+      const words = billingWords(trigger, workspace, period.end);
+      const periodStart = period.start.toISOString();
       tellings = billingRecipients(workspace).map((userId) => ({
         userId,
         kind: BILLING_NOTICE_KIND[trigger.notice],
-        dedupeKey: dedupeKey.billing(trigger.notice, trigger.workspaceId, trigger.periodStart),
+        dedupeKey: dedupeKey.billing(trigger.notice, trigger.workspaceId, periodStart),
         words,
         link: { open: "usage" },
         sourceId: null,
@@ -382,6 +397,7 @@ async function prReadyTellings(
 function billingWords(
   trigger: Extract<NotifyTrigger, { kind: "billing" }>,
   facts: NotifyWorkspaceFacts,
+  resetsOn: Date,
 ): PingWords {
   const workspace: BillingWorkspace = { name: facts.name, personal: facts.kind === "personal" };
   // Set for every notice but free_used (the trigger's schema says so).
@@ -397,7 +413,7 @@ function billingWords(
         workspace,
         capCents: cents,
         // The cap resets where the period the notice is about ends.
-        resetsOn: billingPeriod(facts.billingPeriodAnchor, new Date(trigger.periodStart)).end,
+        resetsOn,
       };
     case "payment_failed":
       return { kind: "billing_payment_failed", workspace, totalCents: cents };

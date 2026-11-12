@@ -183,6 +183,8 @@ export const NotifyTrigger = z.discriminatedUnion("kind", [
     number: PrNumber,
     reviewId: Id,
     reviewerLogin: Login,
+    /** The reviewer as a Ponzu person, found by their GitHub user id, when they are one. */
+    reviewerId: Id.nullable(),
     authorLogin: Login.nullable(),
   }),
   /** A copy of a message that had lapsed lapsed again: the thread says to send it again. */
@@ -228,7 +230,8 @@ export function triggerKey(trigger: NotifyTrigger): string {
     case "wake_failed":
       return `${trigger.kind}:${trigger.canvasId}:${trigger.failedAt}`;
     case "billing":
-      return `${trigger.kind}:${trigger.notice}:${trigger.workspaceId}:${trigger.periodStart}`;
+      // One spelling of the instant, so "…:00Z" and "…:00.000Z" are one job.
+      return `${trigger.kind}:${trigger.notice}:${trigger.workspaceId}:${new Date(trigger.periodStart).toISOString()}`;
   }
 }
 

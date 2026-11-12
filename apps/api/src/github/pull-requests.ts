@@ -123,7 +123,12 @@ export async function tellCanvases(
      * For a review that approved: its ping (`review_approved`), sent to each canvas that heard
      * the review, so only for a reviewer GitHub says can push to the repo.
      */
-    approval?: (canvasId: string, pullRequest: PullRequestRef) => NotifyTrigger | null;
+    approval?: (
+      canvasId: string,
+      pullRequest: PullRequestRef,
+      /** The reviewer as a Ponzu person, by their GitHub user id, when they are one. */
+      reviewerId: string | null,
+    ) => NotifyTrigger | null;
   },
 ): Promise<void> {
   const { db, log } = deps;
@@ -146,7 +151,7 @@ export async function tellCanvases(
     });
     // `next` wakes a sleeping sandbox (docs/cloud.md, "Events").
     await queueWake(deps, canvas.id, kind);
-    const ping = approval?.(canvas.id, pullRequest);
+    const ping = approval?.(canvas.id, pullRequest, person?.id ?? null);
     if (ping) await notify(deps, ping);
     log.info("canvas_event_appended", { canvasId: canvas.id, kind });
   }

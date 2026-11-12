@@ -384,11 +384,12 @@ export function planDelivery(event: string, payload: unknown): Plan {
             }),
             ...(review.state.toLowerCase() === "approved" && review.id !== undefined
               ? {
-                  approval: (canvasId: string, pr: PullRequestRef) =>
+                  approval: (canvasId: string, pr: PullRequestRef, reviewerId: string | null) =>
                     reviewApproved(canvasId, {
                       number: pr.number,
                       reviewId: review.id!,
                       reviewerLogin: user.login,
+                      reviewerId,
                       authorLogin: e.pull_request.user?.login ?? null,
                     }),
                 }

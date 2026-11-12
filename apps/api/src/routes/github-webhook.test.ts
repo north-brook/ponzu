@@ -1220,6 +1220,19 @@ describe("pull requests, checks and reviews", () => {
     // The owner approving it themselves is told to nobody.
     await deliver("pull_request_review", review(person.github, "APPROVED", 503));
     expect(await pings(canvas.id, "pr_approved")).toHaveLength(1);
+    // So is the owner approving under a GitHub login they changed since they last signed in:
+    // they are known by their GitHub user id.
+    const heard = () =>
+      t.logs.filter((line) => line.event === "canvas_event_appended" && line.canvasId === canvas.id)
+        .length;
+    const before = heard();
+    await deliver(
+      "pull_request_review",
+      review({ id: person.github.id, login: "maya-renamed" }, "APPROVED", 504),
+    );
+    // The agent heard the review, so its ping was asked for, and told to nobody.
+    expect(heard()).toBe(before + 1);
+    expect(await pings(canvas.id, "pr_approved")).toHaveLength(1);
     expect(JSON.stringify(await t.db.select().from(notifications))).not.toContain("Nightjar");
   });
 });

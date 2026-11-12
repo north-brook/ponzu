@@ -182,21 +182,22 @@ export async function wakeCanvas(
       throw new RetryLater(waitAfter(error, job.attempts), error.message);
     }
     // It will not start this way, or it has been tried long enough. The next message tries again.
-    await moveSandbox(db, {
+    const failedAt = new Date(clock.now());
+    const gaveUp = await moveSandbox(db, {
       canvasId,
       from: ["waking"],
       to: "asleep",
-      now: new Date(clock.now()),
+      now: failedAt,
       by: job.id,
       changes: { failure: error.message.slice(0, 500) },
     });
     await showAgentWaiting(db, { canvasId, waking: false, blocker: "sandbox_failed" });
     log.error("wake_failed", { canvasId, refusal: error.code, error });
-    await notify(deps, {
-      kind: "wake_failed",
-      canvasId,
-      failedAt: new Date(clock.now()).toISOString(),
-    });
+    // Only the run that put it to sleep pings: the ping is keyed by this moment, so a second run
+    // of the job (or one racing it) that finds it asleep already would ping again.
+    if (gaveUp) {
+      await notify(deps, { kind: "wake_failed", canvasId, failedAt: failedAt.toISOString() });
+    }
   }
 }
 

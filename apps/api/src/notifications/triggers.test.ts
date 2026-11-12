@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { appendEvent, notificationDeliveries, notifications, recordRepoAccess } from "@ponzu/db";
+import {
+  appendEvent,
+  notificationDeliveries,
+  notifications,
+  recordRepoAccess,
+  repushDeliveries,
+} from "@ponzu/db";
 import { runDueJobs } from "../jobs/run.ts";
 import { call, canvasIn, type Workspace, workspaceWithRepo } from "../testing/canvases.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
@@ -309,6 +315,50 @@ describe("a teammate's comment", () => {
     ]);
   });
 
+  test("a push set waiting again while its deliver job runs is still sent", async () => {
+    const { ws, canvas, owner, mate, phone } = await scene();
+    const secondToken = tokenOf(`${owner}-two`);
+    const send = t.push.send.bind(t.push);
+    let raced = false;
+    // While the first push goes, a phone is added and a comment folds in: its notify job re-plans
+    // the row's pushes while this deliver job still holds the job's key, so it can record none.
+    t.push.send = async (messages) => {
+      const tickets = await send(messages);
+      if (!raced) {
+        raced = true;
+        const second = await call(t, ws.people[owner]!.headers, "POST", "/v1/me/devices", {
+          platform: "ios",
+          pushToken: secondToken,
+          pushEnvironment: "production",
+          installId: `install-${owner}-phone-two`,
+          name: "iPhone",
+        });
+        expect(second.status).toBe(201);
+        await repushDeliveries(t.db, {
+          rows: [
+            {
+              notificationId: String(messages[0]!.data!.n),
+              deviceId: second.body.device.id as string,
+              sendAt: new Date(t.clock.now()),
+            },
+          ],
+          now: new Date(t.clock.now()),
+        });
+      }
+      return tickets;
+    };
+    try {
+      await post(mate, canvas.id, [newThread(mate).op]);
+      expect(pushesTo(phone.token)).toHaveLength(1);
+      expect(pushesTo(secondToken)).toHaveLength(0);
+      await later(1000);
+      expect(pushesTo(secondToken)).toHaveLength(1);
+      expect(pushesTo(phone.token)).toHaveLength(1);
+    } finally {
+      t.push.send = send;
+    }
+  });
+
   test("a toggle that is off keeps the row, muted, and folding into it pushes nothing", async () => {
     const { ws, canvas, owner, mate, phone } = await scene();
     await call(t, ws.people[owner]!.headers, "PATCH", "/v1/me/notifications", {
@@ -417,6 +467,10 @@ describe("billing", () => {
     await notify(t.deps, warn);
     await t.backgroundDone();
     await notify(t.deps, warn);
+    await t.backgroundDone();
+    // The same period, its start spelled another way, or an instant inside it, is the same once.
+    await notify(t.deps, { ...warn, periodStart: "2026-11-01T00:00:00Z" });
+    await notify(t.deps, { ...warn, periodStart: "2026-11-14T09:30:00Z" });
     await t.backgroundDone();
 
     const rows = await rowsOf({ workspaceId: ws.id });

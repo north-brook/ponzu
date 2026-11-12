@@ -66,9 +66,17 @@ export async function runDeliverJob(
   const now = new Date(deps.clock.now());
   const notification = await getNotification(db, notificationId);
   if (!notification) return;
-  const { due, nextSendAt } = await dueDeliveries(db, { notificationId, now });
+  let { due, nextSendAt } = await dueDeliveries(db, { notificationId, now });
   if (due.length > 0) {
     await deliver(deps, notification, due, now, job.attempts >= job.maxAttempts);
+    // A comment folded into the row while this ran sets its pushes waiting again
+    // (`repushDeliveries`), and its notify job finds this job still running, so records none of
+    // its own: this job sends them, with the row's new words, rather than leave them waiting.
+    const again = await dueDeliveries(db, { notificationId, now });
+    if (again.due.length > 0) {
+      throw new RetryLater(1000, "A changed notification waits to be pushed again.");
+    }
+    nextSendAt = again.nextSendAt;
   }
   // Pushes still waiting for their time (a 429's, or a phone added on a later attempt).
   if (nextSendAt) {
