@@ -97,6 +97,19 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
   },
   {
+    // For the tests and a look: a design opening with its answers late, delivered on demand
+    // (`window.galleryArrive`, or `?later` on a schedule). Its first paint: the row's mark, the
+    // action's room held, you alone, no pages yet.
+    id: "design-opening",
+    title: "Opening a design · its answers arriving late",
+    ...WINDOW,
+  },
+  {
+    id: "design-opening-launch",
+    title: "Opening a design at launch · nothing known yet, the sidebar collapsed",
+    ...WINDOW,
+  },
+  {
     id: "share",
     title: "Share",
     board: "teams/share.html",

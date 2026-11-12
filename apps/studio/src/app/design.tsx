@@ -11,7 +11,7 @@ import type {
   Person,
   WorkspaceKind,
 } from "../cloud/model.ts";
-import { actionBlock } from "../cloud/pull-request.ts";
+import { actionBlock, nextAction } from "../cloud/pull-request.ts";
 import { railSignal } from "../cloud/status.ts";
 import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
@@ -24,7 +24,7 @@ import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
-import { chromeAction, prSummary } from "./pull-request-map.ts";
+import { chromeAction, offeredTab, prSummary, rowPullRequest } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
 import { branchMoment, steerGate } from "./thread-map.ts";
 import { ThreadStore } from "./thread-store.ts";
@@ -216,10 +216,24 @@ export function DesignChromeSlot({
   const pages = doc ? pageTabs(doc.pages, head?.agentArtboards ?? []) : [];
   const project = summary?.project ?? null;
   const repo = project?.kind === "repo" ? project.repo : null;
-  usePullRequestReads(open, repo ? head : undefined, thread.items);
+  usePullRequestReads(open, repo !== null, head, thread.items);
 
-  const pr = prSummary(head);
-  const kind = repo && pull.tab ? chromeAction(pull.tab) : null;
+  // The mark from the design's head, live; until the head has come, from what the sidebar's row
+  // already says (the same columns), with what the last read of GitHub said of whether it can
+  // merge. So a design opens with its mark at once, and the head confirms it without a change.
+  const pr = head ? prSummary(head) : rowPullRequest(summary, pull.tab);
+  // The last answer kept from an earlier opening is offered only while it agrees with what the
+  // row and the head say now: a pull request merged, closed or pushed to since doesn't offer
+  // what it did (Merge on one already merged) before the read on opening says.
+  const tab = offeredTab(pull, pr);
+  const kind = repo && tab ? chromeAction(tab) : null;
+  // Until its own answer, the action its row's pull request most likely offers: its room is
+  // held, unseen, so the mark beside it doesn't move when it comes. Not for one that is merged
+  // or closed, or with no pull request, which as often offer nothing.
+  const expected =
+    repo && !tab && pr && (pr.state === "open" || pr.state === "draft")
+      ? nextAction(pr, false)
+      : null;
   const gate = steerGate({ access, repo, head, owner, me: meRow, now });
   const worked = useMemo(
     () =>
@@ -284,35 +298,47 @@ export function DesignChromeSlot({
           : null
       }
       rail={{ open: rail.open, signal, onToggle: rail.onToggle }}
+      actionExpected={expected}
     />
   );
 }
 
 /**
- * Reads the pull request when the design opens, and again when what the head says of it
- * changes, when the agent's state changes or a stretch of its work ends (it may have pushed),
- * when the thread says a pull request opened, merged or closed, and on coming back to the
- * window. A Scratch design (no `head` given) has none to read.
+ * Reads the pull request as the design opens (at once, not waiting for its head), and again
+ * when what the head says of it changes, when the agent's state changes or a stretch of its
+ * work ends (it may have pushed), when the thread says a pull request opened, merged or closed,
+ * and on coming back to the window. A Scratch design (no `repo`) has none to read.
  */
 function usePullRequestReads(
   open: OpenDesign,
+  repo: boolean,
   head: DesignHeadRow | undefined,
   items: readonly RunnerItem[] | null,
 ) {
+  useEffect(() => {
+    if (repo) open.pullRequest.refreshOnOpen();
+  }, [open, repo]);
   const branch = items ? branchMoment(items) : 0;
-  const key = head
-    ? [
-        head.prNumber,
-        head.prState,
-        head.prChecks,
-        head.prMergeable,
-        head.prAutoMerge,
-        head.agentState,
-        branch,
-      ].join()
-    : null;
+  const key =
+    repo && head
+      ? [
+          head.prNumber,
+          head.prState,
+          head.prChecks,
+          head.prMergeable,
+          head.prAutoMerge,
+          head.agentState,
+          branch,
+        ].join()
+      : null;
+  // The head as it first comes is what the read on opening already asked about.
+  const first = useRef<string | null>(null);
   useEffect(() => {
     if (key === null) return;
+    if (first.current === null) {
+      first.current = key;
+      return;
+    }
     // A burst of changes (a push and its checks starting) is one read.
     const timer = setTimeout(() => open.pullRequest.refresh(), READ_AFTER_MS);
     return () => clearTimeout(timer);

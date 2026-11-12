@@ -6,6 +6,7 @@ import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
 import { LivePreviews } from "./live-previews.tsx";
+import { OpeningWindow } from "./opening.tsx";
 import { SendHarness } from "./send-harness.tsx";
 import { SETUP_BOARDS } from "./setup-boards.tsx";
 import { THREAD_BOARDS } from "./thread-boards.tsx";
@@ -129,6 +130,8 @@ export const BOARDS: Record<string, () => ReactNode> = {
   share: () => <DesignWindow />,
   "share-not-joined": () => <DesignWindow members={f.membersMixed} />,
   "sidebar-previews-updating": () => <LivePreviews />,
+  "design-opening": () => <OpeningWindow known="row" />,
+  "design-opening-launch": () => <OpeningWindow known="nothing" sidebar="closed" />,
   "thread-in-the-right-rail": () => (
     <DesignHarness
       designs={f.soloWorking}

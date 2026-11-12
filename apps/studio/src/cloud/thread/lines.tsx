@@ -263,10 +263,30 @@ function placeOf(comment: Extract<ThreadItem, { kind: "comment" }>["payload"]): 
 }
 
 /**
+ * How wide a comment's picture is shown: a glance at where the comment was left, not the message
+ * itself, so its words lead. Three fifths of the size it is drawn at (240 by 160, at 2x: twice
+ * the pixels a 2x screen needs at this size, so it stays sharp), the same at every width of the
+ * rail.
+ */
+export const COMMENT_PICTURE_WIDTH = 144;
+/** A tall picture is cut to this height (from its middle, where its pin is), not shown taller. */
+export const COMMENT_PICTURE_MAX_HEIGHT = 108;
+
+/** The size a picture drawn at `width` by `height` is shown at in the thread. */
+export function commentPictureSize(width: number, height: number) {
+  const shownWidth = Math.min(COMMENT_PICTURE_WIDTH, width);
+  return {
+    width: shownWidth,
+    height: Math.min(COMMENT_PICTURE_MAX_HEIGHT, Math.round((shownWidth * height) / width)),
+  };
+}
+
+/**
  * The picture of where a comment was left, above its words as a photo sits above the text sent
- * with it in Messages: the same rounding, the corner that meets the bubble tucked in. It holds
- * its size from the first frame, on the canvas's ground, and the image comes up over it once it
- * has loaded. Pressing it takes the canvas there.
+ * with it in Messages: the corner that meets the bubble tucked in to the bubble's own (5), the
+ * others a step under the bubble's 14 as its smaller size wants. It holds its size from the
+ * first frame, on the canvas's ground, and the image comes up over it once it has loaded.
+ * Pressing it takes the canvas there.
  */
 function CommentPictureButton({
   src,
@@ -287,13 +307,14 @@ function CommentPictureButton({
   children: ReactNode;
 }) {
   const [loaded, setLoaded] = useState<string | null>(null);
+  const shown = commentPictureSize(width, height);
   return (
     <button
       type="button"
       aria-label={`Open the comment on ${place}`}
       onClick={onOpen}
-      style={{ width, height }}
-      className="relative block shrink-0 cursor-default overflow-hidden rounded-14 rounded-br-[5px] bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.97] active:brightness-[0.94]"
+      style={shown}
+      className="relative block shrink-0 cursor-default overflow-hidden rounded-10 rounded-br-[5px] bg-canvas shadow-board outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[0.97] active:brightness-[0.94]"
     >
       {src ? (
         <img
@@ -304,7 +325,7 @@ function CommentPictureButton({
           onLoad={() => setLoaded(src)}
           onError={onFailed}
           className={cn(
-            "block size-full transition-opacity duration-(--dur-hover)",
+            "block size-full object-cover transition-opacity duration-(--dur-hover)",
             loaded === src ? "opacity-100" : "opacity-0",
           )}
         />
