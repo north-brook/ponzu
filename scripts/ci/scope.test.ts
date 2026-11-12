@@ -72,6 +72,14 @@ test("it still runs neither once the apps take its route types through the clien
   });
 });
 
+test("the 1.x packages kept until cutover run neither", () => {
+  // Nothing either app bundles depends on them now that the CLI and its npm package are gone,
+  // and "Tests" runs their tests on every pull request.
+  for (const file of ["packages/store/src/index.ts", "packages/tools/src/local/tools.ts"]) {
+    expect(suites(file)).toEqual({ desktop: false, mobile: false });
+  }
+});
+
 test("the site runs neither", () => {
   expect(suites("apps/web/app/page.tsx")).toEqual({ desktop: false, mobile: false });
 });

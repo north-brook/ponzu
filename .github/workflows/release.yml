@@ -11,8 +11,8 @@ name: Release
 # every file each platform's feed names and every download the site links,
 # and publish it. A platform that fails leaves the draft a draft, so every
 # release ships on all three or on none. electron-updater and the site's
-# download links only see the latest published release, so a failed build never reaches
-# anyone. A mobile-vX.Y.Z tag starts EAS's production workflow
+# download links only see the latest published release, so a failed build
+# never reaches anyone. A mobile-vX.Y.Z tag starts EAS's production workflow
 # (apps/mobile/.eas/workflows), and its release is published here without
 # becoming the latest, which stays the desktop app's. A fix or feature merged
 # to main reaches installed apps without anyone touching a release PR.
