@@ -51,9 +51,10 @@ packages/
   client/    typed API client, live queries, the cloud canvas source
 ```
 
-Deleted at cutover: `apps/cli`, `packages/server`, `packages/mcp`, `packages/store`,
-`plugin/`, the marketplace manifests, and the `/gh`, `/local`, `/open`, `/share`
-and badge routes in `apps/web`.
+Deleted at cutover: `packages/store`, `packages/tools/src/local`, core's 1.x modules,
+`examples/`, and the `/gh`, `/local`, `/open`, `/share` and badge routes in `apps/web`.
+The 1.x command line, its local server and MCP packages, the agent plugin and the
+marketplace manifests are already gone from this branch.
 
 Where things run:
 

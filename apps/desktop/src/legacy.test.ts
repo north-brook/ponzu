@@ -26,7 +26,7 @@ import {
 } from "./legacy.ts";
 
 /*
- * Each case lays out a home folder the way Ponzu 1.x left it (apps/cli/src/install.ts,
+ * Each case lays out a home folder the way Ponzu 1.x left it (its CLI's install.ts,
  * command.ts, host.ts, wake.ts write these exact forms) and checks what goes and what stays.
  */
 
