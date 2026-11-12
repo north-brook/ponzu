@@ -142,6 +142,32 @@ export async function failJob(
 }
 
 /**
+ * Make the waiting job of this kind and key due at `now`, when it was put off to later and
+ * nobody holds it: what it waited for has happened sooner. False when there is no such job.
+ */
+export async function bringJobForward(
+  db: Db,
+  { kind, key, now }: { kind: string; key: string; now: Date },
+): Promise<boolean> {
+  const moved = await run(
+    db
+      .update(jobs)
+      .set({ runAt: now })
+      .where(
+        and(
+          eq(jobs.kind, kind),
+          eq(jobs.key, key),
+          waiting,
+          isNull(jobs.lockedBy),
+          sql`${jobs.runAt} > ${now.toISOString()}::timestamptz`,
+        ),
+      )
+      .returning({ id: jobs.id }),
+  );
+  return moved.length > 0;
+}
+
+/**
  * Close the jobs that are out of attempts with no worker left holding them: whoever had the
  * last attempt died before it could say how it went. Until such a job is closed, nothing of
  * its kind and key can be recorded. The cron calls this on every sweep, and gets the jobs

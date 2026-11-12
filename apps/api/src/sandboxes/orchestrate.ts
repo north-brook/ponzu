@@ -4,6 +4,7 @@ import {
   getCheckpointCover,
   getSandbox,
   getWakeContext,
+  liftAgentBlockers,
   moveSandbox,
   recordCanvasClaudeAccount,
   revokeRunnerToken,
@@ -30,17 +31,14 @@ import {
   SNAPSHOT_EXPIRATION_MS,
   STOP_COMMAND_MS,
 } from "./constants.ts";
-import {
-  claudeProblem,
-  credentialMark,
-  type Environment,
-  newEnvironment,
-  portBinding,
-} from "./environment.ts";
+import { credentialMark, type Environment, newEnvironment, portBinding } from "./environment.ts";
+import { askWakeGates, LIFTED_BY_A_WAKE } from "./gates.ts";
 
 /*
  * Waking a canvas's sandbox (docs/cloud.md, "The sandbox"): the job `requestWake` records, run
- * at once by the request and again by the cron until it is done. The database decides who does
+ * at once by the request and again by the cron until it is done. First the wake gates
+ * (`gates.ts`) are asked whether anything outside the canvas holds it back; the first that
+ * says so ends the wake, or puts it off to when that gate said. The database decides who does
  * it: a wake first claims the canvas's row (`waking`, held by the wake's job), so of any number
  * of wakes racing one starts the runner and the rest leave it be. The claim counts the
  * sandboxes already up in the workspace and for the owner; one past the limits waits.
@@ -103,7 +101,8 @@ export async function runWakeJob(
   payload: RunningJob["payload"],
   job: RunningJob,
 ): Promise<void> {
-  await wakeCanvas(deps, String(payload.canvasId), job);
+  const reason = typeof payload.reason === "string" ? payload.reason : null;
+  await wakeCanvas(deps, String(payload.canvasId), job, { reason });
 }
 
 /** The wake job running: its id is what holds the row while it is `waking`. */
@@ -111,21 +110,36 @@ type Wake = Pick<RunningJob, "id" | "attempts" | "maxAttempts">;
 
 /**
  * Make sure the canvas's runner is running on its owner's current Claude credential. Safe to
- * run twice at once and again after a crash at any point.
+ * run twice at once and again after a crash at any point. `reason` is the wake's, as recorded,
+ * which a gate may read.
  */
-export async function wakeCanvas(deps: JobDeps, canvasId: string, job: Wake): Promise<void> {
+export async function wakeCanvas(
+  deps: JobDeps,
+  canvasId: string,
+  job: Wake,
+  { reason = null }: { reason?: string | null } = {},
+): Promise<void> {
   const { db, clock, log } = deps;
   const began = clock.now();
   const context = await getWakeContext(db, canvasId);
   if (!context || context.status === "settled") return;
 
-  // Nothing to start it with. The event waits in the feed; what is missing wakes it once it's
-  // there, or the next message does.
-  const problem = context.ownerMember ? claudeProblem(context.claude, began) : "claude_owner_left";
-  if (problem) {
-    await showAgentWaiting(db, { canvasId, waking: false, blocker: problem });
-    log.info("wake_blocked", { canvasId, blocker: problem });
+  // Something outside the canvas must change first. The event waits in the feed; what it waits
+  // on wakes it once it has changed, or the next message does, or (when the gate said when)
+  // this wake, tried again then.
+  const refused = askWakeGates(context, new Date(began), { deps, reason });
+  if (refused) {
+    const { blocker, retryAt, gate } = refused;
+    await showAgentWaiting(db, { canvasId, waking: false, blocker, blockedUntil: retryAt });
+    log.info("wake_blocked", { canvasId, blocker });
+    if (retryAt && job.attempts < job.maxAttempts) {
+      throw new RetryLater(Math.max(0, retryAt.getTime() - began), `The ${gate} gate holds it.`);
+    }
     return;
+  }
+  // Every gate lets it through: what one of them said before no longer holds.
+  if (context.agentBlocker && LIFTED_BY_A_WAKE.has(context.agentBlocker)) {
+    await liftAgentBlockers(db, { blockers: [context.agentBlocker], canvasId });
   }
   await recordCanvasClaudeAccount(db, { canvasId, claudeAccountId: context.claude!.id });
 

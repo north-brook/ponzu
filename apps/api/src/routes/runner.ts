@@ -64,6 +64,7 @@ import {
 import { startRunnerSession } from "../runner/session.ts";
 import { writeRunnerThread } from "../runner/thread.ts";
 import { reportTurns } from "../runner/turns.ts";
+import { claimableKinds } from "../sandboxes/gates.ts";
 import { completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
@@ -208,13 +209,16 @@ export const runner = new Hono<AppEnv>()
   /**
    * The canvas's events this runner has not been handed, oldest first, and the canvas's head,
    * from one statement. An event goes to each runner once, so a new claim hands out only what
-   * is new. Safe to repeat: the same claim id hands out again what it handed out.
+   * is new. Safe to repeat: the same claim id hands out again what it handed out. Only the
+   * kinds `claimableKinds` allows now go out; the rest stay in the feed for a later claim.
    */
   .post("/events/claim", access.runner, validate("json", Claim), async (c) => {
     const { canvasId, runnerId } = c.var.actor;
     const { claimId, limit } = c.req.valid("json");
-    const now = new Date(c.var.deps.clock.now());
-    const claimed = await claimEvents(c.var.deps.db, { canvasId, runnerId, claimId, limit, now });
+    const { deps } = c.var;
+    const now = new Date(deps.clock.now());
+    const kinds = await claimableKinds(deps, { canvasId });
+    const claimed = await claimEvents(deps.db, { canvasId, runnerId, claimId, limit, now, kinds });
     if (!claimed) throw new ApiError(404, "not_found", "There is no such canvas.");
     const response: ClaimResponse = {
       events: claimed.events.map(

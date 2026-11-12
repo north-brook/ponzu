@@ -128,6 +128,7 @@ export {
   saveGithubUserToken,
 } from "./queries/github-tokens.ts";
 export {
+  bringJobForward,
   claimJobs,
   completeJob,
   enqueueJob,
@@ -270,6 +271,7 @@ export {
   getSandbox,
   getSandboxOwners,
   getWakeContext,
+  liftAgentBlockers,
   listCanvasesWithSandboxOn,
   listSandboxesToSweep,
   listSandboxImages,

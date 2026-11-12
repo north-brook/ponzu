@@ -11,7 +11,8 @@ filter.ts         the sidebar filter
 search.ts         match highlighting, keyboard selection over results
 pull-request.ts   the next action and the pull request mark's state
 time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the clock they read
-gate.ts           what keeps someone from steering a canvas (read access, the owner's Claude), in words
+gate.ts           what keeps someone from steering a canvas (read access, the owner's Claude), in words,
+                  and each wake gate's blocker line (paused, billing, a Claude plan's limit)
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,

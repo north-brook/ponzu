@@ -417,8 +417,9 @@ export async function countSandboxRestart(db: Db, canvasId: string): Promise<num
 /**
  * Show on the canvas's head why its agent is waiting, and whether a wake is under way. `waking`
  * turns an idle agent to `waking`; without it, a `waking` agent goes back to idle, and so does a
- * `working` one when there is a blocker: nothing runs then, whatever its runner last said. The
- * row clients watch is written only when this changes what it shows.
+ * `working` one when there is a blocker: nothing runs then, whatever its runner last said.
+ * `blockedUntil` is until when the blocker holds, when that is known; any other call clears it.
+ * The row clients watch is written only when this changes what it shows.
  */
 export async function showAgentWaiting(
   db: Db,
@@ -426,23 +427,85 @@ export async function showAgentWaiting(
     canvasId,
     waking,
     blocker,
-  }: { canvasId: string; waking: boolean; blocker: AgentBlocker | null },
+    blockedUntil = null,
+  }: {
+    canvasId: string;
+    waking: boolean;
+    blocker: AgentBlocker | null;
+    blockedUntil?: Date | null;
+  },
 ): Promise<void> {
   const stopped = blocker ? sql`('waking', 'working')` : sql`('waking')`;
   const state = waking
     ? sql`case when ${canvases.agentState} in ('idle', 'limited') then 'waking' else ${canvases.agentState} end`
     : sql`case when ${canvases.agentState} in ${stopped} then 'idle' else ${canvases.agentState} end`;
+  const until = blocker && blockedUntil ? blockedUntil : null;
+  const untilParam = until ? sql`${timeParam(until)}::timestamptz` : sql`null::timestamptz`;
   await run(
     db
       .update(canvases)
-      .set({ agentBlocker: blocker, agentState: state })
+      .set({ agentBlocker: blocker, agentBlockedUntil: until, agentState: state })
       .where(
         and(
           eq(canvases.id, canvasId),
-          sql`(${canvases.agentBlocker}, ${canvases.agentState}) is distinct from (${blocker}::text, ${state})`,
+          sql`(${canvases.agentBlocker}, ${canvases.agentBlockedUntil}, ${canvases.agentState})
+              is distinct from (${blocker}::text, ${untilParam}, ${state})`,
         ),
       ),
   );
+}
+
+/**
+ * Lift `blockers` from the active canvases they hold: one canvas, the canvases of a workspace,
+ * those on a Claude account (that run on it, and its owner's that have not run on one yet), or
+ * every canvas when none of these is given. What a gate does once what it waited for has
+ * changed; the rest of the head is left as it is. Answers each canvas whose head changed, most
+ * recently active first, and whether it has something in its feed its agent must take up.
+ */
+export async function liftAgentBlockers(
+  db: Db,
+  {
+    blockers,
+    canvasId,
+    workspaceId,
+    claudeAccountId,
+  }: {
+    blockers: readonly AgentBlocker[];
+    canvasId?: string;
+    workspaceId?: string;
+    claudeAccountId?: string;
+  },
+): Promise<{ id: string; pending: boolean }[]> {
+  if (blockers.length === 0) return [];
+  const onAccount = sql`(${canvases.claudeAccountId} = ${claudeAccountId ?? null}
+    or (${canvases.claudeAccountId} is null and ${canvases.ownerId} =
+        (select a.user_id from claude_accounts a where a.id = ${claudeAccountId ?? null})))`;
+  const rows = await run(
+    db
+      .update(canvases)
+      .set({ agentBlocker: null, agentBlockedUntil: null })
+      .where(
+        and(
+          eq(canvases.status, "active"),
+          inArray(canvases.agentBlocker, [...blockers]),
+          canvasId === undefined ? undefined : eq(canvases.id, canvasId),
+          workspaceId === undefined ? undefined : eq(canvases.workspaceId, workspaceId),
+          claudeAccountId === undefined ? undefined : onAccount,
+        ),
+      )
+      .returning({
+        id: canvases.id,
+        lastActivityAt: canvases.lastActivityAt,
+        // Named in full: inside a `returning`, Drizzle writes a column without its table.
+        pending: sql<boolean>`exists (
+          select 1 from events e
+           where e.canvas_id = "canvases"."id" and e.delivered_at is null
+             and e.priority in ('now', 'next'))`.mapWith(Boolean),
+      }),
+  );
+  return rows
+    .toSorted((a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime())
+    .map(({ id, pending }) => ({ id, pending }));
 }
 
 /** What waking a canvas takes: the canvas, whose Claude it runs on, and its sandbox now. */
@@ -467,6 +530,9 @@ export interface WakeContext {
    * has left lends their Claude to nothing there.
    */
   ownerMember: boolean;
+  /** What the canvas's head says its agent waits on now, and until when. */
+  agentBlocker: AgentBlocker | null;
+  agentBlockedUntil: Date | null;
 }
 
 /** Whether the canvas `d`'s owner is still a member of its workspace. */
@@ -480,7 +546,14 @@ const runsOn = sql`(a.id = d.claude_account_id
 /** Everything a wake decides on, in one read. Null when there is no such canvas. */
 export async function getWakeContext(db: Db, canvasId: string): Promise<WakeContext | null> {
   const result = await queryJson<{
-    canvas: { id: string; workspace_id: string; status: CanvasStatus; owner_id: string | null };
+    canvas: {
+      id: string;
+      workspace_id: string;
+      status: CanvasStatus;
+      owner_id: string | null;
+      agent_blocker: AgentBlocker | null;
+      agent_blocked_until: string | null;
+    };
     claude: {
       id: string;
       user_id: string;
@@ -497,7 +570,9 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     sql`
       select json_build_object(
         'canvas', json_build_object('id', d.id, 'workspace_id', d.workspace_id,
-                                    'status', d.status, 'owner_id', d.owner_id),
+                                    'status', d.status, 'owner_id', d.owner_id,
+                                    'agent_blocker', d.agent_blocker,
+                                    'agent_blocked_until', d.agent_blocked_until),
         'claude', (select row_to_json(a) from claude_accounts a
                     where a.id = d.claude_account_id
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
@@ -527,6 +602,8 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     },
     sandbox: result.sandbox ? toSandbox(result.sandbox) : null,
     ownerMember: result.owner_member,
+    agentBlocker: canvas.agent_blocker,
+    agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
   };
 }
 

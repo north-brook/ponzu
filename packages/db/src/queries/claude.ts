@@ -160,6 +160,7 @@ export async function setClaudeBlocker(
       .update(canvases)
       .set({
         agentBlocker: blocker,
+        agentBlockedUntil: null,
         // With a blocker nothing runs, whatever its runner last said.
         agentState: sql`case when ${canvases.agentState} in ${blocker ? sql`('waking', 'working')` : sql`('waking')`}
                              then 'idle' else ${canvases.agentState} end`,

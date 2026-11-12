@@ -183,6 +183,13 @@
       "when": 1794472324144,
       "tag": "0025_canvases",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794479429628,
+      "tag": "0026_agent_blockers",
+      "breakpoints": true
     }
   ]
 }
