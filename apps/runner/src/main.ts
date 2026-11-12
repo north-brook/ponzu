@@ -108,6 +108,9 @@ const runner = new Runner({
   stateDir: env.stateDir,
   // What the working state and the thread's steps never say, whatever the agent typed.
   secrets: [env.token, env.portToken, ...secretValues(process.env)],
+  // A subscription's plan has limits worth reporting; an API key has none (readEnv holds that
+  // exactly one of the two is set).
+  planLimits: Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN),
   // Every filesystem, so the agent's files are flushed with the runner's own.
   flush: () =>
     new Promise<void>((resolve) => {

@@ -17,8 +17,14 @@ import type { Git } from "./save/work.ts";
 export type PushFailureKind =
   /** GitHub's branch has commits this one does not: pushing would throw them away. */
   | "diverged"
-  /** GitHub refused it for good: a rule, a protected branch, a workflow file the App may not write. */
+  /** GitHub refused it for good: a rule, a protected branch, a hook. */
   | "refused"
+  /**
+   * GitHub refused it because a commit changes a file under `.github/workflows/`, which Ponzu's
+   * GitHub App has no permission to write. Nothing pushed again gets past that, so it is told
+   * apart from `refused`: the way on is to leave those files out, not to fix something and retry.
+   */
+  | "workflow_permission"
   /** It may pass on another try: the token, the network, GitHub itself. */
   | "transient";
 
@@ -202,6 +208,14 @@ export class BranchPush {
   }
 }
 
+/**
+ * GitHub's own words when a push changes a workflow file without the permission to: "refusing to
+ * allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows`
+ * permission" (an OAuth App's ends "without `workflow` scope").
+ */
+export const WORKFLOW_REFUSAL =
+  /refusing to allow (?:a GitHub App|an OAuth App|an integration) to create or update workflow/i;
+
 /** What a failed `git push --porcelain` says about whether to try again. */
 export function classify(err: unknown): PushFailure {
   const out = err instanceof ShellError ? `${err.stdout}\n${err.stderr}` : String(err);
@@ -213,6 +227,7 @@ export function classify(err: unknown): PushFailure {
   if (/\[rejected\]|non-fast-forward|fetch first|stale info/i.test(out)) {
     return { kind: "diverged", said };
   }
+  if (WORKFLOW_REFUSAL.test(out)) return { kind: "workflow_permission", said };
   // Another push to the branch landed at the same moment (the agent's): GitHub's ref was locked.
   if (/failed to update ref|cannot lock ref|incorrect old value/i.test(out)) {
     return { kind: "transient", said };
@@ -240,7 +255,27 @@ export function pushFailureText(
       return `${where.branch} on GitHub has commits this canvas doesn't, so Ponzu didn't push over them. ${safe}. Ask Claude to bring in what's on GitHub and push again.`;
     case "refused":
       return `GitHub refused the push to ${where.branch} in ${where.repo} (${said}). ${safe}. Ask Claude to fix what GitHub objects to and push again.`;
+    case "workflow_permission":
+      return `GitHub won't let Ponzu push changes to files under .github/workflows/ to ${where.repo}: Ponzu's GitHub App isn't allowed to change workflows. ${safe}. Ask Claude to leave workflow files out of this canvas's commits, or change them on GitHub yourself.`;
     case "transient":
       return `Ponzu couldn't push ${where.branch} to ${where.repo} (${said}). ${safe}: Ponzu tries again when Claude's next turn ends, and Create PR tries again too.`;
+  }
+}
+
+/**
+ * Why a push that the agent's own pull request tool asked for failed, for the agent: what it can
+ * do about it, then git's last line. A workflow file is not something it can push past.
+ */
+export function pushFailureForAgent(failure: PushFailure): string {
+  const said = failure.said.split("\n").at(-1) || "the push failed";
+  switch (failure.kind) {
+    case "workflow_permission":
+      return `GitHub refuses every push from Ponzu that changes a file under .github/workflows/: Ponzu's GitHub App isn't allowed to change workflows, so trying again won't get it through. Take those changes out of the branch's commits and push again, and tell the person which workflow change they'll need to make on GitHub themselves. (${said})`;
+    case "diverged":
+      return `The branch on GitHub has commits the checkout doesn't: fetch, bring them in, and push again. (${said})`;
+    case "refused":
+      return `GitHub refused the push. (${said})`;
+    case "transient":
+      return `The push didn't go through after a few tries. (${said})`;
   }
 }

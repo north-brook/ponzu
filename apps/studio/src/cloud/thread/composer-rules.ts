@@ -5,10 +5,19 @@ import type { PendingAttachment, SteerGate } from "../model.ts";
 export type ComposerButton = "stop" | "send" | "waiting";
 
 /**
+ * Whether a gate keeps the composer from sending. A plan at its limit does not: the message
+ * waits in the feed and goes in when the plan resets, as the line under the gate says. Any other
+ * wait on the owner's Claude does, until someone acts on it.
+ */
+export function composerHolds(gate: SteerGate | null): boolean {
+  return gate !== null && gate.kind !== "claude_limit";
+}
+
+/**
  * Stop while the agent works and there is nothing to say; Send as soon as there is, even
  * mid-run: the message goes straight into the run. A message needs words (an image alone says
  * nothing to the agent) and every attachment uploaded. While the run waits on its owner's
- * Claude nothing sends, but a run still going can be stopped.
+ * Claude being connected nothing sends, but a run still going can be stopped.
  */
 export function composerButton({
   working,
@@ -23,7 +32,7 @@ export function composerButton({
 }): ComposerButton {
   const said = text.trim().length > 0;
   if (working && !said) return "stop";
-  if (gate || !said) return "waiting";
+  if (composerHolds(gate) || !said) return "waiting";
   return attachments.every((a) => a.status === "ready") ? "send" : "waiting";
 }
 

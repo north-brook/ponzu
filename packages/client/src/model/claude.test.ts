@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   type ClaudeConnection,
+  type ClaudeLimit,
   connectionLine,
   duration,
   enteredKey,
+  LIMIT_TITLES,
   limitView,
   needsRenewal,
   pastedCode,
+  toLimits,
 } from "./claude.ts";
 
 // Local times, so the weekdays and clocks read the same in any time zone.
@@ -114,5 +117,40 @@ describe("an entered key", () => {
   test("loses the space or line break a copy from the Console brings with it", () => {
     expect(enteredKey(" sk-ant-api03-abc_DEF-123 \n")).toBe("sk-ant-api03-abc_DEF-123");
     expect(enteredKey("sk-ant-api03-\nabc")).toBe("sk-ant-api03-abc");
+  });
+});
+
+describe("toLimits", () => {
+  const at = "2026-11-12T21:00:00.000Z";
+  test("names the windows Settings knows, in its order, and leaves any other out", () => {
+    expect(
+      toLimits([
+        { window: "seven_day_sonnet", utilization: 0.2, resetsAt: at },
+        { window: "overage", utilization: 0.9, resetsAt: at },
+        { window: "seven_day", utilization: 0.4, resetsAt: at },
+        { window: "five_hour", utilization: 1, resetsAt: at },
+        { window: "seven_day_opus", utilization: null, resetsAt: null },
+      ]),
+    ).toEqual([
+      { window: "session", utilization: 1, resetsAt: at },
+      { window: "week", utilization: 0.4, resetsAt: at },
+      { window: "week_opus", utilization: null, resetsAt: null },
+      { window: "week_sonnet", utilization: 0.2, resetsAt: at },
+    ]);
+    expect(LIMIT_TITLES.week_sonnet).toBe("This week, Sonnet");
+  });
+
+  test("before any canvas has run, shows the session and the week as not yet seen", () => {
+    const unseen: ClaudeLimit[] = [
+      { window: "session", utilization: null, resetsAt: null },
+      { window: "week", utilization: null, resetsAt: null },
+    ];
+    expect(toLimits([])).toEqual(unseen);
+    expect(toLimits([{ window: "overage", utilization: 1, resetsAt: at }])).toEqual(unseen);
+  });
+
+  test("an API key has no plan, so the section is hidden", () => {
+    expect(toLimits(null)).toBeNull();
+    expect(toLimits(undefined)).toBeNull();
   });
 });
