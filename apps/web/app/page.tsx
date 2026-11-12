@@ -1,31 +1,31 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { AGENTS, AgentMark } from "@/components/agent-marks";
 import { Footer, Nav } from "@/components/chrome";
-import { Code, Diff, Tree } from "@/components/code";
+import { Tree } from "@/components/code";
 import { CodeWell } from "@/components/code-well";
-import { CssTileVisual } from "@/components/css-tile";
-import { CommentThread } from "@/components/demo/comment-thread";
-import { ProductDemo } from "@/components/demo/product-demo";
 import { DownloadSplit, PhonePlatforms } from "@/components/download-button";
-import { HomeScreen } from "@/components/home-screen";
-import { Apple, Slice } from "@/components/icons";
+import { HeroShot } from "@/components/hero-shot";
+import { creditPrice, HOME_RATE } from "@/components/home-rate";
+import { Apple, GitHub, Slice } from "@/components/icons";
 import { IPhone } from "@/components/iphone";
-import { GitHubButton, TESTFLIGHT } from "@/components/links";
+import { IPHONE, REPO, TESTFLIGHT } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
-import { SLICE_CSS } from "@/components/slice-demo";
+import { BILLING_LIVE } from "@/components/site";
+import { Steps } from "@/components/steps";
+import { WorkChips } from "@/components/work-chips";
 
 const well =
   "m-0 overflow-hidden whitespace-pre rounded-[14px] px-5 py-4 font-mono text-[12.5px]/[22px]";
 /** A code block: white on the light page, near-black on the dark one. */
 const codeWell = `${well} code bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
 
+/** The pricing band's numbers: rate card v1 (components/home-rate.ts). */
+const RATE = HOME_RATE;
+
 export const metadata: Metadata = share({
   path: "/",
   title: TITLE,
   description: DESCRIPTION,
-  xDescription:
-    "Your agent draws brands, apps and more in HTML and CSS on your computer; you steer with comments.",
 });
 
 export default function Home() {
@@ -33,114 +33,117 @@ export default function Home() {
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
       <Nav />
 
-      <header className="flex flex-col items-center gap-6 pt-14 pb-16 text-center md:pt-[104px]">
-        {/* "open source" holds together once it fits: it's 352px at the smallest size. */}
-        <h1 className="m-0 max-w-[1040px] font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
-          The <span className="min-[400px]:whitespace-nowrap">open source</span> canvas for your
-          agent.
+      <header className="flex flex-col items-center gap-6 pt-14 pb-14 text-center md:pt-[104px] md:pb-16">
+        <h1 className="m-0 max-w-[1100px] font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
+          Make it on the canvas. Ship it to your repo.
         </h1>
-        <p className="m-0 max-w-[760px] text-lg/[29px] text-balance text-muted md:text-[20px]/[32px]">
-          Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on
-          your computer, and you steer with comments.
+        <p className="m-0 max-w-[780px] text-lg/[29px] text-balance text-muted md:text-[20px]/[32px]">
+          Ponzu runs Claude Code in the cloud, on your own Claude plan. Describe what you want,
+          steer it with comments on a live canvas, and it lands as a pull request. Screens, flows,
+          launch pages, dashboards, diagrams, whole features.
         </p>
-        <div className="flex flex-wrap justify-center gap-3 pt-3">
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
           <DownloadSplit testflight={TESTFLIGHT} />
-          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
+          <a
+            className="desktop-only inline-flex items-center gap-2 rounded-full px-5 py-[15px] text-base font-semibold text-ink hover:bg-chip"
+            href={IPHONE}
+          >
+            <Apple className="size-[1em] fill-current" />
+            Get it on iPhone
+          </a>
         </div>
         <PhonePlatforms testflight={TESTFLIGHT} />
+        <p className="m-0 text-sm text-faint">
+          Free to start: {RATE.freeCreditsPerMember} credits a month.
+        </p>
       </header>
 
-      {/*
-        The demo on an ink desktop, with room on every side and its use cases along the top
-        (`.demo-stage`).
-      */}
-      <div className="demo-stage relative mt-4 mb-28 overflow-hidden rounded-[28px] px-14 pt-11 pb-14 max-[720px]:rounded-2xl max-[720px]:p-4 max-[720px]:pt-5">
-        <div className="dm-frame-host relative">
-          <ProductDemo />
-        </div>
-      </div>
+      <HeroShot
+        id="thread-in-the-right-rail"
+        alt="The Ponzu window: boards on a canvas, the thread on the right."
+        sizes="(min-width: 1440px) 1312px, (min-width: 721px) calc(100vw - 128px), calc(100vw - 40px)"
+        priority
+        className="mb-28 rounded-[18px] max-[720px]:mb-20 max-[720px]:rounded-[10px]"
+      />
+
+      <section className="flex flex-col gap-10 pb-28 max-[720px]:pb-20">
+        <SectionHeading>From a sentence to a merge.</SectionHeading>
+        <Steps />
+      </section>
 
       {/*
-        Three rows, each a wide tile beside a narrow one, flipped on the second row. Tiles in a row
-        share a height, so each pair holds proofs of about the same size: a thread beside a diff, a
-        grid of agents beside a stylesheet, the home screen beside the phone.
+        Three rows, each a wide tile beside a narrow one, flipped on the second row. Tiles in a
+        row share a height, so each pair holds proofs of about the same size.
       */}
-      <section className="grid gap-4 pb-[120px] md:grid-cols-12">
+      <section className="grid gap-4 pb-28 max-[720px]:pb-20 md:grid-cols-12">
         <Tile
           className="md:col-span-12 lg:col-span-7"
           title="Steer with comments."
-          body="Pin feedback anywhere. Your agent makes the change, resolves it and answers your questions."
+          body="Pin feedback on any board. Ponzu makes the change and tells you in a sentence; the detail is on the canvas."
         >
-          <CommentThread />
+          <HeroShot
+            id="together-on-a-canvas"
+            alt="Comments pinned on three takes of a shop's hero, and the thread where Ponzu answers them."
+            crop={{ x: 0.3, y: 0.4, w: 0.7, h: 0.57 }}
+            sizes="(min-width: 1024px) 700px, 100vw"
+            className="rounded-xl"
+          />
+        </Tile>
+
+        <Tile
+          className="md:col-span-12 lg:col-span-5"
+          title="It ships as a pull request."
+          body="One canvas, one branch, one pull request. Checks and reviews show in the pull request tab, and the next step is one button."
+        >
+          <HeroShot
+            id="pull-request-tab"
+            alt="A canvas's pull request tab: its checks passing, a review, and the Merge button."
+            crop={{ x: 0.21, y: 0, w: 0.55, h: 0.62 }}
+            sizes="(min-width: 1024px) 480px, 100vw"
+            className="rounded-xl"
+          />
         </Tile>
 
         <Tile
           className="md:col-span-6 lg:col-span-5"
-          title="Designs you can commit."
-          body="Every artboard is just an HTML file, so you can review it and commit it next to your code if you like."
+          title="Full Claude Code, in the cloud."
+          body="Your repo's CLAUDE.md, skills and MCP servers, a real dev server and your tests, in a sandbox of its own. It keeps going with your laptop closed, and sleeps when it's done."
         >
           <div className="flex flex-col gap-2">
             <CodeWell className={codeWell}>
-              <Tree>{`fernwood.design/
-├─ tokens.css
-└─ pages/landing/sunroom.html`}</Tree>
+              <Tree>{`fernwood/
+├─ CLAUDE.md
+├─ .claude/skills/
+└─ .mcp.json`}</Tree>
             </CodeWell>
             <CodeWell className={codeWell}>
-              <Diff
-                lang="html"
-                lines={[
-                  "  <header>",
-                  '+   <a class="drop">',
-                  "+     The Autumn Drop",
-                  "+   </a>",
-                  "    <h1>Plants that…",
-                ]}
-              />
+              <span className="text-[var(--sh-comment)]">$ </span>
+              <span className="text-[var(--sh-fn)]">bun</span> dev
             </CodeWell>
           </div>
         </Tile>
 
         <Tile
-          className="md:col-span-6 lg:col-span-5"
-          title="Bring your agent."
-          body="Claude Code, Codex, Cursor and any MCP client. No account."
+          className="md:col-span-6 lg:col-span-7"
+          title="Your team, on one canvas."
+          body="Everyone with access to the repo sees the same canvas and thread, live. GitHub is the team: no seats, no invites."
         >
-          <AgentsVisual />
-        </Tile>
-
-        <Tile
-          className="md:col-span-12 lg:col-span-7"
-          title="Just HTML and CSS."
-          body="Grid, gradients, variable fonts, video and real animation."
-        >
-          <style>{SLICE_CSS}</style>
-          <div className="grid flex-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-            <div
-              className={`${codeWell} flex min-h-[160px] items-center justify-center overflow-hidden py-0`}
-            >
-              <CssTileVisual />
-            </div>
-            <CodeWell className={`${codeWell} px-4 text-[11.5px]/[19px]`}>
-              <Code code={SLICE_CSS} lang="css" />
-            </CodeWell>
-          </div>
-        </Tile>
-
-        <Tile
-          className="md:col-span-12 lg:col-span-7"
-          title="All your designs, on every Mac."
-          body="Find designs across your Macs on Tailscale and watch your agent's edits live."
-        >
-          <HomeScreen />
+          <HeroShot
+            id="team-sidebar"
+            alt="A team's canvases in the sidebar, with the faces of who is in each, and the boards they share."
+            crop={{ x: 0, y: 0, w: 0.64, h: 0.7 }}
+            sizes="(min-width: 1024px) 700px, 100vw"
+            className="rounded-xl"
+          />
         </Tile>
 
         <Tile
           id="iphone"
-          className="scroll-mt-24 overflow-hidden pb-0 sm:pb-0 md:col-span-12 lg:col-span-5"
+          className="scroll-mt-24 overflow-hidden pb-0 sm:pb-0 md:col-span-6 lg:col-span-5"
           title="And in your pocket."
           body={
             <>
-              Cook with your agents on the go.{" "}
+              Comment on canvases and answer Ponzu's questions from your iPhone.{" "}
               {TESTFLIGHT ? (
                 <a
                   className="inline-flex items-baseline gap-1.5 font-semibold whitespace-nowrap text-ink hover:underline"
@@ -157,24 +160,73 @@ export default function Home() {
         >
           <IPhone />
         </Tile>
+
+        <Tile
+          className="md:col-span-6 lg:col-span-7"
+          title="Open source."
+          body="MIT-licensed. Read exactly what runs in the sandbox and what touches your Claude account."
+        >
+          <div className="flex flex-col gap-3">
+            <CodeWell className={codeWell}>
+              <Tree>{`ponzu/
+├─ apps/runner/   the sandbox
+├─ apps/api/      the cloud
+├─ apps/desktop/  the Mac app
+└─ LICENSE        MIT`}</Tree>
+            </CodeWell>
+            <a
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-chip py-[11px] pr-5 pl-4 text-[15px] font-semibold text-text hover:bg-well"
+              href={REPO}
+            >
+              <GitHub />
+              Read the source
+            </a>
+          </div>
+        </Tile>
       </section>
 
-      <section className="flex flex-col items-center gap-7 pt-10 pb-14 text-center">
+      <section className="flex flex-col items-center gap-10 pb-28 text-center max-[720px]:pb-20">
+        <SectionHeading>One canvas, all kinds of work.</SectionHeading>
+        <WorkChips />
+        <p className="m-0 text-base text-muted">No repo? Start from Scratch.</p>
+      </section>
+
+      <section className="flex flex-col items-center gap-4 rounded-3xl bg-tile px-6 py-14 text-center sm:px-10">
+        <SectionHeading>Pay for what runs.</SectionHeading>
+        <p className="m-0 max-w-[620px] text-lg/[29px] text-balance text-muted">
+          {creditPrice()} a credit. An awake canvas uses {RATE.sandboxCreditsPerAwakeHour} credits
+          an hour; asleep, nothing. {RATE.freeCreditsPerMember} credits a month on us, per person.
+        </p>
+        {BILLING_LIVE ? null : (
+          <p className="m-0 text-sm text-faint">
+            Ponzu is free while billing is being set up. We'll tell you before it starts.
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col items-center gap-7 pt-28 pb-14 text-center max-[720px]:pt-20">
         <a href="/" className="lockup" aria-label="Ponzu">
           <Slice size={72} className="[--slice:var(--yuzu)]" />
         </a>
         <h2 className="m-0 font-display text-4xl leading-[1.1] font-semibold tracking-[-0.03em] text-ink md:text-5xl lg:text-[56px]">
-          Give your agent a canvas.
+          Make something.
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadSplit testflight={TESTFLIGHT} />
-          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
         <PhonePlatforms testflight={TESTFLIGHT} />
       </section>
 
       <Footer />
     </div>
+  );
+}
+
+function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="m-0 text-center font-display text-4xl leading-[1.1] font-semibold tracking-[-0.03em] text-balance text-ink md:text-5xl">
+      {children}
+    </h2>
   );
 }
 
@@ -204,34 +256,6 @@ function Tile({
         <p className="m-0 text-base/[26px] text-pretty text-muted">{body}</p>
       </div>
       <div className="flex min-w-0 flex-1 flex-col justify-center">{children}</div>
-    </div>
-  );
-}
-
-/** The agents Ponzu works with, and the commands that connect the ones it installs into. */
-function AgentsVisual() {
-  return (
-    <div className="flex flex-col gap-3">
-      <ul className="m-0 grid list-none grid-cols-4 gap-2 p-0">
-        {AGENTS.map((agent) => (
-          <li
-            key={agent.id}
-            title={agent.name}
-            className="@container grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
-          >
-            <AgentMark agent={agent.id} size="50cqw" />
-            <span className="sr-only">{agent.name}</span>
-          </li>
-        ))}
-      </ul>
-      <CodeWell className={`${codeWell} py-3.5 text-[12.5px]/[22px]`}>
-        {["claude", "codex", "cursor"].map((agent) => (
-          <span key={agent} className="block">
-            <span className="text-[var(--sh-comment)]">$ </span>
-            <span className="text-[var(--sh-fn)]">ponzu</span> install {agent}
-          </span>
-        ))}
-      </CodeWell>
     </div>
   );
 }

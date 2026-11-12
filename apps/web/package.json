@@ -4,9 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "bun run --cwd ../../packages/canvas build",
     "dev": "next dev --port 4321",
-    "prebuild": "bun run --cwd ../../packages/canvas build",
     "build": "next build",
     "start": "next start --port 4321"
   },
@@ -16,7 +14,6 @@
     "@next/mdx": "16.4.2",
     "@ponzu/canvas": "workspace:*",
     "@ponzu/core": "workspace:*",
-    "@ponzu/store": "workspace:*",
     "next": "^16.4.2",
     "posthog-js": "^1.438.13",
     "react": "^19.3.1",
