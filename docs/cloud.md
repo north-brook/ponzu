@@ -3316,8 +3316,8 @@ about to merge it; deleting them would take that from people who did not ask, an
 GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
 Claude now, so they do not wake (`claude_owner_left`) until a teammate takes one over (below);
 until then they can be read, commented on, merged and deleted by an admin. The delete dialog
-says so: "Your canvases, threads and settings are deleted. Canvases in a team stay with the team.
-Your repos and pull requests on GitHub are not touched."
+says "Your canvases, threads and settings are deleted. Your repos and pull requests on GitHub are
+not touched." It does not yet say that canvases in a team stay with the team.
 
 **Taking over a canvas whose owner left.** A canvas runs on its owner's Claude alone, and never
 switches accounts while its owner is in its workspace. Once its owner has left the workspace, or
@@ -3477,8 +3477,9 @@ main process for each request (`borrowSession` in `packages/client`) and sends
 the request itself, from the studio's origin. The window shows the studio and
 nothing else, under a content security policy that runs only the studio's own
 script and reaches only the API, Neon Realtime and a canvas's files (each its
-environment's exact host), and, in a build that reports usage, its PostHog project's ingestion
-host ([analytics.md](analytics.md)). A canvas's images may come from any https host, as they
+environment's exact host), Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`), and, in a
+build that reports usage, its PostHog project's ingestion host, plus its `-assets` host on
+PostHog's own cloud ([analytics.md](analytics.md), `apps/desktop/src/csp.ts`). A canvas's images may come from any https host, as they
 do in the runner's previews. The packaged app's Electron fuses refuse to run it as
 Node or open an inspector, and a release refuses a remote debugging port, so no
 other program can run code as Ponzu to read the session. Signing out forgets the
@@ -3516,9 +3517,10 @@ interface; `CloudSource` in `packages/client` implements it on a `Replica`. The
 shell around the canvas is new: guided setup, the sidebar, the thread, needs you,
 the pull request tab, settings, sharing and presence.
 
-**Mobile** is the same client on the same packages. Signing in, workspaces, the
-canvases list, the canvas, comments, the thread and answering questions. Push
-notifications are new work on both sides.
+**Mobile** is the same client on the same packages. It has sign-in, setup, the canvases
+list, search, new canvas, a live canvas with comments and their pictures, the chat, questions,
+and the pull request with Merge ([mobile.md](mobile.md)). Pings are built on both sides and stay
+off until the API has `EXPO_ACCESS_TOKEN` (`apps/api/src/deps/push.ts`).
 
 The canvas draws every on-screen board as live DOM. The local app also had a
 rendered-picture tier for heavy pages; it is not in the first cloud release. What
@@ -3535,7 +3537,7 @@ every board in one frame.
 | Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or Vercel credential. |
 | Person and canvas | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one canvas. The API validates and sanitizes everything it sends. |
-| A canvas's HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the canvas's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the canvas was opened. The preload bridge exposes the minimum. |
+| A canvas's HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime, the canvas's files and Google Fonts, plus PostHog in a build that reports usage. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the canvas was opened. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A canvas carries its workspace, and must agree with its repo's; the rows under a canvas (ops, thread, questions, presence and the rest) carry the canvas and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `canvases`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted
@@ -3578,8 +3580,9 @@ failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 **Rate limits per caller.** Each declaration that authenticates also counts the request against
 one rate limit, keyed by the person or by the runner's canvas (`apps/api/src/http/rate-limits.ts`):
 creating a canvas, sending messages and answers, upload addresses, `POST /v1/live`, GitHub sync,
-and a runner's git credentials each have their own, and every other write by a person, and every
-other call by a runner, counts against a catch-all. A read by a person is not counted; the
+and a runner's git credentials each have their own, and every other POST, PATCH or DELETE by a
+person, and every other call by a runner, counts against a catch-all. A person's reads and PUTs
+(presence, replacing a repo secret, a device's active flag) are not counted; the
 firewall's per-address rules cover reads and the public routes. Over the limit is 429
 `rate_limited` with `Retry-After: 60`. The check is Vercel's firewall, through `@vercel/firewall`
 behind `deps.rateLimit`; it runs only when `PONZU_RATE_LIMITS=vercel` on Vercel, and is off
@@ -3590,8 +3593,8 @@ ids the code names, both ways, and with their numbers. It fails open: a check th
 count is taken as the caller is authenticated (`auth/access.ts`), once per request, so the
 steer gate's `rateLimit` (`http/gates.ts`) stays a pass-through and a steer is never counted twice.
 
-**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or on
-cutover day (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
+**The maintenance switch.** `PONZU_MAINTENANCE` pauses Ponzu for an incident, for spend, or for a
+risky migration (`apps/api/src/http/maintenance.ts`). Changing it is a change of the deployment's
 environment, so it holds from the next deploy.
 
 - `off`, the default: nothing is held back.
@@ -3622,8 +3625,8 @@ message is kept and goes through when it's back."
 PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
 by setting `PONZU_POSTHOG_KEY` and off without it. The API captures what happens on the server
 (`apps/api/src/analytics/`), sends unexpected errors to error tracking, and traces the model
-calls it makes; each canvas's runner traces the agent's turns in LLM analytics; the apps capture
-what only they know and record sessions. The rules both sides keep, the event catalogue and what
+calls it makes; each canvas's runner traces the agent's turns in LLM analytics; the Mac app captures
+what only it knows and records sessions. The iPhone app sends no analytics yet. The rules both sides keep, the event catalogue and what
 is never sent are in [analytics.md](analytics.md).
 
 **Share usage data.** Settings › Account has the person's switch, on by default and kept on their
@@ -3770,19 +3773,19 @@ and columns to their canvas names, so no deploy from before it may be rolled bac
 
 ## How this lands
 
-Work happens on the `cloud` branch through pull requests into it. `main` is left
-alone until cutover, so the 1.x app, the site and the phone keep shipping exactly
-what they ship today and nothing has to be paused. Cutover is one pull request
-from `cloud` into `main`, released as the next major version.
+Ponzu Cloud reached `main` in one pull request (#561), released as 2.0.0 on
+13 November 2026. Work now lands on `main` through pull requests; the `cloud` branch is
+retired. The stages it went through:
 
 1. **Foundation.** Core (validation, sanitizing, the replica), the database, the
    sandbox module, the API, the client package.
 2. **The loop.** The runner, the sandbox lifecycle, the thread, events, GitHub.
    Ends with a canvas made by Claude in a sandbox, shown live in a client.
 3. **The apps.** Desktop shell, studio, mobile.
-4. **Billing.**
-5. **Cutover.** Delete the local runtime, rewrite the docs and the site, release.
-6. **Hardening.** Egress proxy for credentials, egress rules for the agent's user, a runner
+4. **Billing.** Built and off until its switch is set (#586, not yet on `main`).
+5. **Cutover.** Released as 2.0.0, with the site and the docs rewritten. Deleting the local
+   runtime is not finished: see "Layout".
+6. **Hardening**, still to come. Egress proxy for credentials, egress rules for the agent's user, a runner
    user without sudo, limits, observability, abuse controls, the picture tier. (Claude Code's
    tools as a user apart from the runner's is done: the image's `agent`.)
 
