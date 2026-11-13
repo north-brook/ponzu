@@ -26,7 +26,7 @@ on:
 # install uses this one.
 defaults:
   tools:
-    bun: 1.4.2
+    bun: 1.4.4
 
 jobs:
   update_ios:
