@@ -24,8 +24,9 @@ name: chat
     visible:
       id: chat-sheet
     timeout: 10000
-- assertVisible: "Make the plans easier to compare"
-- assertVisible: "Now a dark version"
+# A bubble reads to VoiceOver (and Maestro) as who said it and what.
+- assertVisible: "You said: Make the plans easier to compare"
+- assertVisible: "You said: Now a dark version"
 - assertVisible: ".*three plans.*side by side.*"
 - assertVisible: "Starting on the dark one."
 - assertVisible:
@@ -41,7 +42,7 @@ name: chat
 - tapOn:
     id: chat-send
 - extendedWaitUntil:
-    visible: "Also the footer"
+    visible: "You said: Also the footer"
     timeout: 10000
 # The field is empty again and the turn still runs: Stop.
 - hideKeyboard
