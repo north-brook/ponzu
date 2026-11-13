@@ -81,9 +81,7 @@ name: pings
     element: "Ping me when"
     direction: DOWN
     timeout: 10000
-- scrollUntilVisible:
-    element: "A pull request is ready"
-    direction: DOWN
-    timeout: 10000
+# The sheet opens at half height: the first rows show without scrolling.
+- assertVisible: "Ponzu needs you"
 - assertVisible: "Ponzu replies to my comment"
 - assertNotVisible: ".*Cannot update a component.*"
