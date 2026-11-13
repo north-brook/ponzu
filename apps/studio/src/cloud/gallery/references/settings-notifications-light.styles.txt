@@ -132,8 +132,18 @@ text "iPhone 16 Pro" rgb(17, 17, 16) 500 13px Inter
 text "Pings" rgb(169, 165, 155) 400 12px Inter
 ground button[iPhone 16 Pro] rgb(17, 17, 16)
 ground span[iPhone 16 Pro] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
-icon svg[Where] 16×16 rgb(86, 83, 77) stroke 1.7px
-text "Email" rgb(17, 17, 16) 500 13px Inter
-text "ada@example.com · a daily digest only" rgb(169, 165, 155) 400 12px Inter
-ground button[Email] rgb(232, 230, 224)
-ground span[Email] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
+text "Email" rgb(169, 165, 155) 600 11px Inter
+text "Emails go to ada@example.com, your GitH…" rgb(169, 165, 155) 400 12px Inter
+text "Daily digest" rgb(17, 17, 16) 500 13px Inter
+text "What you missed, once a day at 9." rgb(169, 165, 155) 400 12px Inter
+ground button[Daily digest] rgb(232, 230, 224)
+ground span[Daily digest] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
+text "Friday recap" rgb(17, 17, 16) 500 13px Inter
+text "What you shipped, in weeks something me…" rgb(169, 165, 155) 400 12px Inter
+ground button[Friday recap] rgb(17, 17, 16)
+ground span[Friday recap] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
+text "When people join" rgb(17, 17, 16) 500 13px Inter
+text "Workspaces you're an admin of." rgb(169, 165, 155) 400 12px Inter
+ground button[When people join] rgb(17, 17, 16)
+ground span[When people join] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.2) 0px 1px 2px 0px
+text "Billing emails go to every admin and ca…" rgb(169, 165, 155) 400 12px Inter

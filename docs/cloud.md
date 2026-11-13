@@ -2814,7 +2814,7 @@ inbox, the Mac's banners and the badge work regardless.
 notifications whose question is still open, across every workspace, read or not and whether
 or not pings are on. `email.address` is where email would go and `email.available` says
 whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and Settings
-hides the Email row while it is). Only while it is true does `prefs` also hold `emailTeam` and
+hides its Email group while it is). Only while it is true does `prefs` also hold `emailTeam` and
 `emailRecap`, a PATCH take them, and `email.teamAvailable` say whether the person is an admin of
 an organisation's workspace who reaches it on GitHub as its owner or a member, never an outside
 collaborator ("Email"); without the key the answer is exactly what it was before
@@ -2933,7 +2933,9 @@ from the sidebar deletes this Mac's device first; signing out from the menu leav
 forgotten after 30 days unseen. Either way the main process takes every banner away, from the
 screen and Notification Center, and clears the dock's number, so whoever signs in next sees
 none of them. Settings › Notifications › Where lists the person's Macs and iPhones,
-this one first as "This Mac", and the Email row only while `email.available`. macOS shows an
+this one first as "This Mac". Its Email group shows only while `email.available` (see "Email").
+Every switch there saves only itself (a PATCH of the one key), so a Mac showing switches from
+before an email's "Stop these emails" cannot turn that email back on. macOS shows an
 app's notifications only when the app is signed: Ponzu Local's are refused, which the studio
 logs once and goes on.
 
@@ -2963,7 +2965,7 @@ calls the billing trigger yet; billing does once its gate is built.
 
 **The daily email** (`emailDigest`, off until the person turns it on) is one email a day of
 the same events and nothing else, sent through the one door every email uses ("Email" below).
-It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email row until
+It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email group until
 then.
 
 Every five minutes the cron's `digests` step records an `email.digest` job, keyed
@@ -3010,6 +3012,14 @@ differently.
 | `team` (people joined) | `emailTeam`, on by default | yes | yes |
 | `recap` (the Friday recap) | `emailRecap`, on by default | yes | yes |
 | `notice` (a legal notice) | none | no | no |
+
+**Settings › Notifications › Email** (the Mac) shows only while `email.available`; until
+then the Mac shows exactly what it did before email had a group. Under the heading, `Emails go to
+<address>, your GitHub email.` Then `Daily digest` (`What you missed, once a day at 9.`),
+`Friday recap` (`What you shipped, in weeks something merged.`) and, only while
+`email.teamAvailable`, `When people join` (`Workspaces you're an admin of.`). A switch the API
+did not answer has no row. Under them, `Billing emails go to every admin and can't be turned
+off.` The iPhone has no email switches.
 
 **One door.** Every email goes out through `sendEmail` (`email/send.ts`), which decides in this
 order: off without `RESEND_API_KEY` (nothing written); paused when the kind is in
