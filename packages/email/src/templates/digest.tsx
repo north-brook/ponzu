@@ -49,10 +49,14 @@ export function subjectOf({ groups }: DigestProps): string {
       ? withoutStop(line.text)
       : `${nameIn(first, SUBJECT_NAME_MAX)}: ${withoutStop(line.text)}`;
   }
+  const rest = groups.slice(1);
   const names =
     groups.length <= 2
       ? listOf(groups.map((group) => nameIn(group, SUBJECT_NAME_MAX)))
-      : `${nameIn(first, SUBJECT_NAME_MAX)} and ${groups.length - 1} more canvases`;
+      : `${nameIn(first, SUBJECT_NAME_MAX)} and ${digestWords.more(
+          rest.length,
+          rest.every((group) => !group.billing),
+        )}`;
   return `${names}: ${digestWords.things(things)}`;
 }
 

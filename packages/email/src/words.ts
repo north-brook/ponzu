@@ -164,7 +164,7 @@ export const recapWords = {
   numbers: (numbers: readonly number[]) => listOf(numbers.map((n) => `#${n}`)),
   moreCanvases: (n: number) => `And ${count(n, "more canvas", "more canvases")}.`,
   first:
-    "This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. One click below turns it off.",
+    "This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. The link below turns it off.",
   closing: "Have a good weekend.",
   footer: "You get this on Fridays when a pull request from a canvas you own was merged.",
   stop: "Stop Friday emails",
@@ -179,6 +179,14 @@ export const digestWords = {
   /** A billing group's name. */
   plan: (workspaceName: string) => `${nameOf(workspaceName, SUBJECT_NAME_MAX)}'s plan`,
   things: (n: number) => `${count(n, "thing", "things")} since yesterday`,
+  /**
+   * The groups a subject does not name: "2 more canvases", or just "2 more" when a workspace's
+   * plan is among them, so a plan is never counted as a canvas.
+   */
+  more: (n: number, allCanvases: boolean) =>
+    allCanvases
+      ? `${count(n, "more canvas", "more canvases")}`
+      : `${n.toLocaleString("en-US")} more`,
   footer: "You get this email once a day because it is on in Ponzu's Settings.",
   stop: "Stop these emails",
 };

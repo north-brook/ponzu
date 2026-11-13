@@ -135,6 +135,10 @@ describe("the Friday recap", () => {
     );
     expect(recapWords.moreCanvases(2)).toBe("And 2 more canvases.");
     expect(recapWords.closing).toBe("Have a good weekend.");
+    // Not "one click": the footer link opens a page with one button (designs/email.md §3.7).
+    expect(recapWords.first).toBe(
+      "This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. The link below turns it off.",
+    );
   });
 });
 
@@ -172,6 +176,18 @@ describe("the daily digest", () => {
     expect(subject(group("Kettle onboarding", 3), group("Pricing page", 2), group("Docs", 2))).toBe(
       "Kettle onboarding and 2 more canvases: 7 things since yesterday",
     );
+    // A workspace's plan among the groups left unnamed is not counted as a canvas.
+    expect(
+      subject(group("Kettle onboarding", 3), group("Northbrook", 1, true), group("Docs", 2)),
+    ).toBe("Kettle onboarding and 2 more: 6 things since yesterday");
+    expect(
+      subject(
+        group("Kettle onboarding", 3),
+        group("Pricing page", 2),
+        group("Docs", 1),
+        group("Empty states", 1),
+      ),
+    ).toBe("Kettle onboarding and 3 more canvases: 7 things since yesterday");
     expect(subject(group("Northbrook", 2, true))).toBe(
       "Northbrook's plan: 2 things since yesterday",
     );

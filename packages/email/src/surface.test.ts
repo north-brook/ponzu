@@ -43,8 +43,13 @@ test("its dependencies are React Email and React, pinned as the design says", ()
   const pkg = JSON.parse(readFileSync(join(PACKAGE, "package.json"), "utf8"));
   expect(Object.keys(pkg.dependencies).sort()).toEqual(["react", "react-dom", "react-email"]);
   expect(pkg.dependencies["react-email"]).toBe("6.11.5");
-  expect(pkg.devDependencies["@react-email/ui"]).toBe("6.11.5");
   const root = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  // The preview server's package sits in the root's devDependencies, not this package's: the
+  // API's filtered install on Vercel (`--filter @ponzu/api`) installs a workspace dependency's
+  // devDependencies, and @react-email/ui brings Next.js, about 300 MB the API never uses.
+  // `email dev` still finds it, resolving up from packages/email.
+  expect(root.devDependencies["@react-email/ui"]).toBe("6.11.5");
+  expect(pkg.devDependencies["@react-email/ui"]).toBeUndefined();
   expect(root.overrides["@react-email/render"]).toBe("2.2.0");
   for (const name of [
     "@react-email/components",

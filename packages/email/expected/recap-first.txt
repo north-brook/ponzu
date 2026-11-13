@@ -11,7 +11,7 @@ Kettle onboarding https://ponzu.design/canvases/cnv_1?open=pull-request
 
 #41 merged Tuesday
 
-This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. One click below turns it off.
+This is your first Friday recap. It comes only in weeks when a pull request from a canvas you own is merged. The link below turns it off.
 
 Have a good weekend.
 

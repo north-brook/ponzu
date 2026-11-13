@@ -9,4 +9,4 @@ Ponzu's emails as React Email templates. The design is `.context/cloud/program/d
 - `bun run --cwd packages/email shots` draws `references/<fixture>.png` in headless Chromium: light and dark at 390 and 720 px, and a forced inversion. Never merge these by hand: take main's and draw them again.
 - `bun packages/email/scripts/print.ts <fixture> [--html]` prints one email.
 
-Pins: `react-email` 6.11.5 and `@react-email/ui` 6.11.5, with `@react-email/render` held at 2.2.0 by the root `overrides`. `@react-email/components`, `/tailwind` and `/preview-server` are deprecated and not used.
+Pins: `react-email` 6.11.5 and `@react-email/ui` 6.11.5, with `@react-email/render` held at 2.2.0 by the root `overrides`. `@react-email/ui` (the preview server, which brings Next.js) is a root devDependency, so the API's filtered install on Vercel does not fetch it. `@react-email/components`, `/tailwind` and `/preview-server` are deprecated and not used.
