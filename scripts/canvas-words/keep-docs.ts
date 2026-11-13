@@ -3,6 +3,16 @@
 import type { Keep } from "../canvas-words.ts";
 
 export const KEEP_DOCS: Keep[] = [
+  {
+    path: "plugin/skills/design-brief/SKILL.md",
+    has: "Use when asked to design a page, screen, flow or brand from scratch in Ponzu.",
+    why: "the request people type to their agent, so the skill is the one it picks",
+  },
+  {
+    path: "plugin/.{claude,codex}-plugin/plugin.json",
+    has: '"keywords": ["design", "canvas"',
+    why: "a word people search the plugin marketplaces for",
+  },
   { path: "AGENTS.md", has: "`.design` files", why: "the .design folders rule" },
   { path: "scripts/ci/scope.ts", has: "(design|examples)", why: "the design/ folder" },
   {

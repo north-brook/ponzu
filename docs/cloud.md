@@ -54,8 +54,8 @@ packages/
 Still in the repository and due to be deleted: `packages/store`, `packages/tools/src/local`
 and `examples/`. In `apps/web`, `/gh` and `/local` are kept as pages that explain a Ponzu 1
 link, and `/open` redirects to `/local`.
-The 1.x command line, its local server and MCP packages, the agent plugin and the
-marketplace manifests are already gone from this branch.
+The 1.x command line and its local server and MCP packages are already gone. `plugin/` and
+the marketplace manifests are back, rewritten for the cloud's MCP ("Clients").
 
 Where things run:
 
@@ -3505,7 +3505,22 @@ can refuse one that is too old (426, `client_too_old`), and the shell then offer
 the update.
 On first launch the cloud app removes what 1.x left behind (the wake helper, the
 `ponzu` shim, agent registrations), each only when it is in the form 1.x wrote and
-what it runs is gone.
+what it runs is gone. A registration is 1.x's only when it launches its shim (or the server
+inside a 1.x app) with `mcp`, so an HTTP `ponzu` entry and the plugin below are never touched
+(`apps/desktop/src/legacy.test.ts`).
+
+**The plugin.** `plugin/` is Ponzu for Claude Code and Codex: the MCP server at
+`https://api.ponzu.design/v1/mcp` as a remote HTTP entry (`.mcp.json` for Claude Code,
+`.codex-plugin/mcp.json` for Codex, each `{ "type": "http", "url": … }`; the client does the
+OAuth sign-in) and six skills, `design-brief`, `explore-variations`, `implement-design`,
+`code-to-design`, `product-shot` and `watch`, written for delegate and drive mode. The
+marketplaces are `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`:
+`claude plugin marketplace add north-brook/ponzu` then `claude plugin install ponzu@ponzu`, or
+`codex plugin marketplace add north-brook/ponzu`, `codex plugin add ponzu@ponzu` and
+`codex mcp login ponzu`. Release Please bumps both manifests' `version` with the desktop app's.
+A test (`packages/tools/src/cloud/plugin.test.ts`) fails when a skill names a tool the MCP
+doesn't have or a guide `get_guide` doesn't serve. Codex 0.167 reads the entry as streamable
+HTTP and `codex mcp login ponzu` finds it; a sign-in end to end waits on the MCP being deployed.
 
 The renderer never holds the refresh token: it borrows an access token from the
 main process for each request (`borrowSession` in `packages/client`) and sends

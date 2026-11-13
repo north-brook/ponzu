@@ -205,6 +205,10 @@ export const PROTECT: Protect[] = [
   },
   { re: /\bponzu-design\b/g, why: "a GitHub login and the 1.x skill's name" },
   {
+    re: /\b(?:design-brief|implement-design|code-to-design)\b/g,
+    why: "the plugin's skill names, as 1.x's plugin named them (plugin/skills)",
+  },
+  {
     re: /\b(?:designs-of-risky-things|contact-details-as-designs)\b/g,
     why: "gate example ids that key the recorded calibration",
     paths: ["apps/api/evals/ideas/**"],

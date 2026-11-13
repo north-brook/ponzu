@@ -1,0 +1,16 @@
+{
+  "name": "ponzu",
+  "displayName": "Ponzu",
+  "version": "2.4.0",
+  "description": "Ponzu's canvases for your own agent: hand a canvas to Ponzu's agent, or drive one yourself, and steer with comments. Sign in with your Ponzu account.",
+  "author": {
+    "name": "Northbrook",
+    "url": "https://ponzu.design"
+  },
+  "homepage": "https://ponzu.design",
+  "repository": "https://github.com/north-brook/ponzu",
+  "license": "MIT",
+  "keywords": ["design", "canvas", "html", "css", "mockups", "prototyping"],
+  "icon": "./assets/icon.png",
+  "privacyPolicyUrl": "https://ponzu.design/privacy"
+}

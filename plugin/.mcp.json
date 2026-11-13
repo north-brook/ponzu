@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ponzu": {
+      "type": "http",
+      "url": "https://api.ponzu.design/v1/mcp"
+    }
+  }
+}
