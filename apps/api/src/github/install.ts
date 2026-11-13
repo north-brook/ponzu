@@ -31,9 +31,10 @@ const STATE_BINDING: Binding = { column: "auth_states.id", row: "github_install"
 export type InstallClient = "mac" | "ios";
 
 /**
- * Where to send the person to install the App, with a state good for one return. GitHub may
- * preselect `githubAccountId` on its page, and may not: whichever account they pick is the
- * one the setup page records. `id` is the app's handle on the install, for `installStatus`.
+ * Where to send the person to install the App, with a state good for one return. With no
+ * `githubAccountId` it is GitHub's account picker: every account of theirs, to install the App
+ * on one or change the repos of one that has it. GitHub may preselect `githubAccountId` on its
+ * page, and may not: whichever account they pick is the one the setup page records. `id` is the app's handle on the install, for `installStatus`.
  */
 export async function createInstallLink(
   { db, clock, vault, config }: Pick<Deps, "db" | "clock" | "vault" | "config">,
@@ -53,8 +54,13 @@ export async function createInstallLink(
     payload: { client, scheme: scheme ?? null },
     expiresAt,
   });
-  const base = `https://github.com/apps/${config.githubApp.slug}/installations/new`;
-  const url = new URL(githubAccountId === undefined ? base : `${base}/permissions`);
+  // With no account to suggest, GitHub's account picker, asked for by name. Its plain install
+  // page (`installations/new`) only shows the picker until the App is installed somewhere: after
+  // that it goes straight to that installation's settings, where no other account can be picked.
+  const app = `https://github.com/apps/${config.githubApp.slug}/installations`;
+  const url = new URL(
+    githubAccountId === undefined ? `${app}/select_target` : `${app}/new/permissions`,
+  );
   if (githubAccountId !== undefined) url.searchParams.set("target_id", String(githubAccountId));
   url.searchParams.set("state", await vault.seal(state.id, STATE_BINDING));
   // The row's id is the person's own and answers only to their session; the sealed state is
