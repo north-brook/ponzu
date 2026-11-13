@@ -56,7 +56,11 @@ export interface WallSnapshot {
   details: BillingRequired | null;
 }
 
-/** How often the payment dialog asks whether the invoice has been paid. */
+/**
+ * How often a dialog opened by a refusal asks whether the workspace's gate has let go: the invoice
+ * paid, or a card added or the cap raised by an admin elsewhere (a member's dialog has no button
+ * that lifts it).
+ */
 export const PAID_POLL_MS = 5_000;
 
 const CLOSED: WallSnapshot = { open: false, dialog: null, details: null };
@@ -77,6 +81,7 @@ export class BillingWall {
   private held: Held | null = null;
   private watch: CardSetupWatch | null = null;
   private cancelPaidPoll: (() => void) | null = null;
+  private closed = false;
   private readonly listeners = new Set<() => void>();
 
   constructor(private readonly deps: WallDeps) {}
@@ -102,6 +107,7 @@ export class BillingWall {
 
   /** Opens the dialog for `details.reason`, holding `held` if given (a canvas's line holds none). */
   open(details: BillingRequired, held: Held | null = null): void {
+    if (this.closed) return;
     this.stopWatching();
     this.held = held;
     this.show(details, dialogFor(details.reason));
@@ -109,6 +115,7 @@ export class BillingWall {
 
   /** Settings' and a canvas line's "Add a card": the card and the cap, with nothing held. */
   addCard(details: Omit<BillingRequired, "reason">): void {
+    if (this.closed) return;
     this.stopWatching();
     this.held = null;
     this.show(
@@ -128,6 +135,7 @@ export class BillingWall {
     try {
       setup = await this.deps.api.billing.startCardSetup(details.workspaceId, { capUsd, source });
     } catch (error) {
+      if (this.snapshot.details !== details || !this.snapshot.open) return;
       this.setCard({ status: "idle", error: refusalWords(error) });
       return;
     }
@@ -168,9 +176,11 @@ export class BillingWall {
     try {
       await this.deps.api.usage.setCap(details.workspaceId, capUsd);
     } catch (error) {
+      if (this.snapshot.details !== details || !this.snapshot.open) return;
       this.set({ dialog: { kind: "cap_reached", status: "idle", error: refusalWords(error) } });
       return;
     }
+    if (this.closed) return;
     this.deps.refresh(details.workspaceId);
     this.lifted();
   }
@@ -206,17 +216,22 @@ export class BillingWall {
     held?.dropped?.();
   }
 
-  /** The window goes: nothing more is asked or heard. */
+  /**
+   * The window goes: nothing more is asked or heard. The wall is closed for good, so a call still
+   * on its way (a card setup, a cap, the portal) opens nothing and starts no watch when it lands.
+   */
   close(): void {
+    this.closed = true;
     this.stopWatching();
     this.held = null;
+    this.snapshot = CLOSED;
     this.listeners.clear();
   }
 
   private show(details: BillingRequired, dialog: WallDialog): void {
     this.snapshot = { open: true, dialog, details };
     this.deps.analytics.capture("billing dialog shown", { reason: reasonOf(dialog) });
-    if (dialog.kind === "payment_failed") this.pollPaid(details.workspaceId);
+    if (dialog.kind !== "add_card") this.pollGate(details.workspaceId, dialog.kind);
     this.emit();
   }
 
@@ -237,15 +252,21 @@ export class BillingWall {
     }
   }
 
-  /** While the payment dialog is open, whether the workspace's gate has let go of it. */
-  private pollPaid(workspaceId: string): void {
+  /**
+   * While a refusal's dialog is open, whether the workspace's gate has let go of it: an invoice
+   * paid (any gate but payment_failed), or the gate back to ok after a card or cap set by someone
+   * else, which is the only way a member's held send ever runs.
+   */
+  private pollGate(workspaceId: string, kind: Exclude<WallDialog["kind"], "add_card">): void {
     const clock = this.deps.scheduler ?? realScheduler;
+    const showing = () => this.snapshot.open && this.snapshot.dialog?.kind === kind;
     const ask = async () => {
       this.cancelPaidPoll = null;
       try {
         const usage = await this.deps.api.usage.get(workspaceId);
-        if (this.snapshot.dialog?.kind !== "payment_failed" || !this.snapshot.open) return;
-        if (usage.billing.gate !== undefined && usage.billing.gate !== "payment_failed") {
+        if (!showing()) return;
+        const gate = usage.billing.gate;
+        if (gate === "ok" || (kind === "payment_failed" && gate !== undefined && gate !== kind)) {
           this.deps.refresh(workspaceId);
           this.lifted();
           return;
@@ -253,9 +274,7 @@ export class BillingWall {
       } catch {
         // Asked again below.
       }
-      if (this.snapshot.dialog?.kind === "payment_failed" && this.snapshot.open) {
-        this.cancelPaidPoll = clock.after(PAID_POLL_MS, ask);
-      }
+      if (showing()) this.cancelPaidPoll = clock.after(PAID_POLL_MS, ask);
     };
     this.cancelPaidPoll = clock.after(PAID_POLL_MS, ask);
   }

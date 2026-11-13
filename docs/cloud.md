@@ -2919,8 +2919,10 @@ With billing on (`apps/studio/src/app/billing/`):
   `reason` calls for opens: free credits used up (the cap, $100 to start, and "Add card and
   continue"), the cap reached ("Raise cap and continue", offering twice the cap), or a payment
   past its grace ("Pay invoice", which opens the invoice's page). A member is told to ask an
-  admin. Once the card is added, the cap raised, or the gate no longer `payment_failed` (asked
-  every five seconds while that dialog is open), the held send goes again, once: a create with
+  admin. While any of these dialogs is open, the workspace's gate is asked every five seconds, so
+  a limit lifted elsewhere (an admin's card or cap, which is the only way a member's send goes)
+  also lets it go. Once the card is added, the cap raised, the gate back to `ok`, or, for a
+  payment, no longer `payment_failed`, the held send goes again, once: a create with
   the same create key, so it makes one canvas; a message by its bubble's own retry. Dismissed,
   it is dropped: the create page keeps the prompt, and the message's bubble keeps its words
   with Retry; a canvas's first message sent after its pictures, which has left the create page,

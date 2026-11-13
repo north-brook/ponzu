@@ -281,6 +281,30 @@ describe("a send at the wall", () => {
     expect(w.opened).toEqual([]);
   });
 
+  test("a member's held send runs once an admin lifts the limit elsewhere", async () => {
+    for (const reason of ["free_used", "cap_reached"]) {
+      const w = world({ gates: [reason, "ok"] });
+      w.wall.refused(refusal(reason, { canManage: false }), w.held);
+      await w.clock.advance(PAID_POLL_MS);
+      expect(w.runs()).toBe(0);
+      expect(w.wall.getSnapshot().open).toBe(true);
+      await w.clock.advance(PAID_POLL_MS);
+      expect(w.runs()).toBe(1);
+      expect(w.refreshed).toEqual(["ws_1"]);
+      expect(w.wall.getSnapshot().open).toBe(false);
+      await w.clock.advance(PAID_POLL_MS * 3);
+      expect(w.calls.filter((c) => c === "usage")).toHaveLength(2);
+    }
+  });
+
+  test("a free-credits dialog is not lifted by another limit, only by ok", async () => {
+    const w = world({ gates: ["cap_reached"] });
+    w.wall.refused(refusal("free_used", { canManage: false }), w.held);
+    await w.clock.advance(PAID_POLL_MS * 3);
+    expect(w.runs()).toBe(0);
+    expect(w.wall.getSnapshot().open).toBe(true);
+  });
+
   test("Settings' Add a card holds nothing and says nothing of a prompt", async () => {
     const w = world({ setup: ["cancelled", "added"] });
     w.wall.addCard(DETAILS);
@@ -323,6 +347,31 @@ describe("a held send that comes to nothing", () => {
     await flush();
     expect(dropped).toBe(1);
     expect(w.wall.getSnapshot().open).toBe(false);
+  });
+
+  test("closed while a card setup is on its way: nothing opens and nothing is watched", async () => {
+    const w = world({ setup: ["added"] });
+    w.wall.refused(refusal("free_used"), w.held);
+    const going = w.wall.submitCard(100);
+    w.wall.close();
+    await going;
+    await w.clock.advance(10_000);
+    expect(w.opened).toEqual([]);
+    expect(w.calls.filter((c) => c === "poll" || c === "usage")).toEqual([]);
+    expect(w.runs()).toBe(0);
+    expect(w.wall.getSnapshot().open).toBe(false);
+    w.wall.refused(refusal("free_used"), w.held);
+    expect(w.wall.getSnapshot().open).toBe(false);
+  });
+
+  test("closed while a cap is on its way: the held send does not run", async () => {
+    const w = world();
+    w.wall.refused(refusal("cap_reached"), w.held);
+    const going = w.wall.submitCap(200);
+    w.wall.close();
+    await going;
+    expect(w.runs()).toBe(0);
+    expect(w.refreshed).toEqual([]);
   });
 
   test("payment failed with no invoice page: an admin's Pay invoice opens Stripe's portal", async () => {
