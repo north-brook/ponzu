@@ -30,6 +30,9 @@
     "typescript": "^5.9.3",
     "zod": "^4"
   },
+  "overrides": {
+    "@react-email/render": "2.2.0"
+  },
   "patchedDependencies": {
     "@react-native-menu/menu@2.0.0": "patches/@react-native-menu%2Fmenu@2.0.0.patch",
     "react-native-screens@4.30.0": "patches/react-native-screens@4.30.0.patch",

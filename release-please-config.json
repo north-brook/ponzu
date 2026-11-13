@@ -16,6 +16,7 @@
         "packages/db",
         "packages/sandbox",
         "packages/evals",
+        "packages/email",
         "infra",
         "docs"
       ],

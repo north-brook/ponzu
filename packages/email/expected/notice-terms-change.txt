@@ -1,0 +1,18 @@
+Subject: Ponzu's terms change on February 1
+Preview: The terms now say how long Ponzu keeps a canvas after its workspace is deleted.
+
+Ponzu's terms change on February 1
+
+The terms now say how long Ponzu keeps a canvas after its workspace is deleted.
+
+Nothing else changes.
+
+Read the new terms https://ponzu.design/terms
+
+See what changed on GitHub https://github.com/north-brook/ponzu/commits/main/apps/web/app/(legal)/terms/page.mdx
+
+You get this because Ponzu's terms promise it by email. It can't be turned off.
+
+Questions? Reply to this email.
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

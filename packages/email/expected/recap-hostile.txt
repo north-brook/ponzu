@@ -1,0 +1,32 @@
+Subject: Shipped this week: Kettle onboarding flow for the new self… and 3 more
+Preview: 4 pull requests from your canvases were merged this week.
+
+Friday, November 13
+
+Shipped this week
+
+Merged since last Friday, from canvases you own.
+
+Kettle onboarding flow for the new self-serve pricing exper… https://ponzu.design/canvases/cnv_1?open=pull-request
+
+#7 merged Thursday
+
+<b>Q4 & "launch"</b> https://ponzu.design/canvases/cnv_2?open=pull-request
+
+#8 merged Thursday
+
+תכנון השקה של קומקום https://ponzu.design/canvases/cnv_3?open=pull-request
+
+#9 merged Thursday
+
+Launch 🚀👩🏽‍💻 board https://ponzu.design/canvases/cnv_4?open=pull-request
+
+#10 merged Thursday
+
+Have a good weekend.
+
+You get this on Fridays when a pull request from a canvas you own was merged.
+
+Stop Friday emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.recap.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016

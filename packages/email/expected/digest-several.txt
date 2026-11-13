@@ -1,0 +1,17 @@
+Subject: Kettle onboarding: 3 things since yesterday
+Preview: Pull request #41 is ready to merge.
+
+Since yesterday
+
+Here is what Ponzu told you about in the last day.
+
+Kettle onboarding
+Ponzu finished what you asked. https://ponzu.design/canvases/cnv_1?open=thread
+Maya and Sam left 3 comments. https://ponzu.design/canvases/cnv_1?open=thread
+Pull request #41 is ready to merge. https://ponzu.design/canvases/cnv_1?open=thread
+
+You get this email once a day because it is on in Ponzu's Settings.
+
+Stop these emails https://api.ponzu.design/v1/email/unsubscribe?t=usr_1.digest.pzv1.sealed-token
+
+Northbrook PBC, 169 Madison Ave, Suite 2504, New York, NY 10016
