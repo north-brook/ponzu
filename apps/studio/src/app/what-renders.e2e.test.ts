@@ -300,6 +300,37 @@ describe.skipIf(!chromiumPath)("what one change in a canvas draws", () => {
     expect(counts.chrome).toBe(0);
   });
 
+  test("the thread's pictures move to the new address when the file links are reset", async () => {
+    // The rail no longer draws again for every op, so it must still hear the source's new file
+    // address, which comes with no change to the document at all.
+    const pictures = () =>
+      thread()
+        .locator("img[src^='https://assets.test/']")
+        .evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).src));
+    // A teammate's seeded comment gets a picture, which the rail shows from the canvas's files.
+    await page.evaluate(async (id) => {
+      const w = window.ponzuFake!;
+      const sam = w.backend.connect(w.teammate).api;
+      const [drawn] = [...w.backend.canvas(id).pictures.values()];
+      const uploads = await sam.canvases.uploadCommentPicture(id, "m_wr0", {
+        light: drawn!.bytes,
+        dark: drawn!.bytes,
+      });
+      await sam.canvases.attachCommentPicture(id, "m_wr0", uploads);
+    }, canvasId);
+    await waitUntil(async () => (await pictures()).length > 0);
+    const before = await pictures();
+    expect(before.every((src) => src.includes(`/${canvasId}/`))).toBe(true);
+    await page.evaluate(async (id) => {
+      const w = window.ponzuFake!;
+      await w.backend.connect(w.me).api.canvases.rotateAssetKey(id);
+    }, canvasId);
+    await waitUntil(async () => {
+      const now = await pictures();
+      return now.length === before.length && now.every((src) => src.includes(`/${canvasId}-1/`));
+    }, 15_000);
+  });
+
   test("nothing went wrong in the page", () => {
     expect(errors).toEqual([]);
   });

@@ -5,6 +5,7 @@ import { useLiveQuery } from "@ponzu/client/react";
 import { type Actor, type Doc, newId } from "@ponzu/core";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -225,10 +226,10 @@ export function useSourceSelect<T>(
   source: CloudSource,
   select: (state: ReturnType<CloudSource["getState"]>) => T,
 ): T {
-  return useSyncExternalStore(
-    (changed) => source.subscribe(changed),
-    () => select(source.getState()),
-  );
+  // The same subscribe function while the source is the same, so React doesn't let go of the
+  // source and subscribe again on every render.
+  const subscribe = useCallback((changed: () => void) => source.subscribe(changed), [source]);
+  return useSyncExternalStore(subscribe, () => select(source.getState()));
 }
 
 const shapes = new WeakMap<object, string>();

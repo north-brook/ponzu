@@ -111,7 +111,9 @@ export const CanvasRail = memo(function CanvasRail({
   const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
   const now = useNow();
-  const assetBase = open.source.assetBase;
+  // The file address moves when the canvas's file links are reset, with no op at all: the source
+  // says so by publishing its state again, so it is followed here, not read once.
+  const assetBase = useSourceSelect(open.source, () => open.source.assetBase);
 
   // A question waiting in the composer's place isn't in the thread as well.
   const waiting = useMemo(
