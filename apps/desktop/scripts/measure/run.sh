@@ -12,6 +12,9 @@ mkdir -p "$out"
 cd "$root"
 git rev-parse HEAD >"$out/commit.txt" 2>/dev/null || true
 
+# A worker's checkout must be left as it was found: bun install can rewrite bun.lock's
+# workspace versions, so it is put back however the run ends.
+trap 'git -C "$root" checkout -- bun.lock 2>/dev/null || true' EXIT
 bun install
 # The studio built as the headless tests build it: with the fake backend in it.
 (cd apps/studio && env -u NODE_ENV bunx vite build --mode e2e)
