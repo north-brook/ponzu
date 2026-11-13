@@ -132,7 +132,8 @@ export function fakeSearch({
     byCode(a.canvas.id, b.canvas.id) ||
     byCode(a.entry.kind, b.entry.kind) ||
     byCode(a.entry.ref, b.entry.ref);
-  const kept = (group: EntryGroup) => (hits.get(group) ?? []).toSorted(order).slice(0, CAPS[group]);
+  const kept = (group: EntryGroup) =>
+    (hits.get(group) ?? []).slice().sort(order).slice(0, CAPS[group]);
 
   for (const { entry, canvas } of kept("canvases")) {
     answer.canvases.push({
@@ -233,7 +234,7 @@ function entriesOf(canvas: SearchableCanvas): SearchEntry[] {
 function threadEntries(thread: readonly ThreadItem[]): SearchEntry[] {
   const out: SearchEntry[] = [];
   let turn: TurnRecord | null = null;
-  for (const item of thread.toSorted((a, b) => a.seq - b.seq)) {
+  for (const item of thread.slice().sort((a, b) => a.seq - b.seq)) {
     const at = Date.parse(item.at);
     if (item.kind === "tool") {
       if (item.payload.turn) turn = item.payload.turn;
