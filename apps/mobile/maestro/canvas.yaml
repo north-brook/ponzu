@@ -2,9 +2,8 @@ appId: design.ponzu.app.dev
 name: canvas
 ---
 # A canvas from its row: the fake's Pricing page, drawn live in the web view
-# from the replica on the React Native side, read only. Its name in the title,
-# Comment and Chat in the floating stack (unavailable until their slices), no
-# pull request yet; then Back to the list.
+# from the replica on the React Native side. Its name in the title, Comment and
+# Chat in the floating stack, no pull request yet; then Back to the list.
 - runFlow: shared/start.yaml
 - openLink: ponzu-dev://dev?seed=signed-in
 - extendedWaitUntil:

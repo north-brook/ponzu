@@ -1,10 +1,12 @@
+import type { Person } from "@ponzu/client/model";
 import { linkTarget, type Thread } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { onlineManager } from "@tanstack/react-query";
-import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { type Href, router, useLocalSearchParams, useNavigation } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, Text, useWindowDimensions, View } from "react-native";
+import { AppState, Linking, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
@@ -17,6 +19,7 @@ import type { FromCanvas } from "../../canvas/protocol";
 import { CanvasPlaceholder } from "../../components/canvas-placeholder";
 import { CanvasStack } from "../../components/canvas-stack";
 import { type CanvasHandle, CanvasView } from "../../components/canvas-view";
+import { ChatSheet } from "../../components/chat-sheet";
 import { BarButton } from "../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../components/composer";
 import { DraftSheet } from "../../components/draft-sheet";
@@ -38,7 +41,8 @@ import {
 import { canvasStatus, previewUrl } from "../../lib/canvas/status";
 import { useCanvasHead, useCanvasSource, useCanvasView } from "../../lib/canvas/use-canvas";
 import { backend } from "../../lib/cloud/backend";
-import { COMMENT_WORDS } from "../../lib/copy";
+import { config } from "../../lib/cloud/config";
+import { CANVAS_WORDS, COMMENT_WORDS } from "../../lib/copy";
 import {
   draftKey,
   drafts,
@@ -49,7 +53,9 @@ import {
   useDrafts,
 } from "../../lib/drafts";
 import { select, success, thud, tick } from "../../lib/haptics";
+import { pathOf, threadLink } from "../../lib/links";
 import { pageIconImage } from "../../lib/page-icons";
+import { safeHref } from "../../lib/prose";
 import { Juice } from "../../lib/slice";
 import { useTheme } from "../../lib/theme";
 import { EASE_OUT } from "../../lib/tokens";
@@ -58,6 +64,8 @@ import { useWindowInsets } from "../../lib/window-insets";
 const ease = Easing.bezier(...EASE_OUT);
 /** The canvas's bar: 6pt above and below its 44pt controls. */
 const BAR = 56;
+/** The chat sheet's top edge, over the header's glass (board 3.8), below the status bar. */
+const CHAT_TOP = 58;
 
 // Unsent words are kept on disk, so an app iOS evicted or killed still has them (lib/drafts.ts).
 drafts.setStorage(AsyncStorage);
@@ -79,11 +87,14 @@ function leave() {
  * Comments are left where they're about: hold on the canvas, or press Comment and tap, and the
  * field floats up, typed or said. A pin opens its thread, to read, reply, resolve or reopen.
  * Each is one op through the replica (lib/canvas/comments.ts): on the canvas at once, its words
- * kept in their draft (lib/drafts.ts, on disk) until the API has them. The chat and pull
- * request sheets come with their own slices; until then their buttons are shown and unavailable.
+ * kept in their draft (lib/drafts.ts, on disk) until the API has them. Chat opens the canvas's
+ * thread in its sheet (components/chat-sheet.tsx), to read Ponzu, say something, attach
+ * pictures or stop a turn. The pull request sheet comes with its own slice; until then its
+ * button is shown and says so.
  *
  * Opened from a row, a link or a push: `page` and `artboard` say where to open (a board on its
- * page, or a page, as @ponzu/core's `linkTarget` reads them).
+ * page, or a page, as @ponzu/core's `linkTarget` reads them); `sheet=chat` opens the chat, at
+ * `message=<seq>` when it names one.
  */
 export default function CanvasScreen() {
   const params = useLocalSearchParams<{
@@ -219,6 +230,19 @@ export default function CanvasScreen() {
   useEffect(() => {
     if (params.thread) setThreadId(params.thread);
   }, [params.thread]);
+  /**
+   * The chat sheet is up (iPhone design §9): opened by Chat, or by a link or push (`sheet=chat`,
+   * and maybe `message=<seq>` to open at). Only by Chat does its field take the keyboard.
+   */
+  const [chat, setChat] = useState(params.sheet === "chat");
+  const [chatFocus, setChatFocus] = useState(false);
+  useEffect(() => {
+    if (params.sheet !== "chat") return;
+    setChatFocus(false);
+    setChat(true);
+  }, [params.sheet, params.message]);
+  const chatMessage =
+    params.message && /^\d{1,15}$/.test(params.message) ? Number(params.message) : null;
   const [mode, setMode] = useState<Mode>(initialMode);
   /** How far a sheet over the canvas rises: the pin it's about stays above it. */
   const [sheet, setSheet] = useState(0);
@@ -411,6 +435,75 @@ export default function CanvasScreen() {
     });
   };
 
+  /* The chat (iPhone design §9). */
+  /** The person as the thread names them: their bubbles, until the API's own items come. */
+  const chatMe = useMemo<Person | null>(
+    () =>
+      me
+        ? { id: me.id ?? "", name: me.name, login: me.name, avatarUrl: me.avatarUrl ?? null }
+        : null,
+    [me],
+  );
+  const openChat = () => {
+    tick();
+    setThreadId(null);
+    setPending(null);
+    setPlacing(false);
+    setHolding(null);
+    setNotice(null);
+    setChatFocus(true);
+    setChat(true);
+  };
+  /** The chat is gone: the thread is read as far as it held. */
+  const closeChat = (readSeq: number | null) => {
+    setChat(false);
+    setChatFocus(false);
+    if (head) {
+      backend.api.canvases
+        .seen(canvasId, { seq: head.seq, ...(readSeq !== null ? { threadSeq: readSeq } : {}) })
+        .catch(() => {});
+    }
+  };
+  /** Shows a page, or a board on its page, from the chat: the sheet has gone by then. */
+  const showPlace = (at: { pageId?: string; artboardId?: string }) => {
+    const pageOf = at.artboardId
+      ? doc?.pages.find((p) => p.artboards.some((a) => a.id === at.artboardId))?.id
+      : at.pageId;
+    if (pageOf && doc?.pages.some((p) => p.id === pageOf) && pageOf !== page?.id) {
+      setPageId(pageOf);
+      canvas.current?.post({ t: "page", pageId: pageOf });
+    }
+    if (at.artboardId && pageOf) canvas.current?.post({ t: "focus", artboardId: at.artboardId });
+  };
+  /** A comment's picture in the chat: the sheet goes, the canvas goes to the pin, its thread opens. */
+  const openCommentFromChat = (id: string) => {
+    closeChat(null);
+    const pin = doc?.threads.find((t) => t.id === id);
+    if (!pin) return;
+    showPlace(pin.artboardId ? { artboardId: pin.artboardId } : { pageId: pin.pageId });
+    setThreadId(id);
+  };
+  /**
+   * A link in Ponzu's reply: a page or board of this canvas is shown in place, with the sheet
+   * gone; another canvas opens; anything else prose.ts let through leaves the app.
+   */
+  const openLink = (url: string) => {
+    const route = threadLink(url, config().scheme);
+    if (route?.id === canvasId) {
+      closeChat(null);
+      showPlace({ pageId: route.params.page, artboardId: route.params.artboard });
+      return;
+    }
+    if (route) {
+      router.push(pathOf(route) as Href);
+      return;
+    }
+    const href = safeHref(url);
+    if (!href) return;
+    if (/^mailto:/i.test(href)) Linking.openURL(href).catch(() => {});
+    else WebBrowser.openBrowserAsync(href).catch(() => {});
+  };
+
   // Unsent words for this canvas: the pins of new comments left unsent (but the one being
   // written, and those on their way), and the threads with a reply being written.
   const allDrafts = useDrafts();
@@ -508,7 +601,9 @@ export default function CanvasScreen() {
   // Under the title, most pressing first: a comment that didn't go, one waiting to, the canvas.
   const queued = waiting > 0 && state.status === "offline" ? COMMENT_WORDS.queued : null;
   const line = notice ?? queued ?? (placeholderLine ? null : status.line);
-  const sheetUp = Boolean(pending || thread || holding || movingDraft);
+  const sheetUp = Boolean(pending || thread || holding || movingDraft || chat);
+  const offline =
+    state.status === "offline" || !onlineManager.isOnline() ? CANVAS_WORDS.offline : null;
   const foot = Math.max(insets.bottom, 16) + 8;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
@@ -657,6 +752,7 @@ export default function CanvasScreen() {
           right={16 + insets.right}
           prNumber={head?.prNumber ?? null}
           chat={status.chat}
+          onChat={openChat}
           commenting={placing}
           commentHint={readOnly}
           onComment={
@@ -755,6 +851,24 @@ export default function CanvasScreen() {
             canvas.current?.post({ t: "place" });
             setMovingDraft(null);
           }}
+        />
+      )}
+      {chat && chatMe && (
+        <ChatSheet
+          canvasId={canvasId}
+          head={head}
+          canvas={view.data}
+          doc={doc}
+          me={chatMe}
+          readOnly={readOnly}
+          offline={offline}
+          focus={chatFocus && (head?.needsYouCount ?? 0) === 0}
+          message={chatMessage}
+          onDismiss={closeChat}
+          onOpenComment={openCommentFromChat}
+          onOpenLink={openLink}
+          top={Math.max(CHAT_TOP, safe.top + 4)}
+          right={insets.right}
         />
       )}
       {thread && !pending && (

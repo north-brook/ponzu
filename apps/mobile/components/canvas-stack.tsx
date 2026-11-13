@@ -12,10 +12,11 @@ import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
  * shows (the shared `railSignal`): the turning yuzu slice while the agent wakes or works, else
  * its own mark.
  *
- * Chat and the pull request have no sheet on the iPhone yet, so until they do, pressing either
- * says so in one alert instead of doing nothing. The needs-you count isn't shown either: a
- * question the phone can't answer yet would be a dead end. Comment on a canvas the person may
- * only look at is shown and said to be unavailable, not hidden, so the stack never jumps.
+ * Chat opens the chat sheet (components/chat-sheet.tsx). The pull request has no sheet on the
+ * iPhone yet, so until it does, pressing it says so in one alert instead of doing nothing. The
+ * needs-you count isn't shown yet: the questions come to the chat's composer in their own slice.
+ * Comment on a canvas the person may only look at is shown and said to be unavailable, not
+ * hidden, so the stack never jumps.
  */
 export function CanvasStack({
   bottom,
@@ -35,7 +36,7 @@ export function CanvasStack({
   chat: RailSignal;
   onPullRequest?: () => void;
   onComment?: () => void;
-  onChat?: () => void;
+  onChat: () => void;
   /** Comment was pressed and the pin isn't down yet: its glass is held. */
   commenting?: boolean;
   /** Why Comment is unavailable, for VoiceOver (the read-only line). */
@@ -68,11 +69,7 @@ export function CanvasStack({
       >
         <CommentIcon color={color.ink} />
       </Control>
-      <Control
-        testID="stack-chat"
-        label={chatLabel}
-        onPress={onChat ?? (() => Alert.alert(NOT_YET.chat))}
-      >
+      <Control testID="stack-chat" label={chatLabel} onPress={onChat}>
         {busy ? (
           <View testID="stack-chat-working">
             <Juice size={20} color={color.ink} />
@@ -85,9 +82,8 @@ export function CanvasStack({
   );
 }
 
-/** What Chat and the pull request say when pressed, until their sheets come to the iPhone. */
+/** What the pull request says when pressed, until its sheet comes to the iPhone. */
 export const NOT_YET = {
-  chat: "Chat isn't on the iPhone yet. It comes in the next update.",
   pullRequest: "Pull requests aren't on the iPhone yet. They come in the next update.",
 } as const;
 

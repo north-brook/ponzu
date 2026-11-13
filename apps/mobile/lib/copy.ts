@@ -136,5 +136,28 @@ export const COMMENT_WORDS = {
   readOnlyScratch: "You can look at this canvas.",
 } as const;
 
+/** Words the chat sheet says (components/chat-sheet.tsx, lib/chat/lines.ts; iPhone design §22). */
+export const CHAT = {
+  /** The field, empty. */
+  placeholder: "Steer, or ask more",
+  /** Under the field, after a send that didn't go: tapping it sends again. */
+  sendFailed: "Couldn't send. Tap to try again.",
+  /** Under the field, after Stop didn't reach Ponzu. */
+  stopFailed: "Couldn't stop it. Try again.",
+  /** After a billing blocker's first sentence: what the canvas does, and nothing about paying. */
+  waits: "This canvas waits.",
+  /** The thread before anything is in it. */
+  empty: "Nothing here yet. Say what you want, and Ponzu gets to work.",
+  /** The thread couldn't be read and nothing of it is kept here. */
+  unreachable: "Can't reach Ponzu. Trying again.",
+  attach: "Attach",
+  stop: "Stop",
+  send: "Send",
+  /** VoiceOver's name for the cross on a picture waiting to go with the message. */
+  remove: (name: string) => `Remove ${name}`,
+  /** VoiceOver's name for a comment's picture in the thread, which goes to the pin. */
+  openComment: (place: string) => `Open the comment on ${place}`,
+} as const;
+
 /** What the canvases list says when the workspace has no canvases: where they come from. */
 export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";

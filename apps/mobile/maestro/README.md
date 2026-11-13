@@ -16,6 +16,7 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
 | `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
+| `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); the reply's link to the Plans board closes the sheet; a swipe down closes it again. |
 
 With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
 opens the Pricing page and waits for its boards, `run.sh` ends that
@@ -28,7 +29,7 @@ has not yet run on spare; once it passes there, make it the default.
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
-too-old, setup-where, setup-claude, canvases); only a fake build takes it. Every flow checks no development warning
+too-old, setup-where, setup-claude, canvases, chat); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
@@ -44,7 +45,9 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `canvas-placeholder`, `canvas-gone`, `back`, `title`, `page-menu`, `stack-pr`,
 `stack-comment`, `stack-chat`, `canvas-hint`, `comment-sheet`, `comment-field`,
 `comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
-`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`. A
+`resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`,
+`chat-sheet`, `chat-thread`, `chat-input`, `chat-send`, `chat-stop`,
+`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`. A
 canvas's row reads as its VoiceOver label ("Pricing page, 1 waiting for you,
 site, …"), so flows match it with a pattern. Give a new screen a `testID` named
 after it.

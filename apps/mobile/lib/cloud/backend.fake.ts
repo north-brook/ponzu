@@ -43,6 +43,11 @@ export const SCENARIOS = [
    * preview, a settled canvas, and a second workspace to switch to.
    */
   "canvases",
+  /**
+   * Maya's Pricing page with a thread (`stockChat`): her ask, Ponzu's reply with a link to the
+   * Plans board, and a second turn still running, an aside on its way.
+   */
+  "chat",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -237,6 +242,38 @@ export async function stockCanvases(world: FakeWorld): Promise<void> {
   });
 }
 
+/** What `stockChat` puts in the Pricing page's thread, for tests to look for. */
+export const CHAT_SCENE = {
+  ask: "Make the plans easier to compare",
+  reply: (canvasId: string) =>
+    `I put the **three plans** side by side, cheapest first. See [the Plans board](https://ponzu.design/canvases/${canvasId}?artboard=ab_plans).`,
+  replyText: "I put the three plans side by side, cheapest first. See the Plans board.",
+  again: "Now a dark version",
+  aside: "Starting on the dark one.",
+  working: "Drawing the dark plans",
+} as const;
+
+/**
+ * The Pricing page's thread once the world is ready: Maya asked, Ponzu answered with a link to
+ * the Plans board, Maya asked again, and that turn is running: an aside said, its work going on.
+ */
+export async function stockChat(world: FakeWorld): Promise<void> {
+  await world.ready;
+  const { fake, maya } = world;
+  const pricing = [...fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return;
+  const { api } = fake.connect(maya);
+  const agent = fake.agent(pricing.id);
+  await api.canvases.sendMessage(pricing.id, { text: CHAT_SCENE.ask });
+  agent.say(CHAT_SCENE.reply(pricing.id));
+  await api.canvases.sendMessage(pricing.id, { text: CHAT_SCENE.again });
+  agent.work(["ab_plans"], CHAT_SCENE.working);
+  agent.say(CHAT_SCENE.aside);
+  agent.tool("Edited Plans", { streaming: true, artboards: ["ab_plans"] });
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -274,6 +311,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   let limitedUntil: string | null = null;
   const installPages: string[] = [];
   const stocked = new WeakSet<FakeWorld>();
+  const chatted = new WeakSet<FakeWorld>();
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -370,6 +408,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         "setup-where": signedIn,
         "setup-claude": signedIn,
         canvases: signedIn,
+        chat: signedIn,
       };
       // The rows change under the list as the live query would deliver them.
       // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
@@ -379,6 +418,15 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         const current = world;
         session.set({ status: "loading" });
         void stockCanvases(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "chat" && !chatted.has(world)) {
+        chatted.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockChat(current).finally(() => {
           if (world === current) session.set(states[scenario]);
         });
         return true;

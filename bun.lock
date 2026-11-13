@@ -63,7 +63,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.80.1",
+      "version": "2.1.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -80,7 +80,7 @@
     },
     "apps/mobile": {
       "name": "@ponzu/mobile",
-      "version": "0.12.1",
+      "version": "1.0.0",
       "dependencies": {
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
@@ -124,6 +124,15 @@
         "expo-system-ui": "~58.0.6",
         "expo-updates": "~58.0.18",
         "expo-web-browser": "~58.0.6",
+        "mdast-util-from-markdown": "^2.0.2",
+        "mdast-util-gfm-autolink-literal": "^2.0.1",
+        "mdast-util-gfm-strikethrough": "^2.0.1",
+        "mdast-util-gfm-table": "^2.0.1",
+        "mdast-util-gfm-task-list-item": "^2.0.1",
+        "micromark-extension-gfm-autolink-literal": "^2.1.0",
+        "micromark-extension-gfm-strikethrough": "^2.1.0",
+        "micromark-extension-gfm-table": "^2.1.2",
+        "micromark-extension-gfm-task-list-item": "^2.1.0",
         "nativewind": "5.0.0-rc.0",
         "posthog-react-native": "^4.81.10",
         "react": "19.3.0",
@@ -149,6 +158,7 @@
         "@tailwindcss/postcss": "^4.3.3",
         "@testing-library/react-native": "^14.1.0",
         "@types/bun": "latest",
+        "@types/mdast": "^4.0.4",
         "@types/react": "~19.3.0",
         "@types/ungap__structured-clone": "^1.2.0",
         "babel-preset-expo": "~58.0.17",

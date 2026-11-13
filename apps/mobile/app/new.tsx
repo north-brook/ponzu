@@ -3,9 +3,7 @@ import { nameFor } from "@ponzu/client/model/create";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
-import { File } from "expo-file-system";
 import { Image } from "expo-image";
-import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -36,16 +34,9 @@ import { useCloud } from "../lib/cloud/query";
 import { useProjects } from "../lib/cloud/use-projects";
 import { CREATE, LIMITED, PICKER } from "../lib/copy";
 import { fail, select, success, tick } from "../lib/haptics";
+import { type Picked, pickImages, uploadImages } from "../lib/pick-images";
 import { useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
-
-/** An image picked to go with the prompt, until there is a canvas to upload it to. */
-interface Picked {
-  id: string;
-  uri: string;
-  name: string;
-  type: string;
-}
 
 /** A new create key: the API takes 8 to 64 of `A-Za-z0-9_-`, and a UUID is 36 of them. */
 const newCreateKey = () => Crypto.randomUUID();
@@ -218,29 +209,8 @@ export default function NewCanvas() {
 
   const attach = async () => {
     select();
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      selectionLimit: 6,
-      // JPEG rather than HEIC: what the API takes.
-      preferredAssetRepresentationMode:
-        ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-    }).catch(() => null);
-    if (!result || result.canceled || !result.assets) return;
-    const more = result.assets.map((asset, i): Picked => {
-      const type = asset.mimeType ?? "image/jpeg";
-      const name = asset.fileName ?? `image-${picked.length + i + 1}.jpg`;
-      return {
-        // Unique even when the same photo is attached twice, in one pick or two.
-        id: `${asset.assetId ?? asset.uri}-${Crypto.randomUUID()}`,
-        uri: asset.uri,
-        // The library keeps a photo's own name ("IMG_0001.HEIC") on the JPEG it hands over: the
-        // file goes up named for what it is, so the agent reads it as a JPEG.
-        name: type === "image/jpeg" ? name.replace(/\.(heic|heif)$/i, ".jpg") : name,
-        type,
-      };
-    });
-    setPicked((now) => [...now, ...more]);
+    const more = await pickImages(picked.length);
+    if (more.length) setPicked((now) => [...now, ...more]);
   };
 
   const back = () => {
@@ -527,15 +497,6 @@ async function sayWithImages(
   text: string,
   images: readonly Picked[],
 ): Promise<void> {
-  const uploaded = await Promise.all(
-    images.map(async (image) =>
-      api.canvases.upload(canvasId, {
-        name: image.name,
-        type: image.type,
-        bytes: new Uint8Array(await new File(image.uri).arrayBuffer()),
-      }),
-    ),
-  );
-  const attachments = uploaded.flatMap((file) => (file.ref ? [file.ref] : []));
-  await api.canvases.sendMessage(canvasId, { text, attachments });
+  const uploaded = await uploadImages(api, canvasId, images);
+  await api.canvases.sendMessage(canvasId, { text, attachments: uploaded.map((u) => u.ref) });
 }

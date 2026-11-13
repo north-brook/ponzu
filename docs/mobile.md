@@ -322,8 +322,10 @@ Signing in on the fake goes through the real auth session when
 back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
 skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
 state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
-`setup-where` (Lee, whose own account has no Ponzu yet) and `setup-claude`
-(Ava, with no Claude). Only a fake build takes that link. With the authorize
+`setup-where` (Lee, whose own account has no Ponzu yet), `setup-claude`
+(Ava, with no Claude), `canvases` (Maya's list in every state) and `chat`
+(the Pricing page's thread with a turn running). Only a fake build takes that
+link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
 back as a finished install. A component test can put the person's Claude plan
 at a limit with `backend.limitClaude(until)`.
@@ -340,8 +342,8 @@ something to draw.
 
 A row opens `app/canvas/[id].tsx` (`lib/canvas/open.ts`), and so do links
 and, later, pushes, with `page`, `artboard`, `sheet`, `question`, `thread` and
-`message`. Comments work (below); the chat sheet and the pull request sheet
-come with their own slices.
+`message`. Comments and the chat work (below); the pull request sheet comes
+with its own slice.
 
 - **The replica is on the React Native side.** `lib/canvas/use-canvas.ts`
   opens a `CloudSource` (`@ponzu/client/canvas`) for the signed-in person,
@@ -371,9 +373,10 @@ come with their own slices.
   the pages' native menu, and the floating stack bottom right: the pull
   request (once there is one), Comment, and Chat (the shared `railSignal`: the
   needs-you count, else the turning slice while the agent wakes or works).
-  The chat and pull request sheets aren't built yet, so those two are shown
-  and unavailable. A double-tapped board has the screen and the chrome steps
-  aside.
+  Chat opens the chat sheet. The pull request sheet isn't built yet, so its
+  button says so when pressed. The needs-you count isn't shown on Chat until
+  the questions come to the chat's composer. A double-tapped board has the
+  screen and the chrome steps aside.
 - **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
   `CloudSource` and the client's fake backend, with a stand-in page that
   applies what it's sent as the real one does. `canvas/page.webkit.test.ts`
@@ -432,6 +435,67 @@ unsent pin offers Open, Move and Discard draft.
   Comment. `canvas/page.webkit.test.ts` checks a tap after Comment drops a
   pin in WebKit. `maestro/comment.yaml` and `comment-modes.yaml` run the
   flows on a simulator, on spare only.
+
+### The chat
+
+Chat opens the canvas's one thread in a sheet near full height, over the
+header's glass (iPhone design §9): a grabber, the thread and the composer,
+nothing else. A link or push with `sheet=chat` opens it too, at
+`message=<seq>` when it names one (older pages are read until that message is
+held). Only Chat gives its field the keyboard. A swipe down, or VoiceOver's
+escape, closes it, and closing marks the thread read as far as it held
+(`seen` with `threadSeq`).
+
+- **The thread** (`lib/chat/thread-store.ts`) is the `canvas.thread` live
+  query beside the newest page of history, with older pages read as it is
+  scrolled to the top while the live rows aren't there. It is the Mac's
+  thread store on the phone's API object.
+- **The lines** (`lib/chat/lines.ts`) are the Mac's rules from
+  `@ponzu/client/model` (`shownItems`, `toThreadItem`, `threadRows`): a
+  person's message is a bubble on the right, with the sender's avatar on its
+  corner once more than one person has written; a comment is the picture of
+  where it was left above its words, and pressing it closes the sheet and
+  opens that pin's thread; Ponzu's reply is plain text drawn from Markdown;
+  what Ponzu says on the way is quieter and in italics while the turn runs,
+  then goes; there are no tool lines. An open question is not shown in the
+  thread (it belongs in the composer's place, which the next slice builds).
+- **The foot**, most pressing first: a billing blocker (its neutral first
+  sentence and "This canvas waits.", never a way to pay), the owner's Claude
+  (not connected, signed out, at its plan's limit), the sandbox (waiting for
+  a machine, paused, failed), then the working line (the turning slice and
+  what the agent is doing, "Waking up", or "Thinking" from the moment a
+  message is sent).
+- **Markdown** (`lib/prose.ts`, drawn by `lib/markdown.tsx`) is parsed by the
+  Mac's parser and rules: micromark with GitHub's flavour and no footnotes,
+  HTML as text, images as links named by their alt text, quotes three deep
+  and emphasis four, and plain text for anything the Mac would refuse to
+  parse. A link survives only to http, https or mailto. A link to a page or
+  board of this canvas (`https://ponzu.design/canvases/<id>?page=…` or
+  `?artboard=…`, read by `threadLink` in `lib/links.ts`) closes the sheet and
+  goes there; one to another canvas opens it; any other opens in Safari's
+  sheet (mail in Mail). The one difference from the Mac: React Native's URL
+  is partial, so an address is matched whole by a pattern.
+- **The composer** is the comment field (`components/composer.tsx`, typed or
+  said) with Attach at its leading edge (pictures from the library, uploaded
+  to the canvas and sent as the message's `attachments`) and, at its trailing
+  edge, Send when there are words or Stop while a turn is live and the field
+  is empty. A message mid-run goes straight in. A message shows at once as the
+  person's bubble; one that doesn't go takes its bubble away and leaves its
+  words in the field and its pictures over it, with "Couldn't send. Tap to try
+  again." under it (tapping sends again). A billing refusal shows its first
+  sentence and "This canvas waits." The unsent words are a draft on disk
+  (`draftKey.chat`). On a canvas the person may only look at, or offline, the
+  field is one quiet line instead.
+- **Proofs.** `bun test apps/mobile/lib/prose.test.ts` (what a link may go
+  to, images, HTML, depth limits, and the Mac's `parseable` and `settled`
+  compared on the same texts), `lib/links.test.ts` (`threadLink`),
+  `lib/chat` (the store over the fake backend; the lines and the foot).
+  `rntests/chat.rntest.tsx` renders the canvas screen against the fake with
+  the agent's turns played by the test: the lines, the aside going when the
+  turn ends, Stop, a message mid-run, a picture, a send that fails and is
+  sent again, a billing refusal, a board link and an outside link, the read
+  only line, and closing marking the thread read. `maestro/chat.yaml` (seed
+  `chat`) runs it on a simulator, on spare only.
 
 ## Variants
 

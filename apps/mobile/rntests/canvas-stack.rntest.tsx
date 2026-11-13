@@ -5,9 +5,15 @@ import { CanvasStack } from "../components/canvas-stack";
 import { canvasStatus } from "../lib/canvas/status";
 
 /** The stack as the canvas screen draws it for a head row. */
-function Stack(head: Parameters<typeof canvasStatus>[0], prNumber: number | null = null) {
+function Stack(
+  head: Parameters<typeof canvasStatus>[0],
+  prNumber: number | null = null,
+  onChat: () => void = () => {},
+) {
   const status = canvasStatus(head, { status: "ready", doc: null });
-  return <CanvasStack bottom={42} right={16} prNumber={prNumber} chat={status.chat} />;
+  return (
+    <CanvasStack bottom={42} right={16} prNumber={prNumber} chat={status.chat} onChat={onChat} />
+  );
 }
 
 const head = (over: Partial<NonNullable<Parameters<typeof canvasStatus>[0]>> = {}) => ({
@@ -52,21 +58,21 @@ describe("the canvas's floating stack", () => {
     expect(screen.getByLabelText("Pull request #412")).toBeTruthy();
   });
 
-  test("Chat and the pull request say they come in the next update; nothing is dead", async () => {
+  test("Chat opens the chat; the pull request says it comes in the next update", async () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
-    await render(Stack(head(), 412));
+    const onChat = jest.fn();
+    await render(Stack(head(), 412, onChat));
     for (const id of ["stack-pr", "stack-chat"]) {
       expect(screen.getByTestId(id).props.accessibilityState).not.toMatchObject({ disabled: true });
     }
     await fireEvent.press(screen.getByTestId("stack-chat"));
-    expect(alert).toHaveBeenLastCalledWith(
-      "Chat isn't on the iPhone yet. It comes in the next update.",
-    );
+    expect(onChat).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByTestId("stack-pr"));
     expect(alert).toHaveBeenLastCalledWith(
       "Pull requests aren't on the iPhone yet. They come in the next update.",
     );
-    expect(alert).toHaveBeenCalledTimes(2);
+    expect(alert).toHaveBeenCalledTimes(1);
     alert.mockRestore();
   });
 

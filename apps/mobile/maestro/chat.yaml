@@ -1,0 +1,87 @@
+appId: design.ponzu.app.dev
+name: chat
+---
+# The canvas's chat on the fake's Pricing page (seed `chat`): Maya's asks as
+# bubbles, Ponzu's reply drawn from its Markdown, the aside and the working
+# line while its turn runs. Chat opens with the field ready: words typed with
+# the keyboard up and sent mid-run land as a bubble (the keyboard never covers
+# Send). Stop with the field empty ends the turn. The reply's link to the
+# Plans board closes the sheet and goes there; Chat again, and a swipe down
+# closes it.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=chat
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+- tapOn: "Pricing page, .*site.*"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+- tapOn:
+    id: stack-chat
+- extendedWaitUntil:
+    visible:
+      id: chat-sheet
+    timeout: 10000
+- assertVisible: "Make the plans easier to compare"
+- assertVisible: "Now a dark version"
+- assertVisible: ".*three plans.*side by side.*"
+- assertVisible: "Starting on the dark one."
+- assertVisible:
+    id: chat-working
+- assertVisible: "Drawing the dark plans"
+# Opened by Chat with no question: the field has the keyboard. Type and send
+# with it up; Send must be on screen above it.
+- tapOn:
+    id: chat-input
+- inputText: "Also the footer"
+- assertVisible:
+    id: chat-send
+- tapOn:
+    id: chat-send
+- extendedWaitUntil:
+    visible: "Also the footer"
+    timeout: 10000
+# The field is empty again and the turn still runs: Stop.
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: chat-stop
+    timeout: 10000
+- tapOn:
+    id: chat-stop
+- extendedWaitUntil:
+    visible: "You stopped it"
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible:
+      id: chat-working
+    timeout: 10000
+# The reply's link to the Plans board: the sheet goes, the board is there.
+- tapOn: "the Plans board"
+- extendedWaitUntil:
+    notVisible:
+      id: chat-sheet
+    timeout: 10000
+- assertVisible:
+    id: canvas-web
+# Back in, and a swipe down closes it.
+- tapOn:
+    id: stack-chat
+- extendedWaitUntil:
+    visible:
+      id: chat-sheet
+    timeout: 10000
+- hideKeyboard
+- swipe:
+    start: 50%, 12%
+    end: 50%, 90%
+    duration: 300
+- extendedWaitUntil:
+    notVisible:
+      id: chat-sheet
+    timeout: 10000
+- assertVisible:
+    id: stack-chat
+- assertNotVisible: ".*Cannot update a component.*"
