@@ -253,3 +253,20 @@ test("the agent's pull request goes through: read with the turn, each action at 
   const err = await http.actOnPullRequest("merge", { turn: null, headSha: sha }).catch((e) => e);
   expect(err).toMatchObject({ status: 403, code: "turn_not_from_person" });
 });
+
+test("over HTTP the session names the boot, and a checkpoint says what it held once its archives are up", async () => {
+  const { fake, connected } = served();
+  const http = await connected();
+  await http.session({ boot: "3f1c9a52-7d1e-4b8a-9c0f-2a6e5d4b3c21" });
+  // `connected()` started with `{}`, as a runner from before the boot does.
+  expect(fake.sessionRequests).toEqual([{}, { boot: "3f1c9a52-7d1e-4b8a-9c0f-2a6e5d4b3c21" }]);
+
+  const none = { claudeSessionId: null, wipCommit: null, workspace: null };
+  const session = new TextEncoder().encode("a gzipped transcript");
+  await http.saveCheckpoint({ ...none, turn: 1, session, heldThrough: () => 7 });
+  await http.saveCheckpoint({ ...none, turn: 2, session, heldThrough: () => undefined });
+  expect(fake.checkpoints).toEqual([
+    { turn: 1, claudeSessionId: null, wipCommit: null, heldThrough: 7 },
+    { turn: 2, claudeSessionId: null, wipCommit: null },
+  ]);
+});

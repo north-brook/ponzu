@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { RunnerApi } from "../api/api.ts";
 import type { RestoredReport, SavedPoint } from "../api/protocol.ts";
 import { writeDurably } from "../durable.ts";
+import type { HeldMark } from "./held.ts";
 import { type Transcripts, TranscriptTooLarge } from "./transcripts.ts";
 import type { SavedWork, WorkSaver } from "./work.ts";
 
@@ -63,6 +64,21 @@ export interface CheckpointOptions {
   flush(): Promise<void>;
   /** Tells the person, in the thread, something they lost or may want: said once per thing. */
   notify?(message: string): void;
+  /**
+   * Begins a mark of the events the session holds, as its archive is about to be taken
+   * (save/held.ts). Without it a checkpoint does not say, and the API counts what was delivered.
+   */
+  held?(): HeldMark;
+  /**
+   * The runner's usage totals (usage.ts), which go in the transcript's archive and come back
+   * with it, so a turn reported before the disk went back is not counted again after it.
+   */
+  usage?: {
+    /** The totals of `sessionId` as the disk has them, or null. */
+    saved(sessionId: string): string | null;
+    /** Puts carried totals back, never lowering the disk's. Answers whether they changed. */
+    restore(data: string): boolean;
+  };
 }
 
 export class Checkpoints {
@@ -136,8 +152,12 @@ export class Checkpoints {
     this.known = latest;
     if (point.session && this.opts.transcripts) {
       try {
-        await this.opts.transcripts.unpack(point.session);
+        const { usage } = await this.opts.transcripts.unpack(point.session);
         restored.session = true;
+        if (usage && this.opts.usage) {
+          const raised = this.opts.usage.restore(usage);
+          this.opts.event("usage_restored", { turn: latest.turn, raised });
+        }
       } catch (err) {
         this.opts.log(`the session's transcript could not be restored: ${said(err)}`);
       }
@@ -207,12 +227,31 @@ export class Checkpoints {
   }
 
   private async saveOnce(sessionId: string | null): Promise<void> {
+    // Before anything of the session is read: what settles from here on may not be in it.
+    const held = this.opts.held?.();
+    try {
+      await this.saveFrom(sessionId, held);
+    } finally {
+      held?.end();
+    }
+  }
+
+  private async saveFrom(sessionId: string | null, held: HeldMark | undefined): Promise<void> {
     const { transcripts, work } = this.opts;
+    const large: { path: string; size: number }[] = [];
+    const skipped = (path: string, size: number) => large.push({ path, size });
     const stamp = [
       sessionId ?? "",
-      sessionId && transcripts ? transcripts.stamp(sessionId) : "",
-      work ? await work.stamp() : "",
+      sessionId && transcripts ? transcripts.stamp(sessionId, skipped) : "",
+      work ? await work.stamp(skipped) : "",
     ].join("#");
+    // Written in the last moments and too large to hash: told apart by size and times alone.
+    if (large.length)
+      this.opts.event("checkpoint_hash_skipped", {
+        files: large.length,
+        bytes: large.reduce((sum, file) => sum + file.size, 0),
+        paths: large.slice(0, 10).map((file) => file.path),
+      });
     if (stamp === this.last) return;
     const turn = this.turn + 1;
     const known = this.known;
@@ -222,7 +261,7 @@ export class Checkpoints {
     let session: Uint8Array | null = null;
     if (sessionId && transcripts) {
       try {
-        session = await transcripts.pack(sessionId);
+        session = await transcripts.pack(sessionId, this.opts.usage?.saved(sessionId));
       } catch (err) {
         this.opts.log(`the session's transcript was left out of the checkpoint: ${said(err)}`);
         this.opts.event("checkpoint_session_skipped", { turn, reason: said(err) });
@@ -256,6 +295,9 @@ export class Checkpoints {
       ...(keepSession || keepWorkspace
         ? { keep: { session: keepSession, workspace: keepWorkspace } }
         : {}),
+      // Said only of a transcript this checkpoint carries; one it keeps from before, or none,
+      // the API counts as it always has.
+      ...(session && held ? { heldThrough: () => held.read() } : {}),
     });
     this.known = point;
     this.turn = Math.max(turn, point.turn);

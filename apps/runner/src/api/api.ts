@@ -17,6 +17,7 @@ import type {
   RunnerSession,
   SavedPoint,
   SecretResponse,
+  SessionRequest,
   StateRequest,
   StateResponse,
   ThreadResponse,
@@ -55,8 +56,11 @@ export interface Uploaded {
 export interface RunnerApi {
   /** The document's own routes, for the canvas's `Replica`. */
   readonly sync: SyncTransport;
-  /** Takes the lease from whichever process held it. Safe to repeat: the last one wins. */
-  session(): Promise<RunnerSession>;
+  /**
+   * Takes the lease from whichever process held it, naming this boot of the machine when it
+   * can. Safe to repeat: the last one wins.
+   */
+  session(request?: SessionRequest): Promise<RunnerSession>;
   /**
    * An event is handed to this process once, and again only to a later one. Safe to repeat
    * with the same claim id: it hands out again what it handed out.
@@ -134,6 +138,12 @@ export interface Checkpoint {
   workspace: Uint8Array | null;
   /** Keep what the last checkpoint stored in place of an archive this one does not carry. */
   keep?: { session?: boolean; workspace?: boolean };
+  /**
+   * The newest event the session held when its archive was taken (`heldThrough`), read once the
+   * archives are uploaded and just before the checkpoint is recorded: an event that went into
+   * the session while they were on their way lowers it. Undefined: the runner cannot say.
+   */
+  heldThrough?: () => number | undefined;
 }
 
 /** The last checkpoint, with its archives' bytes. */

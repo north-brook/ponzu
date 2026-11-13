@@ -29,6 +29,7 @@ import {
   SESSION_ARCHIVE,
   type SecretRequest,
   type SecretResponse,
+  type SessionRequest,
   type StateRequest,
   type StateResponse,
   type ThreadResponse,
@@ -53,8 +54,8 @@ export class HttpRunnerApi implements RunnerApi {
     this.sync = this.transport();
   }
 
-  async session(): Promise<RunnerSession> {
-    const session = await this.call<RunnerSession>("POST", "/v1/runner/session", {});
+  async session(request: SessionRequest = {}): Promise<RunnerSession> {
+    const session = await this.call<RunnerSession>("POST", "/v1/runner/session", request);
     this.endpoint.runnerId = session.runnerId;
     return session;
   }
@@ -159,6 +160,9 @@ export class HttpRunnerApi implements RunnerApi {
         ids[purpose] = placed[i]!;
       });
     }
+    // Read now, once the archives are up: what went into the session while they were on their
+    // way is not in them.
+    const heldThrough = point.heldThrough?.();
     const { saved } = await this.call<CheckpointResponse>("POST", "/v1/runner/checkpoint", {
       turn: point.turn,
       claudeSessionId: point.claudeSessionId,
@@ -166,6 +170,7 @@ export class HttpRunnerApi implements RunnerApi {
       session: ids.session ?? null,
       workspace: ids.workspace ?? null,
       ...(point.keep ? { keep: point.keep } : {}),
+      ...(heldThrough === undefined ? {} : { heldThrough }),
     } satisfies CheckpointRequest);
     return saved;
   }

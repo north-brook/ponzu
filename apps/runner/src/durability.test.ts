@@ -3,12 +3,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
 import type { RunnerSession } from "./api/protocol.ts";
 import { Runner, type Timing } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
-import { Transcripts } from "./save/transcripts.ts";
+import { Transcripts, USAGE_FILE } from "./save/transcripts.ts";
 import { ScratchWork } from "./save/work.ts";
 
 /*
@@ -246,4 +247,68 @@ test("a new sandbox, with nothing on its disk, starts from the last checkpoint",
   expect(
     existsSync(join(second.config, "projects", "-home-agent-work-scratch", `${SESSION}.jsonl`)),
   ).toBe(true);
+});
+
+test("the session names this boot, and a message taken in while a checkpoint uploads is not counted as held", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d);
+  // `start` gives the runner the boot `boot-b`.
+  expect(api.sessionRequests).toEqual([{ boot: "boot-b" }]);
+  s.run.ready(SESSION);
+  const first = api.push({ kind: "message", payload: { text: "One" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await writeTranscript(d.config, ['{"turn":1}']);
+  s.run.say("m1", "Done.");
+  // The checkpoint's archive is on its way up for a while: a new message comes in meanwhile.
+  api.delays.set("saveCheckpoint", 400);
+  s.run.end();
+  await until(() => api.calls.includes("saveCheckpoint"));
+  const second = api.push({ kind: "message", payload: { text: "Two" } });
+  s.runner.poke();
+  s.run.take(await s.run.input());
+  await until(() => api.checkpoints.length === 1);
+  expect(api.checkpoints[0]).toMatchObject({ turn: 1, heldThrough: first.seq });
+  expect(second.seq).toBeGreaterThan(first.seq);
+});
+
+test("a runner without a boot sends the session what a runner from before did", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const agent = new ScriptedAgent();
+  const runner = new Runner({
+    api: api.client(),
+    agent,
+    prepare: async () => d.work,
+    stateDir: d.stateDir,
+    log: () => {},
+    timing: FAST,
+  });
+  open.push(runner);
+  await runner.start();
+  expect(api.sessionRequests).toEqual([{}]);
+});
+
+test("a turn's usage totals go in its checkpoint's transcript archive", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d);
+  s.run.ready(SESSION);
+  await turn(api, s);
+  await writeTranscript(d.config, ['{"turn":1}']);
+  s.run.say("m1", "Done.");
+  const opus = {
+    model: "opus",
+    inputTokens: 120,
+    outputTokens: 30,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0.25,
+  };
+  s.run.end({ usage: [opus] });
+  await until(() => api.checkpoints.length === 1);
+  const tar = gunzipSync(api.archives.session!).toString("utf8");
+  expect(tar).toContain(USAGE_FILE);
+  expect(tar).toContain(JSON.stringify({ sessionId: SESSION, totals: [opus] }));
 });

@@ -984,7 +984,7 @@ logs `sandbox_move_held` with why, and the canvas moves at a later wake:
 | Why (`reason`) | What happens next |
 |---|---|
 | it is awake or getting there | nothing: an awake sandbox is never recreated, so no turn is ever cut. It moves at the first wake after it next sleeps. |
-| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`canvas_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | it wakes on its own image, its runner saves after its next turn and at the sleep, and the wake after that moves it |
+| `checkpoint_behind`: an event went into the session after the last checkpoint's archive was taken (`canvas_runners.saved_through`, what the runner said the archive held or, from a runner that does not say, what had been delivered when it was recorded, against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | it wakes on its own image, its runner saves after its next turn and at the sleep, and the wake after that moves it |
 | `no_checkpoint`: its runner never saved one | it stays: a recreate would lose its conversation and what is only on its disk |
 
 **When: at the wake, not ahead of it.** A sweep that recreated sleeping sandboxes as soon as an
@@ -1100,7 +1100,10 @@ stop (`ponzu-stop`, above):
   0600 `agent`), at most 64 MB compressed. One past that is left out of the checkpoint, which
   still saves the work and keeps the transcript stored before (`keep`, below); the thread says
   once that the conversation is no longer being saved, and the runner logs
-  `checkpoint_session_skipped`.
+  `checkpoint_session_skipped`. The runner's usage totals for the session
+  (`~/.ponzu/usage.json`, what each turn's use is counted from) go in the same archive, as
+  `.ponzu-usage.json` beside `projects/`, written by the agent's shell from what the runner
+  hands it.
 - **A repo canvas's work in progress** is a commit whose parent is the checkout's HEAD, so
   commits not yet pushed travel with it, and whose tree is the working tree with untracked files
   and without ignored ones, built in an index of its own (the checkout's index, branch and stash
@@ -1125,7 +1128,19 @@ stop (`ponzu-stop`, above):
   disk, flushed (`~/.ponzu/checkpoint.json`). Before it sends one it writes the marker again with
   the turn it is sending as `pending`: a marker one behind the API's that says that turn is
   pending is a stop that came between the API's answer and the write, logged `marker_lag`, not a
-  rollback. Nothing is saved when nothing changed since the last.
+  rollback. Nothing is saved when nothing changed since the last: each file is told by its size,
+  times and inode, and one written in the last two seconds is hashed too, read a megabyte at a
+  time, up to 8 MB. A recent file larger than that is told by size, times and inode alone (an edit
+  of the same size in the same clock tick is then saved by the checkpoint after it leaves those
+  two seconds), and the runner logs `checkpoint_hash_skipped` with how many, their bytes and up
+  to ten paths.
+- **What it holds.** With a transcript, the checkpoint names the newest event (`seq`) the session
+  held as the archive was taken (`heldThrough`): below the oldest event the runner was handed and
+  has not seen go into the session, and below any that goes in while the archive is packed or
+  uploaded. The API records it as `canvas_runners.saved_through`, never above the newest event
+  delivered by then, which is what a recreate goes by ("How images roll out"). A checkpoint
+  without it (one with no transcript of its own, or from a runner from before it) counts every
+  event delivered when it is recorded, as before.
 - **Never less than the last.** A part a checkpoint cannot carry (a transcript too large or not on
   this disk, work that could not be saved or did not change, a checkout that could not be had)
   is kept from the checkpoint before (`keep`), with its session id or commit, so a checkpoint
@@ -1153,7 +1168,11 @@ when the branch was pushed and has moved on past it, the work is put on a local 
 `ponzu-wip/turn-<n>`, and the thread says so, for the agent to bring over what the person wants.
 Changes the disk has of its own are put in `git stash` first, never thrown away. The index is
 left as HEAD has it, so what was uncommitted is uncommitted again and what was untracked is
-untracked. Then the session resumes, and the thread says `resumed` as after any wake. The runner
+untracked. The usage totals the transcript's archive carries go back into the runner's, never
+lowering what the disk has of that session (each count is the larger of the two; a different
+session's replace them), and the runner logs `usage_restored`; so a turn reported before the disk
+went back is not counted again when Claude Code resumes from the restored transcript. Then the
+session resumes, and the thread says `resumed` as after any wake. The runner
 logs `sandbox_rollback` (or `sandbox_rebuilt`) with both markers, the boot ids and how long the
 restore took, and tells the API (`POST /v1/runner/restored`), which logs it with the sandbox's session and image.
 With one snapshot kept per sandbox a rollback should not happen; the check is the same one that
@@ -1573,7 +1592,9 @@ Every route but the session's, the bundle, the upload `PUT` and the runner's own
 ### Session
 
 `POST /v1/runner/session` is the runner's first call: everything it needs to start, and the
-lease.
+lease. Its body is `{ boot? }`: this boot of the machine (`/proc/sys/kernel/random/boot_id`),
+which runners send so that a later API can tell a retried call of one process from another
+process's. The API does not read it yet, and a runner from before it sends `{}`.
 
 ```
 RunnerSession = {
@@ -1901,7 +1922,11 @@ not recorded, are deleted. An archive id must be this runner's upload of that pu
 as declared (404 `not_found`). `wipCommit` is the work in progress's commit, for a repo canvas,
 which the `workspace` archive carries as a bundle. `keep: { session?, workspace? }` keeps the
 last checkpoint's transcript (with its session id) or work (with its commit) in place of one this
-checkpoint does not carry. Holds to the lease (409 `superseded`). Safe to repeat.
+checkpoint does not carry. `heldThrough` (optional, a whole number) is the newest event the
+session held when the transcript's archive was taken ("Saving the sandbox", "What it holds"); the
+API records the smaller of it and the newest event delivered by now as what the checkpoint holds,
+and without it, the newest event delivered by now. Holds to the lease (409 `superseded`). Safe
+to repeat.
 
 `POST /v1/runner/restore` answers the last checkpoint with an address per archive that reads it
 for ten minutes, and its size and SHA-256, which the runner checks. `POST /v1/runner/restored`
@@ -3800,20 +3825,12 @@ from `cloud` into `main`, released as the next major version.
   - the conversation after it outgrew 64 MB compressed: the files keep being saved, the
     transcript stored is the last that fit, and the thread said so;
   - uncommitted work that cannot go back on a pushed branch that moved on: it is on
-    `ponzu-wip/turn-<n>` in the sandbox, and the thread says so, but nothing merges it;
-  - a turn's usage counted twice after a disk came back old, since the usage totals are not in
-    the checkpoint.
+    `ponzu-wip/turn-<n>` in the sandbox, and the thread says so, but nothing merges it.
 - A runner that is answered 409 `superseded` while it starts exits 78 and stays down until the
   dead-runner sweep (90 seconds unheard) puts the sandbox to sleep and wakes it on a new
   environment. A session call retried after a lost answer, with the first landing after the
-  retry, would do it; a session call that names the starting process would close that.
-- A recreate onto a new image goes by whether the last checkpoint holds every event delivered
-  into the session, and the API counts as held what had been delivered when the checkpoint was
-  recorded. An event the runner took into a new turn while it was still uploading the checkpoint
-  of the last is counted as held though it is not. The turn's own checkpoint, or the one the sleep
-  saves, records it soon after; only when both of those fail and the canvas is recreated before
-  another is saved is that turn missing from the conversation after it (the thread still has it).
-  The runner naming, with each checkpoint, the newest event it holds would close it.
+  retry, would do it; a session call that names the starting process would close that. Runners
+  now send their boot id with the session call, and the API does not use it yet.
 - Until `R2_PRIVATE_BUCKET` is set, checkpoint archives sit in the assets bucket under a random
   key (above). Work in progress pushed to `refs/ponzu/wip/<canvas>` by the first version of this
   (dev only) stays on those repositories until someone deletes the refs.
