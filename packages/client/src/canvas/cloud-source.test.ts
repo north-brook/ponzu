@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   type Actor,
   type CanvasSource,
@@ -466,6 +466,120 @@ describe("editing as the canvas expects", () => {
     h.backend.agent(h.canvas.id).idle();
     await h.settle();
     expect(source.getState().presence).toEqual([]);
+  });
+});
+
+describe("what an op costs on a large canvas", () => {
+  /** A board of `n` cards, each a few nodes deep, with shadows and gradients like a real one. */
+  const bigBoard = (id: string, x: number, n: number) => {
+    const cards = Array.from(
+      { length: n },
+      (_, i) =>
+        `<div data-id="n_${id}c${i}" style="padding:24px;box-shadow:0 4px 12px rgb(0 0 0 / 0.1);background:linear-gradient(#fff,#eee)"><h3 data-id="n_${id}h${i}">Card ${i}</h3><p data-id="n_${id}p${i}">Some words about card ${i}, long enough to read like copy.</p></div>`,
+    ).join("");
+    const { artboard } = parseArtboardFile(
+      `<section data-artboard data-id="${id}" data-name="${id}" style="width:1440px;height:900px">${cards}</section>`,
+      { id, name: id },
+    );
+    return { ...artboard, x };
+  };
+
+  /** Maya's canvas with four large boards beside Home, open and settled. */
+  async function large() {
+    const h = await harness();
+    h.backend.agent(h.canvas.id).commit(
+      ["ab_big1", "ab_big2", "ab_big3", "ab_big4"].map((id, i) => ({
+        op: "artboard.create" as const,
+        page: h.page,
+        index: i + 1,
+        artboard: bigBoard(id, (i + 1) * 2000, 120),
+      })),
+    );
+    const maya = h.open(h.maya);
+    const ines = h.open(h.ines);
+    await h.settle();
+    const boards = () => maya.source.getState().doc!.pages.flatMap((p) => p.artboards);
+    return { ...h, mine: maya, theirs: ines, boards };
+  }
+
+  const comment = (who: Actor, id: string): Op => ({
+    op: "thread.create",
+    thread: {
+      id: `th_${id}`,
+      artboardId: "ab_big2",
+      x: 10,
+      y: 10,
+      status: "open",
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [{ id: `m_${id}`, author: who, text: "Lighter shadow?", createdAt: 1 }],
+    },
+  });
+
+  /** How many bytes `structuredClone` is handed while `run` runs, counted as JSON. */
+  async function clonedBytes(run: () => Promise<void>): Promise<number> {
+    const clone = spyOn(globalThis, "structuredClone");
+    try {
+      await run();
+      return clone.mock.calls.reduce((sum, [value]) => sum + JSON.stringify(value).length, 0);
+    } finally {
+      clone.mockRestore();
+    }
+  }
+
+  test("a comment, sent and stamped, copies no board, and every board stays the same object", async () => {
+    const h = await large();
+    const docBytes = JSON.stringify(h.mine.source.getState().doc).length;
+    expect(docBytes).toBeGreaterThan(200_000);
+    const before = h.boards();
+    const states: Doc[] = [];
+    h.mine.source.subscribe((state) => states.push(state.doc!));
+
+    const bytes = await clonedBytes(async () => {
+      h.mine.source.apply(comment(actorOf(h.maya), "aaaaaaaaaa"));
+      await h.settle();
+    });
+
+    // The API stamped it, so the replica built its view again: still nothing but the thread.
+    expect(h.mine.source.getState().doc!.threads[0]!.createdAt).not.toBe(1);
+    expect(states.length).toBeGreaterThan(1);
+    // What was cloned is the comment itself, as it went in and as it came back: well under a
+    // board, and nothing like the document (1.x cloned it once per op, 2.1 three times).
+    expect(bytes).toBeLessThan(2_000);
+    // Nothing drawn from a board has to look at it again: each is the very object it was.
+    for (const doc of states)
+      doc.pages[0]!.artboards.forEach((board, i) => expect(board).toBe(before[i]!));
+    // The op listener and the state share one document, not a copy each.
+    expect(h.mine.ops.at(-1)!.doc).toBe(states[0]!);
+  });
+
+  test("a comment from someone else arrives without a copy of any board", async () => {
+    const h = await large();
+    const before = h.boards();
+    const bytes = await clonedBytes(async () => {
+      h.theirs.source.apply(comment(actorOf(h.ines), "bbbbbbbbbb"));
+      await h.settle();
+    });
+    expect(h.mine.source.getState().doc!.threads).toHaveLength(1);
+    expect(bytes).toBeLessThan(4_000);
+    h.boards().forEach((board, i) => expect(board).toBe(before[i]!));
+  });
+
+  test("a style on one node copies its path, and the other boards and branches stay the same", async () => {
+    const h = await large();
+    const before = h.boards();
+    const bytes = await clonedBytes(async () => {
+      h.mine.source.apply({ op: "style", id: "n_ab_big3h7", style: { color: "red" } });
+      await h.settle();
+    });
+    expect(bytes).toBeLessThan(2_000);
+    const after = h.boards();
+    expect(after.filter((board, i) => board !== before[i]).map((b) => b.id)).toEqual(["ab_big3"]);
+    const changed = after.find((b) => b.id === "ab_big3")!;
+    const old = before.find((b) => b.id === "ab_big3")!;
+    // Every card but the seventh is the very same object.
+    const same = changed.root.children.filter((card, i) => card === old.root.children[i]);
+    expect(same).toHaveLength(old.root.children.length - 1);
   });
 });
 
