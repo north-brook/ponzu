@@ -90,8 +90,13 @@ export function watchCardSetup(opts: {
     try {
       status = (await opts.api.billing.cardSetup(opts.setupId)).status;
     } catch (error) {
-      // Not theirs, or gone: it can't come to anything now. Anything else is asked again.
+      // Not theirs, or gone: it can't come to anything now. Billing turned off meanwhile (409
+      // `billing_not_set_up`) or no longer allowed (403): it won't either, so stop asking rather
+      // than ask every two seconds for half an hour. Anything else is asked again.
       if (error instanceof ApiError && error.status === 404) status = "expired";
+      else if (error instanceof ApiError && (error.status === 403 || error.status === 409)) {
+        status = "failed";
+      }
     }
     asking = false;
     if (done) return;

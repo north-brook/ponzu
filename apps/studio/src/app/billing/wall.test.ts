@@ -298,3 +298,37 @@ describe("a send at the wall", () => {
     expect(w.refreshed).toEqual(["ws_1"]);
   });
 });
+
+describe("a held send that comes to nothing", () => {
+  test("dismissed: the sender is told it was dropped, once", () => {
+    const w = world();
+    let dropped = 0;
+    w.wall.refused(refusal("free_used"), { ...w.held, dropped: () => void dropped++ });
+    w.wall.dismiss();
+    w.wall.dismiss();
+    expect([dropped, w.runs()]).toEqual([1, 0]);
+  });
+
+  test("its run failing once the limit lifts is told as dropped, never left unhandled", async () => {
+    const w = world();
+    let dropped = 0;
+    w.wall.refused(refusal("cap_reached"), {
+      kind: "message",
+      run: async () => {
+        throw new ApiError(0, "network", "offline");
+      },
+      dropped: () => void dropped++,
+    });
+    await w.wall.submitCap(200);
+    await flush();
+    expect(dropped).toBe(1);
+    expect(w.wall.getSnapshot().open).toBe(false);
+  });
+
+  test("payment failed with no invoice page: an admin's Pay invoice opens Stripe's portal", async () => {
+    const w = world();
+    w.wall.refused(refusal("payment_failed", { invoiceUrl: null }), w.held);
+    await w.wall.payInvoice();
+    expect(w.opened).toEqual(["https://billing.stripe.com/p/1"]);
+  });
+});

@@ -247,6 +247,16 @@ describe("Plan and usage", () => {
     expect(usageBar(usage).free).toBeCloseTo(120 / 300);
   });
 
+  test("billing on: a member, never told the card, keeps the cap read-only", async () => {
+    const { backend, ws, sam } = team();
+    backend.features = { ...backend.features, billing: "on" };
+    const asSam = backend.connect(sam).api;
+    expect(toUsage(await asSam.usage.get(ws.id)).capUsd).toBe(100);
+    backend.settings.cards.set(ws.id, { brand: "visa", last4: "4242" });
+    const theirs = toUsage(await asSam.usage.get(ws.id));
+    expect([theirs.card, theirs.capUsd, theirs.pastDue]).toEqual([null, 100, null]);
+  });
+
   test("billing on with a card: the card and what is past due, for an admin only", async () => {
     const { backend, api, ws, sam } = team();
     backend.features = { ...backend.features, billing: "on" };

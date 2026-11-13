@@ -30,6 +30,12 @@ import {
 export interface Held {
   kind: "create" | "message";
   run: () => void | Promise<void>;
+  /**
+   * The send came to nothing after all: the dialog was dismissed, or `run` failed. For a send
+   * whose words are kept nowhere else (a create's first message sent after its images), so the
+   * person is told it didn't go.
+   */
+  dropped?: () => void;
 }
 
 /** Adding a card in the browser: the button's state and what went wrong last. */
@@ -169,11 +175,23 @@ export class BillingWall {
     this.lifted();
   }
 
-  /** The payment dialog's "Pay invoice": Stripe's page, and the dialog waits for it to be paid. */
-  payInvoice(): void {
+  /**
+   * The payment dialog's "Pay invoice": Stripe's page for the invoice, and the dialog waits for it
+   * to be paid. An admin whose invoice has no page of its own gets Stripe's portal, which lists it.
+   */
+  async payInvoice(): Promise<void> {
     const { dialog, details } = this.snapshot;
-    if (dialog?.kind !== "payment_failed" || !details?.invoiceUrl) return;
-    this.deps.openExternal(details.invoiceUrl);
+    if (dialog?.kind !== "payment_failed" || !details?.canManage) return;
+    if (details.invoiceUrl) {
+      this.deps.openExternal(details.invoiceUrl);
+      return;
+    }
+    try {
+      const { url } = await this.deps.api.billing.portal(details.workspaceId);
+      if (this.snapshot.details === details && this.snapshot.open) this.deps.openExternal(url);
+    } catch {
+      // The dialog stays, and its button can be pressed again.
+    }
   }
 
   /** Closed without what it asked for: the held send is dropped (its words stay where they are). */
@@ -181,9 +199,11 @@ export class BillingWall {
     const { dialog, open } = this.snapshot;
     if (!open || !dialog) return;
     this.deps.analytics.capture("billing dialog dismissed", { reason: reasonOf(dialog) });
+    const held = this.held;
     this.held = null;
     this.stopWatching();
     this.set({ open: false });
+    held?.dropped?.();
   }
 
   /** The window goes: nothing more is asked or heard. */
@@ -206,7 +226,15 @@ export class BillingWall {
     this.held = null;
     this.stopWatching();
     this.set({ open: false });
-    if (held) void held.run();
+    if (!held) return;
+    // A run that throws is a send that didn't go: never an unhandled rejection.
+    const fail = () => held.dropped?.();
+    try {
+      const going = held.run();
+      if (going) going.catch(fail);
+    } catch {
+      fail();
+    }
   }
 
   /** While the payment dialog is open, whether the workspace's gate has let go of it. */

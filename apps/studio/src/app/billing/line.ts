@@ -70,7 +70,13 @@ export function useBillingLine(
         return () => wall.open({ ...details, reason: "cap_reached" });
       case "payment_failed": {
         const url = details.invoiceUrl;
-        return url ? () => host.openExternal(url) : undefined;
+        if (url) return () => host.openExternal(url);
+        // No page for the invoice itself: Stripe's portal lists it.
+        return () =>
+          void host.api.billing.portal(workspace.id).then(
+            ({ url: portal }) => host.openExternal(portal),
+            () => undefined,
+          );
       }
     }
   })();

@@ -156,7 +156,9 @@ export function toUsage(usage: ApiUsage): Usage {
     usedCredits: usage.usedCredits,
     freeCredits: usage.freeCredits,
     creditUsd: usage.creditCents / 100,
-    capUsd: on && !card ? null : usage.cap.usd,
+    // An admin is told the card; a member never is (the API leaves it out), so a member keeps
+    // the cap, read-only, rather than losing it to a card they can't be shown.
+    capUsd: on && usage.canManage && !card ? null : usage.cap.usd,
     periodEnd: String(usage.period.end),
     card,
     notBilled: !on,

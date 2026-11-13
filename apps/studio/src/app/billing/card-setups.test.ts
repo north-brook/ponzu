@@ -173,3 +173,12 @@ test("stopped, it asks nothing and hears nothing", async () => {
   await flush();
   expect([w.asked, w.outcomes]).toEqual([[], []]);
 });
+
+test("billing turned off while waiting: it stops asking and says the card wasn't added", async () => {
+  const w = world([new ApiError(409, "billing_not_set_up", "Billing isn't set up here.")]);
+  await w.clock.advance(2_000);
+  expect(w.outcomes).toEqual(["failed"]);
+  expect(w.clock.pending()).toBe(0);
+  await w.clock.advance(60_000);
+  expect(w.asked).toHaveLength(1);
+});

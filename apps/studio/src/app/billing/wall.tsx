@@ -129,8 +129,8 @@ export function BillingWallDialogs({ wall }: { wall: BillingWall }) {
           open={open}
           onDismiss={dismiss}
           workspaceName={details.workspaceName}
-          canPay={details.canManage && details.invoiceUrl !== null}
-          onPay={() => wall.payInvoice()}
+          canPay={details.canManage}
+          onPay={() => void wall.payInvoice()}
         />
       );
   }

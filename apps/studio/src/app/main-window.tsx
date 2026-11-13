@@ -942,6 +942,10 @@ function WorkspaceWindow({
                 say("The canvas is made, but your message didn't reach Claude. Send it again.");
               }
             }}
+            onFirstMessageDropped={() => {
+              analytics.capture("notice shown", { notice: "first_message_not_sent" });
+              say("The canvas is made, but your message didn't reach Claude. Send it again.");
+            }}
           />
         )}
         <SettingsView

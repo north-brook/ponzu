@@ -2918,8 +2918,9 @@ With billing on (`apps/studio/src/app/billing/`):
   every five seconds while that dialog is open), the held send goes again, once: a create with
   the same create key, so it makes one canvas; a message by its bubble's own retry. Dismissed,
   it is dropped: the create page keeps the prompt, and the message's bubble keeps its words
-  with Retry. A comment is not checked first: it commits, and its canvas's line says why it
-  waits.
+  with Retry; a canvas's first message sent after its pictures, which has left the create page,
+  is said not to have reached Claude, as any failed first message is. A comment is not checked
+  first: it commits, and its canvas's line says why it waits.
 - The card goes in on Stripe's Checkout page in the browser, not in fields in the app (Stripe's
   card fields refuse a page that isn't https in live mode, and the studio is served from
   `ponzu-studio://app`). The dialog opens it, says "Finish adding your card in your browser"
@@ -2933,7 +2934,9 @@ With billing on (`apps/studio/src/app/billing/`):
   with nothing held), "Manage in Stripe" with one (Stripe's portal), and while a payment is past
   due the Card row says "Payment failed" or "Payment needs your confirmation" with "Pay invoice"
   in place of the portal's button. With no card the cap row is left out and the bar spans the
-  free credits alone. A member sees neither card nor past due.
+  free credits alone. A member sees neither card nor past due, and keeps the cap, read-only,
+  since the API never tells a member whether there is a card. An invoice with no page of its
+  own is paid through Stripe's portal, which lists it.
 - A canvas waiting on `credits_used_up`, `cap_reached` or `payment_failed` says so at its
   thread's foot in billing's words, with "Add a card", "Raise cap" or "Pay invoice" for someone
   who can manage billing and no button for anyone else. Once the limit lifts the API resumes the

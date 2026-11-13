@@ -15,7 +15,7 @@ import {
   type Repo,
 } from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
-import type { BillingWall } from "./billing/wall.ts";
+import type { BillingWall, Held } from "./billing/wall.ts";
 import { useBillingWall } from "./billing/wall.tsx";
 import type { FreshCanvas } from "./canvas.tsx";
 import type { Host } from "./host.ts";
@@ -99,6 +99,7 @@ export function CreateView({
   onLaunch,
   onLaunchFailed,
   onCreated,
+  onFirstMessageDropped,
   onAllowMore,
 }: {
   host: Host;
@@ -125,6 +126,12 @@ export function CreateView({
    * `messageFailed` when the first message didn't go.
    */
   onCreated: (canvas: FreshCanvas, messageFailed: boolean) => void;
+  /**
+   * A first message sent after its images and held at the billing wall came to nothing after
+   * all: the wall was dismissed, or the send failed once the limit lifted. Told as
+   * `messageFailed` is, since the prompt has already left the page.
+   */
+  onFirstMessageDropped?: () => void;
   onAllowMore: () => void;
 }) {
   const { queries, mutations } = usePonzu();
@@ -247,7 +254,9 @@ export function CreateView({
       });
       pickedIdea.current = null;
       const said = images.length
-        ? await sayWithImages(host.api, canvas.id, text, images, wall)
+        ? await sayWithImages(host.api, canvas.id, text, images, wall, () =>
+            onFirstMessageDropped?.(),
+          )
         : true;
       createKey.current = newCreateKey();
       setPrompt("");
@@ -429,6 +438,8 @@ function release(images: Picked[]) {
 /**
  * Uploads the images to the new canvas, then says the message with them. True once said; false
  * when it wasn't, unless the billing wall held the message to send once its limit lifts (null).
+ * A held message that comes to nothing after all (the wall dismissed, or the send failing once
+ * the limit lifted) calls `dropped`, so the person is told as they would have been at once.
  */
 async function sayWithImages(
   api: Api,
@@ -436,6 +447,7 @@ async function sayWithImages(
   text: string,
   images: Picked[],
   wall: BillingWall | null,
+  dropped: () => void,
 ): Promise<boolean | null> {
   let attachments: string[] | null = null;
   try {
@@ -453,9 +465,19 @@ async function sayWithImages(
     return true;
   } catch (error) {
     const files = attachments;
-    const run = async () => {
-      await api.canvases.sendMessage(canvasId, { text, attachments: files ?? [] });
+    if (!files || !wall) return false;
+    const held: Held = {
+      kind: "message",
+      run: async () => {
+        try {
+          await api.canvases.sendMessage(canvasId, { text, attachments: files });
+        } catch (again) {
+          // At a limit again, it is held again; anything else, it didn't go.
+          if (!wall.refused(again, held)) dropped();
+        }
+      },
+      dropped,
     };
-    return files && wall?.refused(error, { kind: "message", run }) ? null : false;
+    return wall.refused(error, held) ? null : false;
   }
 }
