@@ -779,3 +779,66 @@ test("someone who may only read sees the thread and is told so, and can't send o
   expect(refused.code).toBe("forbidden");
   store.close();
 });
+
+test("billing on, at a limit: the message is turned down whole, held, and sent once on retry", async () => {
+  const w = await world();
+  w.backend.features = { ...w.backend.features, billing: "on" };
+  w.backend.settings.use(w.ws.id, w.maya.id, 400);
+  const refused: { error: unknown; retry: () => void }[] = [];
+  const store = new ThreadStore({
+    ponzu: storePonzu(w.client.api),
+    live: w.client.live,
+    canvasId: w.canvas.id,
+    meId: w.maya.id,
+    onRefused: (error, retry) => refused.push({ error, retry }),
+  }).start();
+  await settle();
+  store.send("Add a yearly toggle", []);
+  await settle();
+  const messages = () => store.getSnapshot().items?.filter((i) => i.kind === "message") ?? [];
+  // Nothing reached the thread; the bubble keeps the words, and the wall has the 402.
+  expect(messages()).toEqual([]);
+  expect(store.getSnapshot().pending.map((m) => m.status)).toEqual(["failed"]);
+  expect(refused).toHaveLength(1);
+  expect(refused[0]!.error).toMatchObject({ status: 402, code: "billing_required" });
+  expect((refused[0]!.error as ApiError).details).toMatchObject({
+    reason: "free_used",
+    workspaceId: w.ws.id,
+    canManage: true,
+  });
+
+  // A card added: the wall's retry sends it, once.
+  w.backend.settings.cards.set(w.ws.id, { brand: "visa", last4: "4242" });
+  refused[0]!.retry();
+  await settle();
+  expect(messages()).toHaveLength(1);
+  expect(store.getSnapshot().pending).toEqual([]);
+  refused[0]!.retry();
+  await settle();
+  expect(messages()).toHaveLength(1);
+  store.close();
+});
+
+test("billing off or observing: the same use past free sends as ever, and nothing is refused", async () => {
+  const w = await world();
+  w.backend.settings.use(w.ws.id, w.maya.id, 400);
+  const refused: unknown[] = [];
+  const store = new ThreadStore({
+    ponzu: storePonzu(w.client.api),
+    live: w.client.live,
+    canvasId: w.canvas.id,
+    meId: w.maya.id,
+    onRefused: (error) => refused.push(error),
+  }).start();
+  await settle();
+  const messages = () => store.getSnapshot().items?.filter((i) => i.kind === "message") ?? [];
+  store.send("Add a yearly toggle", []);
+  await settle();
+  expect(messages()).toHaveLength(1);
+  w.backend.features = { ...w.backend.features, billing: "observe" };
+  store.send("And a monthly one", []);
+  await settle();
+  expect(messages()).toHaveLength(2);
+  expect(refused).toEqual([]);
+  store.close();
+});

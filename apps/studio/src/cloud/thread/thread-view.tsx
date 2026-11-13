@@ -16,7 +16,14 @@ import { SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { atFoot, FOLLOWING, follow, type ScrollMetrics } from "./follow.ts";
-import { type LineHandlers, SandboxLine, ThreadLine, WorkingLine } from "./lines.tsx";
+import {
+  BillingLine,
+  type BillingWait,
+  type LineHandlers,
+  SandboxLine,
+  ThreadLine,
+  WorkingLine,
+} from "./lines.tsx";
 import { SENT_GRACE_MS, sandboxLine, type ThreadRow, threadRows, workingLine } from "./thread.ts";
 
 /** Rows drawn at first, and how many more each time the person reads up past them. */
@@ -93,6 +100,7 @@ export function ThreadView({
   agent,
   meId,
   handlers,
+  billing = null,
 }: {
   items: ThreadItem[];
   older: OlderItems;
@@ -103,6 +111,11 @@ export function ThreadView({
   agent: AgentActivity;
   meId: string;
   handlers: LineHandlers;
+  /**
+   * The canvas waits on its workspace's billing (only ever while billing is on): its line at the
+   * foot, after a turn that is still finishing.
+   */
+  billing?: BillingWait | null;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
@@ -448,6 +461,7 @@ export function ThreadView({
             </LeavingLine>
           ) : null}
           {waiting ? <SandboxLine {...waiting} /> : null}
+          {billing ? <BillingLine {...billing} /> : null}
         </div>
       </div>
       {!state.following && state.unseen > 0 ? (

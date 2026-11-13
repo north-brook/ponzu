@@ -1,6 +1,6 @@
 import type { Api } from "@ponzu/client";
 import type { ClaudeConnection } from "../../cloud/claude.ts";
-import type { PersonUsage, Usage } from "../../cloud/settings/billing.ts";
+import { cardBrand, type PersonUsage, type Usage } from "../../cloud/settings/billing.ts";
 import type { RepoEnvironment } from "../../cloud/settings/environments.ts";
 import type { Installation } from "../../cloud/settings/github.tsx";
 import type { Member } from "../../cloud/settings/members.ts";
@@ -141,19 +141,30 @@ export function toEnvironment(env: ApiEnvironment): RepoEnvironment {
 }
 
 /**
- * The period's usage as Plan and usage draws it. There is no billing yet (no card, no invoices),
- * so the card is none; the cap is always there (the rate card's default until an admin sets
- * one), and the bar and the period's last day follow it.
+ * The period's usage as Plan and usage draws it. While the API doesn't bill (billing off or
+ * observing: `not_set_up`) there is no card and nothing is billed, and the cap is always there
+ * (the rate card's default until an admin sets one), as Ponzu 2.1 showed it. Once it bills
+ * (`on`), an admin sees the card and what is past due; without a card the cap is left out, so
+ * the bar spans the free credits alone (the billing plan's no-card state).
  */
 export function toUsage(usage: ApiUsage): Usage {
+  const on = usage.billing.status === "on";
+  const given = on ? usage.billing.card : null;
+  const card = given ? { brand: cardBrand(given.brand), last4: given.last4 } : null;
+  const pastDue = on ? usage.billing.pastDue : null;
   return {
     usedCredits: usage.usedCredits,
     freeCredits: usage.freeCredits,
     creditUsd: usage.creditCents / 100,
-    capUsd: usage.cap.usd,
+    capUsd: on && !card ? null : usage.cap.usd,
     periodEnd: String(usage.period.end),
-    card: null,
-    notBilled: usage.billing.status === "not_set_up",
+    card,
+    notBilled: !on,
+    ...(on
+      ? {
+          pastDue: pastDue ? { reason: pastDue.reason, invoiceUrl: pastDue.invoiceUrl } : null,
+        }
+      : {}),
   };
 }
 

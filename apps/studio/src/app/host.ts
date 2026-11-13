@@ -46,6 +46,11 @@ export interface Host {
    * page couldn't be had.
    */
   installGithub(body: { githubAccountId?: number }): Promise<void>;
+  /**
+   * Bring the window in front of the browser: a card added on Stripe's page comes back to it
+   * (billing/card-setups.ts). Absent where there is no shell.
+   */
+  comeForward?(): void;
   onCommand(listener: (command: MenuCommand) => void): () => void;
   /** The shell's updater; null where there is none to restart into. */
   update: PonzuDesktop["update"] | null;

@@ -5,12 +5,19 @@ import {
   DeleteAccountDialog,
   DisconnectClaudeDialog,
 } from "../dialogs/account-dialogs.tsx";
-import { CapReachedDialog, CardFields, FreeCreditsDialog } from "../dialogs/billing-dialogs.tsx";
+import {
+  AddCardDialog,
+  CapReachedDialog,
+  type CardStatus,
+  FreeCreditsDialog,
+  PaymentFailedDialog,
+} from "../dialogs/billing-dialogs.tsx";
 import type { ClaudeCardState } from "../setup/claude-card.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, Harness } from "./harness.tsx";
 import * as s from "./setup-fixtures.ts";
 import {
+  type SettingsData,
   SettingsWindow,
   SetupHarness,
   SOLO_SETTINGS,
@@ -35,14 +42,40 @@ function OnSend({ children }: { children: (dismiss: () => void, open: boolean) =
   );
 }
 
-/** Stripe's card fields as they look empty, with Stripe's own placeholders. */
-const card = (
-  <CardFields
-    number={<span>Card number</span>}
-    expiry={<span>MM / YY</span>}
-    cvc={<span>CVC</span>}
-  />
-);
+/**
+ * Free credits used up, on send: the cap and the button that opens Stripe's page in the browser
+ * (no card fields in the app: see billing-dialogs.tsx), waiting on it, or back with why not.
+ */
+function FreeCredits({
+  canAddCard = true,
+  status = "idle",
+  error = null,
+}: {
+  canAddCard?: boolean;
+  status?: CardStatus;
+  error?: string | null;
+}) {
+  return (
+    <OnSend>
+      {(dismiss, open) => (
+        <FreeCreditsDialog
+          open={open}
+          onDismiss={dismiss}
+          workspaceName={f.thistlewick.name}
+          canAddCard={canAddCard}
+          defaultCapUsd={100}
+          status={status}
+          error={error}
+          onSubmit={ignore}
+          onCancel={ignore}
+        />
+      )}
+    </OnSend>
+  );
+}
+
+/** Plan and usage once billing is on, before a card: no cap row, the bar the free credits alone. */
+const NO_CARD_SETTINGS = { ...TEAM_SETTINGS, usage: { ...s.freeUsage, notBilled: false } };
 
 function ClaudeSignedOut({ start = choose }: { start?: ClaudeCardState }) {
   const props = useClaudeCard(start, ignore);
@@ -163,59 +196,65 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
     />
   ),
 
-  "free-credits": () => (
+  "free-credits": () => <FreeCredits />,
+  "free-credits-waiting": () => <FreeCredits status="waiting" />,
+  "free-credits-cancelled": () => (
+    <FreeCredits error="The card wasn't added. Your prompt is still here." />
+  ),
+  "free-credits-member": () => <FreeCredits canAddCard={false} />,
+  "payment-failed": () => (
     <OnSend>
       {(dismiss, open) => (
-        <FreeCreditsDialog
+        <PaymentFailedDialog
           open={open}
           onDismiss={dismiss}
           workspaceName={f.thistlewick.name}
-          canAddCard
-          card={card}
-          cardComplete
-          defaultCapUsd={100}
-          status="idle"
-          error={null}
-          onSubmit={ignore}
+          canPay
+          onPay={ignore}
         />
       )}
     </OnSend>
   ),
-  "free-credits-member": () => (
+  "payment-failed-member": () => (
     <OnSend>
       {(dismiss, open) => (
-        <FreeCreditsDialog
+        <PaymentFailedDialog
           open={open}
           onDismiss={dismiss}
           workspaceName={f.thistlewick.name}
-          canAddCard={false}
-          card={card}
-          cardComplete={false}
-          defaultCapUsd={100}
-          status="idle"
-          error={null}
-          onSubmit={ignore}
+          canPay={false}
+          onPay={ignore}
         />
       )}
     </OnSend>
   ),
-  "free-credits-declined": () => (
-    <OnSend>
-      {(dismiss, open) => (
-        <FreeCreditsDialog
+  "add-card": () => (
+    <SettingsWindowWith section="plan" data={NO_CARD_SETTINGS}>
+      {(close, open) => (
+        <AddCardDialog
           open={open}
-          onDismiss={dismiss}
-          workspaceName={f.thistlewick.name}
-          canAddCard
-          card={card}
-          cardComplete
+          onDismiss={close}
           defaultCapUsd={100}
           status="idle"
-          error="Your card was declined."
+          error={null}
           onSubmit={ignore}
+          onCancel={ignore}
         />
       )}
-    </OnSend>
+    </SettingsWindowWith>
+  ),
+  "settings-plan-no-card": () => <SettingsWindow section="plan" data={NO_CARD_SETTINGS} />,
+  "settings-plan-past-due": () => (
+    <SettingsWindow
+      section="plan"
+      data={{
+        ...TEAM_SETTINGS,
+        usage: {
+          ...TEAM_SETTINGS.usage,
+          pastDue: { reason: "failed", invoiceUrl: "https://invoice.stripe.com/i/acct_1/test_1" },
+        },
+      }}
+    />
   ),
   "cap-reached": () => (
     <OnSend>
@@ -285,15 +324,17 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
 /** Settings on Agents (or `section`), with a dialog over it. */
 function SettingsWindowWith({
   section = "agents",
+  data = TEAM_SETTINGS,
   children,
 }: {
-  section?: "agents" | "account";
+  section?: "agents" | "account" | "plan";
+  data?: SettingsData;
   children: (close: () => void, open: boolean) => ReactNode;
 }) {
   const [open, setOpen] = useState(true);
   return (
     <>
-      <SettingsWindow section={section} data={TEAM_SETTINGS} />
+      <SettingsWindow section={section} data={data} />
       {children(() => setOpen(false), open)}
     </>
   );

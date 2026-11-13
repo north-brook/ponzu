@@ -10,9 +10,17 @@ export type CardBrand = "visa" | "mastercard" | "amex" | "other";
 
 export interface Card {
   brand: CardBrand;
-  last4: string;
-  /** Stripe's last charge to it failed. */
-  failed: boolean;
+  /** Null for a card Stripe gave no digits for (a wallet). */
+  last4: string | null;
+}
+
+/**
+ * The workspace's last invoice didn't get paid: the charge failed, or the bank asks the payer to
+ * confirm it. `invoiceUrl` is Stripe's page to pay it on. Only an admin is told.
+ */
+export interface PastDue {
+  reason: "failed" | "needs_confirmation";
+  invoiceUrl: string | null;
 }
 
 export interface Usage {
@@ -31,6 +39,95 @@ export interface Usage {
    * counted, and the cap stored, but nothing is charged, so nothing reads as billed.
    */
   notBilled?: boolean;
+  /** What is past due, for an admin while billing is on; absent or null otherwise. */
+  pastDue?: PastDue | null;
+}
+
+/** The Card row's words for what is past due. */
+export function pastDueWords(pastDue: PastDue): string {
+  return pastDue.reason === "needs_confirmation"
+    ? "Payment needs your confirmation"
+    : "Payment failed";
+}
+
+/** A card's brand as the API names it (Stripe's word), as the marks Ponzu draws. */
+export function cardBrand(brand: string): CardBrand {
+  return brand === "visa" || brand === "mastercard" || brand === "amex" ? brand : "other";
+}
+
+/*
+ * The billing wall (docs/cloud.md, "Billing"). While billing is on, a send that would start work
+ * past a limit is answered 402 `billing_required` with these details, and nothing is written.
+ * The app keeps the send and opens the dialog the reason calls for.
+ */
+
+/** Why the workspace's work waits: its free credits, its cap, or a payment. */
+export type BillingReason = "free_used" | "cap_reached" | "payment_failed";
+
+/** A 402 `billing_required`'s details, as the dialogs read them. */
+export interface BillingRequired {
+  reason: BillingReason;
+  workspaceId: string;
+  workspaceName: string;
+  /** May add the card, raise the cap or pay: an admin. */
+  canManage: boolean;
+  capUsd: number;
+  billedCents: number;
+  /** When the period ends and the cap resets (ISO 8601). */
+  periodEnd: string;
+  /** Stripe's page for the unpaid invoice; null for a member, or when there is none. */
+  invoiceUrl: string | null;
+}
+
+const REASONS: readonly string[] = ["free_used", "cap_reached", "payment_failed"];
+
+/**
+ * The 402 `billing_required` an error is, or null: anything else, including a 402 an older or
+ * newer API shaped otherwise, is left to the caller's own handling. Duck-typed on the client's
+ * `ApiError` so the rule stays pure.
+ */
+export function billingRequired(error: unknown): BillingRequired | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { status, code, details } = error as {
+    status?: unknown;
+    code?: unknown;
+    details?: unknown;
+  };
+  if (status !== 402 || code !== "billing_required") return null;
+  if (typeof details !== "object" || details === null) return null;
+  const d = details as Record<string, unknown>;
+  if (typeof d.reason !== "string" || !REASONS.includes(d.reason)) return null;
+  if (typeof d.workspaceId !== "string" || typeof d.workspaceName !== "string") return null;
+  return {
+    reason: d.reason as BillingReason,
+    workspaceId: d.workspaceId,
+    workspaceName: d.workspaceName,
+    canManage: d.canManage === true,
+    capUsd: typeof d.capUsd === "number" ? d.capUsd : 0,
+    billedCents: typeof d.billedCents === "number" ? d.billedCents : 0,
+    periodEnd: typeof d.periodEnd === "string" ? d.periodEnd : new Date().toISOString(),
+    invoiceUrl: typeof d.invoiceUrl === "string" ? d.invoiceUrl : null,
+  };
+}
+
+/**
+ * What adding a card in the browser came to, in the words the dialog shows under its button:
+ * null once it is added. In the wall a prompt is held, and the words say it is kept; in Settings
+ * there is none to keep.
+ */
+export function cardSetupError(
+  outcome: "added" | "cancelled" | "expired" | "failed",
+  held: boolean,
+): string | null {
+  switch (outcome) {
+    case "added":
+      return null;
+    case "cancelled":
+    case "failed":
+      return held ? "The card wasn't added. Your prompt is still here." : "The card wasn't added.";
+    case "expired":
+      return "That took too long. Try again.";
+  }
 }
 
 /** What the use past the free credits is called: billed, or before billing exists, past free. */

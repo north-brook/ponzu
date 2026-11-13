@@ -2733,10 +2733,10 @@ free credits are used up. A workspace has a monthly cap.
 
 What is built so far: Plan and usage, worked out from `usage_events` and the rate card, the
 meter's cuts, the gate (worked out, cached, observed and enforced, below), payments through
-Stripe, adding a card through Stripe's Checkout with Stripe's webhook, and the period close
-with its invoice and the payment's state (below). While `PONZU_BILLING` is unset, as in
-production, nothing is held back, no card can be added, no period is closed and nothing is
-charged.
+Stripe, adding a card through Stripe's Checkout with Stripe's webhook, the period close
+with its invoice and the payment's state, and the Mac's walls, card and past due (below). While
+`PONZU_BILLING` is unset, as in production, nothing is held back, no card can be added, no
+period is closed, nothing is charged and the Mac shows what it did before billing.
 
 **The gate.** Whether a workspace may start new work, from its numbers (`billing/gate.ts`):
 `payment_failed` once an invoice has been past due for 7 days, else `free_used` with no card and
@@ -2904,6 +2904,40 @@ then the page shown is the oldest unpaid one's), and the gate is worked out agai
 what it held back. Receipts and the emails about failed payments are Stripe's, with the
 invoice's page; Ponzu sends no billing email of its own. Stripe Tax is added to the invoice when
 `PONZU_STRIPE_TAX=1`.
+
+**On the Mac.** The studio shows nothing of this unless `me.features.billing` is `on`: while
+billing is off or observing, Plan and usage shows credits and that Ponzu is free, the Card row
+offers nothing, and nothing a person sends meets a wall, exactly as before billing was built.
+With billing on (`apps/studio/src/app/billing/`):
+
+- A create or message answered 402 `billing_required` is held, not lost, and the dialog its
+  `reason` calls for opens: free credits used up (the cap, $100 to start, and "Add card and
+  continue"), the cap reached ("Raise cap and continue", offering twice the cap), or a payment
+  past its grace ("Pay invoice", which opens the invoice's page). A member is told to ask an
+  admin. Once the card is added, the cap raised, or the gate no longer `payment_failed` (asked
+  every five seconds while that dialog is open), the held send goes again, once: a create with
+  the same create key, so it makes one canvas; a message by its bubble's own retry. Dismissed,
+  it is dropped: the create page keeps the prompt, and the message's bubble keeps its words
+  with Retry. A comment is not checked first: it commits, and its canvas's line says why it
+  waits.
+- The card goes in on Stripe's Checkout page in the browser, not in fields in the app (Stripe's
+  card fields refuse a page that isn't https in live mode, and the studio is served from
+  `ponzu-studio://app`). The dialog opens it, says "Finish adding your card in your browser"
+  with "Waiting for your card" and Cancel, and asks the API every two seconds how the setup
+  stands (`app/billing/card-setups.ts`), for at most 32 minutes. The return page's
+  `ponzu://billing/card` link only makes it ask at once: the API's answer is the outcome, never
+  the link's. Added, the window comes forward and the held send goes; cancelled or failed, the
+  dialog says "The card wasn't added." (with "Your prompt is still here." when one is held);
+  expired, "That took too long. Try again."
+- Plan and usage, for an admin: "Add a card" with no card (the same dialog, titled "Add a card",
+  with nothing held), "Manage in Stripe" with one (Stripe's portal), and while a payment is past
+  due the Card row says "Payment failed" or "Payment needs your confirmation" with "Pay invoice"
+  in place of the portal's button. With no card the cap row is left out and the bar spans the
+  free credits alone. A member sees neither card nor past due.
+- A canvas waiting on `credits_used_up`, `cap_reached` or `payment_failed` says so at its
+  thread's foot in billing's words, with "Add a card", "Raise cap" or "Pay invoice" for someone
+  who can manage billing and no button for anyone else. Once the limit lifts the API resumes the
+  canvas by itself.
 
 **What billing stores.** On `workspaces`: the cached gate (`billing_gate`, `ok` until worked out,
 and `billing_gate_at`), when the running period is next to close (`billing_next_close_at`), the

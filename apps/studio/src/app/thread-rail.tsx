@@ -9,6 +9,7 @@ import { useNow } from "../cloud/time.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { type CanvasPlaces, CanvasPlacesProvider } from "../cloud/ui/place-link.tsx";
+import { type BillingWorkspace, useBillingLine } from "./billing/line.ts";
 import { type OpenCanvas, useAccess, useSourceState } from "./canvas.tsx";
 import { CommentScene } from "./comment-picture.tsx";
 import type { Host } from "./host.ts";
@@ -55,6 +56,7 @@ export function CanvasRail({
   reveal = null,
   onRevealed,
   say,
+  billingWorkspace = null,
 }: {
   host: Host;
   open: OpenCanvas;
@@ -85,6 +87,8 @@ export function CanvasRail({
   onRevealed?: (at: number) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
+  /** The canvas's workspace, for the line a billing blocker shows; none outside a window. */
+  billingWorkspace?: BillingWorkspace | null;
 }) {
   const canvasId = open.id;
   const { queries, mutations } = usePonzu();
@@ -108,6 +112,7 @@ export function CanvasRail({
   const pictures = useSnapshot(open.pictures);
   const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
+  const billing = useBillingLine(host, billingWorkspace, head?.agentBlocker);
   const theme = useColorScheme();
   const now = useNow();
   const doc = state.doc;
@@ -213,6 +218,7 @@ export function CanvasRail({
         reveal={shownLine}
         {...(onRevealed ? { onRevealed } : {})}
         agent={agentActivity(head ?? open.fresh?.head)}
+        billing={billing}
         asks={asks}
         gate={gate}
         attachments={attachments}

@@ -113,13 +113,58 @@ export const SETUP_COMPOSITIONS: Composition[] = [
     id: "free-credits",
     title: "Free credits used up",
     board: "pricing/free-hours-used-up.html",
+    differs:
+      "no card fields: the card goes in on Stripe's Checkout page in the browser, which card fields on ponzu-studio:// can't do in live mode (billing plan §8.1)",
     ...WINDOW,
     reference: true,
   },
+  {
+    // The card goes in on Stripe's page in the browser; the dialog waits for it, the prompt held.
+    id: "free-credits-waiting",
+    title: "Free credits used up · waiting for the card in the browser",
+    ...WINDOW,
+    reference: "styles",
+  },
+  {
+    id: "free-credits-cancelled",
+    title: "Free credits used up · the card wasn't added",
+    ...WINDOW,
+  },
   { id: "free-credits-member", title: "Free credits used up · a member", ...WINDOW },
-  { id: "free-credits-declined", title: "Free credits used up · card declined", ...WINDOW },
   { id: "cap-reached", title: "Monthly cap reached", ...WINDOW },
   { id: "cap-reached-member", title: "Monthly cap reached · a member", ...WINDOW },
+  {
+    // Not drawn in the mockup: a payment past its seven days' grace, on send.
+    id: "payment-failed",
+    title: "Last payment didn't go through",
+    ...WINDOW,
+    reference: "styles",
+  },
+  { id: "payment-failed-member", title: "Last payment didn't go through · a member", ...WINDOW },
+  {
+    // Not drawn: Settings' Add a card, over Plan and usage with billing on and no card.
+    id: "add-card",
+    title: "Add a card, from Plan and usage",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+    reference: "styles",
+  },
+  {
+    // Not drawn: billing on and no card yet: no cap row, the bar the free credits alone.
+    id: "settings-plan-no-card",
+    title: "Settings · Plan and usage, billing on, no card yet",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+    reference: "styles",
+  },
+  {
+    // Not drawn: a payment failed, with Pay invoice where Manage in Stripe was.
+    id: "settings-plan-past-due",
+    title: "Settings · Plan and usage, a payment failed",
+    ...WINDOW,
+    masks: BEHIND_SETTINGS,
+    reference: "styles",
+  },
   { id: "claude-signed-out", title: "Claude signed out, on send", ...WINDOW },
   { id: "claude-signed-out-code", title: "Claude signed out · paste the code", ...WINDOW },
   { id: "claude-signed-out-key", title: "Claude signed out · key rejected", ...WINDOW },

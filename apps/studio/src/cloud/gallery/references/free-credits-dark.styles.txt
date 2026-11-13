@@ -89,13 +89,6 @@ text "You've used this month's free credits" rgb(244, 243, 239) 400 13px Inter
 icon svg 26×26 rgb(244, 243, 239) stroke 3.4px
 text "You've used this month's free credits" rgb(244, 243, 239) 600 18px Funnel Display
 text "Add a card to keep going. You only pay …" rgb(183, 179, 169) 400 13px Inter
-ground div rgb(27, 27, 26) shadow rgb(58, 57, 54) 0px 0px 0px 1px inset
-icon svg 14×14 rgb(142, 138, 130) stroke 1.9px
-text "Card number" rgb(118, 115, 105) 400 13px Inter
-ground div rgb(27, 27, 26) shadow rgb(58, 57, 54) 0px 0px 0px 1px inset
-text "MM / YY" rgb(118, 115, 105) 400 13px Inter
-ground div rgb(27, 27, 26) shadow rgb(58, 57, 54) 0px 0px 0px 1px inset
-text "CVC" rgb(118, 115, 105) 400 13px Inter
 text "Monthly spend cap" rgb(183, 179, 169) 500 12px Inter
 ground span rgb(27, 27, 26) shadow rgb(58, 57, 54) 0px 0px 0px 1px inset
 text "$" rgb(118, 115, 105) 400 13px Inter

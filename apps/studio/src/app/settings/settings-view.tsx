@@ -94,7 +94,7 @@ export function SettingsView({
       ) : current === "members" ? (
         <MembersView host={host} workspace={workspace} meId={me.id} />
       ) : current === "plan" ? (
-        <PlanView key={workspace.id} workspace={workspace} />
+        <PlanView key={workspace.id} workspace={workspace} host={host} />
       ) : current === "github" ? (
         <GithubView host={host} workspaceId={workspace.id} />
       ) : (

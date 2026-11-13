@@ -19,6 +19,7 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { CanvasChrome } from "../cloud/window/canvas-chrome.tsx";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { AskStore } from "./ask-store.ts";
+import type { BillingWall } from "./billing/wall.ts";
 import { drawCommentPicture, hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
@@ -79,6 +80,8 @@ export function useOpenCanvas(
   canvasId: string | null,
   say: (notice: string) => void,
   fresh: FreshCanvas | null = null,
+  /** The window's billing wall: a message it turns away at a limit is held there. */
+  wall: BillingWall | null = null,
 ): OpenCanvas | null {
   const [open, setOpen] = useState<OpenCanvas | null>(null);
   const { queryClient, queries, mutations } = usePonzu();
@@ -124,7 +127,18 @@ export function useOpenCanvas(
       focused: focusedNow.current,
       ...(cache ? { cache } : {}),
     });
-    const thread = new ThreadStore({ ponzu, live, canvasId, meId: actor.id }).start();
+    const thread = new ThreadStore({
+      ponzu,
+      live,
+      canvasId,
+      meId: actor.id,
+      ...(wall
+        ? {
+            onRefused: (error: unknown, retry: () => void) =>
+              wall.refused(error, { kind: "message", run: retry }),
+          }
+        : {}),
+    }).start();
     const known = made.current?.id === canvasId ? made.current : null;
     if (known?.message) thread.seed(known.message, known.attachments);
     const asks = new AskStore({ ponzu, live, canvasId, onError: (m) => saying.current(m) });
@@ -153,7 +167,7 @@ export function useOpenCanvas(
       pictures.close();
       pullRequest.close();
     };
-  }, [host, ponzu, actor, cache, canvasId]);
+  }, [host, ponzu, actor, cache, canvasId, wall]);
   useEffect(() => {
     open?.source.setFocused(focused);
   }, [open, focused]);

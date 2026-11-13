@@ -261,7 +261,7 @@ export const otherStacks: RepoEnvironment[] = [
   ]),
 ];
 
-const visa = (last4: string): Card => ({ brand: "visa", last4, failed: false });
+const visa = (last4: string): Card => ({ brand: "visa", last4 });
 const periodEnd = local(12, 9);
 
 /** The solo board: 64 awake hours, a $50 cap. */

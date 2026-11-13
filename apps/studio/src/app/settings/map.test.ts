@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createFakeBackend } from "@ponzu/client/testing";
 import { connectionLine } from "../../cloud/claude.ts";
-import { billedUsd, usageLine } from "../../cloud/settings/billing.ts";
+import { billedUsd, pastDueWords, usageBar, usageLine } from "../../cloud/settings/billing.ts";
 import { roleEdit } from "../../cloud/settings/members.ts";
 import {
   hasIphone,
@@ -213,5 +213,61 @@ describe("Plan and usage", () => {
     const asSam = backend.connect(sam).api;
     const theirs = toTeamUsage(await asSam.usage.get(ws.id), "Northbrook");
     expect([theirs.byPerson, theirs.mine.usedCredits]).toEqual([null, 150]);
+  });
+
+  test("billing off or observing: exactly what 2.1 showed, with the cap and no card", async () => {
+    const { backend, api, ws, maya } = team();
+    backend.settings.use(ws.id, maya.id, 400);
+    backend.settings.cards.set(ws.id, { brand: "visa", last4: "4242" });
+    const off = toUsage(await api.usage.get(ws.id));
+    expect(off).toEqual({
+      usedCredits: 400,
+      freeCredits: 300,
+      creditUsd: 0.1,
+      capUsd: 100,
+      periodEnd: off.periodEnd,
+      card: null,
+      notBilled: true,
+    });
+    backend.features = { ...backend.features, billing: "observe" };
+    expect(toUsage(await api.usage.get(ws.id))).toEqual(off);
+  });
+
+  test("billing on, no card: no cap, so the bar spans the free credits alone", async () => {
+    const { backend, api, ws, maya } = team();
+    backend.features = { ...backend.features, billing: "on" };
+    backend.settings.use(ws.id, maya.id, 120);
+    const usage = toUsage(await api.usage.get(ws.id));
+    expect([usage.card, usage.capUsd, usage.notBilled, usage.pastDue]).toEqual([
+      null,
+      null,
+      false,
+      null,
+    ]);
+    expect(usageBar(usage).free).toBeCloseTo(120 / 300);
+  });
+
+  test("billing on with a card: the card and what is past due, for an admin only", async () => {
+    const { backend, api, ws, sam } = team();
+    backend.features = { ...backend.features, billing: "on" };
+    backend.settings.cards.set(ws.id, { brand: "amex", last4: "0005" });
+    const invoiceUrl = "https://invoice.stripe.com/i/acct_1/test_1";
+    backend.settings.pastDue.set(ws.id, {
+      since: new Date().toISOString(),
+      reason: "needs_confirmation",
+      invoiceUrl,
+      graceOver: false,
+    });
+    const usage = toUsage(await api.usage.get(ws.id));
+    expect(usage.card).toEqual({ brand: "amex", last4: "0005" });
+    expect(usage.capUsd).toBe(100);
+    expect(usage.pastDue).toEqual({ reason: "needs_confirmation", invoiceUrl });
+    expect(pastDueWords(usage.pastDue!)).toBe("Payment needs your confirmation");
+
+    const theirs = toUsage(await backend.connect(sam).api.usage.get(ws.id));
+    expect([theirs.card, theirs.pastDue]).toEqual([null, null]);
+    // A card Stripe names another way is drawn as a card.
+    backend.settings.cards.set(ws.id, { brand: "discover", last4: null });
+    expect(toUsage(await api.usage.get(ws.id)).card).toEqual({ brand: "other", last4: null });
   });
 });

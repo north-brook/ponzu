@@ -15,7 +15,7 @@ import { quietFocus } from "../ui/quiet-focus.ts";
 import { overlayOpen } from "../ui/shortcut.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
 import { readDraft, restoreDraft, useDraft, writeDraft } from "./composer-rules.ts";
-import type { LineHandlers } from "./lines.tsx";
+import type { BillingWait, LineHandlers } from "./lines.tsx";
 import { type Reveal, ThreadSkeleton, ThreadView } from "./thread-view.tsx";
 
 export interface ThreadRailProps extends LineHandlers {
@@ -31,6 +31,8 @@ export interface ThreadRailProps extends LineHandlers {
   reveal?: Reveal | null;
   onRevealed?: (at: number) => void;
   agent: AgentActivity;
+  /** The canvas waits on its workspace's billing: the thread's foot says so (ThreadView). */
+  billing?: BillingWait | null;
   /** What the agent waits on, oldest first, and any just closed that the viewer hasn't put away. */
   asks: Ask[];
   gate: SteerGate | null;
@@ -112,6 +114,7 @@ export function ThreadRail(props: ThreadRailProps) {
           reveal={props.reveal ?? null}
           {...(props.onRevealed ? { onRevealed: props.onRevealed } : {})}
           agent={agent}
+          billing={props.billing ?? null}
           meId={meId}
           handlers={handlers}
         />

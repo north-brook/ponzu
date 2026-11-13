@@ -43,8 +43,11 @@ setup/            guided first run: the gates (setup.ts, shared), sign in, where
                   Claude and its card, the iPhone step
 settings/         the Settings modal and its sections, with their rules (billing, shared; members,
                   environments)
-dialogs/          what a send can need first: a card, a higher cap, Claude again; and the
-                  account's confirmations
+dialogs/          what a send can need first: a card, a higher cap, a payment, Claude again; and
+                  the account's confirmations. The card goes in on Stripe's Checkout page in the
+                  browser, not in fields in the dialog as the mockup's free-hours-used-up board
+                  draws them: Stripe's card fields refuse a page that isn't https in live mode, and
+                  the studio is served from ponzu-studio://app (billing plan §8.1)
 gallery/          dev-only: every board composed from fixtures, every component's states
 ```
 

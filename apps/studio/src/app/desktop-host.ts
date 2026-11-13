@@ -59,6 +59,7 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     persistence: () => desktop.session.persistence(),
     onLink: links.onLink,
     installGithub: links.installGithub,
+    comeForward: () => desktop.comeForward(),
     onCommand: (listener) => desktop.onCommand(listener),
     update: desktop.update,
     openExternal: (url) => desktop.openExternal(url),

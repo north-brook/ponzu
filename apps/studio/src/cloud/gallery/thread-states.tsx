@@ -1,5 +1,6 @@
 /* The thread rail, needs you and the pull request mark in the states the boards don't draw. */
 import type { ReactNode } from "react";
+import { blockerWords, type GateBlocker } from "../gate.ts";
 import type { AgentActivity, Ask, PendingAttachment, SteerGate, ThreadItem } from "../model.ts";
 import { ThreadRail } from "../thread/rail.tsx";
 import { NextActionButton } from "../window/next-action.tsx";
@@ -11,6 +12,9 @@ const WORKING: AgentActivity = { state: "working", status: null };
 const IDLE: AgentActivity = { state: "idle", status: null };
 const WAITING: AgentActivity = { state: "needs_you", status: null };
 const LIMIT: SteerGate = { kind: "claude_limit", owner: f.ada, until: "2026-11-10T21:00:00Z" };
+/** The workspaces a billing line names: a team's, and a person's own. */
+const TEAM = { name: f.thistlewick.name, personal: false };
+const SOLO = { name: f.ada.name, personal: true };
 
 /** A rail at its size, on the chrome, as the window holds it. */
 function Rail({
@@ -21,6 +25,7 @@ function Rail({
   gate = null,
   attachments = [],
   canvasId,
+  billing = null,
 }: {
   label: string;
   thread?: ThreadItem[] | null;
@@ -29,7 +34,9 @@ function Rail({
   gate?: SteerGate | null;
   attachments?: PendingAttachment[];
   canvasId: string;
+  billing?: GateBlocker | null;
 }) {
+  const words = billing ? blockerWords(billing) : null;
   return (
     <div className="flex flex-col items-start gap-2">
       <div className="flex h-[560px] w-[360px] flex-col bg-chrome px-2.5 pb-2.5">
@@ -41,6 +48,7 @@ function Rail({
           older="none"
           onLoadOlder={ignore}
           agent={agent}
+          billing={words ? { text: words.line, action: words.action, onAction: ignore } : null}
           asks={asks}
           gate={gate}
           attachments={attachments}
@@ -188,6 +196,37 @@ export function ThreadStates({
           canvasId="failed"
           agent={{ state: "idle", status: null, sandbox: "failed" }}
           label="a machine couldn't start"
+        />
+        <Rail
+          canvasId="credits-used-up"
+          billing={{ blocker: "credits_used_up", workspace: TEAM, canManage: true }}
+          label="free credits used up: Add a card, for an admin"
+        />
+        <Rail
+          canvasId="credits-used-up-solo"
+          billing={{ blocker: "credits_used_up", workspace: SOLO, canManage: true }}
+          label="your own free credits used up"
+        />
+        <Rail
+          canvasId="cap-reached"
+          billing={{
+            blocker: "cap_reached",
+            workspace: TEAM,
+            canManage: true,
+            capUsd: 500,
+            periodEnd: "2026-12-09T12:00:00Z",
+          }}
+          label="the cap reached: Raise cap"
+        />
+        <Rail
+          canvasId="payment-failed"
+          billing={{ blocker: "payment_failed", workspace: TEAM, canManage: true }}
+          label="a payment past its grace: Pay invoice"
+        />
+        <Rail
+          canvasId="payment-failed-member"
+          billing={{ blocker: "payment_failed", workspace: TEAM, canManage: false }}
+          label="the same, for a member: no button"
         />
         <Rail canvasId="unsent" thread={unsent} label="a message on its way, and one that failed" />
         <Rail

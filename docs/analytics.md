@@ -243,6 +243,9 @@ a canvas is its `canvas_id`.
 | `notice shown` | `notice` | a calm state, by what it is, never its words (`NoticeName`) |
 | `notification shown` | `kind`, `surface`: `mac` | the Mac showed a banner from the person's inbox; never its title or body |
 | `notification opened` | `kind`, `surface`: `mac`, `age_ms` | a banner was clicked; `age_ms` is how long after the notification was made |
+| `billing dialog shown` | `reason`: `free_used`, `cap_reached`, `payment_failed`, `add_card` | a send met the billing wall (the API's 402 `billing_required`), or an admin chose Add a card in Plan and usage or on a canvas's line; only while billing is on; never an amount or a workspace's name |
+| `billing dialog dismissed` | `reason` | it was closed without the card, cap or payment it asked for; the held send is dropped and its words stay where they were |
+| `billing portal opened` | | an admin opened Stripe's portal from Plan and usage |
 | `$pageview` | `canvas_id` while a canvas is open | the view changes |
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 

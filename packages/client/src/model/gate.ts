@@ -150,3 +150,29 @@ export function blockerWords(gate: GateBlocker): BlockerWords {
     }
   }
 }
+
+/** The head's blockers that billing gives. */
+const BILLING_BLOCKERS = ["credits_used_up", "cap_reached", "payment_failed"] as const;
+export type BillingBlocker = (typeof BILLING_BLOCKERS)[number];
+
+/**
+ * A canvas head's billing blocker with what its words need, or null for any other blocker or
+ * none. The workspace's cap and period end come from its usage; until that has answered, a
+ * cap_reached line waits for it (null) rather than naming a wrong cap.
+ */
+export function billingBlocker(
+  blocker: string | null | undefined,
+  ctx: {
+    workspace: BlockerWorkspace;
+    canManage: boolean;
+    usage: { capUsd: number; periodEnd: string } | null;
+  },
+): Extract<GateBlocker, { blocker: BillingBlocker }> | null {
+  if (!blocker || !(BILLING_BLOCKERS as readonly string[]).includes(blocker)) return null;
+  const { workspace, canManage, usage } = ctx;
+  if (blocker === "cap_reached") {
+    if (!usage) return null;
+    return { blocker, workspace, canManage, capUsd: usage.capUsd, periodEnd: usage.periodEnd };
+  }
+  return { blocker: blocker as "credits_used_up" | "payment_failed", workspace, canManage };
+}
