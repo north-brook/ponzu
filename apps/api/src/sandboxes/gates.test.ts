@@ -113,6 +113,7 @@ describe("the gates", () => {
     ownerMember: true,
     agentBlocker: null,
     agentBlockedUntil: null,
+    billingGate: "ok",
     ...over,
   });
   const now = new Date("2026-11-12T12:00:00Z");

@@ -192,6 +192,13 @@ export type ErrorCode =
    * Reads still work; send it again in a few minutes.
    */
   | "maintenance"
+  /**
+   * The workspace is at a billing limit (PONZU_BILLING on): its free credits are used up with no
+   * card, it reached its monthly cap, or a payment has failed for a week. Nothing was written.
+   * `details` has `reason`, `workspaceId`, `workspaceName`, `canManage`, `capUsd`, `billedCents`,
+   * `periodEnd` and `invoiceUrl`; the message is the sentence to show.
+   */
+  | "billing_required"
   | "internal";
 
 /**

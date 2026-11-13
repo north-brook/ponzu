@@ -19,6 +19,8 @@ export interface RateCardNumbers {
   sandboxCreditsPerAwakeHour: number;
   freeCreditsPerMember: number;
   defaultCapCents: number;
+  /** The share of the cap at which admins are warned (0.8 on rate card v1). */
+  capWarningFraction: number;
 }
 
 /** What one person used in one canvas under one rate card, in a period. */
@@ -83,7 +85,8 @@ const card = (alias: string) =>
     'creditMicrousd', ${alias}.credit_microusd,
     'sandboxCreditsPerAwakeHour', ${alias}.sandbox_credits_per_awake_hour,
     'freeCreditsPerMember', ${alias}.free_credits_per_member,
-    'defaultCapCents', ${alias}.default_cap_cents)`);
+    'defaultCapCents', ${alias}.default_cap_cents,
+    'capWarningFraction', ${alias}.cap_warning_fraction::float8)`);
 
 /**
  * A workspace's usage in the period [`start`, `end`), as of `now`, in one read: awake time and

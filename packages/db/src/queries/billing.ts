@@ -1,10 +1,11 @@
-import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   type BillingGateValue,
   billingPeriods,
   type CardSetupOutcome,
+  canvases,
   workspaces,
 } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
@@ -148,6 +149,68 @@ export async function setBillingGate(
       select json_build_object('before', gate_before, 'after', gate_after) as result from now_is
     `,
   );
+}
+
+/**
+ * The workspaces whose gate the minute's sweep works out again, at most `limit`, those worked out
+ * longest ago (or never) first: every workspace with a sandbox waking or awake, or one that moved
+ * since `since` (a sleep just metered its stretch), and every workspace whose gate is not `ok`,
+ * so that one held back with nothing awake is let go once its period turns over or its free
+ * credits grow, within a minute.
+ */
+export async function listWorkspacesToGate(
+  db: Db,
+  { since, limit }: { since: Date; limit: number },
+): Promise<string[]> {
+  const result = await queryJson<{ ids: string[] }>(
+    db,
+    sql`
+      select json_build_object('ids', coalesce(json_agg(id), '[]'::json)) as result
+        from (
+          select w.id from workspaces w
+           where w.billing_gate <> 'ok'
+              or exists (
+                select 1 from sandboxes s join canvases d on d.id = s.canvas_id
+                 where d.workspace_id = w.id
+                   and (s.state in ('waking', 'awake')
+                        or s.state_at >= ${timeParam(since)}::timestamptz))
+           order by w.billing_gate_at asc nulls first, w.id
+           limit ${limit}
+        ) due
+    `,
+  );
+  return result?.ids ?? [];
+}
+
+/** The cached billing gate of the canvas's workspace; null when there is no such canvas. */
+export async function canvasBillingGate(
+  db: Db,
+  canvasId: string,
+): Promise<BillingGateValue | null> {
+  const [row] = await run(
+    db
+      .select({ gate: workspaces.billingGate })
+      .from(canvases)
+      .innerJoin(workspaces, eq(workspaces.id, canvases.workspaceId))
+      .where(eq(canvases.id, canvasId))
+      .limit(1),
+  );
+  return row?.gate ?? null;
+}
+
+/** The cached billing gates of these workspaces, by id. */
+export async function billingGatesOf(
+  db: Db,
+  workspaceIds: readonly string[],
+): Promise<Map<string, BillingGateValue>> {
+  if (workspaceIds.length === 0) return new Map();
+  const rows = await run(
+    db
+      .select({ id: workspaces.id, gate: workspaces.billingGate })
+      .from(workspaces)
+      .where(inArray(workspaces.id, [...workspaceIds])),
+  );
+  return new Map(rows.map((row) => [row.id, row.gate]));
 }
 
 // --- card setups ----------------------------------------------------------------------------------

@@ -120,6 +120,9 @@ Every event about a workspace also carries `workspace_id`.
 | `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `unsafe`, `failed`) | `unsafe`: the gate found an idea asking the reader for something other than work on the canvas, so none were kept (what it said goes to the logs only, never here). `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
 | `file uploaded` | `canvas_id`, `content_type`, `bytes` | A person's image reached a canvas. |
 | `monthly cap set` | `cap_usd` | |
+| `billing wall hit` | `reason` (`free_used`, `cap_reached`, `payment_failed`), `surface` (`create`, `message`), `can_manage`, `enforced` | A person's message, or create with one, met a workspace at a billing limit. Only while `PONZU_BILLING` is not off; `enforced` is false in observe, where it went through. |
+| `canvas waiting on billing` | `canvas_id`, `reason` | A canvas's wake began waiting on its workspace's billing limit (billing on), once each time it starts waiting. About no one. |
+| `billing notice` | `kind` (`free_used`, `cap_warning`, `cap_reached`) | A workspace's admins were pinged about billing, once a period for each kind (billing on). About no one. |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
 | `search answered` | `q_length`, `terms`, `results`, `groups`, `ms` | A search of a workspace was answered (`POST /v1/workspaces/:id/search`). `q_length` is the query's length after trimming, `terms` how many terms it made, `results` the hits in all, `groups` the names of the groups with a hit, `ms` the time from the route's start to its answer. Never the words searched for. |
 

@@ -627,15 +627,18 @@ name a window that is over well before then.
   everywhere, starts a wake for up to 20 of those canvases whose feed holds a `now` or `next`
   event (bringing forward a wake a gate had put off), queues the rest for the cron, and wakes
   nothing that owes nothing. `maintenance` refuses with `paused`, to be tried again in two
-  minutes, while wakes are paused ("Security", the maintenance switch); `billing` lets
-  everything through until its feature fills it; `claudeLimit` is "Claude plan limits". The
-  runner's claim hands out only the kinds `claimableKinds` allows (every kind, except that only
-  a stop, an edit and a push go out while the plan the canvas runs on is at its limit; billing
-  will narrow it too); the rest stay in the feed,
-  neither claimed nor delivered. A person's message, answer or create asks the request gates
+  minutes, while wakes are paused ("Security", the maintenance switch); `billing` refuses with
+  `credits_used_up`, `cap_reached` or `payment_failed` while `PONZU_BILLING` is `on` and the
+  workspace's cached gate is not `ok`, except for a wake for `push` ("Billing", the gate);
+  `claudeLimit` is "Claude plan limits". The runner's claim hands out only the kinds
+  `claimableKinds` allows (every kind, except that only a stop, an edit and a push go out while
+  the plan the canvas runs on is at its limit, and only a stop, an answer, an edit and a push
+  while billing holds the workspace back; with both, only what both allow); the rest stay in the
+  feed, neither claimed nor delivered. A person's message, answer or create asks the request gates
   (`http/gates.ts`: `rateLimit`, `maintenance`, `billing`, in that order) once they are known to
   be allowed and before anything is written; `maintenance` refuses with 503 `maintenance` while
-  Ponzu is read-only, and `billing` lets everything through until its feature fills it.
+  Ponzu is read-only, and `billing` refuses a message, or a create with a first message, with
+  402 `billing_required` while billing is on and the workspace's gate is not `ok`.
 - **A wake** (`orchestrate.ts`) claims the row first:
 
   | Row | The wake |
@@ -661,9 +664,10 @@ name a window that is over well before then.
   from it after its `up()` (a retire, a repair) stops the session it started unless the row's
   holder now runs on it, and removes the sandbox when the canvas is settled or gone, since a
   retire that finished in between could not see what this wake made after it.
-- **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
+- **Limits.** Whatever billing says, the claim also counts the sandboxes waking or awake in the
   canvas's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
-  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
+  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement, as a bound on abuse rather than a
+  plan's limit; a wake past either waits as
   `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
   canvases landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
 - **The environment** is made new at every start (`environment.ts`): `PONZU_API_URL`,
@@ -2720,14 +2724,58 @@ free credits are used up. A workspace has a monthly cap.
   or last kept awake.
 - `usage_events` is the one record of use. `credit_ledger` holds what is not use: each
   member's free grant, support's adjustments and, later, top-ups. Nothing writes a `use` row.
-  Balance and cap are checked before every wake. A running turn is never cut off.
+  With billing on, the workspace's gate is checked before every wake and every message. A
+  running turn is never cut off.
 - Stripe receives the billed part as metered usage.
 - The iPhone shows usage and sells nothing.
 
-What is built so far is the reading of it: Plan and usage, worked out from `usage_events` and
-the rate card, the meter's cuts below, and the groundwork for payments below, which nothing
-calls yet. Nothing charges a card and nothing enforces the cap yet; the cap is stored for when
-something does.
+What is built so far: Plan and usage, worked out from `usage_events` and the rate card, the
+meter's cuts, the gate (worked out, cached, observed and enforced, below), and the groundwork for
+payments, which nothing calls yet. Nothing charges a card yet, and while `PONZU_BILLING` is
+unset, as in production, nothing is held back either.
+
+**The gate.** Whether a workspace may start new work, from its numbers (`billing/gate.ts`):
+`payment_failed` once an invoice has been past due for 7 days, else `free_used` with no card and
+the free credits used up, else `cap_reached` with a card and the billed part at the cap, else
+`ok`. `refreshBillingGate` (`billing/refresh.ts`) works it out by Plan and usage's arithmetic
+(granting first the allowances of members not yet granted, as Plan and usage does) and stores it
+on the workspace (`billing_gate`, `billing_gate_at`). It runs in the minute's sweep, after the
+sandboxes' own steps, for every workspace with a sandbox waking or awake or moved in the last
+two minutes, and every workspace whose gate is not `ok`, at most 50 a run, those worked out
+longest ago first; and at once after the cap is changed. Free credits only shrink while
+something is awake, so the stored gate is at most about a minute behind. The routes, the wake and
+the claim read the stored gate, never Stripe (`billing/enforce.ts`):
+
+- A person's `POST /v1/canvases` with a first message, and `POST /v1/canvases/:id/messages`,
+  answer 402 `billing_required` with nothing written. The message is the sentence to show
+  ("<Workspace> has used this month's free credits.", "<Workspace> has reached this month's
+  $<cap> cap.", "<Workspace>'s last payment didn't go through.", and "You've" or "Your" for a
+  personal workspace's own person), and `details` carries `reason`, `workspaceId`,
+  `workspaceName`, `canManage`, `capUsd`, `billedCents`, `periodEnd` and `invoiceUrl` (null for
+  anyone but an admin). A create without a message is made, and an answer is never refused:
+  the turn that asked waits on it.
+- A wake waits on `credits_used_up`, `cap_reached` or `payment_failed`, except a wake for
+  `push`, so finished work can always be pushed. A comment is committed as ever; only its wake
+  waits.
+- The runner's claim hands out only a stop, an answer, an edit and a push, so a running turn
+  finishes and no new one starts. What it holds back stays in the feed, not owed, so nothing
+  lapses.
+- When the gate turns `ok` again, `resumeBillingBlocked` lifts those three blockers in the
+  workspace and wakes the canvases with something owed (`resumeBlocked`); an awake runner takes
+  up what its claim held back at its next claim.
+- With billing on, the workspace's admins (its person, for a personal one) are pinged through
+  `notify` with billing's words, once a period for each of free credits used, 80% of the cap
+  (with a card) and the cap reached.
+
+`PONZU_BILLING` decides how much of this happens. `off` (unset): none of it, nothing is read or
+written for it, and every route answers as before billing. `observe`: the gate is worked out and
+stored and nothing is refused; what would have been is logged as `billing_gate_would_refuse`, a
+person's refused steer is captured as `billing wall hit` with `enforced: false`, and nobody is
+pinged. `on`: all of it.
+
+Each workspace in `GET /v1/me` carries `billingGate` (its stored gate when billing is on, `ok` in
+observe) and `canManageBilling` (an admin), so a composer can open the wall before it commits a
+comment; neither is there while billing is off.
 
 **Payments.** Stripe is reached only through `apps/api/src/deps/payments.ts`, on Stripe's own
 Node SDK (`stripe`, pinned at 23.1.0, at the API version that release pins, `2026-10-28.endive`),
@@ -2842,9 +2890,13 @@ cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted
 first), `unattributedCredits` and `byCanvas`: canvases named only where they may read the repo
 (or their own Scratch, `kind: "canvas"`), then canvases since deleted in one entry with no canvas
 (`kind: "deleted"`), then the canvases they may not know of in another (`kind: "hidden"`). An admin who reaches the workspace only through repos shared with them sees no other
-member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
-`{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
-state.
+member here either. Only an admin sets the cap (403 `forbidden`). While billing is off,
+`billing` answers `{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps
+show the no-card state. In observe it says the same, so an app that predates billing shows
+nothing as billed, and adds `gate`, `capWarning` and `pastDue: null`. When billing is on,
+`status` is `on`, and an admin also sees `card` (`{ brand, last4 }`) and `pastDue`
+(`{ since, reason, invoiceUrl }`); anyone else sees both as null. `invoices` stays `not_set_up`:
+invoices live in Stripe's portal.
 
 ## Notifications
 
@@ -2852,7 +2904,7 @@ Settings › Notifications chooses what pings a person and where. What Ponzu tel
 a row in their inbox (`notifications`), which the Mac watches live; a push to an iPhone is a
 delivery of that row (`notification_deliveries`), sent through Expo's push service. Every
 event in "What is worth a ping" below writes those rows and sends its pushes (see "Sending");
-billing's trigger is built and waits for billing to call it. Pushes stay off until
+billing's trigger is called by the billing gate, only while `PONZU_BILLING` is `on`. Pushes stay off until
 `EXPO_ACCESS_TOKEN` is set: without it every planned push is cancelled as `push_off`, and the
 inbox, the Mac's banners and the badge work regardless.
 

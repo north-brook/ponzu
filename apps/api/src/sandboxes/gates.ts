@@ -1,4 +1,5 @@
 import { type AgentBlocker, claudeLimitedUntil, type EventKind, type WakeContext } from "@ponzu/db";
+import { billingClaimableKinds, holdWakeAtLimit } from "../billing/enforce.ts";
 import { wakesPaused } from "../http/maintenance.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { claudeProblem } from "./environment.ts";
@@ -11,7 +12,7 @@ import { claudeProblem } from "./environment.ts";
  *   owner         its owner, whose Claude it runs on, left the workspace
  *   claude        its Claude is not connected, or has expired
  *   maintenance   Ponzu has paused wakes while it updates
- *   billing       the workspace is at a billing limit                (filled by W6 B2)
+ *   billing       the workspace is at a billing limit, with PONZU_BILLING on (billing/enforce.ts)
  *   claudeLimit   its owner's Claude plan is at a limit until a time (filled by W8 sweep 6)
  *
  * `wakeCanvas` asks them in this order before it claims the sandbox's row. The first that
@@ -87,6 +88,14 @@ export const claudeLimitGate: WakeGate = (ctx, now) => {
   return { blocker: "claude_limited", retryAt: new Date(until.getTime() + LIMIT_GRACE_MS) };
 };
 
+/**
+ * The workspace is at a billing limit (its cached gate is not `ok`) and billing is on: the canvas
+ * waits on `credits_used_up`, `cap_reached` or `payment_failed` until the gate opens again
+ * (`resumeBillingBlocked`). A wake for `push` is let through. Off, it lets everything through
+ * without reading anything; in observe it logs and lets it through.
+ */
+export const billingGate: WakeGate = (ctx, _now, ask) => holdWakeAtLimit(ctx, ask);
+
 export interface NamedWakeGate {
   name: string;
   gate: WakeGate;
@@ -96,7 +105,7 @@ export const WAKE_GATES: readonly NamedWakeGate[] = [
   { name: "owner", gate: ownerGate },
   { name: "claude", gate: claudeGate },
   { name: "maintenance", gate: maintenanceGate },
-  { name: "billing", gate: () => null },
+  { name: "billing", gate: billingGate },
   { name: "claudeLimit", gate: claudeLimitGate },
 ];
 
@@ -137,18 +146,26 @@ export interface ClaimContext {
 
 /**
  * Which kinds of event a runner's claim may hand out now: every kind, unless a feature holds
- * some back (billing, at a limit, hands out only a stop, an answer and an edit, so the turn
- * that is running finishes and no new one begins). What it holds back stays in the feed, not
+ * some back (billing, at a limit, hands out only a stop, an answer, an edit and a push, so the
+ * turn that is running finishes and no new one begins; Claude's plan limit only a stop, an edit
+ * and a push). With both, only what both allow. What it holds back stays in the feed, not
  * delivered, and so not owed. Asynchronous, unlike a wake gate, because what it reads is not
  * in the claim's own statement; it is asked once per claim.
  */
 export async function claimableKinds(
-  deps: Pick<JobDeps, "db" | "clock">,
+  deps: Pick<JobDeps, "db" | "clock" | "features">,
   ctx: ClaimContext,
 ): Promise<readonly EventKind[] | "all"> {
   const now = new Date(deps.clock.now());
-  if (await claudeLimitedUntil(deps.db, { canvasId: ctx.canvasId, now })) return AT_A_CLAUDE_LIMIT;
-  return "all";
+  const [limited, billing] = await Promise.all([
+    claudeLimitedUntil(deps.db, { canvasId: ctx.canvasId, now }),
+    billingClaimableKinds(deps, ctx.canvasId),
+  ]);
+  const claude = limited ? AT_A_CLAUDE_LIMIT : "all";
+  // Each feature that holds kinds back narrows what the others allow.
+  if (claude === "all") return billing;
+  if (billing === "all") return claude;
+  return claude.filter((kind) => billing.includes(kind));
 }
 
 /**

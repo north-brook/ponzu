@@ -4,6 +4,7 @@ import {
   type AgentBlocker,
   type AgentState,
   authStates,
+  type BillingGateValue,
   type CanvasStatus,
   type ClaudeAccountKind,
   type ClaudeAccountStatus,
@@ -669,6 +670,8 @@ export interface WakeContext {
   /** What the canvas's head says its agent waits on now, and until when. */
   agentBlocker: AgentBlocker | null;
   agentBlockedUntil: Date | null;
+  /** Its workspace's cached billing gate (`workspaces.billing_gate`; `ok` while billing is off). */
+  billingGate: BillingGateValue;
 }
 
 /** Whether the canvas `d`'s owner is still a member of its workspace. */
@@ -690,6 +693,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
       agent_blocker: AgentBlocker | null;
       agent_blocked_until: string | null;
     };
+    billing_gate: BillingGateValue;
     claude: {
       id: string;
       user_id: string;
@@ -715,7 +719,8 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
                        or (d.claude_account_id is null and a.user_id = d.owner_id)
                     order by (a.id = d.claude_account_id) desc limit 1),
         'sandbox', (select row_to_json(s) from sandboxes s where s.canvas_id = d.id),
-        'owner_member', ${ownerMember}
+        'owner_member', ${ownerMember},
+        'billing_gate', (select w.billing_gate from workspaces w where w.id = d.workspace_id)
       ) as result
         from canvases d
        where d.id = ${canvasId}
@@ -742,6 +747,7 @@ export async function getWakeContext(db: Db, canvasId: string): Promise<WakeCont
     ownerMember: result.owner_member,
     agentBlocker: canvas.agent_blocker,
     agentBlockedUntil: canvas.agent_blocked_until ? new Date(canvas.agent_blocked_until) : null,
+    billingGate: result.billing_gate ?? "ok",
   };
 }
 

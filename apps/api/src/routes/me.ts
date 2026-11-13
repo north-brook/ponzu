@@ -1,4 +1,6 @@
 import {
+  BILLING_GATES,
+  billingGatesOf,
   getClaudeAccount,
   listUserWorkspaces,
   MEMBER_ROLES,
@@ -60,6 +62,14 @@ const Me = z.object({
       /** False once the GitHub App has been removed from the account. */
       installed: z.boolean(),
       suspended: z.boolean(),
+      /**
+       * The workspace's billing gate, so a composer can open the wall before it commits a
+       * comment: its cached gate while billing is on, `ok` in observe (nothing is refused). Left
+       * out while billing is off.
+       */
+      billingGate: z.enum(BILLING_GATES).optional(),
+      /** May add the card and change the cap: an admin. Left out while billing is off. */
+      canManageBilling: z.boolean().optional(),
     }),
   ),
   /**
@@ -81,6 +91,14 @@ export const me = new Hono<AppEnv>()
       getClaudeAccount(db, user.id),
       listUserWorkspaces(db, user.id),
     ]);
+    // Read only while billing is on: off adds nothing, and observe refuses nothing.
+    const gates =
+      features.billing === "on"
+        ? await billingGatesOf(
+            db,
+            workspaces.map((workspace) => workspace.id),
+          )
+        : null;
     return c.json(
       Me.parse({
         user: toProfile(user),
@@ -94,6 +112,12 @@ export const me = new Hono<AppEnv>()
           ...workspace,
           installed: workspace.installationId !== null,
           suspended: workspace.suspendedAt !== null,
+          ...(features.billing === "off"
+            ? {}
+            : {
+                billingGate: gates?.get(workspace.id) ?? "ok",
+                canManageBilling: workspace.role === "admin",
+              }),
         })),
         features: { billing: features.billing, push: features.push, email: features.email },
       }),

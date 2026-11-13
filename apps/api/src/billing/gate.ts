@@ -1,8 +1,8 @@
 /*
  * The billing gate: whether a workspace may start new work, from its numbers alone
- * (docs/cloud.md, "Billing"). It is a pure function. Reading the usage, caching the answer on the
- * workspace and refusing at the routes, the wake and the runner's claim are built around it
- * later; nothing calls it yet.
+ * (docs/cloud.md, "Billing"). It is a pure function. `refreshBillingGate` (refresh.ts) works it
+ * out and caches it on the workspace; the routes, the wake and the runner's claim read the cached
+ * answer (enforce.ts), and only while PONZU_BILLING is not off.
  *
  * The rules, checked in this order:
  *
@@ -14,7 +14,19 @@
  * A turn that is running when the gate closes is never cut off; the gate only stops new ones.
  */
 
+import type { AgentBlocker } from "@ponzu/db";
+
 export type BillingGate = "ok" | "free_used" | "cap_reached" | "payment_failed";
+
+/** The blocker a canvas waits on for each gate that holds work back. */
+export const BLOCKER_OF: Record<Exclude<BillingGate, "ok">, AgentBlocker> = {
+  free_used: "credits_used_up",
+  cap_reached: "cap_reached",
+  payment_failed: "payment_failed",
+};
+
+/** Every blocker billing gives, which `resumeBillingBlocked` lifts. */
+export const BILLING_BLOCKERS: readonly AgentBlocker[] = Object.values(BLOCKER_OF);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

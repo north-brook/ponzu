@@ -17,6 +17,7 @@ import {
 import { parseSandboxName, type SandboxInfo, scopePrefix } from "@ponzu/sandbox";
 import type { ServerEvents } from "../analytics/events.ts";
 import { meterAwake } from "../billing/meter.ts";
+import { refreshBillingGates } from "../billing/refresh.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { notify } from "../notifications/notify.ts";
 import {
@@ -50,7 +51,9 @@ import { awakeFor, captureSlept, putToSleep, wakeIfPending } from "./stop.ts";
  * and every tenth minute, `reconcile` compares this database's names at Vercel with its rows.
  * While billing is on (observe or on), the `meter` pass runs first, before any of these, and
  * is no sandbox's step: it cuts long awake stretches at period ends and hourly
- * (`billing/meter.ts`). While billing is off it does not run, and the counts do not name it.
+ * (`billing/meter.ts`), and after them the billing gates of the workspaces that may have moved are
+ * worked out again (`gated`, `billing/refresh.ts`). While billing is off neither runs, and the
+ * counts name neither.
  * Each step is a move that holds to the state it moves from, so two sweeps at once, or a sweep
  * and a wake, cannot both act on one sandbox.
  */
@@ -165,6 +168,8 @@ export function extendBy(sandbox: Pick<SandboxRow, "sessionStartedAt" | "expires
 export type SweepCounts = Record<SweepStep | "reconciled", number> & {
   /** The meter's cuts: only while billing is on (observe or on). */
   metered?: number;
+  /** Workspaces whose billing gate was worked out again: only while billing is on (observe or on). */
+  gated?: number;
 };
 
 export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
@@ -203,6 +208,15 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
       }
     }),
   );
+  // After the steps, so a stretch a sleep just metered counts.
+  if (deps.features.billing !== "off") {
+    try {
+      counts.gated = await refreshBillingGates(deps, new Date(now));
+    } catch (error) {
+      deps.log.warn("sweep_failed", { step: "billing_gate", error });
+      deps.analytics.exception(error, { sweep_step: "billing_gate" });
+    }
+  }
   if (new Date(now).getUTCMinutes() % RECONCILE_EVERY_MINUTES === 0) {
     try {
       counts.reconciled = await reconcile(deps);

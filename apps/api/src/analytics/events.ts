@@ -214,6 +214,23 @@ export interface ServerEvents {
   /** A person's file reached a canvas (an image they pasted or dropped into the thread). */
   "file uploaded": { canvas_id: string; content_type: string; bytes: number };
   "monthly cap set": { cap_usd: number | null };
+  /**
+   * A person's create with a message, or message, met a workspace at a billing limit. Only while
+   * PONZU_BILLING is not off; `enforced` is false in observe, where it went through.
+   */
+  "billing wall hit": {
+    reason: "free_used" | "cap_reached" | "payment_failed";
+    surface: "create" | "message" | "answer";
+    can_manage: boolean;
+    enforced: boolean;
+  };
+  /** A canvas began waiting on its workspace's billing limit (billing on). About no one. */
+  "canvas waiting on billing": {
+    canvas_id: string;
+    reason: "free_used" | "cap_reached" | "payment_failed";
+  };
+  /** A workspace's admins were pinged about billing, once a period each (billing on). */
+  "billing notice": { kind: "free_used" | "cap_warning" | "cap_reached" | "payment_failed" };
   "repo secret changed": { repo_id: string; action: "added" | "replaced" | "removed" };
 }
 

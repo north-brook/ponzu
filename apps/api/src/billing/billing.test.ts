@@ -33,6 +33,7 @@ const CARD: RateCardNumbers = {
   sandboxCreditsPerAwakeHour: 5,
   freeCreditsPerMember: 100,
   defaultCapCents: 10_000,
+  capWarningFraction: 0.8,
 };
 const period = {
   start: new Date("2026-11-09T00:00:00Z"),
