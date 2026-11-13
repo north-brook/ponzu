@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useCallback } from "react";
 import { drafts } from "../drafts";
 import { setBadge } from "../push/native";
-import { devices } from "../push/pings";
+import { devices, stopPings } from "../push/pings";
 import { backend } from "./backend";
 import { DOC_CACHE_PATH, fileStorage } from "./files";
 import { forgetNewCanvas } from "./new-canvas";
@@ -18,8 +18,13 @@ export function useSignOut(): () => Promise<void> {
   return useCallback(
     () =>
       signOut({
-        // Only the device registered for the person signing out.
-        readDeviceId: async () => (cloud.userId ? devices.read(cloud.userId) : null),
+        // Only the device registered for the person signing out, and nothing registers it
+        // again once it is gone (a heartbeat finding it deleted would).
+        readDeviceId: async () => {
+          if (!cloud.userId) return null;
+          stopPings(cloud.userId);
+          return devices.read(cloud.userId);
+        },
         deleteDevice: (id) => backend.api.devices.remove(id),
         signOut: () => backend.session.signOut(),
         clearQueries: () => cloud.clear(),

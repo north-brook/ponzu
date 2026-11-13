@@ -224,6 +224,47 @@ test("Turn on: iOS's prompt, then registering on a yes; a no only blocks a devic
   expect(no.calls).toEqual(["prompt"]);
 });
 
+test("signing out stops it: a heartbeat finding the device deleted registers nothing again", async () => {
+  const w = world({
+    active: async () => {
+      throw new ApiError(404, "not_found", "There is no such device.");
+    },
+  });
+  await w.store.write("usr_maya", "dev_1");
+  const registrar = w.registrar();
+  registrar.stop();
+  await registrar.active();
+  await registrar.tokenChanged();
+  expect(await registrar.sync()).toBe("stopped");
+  expect(w.calls).toEqual([]);
+});
+
+test("signed out while a registration was under way: its device id is not kept", async () => {
+  let answer: (value: { device: { id: string } }) => void = () => {};
+  const w = world({ register: () => new Promise((resolve) => (answer = resolve)) });
+  const registrar = w.registrar();
+  const under = registrar.sync();
+  for (let i = 0; i < 100 && !w.calls.some((c) => c.startsWith("register:")); i++) {
+    await Promise.resolve();
+  }
+  expect(w.calls.some((c) => c.startsWith("register:"))).toBe(true);
+  registrar.stop();
+  answer({ device: { id: "dev_1" } });
+  expect(await under).toBe("stopped");
+  expect(await w.store.read("usr_maya")).toBeNull();
+});
+
+test("two registrations asked at once send one", async () => {
+  const w = world({});
+  const registrar = w.registrar();
+  const [a, b] = await Promise.all([registrar.sync(), registrar.sync()]);
+  expect([a, b]).toEqual(["registered", "registered"]);
+  expect(w.calls.filter((c) => c.startsWith("register:"))).toHaveLength(1);
+  // Once it is done, the next one sends again.
+  await registrar.sync();
+  expect(w.calls.filter((c) => c.startsWith("register:"))).toHaveLength(2);
+});
+
 test("a different person signed in here never touches the last person's device", async () => {
   const w = world({ permission: "denied" });
   await w.store.write("usr_maya", "dev_1");

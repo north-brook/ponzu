@@ -95,7 +95,10 @@ function Notifications() {
             }}
           />
         ))}
-        <Label>{PINGS.settings.where}</Label>
+        {/* Allowed but not registered (the simulator, or the API not reached yet): no row. */}
+        {(blocked || mine || permission === "undetermined") && (
+          <Label>{PINGS.settings.where}</Label>
+        )}
         {blocked ? (
           <View testID="settings-ping-this-iphone" style={rowStyle(color.hairline)}>
             <TwoLine title={PINGS.thisIphone} line={PINGS.settings.blocked} />

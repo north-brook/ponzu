@@ -48,6 +48,18 @@ import { tapCanGo, tapIsStale, tapMove } from "./route";
 /** This phone's device id, kept with whose it is (the sign-out deletes it first). */
 export const devices = deviceStore(AsyncStorage, DEVICE_KEY);
 
+/* The signed-in person's registrar, so signing out can stop it before the device goes. */
+let current: { userId: string; registrar: Registrar } | null = null;
+
+/**
+ * Signing out `userId` (lib/cloud/use-sign-out.ts, before the device is deleted): nothing more
+ * is registered, patched or said for them from this phone, so a heartbeat or a registration
+ * under way can't make the device again once it is gone.
+ */
+export function stopPings(userId: string): void {
+  if (current?.userId === userId) current.registrar.stop();
+}
+
 /* The tap held until the app can show it. */
 let held: Tap | null = null;
 const heldListeners = new Set<() => void>();
@@ -150,6 +162,13 @@ function PersonPings({ userId, onPings }: { userId: string; onPings: (p: Pings) 
       }),
     [userId],
   );
+  useEffect(() => {
+    const mine = { userId, registrar };
+    current = mine;
+    return () => {
+      if (current === mine) current = null;
+    };
+  }, [userId, registrar]);
 
   /** The icon's number: the API's count of questions waiting, across every workspace. */
   const badge = useRef(async () => {

@@ -81,14 +81,18 @@ export function handleForeground(behavior: (notification: PingLike) => PingBehav
 
 /** Hears taps on pings: the one that opened the app from cold, then each one after. */
 export function onTap(listener: (notification: PingLike) => void): () => void {
-  const last = Notifications.getLastNotificationResponse();
-  if (last && last.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
-    listener(last.notification);
-  }
-  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+  // The tap that opened the app may also reach the listener: it is taken once.
+  let taken: string | null = null;
+  const take = (response: Notifications.NotificationResponse) => {
     if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const id = response.notification.request.identifier;
+    if (id && id === taken) return;
+    taken = id;
     listener(response.notification);
-  });
+  };
+  const last = Notifications.getLastNotificationResponse();
+  if (last) take(last);
+  const sub = Notifications.addNotificationResponseReceivedListener(take);
   return () => sub.remove();
 }
 

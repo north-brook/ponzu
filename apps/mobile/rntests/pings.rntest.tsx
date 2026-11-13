@@ -282,6 +282,31 @@ describe("pings while the API sends them", () => {
     );
   });
 
+  test("Sign out deletes this phone's device before the session goes, and nothing registers it again", async () => {
+    global.pings.permission = "granted";
+    backend.seed("pings");
+    const order: string[] = [];
+    const remove = backend.api.devices.remove.bind(backend.api.devices);
+    jest.spyOn(backend.api.devices, "remove").mockImplementation(async (id: string) => {
+      order.push(`delete:${backend.session.getState().status}`);
+      return remove(id);
+    });
+    await render(
+      <App>
+        <Settings />
+      </App>,
+    );
+    await waitFor(() => expect(mayaDevices()).toHaveLength(1));
+    await fireEvent.press(await screen.findByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(backend.session.getState()).toEqual({ status: "signed_out" }));
+    expect(order).toEqual(["delete:signed_in"]);
+    // The app coming forward after it says nothing for her.
+    await act(async () => {});
+    expect(mayaDevices()).toEqual([]);
+    expect(await AsyncStorage.getItem("ponzu.device")).toBeNull();
+    expect(global.pings.badge).toBe(0);
+  });
+
   test("Settings when iOS refused: Turned off in iOS Settings, with the way there", async () => {
     global.pings.permission = "denied";
     backend.seed("pings");

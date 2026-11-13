@@ -62,7 +62,8 @@ export type SyncResult =
   | "undetermined"
   | "simulator"
   | "conflict"
-  | "failed";
+  | "failed"
+  | "stopped";
 
 export interface RegistrarDeps {
   native: PushNative;
@@ -87,6 +88,10 @@ const isStatus = (error: unknown, status: number, code?: string) =>
 
 export function createRegistrar(deps: RegistrarDeps) {
   let conflictTold = false;
+  /** Signing out: nothing more is registered, patched or said for this person. */
+  let stopped = false;
+  /** The registration under way, which a second ask joins rather than sending its own. */
+  let syncing: Promise<SyncResult> | null = null;
   const conflict = () => {
     if (conflictTold) return;
     conflictTold = true;
@@ -104,8 +109,19 @@ export function createRegistrar(deps: RegistrarDeps) {
     return null;
   };
 
-  /** Register (or say again) this phone as iOS now allows it. */
-  const sync = async (): Promise<SyncResult> => {
+  /**
+   * Register (or say again) this phone as iOS now allows it. One at a time: iOS's prompt brings
+   * the app forward while Turn on registers, and both would ask at once.
+   */
+  const sync = (): Promise<SyncResult> => {
+    if (stopped) return Promise.resolve("stopped");
+    syncing ??= syncOnce().finally(() => {
+      syncing = null;
+    });
+    return syncing;
+  };
+
+  const syncOnce = async (): Promise<SyncResult> => {
     let permission: PingPermission;
     try {
       permission = await deps.native.permission();
@@ -133,6 +149,8 @@ export function createRegistrar(deps: RegistrarDeps) {
     if (environment === null) return "simulator";
     const pushToken = await token();
     if (!pushToken) return "failed";
+    // Signed out while the token came: a device made now would ping a phone nobody is on.
+    if (stopped) return "stopped";
     try {
       const { device } = await deps.devices.register({
         platform: "ios",
@@ -143,6 +161,7 @@ export function createRegistrar(deps: RegistrarDeps) {
         appVersion: deps.appVersion,
         blocked: false,
       });
+      if (stopped) return "stopped";
       await deps.store.write(deps.userId, device.id);
       return "registered";
     } catch (error) {
@@ -156,6 +175,7 @@ export function createRegistrar(deps: RegistrarDeps) {
 
   /** Expo's token changed: the device is told the new one. */
   const tokenChanged = async (): Promise<void> => {
+    if (stopped) return;
     const id = await deps.store.read(deps.userId);
     if (!id) return;
     const pushToken = await token();
@@ -176,6 +196,7 @@ export function createRegistrar(deps: RegistrarDeps) {
    * they're there. A device the API forgot is registered again.
    */
   const active = async (): Promise<void> => {
+    if (stopped) return;
     const id = await deps.store.read(deps.userId);
     if (!id) return;
     try {
@@ -200,7 +221,15 @@ export function createRegistrar(deps: RegistrarDeps) {
     return answer;
   };
 
-  return { sync, tokenChanged, active, request };
+  /**
+   * Signing out: from now on this registrar sends nothing, so a heartbeat that finds the device
+   * just deleted (404) can't register it again for someone no longer signed in.
+   */
+  const stop = (): void => {
+    stopped = true;
+  };
+
+  return { sync, tokenChanged, active, request, stop };
 }
 
 export type Registrar = ReturnType<typeof createRegistrar>;
