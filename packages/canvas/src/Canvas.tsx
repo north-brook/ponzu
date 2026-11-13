@@ -470,6 +470,16 @@ export function Canvas({
     const r = viewport.current?.getBoundingClientRect();
     return { w: r?.width ?? 1200, h: r?.height ?? 800 };
   };
+  /*
+   * The viewport's size as of its last layout, for what is drawn from it: the render (which
+   * boards are on screen, and how much of each), the camera's view key and the thaw queue's
+   * ranks. Measured there, it forced a layout of every board just built, inside the commit (or
+   * the frame) that built it. A ResizeObserver keeps it, declared before useCameraLayers' own,
+   * so a resize that moves the camera reads the new size. What acts (a fit, a key, a drag)
+   * measures it then, with `viewportSize`.
+   */
+  const laidOut = useRef<{ w: number; h: number } | null>(null);
+  const drawnSize = () => laidOut.current ?? viewportSize();
 
   const fitPage = useCallback(() => {
     if (bounds) fit(bounds, viewportSize(), 72, 1);
@@ -674,6 +684,19 @@ export function Canvas({
   // Wheel: pan; pinch or modifier: zoom. The viewport only mounts once the doc
   // arrives, so attach again then.
   const mounted = !!(doc && page);
+  useLayoutEffect(() => {
+    const el = viewport.current;
+    if (!mounted || !el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      laidOut.current = { w: r.width, h: r.height };
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      laidOut.current = null;
+    };
+  }, [mounted]);
   useEffect(() => {
     if (!mounted) return;
     const el = viewport.current;
@@ -1321,12 +1344,12 @@ export function Canvas({
     return centreDistance(
       { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) },
       camera.get(),
-      viewportSize(),
+      drawnSize(),
     );
   };
   const rankOf = useCallback((id: string) => rankRef.current(id), []);
   const view = useCameraView(camera, (c) => {
-    const vp = viewportSize();
+    const vp = drawnSize();
     let k = String(detailScale(c.zoom, dpr));
     for (const ab of boards) {
       const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
@@ -1337,7 +1360,7 @@ export function Canvas({
   });
   // A pan or zoom over a crowded view: every board's loops hold until the camera stops, as do
   // videos over pictures. A loop under a blur redraws it every frame of the gesture.
-  const crowd = view.moving && crowded(boardBoxes, view, viewportSize());
+  const crowd = view.moving && crowded(boardBoxes, view, drawnSize());
   // Videos over pictures also hold while nobody can be watching the window, as boards' loops do.
   useEffect(() => playing.hold(crowd || still), [crowd, still]);
 
@@ -1374,7 +1397,7 @@ export function Canvas({
   };
   const rectsFor = (ids: string[]) => selectionRects(ids, boards, boardHeight, ghostFor, boxes);
   const selectedRects = rectsFor(selection);
-  const vpSize = viewportSize();
+  const vpSize = drawnSize();
   const scale = detailScale(view.zoom, dpr);
   const arriving = arrivals.boardsArriving(boards);
 
