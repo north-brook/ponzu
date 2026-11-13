@@ -1,17 +1,18 @@
 import { useLiveQuery } from "@ponzu/client/react";
 import { linkTarget } from "@ponzu/core";
 import { useMutation, useQueries } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
 import { ThreadSkeleton } from "../cloud/thread/thread-view.tsx";
 import { useNow } from "../cloud/time.ts";
 import type { CanvasAddress } from "../cloud/ui/canvas-address.ts";
 import { type CanvasPlaces, CanvasPlacesProvider } from "../cloud/ui/place-link.tsx";
-import { type OpenCanvas, useAccess, useSourceState } from "./canvas.tsx";
+import { docShape, type OpenCanvas, useAccess, useSourceSelect } from "./canvas.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import { takeOverRefusal } from "./take-over.ts";
+import { keepLines, type Lines } from "./thread-lines.ts";
 import {
   agentActivity,
   answerLine,
@@ -38,7 +39,7 @@ export interface CommentLink {
  * upload and stop going to the API through the open canvas's stores.
  */
 
-export function CanvasRail({
+export const CanvasRail = memo(function CanvasRail({
   host,
   open,
   me,
@@ -88,7 +89,10 @@ export function CanvasRail({
   const { queries, mutations } = usePonzu();
   const stop = useMutation(mutations.stopAgent());
   const takeOver = useMutation(mutations.takeOver());
-  const state = useSourceState(open.source);
+  // What the rail reads of the document is its pages and boards (the page a comment was left on,
+  // where a link in the agent's words points): an op that changes neither (a comment, a reply,
+  // an agent's commit to what is on a board) draws nothing here.
+  const shape = useSourceSelect(open.source, (state) => docShape(state.doc));
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
   const asked = useSnapshot(open.asks);
@@ -107,7 +111,6 @@ export function CanvasRail({
   const head = useLiveQuery("canvas.head", { canvasId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
   const now = useNow();
-  const doc = state.doc;
   const assetBase = open.source.assetBase;
 
   // A question waiting in the composer's place isn't in the thread as well.
@@ -136,15 +139,42 @@ export function CanvasRail({
     const lines = JSON.parse(picked) as (string | null)[];
     return new Map(closedIds.map((id, i) => [id, lines[i] ?? null] as const));
   }, [picked, closedIds]);
-  const items = useMemo(() => {
+  const last = useRef<Lines | null>(null);
+  const lines = useMemo(() => {
     // A canvas just made shows its first message while its thread is read.
     if (!thread.items && !thread.pending.length) return null;
-    const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc, pictures };
-    return [
-      ...shown.map((item) => withAnswer(toThreadItem(item, ctx), answers)),
-      ...thread.pending.map((message, i) => pendingItem(message, me, i)),
-    ];
-  }, [thread, shown, answers, people, assetBase, doc, me, pictures]);
+    const ctx: ThreadContext = {
+      people,
+      assetsUrl: assetBase ?? null,
+      doc: open.source.getState().doc,
+      pictures,
+    };
+    return keepLines(last.current, [
+      ...shown.map((item) => ({
+        id: item.id,
+        from: [
+          item,
+          people,
+          ctx.assetsUrl,
+          item.kind === "comment" ? shape : null,
+          item.kind === "comment" ? pictures.get(item.payload.messageId) : null,
+          item.kind === "notice" && item.payload.type === "question"
+            ? answers.get(item.payload.questionId)
+            : null,
+        ],
+        make: () => withAnswer(toThreadItem(item, ctx), answers),
+      })),
+      ...thread.pending.map((message, i) => ({
+        id: message.id,
+        from: [message, me, i],
+        make: () => pendingItem(message, me, i),
+      })),
+    ]);
+  }, [open.source, thread, shown, answers, people, assetBase, shape, me, pictures]);
+  useEffect(() => {
+    last.current = lines;
+  }, [lines]);
+  const items = lines?.items ?? null;
 
   // With the rail open, the viewer has read the thread as far as it goes.
   const newest = thread.items?.at(-1)?.seq;
@@ -164,6 +194,7 @@ export function CanvasRail({
         (candidate) => candidate.kind === "comment" && candidate.payload.messageId === messageId,
       );
       const left = item?.kind === "comment" ? item.payload : null;
+      const doc = open.source.getState().doc;
       const there = doc?.threads.some((t) => t.id === threadId) ?? true;
       if (!there) say("That comment was deleted. This is where it was.");
       onOpenComment({
@@ -173,20 +204,24 @@ export function CanvasRail({
         ...(left?.at ? { spot: left.at } : {}),
       });
     },
-    [shown, doc, onOpenComment, say],
+    [open.source, shown, onOpenComment, say],
   );
 
   const loadOlder = useCallback(() => open.thread.loadOlder(), [open.thread]);
   const shownLine = useRevealed(thread, loadOlder, reveal);
 
   // What a link in the agent's words can find: the canvas as it is now, while it streams too.
+  // Made again when a page or board comes, goes or is renamed (`shape`), so its links say so.
   const places = useMemo<CanvasPlaces>(
     () => ({
       canvasId,
-      has: (at) => (doc ? linkTarget(doc, at) !== null : undefined),
+      has: (at) => {
+        const doc = open.source.getState().doc;
+        return doc ? linkTarget(doc, at) !== null : undefined;
+      },
       open: onOpenPlace,
     }),
-    [canvasId, doc, onOpenPlace],
+    [canvasId, open.source, shape, onOpenPlace],
   );
 
   // Until the API says what the viewer may do, nothing offers to steer.
@@ -243,7 +278,7 @@ export function CanvasRail({
       />
     </CanvasPlacesProvider>
   );
-}
+});
 
 /**
  * The line to show, once the thread holds as far back as it: null while the rail pages back

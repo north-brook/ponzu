@@ -2,6 +2,7 @@ import type { MaxLiveQueries } from "@ponzu/api/types";
 import type { Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError } from "../errors.ts";
+import { keepUnchanged } from "../model/map.ts";
 import {
   neonRealtime,
   type RealtimeStatus,
@@ -290,10 +291,16 @@ class LiveQueries implements Live {
         if (!current()) return;
         const decode = DECODE[entry.name] as (row: RawRow<LiveQueryName>) => unknown;
         entry.failures = 0;
-        this.update(entry, {
-          rows: raw.map((row) => decode(row as RawRow<LiveQueryName>)),
-          status: "live",
-        });
+        // Realtime sends a query's whole result each time, every row a new object. A row equal
+        // to one held stays the object held, so a screen drawing a line per row (the thread,
+        // the sidebar) draws again only the rows that changed; a result that changed nothing
+        // (a row written with the same values) is not heard again.
+        const rows = keepUnchanged(
+          entry.snapshot.rows,
+          raw.map((row) => decode(row as RawRow<LiveQueryName>)),
+        );
+        if (rows === entry.snapshot.rows && entry.snapshot.status === "live") return;
+        this.update(entry, { rows, status: "live" });
       },
       status: (status) => {
         if (current()) this.heard(entry, status);
