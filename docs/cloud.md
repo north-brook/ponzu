@@ -199,7 +199,12 @@ id, which GitHub never reuses, so a read of GitHub that began before it cannot b
 the installation back. A one-minute cron reads again any installation nobody has read
 for six hours, which is how an uninstall whose webhook was lost is found.
 
-**Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
+**Installing.** `POST /v1/github/install-link` returns GitHub's account picker for the App
+(`installations/select_target`: every account of the person's, to install the App on one or
+change the repos of one that has it), or its install page for one account when the app
+suggests one (`installations/new/permissions`). The picker is asked for by name because the
+plain install page skips it once the App is installed anywhere and opens that installation's
+settings, where no other account can be chosen. Either carries a
 `state` sealed by the API and recorded as a fifteen-minute, single-use auth state, and
 the app's own handle on it (`id`). GitHub sends the browser to the App's Setup URL,
 `GET /v1/github/setup`, which has no bearer token: the state says who started, the
