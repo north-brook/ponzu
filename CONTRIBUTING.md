@@ -82,7 +82,8 @@ components, each with its own release PR:
 - **The desktop app** (the root package, tags `vX.Y.Z`): `chore(main):
   release X.Y.Z` collects every `feat` and `fix` on `main` into `CHANGELOG.md`.
   Changes only under `apps/mobile`, `apps/api`, `apps/runner`, `packages/db`,
-  `packages/sandbox`, `packages/evals`, `infra` or `docs` don't count.
+  `packages/sandbox`, `packages/evals`, `packages/email`, `infra` or `docs`
+  don't count (`exclude-paths` in `release-please-config.json`).
 - **The iPhone app** (`apps/mobile`, tags `mobile-vX.Y.Z`): `chore(main):
   release mobile X.Y.Z` collects those that touch `apps/mobile` into
   `apps/mobile/CHANGELOG.md`. Its tag starts EAS's production workflow, which
@@ -115,7 +116,8 @@ release PR. Once a release PR's checks pass it merges, and for the desktop app
    `apps/desktop/src/smoke.ts`): the signed
    Mac app, the Windows app as its installer installed it (then uninstalls
    it), the AppImage, and the installed `.deb` (then removes it).
-3. Once all three have succeeded, adds `release-notes.json`, downloads the
+3. Once all three have succeeded, adds `release-notes.json` and the site's
+   `changelog.json` ([docs/release-notes.md](docs/release-notes.md)), downloads the
    draft, checks every file each platform's feed names is there and unchanged,
    and that every download below is (`scripts/release-assets.ts`), then
    publishes the release. Only now can the site's download links and installed

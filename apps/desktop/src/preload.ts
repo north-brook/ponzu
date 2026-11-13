@@ -8,6 +8,8 @@ import {
   type DeepLink,
   type MacNotice,
   type MenuCommand,
+  type PictureAnswer,
+  type PictureRequest,
   type PonzuDesktop,
   type SessionPersistence,
   type SignInResult,
@@ -53,6 +55,7 @@ const desktop: PonzuDesktop = {
     dev: argument("dev") === "1",
     linkScheme: argument("scheme"),
     analytics: analytics(),
+    ...(argument("fake") === "1" ? { fake: true } : {}),
   },
   session: {
     state: () => ipcRenderer.invoke(CHANNELS.sessionState) as Promise<SessionState>,
@@ -97,6 +100,10 @@ const desktop: PonzuDesktop = {
   welcome1x: () => ipcRenderer.invoke(CHANNELS.welcome1x) as Promise<boolean>,
   setUsageSharing: (enabled) =>
     ipcRenderer.invoke(CHANNELS.usageSharing, enabled === true) as Promise<boolean>,
+  pictures: {
+    draw: (request: PictureRequest) =>
+      ipcRenderer.invoke(CHANNELS.picturesDraw, request) as Promise<PictureAnswer>,
+  },
 };
 
 /** The computer's name the main process passed, URI-encoded; null when it passed none. */

@@ -88,6 +88,7 @@ async function world({
       .find((item) => item.kind === "comment" && item.payload.messageId === messageId);
   return {
     backend,
+    canvasId: canvas.id,
     pictures,
     leave,
     kept,
@@ -260,4 +261,38 @@ test("the iPhone's pictures: PNG bytes from its canvas page, kept as PNG", async
     dark: expect.stringMatching(/^comments\/m_png-dark-.*\.png$/),
   });
   pictures.close();
+});
+
+test("a comment deleted while its picture is drawn is let go of: nothing of it is shown or kept", async () => {
+  let finish!: () => void;
+  const held = new Promise<void>((resolve) => (finish = resolve));
+  const w = await world({
+    draw: async () => {
+      await held;
+      return { light: new Blob(["l"]), dark: new Blob(["d"]) };
+    },
+  });
+  await w.leave("m_gone");
+  await w.leave("m_reply_gone");
+  expect(w.pictures.getSnapshot().get("m_gone")?.state).toBe("drawing");
+  // Its thread is deleted, by anyone; and the other comment is taken back.
+  const sam = { kind: "user" as const, id: w.sam.id, name: "Sam Lee" };
+  for (const listener of w.listeners) {
+    listener({ op: "thread.delete", id: "th_m_gone" }, sam, {} as Doc);
+    listener(
+      {
+        op: "batch",
+        ops: [{ op: "thread.unmessage", id: "th_m_reply_gone", messageId: "m_reply_gone" }],
+      },
+      sam,
+      {} as Doc,
+    );
+  }
+  expect(w.pictures.getSnapshot().size).toBe(0);
+  finish();
+  for (let i = 0; i < 6; i++) await settle();
+  // Never shown, never uploaded, never attached.
+  expect(w.pictures.getSnapshot().size).toBe(0);
+  expect(w.released).toEqual([]);
+  expect(w.backend.canvas(w.canvasId).pictures.size).toBe(0);
 });

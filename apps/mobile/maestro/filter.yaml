@@ -1,0 +1,108 @@
+appId: design.ponzu.app.dev
+name: filter
+---
+# The canvases list's filter on the fake (seed `filter`, lib/cloud/backend.fake.ts
+# stockFilter): Maya's three canvases in acme, and her teammate Jun's Checkout
+# (site) and Sign-up form (app, settled). The counts are active canvases and
+# the settled tray isn't filtered, as on the Mac. Filter opens the sheet: Jun alone
+# leaves Checkout; Everyone without site leaves
+# Onboarding and the poster; Jun in Scratch alone keeps nothing, which the list
+# says plainly, and its Clear filter brings every canvas back. The filter is
+# kept on the phone, so the flow ends with it cleared for the flows after it.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=filter
+- extendedWaitUntil:
+    visible:
+      id: canvases
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Checkout, .*"
+    timeout: 30000
+- assertVisible: "Pricing page, .*"
+- assertVisible: "Onboarding, .*"
+- assertVisible: "Settled, 1"
+# Jun alone: Checkout, and his settled canvas in the tray.
+- tapOn: "Filter"
+- extendedWaitUntil:
+    visible:
+      id: filter-sheet
+    timeout: 15000
+- assertVisible: "Everyone"
+- assertVisible: "You"
+- assertVisible: "site, 2"
+- assertVisible: "app, 1"
+- assertVisible: "Scratch, 1"
+- tapOn: "Jun Ito"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
+- swipe:
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
+- extendedWaitUntil:
+    notVisible:
+      id: filter-sheet
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: "Pricing page, .*"
+    timeout: 15000
+- assertVisible: "Checkout, .*"
+- assertNotVisible: "Onboarding, .*"
+- tapOn: "Settled, 1"
+- assertVisible: "Sign-up form, .*"
+- tapOn: "Settled, 1"
+# Everyone, without site.
+- tapOn: "Filter \\(on\\)"
+- extendedWaitUntil:
+    visible:
+      id: filter-sheet
+    timeout: 15000
+- tapOn: "Everyone"
+- tapOn: "site, 2"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
+- swipe:
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
+- extendedWaitUntil:
+    notVisible:
+      id: filter-sheet
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Onboarding, .*"
+    timeout: 15000
+- assertVisible: "Launch poster, .*"
+- assertNotVisible: "Pricing page, .*"
+- assertNotVisible: "Checkout, .*"
+# Jun in Scratch alone: nothing, said plainly, and Clear filter.
+- tapOn: "Filter \\(on\\)"
+- extendedWaitUntil:
+    visible:
+      id: filter-sheet
+    timeout: 15000
+- tapOn: "Jun Ito"
+- tapOn: "app, 1"
+# Down from the sheet's top edge (its 0.6 detent), not the list inside it.
+- swipe:
+    start: 50%, 44%
+    end: 50%, 95%
+    duration: 300
+- extendedWaitUntil:
+    notVisible:
+      id: filter-sheet
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: canvases-filtered
+    timeout: 15000
+- assertVisible: "No canvases match this filter."
+- assertNotVisible:
+    id: canvases-empty
+- tapOn:
+    id: canvases-clear-filter
+- extendedWaitUntil:
+    visible: "Pricing page, .*"
+    timeout: 15000
+- assertVisible: "Checkout, .*"
+- assertVisible: "Onboarding, .*"
+- assertVisible: "Filter"
+- assertNotVisible: ".*Cannot update a component.*"

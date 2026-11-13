@@ -74,6 +74,7 @@ import {
 import { PULL_REQUEST_TOOLS, pullRequestTools } from "./pull-request-tools.ts";
 import { BranchPush, type PushOutcome, pushFailureForAgent, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
+import { HeldEvents } from "./save/held.ts";
 import type { Transcripts } from "./save/transcripts.ts";
 import type { Git, WorkSaver } from "./save/work.ts";
 import { REQUEST_SECRET, requestSecretTool, type SecretWriter } from "./secret-tool.ts";
@@ -318,6 +319,8 @@ export class Runner {
 
   /** Claimed and not yet acknowledged, by id. */
   private held = new Map<string, RunnerEvent>();
+  /** What each checkpoint's transcript holds of the events, as they settle (save/held.ts). */
+  private readonly heldEvents = new HeldEvents();
   /** Messages put into the run that Claude Code has not taken yet, by uuid. */
   private sent = new Map<string, Sent>();
   /** Edits put in beside the run, to be read with its next turn: their uuids, to their events. */
@@ -481,7 +484,10 @@ export class Runner {
 
   /** Start: read the session, ready the checkout, open the canvas, start Claude, claim. */
   async start(): Promise<void> {
-    this.session = await this.retry(() => this.api.session());
+    // The boot names this process to the API, so a session call answered late can one day be
+    // told from another process's. Today's API does not read it.
+    const boot = this.opts.boot?.().id;
+    this.session = await this.retry(() => this.api.session(boot ? { boot } : {}));
     this.modelsHeld = this.session.models ?? null;
     this.telemetry = this.startTelemetry(this.session.analytics ?? null);
     this.notice(this.wakeItem, { type: "waking" }, true);
@@ -710,6 +716,7 @@ export class Runner {
       event: (name, fields) => this.event(name, fields),
       boot: () => this.opts.boot?.() ?? { id: null, at: null },
       flush: () => this.flushDisk(),
+      held: () => this.heldEvents.begin([...this.held.values()].map((event) => event.seq)),
       // `turn_failed` is the notice whose own words the thread shows.
       notify: (message) =>
         this.notice(randomId("ti"), { type: "error", code: "turn_failed", message }),
@@ -1111,8 +1118,10 @@ export class Runner {
             // What a turn left unpushed before this start, or a restore brought back.
             void this.push("start");
           }
-          // A full page: there may be more behind it.
+          // A full page: there may be more behind it. Otherwise every event up to the head is
+          // held here or was delivered before this process: what a checkpoint holds goes from it.
           if (events.length >= CLAIM_LIMIT) this.claimAgain = true;
+          else this.heldEvents.handedThrough(seq);
         } catch (err) {
           if (fatal(err)) break;
           this.log(`claim failed: ${said(err)}`);
@@ -1298,6 +1307,8 @@ export class Runner {
   }
 
   private ack(id: string, inSession: boolean): void {
+    const seq = this.held.get(id)?.seq;
+    if (seq !== undefined) this.heldEvents.settled(seq, inSession);
     this.held.delete(id);
     this.acks.put(id, { id, inSession });
   }

@@ -1,5 +1,48 @@
 # Changelog
 
+## [2.4.0](https://github.com/north-brook/ponzu/compare/v2.3.4...v2.4.0) (2026-11-13)
+
+
+### Features
+
+* **mobile:** the chat docks beside the canvas on an ipad, and standby follows ponzu on iphone duo ([#624](https://github.com/north-brook/ponzu/issues/624)) ([f04eb6a](https://github.com/north-brook/ponzu/commit/f04eb6adc229c87fd1cef46345cfa82ecf347255))
+
+## [2.3.4](https://github.com/north-brook/ponzu/compare/v2.3.3...v2.3.4) (2026-11-13)
+
+
+### Performance Improvements
+
+* **studio:** draw a comment's picture out of the person's window ([#601](https://github.com/north-brook/ponzu/issues/601)) ([ea77ad8](https://github.com/north-brook/ponzu/commit/ea77ad8985ba2f70e2d097c97c6a20bec8826821))
+
+## [2.3.3](https://github.com/north-brook/ponzu/compare/v2.3.2...v2.3.3) (2026-11-13)
+
+
+### Performance Improvements
+
+* **studio:** a comment, a reply or a commit draws only the thread lines and boards it changed ([#599](https://github.com/north-brook/ponzu/issues/599)) ([1a648a5](https://github.com/north-brook/ponzu/commit/1a648a537f76517b7bfea93ebbf2d5649c9d3156))
+
+## [2.3.2](https://github.com/north-brook/ponzu/compare/v2.3.1...v2.3.2) (2026-11-13)
+
+
+### Performance Improvements
+
+* **canvas:** keep less GPU memory while zooming out on big canvases ([#605](https://github.com/north-brook/ponzu/issues/605)) ([1d0cf73](https://github.com/north-brook/ponzu/commit/1d0cf73257fbf91f892db0222344cb534671e471))
+
+## [2.3.1](https://github.com/north-brook/ponzu/compare/v2.3.0...v2.3.1) (2026-11-13)
+
+
+### Performance Improvements
+
+* **canvas:** open a canvas's boards a frame's budget at a time, nearest first ([#598](https://github.com/north-brook/ponzu/issues/598)) ([73277f1](https://github.com/north-brook/ponzu/commit/73277f1323001862dbf10f20e479beed0ce28307))
+* **studio:** emphasis and strikethrough in markdown draw in time linear in the text ([#597](https://github.com/north-brook/ponzu/issues/597)) ([a3f0a5d](https://github.com/north-brook/ponzu/commit/a3f0a5d803d719c799585d8dd02ed1571ad5d480))
+
+## [2.3.0](https://github.com/north-brook/ponzu/compare/v2.2.0...v2.3.0) (2026-11-13)
+
+
+### Features
+
+* email on one send path, off until its key is set ([#602](https://github.com/north-brook/ponzu/issues/602)) ([3fcab6c](https://github.com/north-brook/ponzu/commit/3fcab6c606bd41bba5c2c699c126a51904f28993))
+
 ## [2.2.0](https://github.com/north-brook/ponzu/compare/v2.1.1...v2.2.0) (2026-11-13)
 
 

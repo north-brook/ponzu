@@ -1,10 +1,12 @@
 import type { Session, SessionState } from "@ponzu/client";
 import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/client/testing";
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
-import type { DeepLink, MacNotice, MenuCommand } from "@ponzu/desktop/bridge";
+import type { DeepLink, MacNotice, MenuCommand, PonzuDesktop } from "@ponzu/desktop/bridge";
 import type { Beat } from "../cloud/create/landing.ts";
+import { signedInCache } from "./desktop-host.ts";
 import type { Host, HostNotifications } from "./host.ts";
 import { linksWithInstalls } from "./installs.ts";
+import type { PictureBridge } from "./picture-drawer.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
@@ -94,10 +96,23 @@ export interface FakeMac {
 declare global {
   interface Window {
     ponzuFake?: FakeWorld;
+    /**
+     * The desktop's picture window, as a headless test plays it (another page, in picture mode),
+     * set before the studio loads. Without it, pictures are drawn in the window, as in a browser.
+     */
+    ponzuFakePictures?: PictureBridge;
   }
 }
 
-export function fakeHost(): Host {
+/**
+ * `shell`: the Mac app's bridge, when a test build runs the studio on this fake
+ * (PONZU_FAKE_BACKEND, apps/desktop/src/config.ts), so spare can measure the packaged app. The
+ * canvases opened are then kept the way the Mac app keeps them, in the window's localStorage,
+ * and the traffic lights are the system's. Everything else is still played here: no session,
+ * link or banner reaches the shell.
+ */
+export function fakeHost(opts: { shell?: PonzuDesktop } = {}): Host {
+  const pictures = window.ponzuFakePictures ?? opts.shell?.pictures;
   const backend = createFakeBackend();
   const me = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
   const teammate = backend.addPerson({ login: "sam", name: "Sam Lee" });
@@ -291,7 +306,7 @@ export function fakeHost(): Host {
     session,
     api: client.api,
     live: client.live,
-    lights: "drawn",
+    lights: opts.shell ? (opts.shell.platform === "darwin" ? "native" : "none") : "drawn",
     async signIn() {
       world.signInsStarted++;
       try {
@@ -314,9 +329,12 @@ export function fakeHost(): Host {
     },
     update: null,
     openExternal,
-    docStorage: null,
+    docStorage: opts.shell ? signedInCache(session, window.localStorage) : null,
     notifications: mac?.host ?? null,
     ...(landingBeat ? { landingBeat } : {}),
+    // A headless test's picture page, else the Mac app's picture window when a test build runs
+    // on this fake (PONZU_FAKE_BACKEND), so spare measures pictures where a release draws them.
+    ...(pictures ? { pictures } : {}),
   };
 }
 

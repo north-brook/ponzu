@@ -127,6 +127,28 @@ describe("the session and the lease", () => {
     expect((await getCanvasHead(t.db, canvas.id))!.seq).toBe(0);
   });
 
+  test("a runner that names its boot is answered as before: each call is a new lease", async () => {
+    // Runners send their boot; this API does not use it yet, so the same boot within a second
+    // still takes a new lease and supersedes the last, exactly as a runner sending `{}`.
+    const { canvas, runner: first } = await sample();
+    const auth = { authorization: first.headers.authorization };
+    const boot = "3f1c9a52-7d1e-4b8a-9c0f-2a6e5d4b3c21";
+    const named = await call(t, auth, "POST", "/v1/runner/session", { boot });
+    const again = await call(t, auth, "POST", "/v1/runner/session", { boot });
+    expect([named.status, again.status]).toEqual([200, 200]);
+    // The same answer as a session without a body, but for the lease.
+    expect(named.body).toEqual({ ...first.session, runnerId: expect.stringMatching(/^rnr_/) });
+    expect(new Set([first.session.runnerId, named.body.runnerId, again.body.runnerId]).size).toBe(
+      3,
+    );
+    const stale = { ...auth, [RUNNER_HEADER]: named.body.runnerId };
+    const refused = await call(t, stale, "POST", "/v1/runner/events/claim", claim());
+    expect([refused.status, refused.body.error.code]).toEqual([409, "superseded"]);
+    const current = { ...auth, [RUNNER_HEADER]: again.body.runnerId };
+    expect((await call(t, current, "POST", "/v1/runner/events/claim", claim())).status).toBe(200);
+    expect(named.body.canvas.id).toBe(canvas.id);
+  });
+
   test("a call without the lease is superseded, and a revoked token is refused everywhere", async () => {
     const { canvas, runner } = await sample();
     const bare = { authorization: runner.headers.authorization };

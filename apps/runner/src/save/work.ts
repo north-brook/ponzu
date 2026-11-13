@@ -2,7 +2,7 @@ import { type Dirent, lstatSync, readdirSync, readFileSync, type Stats } from "n
 import { basename, isAbsolute, join, relative } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { MAX_WORKSPACE_BYTES, type SavedPoint, wipRef } from "../api/protocol.ts";
-import { fingerprint } from "./fingerprint.ts";
+import { fingerprint, type HashSkipped } from "./fingerprint.ts";
 import { type AgentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
@@ -30,8 +30,11 @@ import { type AgentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
  */
 
 export interface WorkSaver {
-  /** A cheap fingerprint of the work as it is: the same means there is nothing new to save. */
-  stamp(): Promise<string>;
+  /**
+   * A cheap fingerprint of the work as it is: the same means there is nothing new to save.
+   * `skipped` hears of each file too large to hash.
+   */
+  stamp(skipped?: HashSkipped): Promise<string>;
   /** Saves the work in progress as checkpoint `turn` would carry it. */
   save(turn: number): Promise<SavedWork>;
   /** Puts the checkpoint's work back over what the disk has. */
@@ -179,7 +182,7 @@ export class GitWork implements WorkSaver {
     return text(await this.opts.git(args, opts));
   }
 
-  async stamp(): Promise<string> {
+  async stamp(skipped?: HashSkipped): Promise<string> {
     const head = await this.head();
     if (!head) return "";
     // Every change against HEAD, and every untracked file, by size and time (`fingerprint`).
@@ -192,7 +195,7 @@ export class GitWork implements WorkSaver {
     const sizes = paths.map((path) => {
       try {
         const full = join(this.opts.cwd, path);
-        return `${path}:${fingerprint(full, lstatSync(full), since)}`;
+        return `${path}:${fingerprint(full, lstatSync(full), since, (size) => skipped?.(path, size))}`;
       } catch {
         return `${path}:gone`;
       }
@@ -452,12 +455,13 @@ export class ScratchWork implements WorkSaver {
     },
   ) {}
 
-  async stamp(): Promise<string> {
+  async stamp(skipped?: HashSkipped): Promise<string> {
     const since = Date.now();
     return this.list()
-      .taken.map(
-        ({ path, stat }) => `${path}:${fingerprint(join(this.opts.cwd, path), stat, since)}`,
-      )
+      .taken.map(({ path, stat }) => {
+        const full = join(this.opts.cwd, path);
+        return `${path}:${fingerprint(full, stat, since, (size) => skipped?.(path, size))}`;
+      })
       .join("|");
   }
 

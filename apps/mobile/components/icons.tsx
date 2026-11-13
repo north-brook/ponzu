@@ -34,6 +34,7 @@ import {
   Search01Icon,
   StopIcon,
   Tick02Icon,
+  UserGroupIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { Text, View } from "react-native";
@@ -99,6 +100,8 @@ export const ICONS = {
   stop: StopIcon,
   /** A board found by Search, as the Mac's ⌘K marks one */
   board: DashboardSquare01Icon,
+  /** Everyone, in the canvases list's filter, as the Mac's filter menu marks it */
+  everyone: UserGroupIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -144,6 +147,7 @@ export const NewCanvas = icon(ICONS.newCanvas, 20, 1.8);
 export const Plus = icon(ICONS.plus, 20, 1.8);
 export const Stop = icon(ICONS.stop, 16, 2.2);
 export const BoardIcon = icon(ICONS.board, 16, 1.7);
+export const Everyone = icon(ICONS.everyone, 13, 1.7);
 
 /** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {

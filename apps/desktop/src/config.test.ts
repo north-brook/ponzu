@@ -11,6 +11,7 @@ import {
   configFor,
   type EnvironmentsFile,
   environmentOverride,
+  letThrough,
 } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import {
@@ -241,6 +242,42 @@ describe("PONZU_ENVIRONMENT_OVERRIDE", () => {
       configFor(true, { PONZU_ENVIRONMENT_OVERRIDE: "null" }, built({ test: true })),
     ).toThrow("PONZU_ENVIRONMENT_OVERRIDE has no usable");
     expect(environmentOverride({})).toBeNull();
+  });
+});
+
+describe("PONZU_FAKE_BACKEND", () => {
+  const env = { PONZU_FAKE_BACKEND: "1" };
+
+  test("a release and Ponzu Dev never take it, whatever their environment says", () => {
+    for (const variant of ["release", "dev"] as const) {
+      expect(configFor(true, env, built({ variant })).fakeBackend).toBe(false);
+    }
+  });
+
+  test("a test build and a run from a checkout take it, and only when it says 1", () => {
+    expect(configFor(true, env, built({ test: true })).fakeBackend).toBe(true);
+    expect(configFor(false, env, built()).fakeBackend).toBe(true);
+    for (const value of ["", "0", "true", "yes"]) {
+      expect(
+        configFor(true, { PONZU_FAKE_BACKEND: value }, built({ test: true })).fakeBackend,
+      ).toBe(false);
+    }
+    expect(configFor(true, {}, built({ test: true })).fakeBackend).toBe(false);
+  });
+
+  test("with the network refused, only a local studio server on the fake backend gets through", () => {
+    const dev = "http://localhost:5173";
+    const fake = { fakeBackend: true, studioDevUrl: dev };
+    expect(letThrough(`${dev}/src/main.tsx`, fake)).toBe(true);
+    expect(letThrough("ws://localhost:5173/?token=x", fake)).toBe(true);
+    // Another port on this computer, or anything elsewhere, is still refused.
+    expect(letThrough("http://localhost:3000/v1/me", fake)).toBe(false);
+    expect(letThrough("https://api.ponzu.design/v1/me", fake)).toBe(false);
+    // The smoke check (no fake backend), a packaged app (no server), or a server elsewhere: none.
+    expect(letThrough(`${dev}/`, { fakeBackend: false, studioDevUrl: dev })).toBe(false);
+    expect(letThrough(`${dev}/`, { fakeBackend: true, studioDevUrl: null })).toBe(false);
+    const remote = { fakeBackend: true, studioDevUrl: "https://studio.example.com" };
+    expect(letThrough("https://studio.example.com/", remote)).toBe(false);
   });
 });
 
