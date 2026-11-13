@@ -227,7 +227,7 @@ async function readableWeeks(
 export async function runRecapJob(
   deps: JobDeps,
   payload: unknown,
-  _job: RunningJob,
+  running: RunningJob,
 ): Promise<void> {
   const { db, log, clock } = deps;
   const { userId, friday, timeZone } = RecapPayload.parse(payload);
@@ -248,6 +248,32 @@ export async function runRecapJob(
     return;
   }
 
+  try {
+    await sendRecap(deps, { userId, friday, timeZone, first: person.recapFirstSentAt === null });
+  } catch (error) {
+    // The last attempt failed (Resend held off every time, or something threw): this Friday is
+    // given up, as a missed one is. Without the stamp the step, which leaves only a waiting job
+    // alone, would record a new one every five minutes until the person's Friday ends.
+    if (running.attempts >= running.maxAttempts) {
+      await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+      log.warn("recap_given_up", { userId, attempts: running.attempts });
+    }
+    throw error;
+  }
+}
+
+/** Read the week, keep what the person may still be told about, and send it or stamp it. */
+async function sendRecap(
+  deps: JobDeps,
+  {
+    userId,
+    friday,
+    timeZone,
+    first,
+  }: { userId: string; friday: string; timeZone: string; first: boolean },
+): Promise<void> {
+  const { db, log, clock } = deps;
+  const now = () => new Date(clock.now());
   const weeks = await readableWeeks(
     deps,
     userId,
@@ -266,8 +292,7 @@ export async function runRecapJob(
     numbers: week.numbers,
     weekday: weekdayIn(week.newest, timeZone),
   }));
-  // Read before the send and not changed by it, so a retry renders the same email.
-  const first = person.recapFirstSentAt === null;
+  // `first` was read before the send and is not changed by it, so a retry renders the same email.
   // The one door (send.ts): it reads the address and switch now, and throws RetryLater when
   // Resend could not take the email, so the job goes again with the same key.
   const outcome = await sendEmail(deps, {

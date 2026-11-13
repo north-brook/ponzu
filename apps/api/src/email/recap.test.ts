@@ -327,6 +327,31 @@ describe("the recap", () => {
     expect((await recapPerson(t.db, userId))!.recapSentOn).toBe("2026-01-02");
   });
 
+  test("a job that runs out of attempts gives up the Friday: the step never records another", async () => {
+    const t = await app();
+    const { canvas, userId } = await owner(t);
+    await merged(t, canvas.id, 41, "2026-01-01T12:00:00Z");
+    // Resend cannot take anything all evening.
+    t.mail.failNext(...Array.from({ length: 200 }, () => "unavailable" as const));
+    let at = new Date(FRIDAY).getTime();
+    const midnight = new Date("2026-01-03T05:00:00Z").getTime();
+    while (at < midnight) {
+      await cronAt(t, at);
+      at += 5 * 60_000;
+    }
+    expect(t.mail.sent).toEqual([]);
+    // One job, which ran its five attempts and failed; the Friday is done with, so the step did
+    // not start another every five minutes all evening.
+    const recorded = await recapJobs(t);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]!.failedAt).not.toBeNull();
+    expect(await recapPerson(t.db, userId)).toEqual({
+      recapSentOn: "2026-01-02",
+      recapFirstSentAt: null,
+    });
+    expect(t.logs.some((line) => line.event === "recap_given_up")).toBe(true);
+  }, 60_000);
+
   test("a deleted account's job completes and sends nothing", async () => {
     const t = await app();
     await enqueueJob(t.db, {

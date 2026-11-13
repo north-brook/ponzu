@@ -124,6 +124,29 @@ describe("when it is due", () => {
     expect(await numbers("2026-11-13")).toEqual([4]);
   });
 
+  test("who is quiet uses the same week: its first minute counts, the minute before does not", async () => {
+    // Each person's only merge: at 15:00 EDT last Friday (the week's first minute), at 14:59 EDT
+    // last Friday (the week before), and at 15:00 EST this Friday (next week's first minute).
+    const first = await person();
+    const before = await person();
+    const after = await person();
+    await notice((await canvasOf(first)).id, 1, "2026-10-30T19:00:00Z");
+    await notice((await canvasOf(before)).id, 1, "2026-10-30T18:59:00Z");
+    await notice((await canvasOf(after)).id, 1, "2026-11-06T20:00:00Z");
+    for (const id of [first, before, after]) {
+      await stampRecapSent(db, { userId: id, friday: "2026-10-30", sent: false, now: new Date() });
+    }
+
+    const now = new Date("2026-11-06T20:00:00Z");
+    expect(await stampQuietRecaps(db, { now })).toBe(2);
+    expect(await due(now.toISOString())).toEqual([
+      { userId: first, friday: "2026-11-06", timeZone: "America/New_York" },
+    ]);
+    expect((await recapPerson(db, first))!.recapSentOn).toBe("2026-10-30");
+    expect((await recapPerson(db, before))!.recapSentOn).toBe("2026-11-06");
+    expect((await recapPerson(db, after))!.recapSentOn).toBe("2026-11-06");
+  });
+
   test("Kolkata and Chatham are timed in their own zones", async () => {
     const kolkata = await person({ timeZone: "Asia/Kolkata" });
     const chatham = await person({ timeZone: "Pacific/Chatham" });

@@ -3096,7 +3096,8 @@ Every five minutes, from Friday 00:00 UTC to Saturday 13:00 UTC (outside those h
 be Friday afternoon anywhere, and the step reads nothing), the `recaps` step stamps in one
 statement everyone due with no merge from a canvas they own (`users.recap_sent_on`, the Friday),
 then records an `email.recap` job keyed `recap:<user>:<Friday>` for each of up to 20 of the rest
-and runs them one after another. A Friday missed entirely is skipped, never caught up. The job
+and runs them one after another. A Friday missed entirely is skipped, never caught up, and so is
+one whose job runs out of attempts (its last attempt stamps the Friday as it fails). The job
 keeps a canvas only while the person still owns it, is a member of its workspace now, and could
 read it when it was last merged (the kept access answer judged at that merge, not at send time,
 so a person who has not opened Ponzu since still hears). It sends with Resend's key
