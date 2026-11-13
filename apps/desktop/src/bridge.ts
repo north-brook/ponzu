@@ -132,7 +132,7 @@ export interface PictureRequest {
 
 /**
  * A comment's picture as the picture window drew it: its two WebP files; `empty`, nothing round
- * the pin to show, so the comment goes without one by design; or `failed`, with why.
+ * the pin to show, so the comment rightly goes without one; or `failed`, with why.
  */
 export type PictureAnswer =
   | { ok: true; light: Uint8Array; dark: Uint8Array }
