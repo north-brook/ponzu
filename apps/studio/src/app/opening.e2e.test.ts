@@ -137,7 +137,15 @@ describe.skipIf(!chromiumPath)("opening a canvas, its answers slow", () => {
     );
 
   test("the first time: the mark from the row at once, the action's room held, and the action lands in it", async () => {
-    const painted = await firstPaint(page, row(ids.first));
+    // Its answers kept in hand until the first frame is measured: the frame is the one before
+    // they are in however long the machine takes to paint it, not only while LATENCY outlasts it.
+    await page.evaluate(() => window.ponzuFake!.holdAnswers());
+    let painted: Painted;
+    try {
+      painted = await firstPaint(page, row(ids.first));
+    } finally {
+      await page.evaluate(() => window.ponzuFake!.releaseAnswers());
+    }
     expect(painted.mark?.label).toMatch(/^Pull request #\d+$/);
     expect(painted.action).toBeNull();
     // Ready's room, unseen: the mark already stands where it will.

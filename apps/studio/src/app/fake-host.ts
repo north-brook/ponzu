@@ -58,6 +58,15 @@ export interface FakeWorld {
   /** The app's asks of the API: how many it has made, and how many it is still waiting on. */
   answers: { asked: number; waiting: number };
   /**
+   * Keep every answer the app asks for from now in hand until `releaseAnswers`: the asks are
+   * made, and counted waiting, but none comes back. For a test of what the window shows before
+   * an answer is in, so that holds however slowly the machine paints, not only while the
+   * answer's `latency` outlasts a frame.
+   */
+  holdAnswers(): void;
+  /** Every held answer comes back, and the ones asked for from now come as they would. */
+  releaseAnswers(): void;
+  /**
    * With `?beat=held`, the beat after a send from the create page (cloud/create/landing.ts)
    * passes only when `end` says: `waiting` counts the beats under way, each from the moment
    * the composer lands until it ends or the person goes to the thread. Without it, null: the
@@ -140,7 +149,9 @@ export function fakeHost(): Host {
     };
   }
   const answers = { asked: 0, waiting: 0 };
-  countAnswers(client.api, answers);
+  /** While a test holds the answers: what lets them come back. */
+  let answersHeld: { promise: Promise<void>; resolve: () => void } | null = null;
+  countAnswers(client.api, answers, () => answersHeld?.promise ?? null);
   const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
@@ -248,6 +259,18 @@ export function fakeHost(): Host {
     signInsStarted: 0,
     signInsEnded: 0,
     answers,
+    holdAnswers() {
+      if (answersHeld) return;
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      answersHeld = { promise, resolve };
+    },
+    releaseAnswers() {
+      answersHeld?.resolve();
+      answersHeld = null;
+    },
     beats: beats && {
       get waiting() {
         return beats.size;
@@ -334,15 +357,24 @@ function fakeMac(sendLink: (link: DeepLink) => void): { host: HostNotifications;
 /**
  * Counts, in place, every ask of `api` (each method of it and of the groups in it): Realtime's
  * reads too, which go through the same object. A test waits on `waiting` reaching none rather
- * than for a guess at how long the slowest answer takes.
+ * than for a guess at how long the slowest answer takes. While `held` gives a promise, an
+ * answer comes back only once it has settled (holdAnswers).
  */
-function countAnswers(api: object, answers: FakeWorld["answers"]) {
+function countAnswers(
+  api: object,
+  answers: FakeWorld["answers"],
+  held: () => Promise<void> | null,
+) {
   const methods = api as Record<string, unknown>;
   for (const [key, value] of Object.entries(methods)) {
     if (typeof value === "function") {
       methods[key] = (...args: unknown[]) => {
-        const result: unknown = value.apply(api, args);
-        if (!(result instanceof Promise)) return result;
+        const asked: unknown = value.apply(api, args);
+        if (!(asked instanceof Promise)) return asked;
+        const gate = held();
+        // A refusal while held is the caller's once it comes back, not unhandled before then.
+        if (gate) asked.catch(() => {});
+        const result = gate ? gate.then(() => asked) : asked;
         answers.asked++;
         answers.waiting++;
         const done = () => {
@@ -352,7 +384,7 @@ function countAnswers(api: object, answers: FakeWorld["answers"]) {
         return result;
       };
     } else if (value && typeof value === "object") {
-      countAnswers(value, answers);
+      countAnswers(value, answers, held);
     }
   }
 }

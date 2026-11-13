@@ -152,44 +152,51 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.evaluate(() => window.ponzuFake!.holdSignIn());
     // Timed in the page, on its own clock: when the press landed, and every time the button
     // changed between waiting and ready after it, however long the test's round trips take.
+    // The moment it is waiting, still in the page and so inside the cooldown however slow the
+    // machine, it is pressed again, and the window comes back from the browser.
+    interface SignInSeen {
+      pressed: number;
+      changes: { at: number; busy: boolean }[];
+      /** How many sign-ins had started once the press while it waited had landed. */
+      startedAfterSecondPress: number;
+    }
     await page.evaluate(() => {
       const el = [...document.querySelectorAll("button")].find((b) =>
         b.textContent?.includes("Continue with GitHub"),
       )!;
-      const seen = { pressed: -1, changes: [] as { at: number; busy: boolean }[] };
-      (window as { signInSeen?: typeof seen }).signInSeen = seen;
+      const seen: SignInSeen = { pressed: -1, changes: [], startedAfterSecondPress: -1 };
+      (window as { signInSeen?: SignInSeen }).signInSeen = seen;
       el.addEventListener("click", () => {
         if (seen.pressed < 0) seen.pressed = performance.now();
       });
       let was = el.getAttribute("aria-busy") === "true";
       new MutationObserver(() => {
         const now = el.getAttribute("aria-busy") === "true";
-        if (now !== was) seen.changes.push({ at: performance.now(), busy: now });
+        if (now === was) return;
         was = now;
+        seen.changes.push({ at: performance.now(), busy: now });
+        if (!now || seen.changes.length > 1) return;
+        // A press while it waits starts nothing.
+        el.click();
+        seen.startedAfterSecondPress = window.ponzuFake!.signInsStarted;
+        // Back in the window while the browser is still out: nothing ends at the old 1.5 s
+        // grace from then, only once the cooldown is out.
+        window.dispatchEvent(new Event("blur"));
+        window.dispatchEvent(new Event("focus"));
       }).observe(el, { attributes: true, attributeFilter: ["aria-busy"] });
     });
     await button.click();
-    await waitUntil(async () => (await busy()) === "true");
+    await waitUntil(() =>
+      page.evaluate(() => (window as { signInSeen?: SignInSeen }).signInSeen!.changes.length > 0),
+    );
     await shoot("1-sign-in-waiting");
-    // No Cancel any more, and a press while it waits starts nothing.
+    // No Cancel any more.
     expect(await page.getByRole("button", { name: "Cancel" }).count()).toBe(0);
-    await button.click({ force: true });
-    expect(await page.evaluate(() => window.ponzuFake!.signInsStarted)).toBe(1);
-
-    // Back in the window while the browser is still out: nothing ends at the old 1.5 s grace
-    // from then, only once the cooldown is out.
-    await page.evaluate(() => {
-      window.dispatchEvent(new Event("blur"));
-      window.dispatchEvent(new Event("focus"));
-    });
     await waitUntil(async () => (await busy()) === null);
     // The attempt is still out in the browser: nothing the window did ended it.
     expect(await page.evaluate(() => window.ponzuFake!.signInsEnded)).toBe(0);
-    const seen = await page.evaluate(
-      () =>
-        (window as { signInSeen?: { pressed: number; changes: { at: number; busy: boolean }[] } })
-          .signInSeen!,
-    );
+    const seen = await page.evaluate(() => (window as { signInSeen?: SignInSeen }).signInSeen!);
+    expect(seen.startedAfterSecondPress).toBe(1);
     // Waiting from the press, then ready once: never ready in between.
     expect(seen.changes.map((c) => c.busy)).toEqual([true, false]);
     // Ready no sooner than the cooldown (COOLDOWN_MS, 4 s, less a frame) after the press.
