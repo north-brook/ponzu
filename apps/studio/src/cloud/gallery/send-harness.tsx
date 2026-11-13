@@ -68,13 +68,11 @@ export function SendHarness({ initialPrompt = "" }: { initialPrompt?: string }) 
     setSent({ key: crypto.randomUUID(), origin });
     if (failAfter !== null) {
       setTimeout(() => {
-        // Back to the page as it was: the words, the project; no second travel.
+        // Back to the page as it was: the words, the project, the caret (the page gives it back);
+        // no second travel.
         setSent(null);
         setItems(null);
         setError("That canvas couldn't be made. Try again.");
-        requestAnimationFrame(() =>
-          document.querySelector<HTMLTextAreaElement>("[data-create-composer] textarea")?.focus(),
-        );
       }, failAfter);
     } else {
       setPrompt("");

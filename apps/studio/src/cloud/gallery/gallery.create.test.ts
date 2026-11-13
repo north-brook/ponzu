@@ -48,7 +48,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.goto(`${server.url}/gallery.html?board=${board}&theme=light`);
     await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
   };
-  /** Waits for focus to land on the element named `name` (its label, else its text). */
+  /**
+   * Waits for focus to land on the element named `name` (its label, else its text). No limit of
+   * its own: focus arrives or it doesn't, and the test's timeout says which.
+   */
   const focusOn = (name: string) =>
     page.waitForFunction(
       (name) => {
@@ -56,7 +59,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         return (el?.getAttribute("aria-label") ?? el?.textContent?.trim()) === name;
       },
       name,
-      { timeout: 2000 },
+      { timeout: 0 },
     );
 
   test("at the smallest window the active page tab stays whole and clear of the fade", async () => {
@@ -281,6 +284,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector('[role="menu"]');
     await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
+    // Radix gives focus back a task after the menu leaves (FocusScope's unmount timer), and a
+    // busy browser takes the next key before that timer: wait for it, or Shift+Tab leaves from
+    // the page itself and the focus coming back late is not the keyboard's.
+    await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
     expect(await ring()).toBe("none");
     // Reached with Tab, it is the keyboard's, and the menu gives it back ring and all.
     await page.keyboard.press("Shift+Tab");
@@ -649,7 +656,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
         return `${pane}:${el?.textContent}` === expected;
       },
       expected,
-      { timeout: 2000 },
+      { timeout: 0 },
     );
   };
 
@@ -958,6 +965,41 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     // Once the thread's pane has closed again, the composer is where it was.
     await page.waitForFunction(() => !document.querySelector("[data-pane-motion]"));
     expect(await sendCard()).toEqual(before);
+    await focusOn("Describe what you want to make");
+  });
+
+  test("a send that fails gives the caret back even when a frame comes before the page has drawn", async () => {
+    await openSend("&fail=150&beat=600000");
+    // On a busy machine the browser can run a frame before React draws what a failure set, so
+    // anything that waits for one frame finds the composer still hidden. Forced here: a frame
+    // asked for while a timer's callback runs (as the failure's is) comes before the drawing.
+    await page.evaluate(() => {
+      let inTimer = false;
+      const frame = window.requestAnimationFrame.bind(window);
+      const timer = window.setTimeout.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        if (!inTimer) return frame(callback);
+        queueMicrotask(() => callback(performance.now()));
+        return 0;
+      };
+      window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: unknown[]) =>
+        timer(
+          typeof handler === "function"
+            ? (...args: unknown[]) => {
+                inTimer = true;
+                try {
+                  (handler as (...a: unknown[]) => void)(...args);
+                } finally {
+                  inTimer = false;
+                }
+              }
+            : handler,
+          ms,
+          ...rest,
+        )) as typeof window.setTimeout;
+    });
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("[data-create-composer]:not([data-launched])");
     await focusOn("Describe what you want to make");
   });
 
