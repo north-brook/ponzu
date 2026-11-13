@@ -536,6 +536,139 @@ describe("a repo changing visibility", () => {
   });
 });
 
+describe("when the person's own list cannot settle a read", () => {
+  /** Lists of repos GitHub cuts short, for the length of `work`. */
+  async function cutShort<T>(work: () => Promise<T>): Promise<T> {
+    const { github } = t.deps;
+    const list = github.listInstallationRepositories;
+    github.listInstallationRepositories = async () => ({ items: [], complete: false });
+    try {
+      return await work();
+    } finally {
+      github.listInstallationRepositories = list;
+    }
+  }
+
+  test("made public a moment ago, its token dead: a stranger stays a stranger", async () => {
+    const world = await orgWorld("private");
+    const stranger = world.people.stranger!;
+    const open = async () =>
+      (await call(t, stranger.headers, "GET", `/v1/canvases/${world.canvas.id}`)).status;
+    expect(await open()).toBe(404);
+
+    // GitHub now answers `read` for anybody; Ponzu still has the repo as private, and the
+    // stranger's own list cannot be read to say otherwise.
+    world.main.fake.private = false;
+    t.github.revokeTokens(stranger.github.id);
+    t.clock.advance(61_000);
+    expect(await open()).toBe(404);
+    expect(
+      await getRepoAccess(t.db, { userId: stranger.userId, repoId: world.main.id }),
+    ).toMatchObject({ permission: "none" });
+  });
+
+  test("made public a moment ago, a list cut short: a stranger stays a stranger", async () => {
+    const world = await orgWorld("private");
+    const stranger = world.people.stranger!;
+    world.main.fake.private = false;
+    await cutShort(async () => {
+      t.clock.advance(61_000);
+      const listed = await call(
+        t,
+        stranger.headers,
+        "GET",
+        `/v1/workspaces/${world.workspaceId}/canvases`,
+      );
+      expect(listed.body.canvases).toEqual([]);
+      t.clock.advance(61_000);
+      expect(
+        (await call(t, stranger.headers, "GET", `/v1/canvases/${world.canvas.id}`)).status,
+      ).toBe(404);
+    });
+  });
+
+  test("still private, its token dead: a read-only collaborator keeps it", async () => {
+    const world = await orgWorld("private");
+    const reader = world.people.outsideReader!;
+    t.github.revokeTokens(reader.github.id);
+    t.clock.advance(61_000);
+    const opened = await call(t, reader.headers, "GET", `/v1/canvases/${world.canvas.id}`);
+    expect(opened.status).toBe(200);
+    expect(opened.body.access).toBe("read");
+  });
+
+  test("a list cut short before a public repo it never reached keeps an organization member's read", async () => {
+    // More repos with canvases than a cut-short list asks about one at a time.
+    const tag = nextId;
+    nextId += 40;
+    const people = await signIn(tag, ["owner", "member"]);
+    const login = `wide-${tag}`;
+    const repositories: FakeRepository[] = Array.from({ length: 22 }, (_, i) => ({
+      id: tag + 10 + i,
+      fullName: `${login}/r${i}`,
+      private: false,
+      access: {},
+    }));
+    const installation: FakeInstallation = {
+      id: tag + 1,
+      account: {
+        id: tag + 2,
+        login,
+        type: "Organization",
+        owners: [people.owner!.github.id],
+        members: [people.member!.github.id],
+      },
+      repositorySelection: "all",
+      // And one private repo given them, with no canvas, so the installation is theirs to see.
+      repositories: [
+        ...repositories,
+        {
+          id: tag + 5,
+          fullName: `${login}/own`,
+          private: true,
+          access: { [people.member!.github.id]: "write" },
+        },
+      ],
+    };
+    t.github.installations.push(installation);
+    for (const person of Object.values(people)) await syncGithub(t.deps, person.userId);
+    const workspace = (await getWorkspaceByInstallation(t.db, installation.id))!;
+    const canvases: Canvas[] = [];
+    for (const repository of repositories) {
+      const repo = await repoRow(repository.id);
+      canvases.push(
+        await createCanvas(t.db, {
+          workspaceId: workspace.id,
+          repoId: repo.id,
+          ownerId: people.owner!.userId,
+          claudeAccountId: null,
+          name: repository.fullName,
+          branch: null,
+          doc: emptyDoc(repository.fullName),
+        }),
+      );
+    }
+    const member = people.member!;
+    // The last repo's answer is the newest, so a cut-short list asks about the 21 others first
+    // and stops at its limit before this one.
+    const last = await repoRow(repositories[21]!.id);
+    await recordRepoAccess(t.db, [
+      {
+        userId: member.userId,
+        repoId: last.id,
+        permission: "read",
+        checkedAt: new Date(t.clock.now() + 1),
+      },
+    ]);
+    await cutShort(async () => {
+      t.clock.advance(61_000);
+      const opened = await call(t, member.headers, "GET", `/v1/canvases/${canvases[21]!.id}`);
+      expect(opened.status).toBe(200);
+      expect(opened.body.access).toBe("read");
+    });
+  });
+});
+
 describe("leaving the organization", () => {
   test("a member who leaves loses the public repos they were never given, at their next read", async () => {
     const world = await orgWorld("public");

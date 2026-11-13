@@ -333,11 +333,11 @@ GitHub's, by numeric ids, and reaches the table one of two ways:
   list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
   the oldest of those whose answer a reader acts on (one that lets them read, or a
   repo with a canvas), up to 20 at a time, are asked about as the App; for those a
-  `read` stands on a private repo (GitHub answers `read` there only to someone it gave
-  the repo) and, on a public one, only for a member of the organization, since nothing
-  else can say whether it was given. A repo the cut-short list left out and did not get
-  to asking about is settled when it is opened as for a dead token (below), never by
-  an answer kept from before.
+  `read` stands for a member of the organization (asked with that list) and, for anyone
+  else, only on a repo that is private (GitHub answers `read` there only to someone it
+  gave the repo), since nothing else can say whether it was given. A repo the cut-short
+  list left out and did not get to asking about is settled the same way when it is
+  opened, never by an answer kept from before.
 - **A question, as the App.** `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
   about one repo, asked by `requireCanvas`, `POST /v1/canvases` and a review's check
   when there is no fresh answer. It takes the answer only when the account it names
@@ -345,7 +345,10 @@ GitHub's, by numeric ids, and reaches the table one of two ways:
   public repo for anybody, so a `read` from it is settled by the person's own list
   (above), which also keeps its answers. When their GitHub token is dead nothing can
   settle it: it stands on a private repo (where GitHub answers `read` only to someone it
-  gave the repo) and is `none` on a public one. For someone who never signed in (a
+  gave the repo) and is `none` on a public one. Wherever a `read` stands because the repo
+  is private, the App first asks GitHub whether it still is (`GET /repos/{owner}/{repo}`
+  with a token for that repo alone), since one made public a moment ago is still private
+  in Ponzu's copy while GitHub answers `read` for anybody; an answer it cannot get is no. For someone who never signed in (a
   review's author) it is `none`; only whether they can push is ever asked of them.
 
 Whether a repo is public is the App's word, kept in `repos.private` from every read of
@@ -353,7 +356,8 @@ the installation. A repo that goes public or private is read again at once by it
 `repository` webhook, which also makes every answer about it stale; if that webhook is
 lost, the installation is read again within ten minutes of any member's sync, and the
 cron reads every installation at least every six hours. Until then: a repo made public
-still counts as private, which gives nobody more than GitHub's list does; a repo made
+still counts as private, which gives nobody more than GitHub's list does (and where only
+its being private would let a `read` stand, GitHub is asked first, above); a repo made
 private still counts as public, which lets a member of its organization who was not
 given it open its canvases until Ponzu hears. Anything Ponzu cannot tell is `none`.
 

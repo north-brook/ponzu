@@ -236,6 +236,8 @@ export interface GithubRepositoryAbout {
   language: string | null;
   defaultBranch: string;
   archived: boolean;
+  /** Whether GitHub says it is private now. */
+  private: boolean;
 }
 
 export interface GithubTree {
@@ -704,6 +706,7 @@ export function createGithub({
         language: stringOrNull(repository.language),
         defaultBranch: repository.default_branch,
         archived: repository.archived === true,
+        private: repository.private === true,
       };
     },
 

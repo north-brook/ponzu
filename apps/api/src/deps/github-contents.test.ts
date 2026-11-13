@@ -103,7 +103,7 @@ test("GitHub failing is an UpstreamError with its status", async () => {
   expect(error.status).toBe(409);
 });
 
-test("a repository's page: description, topics and default branch", async () => {
+test("a repository's page: description, topics, default branch and whether it is private", async () => {
   const { github } = githubServing(() =>
     Response.json({
       description: "A plant shop",
@@ -112,6 +112,7 @@ test("a repository's page: description, topics and default branch", async () => 
       language: "TypeScript",
       default_branch: "trunk",
       archived: false,
+      private: true,
     }),
   );
   expect(await github.getRepositoryAbout(null, "o/r")).toEqual({
@@ -121,5 +122,6 @@ test("a repository's page: description, topics and default branch", async () => 
     language: "TypeScript",
     defaultBranch: "trunk",
     archived: false,
+    private: true,
   });
 });

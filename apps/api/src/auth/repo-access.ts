@@ -138,7 +138,7 @@ export async function repoPermission(
   }
   if (permission === "read") {
     if (unlisted) {
-      permission = givenRead(unlisted) ? "read" : "none";
+      permission = (await givenRead(deps, { ...unlisted, installationId, repo })) ? "read" : "none";
     } else if (user.id === null) {
       return "none";
     } else {
@@ -177,7 +177,7 @@ async function settleRead(
     asked,
   }: {
     user: RepoAsker & { id: string };
-    repo: { id: string };
+    repo: { id: string; githubRepoId: number; fullName: string };
     installationId: number;
     /** When GitHub was asked as the App. */
     asked: number;
@@ -185,40 +185,70 @@ async function settleRead(
 ): Promise<RepoPermission> {
   const visibility = await getRepoVisibility(deps.db, repo.id);
   if (visibility === null) return "none";
+  let reached: Awaited<ReturnType<typeof recordReposReachedBy>>;
   try {
-    await recordReposReachedBy(deps, {
+    reached = await recordReposReachedBy(deps, {
       user,
       workspaceId: visibility.workspaceId,
       installationId,
     });
   } catch (error) {
     if (!(error instanceof ApiError && error.code === "github_reauth_required")) throw error;
-    return keepRead(deps, { userId: user.id, repo, visibility, asked });
+    // With their token dead, whether they are in the account cannot be asked: no.
+    return keepRead(deps, {
+      userId: user.id,
+      repo,
+      installationId,
+      private: visibility.private,
+      readsPublic: false,
+      asked,
+    });
   }
   const listed = await getRepoAccess(deps.db, { userId: user.id, repoId: repo.id });
   // A list cut short that left this repo out, and did not get to asking about it, says nothing
-  // of it: the answer kept from before is not trusted, whatever it says.
+  // of it: the answer kept from before is not trusted, whatever it says. Whether they are in the
+  // account was asked with that list, and still counts.
   if (!listed || listed.checkedAt.getTime() < asked) {
-    return keepRead(deps, { userId: user.id, repo, visibility, asked });
+    return keepRead(deps, {
+      userId: user.id,
+      repo,
+      installationId,
+      private: visibility.private,
+      readsPublic: reached.readsPublic,
+      asked,
+    });
   }
   return listed.permission;
 }
 
 /**
  * A `read` GitHub's question as the App gave, when the person's own list could not settle it:
- * it stands (and is kept) on a private repo, where GitHub answers `read` only to someone it gave
- * the repo, and is `none` on a public one.
+ * it stands (and is kept) when `givenRead` says GitHub gave it them, and is `none` otherwise.
  */
 async function keepRead(
   deps: RepoAccessDeps,
   {
     userId,
     repo,
-    visibility,
+    installationId,
+    private: isPrivate,
+    readsPublic,
     asked,
-  }: { userId: string; repo: { id: string }; visibility: { private: boolean }; asked: number },
+  }: {
+    userId: string;
+    repo: { id: string; githubRepoId: number; fullName: string };
+    installationId: number;
+    private: boolean;
+    readsPublic: boolean;
+    asked: number;
+  },
 ): Promise<RepoPermission> {
-  const permission = givenRead({ readsPublic: false, private: visibility.private })
+  const permission = (await givenRead(deps, {
+    readsPublic,
+    private: isPrivate,
+    installationId,
+    repo,
+  }))
     ? "read"
     : "none";
   await recordRepoAccess(deps.db, [
@@ -229,16 +259,54 @@ async function keepRead(
 
 /**
  * Whether a `read` GitHub's question as the App gave is one GitHub gave the person, from what
- * is known without their list: always on a private repo (nobody else is answered `read` there),
- * and on a public one only for someone GitHub gives every public repo of the account.
+ * is known without their list: for someone GitHub gives every public repo of the account
+ * (`readsPublic`), yes; otherwise only on a repo that is private now, where nobody else is
+ * answered `read`. Ponzu's copy may say private for a repo made public a moment ago, whose
+ * notice has not reached it (and then GitHub answers `read` for anybody), so a repo kept as
+ * private is asked about once more, as the App; an answer that cannot be had is no.
  */
-const givenRead = ({
-  readsPublic,
-  private: isPrivate,
-}: {
-  readsPublic: boolean;
-  private: boolean;
-}) => isPrivate || readsPublic;
+async function givenRead(
+  deps: RepoAccessDeps,
+  {
+    readsPublic,
+    private: isPrivate,
+    installationId,
+    repo,
+  }: {
+    readsPublic: boolean;
+    private: boolean;
+    installationId: number;
+    repo: { githubRepoId: number; fullName: string };
+  },
+): Promise<boolean> {
+  if (readsPublic) return true;
+  if (!isPrivate) return false;
+  return privateNow(deps, { installationId, repo });
+}
+
+/**
+ * Whether GitHub says, now, that a repo is private: asked as the App, with a token for that repo
+ * alone and only its metadata. Any failure is no, the tighter answer.
+ */
+async function privateNow(
+  deps: RepoAccessDeps,
+  {
+    installationId,
+    repo,
+  }: { installationId: number; repo: { githubRepoId: number; fullName: string } },
+): Promise<boolean> {
+  try {
+    const { token } = await deps.github.createInstallationToken({
+      installationId,
+      repositoryIds: [repo.githubRepoId],
+      permissions: { metadata: "read" },
+    });
+    return (await deps.github.getRepositoryAbout(token, repo.fullName)).private;
+  } catch (error) {
+    deps.log.warn("repo_visibility_unread", { repo: repo.fullName, error: String(error) });
+    return false;
+  }
+}
 
 /** Whether a permission lets its holder steer a canvas: send messages, answer, merge. */
 export const canWrite = (permission: RepoPermission) =>
@@ -288,7 +356,7 @@ export async function recordReposReachedBy(
      */
     readsPublic?: boolean;
   },
-): Promise<{ missing: number[] }> {
+): Promise<{ missing: number[]; readsPublic: boolean }> {
   const checkedAt = new Date(deps.clock.now());
   const userToken = token ?? (await githubUserToken(deps, user.id));
   let listed: Awaited<ReturnType<Deps["github"]["listInstallationRepositories"]>>;
@@ -336,7 +404,7 @@ export async function recordReposReachedBy(
       ),
     );
   }
-  return recorded;
+  return { ...recorded, readsPublic };
 }
 
 /**
