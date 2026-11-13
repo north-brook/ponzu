@@ -2933,9 +2933,10 @@ from the sidebar deletes this Mac's device first; signing out from the menu leav
 forgotten after 30 days unseen. Either way the main process takes every banner away, from the
 screen and Notification Center, and clears the dock's number, so whoever signs in next sees
 none of them. Settings › Notifications › Where lists the person's Macs and iPhones,
-this one first as "This Mac". Its Email group shows only while `email.available` (see "Email").
-Every switch there saves only itself (a PATCH of the one key), so a Mac showing switches from
-before an email's "Stop these emails" cannot turn that email back on. macOS shows an
+this one first as "This Mac". Settings › Notifications › Email, under Where, shows only while
+`email.available` (see "Email"). Every switch in Settings › Notifications saves only itself (a
+PATCH of the one key), so a Mac showing switches from before an email's "Stop these emails"
+cannot turn that email back on. macOS shows an
 app's notifications only when the app is signed: Ponzu Local's are refused, which the studio
 logs once and goes on.
 

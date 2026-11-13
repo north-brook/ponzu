@@ -50,7 +50,7 @@ describe("ping preferences", () => {
       },
       devices: [],
       badge: 0,
-      // No mailer in this deployment: the Email row is not shown.
+      // No mailer in this deployment: Settings shows no Email group.
       email: { address: "maya@example.com", available: false },
       timeZone: null,
     });
