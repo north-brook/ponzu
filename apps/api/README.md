@@ -487,7 +487,9 @@ production's minute ran before the schedule, and it stays until the schedule has
 firing in production, so production never goes a minute without a run. While both are on,
 production runs the route twice a minute, which the steps allow; the project's **Disable Cron
 Jobs** switch then turns the cron off without a deploy, and turning it back on is the way back
-(docs/production.md, "The minute"). Dev never ran the legacy cron. Vercel keeps a separate copy
+(docs/production.md, "The minute"). Once the cron is off, turn it back on before any rollback of
+production to a deployment from before the schedule: that rollback deletes the schedule, and the
+switch keeps the cron off, so nothing would run the minute. Dev never ran the legacy cron. Vercel keeps a separate copy
 of a static schedule for production and for each custom environment. Production's starts
 active on its first deploy. In the `dev` environment a new schedule starts inactive, and once enabled it stays
 as it was set across later deploys ([Managing Schedules](https://vercel.com/docs/schedules/manage)),

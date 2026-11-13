@@ -65,7 +65,7 @@ On a Mac where a checkout ran before the rename, that run made a "Ponzu Dev Safe
 keychain item, owned by node_modules' Electron.app. Delete it in Keychain Access before Ponzu
 Dev's first launch (it only sealed that old checkout session, which Ponzu Local no longer reads),
 and Ponzu Dev makes its own without asking; never answer Always Allow for it. Update every
-checkout to the current `cloud` before its next `bun run start`: an older one still calls itself
+checkout to the current `main` before its next `bun run start`: an older one still calls itself
 Ponzu Dev and would open Ponzu Dev's folder. Nothing is deleted from code: Ponzu Preview's app
 and folder stay for the person to remove. The API still links back to `ponzu-preview://` for a
 Ponzu Preview that asks.

@@ -46,9 +46,9 @@ const RULESET_FILES = [
 
 /** Environments that do not exist until a founder step makes them. */
 const ENVIRONMENT_PENDING: Record<string, string> = {
-  // Made by hand, limited to `cloud`, before API_DEPLOY is set to true; otherwise the first dev
+  // Made by hand, limited to `main`, before API_DEPLOY is set to true; otherwise the first dev
   // deploy makes it with no branch limit (docs/production.md › The GitHub repository).
-  dev: "make it, limited to cloud, before setting API_DEPLOY=true",
+  dev: "make it, limited to main, before setting API_DEPLOY=true",
   production: "founder step D12",
 };
 

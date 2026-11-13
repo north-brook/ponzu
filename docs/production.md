@@ -766,6 +766,13 @@ comes first. A rollback to a deployment without the schedule deletes production'
 next deploy recreates it active, so after one, disable it again if the cron is meant to be the
 only run.
 
+**Rolling production back once Disable Cron Jobs is on.** Every production deployment before
+this change carries the cron and no schedule. Rolling back to one of them deletes production's
+schedule, and the cron does not come back by itself, because Disable Cron Jobs survives a
+rollback. Production would then have no minute at all: no job retries, and no sandbox put to
+sleep. So turn **Disable Cron Jobs** off first, confirm `crons.disabledAt` is null, and only then
+run `vercel rollback`. Before Disable Cron Jobs is turned on, a rollback needs nothing extra.
+
 ## Checking production
 
 `bun scripts/prod/check.ts --env dev|production [--json] [--deep]` is read-only and never asks

@@ -193,7 +193,7 @@ describe("evaluate on dev's recorded answers", () => {
         area: "github",
         status: "pending",
         says: 'the environment "dev" does not exist yet',
-        fix: "GitHub › the repository › Settings › Environments › dev (make it, limited to cloud, before setting API_DEPLOY=true)",
+        fix: "GitHub › the repository › Settings › Environments › dev (make it, limited to main, before setting API_DEPLOY=true)",
       },
       {
         id: "github.environment.production",
