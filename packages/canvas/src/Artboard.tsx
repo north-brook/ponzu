@@ -267,7 +267,11 @@ function roundRoot(root: ShadowRoot, artboard: AB, report?: (corners: Radii) => 
   const css = cornersCss(corners, "var(--pz-board-radius)");
   const style = root.ownerDocument.createElement("style");
   style.dataset.pzRound = "";
-  style.textContent = `:host{--pz-board-corners:${css}}[data-artboard]{border-radius:var(--pz-board-corners)!important}`;
+  // Each rule on the one element that uses it, never a custom property on :host: every element
+  // of the board inherits one, so writing it there (after the measure above has styled the board)
+  // restyled the whole board a second time. The arrival's layer reads the corners; nothing in
+  // the board does.
+  style.textContent = `[data-artboard]{border-radius:${css}!important}:host>[data-pz-arrive]{--pz-board-corners:${css}}`;
   root.prepend(style);
   if (measured) report?.(measured);
 }
