@@ -76,21 +76,23 @@ function world(opts: {
   );
   const conflicts: number[] = [];
   const waits: number[] = [];
-  const registrar = (userId = "usr_maya") =>
-    createRegistrar({
-      native,
-      devices,
-      store,
-      userId,
-      installId: async () => INSTALL,
-      name: "iPhone 16 Pro",
-      appVersion: "1.1.0+embedded",
-      onConflict: () => conflicts.push(1),
-      wait: async (ms) => {
-        waits.push(ms);
-      },
-    });
+  const deps = (userId = "usr_maya") => ({
+    native,
+    devices,
+    store,
+    userId,
+    installId: async () => INSTALL,
+    name: "iPhone 16 Pro",
+    appVersion: "1.1.0+embedded",
+    onConflict: () => conflicts.push(1),
+    wait: async (ms: number) => {
+      waits.push(ms);
+    },
+  });
+  const registrar = (userId = "usr_maya") => createRegistrar(deps(userId));
   return {
+    deps,
+    native,
     calls,
     kept,
     store,
@@ -239,7 +241,7 @@ test("signing out stops it: a heartbeat finding the device deleted registers not
   expect(w.calls).toEqual([]);
 });
 
-test("signed out while a registration was under way: its device id is not kept", async () => {
+test("signed out while a registration was under way: stop waits for it, and its device id is kept for the sign-out to delete", async () => {
   let answer: (value: { device: { id: string } }) => void = () => {};
   const w = world({ register: () => new Promise((resolve) => (answer = resolve)) });
   const registrar = w.registrar();
@@ -248,10 +250,53 @@ test("signed out while a registration was under way: its device id is not kept",
     await Promise.resolve();
   }
   expect(w.calls.some((c) => c.startsWith("register:"))).toBe(true);
-  registrar.stop();
+  let stoppedAll = false;
+  const stopping = registrar.stop().then(() => {
+    stoppedAll = true;
+  });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  // The sign-out reads the device's id only after stop: not before the registration ends.
+  expect(stoppedAll).toBe(false);
   answer({ device: { id: "dev_1" } });
+  await stopping;
   expect(await under).toBe("stopped");
-  expect(await w.store.read("usr_maya")).toBeNull();
+  expect(await w.store.read("usr_maya")).toBe("dev_1");
+});
+
+test("signed out while the install id was read: nothing is registered", async () => {
+  let give: (id: string) => void = () => {};
+  const w = world({});
+  const registrar = createRegistrar({
+    ...w.deps(),
+    installId: () => new Promise<string>((resolve) => (give = resolve)),
+  });
+  const under = registrar.sync();
+  for (let i = 0; i < 100 && !w.calls.includes("token"); i++) await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const stopping = registrar.stop();
+  give(INSTALL);
+  await stopping;
+  expect(await under).toBe("stopped");
+  expect(w.calls.some((c) => c.startsWith("register:"))).toBe(false);
+});
+
+test("signed out while a new token came: the device is not patched", async () => {
+  let release: () => void = () => {};
+  const w = world({});
+  await w.store.write("usr_maya", "dev_1");
+  const registrar = createRegistrar({
+    ...w.deps(),
+    native: {
+      ...w.native,
+      expoToken: () => new Promise<string>((resolve) => (release = () => resolve(NEW_TOKEN))),
+    },
+  });
+  const changing = registrar.tokenChanged();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await registrar.stop();
+  release();
+  await changing;
+  expect(w.calls.some((c) => c.startsWith("update:"))).toBe(false);
 });
 
 test("two registrations asked at once send one", async () => {

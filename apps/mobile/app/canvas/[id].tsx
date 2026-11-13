@@ -592,7 +592,8 @@ export default function CanvasScreen() {
   };
   /**
    * A link in Ponzu's reply: a page or board of this canvas is shown in place, with the sheet
-   * gone; another canvas opens; anything else prose.ts let through leaves the app.
+   * gone; another canvas opens, with this one's sheet closed and its thread read as a swipe
+   * leaves it; anything else prose.ts let through leaves the app.
    */
   const openLink = (url: string, readSeq: number | null) => {
     const route = threadLink(url, config().scheme);
@@ -602,6 +603,7 @@ export default function CanvasScreen() {
       return;
     }
     if (route) {
+      closeChat(readSeq);
       router.push(pathOf(route) as Href);
       return;
     }

@@ -277,6 +277,25 @@ describe("the chat sheet", () => {
     expect(screen.queryAllByRole("link", { name: "this" })).toHaveLength(0);
   });
 
+  test("a link to another canvas opens it, and this sheet closes with its thread read", async () => {
+    await openPricing();
+    await act(async () => {
+      agent().say("See [the other one](https://ponzu.design/canvases/cnv_0000000000000099).");
+    });
+    await openChat();
+    const link = await screen.findByText("the other one");
+    (WebBrowser.openBrowserAsync as jest.Mock).mockClear();
+    const seen = jest.spyOn(backend.api.canvases, "seen");
+    const last = pricing().thread.at(-1)!.item.seq;
+    await act(async () => {
+      fireEvent.press(link);
+    });
+    expect(mockPush).toHaveBeenCalledWith(expect.stringContaining("cnv_0000000000000099"));
+    await waitFor(() => expect(screen.queryByTestId("chat-sheet")).toBeNull());
+    expect(seen).toHaveBeenCalledWith(pricing().id, expect.objectContaining({ threadSeq: last }));
+    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+  });
+
   test("opened by a link (sheet=chat): up at once, and its field waits for a tap", async () => {
     await openPricing({ sheet: "chat" });
     expect(await screen.findByTestId("chat-sheet")).toBeTruthy();

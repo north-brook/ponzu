@@ -127,6 +127,9 @@ export class AskStore {
         this.closedUnder(id, answeredBy(error));
       } else {
         this.say(refusal(error), true);
+        // The person's answer is still theirs to send again: a teammate answering it now gets
+        // the line saying who, not this failure asking them to send once more.
+        if (this.rows.some((r) => r.id === id)) this.touched.add(id);
       }
       this.emit();
       return false;

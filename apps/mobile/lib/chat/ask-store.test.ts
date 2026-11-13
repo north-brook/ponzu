@@ -211,6 +211,34 @@ describe("the phone's needs-you", () => {
     store.close();
   });
 
+  test("an answer that doesn't go, then a teammate answers: the line names them, not the failure", async () => {
+    const { fake, sam, agent, store, client, canvasId } = await world();
+    const id = agent.ask(BLUE, "Button colour");
+    await until(store, () => store.getSnapshot().asks.length === 1);
+    const api = {
+      canvases: {
+        ...client.api.canvases,
+        answer: async () => {
+          throw new ApiError(0, "network", "offline");
+        },
+      },
+    };
+    const flaky = new AskStore({ api, live: client.live, canvasId, meId: "me" }).start();
+    await until(flaky, () => flaky.getSnapshot().asks.length === 1);
+    expect(await flaky.answer(id, { answers: { "Which blue for the buttons?": "Sky" } })).toBe(
+      false,
+    );
+    expect(flaky.getSnapshot().said).toMatchObject({ text: NEEDS_YOU.offline, failed: true });
+    await fake
+      .connect(sam)
+      .api.canvases.answer(canvasId, id, { answers: { "Which blue for the buttons?": "Royal" } });
+    await until(flaky, () => flaky.getSnapshot().said?.text === "Sam already answered this.");
+    expect(flaky.getSnapshot().said?.failed).toBe(false);
+    expect(flaky.getSnapshot().asks).toEqual([]);
+    flaky.close();
+    store.close();
+  });
+
   test("a secret goes by its own route, and never in an answer's body", async () => {
     const { fake, canvasId, agent, store } = await world();
     const id = agent.ask({ kind: "secret", payload: { name: "STRIPE_KEY", description: null } });

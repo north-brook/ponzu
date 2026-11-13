@@ -149,21 +149,29 @@ export function createRegistrar(deps: RegistrarDeps) {
     if (environment === null) return "simulator";
     const pushToken = await token();
     if (!pushToken) return "failed";
-    // Signed out while the token came: a device made now would ping a phone nobody is on.
+    let installId: string;
+    try {
+      installId = await deps.installId();
+    } catch {
+      return "failed";
+    }
+    // Signed out while the token or install id came: a device made now would ping a phone
+    // nobody is on.
     if (stopped) return "stopped";
     try {
       const { device } = await deps.devices.register({
         platform: "ios",
         pushToken,
         pushEnvironment: environment,
-        installId: await deps.installId(),
+        installId,
         name: deps.name,
         appVersion: deps.appVersion,
         blocked: false,
       });
-      if (stopped) return "stopped";
+      // Kept even when signing out began meanwhile: `stop()` waits for this, so the sign-out
+      // reads this id afterwards and deletes the device the API just made.
       await deps.store.write(deps.userId, device.id);
-      return "registered";
+      return stopped ? "stopped" : "registered";
     } catch (error) {
       if (isStatus(error, 409, "push_token_taken")) {
         conflict();
@@ -179,7 +187,7 @@ export function createRegistrar(deps: RegistrarDeps) {
     const id = await deps.store.read(deps.userId);
     if (!id) return;
     const pushToken = await token();
-    if (!pushToken) return;
+    if (!pushToken || stopped) return;
     try {
       await deps.devices.update(id, { pushToken });
     } catch (error) {
@@ -223,10 +231,13 @@ export function createRegistrar(deps: RegistrarDeps) {
 
   /**
    * Signing out: from now on this registrar sends nothing, so a heartbeat that finds the device
-   * just deleted (404) can't register it again for someone no longer signed in.
+   * just deleted (404) can't register it again for someone no longer signed in. Resolves once a
+   * registration already under way has ended, with the id it made kept, so the sign-out that
+   * reads the device's id next finds that device and deletes it.
    */
-  const stop = (): void => {
+  const stop = async (): Promise<void> => {
     stopped = true;
+    await syncing?.catch(() => {});
   };
 
   return { sync, tokenChanged, active, request, stop };

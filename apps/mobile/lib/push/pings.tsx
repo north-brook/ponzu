@@ -54,10 +54,11 @@ let current: { userId: string; registrar: Registrar } | null = null;
 /**
  * Signing out `userId` (lib/cloud/use-sign-out.ts, before the device is deleted): nothing more
  * is registered, patched or said for them from this phone, so a heartbeat or a registration
- * under way can't make the device again once it is gone.
+ * under way can't make the device again once it is gone. Resolves once a registration already
+ * under way has ended and kept the id of the device it made, so that device is deleted too.
  */
-export function stopPings(userId: string): void {
-  if (current?.userId === userId) current.registrar.stop();
+export async function stopPings(userId: string): Promise<void> {
+  if (current?.userId === userId) await current.registrar.stop();
 }
 
 /* The tap held until the app can show it. */

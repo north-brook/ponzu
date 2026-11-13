@@ -19,10 +19,11 @@ export function useSignOut(): () => Promise<void> {
     () =>
       signOut({
         // Only the device registered for the person signing out, and nothing registers it
-        // again once it is gone (a heartbeat finding it deleted would).
+        // again once it is gone (a heartbeat finding it deleted would). A registration under
+        // way ends first and keeps its id, so the device it made is the one deleted.
         readDeviceId: async () => {
           if (!cloud.userId) return null;
-          stopPings(cloud.userId);
+          await stopPings(cloud.userId);
           return devices.read(cloud.userId);
         },
         deleteDevice: (id) => backend.api.devices.remove(id),

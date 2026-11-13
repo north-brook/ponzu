@@ -268,6 +268,13 @@ export function ChatSheet({
   const atEnd = useRef(true);
   const revealed = useRef(false);
   const pages = useRef(0);
+  // A later link or ping naming another message, while the sheet is up, is shown in its turn.
+  const revealing = useRef(message);
+  if (revealing.current !== message) {
+    revealing.current = message;
+    revealed.current = false;
+    pages.current = 0;
+  }
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     atEnd.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 48;
