@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { memberships, notifications, users, workspaces } from "../schema/index.ts";
 import { timeParam } from "./json.ts";
@@ -38,7 +38,9 @@ export async function emailRecipient(db: Db, userId: string): Promise<EmailRecip
 
 /**
  * Whether the "people joined" email could reach the person at all: they are an admin of at
- * least one organisation's workspace. Settings shows its switch only then.
+ * least one organisation's workspace that they reach on GitHub as its owner or a member. An
+ * outside collaborator made an admin in Ponzu is never sent it (the members of an organisation
+ * are not theirs to see), so Settings does not show them its switch.
  */
 export async function teamEmailAvailable(db: Db, userId: string): Promise<boolean> {
   const [row] = await run(
@@ -50,6 +52,7 @@ export async function teamEmailAvailable(db: Db, userId: string): Promise<boolea
         and(
           eq(memberships.userId, userId),
           eq(memberships.role, "admin"),
+          inArray(memberships.githubAccess, ["owner", "member"]),
           eq(workspaces.kind, "org"),
         ),
       )

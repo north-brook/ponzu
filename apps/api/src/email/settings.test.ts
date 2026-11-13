@@ -102,9 +102,17 @@ describe("with email off", () => {
 describe("with email on", () => {
   test("the switches are answered and taken, and people-joined shows only to an org's admin", async () => {
     const t = await app(true);
-    const ws = await workspaceWithRepo(t, { maya: "admin", sam: "write" });
+    const ws = await workspaceWithRepo(t, { maya: "admin", sam: "write", ola: "admin" });
     const maya = ws.people.maya!;
     const sam = ws.people.sam!;
+    const ola = ws.people.ola!;
+    // Maya reaches the organisation on GitHub as a member. Ola is an outside collaborator made
+    // an admin in Ponzu: people-joined never reaches her, so its switch is not hers to see.
+    await t.db.execute(
+      `update memberships set github_access = 'member' where user_id = '${maya.userId}'`,
+    );
+    const hers = await call(t, ola.headers, "GET", "/v1/me/notifications");
+    expect(hers.body.email.teamAvailable).toBe(false);
 
     const got = await call(t, maya.headers, "GET", "/v1/me/notifications");
     expect(got.body.prefs).toMatchObject({ emailDigest: false, emailTeam: true, emailRecap: true });

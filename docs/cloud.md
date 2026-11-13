@@ -2816,7 +2816,8 @@ or not pings are on. `email.address` is where email would go and `email.availabl
 whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and Settings
 hides the Email row while it is). Only while it is true does `prefs` also hold `emailTeam` and
 `emailRecap`, a PATCH take them, and `email.teamAvailable` say whether the person is an admin of
-an organisation's workspace ("Email"); without the key the answer is exactly what it was before
+an organisation's workspace who reaches it on GitHub as its owner or a member, never an outside
+collaborator ("Email"); without the key the answer is exactly what it was before
 those existed. `timeZone` is the IANA zone the app last reported,
 null until one has; the app sends `timeZone` in a PATCH when its own differs, and a name the
 API's time zone data does not know, or a bare offset such as `+05`, is a 400. The daily email's 9:00 is in that zone.

@@ -91,7 +91,8 @@ const Notifications = z.object({
   /**
    * Where email goes, and whether this deployment can send it at all. While it can,
    * `teamAvailable` says whether the "people joined" email could reach the person (an admin of an
-   * organisation's workspace), so Settings shows its switch.
+   * organisation's workspace who reaches it on GitHub as owner or member), so Settings shows its
+   * switch.
    */
   email: z.object({
     address: z.string().nullable(),
