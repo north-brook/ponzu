@@ -66,6 +66,38 @@ maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
   ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} \
   ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/" || status=$?
 [ "$status" = 0 ] || exit "$status"
+
+# Pings (push/, PUSH=0 skips): `xcrun simctl push` hands the app a ping exactly
+# as Expo's service delivers one (PushData v1 under `body`). A warm tap on a
+# banner, the foreground hiding a ping about the canvas on screen, and a cold
+# start from a banner on the home screen. A banner lasts a few seconds and
+# Maestro takes about as long to start, so while a flow runs, its ping is sent
+# again every two seconds (`during`); the flow taps the banner and checks what
+# the tap opened.
+if [ "${PUSH:-1}" = 1 ]; then
+  ping() { xcrun simctl push "$UDID" design.ponzu.app.dev "$MOBILE/maestro/push/$1.apns" >/dev/null; }
+  flow() {
+    maestro --device "$UDID" test -e DEV_CLIENT="$DEV_CLIENT" \
+      ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT/push-$1"} \
+      "$MOBILE/maestro/push/$1.yaml"
+  }
+  during() {
+    flow "$1" &
+    local running=$!
+    while kill -0 "$running" 2>/dev/null; do
+      ping "$2" || true
+      sleep 2
+    done
+    wait "$running"
+  }
+  flow warm-open
+  during warm-tap pricing-question
+  during foreground pricing-pull-request
+  during other-canvas onboarding-finished
+  flow cold-open
+  during cold-tap cold-permission
+fi
+
 # Opt in with REMOUNT=1 until a run on spare has proven it; then make it the default.
 [ "${REMOUNT:-}" = 1 ] || exit 0
 

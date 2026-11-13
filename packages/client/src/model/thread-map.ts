@@ -25,7 +25,7 @@ type RunnerItem = LiveRows["canvas.thread"];
 
 /**
  * A comment of the viewer's, by its message id: its picture being drawn, or drawn. The studio's
- * comment pictures (apps/studio/src/app/comment-pictures.ts) make these.
+ * comment pictures (@ponzu/client/canvas CommentPictures) make these.
  */
 export type LocalPicture =
   | { state: "drawing"; doc: Doc; threadId: string }

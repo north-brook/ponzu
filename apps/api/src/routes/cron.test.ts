@@ -93,7 +93,8 @@ test("only the scheduler's secret runs it", async () => {
       receipts: { lost: 0 },
       resolve_questions: { lowered: 0 },
       prune_notifications: { expired: 0, deleted: 0, devices: 0 },
-      // Email is off without RESEND_API_KEY, as here: nothing is found due.
+      // Email is off without RESEND_API_KEY, as here: nothing is found due, and the Friday
+      // recap's step does not run at all, so this answer is the one from before email.
       digests: { due: 0, recorded: 0 },
       maintenance: { lifted: 0, started: 0, queued: 0 },
       pull_requests: { swept: 0 },

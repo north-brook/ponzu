@@ -57,4 +57,12 @@ name: comment
     notVisible:
       id: thread-sheet
     timeout: 10000
+# The canvas page drew the picture of where it was left as it was sent, in
+# WKWebView, as PNG (canvas/picture.ts): the chat shows it on the comment.
+- tapOn:
+    id: stack-chat
+- extendedWaitUntil:
+    visible:
+      id: chat-comment-picture
+    timeout: 30000
 - assertNotVisible: ".*Cannot update a component.*"

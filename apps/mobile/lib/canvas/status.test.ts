@@ -122,6 +122,8 @@ describe("loading the page", () => {
     const base = "https://assets.ponzu.cloud/k1/";
     expect(allowLoad(base, base)).toBe(true);
     expect(allowLoad("about:blank", base)).toBe(true);
+    expect(allowLoad("about:srcdoc", base)).toBe(true);
+    expect(allowLoad("about:srcdoc?x", base)).toBe(false);
     expect(allowLoad("https://assets.ponzu.cloud/k1/assets/x.html", base)).toBe(false);
     expect(allowLoad("https://evil.example/", base)).toBe(false);
     expect(allowLoad("ponzu://canvas/cnv_1", base)).toBe(false);

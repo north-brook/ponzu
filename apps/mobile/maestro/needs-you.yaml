@@ -1,0 +1,88 @@
+appId: design.ponzu.app.dev
+name: needs-you
+---
+# What the agent asks, on the fake's Pricing page (seed `needs-you`): two
+# questions in one ask (the second multi-select), a plan and a permission.
+# Chat wears the count; opened, the asks take the composer's place, with the
+# pager across all four pages. A note typed with the keyboard up must leave
+# Send on screen above it. Each answer goes, and once the last has, the
+# composer is back.
+- runFlow: shared/start.yaml
+- openLink: ponzu-dev://dev?seed=needs-you
+- extendedWaitUntil:
+    visible: "Pricing page, .*site.*"
+    timeout: 30000
+- tapOn: "Pricing page, .*site.*"
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-placeholder
+    timeout: 30000
+# Three asks wait: Chat says so.
+- extendedWaitUntil:
+    visible: "Chat, Ponzu has 3 questions"
+    timeout: 10000
+- tapOn:
+    id: stack-chat
+- extendedWaitUntil:
+    visible:
+      id: needs-you
+    timeout: 10000
+# Opened with a question showing, nothing takes the keyboard, and the
+# composer is not there.
+- assertNotVisible:
+    id: chat-input
+- assertVisible:
+    id: needs-you-header
+    text: "Ponzu needs you: Button colour"
+- assertVisible: "1 of 4"
+- assertVisible: "Which blue for the buttons?"
+- tapOn: "Royal"
+- tapOn:
+    id: needs-you-send
+# The ask's second question: several can be chosen.
+- extendedWaitUntil:
+    visible:
+      id: needs-you-header
+      text: "Ponzu needs you: Sections"
+    timeout: 10000
+- assertVisible: "2 of 4"
+- tapOn: "FAQ"
+- tapOn: "Comparison table"
+# A note with the keyboard up: Send stays on screen above it.
+- tapOn:
+    id: needs-you-note
+- inputText: "Keep it short"
+- assertVisible:
+    id: needs-you-send
+- tapOn:
+    id: needs-you-send
+# The plan: its first paragraph, then all of it.
+- extendedWaitUntil:
+    visible:
+      id: needs-you-header
+      text: "Ponzu needs you: Plan"
+    timeout: 10000
+- hideKeyboard
+- assertVisible: ".*three plans side by side.*"
+- tapOn: "Read the plan"
+- assertVisible: ".*short FAQ under them.*"
+- tapOn: "Approve.*"
+- tapOn:
+    id: needs-you-send
+# The permission, the last: Allow, and the composer is back.
+- extendedWaitUntil:
+    visible:
+      id: needs-you-header
+      text: "Ponzu needs you: Permission"
+    timeout: 10000
+- assertVisible: "Run the visual tests"
+- tapOn: "Allow"
+- tapOn:
+    id: needs-you-send
+- extendedWaitUntil:
+    notVisible:
+      id: needs-you
+    timeout: 10000
+- assertVisible:
+    id: chat-input
+- assertNotVisible: ".*Cannot update a component.*"

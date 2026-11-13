@@ -90,7 +90,54 @@ jest.mock("expo-router", () => ({
     canGoBack: jest.fn(() => false),
     canDismiss: jest.fn(() => false),
     dismissAll: jest.fn(),
+    dismissTo: jest.fn(),
+    setParams: jest.fn(),
   },
+}));
+// iOS's notifications (lib/push/native.ts), as a test sets them on `global.pings`: what iOS says
+// of Ponzu's notifications, what its prompt answers, the APNs environment (null: the
+// simulator), the icon's number, and a way to tap a ping once the app listens.
+global.pings = {
+  permission: "undetermined",
+  answer: "granted",
+  environment: "production",
+  calls: [],
+  badge: null,
+  tap: null,
+  reset() {
+    this.permission = "undetermined";
+    this.answer = "granted";
+    this.environment = "production";
+    this.calls = [];
+    this.badge = null;
+  },
+};
+jest.mock("./lib/push/native", () => ({
+  native: {
+    permission: async () => global.pings.permission,
+    requestPermission: async () => {
+      global.pings.calls.push("prompt");
+      global.pings.permission = global.pings.answer;
+      return global.pings.answer;
+    },
+    expoToken: async () => "ExponentPushToken[abcdefgh12345678]",
+    environment: async () => global.pings.environment,
+    onTokenChange: () => () => {},
+  },
+  deviceName: () => "iPhone 16 Pro",
+  appVersion: () => "1.0.0+embedded",
+  setBadge: async (count) => {
+    global.pings.badge = count;
+  },
+  handleForeground: () => {},
+  onTap: (listener) => {
+    global.pings.tap = listener;
+    return () => {
+      if (global.pings.tap === listener) global.pings.tap = null;
+    };
+  },
+  tapTaken: () => {},
+  dismissFor: async () => {},
 }));
 // iOS's paste control, as a button: pressing it pastes what a test put on `global.clipboard`.
 jest.mock("expo-clipboard", () => {

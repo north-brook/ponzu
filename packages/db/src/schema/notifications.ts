@@ -71,6 +71,11 @@ export const notifications = pgTable(
     readVia: text("read_via", { enum: NOTIFICATION_READ_VIA }),
     /** A needs-you whose question is closed: answered, withdrawn or cancelled. */
     resolvedAt: instant("resolved_at"),
+    /**
+     * Its email is done with (a billing notice, docs/cloud.md "Email"): sent, or found stale or
+     * held when its job ran. The daily email leaves such a row out, so nothing is emailed twice.
+     */
+    emailedAt: instant("emailed_at"),
   },
   (t) => [
     unique("notifications_user_dedupe_key").on(t.userId, t.dedupeKey),

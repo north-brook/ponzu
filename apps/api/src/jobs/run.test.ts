@@ -3,6 +3,8 @@ import { jobs, SEARCH_REINDEX_JOB } from "@ponzu/db";
 import { ACCOUNT_FORGET_JOB } from "../account/forget.ts";
 import { ASSET_KEY_RETIRE_JOB } from "../canvases/asset-key.ts";
 import { CANVAS_FILES_DELETE_JOB } from "../canvases/files.ts";
+import { MEMBERS_JOB } from "../email/members.ts";
+import { RECAP_JOB } from "../email/recap.ts";
 import { BASE_REBUILD_JOB } from "../environments/rebuild.ts";
 import { PEOPLE_JOB } from "../github/people.ts";
 import { WEBHOOK_JOB } from "../github/webhook.ts";
@@ -40,6 +42,8 @@ test("the registry runs every kind the API records, each from one module", () =>
       DIGEST_JOB,
       ASSET_KEY_RETIRE_JOB,
       ACCOUNT_FORGET_JOB,
+      MEMBERS_JOB,
+      RECAP_JOB,
     ].sort(),
   );
   const named = JOB_MODULES.flatMap((kinds) => Object.keys(kinds()));
