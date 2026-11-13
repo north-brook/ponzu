@@ -410,7 +410,9 @@ jobs:
         if: env.RUN == 'true'
         # Ponzu Cloud in memory (fake-host.ts) is in development and e2e builds
         # only, so a release can't run on it whatever PONZU_FAKE_BACKEND says.
+        # A studio that isn't where this looks would pass unchecked, so its absence fails too.
         run: |
+          test -f out/linux-unpacked/resources/studio/index.html
           if grep -rl "ponzuFake" out/linux-unpacked/resources/studio; then
             echo "The packaged studio has the fake backend in it." >&2
             exit 1

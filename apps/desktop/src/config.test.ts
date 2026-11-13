@@ -11,6 +11,7 @@ import {
   configFor,
   type EnvironmentsFile,
   environmentOverride,
+  letThrough,
 } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import {
@@ -262,6 +263,21 @@ describe("PONZU_FAKE_BACKEND", () => {
       ).toBe(false);
     }
     expect(configFor(true, {}, built({ test: true })).fakeBackend).toBe(false);
+  });
+
+  test("with the network refused, only a local studio server on the fake backend gets through", () => {
+    const dev = "http://localhost:5173";
+    const fake = { fakeBackend: true, studioDevUrl: dev };
+    expect(letThrough(`${dev}/src/main.tsx`, fake)).toBe(true);
+    expect(letThrough("ws://localhost:5173/?token=x", fake)).toBe(true);
+    // Another port on this computer, or anything elsewhere, is still refused.
+    expect(letThrough("http://localhost:3000/v1/me", fake)).toBe(false);
+    expect(letThrough("https://api.ponzu.design/v1/me", fake)).toBe(false);
+    // The smoke check (no fake backend), a packaged app (no server), or a server elsewhere: none.
+    expect(letThrough(`${dev}/`, { fakeBackend: false, studioDevUrl: dev })).toBe(false);
+    expect(letThrough(`${dev}/`, { fakeBackend: true, studioDevUrl: null })).toBe(false);
+    const remote = { fakeBackend: true, studioDevUrl: "https://studio.example.com" };
+    expect(letThrough("https://studio.example.com/", remote)).toBe(false);
   });
 });
 

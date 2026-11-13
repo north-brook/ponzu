@@ -307,6 +307,23 @@ export function fakeBackend(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
+ * Whether a launch that refuses the network (`blockNetwork` in smoke.ts) still lets `url`
+ * through: only the fake backend run from a checkout on Vite's development server, and only to
+ * that server when it is on this computer (its page, modules and hot reload socket). The smoke
+ * check lets nothing through, and nothing that would leave the computer ever passes.
+ */
+export function letThrough(
+  url: string,
+  config: Pick<Config, "fakeBackend" | "studioDevUrl">,
+): boolean {
+  if (!config.fakeBackend || !config.studioDevUrl || !URL.canParse(url)) return false;
+  const dev = new URL(config.studioDevUrl);
+  if (dev.hostname !== "localhost" && dev.hostname !== "127.0.0.1") return false;
+  const asked = new URL(url);
+  return asked.hostname === dev.hostname && asked.port === dev.port;
+}
+
+/**
  * What the About panel says after the version, `abc1234 · production`, so a Mac's panel reads
  * "Version 2.0.0 (abc1234 · production)": the build, its commit and where it talks to.
  */

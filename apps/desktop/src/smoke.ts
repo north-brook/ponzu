@@ -17,10 +17,12 @@ export const smoke = Boolean(process.env.PONZU_SMOKE);
 /** How long the studio has to draw the sign-in screen. */
 const PAINT_WITHIN_MS = 60_000;
 
-export function blockNetwork(): void {
+/** `allow`: what this launch still lets through (config.ts's `letThrough`); nothing by default. */
+export function blockNetwork(allow: (url: string) => boolean = () => false): void {
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] },
     (details, callback) => {
+      if (allow(details.url)) return callback({});
       console.error(`No network in this launch: refused ${details.url}`);
       callback({ cancel: true });
     },

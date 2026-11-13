@@ -42,6 +42,7 @@ import {
   bundleMismatch,
   claimsScheme,
   configFor,
+  letThrough,
   testBuild,
 } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
@@ -701,7 +702,8 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     await waitForPonzuPreview();
     // The fake backend needs none either: whatever would leave the computer is refused.
-    if (apart) blockNetwork();
+    // A checkout on Vite's development server keeps that server (`letThrough`), and only it.
+    if (apart) blockNetwork(smoke ? undefined : (url) => letThrough(url, config));
     else watchRequestIds();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
