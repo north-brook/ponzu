@@ -1,61 +1,58 @@
 name: Deploy API
 
-# The only thing that deploys apps/api. It is one Vercel project, ponzu-api, with two
-# environments (docs/production.md, "One project, two environments"):
+# The only thing that deploys apps/api: one Vercel project, ponzu-api, with two environments
+# (docs/production.md, "One project, two environments"). One run is the whole staged procedure,
+# in order, for the commit it was started for, and a failure anywhere stops what follows it
+# (docs/production.md, "The production deploy, staged"):
 #
-# Both jobs run from `main` and nothing else: `main` is the branch everything merges into, and no
-# job runs for a pull request, another branch or a tag. With neither variable set, a push to
-# `main` deploys nothing (both are unset today; the orchestrator deploys by hand meanwhile,
-# apps/api/README.md, "Deploying").
+# 1. `plan`: does this commit change what the API is made from (scripts/ci/api-paths.ts), since
+#    the commit each environment serves? If not, nothing deploys. An environment already serving
+#    a newer commit is never sent an older one.
+# 2. `dev`: migrate the Neon `dev` branch, deploy with `--environment dev` (never `--prod`), then
+#    check: health names this commit, its image and every migration; the selfcheck passes apart
+#    from what is known on dev (scripts/ci/selfcheck.ts); and, when its secrets exist, the canary
+#    runs a real turn as the check account (scripts/ci/canary.ts), or says it did not.
+# 3. `production`, only after dev passed: record the deployment serving api.ponzu.design, snapshot
+#    and migrate the Neon default branch, deploy with `--prod --skip-domain`, check that
+#    deployment on its own address, promote it, check api.ponzu.design and the `minute`
+#    schedule. If anything fails after the promotion, the deployment recorded first is promoted
+#    back (never a bare `vercel rollback`) and checked. The database is left as migrated:
+#    migrations are expand only, so the old code runs on the new schema.
+# 4. `report`: the run's summary says what is live where, and one issue labelled
+#    `deploy-failed` is opened or added to on a failure, and closed by a deploy that succeeds.
 #
-# - `dev`: a push to `main` (or a dispatch on `main`) applies the pending migrations to the
-#   Neon `dev` branch, deploys to the project's custom environment `dev` (api-dev.ponzu.design)
-#   with `--environment dev`, never `--prod`, and checks its health there. It runs in the GitHub
-#   Environment `dev`, which only `main` may use; dev's VERCEL_TOKEN lives there, or, until the
-#   environment holds one, is the repository's. Off until the repository variable API_DEPLOY is
-#   "true".
-# - `production`: a push to `main`, and nothing else, under the GitHub Environment `production`,
-#   which only `main` may use and whose reviewer (the founder) approves each run. It snapshots
-#   the Neon default branch, migrates it, and deploys to the project's Production target in
-#   stages: `deploy --prod --skip-domain` builds a production deployment that api.ponzu.design
-#   does not serve yet, that deployment's own /v1/health is checked, and only then does
-#   `vercel promote` give it the domain. Then api.ponzu.design's health and the `minute`
-#   schedule are checked. Off until the repository variable API_DEPLOY_PRODUCTION is "true".
+# Serialized, never cancelled: the whole workflow is one concurrency group. A second merge waits
+# for the first run to finish, rollback included. GitHub keeps one run waiting: a third merge
+# replaces the waiting one, which is then never run. That skips no migration: the newest run's
+# plan compares with what is live, and its `db:migrate` applies every migration in its journal,
+# which holds every older commit's.
+#
+# Off until the repository variable API_DEPLOY is "true" (nothing runs, not even the plan).
+# Production also needs API_DEPLOY_PRODUCTION "true", and runs only for a push: it can't deploy
+# without dev having passed for the same commit in the same run. Both run only from `main`.
 #
 # Production's Vercel token is a secret with its own name, VERCEL_TOKEN_PRODUCTION, held only by
-# the `production` environment. An environment secret only overrides a repository secret of the
-# same name, so with one project a `production` environment that lacked its own VERCEL_TOKEN would
-# silently have used the repository's, which reaches the same project. A missing
-# VERCEL_TOKEN_PRODUCTION is empty instead, and the job stops before it touches the database.
+# the `production` environment: an environment secret only overrides a repository secret of the
+# same name, so a `production` environment without its own VERCEL_TOKEN would silently use the
+# repository's, which reaches the same project. A missing one reads as empty, and the job stops
+# before it touches the database.
 #
 # The staged check reads the new deployment's generated *.vercel.app address, which Vercel
-# Authentication protects (the project's setting protects every deployment URL that is not the
-# current production one). It gets through with a Protection Bypass for Automation secret that
-# the founder makes on purpose and stores as VERCEL_AUTOMATION_BYPASS_SECRET in the `production`
-# environment. It does not use `vercel curl`: that command "automatically handles deployment
-# protection bypass tokens" (https://vercel.com/docs/cli/curl), and the CLI 65.14.0's own code
-# shows that, given no secret, it creates one on a project that has none (as do `vercel httpstat`
-# and `deploy --verify`); this has not been tried live. A bypass secret opens every deployment of
-# the project, dev's and previews' included, until it is revoked
-# (https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation),
-# so it is made and kept deliberately, never as a side effect. health.ts sends it only to a
-# *.vercel.app address.
+# Authentication protects, with a Protection Bypass for Automation secret the founder makes on
+# purpose (VERCEL_AUTOMATION_BYPASS_SECRET, in the `production` environment). It does not use
+# `vercel curl`, `httpstat` or `deploy --verify`: given no secret, the CLI 65.14.0 creates one on a
+# project that has none (read from its code, not tried live). health.ts sends the secret only to
+# a *.vercel.app address.
 #
-# `vercel promote`, `vercel rollback` and `vercel alias set` appear only in the production job and
-# the production runbook. Promoting a deployment that is not a production build "will result in a
-# new production deployment" (https://vercel.com/docs/cli/promote), so none of them is a dev tool:
-# dev is taken back by deploying an older commit with `--environment dev`.
-#
-# Nobody deploys a branch with `--prod`, so the API the apps are built against never becomes
-# whichever branch deployed last, and a migration reaches a shared database only once it has
-# merged. Migrations are expand-only (scripts/ci/migrations.ts), so the new schema runs under
-# the old code between the migration and the deploy. One project has one Container Registry, so
-# production runs the very image dev checked (apps/runner/image/current.json), with no copy.
+# `vercel promote`, `vercel rollback` and `vercel alias set` appear only in the production job.
+# Promoting a deployment that is not a production build "will result in a new production
+# deployment" (https://vercel.com/docs/cli/promote), and with `--json` and no `--yes` the CLI
+# refuses that and exits 1 (read from its code), so neither promotion here can rebuild anything.
+# Dev is taken back by deploying an older commit with `--environment dev`.
 #
 # The repository is deliberately not connected to the Vercel project; this deploys with the CLI
-# and a token. scripts/ci/workflows.test.ts holds the shape of this file: which event runs which
-# job, that only the production job uses `--prod`, `promote` and the production token, and that
-# only the production job can reach the default branch.
+# and a token. scripts/ci/workflows.test.ts holds the shape of this file and runs its steps'
+# shell against fakes.
 on:
   push:
     branches: [main]
@@ -64,26 +61,61 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # One run at a time, in order, for the whole chain: never two deploys at once, and never one
+  # cancelled halfway through a migration or a rollback.
+  group: deploy-api
+  cancel-in-progress: false
+
 jobs:
-  dev:
-    name: Migrate and deploy dev
+  plan:
+    name: Plan
     if: >-
       ${{ vars.API_DEPLOY == 'true' && github.ref == 'refs/heads/main'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.plan.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # main's whole history, to compare this commit with the ones that are live.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # deploy-plan.ts imports nothing outside the repository, so nothing is installed.
+      - name: Does this commit change what the API is made from?
+        id: plan
+        env:
+          PRODUCTION_ON: ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push' }}
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          args=(--commit "$GITHUB_SHA")
+          if [ "$PRODUCTION_ON" = true ]; then args+=(--production); fi
+          if [ "$DISPATCH" = true ]; then args+=(--always); fi
+          bun scripts/ci/deploy-plan.ts "${args[@]}"
+
+  dev:
+    name: Migrate, deploy and check dev
+    needs: plan
+    if: ${{ needs.plan.outputs.deploy == 'true' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    # The canary's real turn waits for the sandbox's idle window (five minutes on dev).
+    timeout-minutes: 45
     # Only `main` may use it (infra/github/repo.json). It holds dev's own VERCEL_TOKEN once the
-    # founder puts one there; until then `secrets.VERCEL_TOKEN` is the repository's.
+    # founder puts one there (until then `secrets.VERCEL_TOKEN` is the repository's), dev's
+    # CRON_SECRET, and CANARY_SESSION_WRITER.
     environment: dev
-    concurrency:
-      # One at a time and in order: a deploy is never cancelled halfway through its migration.
-      group: deploy-api-dev
-      cancel-in-progress: false
     env:
       VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
@@ -93,6 +125,12 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The dev environment holds its cron secret
+        # Before anything touches the database: without it dev can't be checked.
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          [ -n "$CRON_SECRET" ] || { echo "::error::The dev environment has no CRON_SECRET."; exit 1; }
       - name: Apply pending migrations to the Neon `dev` branch
         # Before the code that needs them. `db:migrate` applies everything pending in one
         # transaction and fails if a migration in the journal was passed over.
@@ -113,24 +151,47 @@ jobs:
       - name: Dev answers with this commit, its image and every migration
         # At dev's apiUrl in infra/environments.json, https://api-dev.ponzu.design.
         run: bun scripts/ci/health.ts --env dev --commit "$GITHUB_SHA"
+      - name: Dev's selfcheck passes
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: bun scripts/ci/selfcheck.ts --env dev
+      - name: A real turn on dev, as the check account
+        id: canary
+        # Skipped with a notice when CANARY_SESSION is not set. The session's refresh token
+        # rotates, so it runs only when the next step can store the rotated one.
+        env:
+          CANARY_SESSION: ${{ secrets.CANARY_SESSION }}
+          CANARY_CAN_SAVE: ${{ secrets.CANARY_SESSION_WRITER != '' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: bun scripts/ci/canary.ts --session-file "$RUNNER_TEMP/canary-session.json"
+      - name: Keep the check account's rotated session
+        # Whether the canary passed or not: once it has refreshed, only the new token works.
+        if: ${{ always() && steps.canary.outputs.ran == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.CANARY_SESSION_WRITER }}
+        run: |
+          gh secret set CANARY_SESSION --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/canary-session.json"
+          rm -f "$RUNNER_TEMP/canary-session.json"
 
   production:
-    name: Migrate and deploy production
-    # A push to main only: never a dispatch, another branch or a pull request. The environment
-    # adds the founder's approval and refuses any branch but main on its own.
+    name: Migrate, deploy and check production
+    needs: [plan, dev]
+    # A push to main only, never a dispatch, and only once dev has passed for this commit.
     if: >-
       ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push'
-      && github.ref == 'refs/heads/main' }}
+      && github.ref == 'refs/heads/main' && needs.dev.result == 'success' }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     environment: production
-    concurrency:
-      group: deploy-api-production
-      cancel-in-progress: false
     env:
       VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
       # The same project as dev: its Production target is production.
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+    outputs:
+      previous_commit: ${{ steps.serving.outputs.commit }}
+      rollback: ${{ steps.rollback.outcome }}
+      restored: ${{ steps.restored.outcome }}
+      rollback_minute: ${{ steps.rollback_minute.outcome }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -152,6 +213,13 @@ jobs:
         run: |
           [ -n "$VERCEL_TOKEN" ] || { echo "::error::The production environment has no VERCEL_TOKEN_PRODUCTION."; exit 1; }
           [ -n "$BYPASS" ] || { echo "::error::The production environment has no VERCEL_AUTOMATION_BYPASS_SECRET."; exit 1; }
+      - name: Record the deployment serving production now
+        id: serving
+        # The way back, read before anything changes: its URL and the commit it answers. No
+        # deploy goes ahead without one.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: bun scripts/ci/production.ts serving
       - name: Snapshot the Neon default branch
         # pre-<first 12 of the commit>, kept 14 days: the restore point if this migration goes
         # wrong (docs/production.md, "Backups and restore").
@@ -190,6 +258,7 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: bun scripts/ci/health.ts --env production --commit "$GITHUB_SHA" --url "$URL" --bypass
       - name: Promote it to api.ponzu.design
+        id: promote
         # No --yes: promoting a deployment that is not a production build would build a new one
         # with production's variables, and with --json and no --yes the CLI refuses that and
         # exits 1 (read from the CLI 65.14.0's own promote code).
@@ -205,3 +274,64 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
         run: bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute
+      - name: Put back the deployment that was serving
+        id: rollback
+        # Only when something failed once the promotion had started (a promotion that failed
+        # may still have moved the domain). The URL recorded before, never a bare rollback.
+        if: ${{ failure() && steps.serving.outcome == 'success' && steps.promote.outcome != 'skipped' }}
+        env:
+          PREVIOUS_URL: ${{ steps.serving.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: |
+          echo "::error title=Rolling production back::The new deployment failed after its promotion; promoting the one that was serving."
+          bunx vercel@65.14.0 promote "$PREVIOUS_URL" --json --timeout 5m
+      - name: Production answers as it did before
+        id: restored
+        if: ${{ failure() && steps.rollback.outcome == 'success' }}
+        env:
+          PREVIOUS_COMMIT: ${{ steps.serving.outputs.commit }}
+        run: bun scripts/ci/production.ts restored --commit "$PREVIOUS_COMMIT"
+      - name: The minute is active after the rollback
+        id: rollback_minute
+        # A deployment from before the schedule would delete it, and with Disable Cron Jobs on,
+        # production would have no minute (docs/production.md, "The minute").
+        if: ${{ failure() && steps.rollback.outcome == 'success' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PRODUCTION }}
+        run: bun scripts/ci/schedules.ts --environment production --name minute --path /v1/cron/minute
+
+  report:
+    name: Report
+    needs: [plan, dev, production]
+    # Whatever happened before, once the plan ran.
+    if: ${{ always() && needs.plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      # The run's jobs and steps, to name the one that failed.
+      actions: read
+      # The pull request that merged as this commit.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # deploy-report.ts imports nothing outside the repository, so nothing is installed.
+      - name: Say what is live where, and open, add to or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.plan.result }}
+          DEPLOY: ${{ needs.plan.outputs.deploy }}
+          DEV: ${{ needs.dev.result }}
+          PRODUCTION_ON: ${{ vars.API_DEPLOY_PRODUCTION == 'true' && github.event_name == 'push' }}
+          PRODUCTION: ${{ needs.production.result }}
+          ROLLBACK: ${{ needs.production.outputs.rollback }}
+          RESTORED: ${{ needs.production.outputs.restored }}
+          ROLLBACK_MINUTE: ${{ needs.production.outputs.rollback_minute }}
+          PREVIOUS_COMMIT: ${{ needs.production.outputs.previous_commit }}
+        run: bun scripts/ci/deploy-report.ts

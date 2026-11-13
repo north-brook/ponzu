@@ -25,7 +25,7 @@
     "dev": {
       "branches": ["main"],
       "requiredReviewers": false,
-      "secrets": ["VERCEL_TOKEN"]
+      "secrets": ["CANARY_SESSION_WRITER", "CRON_SECRET", "VERCEL_TOKEN"]
     },
     "production": {
       "branches": ["main"],
@@ -48,6 +48,7 @@
   ],
   "secrets": [
     "ANTHROPIC_API_KEY",
+    "CANARY_SESSION",
     "NEON_API_KEY",
     "PONZU_APP_POSTHOG_CLI_API_KEY",
     "RELEASE_TOKEN",

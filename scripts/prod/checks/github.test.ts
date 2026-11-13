@@ -46,7 +46,7 @@ function afterD12(): GithubAnswers {
         protection_rules: [{ type: "branch_policy", reviewers: [] }],
         deployment_branch_policy: { protected_branches: false, custom_branch_policies: true },
         branch_policies: [{ name: "main", type: "branch" }],
-        secrets: ["VERCEL_TOKEN"],
+        secrets: ["CANARY_SESSION_WRITER", "CRON_SECRET", "VERCEL_TOKEN"],
       },
       {
         name: "production",
@@ -213,7 +213,7 @@ describe("evaluate on dev's recorded answers", () => {
         id: "github.secrets",
         area: "github",
         status: "pending",
-        says: "2 of the 5 repository secrets the workflows read are not set: NEON_API_KEY and PONZU_APP_POSTHOG_CLI_API_KEY",
+        says: "3 of the 6 repository secrets the workflows read are not set: CANARY_SESSION, NEON_API_KEY and PONZU_APP_POSTHOG_CLI_API_KEY",
         fix: "gh secret set <NAME> --repo north-brook/ponzu (docs/production.md › Env and secrets; production's are founder step D12)",
       },
       {
