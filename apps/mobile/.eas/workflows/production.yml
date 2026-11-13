@@ -30,7 +30,7 @@ on:
 # install uses this one, builds included.
 defaults:
   tools:
-    bun: 1.4.2
+    bun: 1.4.4
 
 jobs:
   fingerprint:
