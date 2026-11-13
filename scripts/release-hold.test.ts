@@ -113,13 +113,15 @@ describe("the command", () => {
   };
 
   test("prints merge or hold, reading RELEASES_HELD from its environment", () => {
-    expect(run(["--app", "ponzu", "--title", "chore(main): release 1.80.2"])).toEqual({
+    // The next patch after whatever is released now: a fixed version here goes stale, and
+    // fails, the moment a release passes it.
+    const [major, minor, patch] = (manifest as Record<string, string>)["."]?.split(".") ?? [];
+    const title = `chore(main): release ${major}.${minor}.${Number(patch) + 1}`;
+    expect(run(["--app", "ponzu", "--title", title])).toEqual({ code: 0, out: "merge" });
+    expect(run(["--app", "ponzu", "--title", title], { RELEASES_HELD: "ponzu" })).toEqual({
       code: 0,
-      out: "merge",
+      out: "hold: RELEASES_HELD names ponzu",
     });
-    expect(
-      run(["--app", "ponzu", "--title", "chore(main): release 1.80.2"], { RELEASES_HELD: "ponzu" }),
-    ).toEqual({ code: 0, out: "hold: RELEASES_HELD names ponzu" });
   });
 
   test("reads the pull request's manifest from --proposed", () => {
