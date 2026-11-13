@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { inflateSync } from "node:zlib";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { bundle, canvasCss } from "./dom-lib.ts";
 
 /*
  * A board whose root has a border-radius, drawn by the canvas in a real browser: its corners are
@@ -71,26 +71,10 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
   let css: string;
 
   beforeAll(async () => {
-    const dir = import.meta.dir;
-    const entry = join(dir, ".corners-entry.tsx");
-    await Bun.write(entry, ENTRY);
-    const built = await Bun.build({
-      entrypoints: [entry],
-      target: "browser",
-      format: "esm",
-      define: { "process.env.NODE_ENV": '"production"' },
-    });
-    await Bun.file(entry).delete();
-    if (!built.success) throw new AggregateError(built.logs, "bundle failed");
-    code = await built.outputs[0]!.text();
-    const out = join(tmpdir(), `pz-corners-${process.pid}.css`);
-    const tw = Bun.spawnSync(
-      [join(dir, "../node_modules/.bin/tailwindcss"), "-i", join(dir, "styles.css"), "-o", out],
-      { stderr: "pipe" },
-    );
-    if (tw.exitCode !== 0) throw new Error(tw.stderr.toString());
-    css = await Bun.file(out).text();
-    await Bun.file(out).delete();
+    [code, css] = await Promise.all([
+      bundle("corners", ENTRY, { "process.env.NODE_ENV": '"production"' }),
+      canvasCss(),
+    ]);
     browser = await playwright.launch({ executablePath: chromium!, headless: true });
   });
   afterAll(() => browser?.close());
