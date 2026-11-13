@@ -17,11 +17,11 @@ Facts read from production on November 13, 2026 (by the orchestrator, or read-on
 vendor) are marked **prod**. They are settings, not code, so a change at the vendor makes the
 page wrong until this file and the page change too.
 
-The legal entity is Northbrook PBC (`ENTITY` in site.ts). Its registered address
-(`ENTITY.address`, not drawn while null) and its state of incorporation (`ENTITY.state`) are the
-founder's to give. The terms' governing law names `ENTITY.state` once set; until then it reads
-"the state in which Northbrook PBC is incorporated", and `legal.test.ts` fails while the pages
-are in effect and the state is null. That failing test is deliberate.
+The legal entity is Northbrook PBC (`ENTITY` in site.ts), a Delaware corporation at 169 Madison
+Ave, Suite 2504, New York, NY 10016; the founder gave both on November 13, 2026. The privacy
+policy draws the address after the name (`ENTITY.address`), and the terms' governing law names
+`ENTITY.state` ("the State of Delaware"). `legal.test.ts` fails if the pages are in effect and
+the state is null.
 
 ## Privacy Policy (`/privacy`)
 
@@ -165,48 +165,46 @@ The desktop app's updates come from GitHub Releases (`publish` in `apps/desktop/
 
 Each is written around on the pages so that what they say is true without it.
 
-1. `ENTITY.state`, the state of incorporation (the terms' governing law; the test fails without it).
-2. `ENTITY.address`, the registered address (drawn after the name once set).
-3. Who at Northbrook can reach production data, and when (the privacy policy says nothing on it).
-4. Whether Vercel was asked in writing about the start command's environment, and its answer.
-5. Whether Anthropic approved Claude subscription sign-in in Ponzu's sandboxes in writing.
-6. The R2 buckets' location setting.
-7. Turning on GitHub private vulnerability reporting, then setting `GITHUB_PRIVATE_REPORTING`.
-8. Setting `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` on production, then
+1. Who at Northbrook can reach production data, and when (the privacy policy says nothing on it).
+2. Whether Vercel was asked in writing about the start command's environment, and its answer.
+3. Whether Anthropic approved Claude subscription sign-in in Ponzu's sandboxes in writing.
+4. The R2 buckets' location setting.
+5. Turning on GitHub private vulnerability reporting, then setting `GITHUB_PRIVATE_REPORTING`.
+6. Setting `PONZU_POSTHOG_PERSONAL_API_KEY` and `PONZU_POSTHOG_PROJECT_ID` on production, then
    putting back the automatic PostHog deletion sentence (above).
-9. Applying `infra/neon.json`, then changing "Backups" on the privacy policy.
+7. Applying `infra/neon.json`, then changing "Backups" on the privacy policy.
 
 ## Questions counsel will ask, with the answer or where to look
 
-1. **What personal data, from whom?** The privacy table above. Schemas:
+8. **What personal data, from whom?** The privacy table above. Schemas:
    `packages/db/src/schema/accounts.ts`, `canvases.ts`, `billing.ts`, `notifications.ts`.
-2. **Where is it, which regions?** API and sandboxes in Vercel iad1, the database in Neon
+9. **Where is it, which regions?** API and sandboxes in Vercel iad1, the database in Neon
    aws-us-east-1, PostHog Cloud US. The R2 location is the founder's to read.
-3. **Retention per category?** "How long we keep it" on the policy. Production Neon history is
+10. **Retention per category?** "How long we keep it" on the policy. Production Neon history is
    one day until `infra/neon.json` is applied.
-4. **Is account deletion complete?** `apps/api/src/account/delete.ts` and `forget.ts`. The
+11. **Is account deletion complete?** `apps/api/src/account/delete.ts` and `forget.ts`. The
    PostHog step is skipped in production until the founder sets its key; the policy says to write
    to us meanwhile.
-5. **Is customer content sent to AI providers?** Turns go to Anthropic under the person's own
+12. **Is customer content sent to AI providers?** Turns go to Anthropic under the person's own
    account. Only repository metadata and short excerpts go under Ponzu's key.
-6. **Do we train models?** No training code exists.
-7. **Ads, selling, sharing?** No ad or attribution SDKs. PostHog is the only analytics.
-8. **What does session replay capture?** `apps/studio/src/app/analytics/privacy.ts`; production
+13. **Do we train models?** No training code exists.
+14. **Ads, selling, sharing?** No ad or attribution SDKs. PostHog is the only analytics.
+15. **What does session replay capture?** `apps/studio/src/app/analytics/privacy.ts`; production
    is `private`.
-9. **Cookies and consent?** The site sets none. The desktop app keeps PostHog's state in local
+16. **Cookies and consent?** The site sets none. The desktop app keeps PostHog's state in local
    storage and records sessions unless the person turns sharing off. Whether EU and UK people must
    opt in instead is open; the policy describes what happens without answering it.
-10. **Encryption?** The vault (AES-256-GCM), TLS everywhere, vendors' encryption at rest.
-11. **What can the agent do on GitHub?** The App's permission set above.
-12. **Third-party requests from canvases?** Google Fonts and any https image.
-13. **What do logs contain?** docs/cloud.md "Security", last paragraph.
-14. **Does Vercel store the start command's env?** Not documented.
-15. **Are checkpoints in a private bucket?** Yes in production (`R2_PRIVATE_BUCKET`).
-16. **Email?** None is sent by the service today (no `RESEND_API_KEY`).
-17. **Age gating?** None in code; the terms and policy set 13, and 16 in the EEA.
-18. **Export or portability?** Board exports in the apps; a copy of personal data by hand on request.
-19. **Who at Northbrook can reach production data, the breach process, DPAs?** The founder answers.
-20. **The Ponzu 1 policy** (`/privacy/ponzu-1`) is kept word for word. Its "This website"
+17. **Encryption?** The vault (AES-256-GCM), TLS everywhere, vendors' encryption at rest.
+18. **What can the agent do on GitHub?** The App's permission set above.
+19. **Third-party requests from canvases?** Google Fonts and any https image.
+20. **What do logs contain?** docs/cloud.md "Security", last paragraph.
+21. **Does Vercel store the start command's env?** Not documented.
+22. **Are checkpoints in a private bucket?** Yes in production (`R2_PRIVATE_BUCKET`).
+23. **Email?** None is sent by the service today (no `RESEND_API_KEY`).
+24. **Age gating?** None in code; the terms and policy set 13, and 16 in the EEA.
+25. **Export or portability?** Board exports in the apps; a copy of personal data by hand on request.
+26. **Who at Northbrook can reach production data, the breach process, DPAs?** The founder answers.
+27. **The Ponzu 1 policy** (`/privacy/ponzu-1`) is kept word for word. Its "This website"
     section describes the 1.x site, not today's ponzu.design. Should the archive say so?
-21. **IP addresses at PostHog.** "Discard client IP data" is off in production, and the policy
+28. **IP addresses at PostHog.** "Discard client IP data" is off in production, and the policy
     says PostHog keeps the address events from the device came from.

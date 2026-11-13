@@ -16,14 +16,14 @@ export const LEGAL_STATUS: "draft" | "in-effect" = "in-effect";
 /** The legal pages' effective date, as people read it ("December 1, 2026"), once in effect. */
 export const LEGAL_EFFECTIVE: string | null = "November 13, 2026";
 /**
- * Who makes Ponzu. The registered address and the state of incorporation are the founder's to
- * give. A null address is not drawn. The terms' governing law names the state once it is set,
- * and legal.test.ts fails while the pages are in effect and the state is null.
+ * Who makes Ponzu: its address and its state of incorporation, as the founder gave them on
+ * November 13, 2026. A null address is not drawn. The terms' governing law names the state, and
+ * legal.test.ts fails while the pages are in effect and the state is null.
  */
 export const ENTITY = {
   name: "Northbrook PBC",
-  address: null as string | null,
-  state: null as string | null,
+  address: "169 Madison Ave, Suite 2504, New York, NY 10016" as string | null,
+  state: "Delaware" as string | null,
 };
 /**
  * Whether GitHub's private vulnerability reporting is on for the repository (a repository
