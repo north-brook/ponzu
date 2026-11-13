@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -313,7 +312,7 @@ test("About says the commit and the environment", () => {
  * the file through desired.ts's schema, then bakes. The build itself (which empties dist/) runs
  * in CI's Desktop package job.
  */
-function bake(file: object, variant: "release" | "dev") {
+async function bake(file: object, variant: "release" | "dev") {
   const dir = mkdtempSync(join(tmpdir(), "ponzu-bake-"));
   try {
     const path = join(dir, "environments.json");
@@ -335,34 +334,46 @@ function bake(file: object, variant: "release" | "dev") {
         "}",
       ].join("\n"),
     );
-    return spawnSync(process.execPath, [script, path, variant], { encoding: "utf8" });
+    // Awaited, never spawnSync: Bun 1.4.2's sync spawns can lose a child's exit in a
+    // `bun test --parallel` worker and wait on it forever (oven-sh/bun#47257).
+    const child = Bun.spawn([process.execPath, script, path, variant], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, status] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { status, stdout, stderr };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-test("the build reads infra/environments.json through desired.ts's schema, so a bad file fails", () => {
+test("the build reads infra/environments.json through desired.ts's schema, so a bad file fails", async () => {
   const file = JSON.parse(readFileSync(ENVIRONMENTS_FILE, "utf8"));
-  const ok = bake(file, "release");
+  const ok = await bake(file, "release");
   expect(ok.status).toBe(0);
   expect(JSON.parse(ok.stdout)).toMatchObject({
     name: "production",
     apiUrl: "https://api.ponzu.design",
     workosClientId: "client_01M72Y00V5GD7G4VZJR56D5JS7",
   });
-  expect(JSON.parse(bake(file, "dev").stdout)).toEqual(DEV_ENVIRONMENT);
+  expect(JSON.parse((await bake(file, "dev")).stdout)).toEqual(DEV_ENVIRONMENT);
   const unset = structuredClone(file);
   unset.environments.production.workosClientId = null;
-  const refusedRelease = bake(unset, "release");
+  const refusedRelease = await bake(unset, "release");
   expect(refusedRelease.status).toBe(1);
   expect(refusedRelease.stderr).toContain(
     "production.workosClientId is not set in infra/environments.json",
   );
-  expect(bake(unset, "dev").status).toBe(0);
+  expect((await bake(unset, "dev")).status).toBe(0);
   // Not an https origin: the schema refuses it before anything is baked.
   const broken = structuredClone(file);
   broken.environments.dev.apiUrl = "http://api.ponzu.design";
-  const refused = bake(broken, "dev");
+  const refused = await bake(broken, "dev");
   expect(refused.status).toBe(1);
   expect(refused.stderr).toContain("environments.dev.apiUrl");
 });
