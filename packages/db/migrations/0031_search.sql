@@ -1,3 +1,5 @@
+-- hand-written (the foreign keys below take SHARE ROW EXCLUSIVE on "canvases" until the migration commits, which holds every write to it; give up after 5 s rather than queue live writes behind a long transaction; re-paste after regenerating)
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 -- hand-written (drizzle-kit does not emit extensions, and the trigram index below needs pg_trgm; re-paste after regenerating)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
 CREATE TABLE "search_entries" (

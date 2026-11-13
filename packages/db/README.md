@@ -148,7 +148,12 @@ items. A write whose person author names no `users` row stores "Deleted user" to
 or a reindex never writes back the name a document's comment still carries.
 
 The migration that made the table creates the `pg_trgm` extension, a line written by hand
-(drizzle-kit does not emit extensions). PGlite is given it in `createTestDb`.
+(drizzle-kit does not emit extensions). PGlite is given it in `createTestDb`. A second
+hand-written line, `SET LOCAL lock_timeout = '5s'`, comes first: the two foreign keys take SHARE
+ROW EXCLUSIVE on `canvases` until the migration commits, which holds every write to it (about
+10 ms on a Postgres 18 with 10,000 canvases). If a long transaction is writing to `canvases`, the
+migration gives up after 5 seconds and leaves the database as it was, to be run again, instead
+of queueing live writes behind it.
 
 **Reading.** `searchCanvases` answers a search in one statement, from the canvases
 `readableCanvases` lets the person read. That condition is the canvas list's too
