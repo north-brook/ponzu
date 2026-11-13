@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dirname } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium, type TestChromium } from "@ponzu/render/testing";
 import { ARRIVE_LAG_MS } from "./arrive.ts";
 import { bundle, canvasCss } from "./dom-lib.ts";
 
@@ -12,13 +12,6 @@ import { bundle, canvasCss } from "./dom-lib.ts";
  */
 
 type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
-type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
-const { chromium: playwright } = (await import(
-  Bun.resolveSync(
-    "playwright-core",
-    dirname(Bun.resolveSync("@ponzu/render/chromium", import.meta.dir)),
-  )
-)) as { chromium: { launch(o: object): Promise<Browser> } };
 const chromium = findChromium();
 setDefaultTimeout(30_000);
 
@@ -135,7 +128,7 @@ const settled = (page: Page) =>
   );
 
 describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
-  let browser: Browser;
+  let browser: TestChromium;
   let page: Page;
   let code: string;
   let css: string;
@@ -145,7 +138,7 @@ describe.skipIf(!chromium)("an empty canvas's first board in Chromium", () => {
       bundle("first-board", ENTRY, { "process.env.NODE_ENV": '"production"' }),
       canvasCss(),
     ]);
-    browser = await playwright.launch({ executablePath: chromium!, headless: true });
+    browser = await launchChromium(chromium!);
   });
   afterAll(() => browser?.close());
 

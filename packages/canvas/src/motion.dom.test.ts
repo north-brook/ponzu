@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { launchChromium, type TestChromium } from "@ponzu/render/testing";
 
 /*
  * Motion and BoardDetail in a real browser: animation events, CSS animations
@@ -10,13 +11,6 @@ import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
  */
 
 type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
-type Browser = { newPage(): Promise<Page>; close(): Promise<void> };
-const { chromium: playwright } = (await import(
-  Bun.resolveSync(
-    "playwright-core",
-    dirname(Bun.resolveSync("@ponzu/render/chromium", import.meta.dir)),
-  )
-)) as { chromium: { launch(o: object): Promise<Browser> } };
 const chromium = findChromium();
 setDefaultTimeout(30_000);
 
@@ -28,7 +22,7 @@ window.pz = { fieldsOf, Motion, MOTION_CSS, BoardDetail, STILL_CSS, handoffToVid
 `;
 
 describe.skipIf(!chromium)("motion in Chromium", () => {
-  let browser: Browser;
+  let browser: TestChromium;
   let page: Page;
 
   beforeAll(async () => {
@@ -38,7 +32,7 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     const built = await Bun.build({ entrypoints: [entry], target: "browser", format: "esm" });
     await Bun.file(entry).delete();
     const code = await built.outputs[0]!.text();
-    browser = await playwright.launch({ executablePath: chromium!, headless: true });
+    browser = await launchChromium(chromium!);
     page = await browser.newPage();
     await page.setContent("<!doctype html><div id=host></div>");
     await page.addScriptTag({ content: code, type: "module" });
