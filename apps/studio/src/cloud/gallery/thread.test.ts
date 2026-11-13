@@ -175,7 +175,12 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
           [...document.querySelectorAll<HTMLImageElement>(`${sel} img`)].every((i) => i.complete),
         log,
       );
-      await page.waitForTimeout(100);
+      // A frame laid out with every picture in it, and its resize heard (the rail's observer runs
+      // after layout in that frame): the second frame from now starts after it, however slowly
+      // the machine draws.
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
       expect(Math.abs((await whereIs(before.text))! - before.y)).toBeLessThan(2);
     } finally {
       release();
@@ -410,7 +415,7 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     board: string,
     reducedMotion: "reduce" | "no-preference",
     steps = 20,
-  ): Promise<{ frames: Frame[]; end: End | null }> => {
+  ): Promise<{ frames: Frame[]; commits: Frame[]; end: End | null }> => {
     await page.setViewportSize({ width: 600, height: 700 });
     await page.emulateMedia({ colorScheme: "light", reducedMotion });
     await page.goto(`${server.url}/gallery.html?board=${board}&theme=light`);
@@ -466,27 +471,29 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       let end: End | null = null;
       let ended: Omit<End, "lastHeld" | "gone"> | null = null;
       let held: Frame | null = null;
+      const made: Frame[] = [];
       const commits = new MutationObserver(() => {
         const now = measure(-1);
+        made.push(now);
         const going = leavingNow();
         if (!ended && going.length && last) {
           // The turn's end: hold what it set leaving where it starts, then walk it.
-          const made = going.flatMap((el) => el.getAnimations());
-          for (const a of made) {
+          const leaves = going.flatMap((el) => el.getAnimations());
+          for (const a of leaves) {
             a.pause();
             a.currentTime = 0;
           }
-          const timings = made.map((a) => a.effect!.getComputedTiming());
+          const timings = leaves.map((a) => a.effect!.getComputedTiming());
           const run = Math.max(0, ...timings.map((t) => Number(t.endTime)));
           const walked: Frame[] = [];
           for (let i = 0; i <= steps; i++) {
             const t = (run * i) / steps;
-            made.forEach((a, j) => {
+            leaves.forEach((a, j) => {
               a.currentTime = Math.min(t, Number(timings[j]!.endTime) - 0.01);
             });
             walked.push(measure(t));
           }
-          for (const a of made) a.finish();
+          for (const a of leaves) a.finish();
           ended = { before: last, steps: walked };
           // Finished: closed all the way, and still there until React takes it away.
           held = last = measure(run);
@@ -517,7 +524,7 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
         });
       });
       commits.disconnect();
-      return { frames: out, end };
+      return { frames: out, commits: made, end };
     }, steps);
   };
 
@@ -529,7 +536,7 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
    * the answer settles into place without a jump.
    */
   test("a streaming turn: one working line, asides as they come, and an end that settles", async () => {
-    const { frames, end: turn } = await playTurn("turn-live", "no-preference");
+    const { frames, commits, end: turn } = await playTurn("turn-live", "no-preference");
     const sent = frames.findIndex((f) => f.messages > 0);
     const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(sent).toBeGreaterThanOrEqual(0);
@@ -543,8 +550,16 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       expect(frame.work).toBe(false);
       expect(frame.leaving).toEqual([]);
     }
-    // The states it went through, each specific; thinking right after it spoke.
-    const states = during.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
+    // The states it went through, each specific; thinking right after it spoke. Read from every
+    // commit, not every frame: a state the page held for less than a frame is not painted, and
+    // a loaded machine paints fewer frames.
+    const from = commits.findIndex((f) => f.messages > 0);
+    const to = commits.findIndex((f, i) => i > from && f.lines === 0 && f.messages > 0);
+    expect(from).toBeGreaterThanOrEqual(0);
+    expect(to).toBeGreaterThan(from);
+    const live = commits.slice(from, to);
+    for (const commit of live) expect(commit.lines).toBe(1);
+    const states = live.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
     expect(states).toEqual([
       "Thinking",
       "Reading the canvas",
@@ -556,10 +571,14 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     ]);
     // Its first message reads plain while it is the newest thing said, and becomes an aside, in
     // italics, the moment the agent carries on after it; the answer is never one.
-    const firstAside = during.findIndex((f) => f.asides.length > 0);
+    const firstAside = live.findIndex((f) => f.asides.length > 0);
     expect(firstAside).toBeGreaterThan(0);
-    expect(during[firstAside]!.working).toBe('Drawing "Plan ready"');
-    for (const frame of during.slice(firstAside)) {
+    expect(live[firstAside]!.working).toBe('Drawing "Plan ready"');
+    const firstPainted = during.findIndex((f) => f.asides.length > 0);
+    for (const frame of [
+      ...live.slice(firstAside),
+      ...(firstPainted < 0 ? [] : during.slice(firstPainted)),
+    ]) {
       expect(frame.asides).toEqual([
         { text: "Drew Plan. Now Plan ready, then the tokens.", italic: true },
       ]);
