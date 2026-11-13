@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/north-brook/ponzu/compare/v2.0.0...v2.1.0) (2026-11-13)
+
+
+### Features
+
+* search a workspace's canvases, boards, comments, messages and pull requests ([#552](https://github.com/north-brook/ponzu/issues/552)) ([b508c14](https://github.com/north-brook/ponzu/commit/b508c149fa3ea2bc6e1e7bbd54c12408a279eff5))
+
 ## [2.0.0](https://github.com/north-brook/ponzu/compare/v1.80.1...v2.0.0) (2026-11-13)
 
 
