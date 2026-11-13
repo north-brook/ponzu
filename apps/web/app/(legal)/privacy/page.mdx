@@ -41,7 +41,7 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 
 ### Your GitHub access
 
-- **Your GitHub user token,** encrypted. It lasts eight hours and is refreshed. It never leaves our servers.
+- **Your GitHub user token,** encrypted. GitHub issues it through WorkOS when you sign in; it lasts eight hours and we refresh it with GitHub directly. We use it only to call GitHub from our servers.
 - **The workspaces and repositories you can reach,** and your permission on each, as GitHub says. We ask GitHub again when an answer is old, so access follows GitHub.
 - **The people GitHub lists for each repository** where Ponzu's GitHub App is installed: their login, name, avatar and permission, including people who have never opened Ponzu. We use it to show who is in a workspace. It never grants anyone anything.
 - **What GitHub tells us** about the accounts and repositories where the App is installed: pushes, pull requests and their reviews, checks, and changes to repositories, members and teams. We keep a record of each notice for 30 days, to recognise one GitHub sends twice.
@@ -58,8 +58,8 @@ When you sign in, GitHub tells us, through our sign-in provider WorkOS, your Git
 ### Your code
 
 - Each canvas has its own sandbox, which checks out the canvas's branch and runs your repository's code.
-- The agent's commits are pushed to a branch whose name starts with `pz/`, authored as you, at your GitHub noreply address.
-- Pull requests are opened, updated and merged as you, when you, or a turn you started, asks for it.
+- The agent's commits are pushed to a branch whose name starts with `pz/`, authored as the canvas's owner, at their GitHub noreply address, whoever asked for the work. If the owner has deleted their account, they are authored as Ponzu's GitHub App.
+- The agent works in turns that a person in the canvas starts, and also in turns that a failed check or a review of its pull request starts. In a turn a person started, it acts on the pull request as that person; in any other turn, as the last person who wrote to it, or else the canvas's owner. It merges a pull request, marks it ready or turns on auto-merge only in a turn a person started in Ponzu, as that person.
 - The sandbox's disk, and a snapshot of it while the canvas sleeps, live at Vercel.
 
 ### Suggested prompts for a repository
@@ -74,7 +74,7 @@ The credential reaches the sandbox in the command that starts it, at Vercel. Ver
 
 ### Your repository's secrets
 
-A workspace admin can give a repository secrets (environment variables). We keep their names, and their values encrypted, and give them to that repository's sandboxes when they start, in memory like the Claude credential.
+A workspace admin can give a repository secrets (environment variables), and anyone who can steer a canvas can give it one when the agent asks for it. We keep their names, and their values encrypted, and give them to that repository's sandboxes, in memory like the Claude credential.
 
 ### Usage and billing
 
@@ -84,7 +84,7 @@ A workspace admin can give a repository secrets (environment variables). We keep
 
 ### Notifications and your devices
 
-- **Your inbox:** what Ponzu tells you about your canvases, such as a question for you, a reply, a pull request that is ready or a teammate's comment. Each one holds ids and a sentence Ponzu writes, never words a person or the agent wrote.
+- **Your inbox:** what Ponzu tells you about your canvases, such as a question for you, a reply, a pull request that is ready or a teammate's comment. Each one holds ids, the canvas's or workspace's name, the first names of the people it is about, and a sentence Ponzu writes; never the words of a message or comment.
 - **Your settings for them,** and your time zone as the desktop app reports it.
 - **Each computer the desktop app runs on:** a random id for the install, the computer's name, the app's version, and when you were last at it, so notifications show on the computer you are using.
 - Ponzu for iPhone does not register for notifications yet, and nothing is sent to phones or by email yet. When it is, we will keep what sending needs (a phone's push token, its name and the app's version) and say so here first.
@@ -98,14 +98,14 @@ We use PostHog to understand how Ponzu is used and to fix what breaks.
 - **Clicks** in the desktop app, for heatmaps, without the text or labels of what was clicked.
 - **Errors,** with their stack traces, from the desktop app and the servers.
 - **Model calls:** for each call to a model that we or the agent make, the model, token counts, timing, cost, tool names and the outcome. Never the prompts, the replies, or what tools were given and returned.
-- **Recordings of desktop app sessions:** what the screen shows, the pointer and keys, the app's console messages, and the timing of its requests (their addresses without queries, never their contents). Every field you type in is masked, and anything that can show a secret (your Claude credential, a repository's secrets) is blocked from the recording. A canvas's boards are hidden, and the text of a canvas, its thread and comments, the pull request tab, suggested prompts and canvas names is masked.
+- **Recordings of desktop app sessions:** what the screen shows, the pointer and keys, the app's console messages, and the timing of its requests (their addresses without queries, never their contents). Every field you type in is masked, and anything that can show a secret (your Claude credential, a repository's secrets) is blocked from the recording. A canvas's boards are hidden, and the text of a canvas, its thread and comments, the pull request tab, suggested prompts and canvas names is masked on screen. Console messages are recorded as the app writes them.
 - **IP addresses:** the desktop app and this website send to PostHog from your own device, so PostHog receives your IP address. Our PostHog project does not discard it. Our servers send their events to PostHog without your IP address.
-- **Ponzu for iPhone** sends nothing to PostHog in this version. What our servers record about what you do from the phone follows the switch below.
+- **Ponzu for iPhone** sends nothing to PostHog in this version. While it is a TestFlight beta, Apple may send us its crash reports and any feedback you send through TestFlight, if you allow it. What our servers record about what you do from the phone follows the switch below.
 - **How to turn it off:** turn off Settings › Account › Share usage data in the desktop app. The switch is on until you turn it off. It is kept on your account, so it holds on every device you sign in on. Within a minute our servers send PostHog nothing more about you (no events, profile updates or errors), the agent's turns that you start are not traced, and the desktop app stops recording and reporting at once; a turn that was already running when you turned it off may still be traced. Events about no one person, such as a sandbox going to sleep, are still counted. On any computer you can also set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1` in the environment Ponzu starts in, or write `{"enabled": false}` to `~/.ponzu/telemetry.json`; these turn off what the desktop app on that computer reports, whatever the switch says. Turning the switch off does not delete what was already sent. To have that deleted, write to <Mail to="privacy" /> and we will ask PostHog to delete it.
 
 ### Logs
 
-Our servers log ids and outcomes, never tokens, request bodies or headers. The logs are kept at Vercel.
+Our servers' own log lines carry ids and outcomes, never tokens, request bodies or headers. Vercel, which runs our servers, also keeps its own record of the requests they receive, as any web host does. Both are kept at Vercel.
 
 ### This website
 
@@ -132,13 +132,13 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
 ## How long we keep it
 
 - Your canvases, threads and comments: until you delete the canvas or your account. A canvas whose pull request has merged is kept, with its last checkpoint, until it is deleted. Nothing expires a canvas by itself.
-- A canvas's change history is compacted after seven days: older changes are folded into its checkpoints.
+- A canvas's change history is compacted as its checkpoints are saved: changes older than seven days, beyond its newest 200, are folded into its checkpoints.
 - A sandbox's snapshot expires 30 days after it was last used, and Vercel removes the sandbox 14 days after that.
 - A checkpoint is deleted when a newer one replaces it.
 - A notification leaves your inbox three days after it was made if you have not read it, and is deleted after 30 days. A computer the desktop app has not been seen on for 30 days is forgotten.
 - The short-lived records we keep while you connect Claude or install Ponzu's GitHub App are deleted a day after they expire. Records of finished background work, and of the notices GitHub and our other providers send us, are deleted 30 days after the work finished or the notice arrived.
 - Analytics: PostHog keeps recordings of desktop app sessions for 30 days. Our project sets no limit on events, so PostHog keeps them for as long as our plan with it does, unless they are deleted sooner.
-- Backups: what is deleted from our database can still be restored from its history for a day afterwards, and from a snapshot taken before a change to the database's structure for 14 days.
+- Backups: what is deleted from our database can still be restored from its history for a day afterwards. Each time we update our servers, we first take a copy of the database and keep it for 14 days, so what was deleted before a copy was taken can be restored from that copy until it expires.
 - Logs: for as long as Vercel keeps them on our plan.
 
 ## Deleting
@@ -154,6 +154,7 @@ The full list, with what each one holds, is on [Subprocessors](/subprocessors). 
   - The workspace's usage history stays, put down to nobody.
   - The name a canvas's document carries for the author of a comment you left is not rewritten, in the canvas or in its checkpoints; nor are your words in workspaces you had already left.
   - Your branches, commits and pull requests on GitHub, and the pictures a pull request shows, are not touched.
+  - While GitHub still lists you on a workspace's repositories, your login, name and avatar stay in that workspace's list of people, as they do for anyone GitHub lists.
 - You cannot delete your account while you are the only admin of a workspace that others are in. Make someone else an admin first.
 - We also revoke Ponzu's authorization on your GitHub account. If GitHub does not answer, your account is deleted all the same, and you can revoke it yourself in GitHub's settings, under Applications.
 - Deleting your account does not yet delete what PostHog holds about you by itself. Write to <Mail to="privacy" /> and we will ask PostHog to delete your profile, events and recordings.
@@ -185,7 +186,7 @@ Ponzu is not for children. You must be at least 13 to use it, and at least 16 in
 
 ## Changes
 
-When this policy changes, the new version is posted here, and every change shows in the repository's history on GitHub. If a change matters to how your data is used, we tell you before it takes effect.
+When this policy changes, the new version is posted here, and every change shows in the repository's history on GitHub. If a change uses your data in a new way, we tell you at least 30 days before it takes effect, by email where we have your address, and on this page.
 
 ## Ponzu 1
 

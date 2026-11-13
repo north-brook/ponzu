@@ -34,7 +34,7 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "Neon (Databricks, Inc.)",
     purpose: "Database and realtime updates",
-    data: "Accounts, workspaces, canvases, threads, comments, notifications, events and usage; tokens and secrets, encrypted",
+    data: "Accounts, workspaces, canvases, threads, comments, notifications, events and usage; tokens and secrets, encrypted; and, for live updates, the IP address of each device connected to it",
     location: "United States (AWS us-east-1, N. Virginia)",
     status: "in-use",
     url: "https://neon.com",
@@ -50,7 +50,7 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "WorkOS, Inc.",
     purpose: "Sign-in and sessions",
-    data: "Name, email and GitHub identity; the IP address and browser of each sign-in",
+    data: "Name, email and GitHub identity; the GitHub token each sign-in produces, as it passes through; the IP address and browser of each sign-in",
     location: "Where WorkOS runs its service",
     status: "in-use",
     url: "https://workos.com",
@@ -75,7 +75,7 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
   {
     name: "650 Industries, Inc. (Expo)",
     purpose: "Delivers updates to the iPhone app",
-    data: "The phone's platform, the app's runtime version and its update channel, in each check for an update",
+    data: "The phone's IP address and platform, the app's runtime version and its update channel, and whatever else Expo's update library sends, in each check for an update",
     location: "Where Expo runs its service",
     status: "in-use",
     url: "https://expo.dev",
