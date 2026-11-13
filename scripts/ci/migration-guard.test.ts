@@ -129,6 +129,21 @@ describe("a change against main", () => {
     expect(rules(result)).toEqual(["snapshot chain", "snapshot chain", "renumber"]);
   });
 
+  test("a new snapshot with no id, or that is not JSON, fails", () => {
+    for (const text of [JSON.stringify({ prevId: "x" }), "{ not json"]) {
+      const m = withNext(MAIN);
+      m.files[`meta/${NUMBER}_snapshot.json`] = text;
+      expect(rules(judge(MAIN, m))).toContain("snapshot chain");
+    }
+    // Even when its prevId is right, the next one could not follow it.
+    const prevId = JSON.parse(
+      MAIN.files[`meta/${String(N - 1).padStart(4, "0")}_snapshot.json`] as string,
+    ).id;
+    const m = withNext(MAIN);
+    m.files[`meta/${NUMBER}_snapshot.json`] = JSON.stringify({ prevId });
+    expect(rules(judge(MAIN, m))).toEqual(["snapshot chain"]);
+  });
+
   test("a migration made before main's newest fails: db:migrate would skip it", () => {
     const result = judge(MAIN, withNext(MAIN, { when: NEWEST - 1 }));
     expect(rules(result)).toEqual(["older than main's newest", "renumber"]);
@@ -182,6 +197,8 @@ describe("the lock timeout", () => {
       `CREATE INDEX "users_plan_idx" ON "users" USING btree ("plan");`,
       `CREATE TABLE "things" ("user_id" text);${BREAK}\nALTER TABLE "things" ADD CONSTRAINT "f" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id");`,
       `UPDATE users SET plan = 'free';`,
+      `ALTER TABLE IF EXISTS users ADD COLUMN plan text;`,
+      `ALTER TABLE IF EXISTS ONLY public.users ADD COLUMN plan text;`,
     ]) {
       const found = lockProblems("x.sql", sql, tables);
       expect(found.map((p) => p.rule)).toEqual(["lock_timeout"]);
@@ -201,6 +218,22 @@ describe("the lock timeout", () => {
     expect(lockProblems("x.sql", `SET lock_timeout = '2s';\nDROP INDEX "i";`, tables)).toEqual([]);
     const fresh = `CREATE TABLE "things" ("id" text PRIMARY KEY NOT NULL, "users_seen" integer);`;
     expect(lockProblems("x.sql", fresh, tables)).toEqual([]);
+  });
+
+  test("a lock_timeout of zero or DEFAULT is no timeout, and does not count", () => {
+    for (const set of [
+      "SET LOCAL lock_timeout = 0;",
+      "SET LOCAL lock_timeout = '0';",
+      "SET lock_timeout TO DEFAULT;",
+      "SET LOCAL lock_timeout = '0s';",
+    ]) {
+      const sql = `${set}${BREAK}\nALTER TABLE "users" ADD COLUMN "plan" text;`;
+      expect(lockProblems("x.sql", sql, tables).map((p) => p.rule)).toEqual(["lock_timeout"]);
+    }
+    for (const set of ["SET LOCAL lock_timeout TO '1min';", "SET SESSION lock_timeout = 5000;"]) {
+      const sql = `${set}${BREAK}\nALTER TABLE "users" ADD COLUMN "plan" text;`;
+      expect(lockProblems("x.sql", sql, tables)).toEqual([]);
+    }
   });
 
   test("a lock_timeout set after the first lock is too late", () => {
@@ -241,6 +274,13 @@ describe("renumbering", () => {
   test("the advice names the command and the base", () => {
     expect(renumberAdvice("abc123")).toContain(
       "bun scripts/ci/migration-guard.ts renumber --base abc123",
+    );
+  });
+
+  test("judged against a commit in CI, the advice renumbers onto origin/main", () => {
+    // A queue entry ahead may never land, and a lane has no copy of it.
+    expect(renumberAdvice("a".repeat(40))).toContain(
+      "bun scripts/ci/migration-guard.ts renumber --base origin/main",
     );
   });
 });

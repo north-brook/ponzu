@@ -747,7 +747,8 @@ only when that job did.
   pull request in the queue once its checks pass (`gh pr merge --help`: "no merge strategy is
   required"; the `--squash` is ignored and the queue squashes). A release pull request that
   `scripts/release-hold.ts` holds loses auto-merge as before, and if it is already in the queue
-  it is also taken out of it (turning auto-merge off does not do that).
+  it is also taken out of it (turning auto-merge off does not do that). So is a release pull
+  request whose hold could not be decided.
 
 **What changes for a person merging by hand.** The button says "Merge when ready" and adds the
 pull request to the queue; it merges some minutes later, after the queue's run. From a terminal,
@@ -784,14 +785,16 @@ commit before it on a push. It fails, naming the file and line, when:
   journal, the files and the snapshot chain disagree anywhere;
 - it edits or deletes a migration the base has (applied migrations never change);
 - it adds more than one migration;
-- it is not expand only: the statements `scripts/ci/migrations.ts` refuses (DROP, RENAME, a type
-  change, SET NOT NULL, ADD COLUMN … NOT NULL without a default, TRUNCATE), unless a
+- it is not expand only: the statements `scripts/ci/migrations.ts` refuses (DROP of a table,
+  column, index, type, extension, function or sequence, a column's DEFAULT dropped, RENAME, a
+  type change, SET NOT NULL, ADD COLUMN … NOT NULL without a default, TRUNCATE), unless a
   `-- contract:` line says why it is safe now;
 - a statement names a table the base already has before `lock_timeout` is set. Each such
   statement holds a lock on that table until the migration commits, so a long transaction on it
   would hold every request behind the migration. The migration's first statement is then
   `SET LOCAL lock_timeout = '5s';--> statement-breakpoint`, under a `-- hand-written (…)` line, as
-  in `0031_search`. A migration that only creates new tables needs none.
+  in `0031_search`. A timeout of zero or DEFAULT is no timeout and does not count. A migration
+  that only creates new tables needs none.
 
 When another lane's migration took the number first, the failure prints what to run:
 
@@ -859,7 +862,13 @@ Migrations job. The contract checks the code of the commit right before the merg
 that is actually live: if two merges with migrations deploy as one (a deploy that skips a queued
 older commit), the API live before both runs on two migrations that were each checked only
 against their own base. The lock rule finds a table by its quoted name, or unquoted after a word
-that takes a table; a name built in dynamic SQL is not found.
+that takes a table; a name built in dynamic SQL is not found. The lint does not catch a
+constraint narrowed on data that exists (a CHECK or UNIQUE added to an existing column), or a
+DELETE; the contract catches what the old API's own tests exercise, and a reviewer the rest. And
+the release notes ride on the squash commit's body (`squash_merge_commit_message: PR_BODY` in
+`infra/github/repo.json`): that the queue's squash takes the repository's commit message settings
+has not been seen yet, so look at the first queued `feat:` or `fix:` commit on `main` and at the
+release pull request that follows it.
 
 ## The minute
 

@@ -76,6 +76,15 @@ describe("the migration lint", () => {
         `ALTER TABLE "a" ADD COLUMN "b" integer DEFAULT 0 NOT NULL, ADD COLUMN "c" text NOT NULL;`,
       ),
     ).toEqual(["ADD COLUMN … NOT NULL without a DEFAULT"]);
+    expect(rule(`ALTER TABLE "a" ALTER COLUMN "b" DROP DEFAULT;`)).toEqual(["DROP DEFAULT"]);
+    expect(rule(`ALTER TABLE a ALTER b DROP DEFAULT;`)).toEqual(["DROP DEFAULT"]);
+    const dropped = "DROP INDEX, TYPE, DOMAIN, EXTENSION, FUNCTION or SEQUENCE";
+    expect(rule(`DROP INDEX "users_email_unique";`)).toEqual([dropped]);
+    expect(rule(`DROP TYPE "public"."plan" CASCADE;`)).toEqual([dropped]);
+    expect(rule(`DROP EXTENSION IF EXISTS pg_trgm;`)).toEqual([dropped]);
+    expect(rule(`DROP FUNCTION fold(text);`)).toEqual([dropped]);
+    expect(rule(`DROP SEQUENCE "s";`)).toEqual([dropped]);
+    expect(rule(`DROP DOMAIN "d";`)).toEqual([dropped]);
   });
 
   test("what only adds passes", () => {
@@ -122,7 +131,11 @@ describe("the migration lint", () => {
     expect(rule(`ALTER TABLE "a" ADD "b" integer NOT NULL;`)).toEqual([
       "ADD COLUMN … NOT NULL without a DEFAULT",
     ]);
-    expect(rule(`ALTER TABLE "a" ALTER "b" DROP NOT NULL, ALTER "c" DROP DEFAULT;`)).toEqual([]);
+    // Not a column dropped, but a default, which an older API's inserts may rely on.
+    expect(rule(`ALTER TABLE "a" ALTER "b" DROP NOT NULL, ALTER "c" DROP DEFAULT;`)).toEqual([
+      "DROP DEFAULT",
+    ]);
+    expect(rule(`ALTER TABLE "a" ALTER "b" DROP NOT NULL;`)).toEqual([]);
     expect(rule(`ALTER TABLE "a" ADD CONSTRAINT "k" CHECK ("b" IS NOT NULL);`)).toEqual([]);
     expect(rule(`TRUNCATE "a";`)).toEqual(["TRUNCATE"]);
     expect(rule(`DROP MATERIALIZED VIEW "v";`)).toEqual(["DROP SCHEMA or VIEW"]);

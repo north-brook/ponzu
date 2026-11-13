@@ -250,6 +250,42 @@ describe("release.yml's hold with a merge queue", () => {
     expect(dequeues(run.calls)).toEqual([]);
   });
 
+  test("when the hold cannot be decided, a queued release PR is taken out of the queue", async () => {
+    const fallback = job.steps.find((s) => s.if === "failure()") as Step;
+    const dir = mkdtempSync(join(tmpdir(), "release-queue-"));
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(
+      join(dir, "bin", "gh"),
+      [
+        "#!/bin/bash",
+        'printf "%s\\n" "$*" >>"$FAKE_LOG"',
+        'case "$1 $2" in',
+        // Queued: auto-merge is spent, so the first list (auto-merge on) finds nothing.
+        '  "pr list") case "$*" in *autoMergeRequest*) ;; *) echo 7 ;; esac ;;',
+        '  "api graphql") case "$*" in *isInMergeQueue*) echo PR_node ;; esac ;;',
+        "esac",
+      ].join("\n"),
+    );
+    chmodSync(join(dir, "bin", "gh"), 0o755);
+    const log = join(dir, "gh.log");
+    writeFileSync(log, "");
+    const result = await spawn(["bash", "-e", "-c", fallback.run as string], {
+      cwd: ROOT,
+      env: {
+        PATH: `${join(dir, "bin")}:${process.env.PATH}`,
+        APP: "ponzu",
+        GITHUB_REPOSITORY: "o/r",
+        FAKE_LOG: log,
+      },
+    });
+    const calls = readFileSync(log, "utf8").trim().split("\n").filter(Boolean);
+    rmSync(dir, { recursive: true });
+    expect(result.code).toBe(0);
+    expect(dequeues(calls)).toHaveLength(1);
+    expect(dequeues(calls)[0]).toContain(`input: {id: "PR_node"}`);
+    expect(result.stdout).toContain("Release PR #7 taken out of the merge queue");
+  });
+
   test("a release PR that is not held keeps auto-merge, which the queue honours", async () => {
     // `gh pr merge --squash --auto` on a branch with a merge queue enables auto-merge, and the
     // PR joins the queue once its checks pass (gh pr merge --help); the queue squashes.

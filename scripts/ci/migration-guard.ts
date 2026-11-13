@@ -198,7 +198,17 @@ export function judgeTree(m: Migrations): Problem[] {
   for (const entry of m.journal.entries) {
     if (!TAG.test(entry.tag)) continue;
     const snap = snapshot(m, entry.tag);
-    if (!snap.id) continue;
+    if (!snap.id) {
+      // A snapshot with no id (or that is not JSON) breaks the chain for the next generate.
+      if (snapshotOf(entry.tag) in m.files) {
+        out.push({
+          rule: "snapshot chain",
+          file: snapshotOf(entry.tag),
+          message: `${snapshotOf(entry.tag)} has no id, so no snapshot after it can follow it. Regenerate it with db:generate.`,
+        });
+      }
+      continue;
+    }
     if (snap.prevId !== prev) {
       out.push({
         rule: "snapshot chain",
@@ -219,8 +229,12 @@ export function judgeTree(m: Migrations): Problem[] {
   return out;
 }
 
-/** `SET [LOCAL] lock_timeout`, as `statements` gives it (upper-cased). */
-const LOCK_TIMEOUT = /^SET\s+(?:LOCAL\s+)?LOCK_TIMEOUT\b/;
+/**
+ * `SET [LOCAL|SESSION] lock_timeout` to a number, as `statements` gives it (upper-cased). Zero
+ * and DEFAULT mean no timeout at all, so they do not count.
+ */
+const LOCK_TIMEOUT = /^SET\s+(?:LOCAL\s+|SESSION\s+)?LOCK_TIMEOUT\s*(?:=|\bTO\b)\s*'?\s*(\d+)/;
+const setsLockTimeout = (code: string) => Number(LOCK_TIMEOUT.exec(code)?.[1] ?? 0) > 0;
 
 /**
  * The first statement that names one of `existing` before any `lock_timeout` is set. A name
@@ -232,11 +246,11 @@ export function lockProblems(file: string, sql: string, existing: string[]): Pro
   const patterns = existing.map((name) => ({
     name,
     test: new RegExp(
-      `"${quote(name)}"|\\b(?:TABLE|ON|REFERENCES|INTO|UPDATE|FROM|JOIN)\\s+(?:ONLY\\s+)?(?:PUBLIC\\.)?${quote(name)}\\b`,
+      `"${quote(name)}"|\\b(?:TABLE|ON|REFERENCES|INTO|UPDATE|FROM|JOIN|TRUNCATE)\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?(?:PUBLIC\\.)?${quote(name)}\\b`,
     ),
   }));
   for (const statement of statements(sql)) {
-    if (LOCK_TIMEOUT.test(statement.code)) return [];
+    if (setsLockTimeout(statement.code)) return [];
     const hit = patterns.find((p) => p.test.test(statement.code));
     if (hit) {
       return [
@@ -252,8 +266,12 @@ export function lockProblems(file: string, sql: string, existing: string[]): Pro
   return [];
 }
 
-/** How to renumber, in the words a failure prints. */
-export function renumberAdvice(base: string): string {
+/**
+ * How to renumber, in the words a failure prints. CI judges against a commit (the merge's base,
+ * or the queue entry ahead, which may never land), so a lane renumbers onto origin/main instead.
+ */
+export function renumberAdvice(judgedAgainst: string): string {
+  const base = /^[0-9a-f]{40}$/.test(judgedAgainst) ? "origin/main" : judgedAgainst;
   return [
     "Renumber this branch's migration onto main's:",
     "  git fetch origin && git merge origin/main   (a conflict in packages/db/migrations is fine: the next line settles it)",

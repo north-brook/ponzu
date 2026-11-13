@@ -173,6 +173,23 @@ jobs:
             gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --disable-auto
             echo "::warning title=Auto-merge turned off on release PR #$number::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
           done
+          # One already in the merge queue has no auto-merge left to turn off, and would still
+          # merge: it is taken out of the queue too.
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
+            --label "autorelease: pending" --json number --jq '.[].number')
+          owner=${GITHUB_REPOSITORY%/*}
+          name=${GITHUB_REPOSITORY#*/}
+          for number in $numbers; do
+            queued=$(gh api graphql -f query="{ repository(owner: \"$owner\", name: \"$name\") {
+                pullRequest(number: $number) { id isInMergeQueue } } }" \
+              --jq '.data.repository.pullRequest | select(.isInMergeQueue) | .id')
+            if [ -n "$queued" ]; then
+              gh api graphql \
+                -f query="mutation { dequeuePullRequest(input: {id: \"$queued\"}) { clientMutationId } }" >/dev/null
+              echo "::warning title=Release PR #$number taken out of the merge queue::Whether it is held could not be decided, so a person merges it or the next push to main decides again."
+            fi
+          done
         env:
           APP: ${{ matrix.app }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
