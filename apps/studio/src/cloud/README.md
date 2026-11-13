@@ -220,6 +220,9 @@ moves the view there (`place-link.tsx`: dotted where an outside link is solid, m
 it names is gone). While a reply streams, a link still being written shows as its words alone
 (`settled`). Text shaped to make the
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
+Emphasis and strikethrough are paired by `emphasis.ts`, which makes micromark's pairs in time that
+grows with the text, where micromark's own took the square of it (32 KB of `abc* ` took 0.3 s).
+markdown.test.tsx counts the parser's work on each hostile shape rather than timing it.
 Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 
 ### Search

@@ -4,9 +4,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
+import type { PGlite } from "@electric-sql/pglite";
 import { migrationsFolder } from "../migrations.ts";
-import { extensions } from "../testing.ts";
+import { createEmptyTestDb } from "../testing.ts";
 
 const journal: { entries: { tag: string }[] } = JSON.parse(
   readFileSync(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
@@ -28,7 +28,8 @@ async function apply(client: PGlite, tag: string) {
 
 let client: PGlite;
 beforeAll(async () => {
-  client = new PGlite({ extensions });
+  client = await createEmptyTestDb();
+  await client.exec("CREATE EXTENSION IF NOT EXISTS pg_trgm");
   for (const tag of tags.slice(0, tags.indexOf(TAG))) await apply(client, tag);
 });
 afterAll(() => client.close());

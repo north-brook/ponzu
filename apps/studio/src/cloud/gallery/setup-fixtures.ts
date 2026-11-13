@@ -150,6 +150,8 @@ export const pingPrefs: PingPrefs = {
   prReady: true,
   teammateComments: false,
   emailDigest: false,
+  emailTeam: true,
+  emailRecap: true,
 };
 export const iphone: PingDevice = {
   id: "dev_iphone",

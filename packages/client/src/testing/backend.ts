@@ -1390,6 +1390,13 @@ export class FakeBackend {
       email: (userId) => ({
         address: this.people.get(userId)?.email ?? null,
         available: this.features.email,
+        // The API also asks GitHub's own answer (owner or member, never an outside
+        // collaborator); the fake has only roles, so an admin of a team is enough here.
+        ...(this.features.email && {
+          teamAvailable: [...this.workspaces.values()].some(
+            (workspace) => workspace.kind === "org" && workspace.members.get(userId) === "admin",
+          ),
+        }),
       }),
       billingMode: () => this.features.billing,
       changed: () => this.changed(),

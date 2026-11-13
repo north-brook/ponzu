@@ -36,6 +36,9 @@ const DEFAULT_PREFS: Prefs = {
   emailDigest: false,
 };
 
+/** The switches only an API that can send email answers, and only it takes; both on by default. */
+const EMAIL_ONLY_PREFS = { emailTeam: true, emailRecap: true } as const;
+
 /** The launch rate card: $0.10 a credit, 100 free per member, a $100 cap by default. */
 const CREDIT_CENTS = 10;
 const FREE_PER_MEMBER = 100;
@@ -65,8 +68,11 @@ export interface SettingsWorld {
   soleAdminOf(userId: string): { id: string; name: string }[];
   /** Take the person out of every workspace and forget them. */
   forget(userId: string): void;
-  /** Where the person's daily email would go, and whether the API can send it at all. */
-  email(userId: string): { address: string | null; available: boolean };
+  /**
+   * Where the person's email would go, whether the API can send it at all, and (only while it
+   * can) whether the "people joined" email could reach them.
+   */
+  email(userId: string): { address: string | null; available: boolean; teamAvailable?: boolean };
   /** PONZU_BILLING where the fake runs: off unless a test says otherwise. */
   billingMode(): "off" | "observe" | "on";
   /** Something a live query shows changed. */
@@ -251,8 +257,15 @@ export class FakeSettings {
     const now = () => new Date(this.clock.now()).toISOString();
     const prefs = () => this.prefs.get(userId) ?? DEFAULT_PREFS;
     const mine = () => this.devices.get(userId) ?? [];
+    // As the API: with email off, the answer is what it was before email had more than one kind.
+    const shown = (): Prefs => {
+      const kept = prefs();
+      if (world.email(userId).available) return { ...EMAIL_ONLY_PREFS, ...kept };
+      const { emailTeam: _team, emailRecap: _recap, ...rest } = kept;
+      return rest;
+    };
     const notifications = () => ({
-      prefs: prefs(),
+      prefs: shown(),
       devices: mine(),
       badge: this.badgeOf(userId),
       email: world.email(userId),
@@ -382,7 +395,12 @@ export class FakeSettings {
               }
               this.timeZones.set(userId, timeZone);
             }
-            this.prefs.set(userId, { ...prefs(), ...changes });
+            const taken = { ...changes };
+            if (!world.email(userId).available) {
+              delete taken.emailTeam;
+              delete taken.emailRecap;
+            }
+            this.prefs.set(userId, { ...prefs(), ...taken });
             return notifications();
           }),
         read: (id) =>

@@ -90,6 +90,16 @@ export const users = pgTable("users", {
   timeZone: text("time_zone"),
   /** The local date of the last daily email, so it goes at most once a day. */
   digestSentOn: date("digest_sent_on", { mode: "string" }),
+  // Email (docs/cloud.md, "Email"): the switches for the emails that can be turned off besides
+  // the daily one, and the stamps that make each go at most once.
+  /** Settings › Notifications › Email › When people join, for workspaces they are an admin of. */
+  emailTeam: boolean("email_team").notNull().default(true),
+  /** Settings › Notifications › Email › Friday recap. */
+  emailRecap: boolean("email_recap").notNull().default(true),
+  /** The last Friday whose recap was handled, sent or skipped, as a local date. */
+  recapSentOn: date("recap_sent_on", { mode: "string" }),
+  /** When the first real recap went, for its one-time introduction. Null: none yet. */
+  recapFirstSentAt: instant("recap_first_sent_at"),
   // Settings › Account › Share usage data: false stops the apps', the API's and the agent's
   // analytics about this person (docs/analytics.md, "Turning it off").
   shareUsage: boolean("share_usage").notNull().default(true),
@@ -197,6 +207,12 @@ export const workspaces = pgTable(
     peopleSyncedAt: instant("people_synced_at"),
     /** False when that read was cut short: someone missing from it may still have access. */
     peopleComplete: boolean("people_complete").notNull().default(false),
+    /**
+     * Where the next "people joined" email's window starts (docs/cloud.md, "Email"). Its
+     * default is the moment the column was added, so nobody already in a workspace then is
+     * ever announced.
+     */
+    membersAnnouncedAt: instant("members_announced_at").notNull().defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

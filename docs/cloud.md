@@ -3064,7 +3064,7 @@ inbox, the Mac's banners and the badge work regardless.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| GET | `/v1/me/notifications` | none | `{ prefs, devices, badge, email: { address, available }, timeZone }` |
+| GET | `/v1/me/notifications` | none | `{ prefs, devices, badge, email: { address, available, teamAvailable? }, timeZone }` |
 | PATCH | `/v1/me/notifications` | some of `prefs`, and `timeZone?` | as GET |
 | POST | `/v1/me/notifications/:id/read` | `{ via: "mac" \| "ios" }` | 204 |
 | POST | `/v1/me/devices` | `{ platform, pushToken?, pushEnvironment?, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
@@ -3074,9 +3074,13 @@ inbox, the Mac's banners and the badge work regardless.
 
 `badge` is the number on the Mac's dock and the phone's icon: the person's needs-you
 notifications whose question is still open, across every workspace, read or not and whether
-or not pings are on. `email.address` is where the daily email would go and `email.available`
-says whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and
-Settings hides the Email row while it is). `timeZone` is the IANA zone the app last reported,
+or not pings are on. `email.address` is where email would go and `email.available` says
+whether this deployment can send it at all (false until `RESEND_API_KEY` is set, and Settings
+hides its Email group while it is). Only while it is true does `prefs` also hold `emailTeam` and
+`emailRecap`, a PATCH take them, and `email.teamAvailable` say whether the person is an admin of
+an organisation's workspace who reaches it on GitHub as its owner or a member, never an outside
+collaborator ("Email"); without the key the answer is exactly what it was before
+those existed. `timeZone` is the IANA zone the app last reported,
 null until one has; the app sends `timeZone` in a PATCH when its own differs, and a name the
 API's time zone data does not know, or a bare offset such as `+05`, is a 400. The daily email's 9:00 is in that zone.
 
@@ -3191,7 +3195,10 @@ from the sidebar deletes this Mac's device first; signing out from the menu leav
 forgotten after 30 days unseen. Either way the main process takes every banner away, from the
 screen and Notification Center, and clears the dock's number, so whoever signs in next sees
 none of them. Settings › Notifications › Where lists the person's Macs and iPhones,
-this one first as "This Mac", and the Email row only while `email.available`. macOS shows an
+this one first as "This Mac". Settings › Notifications › Email, under Where, shows only while
+`email.available` (see "Email"). Every switch in Settings › Notifications saves only itself (a
+PATCH of the one key), so a Mac showing switches from before an email's "Stop these emails"
+cannot turn that email back on. macOS shows an
 app's notifications only when the app is signed: Ponzu Local's are refused, which the studio
 logs once and goes on.
 
@@ -3220,21 +3227,17 @@ nobody: the agent takes the first two up by itself, and the rest recover on thei
 calls the billing trigger yet; billing does once its gate is built.
 
 **The daily email** (`emailDigest`, off until the person turns it on) is one email a day of
-the same events and nothing else, sent through Resend (`deps/mail.ts`, the official `resend`
-SDK). It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email row
-until then. `PONZU_EMAIL_FROM` is who it is from, `Ponzu <ping@ponzu.design>` unless set.
-
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/v1/email/unsubscribe?t=` | none | a page saying the email is off; 400 and a page saying the link doesn't work |
-| POST | `/v1/email/unsubscribe?t=` | anything (a mail app's one-click unsubscribe) | 204; 400 `invalid_request` |
+the same events and nothing else, sent through the one door every email uses ("Email" below).
+It is off for everyone until `RESEND_API_KEY` is set, and Settings hides the Email group until
+then.
 
 Every five minutes the cron's `digests` step records an `email.digest` job, keyed
 `digest:<user>:<local date>`, for each of up to 20 people whose email is on, who has an
 address, for whom it is 9:00 or later in their time zone (the app's, or America/New_York when it has reported none or
 one Postgres does not know), and whose `digest_sent_on` is before that local date. The job reads
 their notifications from the 24 hours before it was found due that are still unread (`muted` ones
-included: they were never pinged), leaves out needs-you rows whose question has closed, and groups them by canvas, with billing rows under
+included: they were never pinged), leaves out needs-you rows whose question has closed and
+billing rows that had an email of their own (`notifications.emailed_at`), and groups them by canvas, with billing rows under
 their workspace. A canvas whose person is no longer a member, or whose kept access answer has
 changed to less than read since its newest row, is left out (an answer that is only old is not:
 the email is for people who have been away); a billing row goes only to someone still among the
@@ -3243,23 +3246,178 @@ sends one email and stamps the date. The step runs its batch itself, one email a
 rather than leaving it to the minute's `jobs` step, which takes ten jobs a minute of every kind:
 a busy 9:00 never holds pushes up, and Resend's rate is not met all at once.
 
-The subject counts what it holds ("Ponzu: 3 things on 2 canvases", "… and your plan" with
-billing rows). The body is each canvas's name (or the workspace's) and under it the rows' own
-sentences, at most ten a canvas and then "And 2 more.", each linking to
-`https://ponzu.design/canvases/<id>` with `open`, `page`, `artboard`, `question` and `comment`
-riding along, which the site's page hands to the app as a `ponzu://canvas/` link; a billing line
-has no link. There is a plain text part, and `List-Unsubscribe` with
-`List-Unsubscribe-Post: List-Unsubscribe=One-Click`. The job's key is Resend's idempotency key,
-so a send retried within a day is not sent twice. Resend's 429, 5xx or no answer tries again five
-minutes on; a refusal (a bad address, an unverified sender) or a key already used is logged and
-the day is stamped. Logs carry the person's id and Resend's codes, never the address or the words.
+The subject is canvas-first ("Kettle onboarding: 3 things since yesterday"; @ponzu/email's
+digest template). The body is each canvas's name (or "Northbrook's plan" for a workspace's
+billing rows) and under it the rows' own sentences, at most ten a canvas and then "And 2 more.",
+each linking to `https://ponzu.design/canvases/<id>` with `open`, `page`, `artboard`, `question`
+and `comment` riding along, which the site's page hands to the app as a `ponzu://canvas/` link;
+a billing line links to `https://ponzu.design/settings?section=usage&workspace=<id>&n=<id>`. The
+job's key is Resend's idempotency key. While `digest` is in `PONZU_EMAIL_PAUSED` the step
+records nothing, and a job recorded before stamps the day without sending. Whatever `sendEmail`
+answers but "off" stamps the date: sent, refused, held, paused or turned off since. Resend's 429,
+5xx or no answer tries again five minutes on. Unsubscribing is "Email"'s.
 
-The unsubscribe link carries `t`: the person's id and that id sealed by the vault under
-`email-unsubscribe/<user id>`, so only the API can make one, one person's does not open as
-another's, and all it can do is turn that person's email off. It does not expire. Following it
-turns `emailDigest` off and answers a page ("You won't get Ponzu's daily email any more."); the
-POST does the same for a mail app and answers 204. Either is safe to repeat, and the person can
-turn the email on again in Settings.
+## Email
+
+Ponzu's emails are rendered by `@ponzu/email` (React Email) to an HTML and a text part, and sent
+through Resend with its official SDK, which only `apps/api/src/deps/mail.ts` imports. Today the
+daily digest, people joined and the Friday recap are sent, and the founder's script sends the
+legal notices; the billing notices are built on the same door by a later slice. Production has
+no `RESEND_API_KEY`, so
+everything here is off there: nothing is sent, no email job is recorded, and no route answers
+differently.
+
+**Kinds** (`apps/api/src/email/kinds.ts`):
+
+| Kind | Switch | Unsubscribe link | Can be paused |
+|---|---|---|---|
+| `digest` | `emailDigest`, off by default | yes | yes |
+| `billing` | none: always on, to the workspace's admins | no | yes, but never while `PONZU_BILLING=on` |
+| `team` (people joined) | `emailTeam`, on by default | yes | yes |
+| `recap` (the Friday recap) | `emailRecap`, on by default | yes | yes |
+| `notice` (a legal notice) | none | no | no |
+
+**Settings › Notifications › Email** (the Mac) shows only while `email.available`; until
+then the Mac shows exactly what it did before email had a group. Under the heading, `Emails go to
+<address>, your GitHub email.` Then `Daily digest` (`What you missed, once a day at 9.`),
+`Friday recap` (`What you shipped, in weeks something merged.`) and, only while
+`email.teamAvailable`, `When people join` (`Workspaces you're an admin of.`). A switch the API
+did not answer has no row. Under them, `Billing emails go to every admin and can't be turned
+off.` The iPhone has no email switches.
+
+**One door.** Every email goes out through `sendEmail` (`email/send.ts`), which decides in this
+order: off without `RESEND_API_KEY` (nothing written); paused when the kind is in
+`PONZU_EMAIL_PAUSED`; the person's address and switch read now, never from the job (`no_address`,
+`opted_out`); outside production, held unless `PONZU_EMAIL_ALLOW` names the address (unset holds
+everything, and Resend is never asked); rendered; headers; sent with the caller's key as Resend's
+Idempotency-Key (at most 256 characters); Resend's answer mapped (`rate_limited` and `unavailable`
+try again in five minutes, `duplicate` counts as sent, `rejected` is `refused`, logged and
+reported). Every answer but "off" and a retry is final, and the caller stamps its email done.
+Paused means dropped, not deferred: the step or hook records nothing for a paused kind, and a job
+recorded before stamps without sending. (Holding it until resumed would use the job's attempts
+up.) Outside production the subject starts `[Dev] `, links carry `app=ponzu-dev`, and each send
+is tagged `kind` and `env` for Resend's dashboard. Reply-To is `PONZU_EMAIL_REPLY_TO` when set.
+
+**Durability.** No send log and no Resend webhook for the automatic emails: Resend's
+idempotency key (24 hours) plus one stamp each, `users.digest_sent_on`,
+`notifications.emailed_at` (a billing notice), `workspaces.members_announced_at` (people joined;
+its default is the moment the column was added, so nobody already in a workspace then is ever
+announced) and `users.recap_sent_on` (with `recap_first_sent_at` for the first recap's
+introduction). Legal notices keep a record each in `email_notices` (`notice_id`, `user_id` with
+no foreign key so it outlives the account, `workspace_id`, `address`, `sent_at`, `resend_id`,
+`outcome` of `pending`, `sent`, `refused`, `no_address` or `held`), written `pending` before the
+send. A kind with an unsubscribe link seals a fresh token each render, so a retry after a lost
+answer differs in that link alone; Resend then answers 409 for the key, which is `duplicate`,
+and nothing goes twice.
+
+**Unsubscribing.** `List-Unsubscribe` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
+go on the kinds that can be turned off, and on no other. The link's `t` is
+`<user id>.<category>.<sealed>`, the vault sealing `<user id>:<category>` under
+`email-unsubscribe/<user id>`, with category `digest`, `team` or `recap`: only the API can make
+one, one person's does not open as another's, and one for a category cannot stop another. The
+digest's first tokens, `<user id>.pzv1.…`, still open as the digest's. Tokens do not expire.
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| GET | `/v1/email/unsubscribe?t=` | none | a page that asks ("Stop Ponzu's Friday recap?") with one button posting the token back with `via=page`; nothing changes; 400 and a page for a token the API did not make |
+| POST | `/v1/email/unsubscribe?t=` | `List-Unsubscribe=One-Click` (a mail app), or `via=page` (the button) | the switch off: 204 for a mail app, a page in the kind's words for the button; 400 for a bad token |
+
+Only a POST changes anything, because mail filters and link scanners fetch every link in an
+email (RFC 8058, section 6). Only a POST is counted (`email unsubscribed`).
+
+**People joined** (`team`, `apps/api/src/email/members.ts`). When a person's own sign-in sync
+makes their membership of an organisation's workspace (`upsertMembership` answers `created`),
+they reach the organisation on GitHub as its owner or a member, and they did not install the
+App, the sync records an `email.members` job for the workspace, due at `until =
+greatest(now + 1 hour, members_announced_at + 24 hours)`: joins gather for an hour, and a
+workspace's admins hear at most once a day. Nothing is recorded while email is off. While `team`
+is paused a join records nothing and moves `members_announced_at` past itself (never back), so
+the first email after `team` is released never announces it. The job's key is `members:<workspace>:<members_announced_at>`, so every join until the
+window moves folds into the one job. When it runs, it announces the memberships made in
+`(greatest(members_announced_at, until - 48 hours), until]` that still exist, by the same rule
+(owner or member, not the installer), oldest first. The 48-hour floor keeps the first email
+after the key is set to recent joins, since the column's default is the moment it was added.
+It sends one email to each admin of the workspace who reaches the organisation as its owner or
+a member (an outside collaborator made admin in Ponzu never gets it, since an organisation's
+members are not theirs to see), never to one of the people announced, with Resend's key
+`members/<workspace>/<until>/<admin>`. Once every admin is handled it moves
+`members_announced_at` to `until`. Then, if anyone joined after `until` while it ran (their join
+folded into it and was outside its window), it records the next job, due 24 hours after `until`.
+A job whose window start has moved since it was recorded sends nothing and only schedules
+whoever joined since. A person who loses access and later regains it has a new membership and is
+announced again. Before `team` is first released in an environment, `DATABASE_URL=… bun
+apps/api/scripts/email-stamp-members.ts` moves every workspace's window start to now (never
+back), so only people who join from then on are announced. The email names people by
+`users.name` and `@login` only, with no avatars and no button.
+
+**The Friday recap** (`recap`, `apps/api/src/email/recap.ts`). On Fridays from 15:00 where the
+person is (their app's time zone, or New York when it reported none or one Postgres does not
+know, the digest's guard), the pull requests merged that week from canvases they own, only in
+weeks when there were any. A merge is the thread notice `ti_pr-<n>-merged`, written once when
+Ponzu first sees it; its time stands in for the merge's, and the week is `[last Friday 15:00,
+this Friday 15:00)` in the person's zone, computed in Postgres so it follows daylight saving.
+Every five minutes, from Friday 00:00 UTC to Saturday 13:00 UTC (outside those hours it cannot
+be Friday afternoon anywhere, and the step reads nothing), the `recaps` step stamps in one
+statement everyone due with no merge from a canvas they own (`users.recap_sent_on`, the Friday),
+then records an `email.recap` job keyed `recap:<user>:<Friday>` for each of up to 20 of the rest
+and runs them one after another. A Friday missed entirely is skipped, never caught up, and so is
+one whose job runs out of attempts (its last attempt stamps the Friday as it fails), and one
+whose job would send after Saturday 12:00 where the person is (it stamps the Friday instead):
+every send for a Friday then falls within 21 hours of the first, inside Resend's 24-hour
+idempotency window, so a retry can never send a second copy. The job
+keeps a canvas only while the person still owns it, is a member of its workspace now, and could
+read it when it was last merged (the kept access answer judged at that merge, not at send time,
+so a person who has not opened Ponzu since still hears). It sends with Resend's key
+`recap/<user>/<Friday>`, stamps `recap_sent_on`, and on the first real send sets
+`recap_first_sent_at`, which drops the one-time introduction from every later recap; with nothing
+left it only stamps. The recap is in its counts-only form (`RECAP_FORM`): `Shipped this week: 2
+canvases, 3 pull requests merged`, with no canvas or workspace name in the subject, preview or
+body, until the founder chooses names. It never carries a pull request's title, a repository, or
+anything else a person or the agent wrote. Nothing is read, stamped or recorded while email is
+off or `recap` is paused: the step does not run at all, records no cron slot, and is left out of
+the cron's answer (a step's `enabled`); a job recorded before the pause stamps the Friday without sending.
+
+**Legal notices** (`notice`, `apps/api/src/email/notice.ts`). What the terms and privacy policy
+promise to say by email: billing starting, a price rise, a change to the terms or the privacy
+policy, Ponzu closing, and a suspension. Nothing in the product sends one: the founder runs
+`DATABASE_URL=… PONZU_ENVIRONMENT=… RESEND_API_KEY=… bun apps/api/scripts/notice.ts --notice <id>
+--dry-run|--send`. Each notice is a file in `apps/api/src/email/notices/` named for its id, with
+its kind, the day it takes effect (`YYYY-MM-DD`, said in UTC with no time) and any summary in
+Ponzu's own words, reviewed in a pull request; `billing-starts` waits for the founder's day, and
+`dev-check` exists only to check the script on dev and is refused on production. Billing starting
+and a price rise go to every admin of an organisation's workspace and the person of each personal
+workspace (never a collaborator of one); a terms, privacy or closing notice to everyone with an
+account; a suspension to the people `--user` names, with `--case <id>` (each suspension is
+recorded as `suspension/<case>`), `--reason-file` (the founder's words, at most 1,000 characters,
+sent as escaped text: the one place a person's own words are in any email) and, for a workspace,
+`--workspace` (then each person named must be a member of it, so no one else learns of it).
+`--dry-run` writes nothing: it prints counts (people, without an address, already
+recorded by outcome, to send, and the ids of `pending` records over a day old) and renders the
+email to a file. `--send` refuses before writing anything while email is off, for a dated notice
+less than 30 days before its day (a terms change may pass `--sooner`, the terms' "sooner if the
+law or stopping abuse needs it"), for a notice with no day, for `dev-check` on production, and
+outside production without `PONZU_EMAIL_ALLOW` (everyone would be recorded `held` for good).
+For each person it writes the `pending` record, sends with Resend's key
+`notice/<notice>/<user>` at most 5 times a second (so the API's own emails stay under Resend's 10
+a second), then writes the outcome, the address and Resend's id. A rerun sends to nobody whose
+record is finished. A `pending` record under 24 hours old (the script stopped mid-send) is sent
+again under the same key, which Resend answers with the first email; an older one is listed by
+id, never sent again, and the script exits 1 for the founder to look the person up at Resend
+(docs/production.md, "Email (Resend)"). When Resend
+asks it to wait, the script stops there and is run again. A notice is never paused, carries no
+unsubscribe link, and outside production goes only to `PONZU_EMAIL_ALLOW` (the rest are recorded
+`held`). Its output carries counts and ids, never an address, a name or the reason.
+
+**Environments.** Production sends to anyone the rules choose once its key exists, and starts
+with every kind in `PONZU_EMAIL_PAUSED` until the founder releases them. Dev, previews and a
+local API send only to `PONZU_EMAIL_ALLOW`. `PONZU_EMAIL_ALLOW` set on production, and `billing`
+in `PONZU_EMAIL_PAUSED` while `PONZU_BILLING=on`, are logged at boot as `email_env_problem`
+(the API still starts), and the production check reports the first (docs/production.md, "Email (Resend)").
+
+**Live and proof sends**, by the orchestrator on dev only: `PONZU_LIVE_MAIL=1 bun test
+apps/api/src/email/email.live.test.ts` (Resend's test addresses) and
+`bun apps/api/scripts/email-proof.ts --to <an allowlisted address>` (every sample, `[Proof] `),
+which refuses production, a missing key or allowlist, and an address the allowlist does not name.
 
 ## Repo environments
 

@@ -182,8 +182,10 @@ export interface SettingsData {
   /** Put down to nobody, beside `byPerson`. */
   unattributedCredits?: number;
   byCanvas?: CanvasUsage[];
-  /** Ponzu can send email: Notifications shows the daily digest's row. Shown unless false. */
+  /** Ponzu can send email: Notifications shows the Email group. Shown unless false. */
   emailAvailable?: boolean;
+  /** The "people joined" email could reach the person: its row shows. Shown unless false. */
+  teamAvailable?: boolean;
   /** The API's billing switch is "on": Plan and usage shows dollars and the cap. Shown unless false. */
   billingOn?: boolean;
 }
@@ -266,13 +268,14 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
     notifications: () => (
       <NotificationsSection
         prefs={prefs}
-        onPrefsChange={setPrefs}
+        onPrefChange={(pref, on) => setPrefs((p) => ({ ...p, [pref]: on }))}
         devices={data.devices}
         onDeviceChange={(device, pings) =>
           set({ devices: data.devices.map((d) => (d.id === device.id ? { ...d, pings } : d)) })
         }
         email={s.email}
         emailAvailable={data.emailAvailable ?? true}
+        teamAvailable={data.teamAvailable ?? true}
         team={data.workspaces.some((w) => w.kind === "org")}
         onGetIphone={ignore}
       />

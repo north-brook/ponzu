@@ -160,6 +160,38 @@ test("a ping toggle shows at once, and is put back when the API turns it down", 
   expect(shown).toEqual([true, false, true, false]);
 });
 
+test("with email off, Notifications answers no email switch and keeps none it is sent", async () => {
+  const { backend, maya, queryClient, queries, mutations, mutate } = device();
+  const answer = await queryClient.fetchQuery(queries.notifications());
+  expect(Object.keys(answer.prefs).sort()).toEqual(
+    ["emailDigest", "needsYou", "prReady", "replies", "teammateComments"].sort(),
+  );
+  expect(answer.email).toEqual({ address: maya.email, available: false });
+
+  await mutate(mutations.setPings(), { emailRecap: false });
+  backend.features = { ...backend.features, email: true };
+  // Turned on later, the recap is on: what was sent while email was off was not kept.
+  expect((await backend.connect(maya).api.notifications.get()).prefs.emailRecap).toBe(true);
+});
+
+test("a Mac showing switches from before an unsubscribe saves only the one flipped", async () => {
+  const { backend, maya, queryClient, queries, mutations, mutate } = device();
+  backend.features = { ...backend.features, email: true };
+  const shown = await queryClient.fetchQuery(queries.notifications());
+  expect(shown.prefs).toMatchObject({ emailRecap: true, emailTeam: true });
+  // A personal workspace only: the people-joined email can't reach Maya.
+  expect(shown.email.teamAvailable).toBe(false);
+
+  // Elsewhere (the recap's "Stop these emails"), the recap goes off; this Mac still shows it on.
+  await backend.connect(maya).api.notifications.set({ emailRecap: false });
+  expect(queryClient.getQueryData(queries.notifications().queryKey)?.prefs.emailRecap).toBe(true);
+
+  // Settings sends the switch flipped, as NotificationsView does, and nothing else.
+  await mutate(mutations.setPings(), { emailDigest: true });
+  const kept = (await backend.connect(maya).api.notifications.get()).prefs;
+  expect(kept).toMatchObject({ emailDigest: true, emailRecap: false, emailTeam: true });
+});
+
 test("Share usage data shows flipped in me at once, saves for the person, and is put back on a failure", async () => {
   const { backend, maya, client, queryClient, queries, mutations, mutate } = device();
   const sharing = () => queryClient.getQueryData(queries.me().queryKey)?.privacy.shareUsage;

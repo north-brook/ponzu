@@ -1,5 +1,5 @@
 {
-  "id": "c42f7d60-ce2c-4933-b5b0-d095e102fb67",
+  "id": "15bbf8f4-f466-4023-a7f9-4a1614411774",
   "prevId": "f1ec2a99-ce11-4a23-86ca-b8fb4ff5e798",
   "version": "7",
   "dialect": "postgresql",
@@ -84,22 +84,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "auth_states_open_card_setup_key": {
-          "name": "auth_states_open_card_setup_key",
-          "columns": [
-            {
-              "expression": "(\"payload\" ->> 'workspaceId')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"auth_states\".\"kind\" = 'card_setup' and \"auth_states\".\"consumed_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -123,7 +107,7 @@
       "checkConstraints": {
         "auth_states_kind_check": {
           "name": "auth_states_kind_check",
-          "value": "\"auth_states\".\"kind\" in ('github_install', 'claude_sign_in', 'card_setup')"
+          "value": "\"auth_states\".\"kind\" in ('github_install', 'claude_sign_in')"
         }
       },
       "isRLSEnabled": false
@@ -1235,6 +1219,32 @@
           "primaryKey": false,
           "notNull": false
         },
+        "email_team": {
+          "name": "email_team",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_recap": {
+          "name": "email_recap",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "recap_sent_on": {
+          "name": "recap_sent_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recap_first_sent_at": {
+          "name": "recap_first_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "share_usage": {
           "name": "share_usage",
           "type": "boolean",
@@ -1524,55 +1534,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "billing_gate": {
-          "name": "billing_gate",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'ok'"
-        },
-        "billing_gate_at": {
-          "name": "billing_gate_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billing_next_close_at": {
-          "name": "billing_next_close_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stripe_payment_method_id": {
-          "name": "stripe_payment_method_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "card_added_at": {
-          "name": "card_added_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "card_added_by_user_id": {
-          "name": "card_added_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "past_due_reason": {
-          "name": "past_due_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "past_due_invoice_url": {
-          "name": "past_due_invoice_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "ideas_window_started_at": {
           "name": "ideas_window_started_at",
           "type": "timestamp with time zone",
@@ -1599,6 +1560,13 @@
           "notNull": true,
           "default": false
         },
+        "members_announced_at": {
+          "name": "members_announced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1614,23 +1582,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "workspaces_billing_next_close_at_idx": {
-          "name": "workspaces_billing_next_close_at_idx",
-          "columns": [
-            {
-              "expression": "billing_next_close_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "workspaces_installed_by_user_id_users_id_fk": {
           "name": "workspaces_installed_by_user_id_users_id_fk",
@@ -1638,19 +1590,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "installed_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "workspaces_card_added_by_user_id_users_id_fk": {
-          "name": "workspaces_card_added_by_user_id_users_id_fk",
-          "tableFrom": "workspaces",
-          "tableTo": "users",
-          "columnsFrom": [
-            "card_added_by_user_id"
           ],
           "columnsTo": [
             "id"
@@ -1696,252 +1635,6 @@
         "workspaces_monthly_cap_cents_check": {
           "name": "workspaces_monthly_cap_cents_check",
           "value": "\"workspaces\".\"monthly_cap_cents\" >= 0"
-        },
-        "workspaces_billing_gate_check": {
-          "name": "workspaces_billing_gate_check",
-          "value": "\"workspaces\".\"billing_gate\" in ('ok', 'free_used', 'cap_reached', 'payment_failed')"
-        },
-        "workspaces_past_due_reason_check": {
-          "name": "workspaces_past_due_reason_check",
-          "value": "\"workspaces\".\"past_due_reason\" in ('failed', 'needs_confirmation')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.billing_periods": {
-      "name": "billing_periods",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_start": {
-          "name": "period_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_end": {
-          "name": "period_end",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'closing'"
-        },
-        "used_credits": {
-          "name": "used_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "free_credits": {
-          "name": "free_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "billed_credits": {
-          "name": "billed_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "charged_credits": {
-          "name": "charged_credits",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "charged_cents": {
-          "name": "charged_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cap_cents": {
-          "name": "cap_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "people": {
-          "name": "people",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate_card_version": {
-          "name": "rate_card_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stripe_invoice_id": {
-          "name": "stripe_invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoice_number": {
-          "name": "invoice_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hosted_invoice_url": {
-          "name": "hosted_invoice_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_cents": {
-          "name": "tax_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "total_cents": {
-          "name": "total_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "invoiced_at": {
-          "name": "invoiced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "paid_at": {
-          "name": "paid_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "failed_at": {
-          "name": "failed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "billing_periods_unsettled_idx": {
-          "name": "billing_periods_unsettled_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"billing_periods\".\"status\" in ('invoiced', 'payment_failed')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "billing_periods_workspace_id_workspaces_id_fk": {
-          "name": "billing_periods_workspace_id_workspaces_id_fk",
-          "tableFrom": "billing_periods",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "billing_periods_rate_card_version_rate_cards_version_fk": {
-          "name": "billing_periods_rate_card_version_rate_cards_version_fk",
-          "tableFrom": "billing_periods",
-          "tableTo": "rate_cards",
-          "columnsFrom": [
-            "rate_card_version"
-          ],
-          "columnsTo": [
-            "version"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "billing_periods_workspace_id_period_start_pk": {
-          "name": "billing_periods_workspace_id_period_start_pk",
-          "columns": [
-            "workspace_id",
-            "period_start"
-          ]
-        }
-      },
-      "uniqueConstraints": {
-        "billing_periods_stripe_invoice_id_unique": {
-          "name": "billing_periods_stripe_invoice_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "stripe_invoice_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "billing_periods_status_check": {
-          "name": "billing_periods_status_check",
-          "value": "\"billing_periods\".\"status\" in ('closing', 'unbilled', 'waived', 'invoiced', 'paid', 'payment_failed', 'uncollectible', 'void')"
-        },
-        "billing_periods_span_check": {
-          "name": "billing_periods_span_check",
-          "value": "\"billing_periods\".\"period_end\" > \"billing_periods\".\"period_start\""
-        },
-        "billing_periods_numbers_check": {
-          "name": "billing_periods_numbers_check",
-          "value": "\"billing_periods\".\"used_credits\" >= 0 and \"billing_periods\".\"free_credits\" >= 0 and \"billing_periods\".\"billed_credits\" >= 0 and \"billing_periods\".\"charged_credits\" >= 0 and \"billing_periods\".\"charged_credits\" <= \"billing_periods\".\"billed_credits\" and \"billing_periods\".\"charged_cents\" >= 0 and \"billing_periods\".\"charged_cents\" <= \"billing_periods\".\"cap_cents\" and \"billing_periods\".\"people\" >= 0 and \"billing_periods\".\"attempts\" >= 0"
-        },
-        "billing_periods_invoice_check": {
-          "name": "billing_periods_invoice_check",
-          "value": "\"billing_periods\".\"status\" not in ('invoiced', 'paid', 'payment_failed', 'uncollectible', 'void') or \"billing_periods\".\"stripe_invoice_id\" is not null"
         }
       },
       "isRLSEnabled": false
@@ -4384,6 +4077,81 @@
       },
       "isRLSEnabled": false
     },
+    "public.email_notices": {
+      "name": "email_notices",
+      "schema": "",
+      "columns": {
+        "notice_id": {
+          "name": "notice_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resend_id": {
+          "name": "resend_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "email_notices_notice_id_user_id_pk": {
+          "name": "email_notices_notice_id_user_id_pk",
+          "columns": [
+            "notice_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "email_notices_outcome_check": {
+          "name": "email_notices_outcome_check",
+          "value": "\"email_notices\".\"outcome\" in ('pending', 'sent', 'refused', 'no_address', 'held')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.notification_deliveries": {
       "name": "notification_deliveries",
       "schema": "",
@@ -4691,6 +4459,12 @@
         },
         "resolved_at": {
           "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emailed_at": {
+          "name": "emailed_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

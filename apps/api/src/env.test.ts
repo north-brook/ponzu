@@ -5,6 +5,7 @@ import {
   DEFAULT_API_URL,
   ENVIRONMENTS,
   EnvError,
+  emailEnvProblems,
   environmentPair,
   FORBIDDEN_ENV,
   OPTIONAL_ENV,
@@ -85,10 +86,11 @@ test("a complete environment is read into one typed value", () => {
     posthogAdmin: null,
     // Without an Expo access token, push is off.
     push: null,
-    // Without a Resend key, email is off.
+    // Without a Resend key, email is off; nothing else about email is set.
     mail: null,
     // Without Stripe's values, there is nothing to charge with (and billing is off anyway).
     stripe: null,
+    email: { replyTo: null, allow: null, paused: new Set() },
     // Every feature switch is off when nothing sets it.
     features: FEATURES_OFF,
     // Not on Vercel, so rate limits could not be asked even with PONZU_RATE_LIMITS=vercel.
@@ -279,7 +281,7 @@ test("a Resend key switches email on, from Ponzu unless PONZU_EMAIL_FROM says ot
   expect(readEnv({ ...complete, RESEND_API_KEY: "" }).mail).toBeNull();
   expect(readEnv({ ...complete, RESEND_API_KEY: "re_test_example" }).mail).toEqual({
     apiKey: "re_test_example",
-    from: "Ponzu <ping@ponzu.design>",
+    from: "Ponzu <ping@mail.ponzu.design>",
   });
   expect(
     readEnv({
@@ -298,6 +300,93 @@ test("a Resend key switches email on, from Ponzu unless PONZU_EMAIL_FROM says ot
       "The API cannot start. PONZU_EMAIL_FROM is malformed.",
     );
   }
+});
+
+test("email's Reply-To, allowlist and paused kinds are read, and anything else is refused", () => {
+  const email = readEnv({
+    ...complete,
+    PONZU_EMAIL_REPLY_TO: "hello@ponzu.design",
+    PONZU_EMAIL_ALLOW: " Maya@Example.com, @northbrook.dev ",
+    PONZU_EMAIL_PAUSED: "digest,billing, team",
+  }).email;
+  expect(email.replyTo).toBe("hello@ponzu.design");
+  expect(email.allow).toEqual({
+    addresses: new Set(["maya@example.com"]),
+    domains: new Set(["northbrook.dev"]),
+  });
+  expect(email.paused).toEqual(new Set(["digest", "billing", "team"]));
+  expect(
+    readEnv({ ...complete, PONZU_EMAIL_REPLY_TO: "Ponzu <hello@ponzu.design>" }).email,
+  ).toMatchObject({ replyTo: "Ponzu <hello@ponzu.design>" });
+  // An empty allowlist is set, and holds everything: nobody is named.
+  expect(readEnv({ ...complete, PONZU_EMAIL_ALLOW: "," }).email.allow).toEqual({
+    addresses: new Set(),
+    domains: new Set(),
+  });
+  // A notice cannot be paused, and a name that is not a kind is a typo, not a no-op.
+  for (const [name, value] of [
+    ["PONZU_EMAIL_PAUSED", "notice"],
+    ["PONZU_EMAIL_PAUSED", "digest,recaps"],
+    ["PONZU_EMAIL_ALLOW", "maya"],
+    ["PONZU_EMAIL_ALLOW", "maya@example.com; sam@example.com"],
+    ["PONZU_EMAIL_REPLY_TO", "a@b.c, d@e.f"],
+    ["PONZU_EMAIL_REPLY_TO", "hello@ponzu.design\nBcc: x@y.z"],
+  ] as const) {
+    expect(() => readEnv({ ...complete, [name]: value })).toThrow(
+      `The API cannot start. ${name} is malformed.`,
+    );
+  }
+});
+
+test("production reports an allowlist, and billing paused while billing is on, without refusing", () => {
+  const production = { PONZU_ENVIRONMENT: "production" as const, PONZU_BILLING: "off" as const };
+  expect(emailEnvProblems(production)).toEqual([]);
+  expect(emailEnvProblems({ ...production, PONZU_EMAIL_ALLOW: "a@b.c" })).toEqual([
+    "PONZU_EMAIL_ALLOW is set on production, where it is ignored: remove it.",
+  ]);
+  // Paused while billing is off or observing is how production starts (founder step 10).
+  expect(
+    emailEnvProblems({ ...production, PONZU_EMAIL_PAUSED: "digest,billing,team,recap" }),
+  ).toEqual([]);
+  expect(
+    emailEnvProblems({ ...production, PONZU_BILLING: "on", PONZU_EMAIL_PAUSED: "team,billing" }),
+  ).toEqual([
+    "PONZU_EMAIL_PAUSED holds billing while PONZU_BILLING is on: admins would not be told that work stopped.",
+  ]);
+  expect(
+    emailEnvProblems({ ...production, PONZU_BILLING: "on", PONZU_EMAIL_PAUSED: "team" }),
+  ).toEqual([]);
+  // Outside production neither is a mistake: dev needs its allowlist.
+  expect(
+    emailEnvProblems({
+      PONZU_ENVIRONMENT: "dev",
+      PONZU_BILLING: "on",
+      PONZU_EMAIL_ALLOW: "a@b.c",
+      PONZU_EMAIL_PAUSED: "billing",
+    }),
+  ).toEqual([]);
+
+  // The API still starts, and says so in its boot log, naming variables and no value.
+  const lines: LogLine[] = [];
+  const env = readEnv(
+    {
+      ...complete,
+      // Billing on needs Stripe's values to start at all.
+      ...STRIPE,
+      VERCEL: "1",
+      PONZU_ENVIRONMENT: "production",
+      PONZU_API_URL: "https://api.ponzu.design",
+      PONZU_BILLING: "on",
+      PONZU_EMAIL_PAUSED: "billing",
+      PONZU_EMAIL_ALLOW: "secret-address@example.com",
+    },
+    { log: createLogger((line) => lines.push(line)) },
+  );
+  expect(env.environment).toBe("production");
+  const problems = lines.filter((line) => line.event === "email_env_problem");
+  expect(problems).toHaveLength(2);
+  expect(problems.every((line) => line.level === "error")).toBe(true);
+  expect(JSON.stringify(lines)).not.toContain("secret-address");
 });
 
 test("a PostHog key switches analytics on, with prompts and answers off unless asked for", () => {
@@ -491,7 +580,10 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "EXPO_ACCESS_TOKEN",
     "PONZU_API_URL",
     "PONZU_BILLING",
+    "PONZU_EMAIL_ALLOW",
     "PONZU_EMAIL_FROM",
+    "PONZU_EMAIL_PAUSED",
+    "PONZU_EMAIL_REPLY_TO",
     "PONZU_ENVIRONMENT",
     "PONZU_MAINTENANCE",
     "PONZU_MERGE_QUEUE",
@@ -603,7 +695,10 @@ test("the required, optional, system and forbidden names are exact and do not ov
   expect([...OPTIONAL_ENV].sort()).toEqual([
     "EXPO_ACCESS_TOKEN",
     "PONZU_BILLING",
+    "PONZU_EMAIL_ALLOW",
     "PONZU_EMAIL_FROM",
+    "PONZU_EMAIL_PAUSED",
+    "PONZU_EMAIL_REPLY_TO",
     "PONZU_MAINTENANCE",
     "PONZU_MERGE_QUEUE",
     "PONZU_MIN_CLIENT_VERSIONS",

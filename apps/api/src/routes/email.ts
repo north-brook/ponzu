@@ -1,22 +1,29 @@
 import { type Handoff, renderHandoff } from "@ponzu/core/handoff";
 import { setPingPrefs } from "@ponzu/db";
+import { unsubscribeWords } from "@ponzu/email";
 import { type Context, Hono } from "hono";
 import { access } from "../auth/access.ts";
+import { UNSUBSCRIBE_PREF, type UnsubscribeCategory } from "../email/kinds.ts";
+import { openUnsubscribeToken } from "../email/unsubscribe.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
-import { unsubscribeUser } from "../notifications/unsubscribe.ts";
 
 /*
- * The daily email's unsubscribe link (notifications/digest.ts). It has no bearer token: the
- * token in `t`, which only the API can make (notifications/unsubscribe.ts), says whose email to
- * stop, and that is all it can do.
+ * An email's unsubscribe link (docs/cloud.md, "Email"). It has no bearer token: the token in `t`,
+ * which only the API can make (email/unsubscribe.ts), says whose email to stop and which one,
+ * and that is all it can do.
  *
- *   GET  /v1/email/unsubscribe?t=…  a person followed the email's link: the email is turned off,
- *                                   and the answer is a page that says so.
- *   POST /v1/email/unsubscribe?t=…  their mail app's one-click unsubscribe (RFC 8058, from the
- *                                   `List-Unsubscribe` headers): turned off, 204.
+ *   GET  /v1/email/unsubscribe?t=…  a person, or a mail filter or link scanner, followed the
+ *                                   email's link: nothing changes. The answer is a page that
+ *                                   asks, with one button that posts the same token.
+ *   POST /v1/email/unsubscribe?t=…  turns that email off. From the person's mail app's one-click
+ *                                   unsubscribe (RFC 8058, the `List-Unsubscribe` headers), 204.
+ *                                   From the page's button (`via=page`), a page that says so.
  *
- * Either is safe to repeat. The email can be turned on again in Settings › Notifications.
+ * Only a POST changes anything, because scanners fetch every link in an email (RFC 8058,
+ * section 6): a link that stopped an email when fetched would stop default-on emails nobody
+ * meant to stop. Either is safe to repeat. The email can be turned on again in Settings ›
+ * Notifications.
  */
 
 /** The page's headers besides its content security policy. The address carries the token. */
@@ -26,49 +33,88 @@ const PAGE_HEADERS = {
   "x-content-type-options": "nosniff",
 };
 
-const DONE: Handoff = {
-  documentTitle: "Daily email off",
-  view: {
-    title: "You won't get Ponzu's daily email any more.",
-    body: "You can turn it on again in Ponzu, in Settings › Notifications. You can close this tab.",
-  },
-  link: null,
+const TITLE: Record<UnsubscribeCategory, string> = {
+  digest: "Daily email",
+  team: "Emails when people join",
+  recap: "Friday recap",
 };
+
+/** The page a followed link answers: the question, and the button that answers it. */
+function asking(category: UnsubscribeCategory, token: string): Handoff {
+  return {
+    documentTitle: TITLE[category],
+    view: { title: unsubscribeWords.question[category], body: unsubscribeWords.backOn },
+    link: null,
+    form: {
+      action: `/v1/email/unsubscribe?t=${encodeURIComponent(token)}`,
+      fields: { via: "page" },
+      label: unsubscribeWords.button,
+    },
+  };
+}
+
+/** The page the button answers. */
+function done(category: UnsubscribeCategory): Handoff {
+  return {
+    documentTitle: `${TITLE[category]} off`,
+    view: {
+      title: unsubscribeWords.done[category],
+      body: `${unsubscribeWords.backOn} You can close this tab.`,
+    },
+    link: null,
+  };
+}
 
 const BROKEN: Handoff = {
   documentTitle: "Link not working",
   view: {
     title: "This link doesn't work",
-    body: "You can turn the daily email off in Ponzu, in Settings › Notifications.",
+    body: "You can turn Ponzu's emails off in Ponzu, in Settings › Notifications.",
   },
   link: null,
   problem: true,
 };
 
-/** Turns off the email of the person the request's token names; false when it names nobody. */
-async function unsubscribe(c: Context<AppEnv>): Promise<boolean> {
-  const { deps } = c.var;
-  const userId = await unsubscribeUser(deps.vault, c.req.query("t"));
-  if (!userId) return false;
-  try {
-    await setPingPrefs(deps.db, { userId, prefs: { emailDigest: false } });
-  } catch (error) {
-    // An account deleted since the email went has no email to stop.
-    if (!(error instanceof Error && error.message.startsWith("There is no user"))) throw error;
-  }
-  c.var.log.info("digest_unsubscribed", { userId });
-  return true;
+async function page(c: Context<AppEnv>, handoff: Handoff, status: 200 | 400) {
+  const { html, csp } = await renderHandoff(handoff);
+  return c.html(html, status, { ...PAGE_HEADERS, "content-security-policy": csp });
+}
+
+/** Whether the POST came from the page's button rather than a mail app. */
+async function fromPage(c: Context<AppEnv>): Promise<boolean> {
+  const type = c.req.header("content-type") ?? "";
+  if (!type.startsWith("application/x-www-form-urlencoded")) return false;
+  const body = new URLSearchParams(await c.req.text());
+  return body.get("via") === "page";
 }
 
 export const email = new Hono<AppEnv>()
   .get("/unsubscribe", access.public, async (c) => {
-    const done = await unsubscribe(c);
-    const { html, csp } = await renderHandoff(done ? DONE : BROKEN);
-    return c.html(html, done ? 200 : 400, { ...PAGE_HEADERS, "content-security-policy": csp });
+    const token = c.req.query("t");
+    const opened = await openUnsubscribeToken(c.var.deps.vault, token);
+    if (!opened) return page(c, BROKEN, 400);
+    return page(c, asking(opened.category, token!), 200);
   })
   .post("/unsubscribe", access.public, async (c) => {
-    if (!(await unsubscribe(c))) {
+    const { deps, log } = c.var;
+    const via = (await fromPage(c)) ? "page" : "one_click";
+    const opened = await openUnsubscribeToken(deps.vault, c.req.query("t"));
+    if (!opened) {
+      if (via === "page") return page(c, BROKEN, 400);
       throw new ApiError(400, "invalid_request", "This unsubscribe link is not one Ponzu made.");
     }
-    return c.body(null, 204);
+    const { userId, category } = opened;
+    let found = true;
+    try {
+      await setPingPrefs(deps.db, { userId, prefs: { [UNSUBSCRIBE_PREF[category]]: false } });
+    } catch (error) {
+      // An account deleted since the email went has no email to stop.
+      if (!(error instanceof Error && error.message.startsWith("There is no user"))) throw error;
+      found = false;
+    }
+    log.info("email_unsubscribed", { userId, kind: category, via });
+    if (found) {
+      deps.analytics.capture("email unsubscribed", { kind: category, via }, { distinctId: userId });
+    }
+    return via === "page" ? page(c, done(category), 200) : c.body(null, 204);
   });
