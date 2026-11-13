@@ -323,8 +323,9 @@ back with `code=fake` (`maestro/authorize.ts`); without one, the browser is
 skipped. `ponzu-dev://dev?seed=<scenario>` (`app/dev.tsx`) puts the app in a
 state: `signed-out`, `signed-in`, `empty`, `github-reauth`, `too-old`,
 `setup-where` (Lee, whose own account has no Ponzu yet), `setup-claude`
-(Ava, with no Claude), `canvases` (Maya's list in every state) and `chat`
-(the Pricing page's thread with a turn running). Only a fake build takes that
+(Ava, with no Claude), `canvases` (Maya's list in every state), `chat`
+(the Pricing page's thread with a turn running) and `needs-you` (the Pricing
+page waiting on two questions, a plan and a permission). Only a fake build takes that
 link. With the authorize
 page running, the fake's install links open its `/install` page, which comes
 back as a finished install. A component test can put the person's Claude plan
@@ -374,8 +375,9 @@ with its own slice.
   request (once there is one), Comment, and Chat (the shared `railSignal`: the
   needs-you count, else the turning slice while the agent wakes or works).
   Chat opens the chat sheet. The pull request sheet isn't built yet, so its
-  button says so when pressed. The needs-you count isn't shown on Chat until
-  the questions come to the chat's composer. A double-tapped board has the
+  button says so when pressed. The needs-you count sits in a yuzu pill on
+  Chat's top-right edge, and Chat's VoiceOver label says it ("Chat, Ponzu has
+  2 questions"). A double-tapped board has the
   screen and the chrome steps aside.
 - **Proofs.** `bun test apps/mobile/lib/canvas` runs the bridge over the real
   `CloudSource` and the client's fake backend, with a stand-in page that
@@ -496,6 +498,53 @@ escape, closes it, and closing marks the thread read as far as it held
   sent again, a billing refusal, a board link and an outside link, the read
   only line, and closing marking the thread read. `maestro/chat.yaml` (seed
   `chat`) runs it on a simulator, on spare only.
+
+### Needs you
+
+While the agent waits on a person, what it asks takes the chat composer's
+place (`components/needs-you.tsx`, iPhone design §10): one page at a time
+under its own header, a yuzu dot before it and the pager `‹ n/m ›` after it
+when more than one page waits. Each question of a multiple-choice ask is a
+page; a plan, a permission, a secret or a hand-off is one. The rules for what
+is answerable and what each answer says are the Mac's, from
+`@ponzu/client/model` (`answer.ts`), and so are the card's words
+(`lib/copy.ts` `NEEDS_YOU`, held to the Mac's source by `copy.test.ts`).
+
+- **The kinds.** A question: its options on one track, the chosen raised with
+  a tick (several on a multi-select, "Choose any."), and a note ("Add a note,
+  or answer in words") that goes with them or is the answer. A plan: its first
+  paragraph, "Read the plan" for the rest, Approve or Keep planning, and a
+  note. A permission: its title, description and tool, Allow or Deny, and a
+  note. A secret: a secure field whose value goes by its own route
+  (`answerSecret`), never in the thread or an answer's body. A hand-off: Open
+  its web address in Safari's sheet (only `http` and `https`), or Not now.
+- **Sending.** Send answers the page in view and moves on; an ask goes once
+  its last page is answered, and only once however often Send is pressed
+  (`lib/chat/ask-store.ts`). Its live row then goes, and when none are left
+  the composer is back.
+- **Someone else first.** A question a teammate answers elsewhere leaves with
+  its live row. If the person had started on it, or their answer comes back
+  409 `question_closed`, it leaves and the next shows, with one line under the
+  slot: "Sam already answered this.", or "Someone already answered this." when
+  Ponzu can't say who, or "Claude moved on, so this needs no answer." for one
+  the run withdrew.
+- **An answer that doesn't go** keeps what was chosen and typed, with the
+  Mac's reason under the slot. A billing refusal shows only its first
+  sentence and "This canvas waits."
+- **Read only or offline**, the card still shows what is asked, its options
+  unpressable, and the read-only or offline line is in the field's place.
+- **Links.** A push or link with `question=<id>` opens the chat at that
+  question's page.
+- **Proofs.** `bun test apps/mobile/lib/chat/ask-store.test.ts` (order, sent
+  once, a teammate's answer untouched and started, a 409 naming who answered,
+  one naming nobody, a withdrawn question, an answer that doesn't go then
+  does, a secret by its own route). `rntests/needs-you.rntest.tsx` renders the
+  canvas screen against the fake: one question with no pager, four pages with
+  the pager through a multi-select, a plan and a permission, a note alone as
+  the answer, Send pressed twice, a teammate answering elsewhere, a 409, a
+  push's question, and read-only. `rntests/canvas-stack.rntest.tsx` covers the
+  count on Chat. `maestro/needs-you.yaml` (seed `needs-you`) runs it on a
+  simulator, on spare only.
 
 ## Variants
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, WHERE } from "./copy";
+import { BLOCKED, CLAUDE, CREATE, EFFORT_LABELS, NEEDS_YOU, WHERE } from "./copy";
 
 /*
  * The phone's setup says what the Mac's says. The Mac's words live in its JSX, so this reads
@@ -57,5 +57,43 @@ test("Connect Claude in the Mac's words", () => {
   const source = mac("claude-step.tsx") + mac("claude-card.tsx");
   for (const [name, words] of Object.entries(CLAUDE)) {
     expect({ name, found: source.includes(words) }).toEqual({ name, found: true });
+  }
+});
+
+test("Needs you in the Mac's words", () => {
+  const read = (path: string) =>
+    readFileSync(join(import.meta.dir, "../../..", path), "utf8").replace(/\s+/g, " ");
+  const source = [
+    "apps/studio/src/cloud/needs-you/needs-you.tsx",
+    "apps/studio/src/app/ask-store.ts",
+    "packages/client/src/model/answer.ts",
+  ]
+    .map(read)
+    .join(" ");
+  const words = {
+    plan: NEEDS_YOU.plan,
+    permission: NEEDS_YOU.permission,
+    secret: NEEDS_YOU.secret,
+    link: NEEDS_YOU.link,
+    chooseAny: NEEDS_YOU.chooseAny,
+    questionNote: NEEDS_YOU.questionNote,
+    planNote: NEEDS_YOU.planNote,
+    note: NEEDS_YOU.note,
+    secretField: NEEDS_YOU.secretField,
+    opened: NEEDS_YOU.opened,
+    notNow: NEEDS_YOU.notNow,
+    notWeb: NEEDS_YOU.notWeb,
+    movedOn: NEEDS_YOU.movedOn,
+    failed: NEEDS_YOU.failed,
+    offline: NEEDS_YOU.offline,
+    secretsFull: NEEDS_YOU.secretsFull,
+    secretReserved: NEEDS_YOU.secretReserved,
+    noRepository: NEEDS_YOU.noRepository,
+    // The Mac writes the repo's name into its sentence.
+    keptWithRepo: NEEDS_YOU.secretKept("REPO").replace("REPO", `${"$"}{repoName}`),
+    keptHere: NEEDS_YOU.secretKept(null),
+  };
+  for (const [name, said] of Object.entries(words)) {
+    expect({ name, found: source.includes(said) }).toEqual({ name, found: true });
   }
 });

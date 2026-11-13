@@ -94,7 +94,7 @@ function leave() {
  *
  * Opened from a row, a link or a push: `page` and `artboard` say where to open (a board on its
  * page, or a page, as @ponzu/core's `linkTarget` reads them); `sheet=chat` opens the chat, at
- * `message=<seq>` when it names one.
+ * `message=<seq>` when it names one, and `question=<id>` (a push's) opens it at that question.
  */
 export default function CanvasScreen() {
   const params = useLocalSearchParams<{
@@ -240,7 +240,9 @@ export default function CanvasScreen() {
     if (params.sheet !== "chat") return;
     setChatFocus(false);
     setChat(true);
-  }, [params.sheet, params.message]);
+  }, [params.sheet, params.message, params.question]);
+  const chatQuestion =
+    params.question && /^[A-Za-z0-9_-]{1,64}$/.test(params.question) ? params.question : null;
   const chatMessage =
     params.message && /^\d{1,15}$/.test(params.message) ? Number(params.message) : null;
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -864,6 +866,8 @@ export default function CanvasScreen() {
           offline={offline}
           focus={chatFocus && (head?.needsYouCount ?? 0) === 0}
           message={chatMessage}
+          question={chatQuestion}
+          repoName={view.data?.repo?.fullName ?? null}
           onDismiss={closeChat}
           onOpenComment={openCommentFromChat}
           onOpenLink={openLink}

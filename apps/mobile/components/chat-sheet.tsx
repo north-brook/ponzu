@@ -1,5 +1,6 @@
 import type { CanvasHeadRow } from "@ponzu/client";
 import {
+  type AskAnswer,
   ERROR_COPY,
   ERROR_DETAIL,
   membersById,
@@ -35,13 +36,14 @@ import {
   sendFailed,
 } from "../lib/chat/lines";
 import { revealStep } from "../lib/chat/thread-store";
+import { useAsks } from "../lib/chat/use-asks";
 import { useThread } from "../lib/chat/use-thread";
 import { backend } from "../lib/cloud/backend";
-import { useLive, useWorkspaces } from "../lib/cloud/canvases";
+import { useWorkspaces } from "../lib/cloud/canvases";
 import { useCloud } from "../lib/cloud/query";
 import { CHAT } from "../lib/copy";
 import { draftKey } from "../lib/drafts";
-import { fail, select, tick } from "../lib/haptics";
+import { fail, select, success, tick } from "../lib/haptics";
 import { Markdown } from "../lib/markdown";
 import { type Picked, pickImages, uploadImages } from "../lib/pick-images";
 import { Juice } from "../lib/slice";
@@ -49,6 +51,7 @@ import { useTheme } from "../lib/theme";
 import { brand, font } from "../lib/tokens";
 import { Composer, type ComposerHandle, type Mode } from "./composer";
 import { AlertCircle, Close, Plus } from "./icons";
+import { NeedsYou } from "./needs-you";
 import { Sheet } from "./sheet";
 
 /** The canvas's view, as far as the chat reads it. */
@@ -85,6 +88,10 @@ export function pictureSize(width: number, height: number) {
  * or said), and the right button: Send when there are words, Stop while a turn is live and the
  * field is empty. A message mid-run goes straight in. A send that doesn't go keeps its words and
  * pictures, with "Couldn't send. Tap to try again." under the field.
+ *
+ * While the agent waits on a person, what it asks takes the composer's place (needs-you.tsx,
+ * iPhone design §10): answered there, its live row goes and the composer is back. An ask someone
+ * else answered first leaves, with one line under the slot saying so.
  */
 export function ChatSheet({
   canvasId,
@@ -96,6 +103,8 @@ export function ChatSheet({
   offline,
   focus,
   message,
+  question,
+  repoName,
   onDismiss,
   onOpenComment,
   onOpenLink,
@@ -117,6 +126,10 @@ export function ChatSheet({
   focus: boolean;
   /** A message to open at, by its seq (a link's or a push's `message`). */
   message: number | null;
+  /** A question to open at, by its id (a push's `question`). */
+  question: string | null;
+  /** The canvas's repo, where a secret it asks for is kept; null for Scratch. */
+  repoName: string | null;
   /** Gone, with the newest seq of the thread it held: how far the person has read it. */
   onDismiss: (readSeq: number | null) => void;
   /**
@@ -134,11 +147,8 @@ export function ChatSheet({
   const { color } = useTheme();
   const cloud = useCloud();
   const { store, thread } = useThread(canvasId);
-  const questions = useLive("canvas.questions", { canvasId });
-  const openAsks = useMemo(
-    () => new Set((questions.rows ?? []).map((q) => q.id)),
-    [questions.rows],
-  );
+  const { store: askStore, asks } = useAsks(canvasId);
+  const openAsks = asks.open;
   const members = useQuery({
     ...cloud.queries.workspace(canvas?.workspaceId ?? ""),
     enabled: Boolean(canvas?.workspaceId) && cloud.userId !== null,
@@ -205,6 +215,7 @@ export function ChatSheet({
     if (!store) throw new Error("The thread isn't open yet.");
     const pictures = picked;
     setLine(null);
+    askStore?.clearSaid();
     setPicked([]);
     try {
       const uploaded = await uploadImages(backend.api, canvasId, pictures);
@@ -277,6 +288,14 @@ export function ChatSheet({
   const openLink = useCallback((url: string) => leave.current.onOpenLink(url, readSeq.current), []);
 
   const writable = !readOnly;
+  // What the agent asks, in the composer's place, once the live rows say anything is open.
+  const asking = asks.asks.length > 0;
+  const answer = (id: string, given: AskAnswer) => {
+    void askStore?.answer(id, given).then((ok) => (ok ? success() : fail()));
+  };
+  // Under the slot: what became of an answer, else what became of a message or Stop.
+  const said = asks.said ?? (line ? { id: -1, text: line, failed: true } : null);
+  const retries = !asks.said && lineRetries;
   const empty = thread.items !== null && rows.length === 0;
   return (
     <Sheet
@@ -318,7 +337,7 @@ export function ChatSheet({
         }
         ListFooterComponent={foot ? <Foot foot={foot} /> : undefined}
       />
-      {writable && picked.length > 0 && (
+      {writable && !asking && picked.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -356,7 +375,17 @@ export function ChatSheet({
           ))}
         </ScrollView>
       )}
-      {writable && !offline ? (
+      {asking ? (
+        <NeedsYou
+          asks={asks.asks}
+          start={question}
+          repoName={repoName}
+          blocked={readOnly ?? offline}
+          onAnswer={answer}
+          onTouch={(id) => askStore?.touch(id)}
+          onOpenLink={openLink}
+        />
+      ) : writable && !offline ? (
         <Composer
           name="chat"
           mode={mode}
@@ -383,11 +412,12 @@ export function ChatSheet({
       ) : (
         <Quiet testID="chat-read-only">{readOnly ?? offline}</Quiet>
       )}
-      {line && writable && (
+      {said && writable && (
         <Pressable
           testID="chat-line"
-          accessibilityRole={lineRetries ? "button" : "text"}
-          disabled={!lineRetries}
+          accessibilityRole={retries ? "button" : "text"}
+          accessibilityLiveRegion="polite"
+          disabled={!retries}
           onPress={() => composer.current?.send()}
         >
           <Text
@@ -399,7 +429,7 @@ export function ChatSheet({
               textAlign: "center",
             }}
           >
-            {line}
+            {said.text}
           </Text>
         </Pressable>
       )}

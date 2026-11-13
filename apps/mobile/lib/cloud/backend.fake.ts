@@ -48,6 +48,11 @@ export const SCENARIOS = [
    * Plans board, and a second turn still running, an aside on its way.
    */
   "chat",
+  /**
+   * Maya's Pricing page waiting on her (`stockAsks`): two questions in one ask (the second
+   * multi-select), a plan to approve, and a permission, four pages in all.
+   */
+  "needs-you",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -274,6 +279,48 @@ export async function stockChat(world: FakeWorld): Promise<void> {
   agent.tool("Edited Plans", { streaming: true, artboards: ["ab_plans"] });
 }
 
+/** What `stockAsks` asks on the Pricing page, for tests to look for. */
+export const ASKS_SCENE = {
+  blue: {
+    header: "Button colour",
+    question: "Which blue for the buttons?",
+    options: ["Royal", "Sky"],
+  },
+  sections: {
+    header: "Sections",
+    question: "Which sections go under the plans?",
+    options: ["FAQ", "Testimonials", "Comparison table"],
+  },
+  planFirst: "Put the three plans side by side, cheapest first.",
+  planRest: "Then add a short FAQ under them, and a dark version of both.",
+  permission: { tool: "Bash", title: "Run the visual tests", description: "bun test visual" },
+} as const;
+
+/** The Pricing page waiting on Maya: a two-question ask, a plan and a permission. */
+export async function stockAsks(world: FakeWorld): Promise<string[]> {
+  await world.ready;
+  const pricing = [...world.fake.canvases.values()].find(
+    (c) => c.workspaceId === world.acme.id && c.sequencer.doc.name === "Pricing page",
+  );
+  if (!pricing) return [];
+  const agent = world.fake.agent(pricing.id);
+  const { blue, sections, planFirst, planRest, permission } = ASKS_SCENE;
+  const asked = (q: typeof blue | typeof sections, multiSelect: boolean) => ({
+    header: q.header,
+    question: q.question,
+    options: q.options.map((label) => ({ label, description: "" })),
+    multiSelect,
+  });
+  return [
+    agent.ask(
+      { kind: "question", payload: { questions: [asked(blue, false), asked(sections, true)] } },
+      blue.header,
+    ),
+    agent.ask({ kind: "plan", payload: { plan: `${planFirst}\n\n${planRest}` } }, "Plan"),
+    agent.ask({ kind: "permission", payload: { ...permission } }, permission.title),
+  ];
+}
+
 export interface FakeCloud extends Backend {
   kind: "fake";
   /** The world now (`reset` makes a new one). */
@@ -312,6 +359,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
   const installPages: string[] = [];
   const stocked = new WeakSet<FakeWorld>();
   const chatted = new WeakSet<FakeWorld>();
+  const asked = new WeakSet<FakeWorld>();
   const client = () => {
     const person = session.person;
     let known = clients.get(person.id);
@@ -409,6 +457,7 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         "setup-claude": signedIn,
         canvases: signedIn,
         chat: signedIn,
+        "needs-you": signedIn,
       };
       // The rows change under the list as the live query would deliver them.
       // Maya is signed in once Northbrook exists, as someone already in two workspaces is: `me`
@@ -427,6 +476,15 @@ export function fakeCloud(opts: { authorizeUrl?: string | null } = {}): FakeClou
         const current = world;
         session.set({ status: "loading" });
         void stockChat(current).finally(() => {
+          if (world === current) session.set(states[scenario]);
+        });
+        return true;
+      }
+      if (scenario === "needs-you" && !asked.has(world)) {
+        asked.add(world);
+        const current = world;
+        session.set({ status: "loading" });
+        void stockAsks(current).finally(() => {
           if (world === current) session.set(states[scenario]);
         });
         return true;

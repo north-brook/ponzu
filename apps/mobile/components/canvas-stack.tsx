@@ -1,20 +1,22 @@
 import type { RailSignal } from "@ponzu/client/model";
 import type { ReactNode } from "react";
-import { Alert, View } from "react-native";
+import { Alert, Text, View } from "react-native";
+import { NEEDS_YOU } from "../lib/copy";
 import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
+import { brand, font } from "../lib/tokens";
 import { BarButton } from "./chrome";
 import { ChatIcon, CommentIcon, PullRequestIcon } from "./icons";
 
 /**
  * The canvas's floating stack, bottom right, top to bottom (iPhone design §7): the pull request,
  * shown only once the canvas has one; Comment; and Chat, which shows what the Mac's thread toggle
- * shows (the shared `railSignal`): the turning yuzu slice while the agent wakes or works, else
- * its own mark.
+ * shows (the shared `railSignal`): a needs-you count on its top-right edge while the agent waits
+ * on someone, else the turning yuzu slice while it wakes or works, else its own mark.
  *
  * Chat opens the chat sheet (components/chat-sheet.tsx). The pull request has no sheet on the
  * iPhone yet, so until it does, pressing it says so in one alert instead of doing nothing. The
- * needs-you count isn't shown yet: the questions come to the chat's composer in their own slice.
+ * questions the count stands for are answered in the chat's composer slot (needs-you.tsx).
  * Comment on a canvas the person may only look at is shown and said to be unavailable, not
  * hidden, so the stack never jumps.
  */
@@ -43,8 +45,10 @@ export function CanvasStack({
   commentHint?: string | null;
 }) {
   const { color } = useTheme();
+  const needsYou = typeof chat === "object" ? chat.needsYou : 0;
   const busy = chat === "working";
-  const chatLabel = busy ? "Chat, Ponzu is working" : "Chat";
+  const chatLabel =
+    needsYou > 0 ? NEEDS_YOU.chat(needsYou) : busy ? "Chat, Ponzu is working" : "Chat";
   return (
     <View
       testID="canvas-stack"
@@ -78,6 +82,33 @@ export function CanvasStack({
           <ChatIcon color={color.ink} />
         )}
       </Control>
+      {needsYou > 0 && (
+        // On Chat's top-right edge. Its count is in Chat's own label for VoiceOver.
+        <View
+          testID="stack-chat-badge"
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{
+            position: "absolute",
+            right: -4,
+            bottom: 30,
+            minWidth: 20,
+            height: 20,
+            borderRadius: 10,
+            paddingHorizontal: 5,
+            backgroundColor: brand.yuzu,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{ fontFamily: font.sans, fontWeight: "700", fontSize: 12, color: brand.ink }}
+          >
+            {needsYou > 99 ? "99+" : needsYou}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }

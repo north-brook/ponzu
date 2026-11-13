@@ -159,5 +159,57 @@ export const CHAT = {
   openComment: (place: string) => `Open the comment on ${place}`,
 } as const;
 
+/**
+ * Needs you (iPhone design §10 and §22): what the agent asks, in the chat's composer slot. The
+ * card's words are the Mac's (apps/studio/src/cloud/needs-you/needs-you.tsx); copy.test.ts holds
+ * them to it. The lines under the slot are the phone's own.
+ */
+export const NEEDS_YOU = {
+  /** Each kind's header; a question's is its own. */
+  plan: "Plan",
+  permission: "Permission",
+  secret: "Secret",
+  link: "Over to you",
+  /** After a multi-select question's words. */
+  chooseAny: "Choose any.",
+  /** The note's field, by kind. */
+  questionNote: "Add a note, or answer in words",
+  planNote: "Add a note, or say what to change",
+  note: "Add a note",
+  secretField: "Paste the value",
+  /** A plan's first paragraph shows; this opens the rest in the sheet. */
+  readPlan: "Read the plan",
+  secretLead: (name: string) => `Claude needs ${name} to go on.`,
+  secretKept: (repo: string | null) =>
+    repo
+      ? `Kept with ${repo}'s secrets for its canvases. It never goes in the thread.`
+      : "Kept for this canvas only. It never goes in the thread.",
+  open: (host: string) => `Open ${host}`,
+  opened: "Opened. Send when you're done there.",
+  notNow: "Not now",
+  notWeb: "Not a web address, so Ponzu won't open it:",
+  /** VoiceOver: the card, and the pager's steps. */
+  card: (header: string) => `Ponzu needs you: ${header}`,
+  previous: "Previous",
+  next: "Next",
+  of: (at: number, count: number) => `${at} of ${count}`,
+  send: "Send",
+  /** Under the slot, when someone else's answer closed the ask the person was on. */
+  answered: "Someone already answered this.",
+  answeredBy: (name: string) => `${name} already answered this.`,
+  movedOn: "Claude moved on, so this needs no answer.",
+  /** Under the slot, when an answer didn't go: the Mac's words. */
+  failed: "Your answer didn't go through. Send it again.",
+  offline: "Your answer didn't reach Ponzu. Check your connection and send it again.",
+  secretsFull:
+    "This repo has no room for another secret. Remove one in Settings › Environments, then send it again.",
+  secretReserved:
+    "Claude asked for a name Ponzu keeps for itself, so it can't be a secret. Tell Claude to use another name.",
+  noRepository: "A Scratch canvas has no repository to keep a secret with.",
+  /** The Chat button, while questions wait. */
+  chat: (count: number) =>
+    count === 1 ? "Chat, Ponzu has a question" : `Chat, Ponzu has ${count} questions`,
+} as const;
+
 /** What the canvases list says when the workspace has no canvases: where they come from. */
 export const EMPTY_CANVASES = "No canvases yet. Canvases you make in Ponzu show up here.";

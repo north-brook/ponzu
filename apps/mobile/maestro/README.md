@@ -17,6 +17,7 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
 | `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); a swipe down closes the sheet; opened again, the reply's link to the Plans board closes it and focuses that board. |
+| `needs-you.yaml` | The Pricing page waiting on Maya (seed `needs-you`): Chat says three questions wait; opened, the asks take the composer's place with the pager across four pages; a single choice, then a multi-select with a note typed with the keyboard up (Send stays on screen above it), the plan's first paragraph and then all of it with Approve, and the permission with Allow; once the last is sent the composer is back. |
 
 With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
 opens the Pricing page and waits for its boards, `run.sh` ends that
@@ -29,7 +30,7 @@ has not yet run on spare; once it passes there, make it the default.
 `shared/start.yaml` opens the client onto Metro and closes the development
 menu if it shows. `ponzu-dev://dev?seed=<scenario>` puts the fake in a state
 (`lib/cloud/backend.fake.ts`: signed-out, signed-in, empty, github-reauth,
-too-old, setup-where, setup-claude, canvases, chat); only a fake build takes it. Every flow checks no development warning
+too-old, setup-where, setup-claude, canvases, chat, needs-you); only a fake build takes it. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
@@ -47,7 +48,10 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `comment-input`, `comment-error`, `to-type`, `to-voice`, `send`, `thread-sheet`,
 `resolve`, `thread-note`, `thread-read-only`, `draft-sheet`, `move-done`,
 `chat-sheet`, `chat-thread`, `chat-input`, `chat-send`, `chat-stop`,
-`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`. A
+`chat-attach`, `chat-working`, `chat-waiting`, `chat-line`, `chat-read-only`,
+`stack-chat-badge`, `needs-you`, `needs-you-header`, `needs-you-pager`,
+`needs-you-previous`, `needs-you-next`, `needs-you-option`, `needs-you-note`,
+`needs-you-send`, `needs-you-plan`, `needs-you-read-plan`, `needs-you-blocked`. A
 canvas's row reads as its VoiceOver label ("Pricing page, 1 waiting for you,
 site, …"), so flows match it with a pattern. Give a new screen a `testID` named
 after it.

@@ -44,13 +44,26 @@ describe("the canvas's floating stack", () => {
     },
   );
 
-  test("needs you: no count is shown, since the phone can't answer a question yet", async () => {
+  test("needs you: Chat wears the count, and says it to VoiceOver", async () => {
     await render(Stack(head({ agentState: "needs_you", needsYouCount: 2 })));
     const hidden = { includeHiddenElements: true };
-    expect(screen.queryByTestId("stack-chat-badge", hidden)).toBeNull();
-    expect(screen.queryByText("2", hidden)).toBeNull();
-    expect(screen.getByLabelText("Chat")).toBeTruthy();
+    expect(screen.getByTestId("stack-chat-badge", hidden)).toBeTruthy();
+    expect(screen.getByText("2", hidden)).toBeTruthy();
+    // The badge itself is hidden from VoiceOver: Chat's label carries the count.
+    expect(screen.queryByTestId("stack-chat-badge")).toBeNull();
+    expect(screen.getByLabelText("Chat, Ponzu has 2 questions")).toBeTruthy();
     expect(screen.queryByTestId("stack-chat-working")).toBeNull();
+  });
+
+  test("needs you outranks working, and one question is said as one", async () => {
+    await render(Stack(head({ agentState: "working", needsYouCount: 1 })));
+    expect(screen.getByLabelText("Chat, Ponzu has a question")).toBeTruthy();
+    expect(screen.getByText("1", { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  test("past 99, the count says 99+", async () => {
+    await render(Stack(head({ agentState: "needs_you", needsYouCount: 140 })));
+    expect(screen.getByText("99+", { includeHiddenElements: true })).toBeTruthy();
   });
 
   test("the pull request's button shows once there is one", async () => {
