@@ -2460,6 +2460,7 @@ const Board = memo(function Board({
           width: w,
           height: fixed ?? undefined,
           borderRadius: corners,
+          contain: fixed === null ? "layout paint style" : "strict",
           "--pz-board-radius": `${radius}px`,
           "--pz-board-edge-width": `${edge}px`,
         } as CSSProperties
