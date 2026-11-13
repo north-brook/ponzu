@@ -3763,7 +3763,12 @@ canvases list, the canvas, comments, the thread and answering questions. Push
 notifications are new work on both sides.
 
 The canvas draws every on-screen board as live DOM. The local app also had a
-rendered-picture tier for heavy pages; it is not in the first cloud release.
+rendered-picture tier for heavy pages; it is not in the first cloud release. What
+the cloud canvas keeps from it is the staged open: a board's DOM is built the
+first time it comes near the view (a fit-content board's at once, for its height),
+and boards on screen go live a frame's budget of elements at a time (4,000),
+nearest the middle of the view first, so opening a page never builds and draws
+every board in one frame.
 
 ## Security
 
