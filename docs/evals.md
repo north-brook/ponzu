@@ -19,9 +19,10 @@ agent's turns, runs on the development API key: `PONZU_ANTHROPIC_API_KEY` if it 
 `ANTHROPIC_API_KEY` (the name `.context/cloud.env` and the repository secret use). Never on a
 Claude subscription: the evals read no sign-in from the environment or from disk, and a
 `CLAUDE_CODE_OAUTH_TOKEN` set in your shell does not reach the agent's turns. With no key, a run
-says so in one line and exits 2 before anything runs. The key is never printed: the lines a run
-prints and the results it writes have it taken out, and the runner scrubs it from the thread as
-it scrubs a sandbox's Claude credential.
+says so in one line and exits 2 before anything runs or anything is sent. The key is never
+printed: everything `bun run evals` prints (an error that stops it included) and every report and
+calibration it writes have it taken out, and the runner scrubs it from the thread as it scrubs a
+sandbox's Claude credential.
 
 Flags: `--samples N` (runs of each ideas case, default 3), `--turns N` (real agent turns, default
 6), `--cap USD` or `PONZU_EVALS_SPEND_USD` (default $3), `--only id,id` (some cases or
@@ -133,14 +134,17 @@ try). Their exact checks are `pullRequestAsAsked` (`checks.ts`), tested without 
 them with `bun run evals agent --only A7,A8,A9,A10` when there is budget for four turns and
 their judging. The thread judge's rubric now says the agent opens the pull request itself (a draft
 called ready, or sending the person to Create PR, fails `failures`), its Create PR examples are
-relabelled and two added (`draft-called-ready`, `sent-to-create-pr`), so its version changed: it
-must be calibrated again (`bun run evals judges --judge thread`, about $1) before the next run, which
-refuses it until then. That calibration has not been run either.
+relabelled and two added (`draft-called-ready`, `sent-to-create-pr`), so its version changed. That
+version was calibrated on 12 November 2026 and passed (`results/calibration.json`), so a run uses it;
+after the next change to the rubric, `bun run evals judges --judge thread` (about $1) comes first.
 
 Agent turns run on the API key too, and are paid in dollars. Their cost is known only once a
 turn ends, so they are counted in turns before they start (`--turns`), and what Claude Code
-says each cost is added to the spend after it (`agent:turn` in the report): a judge call after a
-turn still stops at the cap, and no turn starts once the cap is spent. One turn can take the
+says each cost is added to the spend after it (`agent:turn` in the report), a failed turn's as far
+as the runner reported it before the failure: a judge call after a turn still stops at the cap,
+and no turn starts once the cap is spent. A turn stopped before Claude Code reported its usage
+(one that ran past its 40 minutes) is not counted: what it cost shows only in the Anthropic
+Console's usage for the key. One turn can take the
 spend past the cap by its own cost, so give a run room: `--cap 6` for six cases.
 
 What a case costs on the API, from the last recorded run (Claude Code's own figure for each

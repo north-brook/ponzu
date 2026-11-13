@@ -14,7 +14,6 @@ import {
   type Suite,
   type SuiteReport,
   tally,
-  withoutSecret,
   writeCalibration,
   writeReport,
 } from "@ponzu/evals";
@@ -31,6 +30,7 @@ import {
   runTurn,
   type TurnOutcome,
   type TurnSetup,
+  turnCostUsd,
 } from "./harness.ts";
 import { THREAD_JUDGE_EXAMPLES } from "./judge.examples.ts";
 import {
@@ -484,6 +484,8 @@ export const agentSuite: Suite = {
           log: ctx.log,
         });
       } catch (error) {
+        // A failed turn was paid for too, as far as the runner reported it before it failed.
+        ctx.meter.add("agent:turn", turnCostUsd((error as { usage?: TurnOutcome["usage"] }).usage));
         row.error = String(error);
         ctx.log(`${c.id}: the turn failed: ${row.error}`);
         continue;
@@ -516,16 +518,10 @@ export const agentSuite: Suite = {
         boards_made: madeBoards.length,
         commits: turn.commits.length,
         minutes: Math.round(turn.durationMs / 6000) / 10,
-        claude_code_cost_usd:
-          Math.round(
-            turn.usage.reduce((s, u) => s + u.models.reduce((m, x) => m + x.costUsd, 0), 0) * 100,
-          ) / 100,
+        claude_code_cost_usd: Math.round(turnCostUsd(turn.usage) * 100) / 100,
       };
       // The turn ran on the evals' key: what Claude Code says it cost counts against the cap.
-      ctx.meter.add(
-        "agent:turn",
-        turn.usage.reduce((s, u) => s + u.models.reduce((m, x) => m + x.costUsd, 0), 0),
-      );
+      ctx.meter.add("agent:turn", turnCostUsd(turn.usage));
       row.factInputs = factInputs(setup, turn);
       row.facts = factsText(row.factInputs);
       row.midTurn = turn.midTurn;
@@ -688,11 +684,9 @@ function finish(
     failures,
     cases: results,
   };
-  // What is kept never carries the key, whatever a model or an error repeated of it.
-  const key = evalsApiKey();
-  const kept = key ? withoutSecret(report, key) : report;
-  writeReport(RESULTS, kept, agentMarkdown(kept, kept.cases as CaseResult[]));
-  return kept;
+  // writeReport takes the key out of what it writes, whatever a model or an error repeated of it.
+  writeReport(RESULTS, report, agentMarkdown(report, results));
+  return report;
 }
 
 /** The report a person reads, from what `latest.json` records. */

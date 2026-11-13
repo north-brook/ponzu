@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { evalsApiKey, withoutSecret } from "./key.ts";
 import { SpendCapReached } from "./meter.ts";
 import { pool } from "./pool.ts";
 
@@ -139,7 +140,9 @@ export function writeCalibration(dir: string, calibration: Calibration): void {
   mkdirSync(dir, { recursive: true });
   const all = readCalibrations(dir);
   all[calibration.judge] = calibration;
-  writeFileSync(join(dir, FILE), `${JSON.stringify(all, null, 2)}\n`);
+  // Never the evals' key, whatever a judge or an error repeated of it.
+  const json = `${JSON.stringify(all, null, 2)}\n`;
+  writeFileSync(join(dir, FILE), withoutSecret(json, evalsApiKey() ?? ""));
 }
 
 export class Uncalibrated extends Error {

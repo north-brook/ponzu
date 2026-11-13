@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Calibration, writeCalibration } from "./calibrate.ts";
 import { evalsApiKey, NO_EVALS_KEY, withoutSecret } from "./key.ts";
 import { Meter } from "./meter.ts";
+import { type SuiteReport, writeReport } from "./suite.ts";
 
 // The evals' one credential: an Anthropic API key, never a Claude sign-in.
 
@@ -33,6 +38,40 @@ test("what the evals keep has the key taken out, however deep", () => {
   expect(kept.cases[0]!.error).toBe("401 for key [redacted]");
   expect(kept.spend.usd).toBe(0.1);
   expect(JSON.stringify(report)).toContain(KEY);
+});
+
+test("a report or calibration written to disk never carries the key", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ponzu-evals-key-"));
+  const before = { ponzu: process.env.PONZU_ANTHROPIC_API_KEY };
+  process.env.PONZU_ANTHROPIC_API_KEY = KEY;
+  try {
+    const report = {
+      suite: "x",
+      at: "now",
+      commit: null,
+      samples: 1,
+      spend: { usd: 0, cap: 1, byLabel: {} },
+      judges: {},
+      rates: {},
+      notRun: [`401: ${KEY}`],
+      failures: [],
+      cases: [{ error: `the key ${KEY} was refused` }],
+    } as unknown as SuiteReport;
+    writeReport(dir, report, `# Run\n\nfailed: ${KEY}`);
+    writeCalibration(dir, {
+      judge: "j",
+      reason: `quoted ${KEY}`,
+    } as unknown as Calibration);
+    for (const file of readdirSync(dir)) {
+      const text = readFileSync(join(dir, file), "utf8");
+      expect(text).not.toContain(KEY);
+      expect(text).toContain("[redacted]");
+    }
+  } finally {
+    if (before.ponzu === undefined) delete process.env.PONZU_ANTHROPIC_API_KEY;
+    else process.env.PONZU_ANTHROPIC_API_KEY = before.ponzu;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("an agent turn's cost, known only after it, counts against the cap", () => {

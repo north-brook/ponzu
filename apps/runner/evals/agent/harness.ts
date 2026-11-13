@@ -136,6 +136,11 @@ export function findHeadlessShell(): string | undefined {
 const run = (cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) =>
   execFileSync(cmd, args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/** What Claude Code said a turn cost, in dollars, from the usage the runner reported. */
+export function turnCostUsd(usage: readonly TurnUsage[] | undefined): number {
+  return (usage ?? []).reduce((s, u) => s + u.models.reduce((m, x) => m + x.costUsd, 0), 0);
+}
+
 /**
  * The environment a turn's Claude Code, tools and git run in, built from nothing: only what they
  * need, and the API key as the one Claude credential. Nothing of this process's environment
@@ -356,6 +361,12 @@ export async function runTurn(setup: TurnSetup, opts: HarnessOptions): Promise<T
       }
     }
     return outcome;
+  } catch (error) {
+    // A turn that failed was still paid for: what the runner reported of it goes with the error,
+    // for the caller to count against the cap.
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+      usage: [...api.usage.values()],
+    });
   } finally {
     await runner.stop().catch(() => {});
     rmSync(root, { recursive: true, force: true });

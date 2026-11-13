@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { turnEnv } from "./harness.ts";
+import { turnCostUsd, turnEnv } from "./harness.ts";
 
 // What a turn's Claude Code is given to sign in with: the evals' API key and nothing else.
 
@@ -40,6 +40,15 @@ test("a sign-in in the developer's shell never reaches the turn", () => {
       "USER",
     ].sort(),
   );
+});
+
+test("a turn's cost is what Claude Code said each model cost, a failed turn's too", () => {
+  const usage = [
+    { models: [{ costUsd: 0.25 }, { costUsd: 0.05 }] },
+    { models: [{ costUsd: 0.1 }] },
+  ] as unknown as Parameters<typeof turnCostUsd>[0];
+  expect(turnCostUsd(usage)).toBeCloseTo(0.4);
+  expect(turnCostUsd(undefined)).toBe(0);
 });
 
 test("a turn without a key does not start", () => {
