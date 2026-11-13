@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { turnCostUsd, turnEnv } from "./harness.ts";
+import { agentRun, DESIGN_DEFAULTS, turnCostUsd, turnEnv, turnSession } from "./harness.ts";
 
 // What a turn's Claude Code is given to sign in with: the evals' API key and nothing else.
 
@@ -53,4 +53,46 @@ test("a turn's cost is what Claude Code said each model cost, a failed turn's to
 
 test("a turn without a key does not start", () => {
   expect(() => turnEnv("/tmp/ponzu-eval-x", "", shell)).toThrow(/API key/);
+});
+
+// Where a turn runs: a canvas's defaults, or the builders' rules (`--on dev-key`).
+
+const SETUP = {
+  canvasId: "cnv_x",
+  doc: { name: "Onboarding", pages: [], tokens: ":root {\n}\n", threads: [], notes: {} },
+  repo: true,
+  event: { kind: "message", payload: { text: "hi" } },
+} as unknown as Parameters<typeof turnSession>[0];
+
+test("without --on a turn runs at a canvas's defaults, unlabelled", () => {
+  expect(agentRun(null)).toBe(DESIGN_DEFAULTS);
+  expect(agentRun(undefined)).toBe(DESIGN_DEFAULTS);
+  const session = turnSession(SETUP);
+  expect([session.model, session.effort]).toEqual(["claude-opus-5-5", "high"]);
+  expect(DESIGN_DEFAULTS.ranOn).toBeNull();
+});
+
+test("--on dev-key pins Haiku at low effort for the turn, and labels its rows", () => {
+  const run = agentRun("dev-key");
+  expect(run).toMatchObject({
+    model: "claude-haiku-5-5",
+    effort: "low",
+    ranOn: "dev-key/haiku/low",
+  });
+  const session = turnSession(SETUP, run);
+  // The runner hands Claude Code the session's model and effort (run.ts), so this is what runs.
+  expect([session.model, session.effort]).toEqual(["claude-haiku-5-5", "low"]);
+  expect(session.canvas).toEqual({ id: "cnv_x", name: "Onboarding" });
+});
+
+test("--on dev-key still runs on the key alone: a sign-in in the shell never reaches it", () => {
+  // The run changes only the model; the environment is the same one, built from nothing.
+  agentRun("dev-key");
+  const env = turnEnv("/tmp/ponzu-eval-x", KEY, shell);
+  expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+  expect(env.ANTHROPIC_API_KEY).toBe(KEY);
+});
+
+test("an unknown --on is refused before anything runs", () => {
+  expect(() => agentRun("subscription")).toThrow(/--on takes dev-key/);
 });
