@@ -16,7 +16,7 @@ reaches a real API, WorkOS or GitHub. They run in this order (`config.yaml`):
 | `canvas.yaml` | A canvas from its row (the fake's Pricing page): the web view draws it, the placeholder gives way, the title and the floating stack (Comment, Chat, no pull request); Back to the list. |
 | `comment.yaml` | Comment, a tap on the Plans board, typed words, Send: the field leaves, the pin stays; tapping the pin opens its thread under Maya's name; Resolve closes it. |
 | `comment-modes.yaml` | A hold on the FAQ board brings the field up in voice, which says it can't hear (the microphone is refused); Type instead and Speak instead switch; typed words swiped away stay as an unsent pin, which brings the field back with them. |
-| `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); the reply's link to the Plans board closes the sheet; a swipe down closes it again. |
+| `chat.yaml` | The Pricing page's chat (seed `chat`): Maya's bubbles, Ponzu's reply from its Markdown, the aside and working line while the turn runs; words typed with the keyboard up and sent mid-run land as a bubble; Stop ends the turn ("You stopped it"); a swipe down closes the sheet; opened again, the reply's link to the Plans board closes it and focuses that board. |
 
 With `REMOUNT=1` (`--env REMOUNT=1` on the job), `run.sh` then tests the remount iOS forces on a canvas: `remount/open.yaml`
 opens the Pricing page and waits for its boards, `run.sh` ends that

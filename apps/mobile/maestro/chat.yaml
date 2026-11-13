@@ -5,9 +5,9 @@ name: chat
 # bubbles, Ponzu's reply drawn from its Markdown, the aside and the working
 # line while its turn runs. Chat opens with the field ready: words typed with
 # the keyboard up and sent mid-run land as a bubble (the keyboard never covers
-# Send). Stop with the field empty ends the turn. The reply's link to the
-# Plans board closes the sheet and goes there; Chat again, and a swipe down
-# closes it.
+# Send). Stop with the field empty ends the turn. A swipe down closes the
+# sheet; Chat again, and the reply's link to the Plans board closes it and
+# focuses that board.
 - runFlow: shared/start.yaml
 - openLink: ponzu-dev://dev?seed=chat
 - extendedWaitUntil:
@@ -59,15 +59,15 @@ name: chat
     notVisible:
       id: chat-working
     timeout: 10000
-# The reply's link to the Plans board: the sheet goes, the board is there.
-- tapOn: "the Plans board"
+# A swipe down from the grabber closes it, and Chat opens it again.
+- swipe:
+    start: 50%, 9%
+    end: 50%, 90%
+    duration: 300
 - extendedWaitUntil:
     notVisible:
       id: chat-sheet
     timeout: 10000
-- assertVisible:
-    id: canvas-web
-# Back in, and a swipe down closes it.
 - tapOn:
     id: stack-chat
 - extendedWaitUntil:
@@ -75,14 +75,16 @@ name: chat
       id: chat-sheet
     timeout: 10000
 - hideKeyboard
-- swipe:
-    start: 50%, 12%
-    end: 50%, 90%
-    duration: 300
+# The reply's link to the Plans board: the sheet goes and the board is
+# focused, so the chrome steps aside as it does for a double-tapped board.
+- tapOn: "the Plans board"
 - extendedWaitUntil:
     notVisible:
       id: chat-sheet
     timeout: 10000
-- assertVisible:
-    id: stack-chat
+- extendedWaitUntil:
+    visible:
+      id: chrome-hidden
+    timeout: 10000
+- assertVisible: "Plans"
 - assertNotVisible: ".*Cannot update a component.*"
