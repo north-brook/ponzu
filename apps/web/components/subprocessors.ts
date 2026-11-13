@@ -98,8 +98,9 @@ export const SUBPROCESSORS: readonly Subprocessor[] = [
   },
   {
     name: "Resend",
-    purpose: "Sends the daily email of notifications, to people who turn it on",
-    data: "Your email address, and the email: your canvases' names and Ponzu's own sentences about them",
+    purpose:
+      "Sends Ponzu's emails (billing emails to admins, people joining a workspace to its admins, the Friday recap, the daily email of notifications, and legal notices)",
+    data: "Your email address, and the email: workspace and canvas names, the names and GitHub logins of people who joined and the workspace's number of people (to admins), amounts, dates and Stripe's invoice link (billing, to admins), pull request numbers, a suspension's reason, links that carry Ponzu's ids, and Ponzu's own sentences",
     location: "Where Resend runs its service",
     status: "when-it-ships",
     url: "https://resend.com",

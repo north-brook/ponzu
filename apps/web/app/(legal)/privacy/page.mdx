@@ -87,8 +87,20 @@ A workspace admin can give a repository secrets (environment variables), and any
 - **Your inbox:** what Ponzu tells you about your canvases, such as a question for you, a reply, a pull request that is ready or a teammate's comment. Each one holds ids, the canvas's or workspace's name, the first names of the people it is about, and a sentence Ponzu writes; never the words of a message or comment.
 - **Your settings for them,** and your time zone as the desktop app reports it.
 - **Each computer the desktop app runs on:** a random id for the install, the computer's name, the app's version, and when you were last at it, so notifications show on the computer you are using.
-- Ponzu for iPhone does not register for notifications yet, and nothing is sent to phones or by email yet. When it is, we will keep what sending needs (a phone's push token, its name and the app's version) and say so here first.
+- Ponzu for iPhone does not register for notifications yet, and nothing is sent to phones yet. When it is, we will keep what sending needs (a phone's push token, its name and the app's version) and say so here first.
 - Ponzu for iPhone turns a comment you dictate into text on the phone itself. The audio is not sent to us.
+
+### Email
+
+Ponzu does not send email yet. When it starts, it will send these, through Resend, to the email address GitHub gives us for you:
+
+- **Billing emails,** once billing has started, to every admin of a workspace, or to the person whose own workspace it is: when the free credits are used up and there is no card, when the workspace has used most of its monthly cap and when it reaches it, and when a payment doesn't go through. They carry the workspace's name, amounts and dates, and the email about a payment can carry a link to Stripe's page for the invoice. They can't be turned off.
+- **People joining a workspace,** to the admins of an organization's workspace, at most once a day: the names and GitHub logins of the people who joined, and how many people the workspace now has.
+- **A Friday recap,** to the owner of canvases whose pull requests were merged that week, and only in such weeks: those canvases' names, their workspaces' names and their pull requests' numbers, or only how many there were.
+- **The daily email** of your notifications, only if you turn it on in the desktop app's Settings: the names of your canvases and workspaces, and the sentences Ponzu wrote about them, as in your inbox.
+- **Legal notices** that our [terms](/terms) and this policy promise by email, such as before billing starts or a price rises, before certain changes to them take effect, and when we suspend an account. They can't be turned off. We will keep a record of each notice for each person it was meant for (which notice, the address it went to, when, and whether it was sent), including after the account is deleted, for as long as we may need to show that it was sent.
+
+Beyond the names of canvases, workspaces and people, an email never carries what a person or the agent wrote: no message, comment, pull request title or repository name. The one exception is a suspension notice, which says in our own words why we suspended the account. Emails have no open or click tracking. The only things they load are Ponzu's logo and its font, from this website, which sees your IP address as any web host does. You will be able to turn off the email about people joining, the recap and the daily email with the link at the bottom of each one, or in the desktop app's Settings.
 
 <H2 id="analytics">Product analytics</H2>
 
