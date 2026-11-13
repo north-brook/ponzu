@@ -17,14 +17,15 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { ApiError, type CanvasHeadRow } from "@ponzu/client";
 import {
   ago,
-  bodyForTab,
   type CheckRun,
   duration,
   type NextAction,
+  offeredTab,
   orderChecks,
   type PrComment,
   type PrFile,
   type PullRequestDetail,
+  prSummary,
   pullRequestIcon,
   toPullRequestDetail,
 } from "@ponzu/client/model";
@@ -46,7 +47,14 @@ import { CHAT, PR } from "../lib/copy";
 import { fail, select, success, tick } from "../lib/haptics";
 import { Markdown } from "../lib/markdown";
 import { safeHref } from "../lib/prose";
-import { authorName, checksLine, PrActions, prFoot, reviewsLine } from "../lib/pull-request";
+import {
+  type AskedAgent,
+  authorName,
+  checksLine,
+  PrActions,
+  prFoot,
+  reviewsLine,
+} from "../lib/pull-request";
 import { useTheme } from "../lib/theme";
 import { font } from "../lib/tokens";
 import { Diff } from "./diff";
@@ -93,6 +101,12 @@ const CHECK_WORD: Record<CheckRun["state"], string> = {
   queued: "Queued",
   skipped: "Skipped",
 };
+
+/**
+ * Fix checks or Resolve as last asked on each canvas, for this run of the app: asked once for a
+ * commit, as on the Mac, however often the sheet is opened.
+ */
+const ASKED = new Map<string, AskedAgent>();
 
 /** What the sheet shows in its place: the pull request, or one of its drill-ins. */
 type Drill =
@@ -169,6 +183,14 @@ export function PrSheet({
     enabled: cloud.userId !== null,
   });
   const tab = query.data ?? null;
+  // What the foot offers is a read made since the sheet opened, or a kept one the head still
+  // agrees with, as on the Mac (`offeredTab`): an answer kept on disk from before a merge or a
+  // push elsewhere offers nothing until the read on opening says so.
+  const openedAt = useRef(Date.now());
+  const offered = offeredTab(
+    { tab, confirmed: tab !== null && query.dataUpdatedAt >= openedAt.current },
+    prSummary(head),
+  );
 
   // Read again whenever the head says the pull request moved, or the agent's turn changed.
   const moved = head
@@ -184,31 +206,41 @@ export function PrSheet({
     void query.refetch();
   }, [moved, turn]);
 
+  // Keyed on what stays for the person, not `cloud` itself, which changes as the disk copy is
+  // read back: a new PrActions mid-question would forget the press on its way.
+  const { queryClient, mutations } = cloud;
   const actions = useMemo(
     () =>
-      new PrActions({
-        act: (action) =>
-          new MutationObserver(cloud.queryClient, cloud.mutations.pullRequestAction()).mutate({
-            canvasId,
-            action,
-          }),
-        tell: async (text) => {
-          await backend.api.canvases.sendMessage(canvasId, { text });
+      new PrActions(
+        {
+          act: (action) =>
+            new MutationObserver(queryClient, mutations.pullRequestAction()).mutate({
+              canvasId,
+              action,
+            }),
+          tell: async (text) => {
+            await backend.api.canvases.sendMessage(canvasId, { text });
+          },
+          confirm: confirmMerge,
         },
-        confirm: confirmMerge,
-      }),
-    [cloud, canvasId],
+        ASKED.get(canvasId) ?? null,
+      ),
+    [queryClient, mutations, canvasId],
   );
   const acting = useSyncExternalStore(actions.subscribe, actions.getSnapshot);
+  // Fix checks or Resolve asked for a commit stays asked when the sheet closes and opens again.
+  useEffect(() => {
+    if (acting.asked) ASKED.set(canvasId, acting.asked);
+  }, [acting.asked, canvasId]);
 
   const [drill, setDrill] = useState<Drill | null>(null);
   const pull = tab?.pullRequest ?? null;
   const pr = useMemo(() => (pull ? toPullRequestDetail(pull) : null), [pull]);
 
   const run = (action: NextAction) => {
-    if (!tab) return;
+    if (!offered) return;
     tick();
-    void actions.run(action, tab).then((came) => {
+    void actions.run(action, offered).then((came) => {
       if (came === "failed") fail();
       else if (came === "done") success();
     });
@@ -231,7 +263,7 @@ export function PrSheet({
     closed: { icon: GitPullRequestClosedIcon, tint: color.muted },
   }[iconState];
   const number = pull?.number ?? head?.prNumber ?? null;
-  const foot = prFoot(tab, { readOnly: blocked, asked: acting.asked });
+  const foot = prFoot(offered, { readOnly: blocked, asked: acting.asked });
 
   return (
     <Sheet
@@ -413,7 +445,8 @@ function Details({ pr }: { pr: PullRequestDetail }) {
         : pr.state === "closed"
           ? PR.closed
           : null;
-  const body = bodyForTab(pr.body);
+  // Already without Ponzu's own markers (`toPullRequestDetail` reads it through `bodyForTab`).
+  const body = pr.body;
   return (
     <View style={{ gap: 8 }}>
       <Text
@@ -771,7 +804,8 @@ function Foot({
 
 const DRILL_TITLE = {
   checks: PR.mac.checks,
-  reviews: PR.mac.approvals,
+  // A request for changes is listed with the approvals, so not the Mac's "Approvals".
+  reviews: PR.reviews,
   conversation: PR.mac.comments,
 } as const;
 

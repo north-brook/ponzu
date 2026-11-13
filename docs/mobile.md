@@ -573,7 +573,11 @@ agent's turn changed.
   the Mac's chrome reads it (`lib/pull-request.ts`), in the Mac's words:
   Ready, Auto-merge, Update branch and Merge go to GitHub as the person;
   Fix checks and Resolve ask Claude in the chat, in the Mac's words
-  (`agentAsk`), once for a commit ("Asked Claude in the chat."). Auto-merge
+  (`agentAsk`), once for a commit ("Asked Claude in the chat."), however
+  often the sheet is closed and opened while the app runs. What the foot
+  offers comes from a read made since the sheet opened, or a kept answer the
+  canvas's head still agrees with (`offeredTab`, as the Mac's chrome), so an
+  answer kept from before a merge or push elsewhere offers nothing. Auto-merge
   once on waits on GitHub and says "Merges once the checks pass". Merged,
   closed or none: no button. Create PR is the Mac's. Held back by the repo's
   rules with no auto-merge, there is nothing to press and one line: "This

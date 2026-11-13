@@ -335,6 +335,45 @@ describe("the pull request sheet", () => {
     await waitFor(() => expect(screen.queryByTestId("pr-action")).toBeNull());
   });
 
+  test("Fix checks stays asked for the commit when the sheet is closed and opened again", async () => {
+    await opened();
+    github().setChecks([{ name: "ci / visual", state: "failed" }]);
+    const send = jest.spyOn(backend.api.canvases, "sendMessage");
+    await openPricing();
+    await openSheet();
+    await fireEvent.press(await action("Fix checks"));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await fireEvent.press(screen.getByTestId("pr-close"));
+    await waitFor(() => expect(screen.queryByTestId("pr-sheet")).toBeNull());
+    await openSheet();
+    expect(await screen.findByText("Asked Claude in the chat.")).toBeTruthy();
+    expect((await action("Fix checks")).props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    await fireEvent.press(screen.getByTestId("pr-action"));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test("an answer kept from before a merge elsewhere offers no Merge until GitHub is read again", async () => {
+    await stockPullRequest(backend.world);
+    await openPricing();
+    await openSheet();
+    await action("Merge");
+    await fireEvent.press(screen.getByTestId("pr-close"));
+    await waitFor(() => expect(screen.queryByTestId("pr-sheet")).toBeNull());
+    const headSha = (await maya().canvases.pullRequest.get(pricing().id)).pullRequest!.head.sha;
+    // GitHub is slow to answer from here on: the sheet has only the answer it kept.
+    jest
+      .spyOn(backend.api.canvases.pullRequest, "get")
+      .mockImplementation(() => new Promise(() => {}));
+    await act(async () => {
+      await maya().canvases.pullRequest.merge(pricing().id, { headSha });
+    });
+    expect(github().row.prState).toBe("merged");
+    await openSheet();
+    await waitFor(() => expect(screen.queryByTestId("pr-action")).toBeNull());
+  });
+
   test("opened by a link (sheet=pull-request): up at once", async () => {
     await stockPullRequest(backend.world);
     await openPricing({ sheet: "pull-request" });

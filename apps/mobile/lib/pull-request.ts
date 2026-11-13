@@ -163,7 +163,7 @@ export interface PrActionsState {
  * the confirmation still up included, does nothing, so a double tap merges once.
  */
 export class PrActions {
-  private state: PrActionsState = { busy: null, failed: null, asked: null };
+  private state: PrActionsState;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -175,7 +175,11 @@ export class PrActions {
       /** Asks the person before a merge; true to go ahead. */
       confirm(question: string): Promise<boolean>;
     },
-  ) {}
+    /** An ask already made on this canvas (the sheet was open before): not made again. */
+    asked: AskedAgent | null = null,
+  ) {
+    this.state = { busy: null, failed: null, asked };
+  }
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);

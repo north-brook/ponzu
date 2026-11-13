@@ -243,8 +243,9 @@ export const PR = {
     openOnGithub: "Open on GitHub",
     checks: "Checks",
     comments: "Comments",
-    approvals: "Approvals",
   },
+  /** The reviews drill-in's title: approvals and requests for changes together. */
+  reviews: "Reviews",
   /** The merge confirmation, a native action sheet (D13). There is never a bypass. */
   confirm: (number: number, base: string) => `Merge #${number} into ${base}?`,
   /** VoiceOver's name for the Merge button: which pull request. */
