@@ -1,4 +1,4 @@
-import { applyOp, type Doc, type Op } from "./doc.ts";
+import { type Doc, type Op, withOp } from "./doc.ts";
 import {
   type ClientOp,
   CommitRefusedError,
@@ -21,7 +21,10 @@ export interface ReplicaOptions {
   schedule: Scheduler;
   /** Who edits here. Their own ops reach the op listener under this name. */
   actor: Actor;
-  /** The canvas as of `seq`, from `fetchDoc`. The replica keeps it and changes it. */
+  /**
+   * The canvas as of `seq`, from `fetchDoc`. The replica keeps it, and never changes it or any
+   * document it gives out in place: each change is a new document that shares what it left alone.
+   */
   doc: Doc;
   seq: number;
   /** Makes each op's id. `newOpId` unless a test wants to know them. */
@@ -84,6 +87,10 @@ const RETRY_MS = { first: 500, last: 30_000 };
  * with whatever is still pending applied again.
  *
  * It talks to the API one request at a time, and never on a timer of its own.
+ *
+ * No document it holds or gives out is ever changed in place. An op makes a new one (`withOp`)
+ * that shares every page, board, node and thread the op left alone, so `confirmed` and `view`
+ * share all but what the pending ops change, and a comment leaves every board the same object.
  */
 export class Replica {
   /** The canvas as of `seq`: only committed ops, in order. */
@@ -128,7 +135,7 @@ export class Replica {
     this.actor = opts.actor;
     this.newId = opts.newId ?? newOpId;
     this.view = opts.doc;
-    this.confirmed = structuredClone(opts.doc);
+    this.confirmed = opts.doc;
     this.confirmedSeq = opts.seq;
     this.head = opts.seq;
   }
@@ -141,8 +148,8 @@ export class Replica {
 
   /**
    * The canvas as the person sees it: confirmed ops, then their own pending ones. Read
-   * only, and read afresh after each change: when committed ops land under pending ones
-   * this is a new object, not the old one changed.
+   * only, and read afresh after each change: every change makes a new object, and leaves the
+   * old one as it was. What a change left alone (a board, a thread) is the same object in both.
    */
   get doc(): Doc {
     return this.view;
@@ -197,7 +204,8 @@ export class Replica {
    */
   apply(op: Op): AppliedOp {
     validateOp(op);
-    const inverse = applyOp(this.view, op);
+    const { doc, inverse } = withOp(this.view, op);
+    this.view = doc;
     const id = this.newId();
     const bytes = utf8Length(JSON.stringify({ id, op }));
     this.queue.push({ id, op, bytes, sent: false, applied: true });
@@ -446,7 +454,7 @@ export class Replica {
         continue;
       }
       try {
-        applyOp(this.confirmed, c.op);
+        this.confirmed = withOp(this.confirmed, c.op).doc;
       } catch {
         // The API applied this op to the same document, so ours isn't the same.
         this.lost();
@@ -463,13 +471,10 @@ export class Replica {
         continue;
       }
       if (!stale && this.queue.length === 0) {
-        try {
-          applyOp(this.view, c.op);
-          effects.heard.push({ committed: c, echo: false });
-          continue;
-        } catch {
-          // The view was the confirmed document, so this can't happen. Build it again if it does.
-        }
+        // Nothing pending: the view is the confirmed document.
+        this.view = this.confirmed;
+        effects.heard.push({ committed: c, echo: false });
+        continue;
       }
       const mine = this.take(c.id);
       if (!mine?.applied || !sameOp(mine.op, c.op))
@@ -481,12 +486,18 @@ export class Replica {
     return effects;
   }
 
-  /** `view` from scratch: the confirmed document, then each pending op that still fits. */
+  /**
+   * `view` again: the confirmed document, then each pending op that still fits. Nothing is
+   * copied but what those ops change, and the document's own fields.
+   */
   private rebuild(dropped: DroppedOp[]): void {
-    this.view = structuredClone(this.confirmed);
+    // A new object even when nothing is pending: `confirmed` may be a document this replica
+    // gave out before (when nothing was pending then), and a view that went back to it would
+    // look unchanged to whoever compares documents to tell a change.
+    this.view = { ...this.confirmed };
     this.queue = this.queue.filter((entry) => {
       try {
-        applyOp(this.view, entry.op);
+        this.view = withOp(this.view, entry.op).doc;
         entry.applied = true;
         return true;
       } catch (err) {

@@ -252,6 +252,22 @@ test("a canvas whose last page a person deleted takes an artboard all the same",
   ]);
 });
 
+test("moves in one call each see the ones before them, on a replica as on a folder", async () => {
+  const { call, replica } = setup();
+  const r = await call("move_nodes", {
+    moves: [
+      { id: "n_h", after: "n_p" },
+      { id: "n_p", parent: "ab_pricing", index: 0 },
+      { id: "n_h", after: "n_p" },
+    ],
+  });
+  expect(r.isError, r.text).toBeFalsy();
+  const ids = (id: string) =>
+    locate(replica.doc, id)!.node.children.flatMap((c) => (c.kind === "el" ? [c.id] : []));
+  expect(ids("n_card")).toEqual([]);
+  expect(ids("ab_pricing")).toEqual(["n_p", "n_h", "n_plan"]);
+});
+
 test("every kind of edit the tools make is one the API takes, and both sides end up the same", async () => {
   const { call, api, replica, synced, ws } = setup();
   const ok = async (name: string, args: unknown) => {
