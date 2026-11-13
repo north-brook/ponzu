@@ -163,7 +163,10 @@ export function refusalFacts(deps: Pick<NoticeDeps, "clock" | "config" | "mail">
     now: new Date(deps.clock.now()),
     environment: deps.config.build.environment,
     mailEnabled: deps.mail.enabled,
-    allowlisted: deps.config.email.allow !== null,
+    // An empty PONZU_EMAIL_ALLOW (`PONZU_EMAIL_ALLOW=`) names nobody, so it counts as unset.
+    allowlisted:
+      deps.config.email.allow !== null &&
+      deps.config.email.allow.addresses.size + deps.config.email.allow.domains.size > 0,
   };
 }
 

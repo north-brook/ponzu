@@ -87,7 +87,14 @@ function teamEmailOn(deps: Pick<Deps, "mail" | "config">): boolean {
  * that will is already waiting. Nothing while email is off or `team` is paused.
  */
 export async function noteJoined(deps: ScheduleDeps, workspaceId: string): Promise<Job | null> {
-  if (!teamEmailOn(deps)) return null;
+  if (!deps.mail.enabled) return null;
+  if (emailPaused(deps.config.email, "team")) {
+    // Paused means dropped: move the window's start past this join, so the first email after
+    // `team` is released never announces it. A millisecond on, because the database stamps
+    // `created_at` in microseconds and the clock counts milliseconds. Never moves it back.
+    await stampMembersAnnounced(deps.db, { workspaceId, until: new Date(deps.clock.now() + 1) });
+    return null;
+  }
   const workspace = await teamEmailWorkspace(deps.db, workspaceId);
   if (!workspace || workspace.kind !== "org") return null;
   return schedule(deps, workspace);

@@ -38,6 +38,11 @@ export interface CronStep {
   /** Runs once an hour, at this minute past it (0 to 59). Wins over `everyMinutes`. */
   atMinute?: number;
   /**
+   * Whether the step is on at all. A step that answers false is not run, records no slot and
+   * is left out of the answer, so a feature that is off writes and answers nothing.
+   */
+  enabled?(run: CronDeps, now: Date): boolean;
+  /**
    * Does the step's work, and answers counts of what it did. Runs may overlap, and a run may
    * be repeated, so the work must take only what nobody else holds.
    */
@@ -87,6 +92,7 @@ export async function runCronSteps(
   const answer: CronAnswer = { steps: {} };
   const runStep = async (step: CronStep) => {
     try {
+      if (step.enabled && !step.enabled(deps, now)) return;
       const slot = slotOf(step, now);
       if (slot === "skip") return;
       if (

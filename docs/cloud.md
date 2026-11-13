@@ -3068,8 +3068,9 @@ makes their membership of an organisation's workspace (`upsertMembership` answer
 they reach the organisation on GitHub as its owner or a member, and they did not install the
 App, the sync records an `email.members` job for the workspace, due at `until =
 greatest(now + 1 hour, members_announced_at + 24 hours)`: joins gather for an hour, and a
-workspace's admins hear at most once a day. Nothing is recorded while email is off or `team` is
-paused. The job's key is `members:<workspace>:<members_announced_at>`, so every join until the
+workspace's admins hear at most once a day. Nothing is recorded while email is off. While `team`
+is paused a join records nothing and moves `members_announced_at` past itself (never back), so
+the first email after `team` is released never announces it. The job's key is `members:<workspace>:<members_announced_at>`, so every join until the
 window moves folds into the one job. When it runs, it announces the memberships made in
 `(greatest(members_announced_at, until - 48 hours), until]` that still exist, by the same rule
 (owner or member, not the installer), oldest first. The 48-hour floor keeps the first email
@@ -3098,7 +3099,10 @@ be Friday afternoon anywhere, and the step reads nothing), the `recaps` step sta
 statement everyone due with no merge from a canvas they own (`users.recap_sent_on`, the Friday),
 then records an `email.recap` job keyed `recap:<user>:<Friday>` for each of up to 20 of the rest
 and runs them one after another. A Friday missed entirely is skipped, never caught up, and so is
-one whose job runs out of attempts (its last attempt stamps the Friday as it fails). The job
+one whose job runs out of attempts (its last attempt stamps the Friday as it fails), and one
+whose job would send after Saturday 12:00 where the person is (it stamps the Friday instead):
+every send for a Friday then falls within 21 hours of the first, inside Resend's 24-hour
+idempotency window, so a retry can never send a second copy. The job
 keeps a canvas only while the person still owns it, is a member of its workspace now, and could
 read it when it was last merged (the kept access answer judged at that merge, not at send time,
 so a person who has not opened Ponzu since still hears). It sends with Resend's key
@@ -3108,7 +3112,8 @@ left it only stamps. The recap is in its counts-only form (`RECAP_FORM`): `Shipp
 canvases, 3 pull requests merged`, with no canvas or workspace name in the subject, preview or
 body, until the founder chooses names. It never carries a pull request's title, a repository, or
 anything else a person or the agent wrote. Nothing is read, stamped or recorded while email is
-off or `recap` is paused; a job recorded before the pause stamps the Friday without sending.
+off or `recap` is paused: the step does not run at all, records no cron slot, and is left out of
+the cron's answer (a step's `enabled`); a job recorded before the pause stamps the Friday without sending.
 
 **Legal notices** (`notice`, `apps/api/src/email/notice.ts`). What the terms and privacy policy
 promise to say by email: billing starting, a price rise, a change to the terms or the privacy

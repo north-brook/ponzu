@@ -560,6 +560,16 @@ describe("the 30 days", () => {
     expect(t.mail.sent).toEqual([]);
     expect(sendRefusal(request(termsChange(60)), on)).toBeNull();
   });
+
+  test("an empty PONZU_EMAIL_ALLOW counts as no allowlist", async () => {
+    const t = await app({ environment: "dev", email: { allow: parseEmailAllow("") } });
+    await person(t, "emptyallow-a");
+    const run = io();
+    expect(await runNotice(t.deps, args(["--notice", "dev-check", "--send"]), run.io)).toBe(2);
+    expect(run.printed.join("\n")).toContain("PONZU_EMAIL_ALLOW is not set");
+    expect(await records(t)).toEqual([]);
+    expect(t.mail.sent).toEqual([]);
+  });
 });
 
 describe("a suspension", () => {

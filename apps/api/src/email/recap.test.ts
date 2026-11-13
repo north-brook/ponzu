@@ -8,6 +8,7 @@ import { createTestApp, type TestApp } from "../testing/index.ts";
 import type { EmailConfig } from "./kinds.ts";
 import {
   groupMerges,
+  nextDayAt,
   RECAP_BATCH,
   RECAP_FORM,
   RECAP_JOB,
@@ -122,6 +123,13 @@ async function merged(t: TestApp, canvasId: string, number: number, at: string) 
   );
 }
 
+/** The cron slots the recap step recorded. */
+async function recapSlots(t: TestApp) {
+  return (await t.db.select().from(jobs)).filter(
+    (job) => job.kind === "cron.step" && job.key?.startsWith("recaps@"),
+  );
+}
+
 async function recapJobs(t: TestApp) {
   return (await t.db.select().from(jobs)).filter((job) => job.kind === RECAP_JOB);
 }
@@ -132,9 +140,11 @@ describe("off, paused, and outside Friday afternoon", () => {
     const { canvas, userId } = await owner(t);
     await merged(t, canvas.id, 41, "2026-01-01T12:00:00Z");
     for (const at of [FRIDAY, "2026-01-02T20:05:00Z", "2026-01-03T01:00:00Z"]) {
-      expect(await cronAt(t, at)).toEqual({ stamped: 0, due: 0, recorded: 0 });
+      // The step does not run: it is not in the cron's answer and records no slot.
+      expect(await cronAt(t, at)).toBeUndefined();
     }
     expect(await recapJobs(t)).toEqual([]);
+    expect(await recapSlots(t)).toEqual([]);
     expect(await recapPerson(t.db, userId)).toEqual({ recapSentOn: null, recapFirstSentAt: null });
     expect(t.mail.sent).toEqual([]);
     const logged = JSON.stringify(t.logs);
@@ -147,8 +157,9 @@ describe("off, paused, and outside Friday afternoon", () => {
     const { canvas, userId } = await owner(t);
     const quiet = await owner(t);
     await merged(t, canvas.id, 41, "2026-01-01T12:00:00Z");
-    expect(await cronAt(t, FRIDAY)).toEqual({ stamped: 0, due: 0, recorded: 0 });
+    expect(await cronAt(t, FRIDAY)).toBeUndefined();
     expect(await recapJobs(t)).toEqual([]);
+    expect(await recapSlots(t)).toEqual([]);
     expect((await recapPerson(t.db, userId))!.recapSentOn).toBeNull();
     expect((await recapPerson(t.db, quiet.userId))!.recapSentOn).toBeNull();
     expect(t.mail.sent).toEqual([]);
@@ -351,6 +362,50 @@ describe("the recap", () => {
     });
     expect(t.logs.some((line) => line.event === "recap_given_up")).toBe(true);
   }, 60_000);
+
+  test("a job that first runs after Saturday 12:00 local gives up rather than risk a second copy", async () => {
+    // Resend keeps an idempotency key for 24 hours. A job left after an outage could otherwise
+    // send again a recap Resend took before the job lost its answer.
+    const t = await app();
+    const { canvas, userId } = await owner(t);
+    await merged(t, canvas.id, 41, "2026-01-01T12:00:00Z");
+    // Saturday 12:00 in New York is 17:00 UTC; a minute before, the job still sends.
+    t.clock.advance(new Date("2026-01-03T17:00:00Z").getTime() - t.clock.now());
+    await enqueueJob(t.db, {
+      kind: RECAP_JOB,
+      key: recapJobKey(userId, "2026-01-02"),
+      payload: { userId, friday: "2026-01-02", timeZone: "America/New_York" },
+      runAt: new Date(t.clock.now()),
+    });
+    await runDueJobs(t.deps, "test:late");
+    expect(t.mail.sent).toEqual([]);
+    expect(await recapPerson(t.db, userId)).toEqual({
+      recapSentOn: "2026-01-02",
+      recapFirstSentAt: null,
+    });
+    expect(
+      t.logs.some((line) => line.event === "recap_given_up" && line.reason === "too_late"),
+    ).toBe(true);
+  });
+
+  test("the last moment to send follows the person's zone and daylight saving", () => {
+    expect(nextDayAt("2026-01-02", 12, "America/New_York").toISOString()).toBe(
+      "2026-01-03T17:00:00.000Z",
+    );
+    expect(nextDayAt("2026-07-03", 12, "America/New_York").toISOString()).toBe(
+      "2026-07-04T16:00:00.000Z",
+    );
+    expect(nextDayAt("2026-01-02", 12, "Asia/Kolkata").toISOString()).toBe(
+      "2026-01-03T06:30:00.000Z",
+    );
+    expect(nextDayAt("2026-01-30", 12, "Pacific/Kiritimati").toISOString()).toBe(
+      "2026-01-30T22:00:00.000Z",
+    );
+    // An unknown zone is read as New York, as everywhere else in the recap.
+    expect(nextDayAt("2026-01-02", 12, "Mars/Olympus").toISOString()).toBe(
+      "2026-01-03T17:00:00.000Z",
+    );
+  });
 
   test("a deleted account's job completes and sends nothing", async () => {
     const t = await app();

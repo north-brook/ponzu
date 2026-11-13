@@ -219,6 +219,30 @@ describe("with email off or the kind paused", () => {
     expect(await membersJobs(t)).toEqual([]);
   });
 
+  test("a join while team is paused is dropped: the email after the release leaves it out", async () => {
+    const t = await app({ email: { paused: new Set(["team"]) } });
+    const [owner, ann, ben] = await people(t, "owner", "ann", "ben");
+    const { workspaceId } = await org(t, { owners: [owner!], members: [ann!, ben!] });
+    await join(t, owner!);
+    await before(t, workspaceId, t.clock.now() - 3 * DAY, owner!);
+    // Ann joins while `team` is paused: nothing is recorded, and the window moves past her.
+    await join(t, ann!);
+    // As the database would have stamped it, by the app's clock (the test's clock lags real time).
+    await joinedAt(t, workspaceId, ann!, t.clock.now());
+    expect(await membersJobs(t)).toEqual([]);
+    expect(await windowStart(t, workspaceId)).toBeGreaterThan(t.clock.now());
+
+    // Released an hour later; Ben joins, and the one email names only him.
+    t.clock.advance(HOUR);
+    t.deps.config.email = { ...t.deps.config.email, paused: new Set() };
+    await join(t, ben!);
+    const [job] = await waitingMembersJobs(t);
+    await cronAt(t, job!.runAt.getTime());
+    expect(recipients(t)).toEqual(["owner"]);
+    expect(t.mail.sent[0]!.subject).toContain("Ben");
+    expect(t.mail.sent[0]!.subject).not.toContain("Ann");
+  });
+
   test("a job recorded before the pause closes its window without sending", async () => {
     const t = await app({ email: { paused: new Set(["team"]) } });
     const [owner, ann] = await people(t, "owner", "ann");

@@ -83,7 +83,7 @@ export function recapEmailKey(userId: string, friday: string): string {
 }
 
 /** Whether a recap may be recorded now: email is on and `recap` is not paused. */
-function recapEmailOn(deps: Pick<Deps, "mail" | "config">): boolean {
+export function recapEmailOn(deps: Pick<Deps, "mail" | "config">): boolean {
   return deps.mail.enabled && !emailPaused(deps.config.email, "recap");
 }
 
@@ -193,6 +193,50 @@ export function weekdayIn(at: Date, timeZone: string): string {
   );
 }
 
+/**
+ * The instant of `hour`:00 on the day after the local date `YYYY-MM-DD`, in `timeZone`. Used for
+ * Saturday 12:00, the last moment a recap job may still send for that Friday.
+ */
+export function nextDayAt(date: string, hour: number, timeZone: string): Date {
+  const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+  const wanted = Date.UTC(year, month - 1, day + 1, hour);
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: intlZone(timeZone),
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  });
+  const offset = (at: number) => {
+    const parts = Object.fromEntries(
+      format.formatToParts(at).map((part) => [part.type, Number(part.value)]),
+    );
+    const local = Date.UTC(
+      parts.year!,
+      parts.month! - 1,
+      parts.day!,
+      parts.hour!,
+      parts.minute!,
+      parts.second!,
+    );
+    return local - (at - (at % 1000));
+  };
+  // Twice, so a daylight-saving change between the guess and the answer is followed.
+  let at = wanted - offset(wanted);
+  at = wanted - offset(at);
+  return new Date(at);
+}
+
+/**
+ * A recap is sent first on its Friday at or after 15:00 local, so by Saturday 12:00 local, 21
+ * hours later, every retry still falls inside Resend's 24-hour idempotency window. After that a
+ * retry could send a second copy of one Resend took before the job lost its answer.
+ */
+const RECAP_LAST_SEND_HOUR = 12;
+
 /** "Friday, November 13", from the local date `YYYY-MM-DD`. */
 export function recapDateLine(friday: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -245,6 +289,13 @@ export async function runRecapJob(
     // Paused means dropped: this Friday is skipped.
     log.info("email_paused", { kind: "recap", job });
     await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+    return;
+  }
+  if (now() >= nextDayAt(friday, RECAP_LAST_SEND_HOUR, timeZone)) {
+    // Too late to send safely: Resend may no longer know this key, so a recap it already took
+    // would go twice. This Friday is given up, as a missed one is.
+    await stampRecapSent(db, { userId, friday, sent: false, now: now() });
+    log.warn("recap_given_up", { userId, attempts: running.attempts, reason: "too_late" });
     return;
   }
 
