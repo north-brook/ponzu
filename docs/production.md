@@ -440,6 +440,24 @@ Replay is `private` and AI content is off unless the founder chooses otherwise (
 A workspace "Ponzu production" with a monthly spend limit, and a key used only as
 `PONZU_ANTHROPIC_API_KEY` for ideas and their gate.
 
+### Email (Resend)
+
+Off until the founder's email steps (docs/cloud.md, "Email"). When production has a key:
+
+- `mail.ponzu.design` verified at Resend (SPF and DKIM), and `_dmarc.ponzu.design` published.
+- `RESEND_API_KEY` a sending-only key restricted to that domain, stored as sensitive; dev has its
+  own key.
+- `PONZU_EMAIL_FROM` (or its default, `Ponzu <ping@mail.ponzu.design>`) and
+  `PONZU_EMAIL_REPLY_TO` set.
+- `PONZU_EMAIL_ALLOW` absent on the Production target: the check fails `vercel.env.email_allow`
+  when it is there, and the API logs `email_env_problem` at boot.
+- `PONZU_EMAIL_PAUSED` set to `digest,billing,team,recap` in the same change as the key, then
+  emptied one kind at a time. `billing` never in it while `PONZU_BILLING=on`: the API logs
+  `email_env_problem` at boot when it is, and the check marks `vercel.env.email_paused` for a
+  person to confirm, since it reads names, not values.
+- The site's `/settings` page and `/email/` assets live on ponzu.design before any kind is
+  released.
+
 ### The GitHub repository
 
 - `main` keeps its ruleset exactly as it is: `infra/github/ruleset-main.json` is a copy of it,

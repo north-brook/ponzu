@@ -109,6 +109,12 @@ export {
 } from "./queries/claude.ts";
 export { openClaudeSignIn, setClaudeSignInSession } from "./queries/claude-sign-ins.ts";
 export {
+  type EmailRecipient,
+  emailRecipient,
+  stampNotificationEmailed,
+  teamEmailAvailable,
+} from "./queries/email.ts";
+export {
   addRepoSecret,
   deleteRepoSecret,
   getRepoEnvironment,

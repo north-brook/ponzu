@@ -133,7 +133,12 @@ describe("ping preferences", () => {
     t.deps.features.email = true;
     try {
       const got = await call(t, ines.headers, "GET", "/v1/me/notifications");
-      expect(got.body.email).toEqual({ address: "ines@example.com", available: true });
+      // With email on, also whether people-joined could reach her (an organisation's admin).
+      expect(got.body.email).toEqual({
+        address: "ines@example.com",
+        available: true,
+        teamAvailable: expect.any(Boolean),
+      });
     } finally {
       t.deps.features.email = before;
     }
