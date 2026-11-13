@@ -52,6 +52,18 @@ const NOTICE_SPACING_MS = 1000 / NOTICE_SENDS_PER_SECOND;
 
 /** How long Resend keeps an idempotency key: a `pending` row older than this is never resent. */
 export const NOTICE_PENDING_MAX_MS = 24 * 60 * 60_000;
+/**
+ * How long before that a `pending` row stops being sent again. The age is judged at the moment
+ * of the send, after the claim and any wait for Resend's rate, and the request itself takes
+ * time: without a margin a retry admitted just inside the day could reach Resend after its key
+ * had gone, and be delivered as a second notice.
+ */
+export const NOTICE_RETRY_MARGIN_MS = 30 * 60_000;
+
+/** Whether a `pending` row made at `createdAt` is too old to send again at `now`. */
+function tooOldToResend(createdAt: Date, now: number): boolean {
+  return now - createdAt.getTime() >= NOTICE_PENDING_MAX_MS - NOTICE_RETRY_MARGIN_MS;
+}
 
 /** How many days ahead a dated notice must go. */
 export const NOTICE_LEAD_DAYS = 30;
@@ -236,7 +248,10 @@ export interface NoticePlan {
   done: Record<Exclude<EmailNoticeOutcome, "pending">, number>;
   /** Recipients with a `pending` row young enough to be sent again with the same key. */
   retry: number;
-  /** Recipients with a `pending` row older than 24 hours: listed, never sent again. */
+  /**
+   * Everyone with a `pending` row too old to send again, whether or not the notice is still for
+   * them (an account deleted since, someone no longer an admin): listed, never sent again.
+   */
   stale: string[];
   /** Recipients with no row yet. */
   fresh: number;
@@ -276,15 +291,19 @@ export async function planNotice(
   const records = await emailNoticeRecords(db, recordId);
   const now = deps.clock.now();
   const done = { sent: 0, refused: 0, no_address: 0, held: 0 };
-  const stale: string[] = [];
+  // Every record of the notice, not only the current audience's: an unfinished send to someone
+  // the notice is no longer for is still one the founder has to look at.
+  const stale = [...records]
+    .filter(([, r]) => r.outcome === "pending" && tooOldToResend(r.createdAt, now))
+    .map(([userId]) => userId)
+    .sort();
   let retry = 0;
   let fresh = 0;
   for (const userId of recipients) {
     const record = records.get(userId);
     if (!record) fresh++;
     else if (record.outcome !== "pending") done[record.outcome]++;
-    else if (now - record.createdAt.getTime() >= NOTICE_PENDING_MAX_MS) stale.push(userId);
-    else retry++;
+    else if (!tooOldToResend(record.createdAt, now)) retry++;
   }
   return {
     recordId,
@@ -305,7 +324,10 @@ export interface NoticeReport {
   outcomes: Record<Exclude<EmailNoticeOutcome, "pending">, number>;
   /** Recipients skipped because their notice was already finished. */
   alreadyDone: number;
-  /** `pending` rows older than 24 hours: never sent again; the founder looks at each. */
+  /**
+   * `pending` rows too old to send again, of anyone, in the audience now or not: never sent
+   * again; the founder looks at each.
+   */
   stale: string[];
   /**
    * Set when Resend asked to wait (a rate limit, or it was down): the run stopped there and the
@@ -336,6 +358,7 @@ export async function sendNotice(deps: NoticeDeps, request: NoticeRequest): Prom
     stale: [],
     stoppedEarly: null,
   };
+  const stale = new Set(plan.stale);
   // When Resend may next be asked; moved on only by a request that reached it.
   let nextAt = 0;
   for (const userId of plan.recipients) {
@@ -350,14 +373,14 @@ export async function sendNotice(deps: NoticeDeps, request: NoticeRequest): Prom
       report.alreadyDone++;
       continue;
     }
-    if (now - record.createdAt.getTime() >= NOTICE_PENDING_MAX_MS) {
-      report.stale.push(userId);
-      continue;
-    }
-
     const wait = nextAt - deps.clock.now();
     if (wait > 0) await deps.clock.sleep(wait);
     const askedAt = deps.clock.now();
+    // Judged now, after the claim and the wait, not when the loop reached this person.
+    if (tooOldToResend(record.createdAt, askedAt)) {
+      stale.add(userId);
+      continue;
+    }
     let result: Awaited<ReturnType<typeof deliverEmail>>;
     try {
       result = await deliverEmail(deps, {
@@ -385,6 +408,7 @@ export async function sendNotice(deps: NoticeDeps, request: NoticeRequest): Prom
     });
     report.outcomes[outcome]++;
   }
+  report.stale = [...stale].sort();
   return report;
 }
 

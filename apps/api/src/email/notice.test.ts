@@ -376,6 +376,44 @@ describe("--send", () => {
     expect((await records(t)).find((r) => r.userId === a.id)?.outcome).toBe("pending");
   });
 
+  test("a pending row within half an hour of a day old is not risked: listed, not sent", async () => {
+    const t = await app();
+    const a = await person(t, "margin-a");
+    const notice = termsChange(40);
+    await claimEmailNotice(t.db, {
+      noticeId: notice.id,
+      userId: a.id,
+      workspaceId: null,
+      now: new Date(t.clock.now()),
+    });
+    // Resend's key is still alive, but only just: the request could land after it has gone.
+    t.clock.advance(NOTICE_PENDING_MAX_MS - 15 * 60_000);
+    const report = await sendNotice(t.deps, request(notice));
+    expect(report.stale).toEqual([a.id]);
+    expect(t.mail.sent).toEqual([]);
+    expect((await records(t)).map((r) => r.outcome)).toEqual(["pending"]);
+  });
+
+  test("a stale pending row of someone the notice is no longer for is still listed", async () => {
+    const t = await app();
+    const a = await person(t, "gone-a");
+    const b = await person(t, "gone-b");
+    const notice = termsChange(40);
+    await claimEmailNotice(t.db, {
+      noticeId: notice.id,
+      userId: a.id,
+      workspaceId: null,
+      now: new Date(t.clock.now()),
+    });
+    t.clock.advance(NOTICE_PENDING_MAX_MS);
+    // This run is narrowed to b alone, as an audience that has lost a would be.
+    const narrowed = { ...request(notice), users: [b.id] };
+    expect((await planNotice(t.deps, narrowed)).stale).toEqual([a.id]);
+    const report = await sendNotice(t.deps, narrowed);
+    expect(report.stale).toEqual([a.id]);
+    expect(t.mail.sent.map((m) => m.to)).toEqual([b.address]);
+  });
+
   test("asks Resend at most 5 times a second", async () => {
     const t = await app();
     for (let i = 0; i < 12; i++) await person(t, `rate-${i}`);
