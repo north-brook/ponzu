@@ -19,7 +19,7 @@ import type { PictureAnswer, ToCanvas } from "../../canvas/protocol";
 /** How long the page may take to draw a picture, both themes, before the comment goes without. */
 export const PAGE_MS = 30_000;
 
-/** There is nothing round the comment's pin to show: it goes without a picture, by design. */
+/** There is nothing round the comment's pin to show: it goes without a picture, on purpose. */
 export class NoPicture extends Error {
   override name = "NoPicture";
   constructor() {
