@@ -52,10 +52,13 @@ describe.skipIf(!chromium || process.platform === "win32")("the tests' Chromium"
 
   // Chrome stopped dead stands in for one whose teardown hangs, as it does on a busy Mac:
   // Playwright's own close would wait 30 s on it before killing it, past any test's timeout.
+  // Its helpers are stopped too, so none can leave by itself when Chrome goes: only a kill of the
+  // whole group ends them.
   test("a Chrome that won't answer still closes, without waiting on it", async () => {
     const browser = await launchChromium(chromium);
     const pid = browser.pid!;
-    process.kill(pid, "SIGSTOP");
+    await (await browser.newPage()).setContent("<p>hi</p>");
+    process.kill(-pid, "SIGSTOP");
     await browser.close();
     expect(alive(pid)).toBe(false);
     await groupGone(pid);
